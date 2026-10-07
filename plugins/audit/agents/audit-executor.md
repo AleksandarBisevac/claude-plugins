@@ -50,6 +50,12 @@ Hard rules (non-negotiable):
   command, runner crash, zero tests collected where some were expected) — the
   orchestrator treats these very differently. (`run-test-gate.py` applies
   `meta.nodePreamble` itself; you only prepend it to a command you type yourself.)
+- **A tool call refused by the auto-mode permission classifier — text containing
+  `auto mode cannot determine the safety` or `gave no verdict` — produced no
+  verdict on that step: report it as `could-not-run`, never as `fail`.** Put
+  the refusal in `task.outcome.technical` **verbatim**, the classifier's own
+  words rather than your summary of them — the same discipline the red-first
+  rule below already asks of this exact refusal.
 - **A gate failure in a file you do not own is probably not yours.** The working
   tree is shared with sibling tasks running right now, editing it while you run
   whatever gate reading you were given — so a type error, a lint error or a failing
@@ -100,7 +106,8 @@ Hard rules (non-negotiable):
   ```
   python3 "<plugin root>/scripts/governance/stamp-verification.py" red \
       --project <gitRoot> --manifest <manifestPath> --task <taskId> \
-      [--case <id or full label of the case you added>] -- <test command>
+      [--case <id or full label of the case you added>] [--deps-from <dir>] \
+      -- <test command>
   ```
 
   It checks HEAD out into a temp directory with `git worktree add --detach`, copies
@@ -110,10 +117,20 @@ Hard rules (non-negotiable):
   the `redFirst` block to return — `{status, basis, at}`, the shape below. The
   orchestrator's prompt gives you the resolved command. The throwaway holds only
   TRACKED files, and the run's environment is scrubbed of what points at the shared
-  tree (the output names what it dropped): a suite that needs an untracked
-  dependency — `node_modules`, an in-repo `.venv`, generated files — cannot run there
-  and comes back `could-not-prove`, which is the honest word for it, not a reason to
-  run the proof in the shared tree instead. **Never** write HEAD's copy
+  tree (the output names what it dropped). The ignored dependency directories of
+  `--deps-from <dir>` (`--project` by default) — `node_modules` at any depth, `.venv` —
+  are linked in entry by entry, and the output's `dependencies:` line names each one
+  linked or skipped and what became of each `.npmrc`. Each leak that link opens is
+  named, not closed: a link landing in the shared tree outside every dependency
+  directory (a workspace package, an editable install) would let HEAD's run read the
+  fix, so `workspace_links()` in `stamp-verification.py` finds it, the directory holding
+  it is skipped and named with its reason on the `dependencies:` line, and the run goes
+  ahead without that directory; a write a runner makes INTO a linked entry
+  lands in the source checkout and nothing watches it; the user's `~/.npmrc` and an
+  untracked project one never reach the run's fresh home, so a wrapper that needs a
+  private registry fails there. Anything else untracked — generated files — still
+  cannot run there and comes back `could-not-prove`, which is the honest word for it,
+  not a reason to run the proof in the shared tree instead. **Never** write HEAD's copy
   over a file (`git show HEAD:<file> > <file>`), revert your own fix, or edit a
   sibling's file to prove a red: the tree is shared, and a host refused exactly that
   beside a sibling's uncommitted work. Nothing mechanically stops the overwrite — the
@@ -121,8 +138,11 @@ Hard rules (non-negotiable):
 - **`proved` means one of YOUR cases failed an assertion.** The helper names the
   failing cases, and a red counts only against a GREEN baseline: the helper first runs
   HEAD's own test files with the same command on HEAD's code — every declared test file
-  new at HEAD laid over as an empty file — and they must be green (exit 0 with no failure,
-  or an exit 5 whose one runner's tally counts nothing run and nothing failed); then a
+  new at HEAD laid over as an empty file, a jest or vitest one left absent instead — and
+  they must be green (exit 0 with no failure, or an exit 5 whose one runner's tally counts
+  nothing run and nothing failed, or, for a file left absent, the runner's own no-test-file
+  sentence with no case or failure counted — step 1 of the `stamp-verification.py` section
+  of `PLUGIN-BUILD-GUIDE.md` is the full rule); then a
   failure of your run counts only where the runner locates it in one of your declared
   test files (a pytest node id, unittest `-v`'s module and class, a run of exactly one
   declared file), the class it names there defines the case (its last binding there — an
@@ -147,7 +167,14 @@ Hard rules (non-negotiable):
   error — and a second run with the working tree's implementation copied in no
   longer ends on that error and reaches its assertions. A run whose output
   carries no tally the helper reads is `could-not-prove` too, with the reason in the
-  basis. A test that passes without the fix gets no word at all: it proves nothing
+  basis. The runners whose tally the helper reads are `house`, `pytest`, `unittest`,
+  `jest` and `vitest`. `house` is a `--selftest` printing this repo's
+  `cases passed` line, and the output decides rather than the command, so a wrapper
+  (`npm test`) counts when the runner it wraps prints its own tally; any other runner
+  is `could-not-prove` however its dependencies are linked. That list is derived, not
+  remembered: `runner_list_drift()` in `plugins/audit/scripts/_refs.py` reads it off
+  `TALLY_READERS` in `_runner_output.py` and fails the build when this sentence or
+  the one in `reference/execute-task.md` drifts from the table. A test that passes without the fix gets no word at all: it proves nothing
   yet, and the work is to fix the test.
 - **A red-first proof you were not ALLOWED to make is `could-not-prove`, never an
   inference.** When the helper cannot run, or when anything else that is not the

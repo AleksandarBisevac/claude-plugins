@@ -86,6 +86,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _manifest_io as _mio   # noqa: E402  (the loader, and the ONE document spelling)
 import _manifest_rules as _rules  # noqa: E402  (the referential rules, for the two checks)
 import _panel_write           # noqa: E402  (the index lock, the project walk and the
@@ -343,6 +344,7 @@ def main(argv, out=print):
     p.add_argument("--project-dir", dest="project_dir", default=None)
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--json", action="store_true", dest="as_json")
+    _claude_home.attach_usage_hint(p)
     try:
         args = p.parse_args(argv)
     except SystemExit as exc:

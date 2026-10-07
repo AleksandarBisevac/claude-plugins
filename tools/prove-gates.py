@@ -422,6 +422,10 @@ TABLE = (
   _claim_payload("thirteen"), OUT, "pn0"),
  ("entries_missing_guard", S + "status/audit-status.py", "drop",
   r"^    safe_stdio\(\)$", None, OUT, "f1"),
+ # An entry point whose parser stops going through the usage hook answers an
+ # older copy's unknown verb with a bare "invalid choice" again.
+ ("usage_hint_violations", S + "status/audit-logs.py", "drop",
+  r"^    _claude_home\.attach_usage_hint\(ap\)$", None, OUT, "uh7"),
  ("layer_violations", S + "_fmt.py", "after", INSTALL,
   "\n\ndef _probe_up():\n    import _panel_state\n    return _panel_state\n",
   DEP, "r1"),
@@ -660,6 +664,12 @@ TABLE = (
  # be grading a reference which asks for nothing as one that asks for everything.
  ("return_shape_drift", "plugins/audit/agents/audit-executor.md", "replace",
   "Report back a structured outcome:", "Report back what happened:", REF, "rs2"),
+ # The runner list loses a runner red still reads - the reference keeps telling an
+ # operator the helper reads fewer runners than it does, which is the shape a list
+ # written from memory takes the day the table grows a reader.
+ ("runner_list_drift", "plugins/audit/reference/execute-task.md", "replace",
+  "`jest` and `vitest`. The output decides", "and `jest`. The output decides",
+  REF, "rl1"),
  # A hidden command spelled inside a fenced block under `reference/` - the shape
  # the sign-off fix loop already uses for `/audit:task`/`/audit:run` - is a command
  # the pipeline would be refused invoking the day it takes that step. `## Reporting`
@@ -1008,12 +1018,12 @@ TABLE = (
  ("schema_vocab_drift", S + "manifest/_manifest_vocab.py", "replace",
   'KNOWN_MERGE = {"auto", "removeWorktree", "deleteBranch"}',
   'KNOWN_MERGE = {"auto", "removeWorktree"}', MVO, "mv18"),
- # A recommended subset that stops being a subset. `CLAIM_KEYS` names three fields
- # of `phase.claim`; a fourth that the schema does not declare is the shape a
+ # A recommended subset that stops being a subset. `CLAIM_KEYS` names the fields a
+ # claim is asked for; one more that the schema does not declare is the shape a
  # rename leaves when only one side is updated.
  ("schema_subset_drift", S + "manifest/_manifest_vocab.py", "replace",
-  'CLAIM_KEYS = ("sessionId", "host", "branch")',
-  'CLAIM_KEYS = ("sessionId", "host", "branch", "worktree")', MVO, "mv23"),
+  'CLAIM_KEYS = ("sessionId", "branch")',
+  'CLAIM_KEYS = ("sessionId", "branch", "worktree")', MVO, "mv23"),
  # An inline vocabulary at its `_unknown_keys()` call, drifted from the schema.
  # These are the levels whose words are a set LITERAL rather than a named set, so
  # nothing but this rule compares them with anything.
@@ -1279,6 +1289,12 @@ ALLOW = (
  # have. `f1` is the live-tree assertion, which is this rule's allow corpus.
  ("entries_missing_guard", S + "_output.py", "replace",
   "            if not entries:", "            if False:", OUT, "f1"),
+ # A parser wrapped at construction, and a `parents=` template that never parses
+ # argv, are the two narrowings. Take them away and the template every subcommand
+ # parser inherits from reads as a bare parser; `uh5` names those fixtures quiet.
+ ("usage_hint_violations", S + "_output.py", "replace",
+  "        if id(call) in wrapped or name in templates:",
+  "        if False:", OUT, "uh5"),
  # The docstring filter, removed - which is the bug this classifier actually
  # shipped: a migrated file DESCRIBING the contract came back classified as
  # carrying a suite, so the file that did the right thing was the defect.
@@ -1831,6 +1847,12 @@ ALLOW = (
  # noise, which is the same argument `rf7` makes for its trigger.
  ("return_shape_drift", S + "_refs.py", "replace",
   "            if (depth == 1\n", "            if (True\n", REF, "rs6"),
+ # The list sentence's end dropped, so every backticked word after it in the
+ # document reads as a runner - `could-not-prove`, a flag, a file name - and a
+ # document naming exactly the table's runners is convicted for the sentences
+ # that follow it. The full stop is the narrowing that keeps the list the list.
+ ("runner_list_drift", S + "_refs.py", "replace",
+  '    stop = text.find(".", start)\n', "    stop = -1\n", REF, "rl3"),
  # The fence narrowed to nothing: ANY backtick span now counts as "the pipeline
  # runs this", not only a triple-backtick block. `layout`, `migrate`, `sync` and
  # `worktree` are each named in single backticks in ordinary prose across

@@ -169,6 +169,282 @@ def _cases(check):
                                               + M.entries_missing_guard((M.TESTS_DIR,)))
           and M.py_files(M.TESTS_DIR) != [])
 
+    # ------------------------------------------------------------ the usage hook
+    # Every parser an entry point builds hands itself to the one shared usage hook,
+    # so a usage error from an older copy names the newer one. The fixtures carry the
+    # shapes the real tree uses - a parser hooked beside its construction, one wrapped
+    # at construction, a builder returning the hooked parser, a `parents=` template
+    # that never parses argv - and the shapes that would leave a parser bare.
+    hook = tempfile.mkdtemp(prefix="audit-usage-hook-")
+    try:
+        os.makedirs(os.path.join(hook, "sub"))
+        fixtures = {
+            os.path.join("sub", "bare.py"):
+                'import argparse\n'
+                'if __name__ == "__main__":\n'
+                '    p = argparse.ArgumentParser(prog="bare")\n'
+                '    p.parse_args()\n',
+            "hooked.py":
+                'import argparse\nimport _claude_home\n'
+                'if __name__ == "__main__":\n'
+                '    p = argparse.ArgumentParser(prog="hooked")\n'
+                '    p.add_argument("verb")\n'
+                '    _claude_home.attach_usage_hint(p)\n'
+                '    p.parse_args()\n',
+            "wrapped.py":
+                'import argparse\nimport _claude_home\n'
+                'def main():\n'
+                '    p = _claude_home.attach_usage_hint(\n'
+                '        argparse.ArgumentParser(prog="wrapped"))\n'
+                '    return p.parse_args()\n',
+            "builder.py":
+                'import argparse\nimport _claude_home\n'
+                'def build():\n'
+                '    parser = argparse.ArgumentParser(prog="builder")\n'
+                '    return _claude_home.attach_usage_hint(parser)\n',
+            "parent.py":
+                'import argparse\nimport _claude_home\n'
+                'def build():\n'
+                '    common = argparse.ArgumentParser(add_help=False)\n'
+                '    p = argparse.ArgumentParser(parents=[common])\n'
+                '    return _claude_home.attach_usage_hint(p)\n',
+            # The hook attached only after argv was parsed decorates nothing: the
+            # usage error has already been raised by the time it is installed.
+            "late.py":
+                'import argparse\nimport _claude_home\n'
+                'def main():\n'
+                '    p = argparse.ArgumentParser(prog="late")\n'
+                '    args = p.parse_args()\n'
+                '    _claude_home.attach_usage_hint(p)\n'
+                '    return args\n',
+            # The same NAME hooked in a different function is a different parser.
+            "elsewhere.py":
+                'import argparse\nimport _claude_home\n'
+                'def build():\n'
+                '    p = argparse.ArgumentParser(prog="elsewhere")\n'
+                '    return p\n'
+                'def other(p):\n'
+                '    return _claude_home.attach_usage_hint(p)\n',
+            # A parser no name holds cannot be handed to anything afterwards.
+            "unnamed.py":
+                'import argparse\n'
+                'def main():\n'
+                '    return argparse.ArgumentParser(prog="unnamed").parse_args()\n',
+            # Naming the constructor in prose or comparing against its name is not
+            # building one - the shape of the lint that reads other files' parsers
+            # and of the hook's own docstring.
+            "prose.py":
+                '"""Every ArgumentParser(...) here is read, never built."""\n'
+                'def built(fn):\n'
+                '    return fn == "ArgumentParser"\n',
+            "broken.py":
+                'p = argparse.ArgumentParser(\n',
+        }
+        for rel, text in fixtures.items():
+            with open(os.path.join(hook, rel), "w", encoding="utf-8") as fh:
+                fh.write(text)
+        found = M.usage_hint_violations((hook,))
+        where = sorted((rel, line) for rel, line, _why in found)
+        check("uh1 an entry point that builds a parser and never hands it to the "
+              "usage hook is named by file and line: %r" % (where,),
+              ("sub/bare.py", 3) in where)
+        check("uh2 ...and so is one that hands it over only AFTER parsing argv, "
+              "since the usage error has already been raised by then: %r"
+              % (where,), ("late.py", 4) in where)
+        check("uh3 ...and a parser hooked under the same name in ANOTHER function "
+              "is still bare where it was built: %r" % (where,),
+              ("elsewhere.py", 4) in where)
+        check("uh4 ...and a parser no name holds, and a file that will not parse "
+              "(reported, never skipped): %r" % (where,),
+              ("unnamed.py", 3) in where and ("broken.py", 0) in where)
+        # The over-fire twin: a lint that named every parser it saw would pass
+        # uh1-uh4 and fail here, on the hooked, wrapped, builder, parents= and
+        # prose fixtures that must stay quiet.
+        check("uh5 nothing else is named - a hooked, wrapped, built-and-returned "
+              "or parents= parser, and a file that only NAMES the constructor, all "
+              "stay quiet: %r" % (where,),
+              where == [("broken.py", 0), ("elsewhere.py", 4), ("late.py", 4),
+                        ("sub/bare.py", 3), ("unnamed.py", 3)])
+        check("uh6 every finding says why, in words: %r" % (found,),
+              all(why and isinstance(why, str) for _r, _l, why in found))
+    finally:
+        shutil.rmtree(hook, ignore_errors=True)
+
+    real_hook = M.usage_hint_violations()
+    check("uh7 no entry point under scripts/ builds a parser it never hands to the "
+          "usage hook: %r" % (real_hook,), real_hook == [])
+    # The allow case on the real tree, and the one that keeps uh7 from being green
+    # over an empty scan: every file that spells the constructor followed by an
+    # open parenthesis must be one the AST reads a parser in, except the two that
+    # only NAME it - `_refs.py` reads other files' constructions to learn which
+    # flags argparse adds, and `_claude_home.py`'s docstring describes the seam.
+    # Neither builds a parser, so neither owes the hook and neither is exempted.
+    spelled = set()
+    for rel, path in M.lint_py_files(M.SCRIPTS_DIR):
+        with open(path, encoding="utf-8") as fh:
+            if "ArgumentParser" + "(" in fh.read():
+                spelled.add(rel)
+    sites = set(rel for rel, _line, _why in
+                M.parser_sites(M.lint_py_files(M.SCRIPTS_DIR)))
+    mentions = set(["_refs.py", "status/_claude_home.py"])
+    check("uh8 the scan reads a parser in every file that spells one being built, "
+          "and in neither of the files that only name the constructor: sites "
+          "missing %r, unexpected %r"
+          % (sorted(spelled - mentions - sites), sorted(sites - (spelled - mentions))),
+          mentions <= spelled and sites == spelled - mentions and bool(sites))
+
+    # ----------------------------------------------- the hand-parsed dispatcher shape
+    # The other half of the same check: a dispatcher that reads its verb by hand
+    # (`if verb not in (...)`) builds no parser, so `parser_sites()` cannot see it -
+    # `materialize-proposal.py` was exactly this before it called the hint
+    # directly in the branch that refuses an unrecognised verb. Two signals are
+    # both required (see the module comment above `verb_dispatch_sites`), each
+    # proven necessary by its own twin below: a fixture that has one signal but
+    # not the other must stay as quiet as a plain validator.
+    vd = tempfile.mkdtemp(prefix="audit-verb-dispatch-")
+    try:
+        vd_fixtures = {
+            # The deny case: the shape the review found - a name dispatched on
+            # elsewhere (`verb == "list"`) whose unknown-verb branch prints the
+            # usage block and nothing else.
+            "bare.py":
+                'import sys\n'
+                'USAGE = "usage: bare.py <verb>\\n"\n'
+                'def main(argv):\n'
+                '    verb = argv[0]\n'
+                '    if verb not in ("list", "plan", "drop"):\n'
+                '        sys.stderr.write(USAGE)\n'
+                '        return 2\n'
+                '    if verb == "list":\n'
+                '        return 0\n'
+                '    return 1\n',
+            # The allow twin: structurally identical, differing only in the one
+            # call this check is about - proving the lint reads the call and not
+            # merely the shape of the `if`.
+            "hinted.py":
+                'import sys\n'
+                'import _claude_home\n'
+                'USAGE = "usage: hinted.py <verb>\\n"\n'
+                'def main(argv):\n'
+                '    verb = argv[0]\n'
+                '    if verb not in ("list", "plan", "drop"):\n'
+                '        sys.stderr.write(USAGE)\n'
+                '        hint = _claude_home.usage_hint(None, None, None, None)\n'
+                '        sys.stderr.write("\\n".join(hint))\n'
+                '        return 2\n'
+                '    if verb == "list":\n'
+                '        return 0\n'
+                '    return 1\n',
+            # Dispatched on, but the refusal is an ordinary sentence, never the
+            # shared usage block - `materialize-proposal.py`'s OWN `--all applies
+            # to plan and materialize only` branch is exactly this shape, and
+            # owes the hint no more than any other one-line refusal does.
+            "ordinary_refusal.py":
+                'import sys\n'
+                'def main(argv):\n'
+                '    verb = argv[0]\n'
+                '    if verb not in ("plan", "materialize"):\n'
+                '        sys.stderr.write("--all applies to plan and '
+                'materialize only\\n")\n'
+                '        return 2\n'
+                '    if verb == "plan":\n'
+                '        return 0\n'
+                '    return 1\n',
+            # Prints the usage block, but the name is never dispatched on again -
+            # a validated flag, not a verb - `ado-connect.py`'s `--transport`
+            # check is exactly this shape.
+            "validated_flag.py":
+                'import sys\n'
+                'USAGE = "usage: validated_flag.py --transport auto|mcp|az\\n"\n'
+                'def main(argv):\n'
+                '    transport_hint = argv[0]\n'
+                '    if transport_hint not in ("auto", "mcp", "az"):\n'
+                '        sys.stderr.write(USAGE)\n'
+                '        return 2\n'
+                '    return 0\n',
+            # A single flag check is not a verb dispatch, and a membership test
+            # against one literal is not "unknown among several" - neither owes
+            # the hint, and a lint that fired on either would be unusable on this
+            # tree's many `"--flag" in argv` checks.
+            "flag_only.py":
+                'def main(argv):\n'
+                '    if "--json" not in argv:\n'
+                '        return 1\n'
+                '    return 0\n',
+            "single_literal.py":
+                'import sys\n'
+                'def main(argv):\n'
+                '    if argv[0] not in ("list",):\n'
+                '        sys.stderr.write("usage\\n")\n'
+                '        return 2\n'
+                '    return 0\n',
+            # The usage block written inside a FORMAT EXPRESSION, one level
+            # below the call argument itself - the shape this tree's own
+            # migrate-manifest.py and resolve-ado-parent.py write
+            # (`"%s\\n%s\\n" % (err, _USAGE)`), which a check that only read a
+            # bare `ast.Name` argument would miss.
+            "format_bare.py":
+                'import sys\n'
+                '_USAGE = "usage: format_bare.py <verb>\\n"\n'
+                'def main(argv):\n'
+                '    verb = argv[0]\n'
+                '    err = "bad verb"\n'
+                '    if verb not in ("list", "plan", "drop"):\n'
+                '        sys.stderr.write("%s\\n%s\\n" % (err, _USAGE))\n'
+                '        return 2\n'
+                '    if verb == "list":\n'
+                '        return 0\n'
+                '    return 1\n',
+            # The allow twin for the format-expression shape - same format
+            # expression, the hint called in the branch.
+            "format_hinted.py":
+                'import sys\n'
+                'import _claude_home\n'
+                '_USAGE = "usage: format_hinted.py <verb>\\n"\n'
+                'def main(argv):\n'
+                '    verb = argv[0]\n'
+                '    err = "bad verb"\n'
+                '    if verb not in ("list", "plan", "drop"):\n'
+                '        sys.stderr.write("%s\\n%s\\n" % (err, _USAGE))\n'
+                '        hint = _claude_home.usage_hint(None, None, None, None)\n'
+                '        sys.stderr.write("\\n".join(hint))\n'
+                '        return 2\n'
+                '    if verb == "list":\n'
+                '        return 0\n'
+                '    return 1\n',
+        }
+        for rel, text in vd_fixtures.items():
+            with open(os.path.join(vd, rel), "w", encoding="utf-8") as fh:
+                fh.write(text)
+        vd_found = M.usage_hint_violations((vd,))
+        vd_where = sorted((rel, line) for rel, line, _why in vd_found)
+        check("vd1 a hand-parsed unknown-verb branch that never calls "
+              "_claude_home.usage_hint is named by file and line: %r" % (vd_where,),
+              ("bare.py", 5) in vd_where)
+        check("vd2 ...its why says what is missing: %r" % (vd_found,),
+              any(rel == "bare.py" and why and "usage_hint" in why
+                  for rel, _line, why in vd_found))
+        check("vd3 the allow twin - same shape, the hint called in the branch - "
+              "stays quiet, and so do a dispatched-but-ordinary refusal, a "
+              "usage-printing but never-dispatched flag, a single-flag check "
+              "and a one-literal membership test: %r" % (vd_where,),
+              vd_where == [("bare.py", 5), ("format_bare.py", 6)])
+        check("vd5 the usage block written inside a FORMAT EXPRESSION - "
+              "`\"%%s\\n%%s\\n\" %% (err, _USAGE)` - is read the same as a bare "
+              "name argument, and is named by file and line: %r" % (vd_where,),
+              ("format_bare.py", 6) in vd_where)
+        check("vd6 ...and its allow twin - the identical format expression, the "
+              "hint called in the branch - stays quiet: %r" % (vd_where,),
+              ("format_hinted.py", 6) not in vd_where)
+    finally:
+        shutil.rmtree(vd, ignore_errors=True)
+
+    real_verb_dispatch = M.verb_dispatch_sites(M.lint_py_files(M.SCRIPTS_DIR))
+    check("vd4 no hand-parsed dispatcher under scripts/ refuses an unknown verb "
+          "without calling the usage hint: %r"
+          % ([r for r in real_verb_dispatch if r[2]],),
+          all(why is None for _rel, _line, why in real_verb_dispatch))
+
     # --------------------------------------------------------- house-style AST bans
     # Same shape as the adoption-lint block above: a fixture directory per case, each
     # proving the checker actually reads the construct rather than merely never having
@@ -676,6 +952,7 @@ def _cases(check):
                                   "scripts/governance/_locks.py",
                                   "scripts/governance/_policy.py",
                                   "scripts/governance/_proc_group.py",
+                                  "scripts/governance/_runner_output.py",
                                   "scripts/governance/_scoped_commit.py",
                                   "scripts/governance/_tree_stamp.py",
                                   "scripts/governance/_verdict_binding.py",
@@ -826,6 +1103,7 @@ def _cases(check):
                                      "plugins/audit/scripts/governance/_locks.py",
                                      "plugins/audit/scripts/governance/_policy.py",
                                      "plugins/audit/scripts/governance/_proc_group.py",
+                                     "plugins/audit/scripts/governance/_runner_output.py",
                                      "plugins/audit/scripts/governance/_scoped_commit.py",
                                      "plugins/audit/scripts/governance/_tree_stamp.py",
                                      "plugins/audit/scripts/governance/_verdict_binding.py",

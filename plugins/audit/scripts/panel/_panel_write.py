@@ -1375,6 +1375,22 @@ def _fmt_change(row):
                                 side(row.get("from")), side(row.get("to")))
 
 
+def _machine_path_findings(project, rows):
+    """A refusal per change row whose NEW value carries a machine path.
+
+    Every value a panel save writes is one its user typed, so it is caller
+    free text and `_journal_io.check_free_text` judges it before anything is
+    written - the manifest or config would keep it verbatim, and the journal
+    row repeats it. Only `to` is asked: `from` is what is on disk already, and
+    refusing a save over the value it replaces would leave no way to remove
+    one."""
+    return [why for why in (
+        _journal_io.check_free_text(project, "%s %s" % (r.get("target"),
+                                                       r.get("field")),
+                                    r.get("to"))
+        for r in rows) if why]
+
+
 def _journal(project, config, action, target, rows):
     """Append one row to the tamper-evident journal. Response fields, not a bool.
 
@@ -1411,19 +1427,44 @@ def _journal(project, config, action, target, rows):
     if mod is None or not hasattr(mod, "append"):
         return {"journaled": False, "journaledWhy": "unavailable"}
     try:
-        written = mod.append(project, {
-            "action": action,
-            "target": target,
-            "summary": "%d change(s): %s" % (
-                len(rows), "; ".join(_fmt_change(r) for r in rows)),
-            "actor": {"author": _viewer(project, config).get("author"),
-                      "via": "panel"}})
-    except Exception:
-        written = False
-    if not written:
-        return {"journaled": False, "journaledWhy": "failed"}
-    _claim_panel_write(mod, project, config, written)
-    return {"journaled": True}
+        entry = {"action": action,
+                 "target": target,
+                 "summary": "%d change(s): %s" % (
+                     len(rows), "; ".join(_fmt_change(r) for r in rows)),
+                 "actor": {"author": _viewer(project, config).get("author"),
+                           "via": "panel"}}
+        # The `_why` sibling when the module has one; a stub standing in
+        # for the module may carry only `append`.
+        if hasattr(mod, "append_why"):
+            written, why = mod.append_why(project, entry)
+        else:
+            written, why = mod.append(project, entry), None
+    except Exception as exc:
+        written, why = False, exc
+    if written:
+        _claim_panel_write(mod, project, config, written)
+    return journal_block(project, written, why)
+
+
+def journal_block(project, written, why):
+    """The `journaled` block every writer reports for one append:
+    `{"journaled": True}`, or `{"journaled": False, "journaledWhy": "failed",
+    "journaledReason"}`.
+
+    `journaledWhy` STAYS THE CODE WORD, because the panel's toast and every
+    CLI report branch compare it exactly; `journaledReason` rides beside it,
+    so an append that failed is never only the one word. `why` is the
+    append's own reason, or the exception that stopped the writer building
+    its row - redacted, because an exception quotes paths - or None, which
+    is said as such rather than replaced by an invented cause."""
+    if written:
+        return {"journaled": True}
+    if isinstance(why, Exception):
+        why = _journal_io.redacted_text(project, "%s: %s"
+                                        % (type(why).__name__, why))
+    return {"journaled": False, "journaledWhy": "failed",
+            "journaledReason": why or "the append returned no file and no "
+                                      "reason"}
 
 
 def _claim_panel_write(mod, project, config, written):
@@ -1503,6 +1544,9 @@ def write_config(project, obj=None, mutate=None):
                     "applied": [], "unchanged": True, "journaled": False,
                     "journaledWhy": "unchanged",
                     "path": _output.posix_rel(path, project)}
+        machine = _machine_path_findings(project, applied)
+        if machine:
+            return {"ok": False, "findings": machine, "warnings": warnings}
         _atomic_write_json(path, target)
     finally:
         said = _release_write_lock(lock)
@@ -2338,6 +2382,9 @@ def _composition_pass(project, config, mpath, patch, vm):
     # `from` half of every row has to be the value on disk, not the value the patch
     # is about to put there.
     applied = _composition_changes(assembled, patch)
+    machine = _machine_path_findings(project, applied)
+    if machine:
+        return {"ok": False, "findings": machine}, None
     err = _reject_stranded(project, config, patch)
     if err:
         return {"ok": False, "findings": ["refused: " + err]}, None

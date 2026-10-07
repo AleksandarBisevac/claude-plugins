@@ -102,6 +102,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _journal_io                                                   # noqa: E402
 import _manifest_io as _mio                                          # noqa: E402
 
@@ -218,7 +219,7 @@ def _parser():
                         "(default: derived from the manifest path)")
     p.add_argument("--json", dest="as_json", action="store_true",
                    help="print the answer as JSON instead of as a block")
-    return p
+    return _claude_home.attach_usage_hint(p)
 
 
 def _project_of(args, mpath):

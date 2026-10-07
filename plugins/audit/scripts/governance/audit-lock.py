@@ -80,7 +80,7 @@ mistakes are not the same size, so the tie does not go to convenience.
 An EMPTY claim is the one thing that reads dead, and it is not a tie: a file with
 no record in it names nobody, so there is no holder the bias could protect. It is
 a take that was interrupted before it recorded itself, it is offered for takeover
-like any other run that is not there, and `_locks._interrupted_take()` is where
+like any other run that is not there, and `_locks.holder_gone()` is where
 that is decided. Anything present but unparseable stays LIVE -- something wrote it.
 
 A pid can be reused by an unrelated process, which reads as LIVE -- the same safe
@@ -131,17 +131,19 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _locks  # noqa: E402  (where a lock lives, what it may be called, is it live)
 
-# The read side, spelled here because this file's own commands ask the same four
-# questions its callers do. NOT copies: `_locks` is layer 1 and owns every one of
-# them, and `tests/test_audit_lock.py` pins each name to be that module's own
-# object. They moved because THREE other modules needed them and reached this
-# entry point through `_loader` to get them — three of the seventeen edges
+# The read side, spelled here because this file's own commands ask the same
+# questions its callers do. Public names only - a private `_locks` helper is that
+# module's own business, and `test__locks.py` holds that no module under
+# scripts/ or hooks/ other than `_locks.py` reaches one. NOT copies: `_locks` is
+# layer 1 and owns every one of them, and `tests/test_audit_lock.py` pins each
+# name to be that module's own object. They moved because other modules needed
+# them and reached this entry point through `_loader` to get them - edges
 # `_deps.KNOWN_LAYER_DEBT` recorded.
 STALE_MINUTES = _locks.STALE_MINUTES
 pid_alive = _locks.pid_alive
-_age_minutes = _locks._age_minutes
 judge = _locks.judge
 lock_dir = _locks.lock_dir
 valid_name = _locks.valid_name
@@ -149,8 +151,6 @@ read_lock = _locks.read_lock
 collect = _locks.collect
 acquire = _locks.acquire
 release = _locks.release
-_identity = _locks._identity
-_write_lock = _locks._write_lock
 
 E_LIVE, E_STALE, E_USAGE, E_ERR = (_locks.E_LIVE, _locks.E_STALE,
                                    _locks.E_USAGE, _locks.E_ERR)
@@ -235,6 +235,7 @@ def main(argv, out=print):
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--force", action="store_true")
     p.add_argument("--json", action="store_true")
+    _claude_home.attach_usage_hint(p)
     try:
         args = p.parse_args(argv)
     except SystemExit as exc:

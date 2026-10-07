@@ -62,6 +62,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 import _locks  # noqa: E402  (take/give back the backfill lock, at layer 1)
 import _fmt  # noqa: E402  (the one token/cost formatter)
@@ -985,7 +986,7 @@ def build_parser():
     p.add_argument("--ledger-dir", default=None)
     p.add_argument("--transcript-dir", default=None,
                    help="override transcript discovery for --backfill")
-    return p
+    return _claude_home.attach_usage_hint(p)
 
 
 def main(argv):

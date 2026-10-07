@@ -83,6 +83,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _manifest_vocab as _vocab  # noqa: E402  (the words, and the segment fold --view reads)
 import _manifest_rules  # noqa: E402  (the manifest rules, at layer 2 - imported, not loaded)
@@ -1900,7 +1901,7 @@ def build_parser():
     p.add_argument("--git-root", dest="git_root", default="", metavar="PREFIX",
                    help="path prefix stripped from task files before the "
                         "--submodules comparison")
-    return p
+    return _claude_home.attach_usage_hint(p)
 
 
 def main(argv):

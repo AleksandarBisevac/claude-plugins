@@ -2730,6 +2730,59 @@ def _cases(check):
           % (_rv_compile,),
           _rv_compile == [])
 
+    # --- (cv) a classifier no-verdict is `could-not-run`, never a fail --
+    # Claude Code's auto-mode permission classifier can refuse a tool call with
+    # text saying it reached no verdict ('auto mode cannot determine the safety'
+    # or 'gave no verdict', the wording seen in 2.1.2xx transcripts). The
+    # pipeline used to read that refusal as a failed attempt; this pins the arm
+    # that reads it as `could-not-run` instead, in both documents the rule is
+    # addressed to.
+    _cv_ref = _squash(_product_doc("reference/execute-task.md"))
+    _cv_anchor = "classifier gave no verdict"
+    check("cv1 execute-task.md carries BOTH classifier fragments, the exact "
+          "wording the transcripts showed, so a reader can match the refusal "
+          "text verbatim rather than guess at a paraphrase",
+          "auto mode cannot determine the safety" in _cv_ref
+          and "gave no verdict" in _cv_ref
+          and _cv_anchor in _cv_ref)
+    _cv_at = _cv_ref.find(_cv_anchor)
+    _cv_next = _cv_ref.find("5. Manual gate items", _cv_at)
+    _cv_arm = _cv_ref[_cv_at:_cv_next if _cv_next >= 0 else len(_cv_ref)]
+    check("cv2 ...and the ARM records `could-not-run`, reverts the attempts "
+          "increment and raises NO human action item - a missing interpreter "
+          "is fixed before the next run, while the same classifier meets the "
+          "same step again, which is what tells this arm apart from the "
+          "infrastructure arm beside it: %r" % (_cv_arm,),
+          "could-not-run" in _cv_arm
+          and "revert the `attempts` increment from step 2" in _cv_arm
+          and "no human action item" in _cv_arm
+          and "human action item" not in
+          _cv_arm.replace("no human action item", ""))
+    # THE ALLOW TWIN: the infrastructure arm right beside it still raises its OWN
+    # human action item - proving the isolation above reads the NEW arm and not
+    # the whole step, which would hide a copy-paste that merged the two arms.
+    check("cv3 THE ALLOW TWIN: the infrastructure arm this sits beside still "
+          "STOPS with its own human action item, unchanged",
+          "STOP with a human action item" in _cv_ref)
+
+    _cv_exec = _squash(_product_doc("agents/audit-executor.md"))
+    check("cv4 audit-executor.md tells the executor to report that SAME refusal "
+          "as `could-not-run`, never as `fail`, with the refusal verbatim in "
+          "`task.outcome.technical` - the field a retry and a reviewer both "
+          "read, so a paraphrase here is the same inference-from-a-refusal "
+          "defect the red-first rule already exists to refuse",
+          "auto mode cannot determine the safety" in _cv_exec
+          and "gave no verdict" in _cv_exec
+          and "`could-not-run`, never as `fail`" in _cv_exec
+          and "verbatim" in _cv_exec)
+
+    _cv_orch = _squash(_product_doc("reference/orchestrator.md"))
+    check("cv5 orchestrator.md's progress output carries the matching line, so "
+          "a long-running phase reports the classifier's unavailability the "
+          "same way it reports every other arm rather than going silent on it",
+          "[NO-VERDICT]" in _cv_orch and "classifier gave no verdict" in _cv_orch
+          and "no retry spent" in _cv_orch)
+
     # --- (rs) P42: the return shape, and the path that stopped asking for it ----
     # The executor's return is prose an agent writes: nothing parses it, nothing
     # rejects it, and its only reader is the orchestrator - the one actor that
@@ -2814,6 +2867,76 @@ def _cases(check):
                                               + ": no return shape"))
     finally:
         shutil.rmtree(_tmp_rs, ignore_errors=True)
+
+    # --- (rl) the runners red reads, named where its reader looks ---------------
+    # "A run whose output carries no tally the helper reads" told an operator the
+    # answer and not which runners the helper reads, so somebody who had just
+    # fixed their dependencies learned nothing about whether their runner was one.
+    # The list now sits in both documents and is DERIVED from red's tally table.
+    # The live case compares against the table as IMPORTED, while the check reads
+    # it by AST - two readings from two places, so the comparison can fail.
+    import _runner_output                          # noqa: E402
+    _rl = M.runner_list_drift()
+    _rl_table = [name for name, _reader in _runner_output.TALLY_READERS]
+    check("rl1 THE ALLOW CASE, on the shipped tree: both documents name exactly "
+          "the runners red's tally table holds, and the list the check read off "
+          "the source is the one the module really carries: %r" % (_rl,),
+          _rl["problems"] == [] and _rl["runners"] == _rl_table
+          and len(_rl_table) > 1)
+
+    _rl_src = M.PLUGIN_REL + "/" + "/".join(M.RUNNER_LIST_SOURCE)
+    _rl_table_src = ('TALLY_READERS = (("house", _a), ("pytest", _b),\n'
+                     '                 ("vitest", _c))\n')
+
+    def _rl_doc(names):
+        return ("Some rule before it. %s %s. Then a sentence naming `other`.\n"
+                % (M.RUNNER_LIST_TRIGGER,
+                   ", ".join("`%s`" % (n,) for n in names)))
+
+    _tmp_rl = tempfile.mkdtemp(prefix="qg-rl-")
+    try:
+        _write(_tmp_rl, _rl_src, _rl_table_src)
+        _write(_tmp_rl, _FX_AGENTS + "audit-executor.md",
+               _rl_doc(["house", "pytest", "nose"]))
+        _write(_tmp_rl, _FX_REFERENCE + "execute-task.md",
+               _rl_doc(["house", "pytest", "vitest"]))
+        _d = M.runner_list_drift(_tmp_rl)
+        check("rl2 THE DENY CASE: a document naming a runner the table does not "
+              "hold, and omitting one it holds, is reported BY DOCUMENT AND "
+              "RUNNER - and the document that agrees is not reported: %r" % (_d,),
+              _d["runners"] == ["house", "pytest", "vitest"]
+              and _d["problems"] == [
+                  "%s: names the runner 'nose', which red's tally table does "
+                  "not hold" % (M.RED_FIRST_EXECUTOR_BRIEF,),
+                  "%s: omits the runner 'vitest', which red's tally table "
+                  "holds" % (M.RED_FIRST_EXECUTOR_BRIEF,)])
+        _write(_tmp_rl, _FX_AGENTS + "audit-executor.md",
+               _rl_doc(["vitest", "house", "pytest"]))
+        _d = M.runner_list_drift(_tmp_rl)
+        # The twin of rl2, there for the mutation that reports every document:
+        # the same table, the same order-free list, and nothing to say. The word
+        # after the sentence (`other`) is outside the list and must stay outside.
+        check("rl3 THE ALLOW TWIN: both documents naming exactly the table's "
+              "runners, in any order, owe nothing, and a backticked word after "
+              "the sentence ends is not read as a runner: %r" % (_d,),
+              _d["problems"] == [])
+        _write(_tmp_rl, _FX_REFERENCE + "execute-task.md",
+               "The helper reads some runners.\n")
+        _d = M.runner_list_drift(_tmp_rl)
+        check("rl4 a document that names no runner list at all is a finding, "
+              "never a clean sheet over a sentence that is not there: %r" % (_d,),
+              len(_d["problems"]) == 1
+              and _d["problems"][0].startswith(M.RETURN_SHAPE_READER + ":"))
+        _write(_tmp_rl, _rl_src, "TALLY_READERS = build_readers()\n")
+        _write(_tmp_rl, _FX_REFERENCE + "execute-task.md",
+               _rl_doc(["house", "pytest", "vitest"]))
+        _d = M.runner_list_drift(_tmp_rl)
+        check("rl5 a table the check cannot read as literals is a finding and "
+              "the documents are not graded against an empty list: %r" % (_d,),
+              _d["runners"] == [] and len(_d["problems"]) == 1
+              and "TALLY_READERS" in _d["problems"][0])
+    finally:
+        shutil.rmtree(_tmp_rl, ignore_errors=True)
 
     # --- the phase verbs: two spellings, one writer ----------------------------
     # WHY HERE. `tools/affected.py` routes an edit under `plugins/audit/commands/`
@@ -3257,7 +3380,7 @@ def _cases(check):
           _pf_checked != [] and "--gate-clear" in _pf_checked
           and _pf_verbs == ["add", "add-phase", "block", "cancel", "couple",
                             "done", "move", "mute", "note", "reopen", "scope",
-                            "uncouple", "unmute"]
+                            "start", "uncouple", "unmute"]
           and _pf_same != "" and _pf_same == _at_src
           and _at_dest.get("--gate-clear") == "gate_clear"
           and _at_dest.get("--blocked-by") == "blocked_by")

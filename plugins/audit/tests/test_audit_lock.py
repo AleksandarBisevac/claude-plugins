@@ -37,6 +37,7 @@ import time
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
+import _locks                                      # noqa: E402  (the private helpers the age and legacy-claim cases drive; the command no longer re-exports them)
 
 M = _loader.load_script("audit-lock.py", modname="audit_lock")
 
@@ -109,7 +110,7 @@ def _cases(check):
         for mins in (0, 30, 59, 61, 95, 1440):
             stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ",
                                   time.gmtime(time.time() - mins * 60))
-            got = M._age_minutes({"startedAt": stamp}, "")
+            got = _locks._age_minutes({"startedAt": stamp}, "")
             check("a%d %s: %d min old measures as %d" % (mins, label, mins, mins),
                   abs(got - mins) < 1)
     age_cases("UTC-agnostic")
@@ -129,7 +130,7 @@ def _cases(check):
         if hasattr(time, "tzset"):
             time.tzset()
     check("a-mtime falls back to the file when startedAt is missing or junk",
-          M._age_minutes({"startedAt": "not a date"}, M.__file__) > 0)
+          _locks._age_minutes({"startedAt": "not a date"}, M.__file__) > 0)
 
     # (n) name validation -- a lock name reaches the filesystem
     check("n1 index", M.valid_name("index"))
@@ -183,13 +184,13 @@ def _cases(check):
             p1 = os.path.join(ld, "phase-P1.lock")
             info = M.read_lock(p1)
             info["startedAt"] = old
-            M._write_lock(p1, info)
+            _locks._write_lock(p1, info)
             code, txt = run(["acquire", "phase-P1", "--session", "sess-B",
                              "--wait", "0", "--pid", other], tmp)
             check("c4 a 95-min-old LIVE run still refuses", code == M.E_LIVE)
 
             info["pid"] = dead_pid
-            M._write_lock(p1, info)
+            _locks._write_lock(p1, info)
             code, txt = run(["acquire", "phase-P1", "--session", "sess-B",
                              "--pid", other], tmp)
             check("c5 a dead holder offers takeover (exit 4)", code == M.E_STALE)
@@ -235,11 +236,11 @@ def _cases(check):
             check("c10 a traversing name is a usage error", code == M.E_USAGE)
 
             # A lock written by the old prose (no pid) must still work.
-            M._write_lock(p1, {"hostname": here, "startedAt": now, "note": "legacy"})
+            _locks._write_lock(p1, {"hostname": here, "startedAt": now, "note": "legacy"})
             code, _ = run(["acquire", "phase-P1", "--session", "sess-C",
                            "--wait", "0"], tmp)
             check("c11 a legacy pid-less lock is honoured", code == M.E_LIVE)
-            M._write_lock(p1, {"hostname": here, "startedAt": old, "note": "legacy"})
+            _locks._write_lock(p1, {"hostname": here, "startedAt": old, "note": "legacy"})
             code, _ = run(["acquire", "phase-P1", "--session", "sess-C"], tmp)
             check("c11b and goes stale on age, as it always did", code == M.E_STALE)
             code, _ = run(["release", "phase-P1", "--session", "sess-C", "--force"], tmp)
@@ -395,7 +396,7 @@ def _cases(check):
                     # case would have graded the answer for re-entry as the
                     # refusal it is named for. `os.getppid()` is live and is
                     # somebody else.
-                    M._write_lock(os.path.join(pld, "index.lock"),
+                    _locks._write_lock(os.path.join(pld, "index.lock"),
                                   {"hostname": here, "pid": os.getppid(),
                                    "sessionId": "s-HOLDER", "startedAt": now,
                                    "note": "holding"})

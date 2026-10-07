@@ -1,7 +1,7 @@
 {
   "id": "P102",
   "title": "red-first proves a red outside Python",
-  "status": "pending",
+  "status": "done",
   "description": "Tasks: (1) When no runner-output reader matches, say so and quote nothing as decisive (the npm update banner was quoted as the cause). (2) Design first, then build: a shared runner-output module (jest/vitest tallies and case identity), a per-runner baseline that tolerates a new empty suite, and dependency provision for the throwaway tree (node_modules) with its two leaks named. (3) Every entry point's usage error names its own version and, through one shared hook, the newer installed copy for this project; orchestrator docs resolve the plugin root per spawn and re-resolve after an update.",
   "desiredOutcome": "stamp-verification red proves a red in a jest or vitest project as it does under pytest, and an older cached copy that is asked for a newer verb names the newer installed copy",
   "testGate": [
@@ -15,21 +15,113 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
-  "mergedAt": null,
+  "baseRef": "cd6933ada1f214a0af05fdb63330bdc94aeafa55",
+  "branch": "audit/p102-red-first-proves-a-red-outside",
+  "mergedAt": "2026-10-07T11:36:05Z",
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P102-R1",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py dependency_plan, workspace_links, refused_links_problem",
+        "issue": "--deps-from now defaults to the project, so an editable install of the project in an in-repo virtualenv is read as a workspace link and the whole red run is refused before anything executes, even for a unittest command that never uses that environment; a run that proved before this phase now cannot prove.",
+        "resolution": "fixed in P102.12-ptn (8b6e21f7): Skip a dependency directory that holds a link into the tree, recording the reason in the plan's skipped list that the deps clause prints, and run without it; a case with an editable install in an in-repo virtualenv and a system-python unittest command that still proves.",
+        "fixTask": "P102.12-ptn",
+        "commit": "8b6e21f7"
+      },
+      {
+        "id": "P102-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_runner_output.py jest assertion check; stamp-verification.py design note; PLUGIN-BUILD-GUIDE.md",
+        "issue": "Jest prints a hint line for each node:assert failure rather than an AssertionError line, so the assertion check misses every node:assert failure and a genuine failure reads as a collection error, while the design note, a docstring and the guide state the opposite.",
+        "resolution": "fixed in P102.12-ptn (8b6e21f7): Accept jest's node:assert hint line as an assertion, with a case from jest's real text, and correct the note, docstring, comment and guide.",
+        "fixTask": "P102.12-ptn",
+        "commit": "8b6e21f7"
+      },
+      {
+        "id": "P102-R3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_runner_output.py summary readers",
+        "issue": "Jest's summary line is not read when its output is coloured (FORCE_COLOR inherited or --colors), so a proved failure and a new test file read as no tally and the basis says the output carries no tally while it does.",
+        "resolution": "fixed in P102.12-ptn (8b6e21f7): Strip terminal escapes once before the tally and failing-case readers; a case with jest's coloured summary line.",
+        "fixTask": "P102.12-ptn",
+        "commit": "8b6e21f7"
+      },
+      {
+        "id": "P102-R4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py design note",
+        "issue": "The note says each part is built while part one is written as future plans, and says the two pytest patterns become one while the next paragraph and the code keep two.",
+        "resolution": "fixed in P102.12-ptn (8b6e21f7): Rewrite part one in the present tense and delete the sentence about one pattern.",
+        "fixTask": "P102.12-ptn",
+        "commit": "8b6e21f7"
+      },
+      {
+        "id": "P102-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/materialize-proposal.py and other hand-parsed verb dispatchers",
+        "issue": "Entry points that dispatch on a verb by hand get no usage hint, so an older cached copy asked for a newer verb names no newer copy, the case the phase outcome names.",
+        "resolution": "fixed in P102.13-ptn (099cbade): Print the shared hint lines on an unknown verb in every hand-parsed verb dispatcher, held by the same lint widened to them.",
+        "fixTask": "P102.13-ptn",
+        "commit": "099cbade"
+      },
+      {
+        "id": "P102-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py workspace_links",
+        "issue": "The workspace-link walk lstats every entry of each dependency directory on every red, unbounded by the run's deadline.",
+        "resolution": "fixed in P102.12-ptn (8b6e21f7): Limit the scan to entry shapes that can be workspace links, and check the deadline inside it.",
+        "fixTask": "P102.12-ptn",
+        "commit": "8b6e21f7"
+      },
+      {
+        "id": "P102-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py _decisive_line and error readers",
+        "issue": "Escapes are stripped only on entry to the tally and failing-case readers, so a coloured run's persisted basis carries raw escape bytes and a coloured error gutter is not matched.",
+        "resolution": "fixed in P102.14-ptn (d0f7fe04): Read the plain text once in the decisive-line and error readers; a case that a coloured jest red's basis holds no escape, with an uncoloured twin.",
+        "fixTask": "P102.14-ptn",
+        "commit": "d0f7fe04"
+      },
+      {
+        "id": "P102-R8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/_output.py _prints_usage_block",
+        "issue": "A usage write is recognised only as a bare positional name, so a dispatcher writing the usage block inside a format expression would escape the widened lint.",
+        "resolution": "fixed in P102.14-ptn (d0f7fe04): Walk each call argument so a usage name nested in a format expression counts; a case for that shape with a hinted twin.",
+        "fixTask": "P102.14-ptn",
+        "commit": "d0f7fe04"
+      },
+      {
+        "id": "P102-R9",
+        "severity": "low",
+        "file": "plugins/audit/scripts/_output.py; plugins/audit/tests/test__output.py; plugins/audit/tests/test_materialize_proposal.py",
+        "issue": "Comments and a docstring cite a private register id, and a comment states an unbased count.",
+        "resolution": "fixed in P102.14-ptn (d0f7fe04): Replace each id with the constraint it stands for and drop the count.",
+        "fixTask": "P102.14-ptn",
+        "commit": "d0f7fe04"
+      },
+      {
+        "id": "P102-R10",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py leftover_throwaways; plugins/audit/tests/test_stamp_verification.py",
+        "issue": "The leftover check treats any worktree with a throwaway-prefixed path component as a leftover, the main worktree included, so the suite run inside a throwaway reports its own fixture as a leftover and the helper can never prove red for that suite.",
+        "resolution": "fixed in P102.14-ptn (d0f7fe04): Skip the main worktree and match the prefix only on the holder directly above a tree directory; the suite reads the same function; a case with the fixture under a throwaway-prefixed parent.",
+        "fixTask": "P102.14-ptn",
+        "commit": "d0f7fe04"
+      }
+    ],
+    "outcome": "[findings: 10 - 1 high, 2 med, 7 low; 10 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "stamp-verification red now proves a red in a jest or vitest project the way it does under pytest. The runner readers live in one module, governance/_runner_output.py. red reads jest and vitest tallies and failing cases, coloured output and node:assert hints included. It credits a failure to the task by suite path and title chain. A new test file's baseline runs with the file absent. The project's ignored dependency directories are linked into the throwaway entry by entry, and a directory holding a link into the tree is skipped and named rather than refusing the run. The docs name the runners red reads, held by a drift check. Every argparse entry point, and the hand-parsed verb dispatcher, prints the shared usage hint, so an older cached copy asked for a newer verb names the newer installed copy; a lint holds both shapes. The orchestrator resolves the plugin root per spawn. The leftover-throwaway check no longer mistakes a project's own checkout for a stray throwaway.\n\nThe review ran two rounds. The first found a regression on the Python path (an editable install refused the whole run) and two jest reading gaps; all are fixed, and the second round found only low items, now fixed too. The phase gate is green, and the invariants check found no breach.",
   "tasks": [
     {
       "id": "P102.1",
       "title": "red names no line as decisive when no runner reader matched",
-      "status": "pending",
+      "status": "done",
       "description": "`_decisive_line` falls back to the last non-blank line when neither a tally key nor an Error line matched. So a basis named npm's update banner, printed after the run, as the cause of a run it could not read. When no reader matched, the basis says so and quotes nothing as decisive. A first or last line may be shown only when labelled as unread output, never as a cause chosen by position. The fixture must be text that no reader matches, so the case keeps holding after the jest and vitest readers land.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -55,21 +147,36 @@
         "P100"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4137f0c2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "When no tally or error reader matches a run's output, the red-first basis now says so and quotes no line of it: stamp-verification.py's _decisive_line used to fall back to the last non-blank line (npm's update notice, for one) or \"(no output)\", and now returns NO_READER (\"no tally or error reader matched its output, so no line of it is quoted as decisive\") when there is output and NO_OUTPUT when there is none; the tally and Error-line branches and all callers' formatting are unchanged. Cases sr195 (an npm run no reader matches, ending in its notice, quotes none of its lines), sr196 (a real pytest capture still ends the basis on its tally line) and sr197 (a traceback followed by a notice quotes the ModuleNotFoundError line). Red: sr195 failed on the unfixed code (177/178, exit 1); the helper answered could-not-prove because HEAD's own suite is red inside its throwaway tree (sr23/sr24, the SIGTERM/SIGKILL throwaway-removal cases), recorded as its own finding; an always-NO_READER mutation turned sr196 and sr197 red.",
+        "descriptive": "When the red-first check cannot read a test run's output, it now says so instead of quoting whatever line came last, such as npm's update banner, as if it were the cause."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T21:26:47Z",
+      "completedAt": "2026-10-06T21:52:37Z",
+      "verifiedBy": [
+        "sr195",
+        "sr196",
+        "sr197"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T21:52:26Z.73fc75",
+        "status": "passed",
+        "at": "2026-10-06T21:52:26Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "4137f0c2",
+        "at": "2026-10-06T21:52:37Z",
+        "basis": "orchestrator check: the fallback is replaced as the description asks; the new case failed before the fix and the allow twins catch an over-firing fix"
+      }
     },
     {
       "id": "P102.2",
       "title": "design note: how red reads, credits, baselines and provisions a jest or vitest run",
-      "status": "pending",
+      "status": "done",
       "description": "Before any code, write the design as a section of stamp-verification.py's module docstring; every implementation task below depends on it. It settles four things. (1) One runner-output module at layer 1, scripts/governance/_runner_output.py. It holds run-test-gate's summary and failure readers, moved and not copied, and red reads through it. It carries a per-case assertion flag that tells an expect failure apart from 'Test suite failed to run'. (2) Per-runner case identity and credit for jest and vitest: the FAIL <path> header plus the title chain. HEAD's case is the same chain with an identical body in HEAD's copy. Because ast is Python-only, choose between a text-level reading and a small stdlib tokenizer. (3) A per-runner baseline in which a new test file is absent rather than an empty stub. Settle it by first driving jest with and without --passWithNoTests on an empty suite, and vitest on an empty file (vitest was never driven), and record the results as dated history. (4) --deps-from <dir>, defaulting to --project, which links ignored dependency directories (node_modules at any depth, .venv) into the throwaway. Name the leaks a link opens: a workspace link into the shared tree, which is refused by name, and runner caches written back through the link. Also say how the project's .npmrc reaches the fresh HOME, or that it is named as dropped.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py"
@@ -90,27 +197,39 @@
         "P100"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "dd4ccd39",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The design for red-first under jest and vitest is written as a section at the end of stamp-verification.py's module docstring, headed as design not yet built; no behaviour changes. (1) One runner-output module, scripts/governance/_runner_output.py at layer 1, takes run-test-gate's summary and failure readers by move (each name checked to exist there; failing_suites stays because it reads the evidence layer) plus red's own tally and case readers; the two pytest summary patterns merge into their union; a per-case assertion flag is read from the runners' own shapes (jest's matcher hint or AssertionError under a bullet sets it, a thrown error or 'Test suite failed to run' does not; vitest's AssertionError under a FAIL chain sets it, 'Failed Suites' does not), and a crashed suite reads as a collection error, never red. (2) A case is its FAIL header path plus its title chain; a small stdlib tokenizer, failing closed, finds which test call sits inside which describe; run-time titles are refused credit by name; credit is refused when any HEAD test file holds the same chain with an identical body, matching the Python rule. (3) Driven on 2026-10-06 (node v22.22.3, jest 30.4.2 from an existing local install read-only, vitest 4.1.10 from this repo), recorded as dated history, measured once each: an empty test file fails both runners with or without --passWithNoTests, and a missing file exits 1 unless --passWithNoTests; so under jest and vitest a new test file is left absent from HEAD's run, while the empty stub stays the rule for Python runners. (4) --deps-from links ignored node_modules and .venv directories at any depth into the throwaway as real directories of per-entry symlinks, because vitest writes its results cache into node_modules; workspace links are refused by name; caches written back through a link are kept local or named as unwatched; git clean and rmtree must never follow a link, with a sentinel case owed; an untracked or user .npmrc is named as dropped and NPM_CONFIG_USERCONFIG is removed from the run. Of the session's red-helper findings, vitest without node_modules is addressed; the inline tools/ suite, the SIGTERM/SIGKILL cases red inside the throwaway and the stamp going stale on ledger creation are left to later tasks.",
+        "descriptive": "The plan for making the red-first proof work for JavaScript test runners is written down, with both runners' actual behaviour measured first, so the tasks that build it share one design."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T21:52:37Z",
+      "completedAt": "2026-10-06T22:19:03Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T22:18:57Z.e1338d",
+        "status": "passed",
+        "at": "2026-10-06T22:18:57Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "dd4ccd39",
+        "at": "2026-10-06T22:19:03Z",
+        "basis": "orchestrator check: the four questions the description names are settled in the docstring, both runners were driven and recorded as dated history, and no behaviour changed"
+      }
     },
     {
       "id": "P102.3",
       "title": "run-test-gate's runner readers move to one shared module",
-      "status": "pending",
+      "status": "done",
       "description": "Move _SUMMARY_READERS, _FAILURE_READERS, jest_failures and their helpers out of run-test-gate.py into the new layer-1 module the design names, and import them back. No behaviour changes. This avoids the layer debt of one entry point importing another. The new file owes every registration in CLAUDE.md's 'Adding a .py': the migrated --selftest pointer with its cases in tests/test__runner_output.py; safe_stdio first in __main__; a _deps.LAYERS entry at layer 1 with its reason; a tree line and a section in PLUGIN-BUILD-GUIDE.md plus the regenerated module map (`python3 plugins/audit/scripts/_deps.py --render`); and the PATH_PREAMBLE.",
       "files": [
         "plugins/audit/scripts/governance/_runner_output.py",
         "plugins/audit/scripts/governance/run-test-gate.py",
         "plugins/audit/scripts/_deps.py",
         "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__output.py",
         "plugins/audit/tests/test__runner_output.py",
         "plugins/audit/tests/test_run_test_gate.py"
       ],
@@ -134,21 +253,42 @@
       "dependsOn": [
         "P102.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8dc401ad",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "New layer-1 module plugins/audit/scripts/governance/_runner_output.py (imports only _output) holds, moved unchanged from run-test-gate.py: _SUMMARY_PAIR, _CSI_TEXT, _NO_TESTS, _SUMMARY_READERS, summary_reader, summary_readers, summary_count, _FAILURE_READERS, JEST_EXEC_ERROR, _JEST_SUITE_HEADER, _ANSI, jest_failures, _VITEST_FAIL_LINE. It carries the PATH_PREAMBLE, safe_stdio() first in __main__, and a --selftest pointing to tests/test__runner_output.py. run-test-gate.py imports it as _ro and keeps one-line names bound to the same objects (the pattern it already uses for _proc_group); only comments describing the readers' home were reworded. _deps.LAYERS places _runner_output at L1 with its reason; PLUGIN-BUILD-GUIDE.md gains a tree line, a section, and the module map regenerated by `_deps.py --render`. test__output.py's sc11/sc13 lists name the new module (scope widened for exactly that).\nDecisions: _CSI_TEXT moved with the readers because _SUMMARY_READERS uses it; _NO_TESTS keeps no local name; jest worker-signal and failing_suites helpers stay in run-test-gate (failing_suites reads _evidence_io's limits); no regex changed (the pytest pattern merge belongs to the later red task); the existing reader cases stay in test_run_test_gate.py unchanged.\nTests: test__runner_output ru1-ru8 (each table holds every runner the gate read before the move, written out as a fixture; the tables pair; counts and None for unrecognised output; jest failures; the vitest FAIL line; an AST check that the module imports no sibling but _output); test_run_test_gate ro1 (run-test-gate's names are the shared module's objects). Regression mode, a pure move: red-first not attempted; scratch mutations (mocha row deleted -> ru2/ru3 red; a private tuple(list(...)) copy -> ro1 red) showed the cases can fail. Suites: test__runner_output 8/8, test_run_test_gate 486/486, test__output 182/182, test__deps 299/299, test__refs 304/304, ruff and vermin clean.",
+        "descriptive": "run-test-gate's runner summary and failure readers now live in one layer-1 module that stamp-verification can also import, with run-test-gate's behaviour unchanged."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T22:19:15Z",
+      "completedAt": "2026-10-07T00:19:14Z",
+      "verifiedBy": [
+        "ru1",
+        "ru2",
+        "ru3",
+        "ru4",
+        "ru5",
+        "ru6",
+        "ru7",
+        "ru8",
+        "ro1"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T00:19:04Z.8b68f1",
+        "status": "passed",
+        "at": "2026-10-07T00:19:04Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8dc401ad",
+        "at": "2026-10-07T00:19:14Z",
+        "basis": "orchestrator check: a pure move, the tables are the same objects in both places (ro1), every runner the gate read is still read (ru1-ru3), and scratch mutations turned the new cases red"
+      }
     },
     {
       "id": "P102.4",
       "title": "red reads a jest or vitest tally and its failing cases through the shared module",
-      "status": "pending",
+      "status": "done",
       "description": "TALLY_READERS, CASE_READERS and command_runner in stamp-verification.py know only house, pytest and unittest. run-test-gate reads jest, vitest, mocha, pytest and playwright. So red answered no-tally on a genuine jest assertion failure. red now reads tallies and cases through the shared module, which gains the per-case assertion flag red needs for jest and vitest. Mocha and playwright join only if the design note says their output carries what red needs. The house, pytest and unittest readings stay exactly as they are. Regenerate the module map for the new edge.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -180,21 +320,37 @@
       "dependsOn": [
         "P102.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f98ee708",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "red's tally and case readers moved into plugins/audit/scripts/governance/_runner_output.py, in a section `# --- which case failed an assertion: the tally and cases red reads`: HOUSE_ESCAPES, the house/pytest/unittest regexes, house_case_id, the house/pytest/unittest case and tally readers, CASE_READERS, TALLY_READERS, command_runner, failing_cases and read_tally - the house, pytest and unittest code unchanged. stamp-verification.py imports _runner_output and keeps aliases for the names it or its tests use (house_case_id, _unittest_tally, failing_cases, read_tally), the pattern run-test-gate already uses.\nNew readers: _jest_cases and _vitest_cases give each case id (the test's own title), label, suite, chain and assertion. The jest flag is true when the first line under the bullet is a matcher hint (expect( / expect.) or AssertionError; the vitest flag only for AssertionError. A jest 'Test suite failed to run' bullet or a vitest `FAIL <file> [ <file> ]` line becomes a case with an empty chain, id None and assertion False; exact repeats (jest's 'Summary of all failing tests') are collapsed. _jest_tally and _vitest_tally (via _summary_tally) read only that runner's row from summary_readers and count each suite that failed to run as a failure with no case, so a run whose only failure is a crashed suite is collection-error, not red. jest_failures now builds on _jest_blocks with an unchanged result (test_run_test_gate 486/486, ru6 green). command_runner names jest/vitest only when it is the program itself (argv[0] basename); npm test / npx jest name no runner. _TALLY_KEYS quotes jest 'Tests:' and vitest 'Tests ' summary lines in the basis.\nDocs: stamp-verification's design note says which parts are built and which are not; _runner_output's module docstring gains an 'AND WHAT red READS' paragraph; PLUGIN-BUILD-GUIDE.md's module map regenerated from _deps.render() (the stamp-verification edge gains _runner_output), and the _runner_output section moved below _proc_group's shell-lookup paragraph, which the previous task's insertion had split from its module.\nDecisions: mocha and playwright not added (the design note records no failure output that says which failure is an assertion); the two pytest summary patterns are not merged (house/pytest/unittest readings stay exactly as they are; the note says it is a change of its own); case_site still places no jest/vitest case in a declared file, so an end-to-end jest red is still could-not-prove (later design parts).\nTests: test_stamp_verification sr198, sr199; test__runner_output ru9, ru10. Red-first: helper proved test__runner_output at HEAD 8dc401ad (ru9, ru10; 8/10); test_stamp_verification came back could-not-prove because its sr23/sr24 are red inside the helper's own throwaway (a known limitation), so sr198/sr199 rest on the tdd red seen in the shared tree before the fix (both no-tally) and on six scratch mutations of _runner_output in a unique mktemp copy, each reddening its target. Suites 10/10, 180/180, test__deps 299/299, test__output 182/182, test_run_test_gate 486/486; ruff and vermin clean.",
+        "descriptive": "The red-first check now understands jest and vitest output: it reads their pass/fail tally and names each failing test, flags which failures were assertions, and treats a test file that crashed as a collection error rather than a proof."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-07T00:19:22Z",
+      "completedAt": "2026-10-07T00:55:40Z",
+      "verifiedBy": [
+        "sr198",
+        "sr199",
+        "ru9",
+        "ru10"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T00:55:28Z.57cbc0",
+        "status": "passed",
+        "at": "2026-10-07T00:55:28Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "f98ee708",
+        "at": "2026-10-07T00:55:40Z",
+        "basis": "orchestrator check: TALLY_READERS and CASE_READERS now live in the shared module with jest and vitest readers carrying the assertion flag; house/pytest/unittest moved unchanged; mocha/playwright deliberately out per the design note; module map regenerated"
+      }
     },
     {
       "id": "P102.5",
       "title": "a jest or vitest failure is credited to the task by suite path and title chain",
-      "status": "pending",
+      "status": "done",
       "description": "case_site, credit_problem and module_key use Python's ast to decide whether a failing case is the task's own. So for a JS failure there is no notion of a case HEAD already has. Implement the per-runner identity the design note chose: jest and vitest locate a failure by suite path and title chain, and HEAD's case is the same chain with an identical body in HEAD's copy of the file. The Python credit rule is unchanged.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -224,25 +380,45 @@
       "dependsOn": [
         "P102.4"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c40fa690",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stamp-verification.py gains a section '# --- which jest or vitest case a JS/TS test file defines ---': a small stdlib JS/TS tokenizer (_js_scan: strings, template literals with nested ${} substitutions, both comment styles, regex literals). js_test_cases(text) returns {tests: [(chain, body tokens)], dynamic: [chain]} or None when a literal is left open or brackets do not balance (fails closed); it reads describe/test/it calls with any modifiers between. A .each call or a template title with a substitution is a run-time title, turned by _js_title_pattern into a regex from its literal parts (a variable title matches anything at its depth). js_test_definitions(texts) returns {defs: {(chain, body): rel}, unread: {rel: text}}.\ncase_site locates a jest/vitest case by the failure's suite path through _one_declared(real_path=True): an exact match is the file; a tail must match exactly one declared file and no other file. credit_problem sends jest/vitest cases to _js_credit_problem, which refuses credit when the declared working-tree file cannot be read; a run-time title in it could fill the same chain; the file defines no test with that chain; HEAD's test files could not be read; any HEAD test file has the same chain with a token-identical body (comments and layout ignored); or an unreadable HEAD test file may hold the title. The Python credit rule is unchanged. head_tree returns (files, defs, modules, js) from one `git cat-file --batch` over .py and JS/TS test files (.test./.spec. names, __tests__, or declared); run_red and red_verdict carry head_js; the could-not-prove basis states the JS rule for jest/vitest. The design note's part (2) is now present tense and marked built; a new jest/vitest test file stays could-not-prove end to end until part (3).\nDecisions: an identical body in ANY HEAD jest/vitest test file refuses credit (the design note's rule); a run-time title is matched as a pattern, not as any title, so template-titled loops do not block literal tests in the same describe; a HEAD dynamic test elsewhere is not compared. Checked against real source: the tokenizer read every tracked tools/ui-tests/*.test.mjs file with none unreadable (measured once).\nTests: stage sj-credit, sj1 (end-to-end red_verdict proved) to sj5 (identical/edited/copied HEAD bodies, undeclared/suffix/ambiguous paths, .each and template titles, unreadable files). Red-first: the helper is could-not-prove for test_stamp_verification.py (sr23/sr24 red inside its own throwaway, a known limitation); the red rests on the tdd red in the shared tree before the credit code existed (180/185, sj1-sj5 failing on assertions) and nine scratch mutation rows in a unique mktemp copy, each red on its named cases, two of them over-fire rows turning the allow twins red. Suite 185/185; test__runner_output 10/10; ruff, vermin and house lints clean.",
+        "descriptive": "The red-first check can now tell whether a failing jest or vitest test belongs to the task: it finds the test by its file and its describe/test titles, and refuses credit for a test HEAD already had unchanged, for titles built at run time, and for files it cannot read."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-07T00:55:41Z",
+      "completedAt": "2026-10-07T01:34:27Z",
+      "verifiedBy": [
+        "sj1",
+        "sj2",
+        "sj3",
+        "sj4",
+        "sj5"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T01:34:16Z.a6aca1",
+        "status": "passed",
+        "at": "2026-10-07T01:34:16Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c40fa690",
+        "at": "2026-10-07T01:34:27Z",
+        "basis": "orchestrator check: per-runner identity as the design note chose, Python rule unchanged, the helper's known could-not-prove stated verbatim with the tdd red and nine mutation rows as the proof"
+      }
     },
     {
       "id": "P102.6",
       "title": "a new jest or vitest test file's baseline runs with the file absent",
-      "status": "pending",
+      "status": "done",
       "description": "For HEAD's run, _isolated_run lays each declared test file that is new at HEAD over as an EMPTY file, and jest refuses an empty suite. So every new JS test file turned the baseline red, and the answer became 'HEAD's own tests are already red'. For the runners the design note names, the baseline runs with the new file absent and the command's other targets run. The measurement in the note decides whether --passWithNoTests, or its vitest equivalent, is passed. A fake runner script keeps the sweep free of npm.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
-        "plugins/audit/tests/test_stamp_verification.py"
+        "plugins/audit/tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/agents/audit-executor.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -267,27 +443,45 @@
       "dependsOn": [
         "P102.4"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8d749723",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stamp-verification.py: run_red leaves a declared test file that is new at HEAD out of HEAD's run when _is_js_test_path reads it as jest or vitest (the git reset already removes it, so it is simply not written); every other new file is still laid over as an empty stub. baseline_problem also accepts _js_none_found: exit 1, the runner's own sentence ('No tests found, exiting with code N' for jest, 'No test files found, exiting with code N' for vitest; regex _JS_NO_TESTS), no tally counting a case or a failure, and at least one file left absent. The basis names stubbed and absent files separately and the payload gains baseline: {stubbed, absent}. The design note's part (3) is marked built. Decision, from the note's measurement: --passWithNoTests is not added - under jest it does not rescue an empty stub, leaving the file absent removes the need under both runners, and a flag added to a wrapper's argv (npm test) reaches the wrapper, not the runner.\nDocs: PLUGIN-BUILD-GUIDE.md step 1 of the stamp-verification section holds the full rule with a pointer to the design note; reference/execute-task.md and agents/audit-executor.md each carry a short clause pointing to it. No count written.\nTests: fake jest-shaped and pytest-shaped runners (no npm), stage sb-new-file: sb1-sb3 (the new file left absent proves; the payload names it; a stub would fail), sb4 (the no-test sentence beside a failure count is not accepted) and sb5 (its allow twin; refused when nothing was left absent). Red-first: the helper is could-not-prove for test_stamp_verification.py (sr23/sr24 red inside its throwaway, known); the red rests on the tdd red in the shared tree before the fix (185/188, only sb1-sb3) and scratch mutation rows in a unique temp copy, each red (never-accept, always-accept-when-absent, nothing-absent, everything-absent, drop-only-tally, drop-absent). Suites 190/190, test__refs 304/304, test__output 182/182, test__deps 299/299.",
+        "descriptive": "The red-first check can now prove a task that adds a brand-new jest or vitest test file: HEAD's comparison run leaves the new file out instead of failing on an empty one, and only the runner's own 'no tests found' answer is accepted as clean."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-07T01:34:28Z",
+      "completedAt": "2026-10-07T02:20:56Z",
+      "verifiedBy": [
+        "sb1",
+        "sb2",
+        "sb3",
+        "sb4",
+        "sb5"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T02:20:38Z.7d0d74",
+        "status": "passed",
+        "at": "2026-10-07T02:20:38Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8d749723",
+        "at": "2026-10-07T02:20:56Z",
+        "basis": "orchestrator check: the baseline leaves new JS test files absent as the design note chose, the flag decision is recorded with its basis, the three docs carry the rule, both halves of the acceptance rule have a case shown red by mutation"
+      }
     },
     {
       "id": "P102.7",
       "title": "red links the project's ignored dependency directories into the throwaway",
-      "status": "pending",
+      "status": "done",
       "description": "The throwaway is a detached worktree that holds tracked files only, so node_modules is absent. Each run under its fresh HOME re-downloads an unpinned runner, or fails offline, and the .npmrc a private registry needs, kept in the user's home directory, is missing. Add --deps-from <dir>, defaulting to --project. It links into the throwaway the ignored dependency directories that `git ls-files --others --ignored --directory` names (node_modules at any depth, .venv). A workspace link that resolves into the shared tree would let HEAD's run read the fix and answer a false not-red, so it is refused by name. Writes a runner makes back through a link are named in the basis. The fresh HOME stays, and .npmrc is either resolved on purpose or named as dropped. In agents/audit-executor.md and reference/execute-task.md, replace the 'untracked dependency comes back could-not-prove' sentence with the flag and its leaks. The end-to-end check against real jest is the maintainer's field-report probe, driven by hand and recorded in the outcome.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
         "plugins/audit/tests/test_stamp_verification.py",
         "plugins/audit/agents/audit-executor.md",
-        "plugins/audit/reference/execute-task.md"
+        "plugins/audit/reference/execute-task.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -314,21 +508,38 @@
         "P102.5",
         "P102.6"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "212470e8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stamp-verification.py gains a section 'dependencies: the ignored directories linked into the throwaway': dep_rels picks node_modules and .venv at any depth (outermost only) from git's ignored listing; dependency_plan lists the ignored directories of --deps-from (default --project) with `git ls-files -z --others --ignored --exclude-standard --directory` and links one only where its parent exists at HEAD (otherwise skipped, the basis says why); workspace_links walks each linked directory without following links and refuses by name a symlink, a .pth path line or an __editable__ finder path that lands in the project or --deps-from root outside every dependency directory; _npmrc_state checks only whether each .npmrc exists (a tracked project file arrives with HEAD, an untracked one and the .npmrc in the user's home directory are dropped - every run has a fresh home); link_dependencies builds a real directory of per-entry absolute symlinks (.cache, .vite and .vite-temp never linked, so a runner's cache write stays in the throwaway) and runs again after every reset in _isolated_run; refused_links_problem and deps_clause give the refusal and the basis text. Wiring: the --deps-from flag; a refused workspace link becomes the run's problem before HEAD's run (no run, could-not-prove); NPM_CONFIG_USERCONFIG dropped from the run's environment in any capitalisation; the dependency clause in every basis and the not-red note; a dependencies key in the JSON payload and a dependencies line in the human output. The design note's part (4) is marked built. Decisions: cache entries skipped, not created; a dangling link into the tree counts as a workspace link; a bad --deps-from is a usage error (exit 2); symlinks required (a host that cannot make them answers could-not-prove, not tested on Windows).\nDocs: agents/audit-executor.md and reference/execute-task.md replace the 'an untracked dependency comes back could-not-prove' sentence with the flag and its leaks, naming workspace_links() as the enforcer; PLUGIN-BUILD-GUIDE.md's stamp-verification section states the same rule and its usage line gains [--deps-from DIR]; P102.6's baseline clauses untouched.\nTests: sd1-sd5 (proved by default with the tracked .npmrc carried and the links surviving every reset; a workspace link refused by name with no run made; its allow twin - a link outside the project and a .bin link inside node_modules - proved; a test passing without the fix stays not red with every leak named and NPM_CONFIG_USERCONFIG dropped; --deps-from from another checkout proved, without it could-not-prove). Red-first: the helper is could-not-prove for test_stamp_verification.py (sr23/sr24, known); the red rests on the tdd run in the shared tree before the change (0/5) and eight scratch mutation rows (M1-M8), each red, including an over-fire row turning the allow cases red. Measured once in the throwaway: `npx vitest run tools/ui-tests/calendar.test.mjs` ran with node_modules linked and the helper read its tally (not red, as expected - the file is not declared). Suites 195/195, test__refs 304/304, test__output 182/182, test__deps 299/299.",
+        "descriptive": "The red-first check can now run JavaScript and Python test suites whose tools live in ignored folders such as node_modules: it links them into its throwaway copy, refuses a link that would let the old code read the new fix, and names every way a run could leak."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-07T02:20:56Z",
+      "completedAt": "2026-10-07T02:48:14Z",
+      "verifiedBy": [
+        "sd1",
+        "sd2",
+        "sd3",
+        "sd4",
+        "sd5"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T02:48:07Z.186604",
+        "status": "passed",
+        "at": "2026-10-07T02:48:07Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "212470e8",
+        "at": "2026-10-07T02:48:14Z",
+        "basis": "orchestrator check: --deps-from as described, the workspace-link refusal by name before any run, .npmrc resolved or named, the three docs updated, real vitest run read in the throwaway; red rests on the tdd run and eight mutation rows (helper limitation stated)"
+      }
     },
     {
       "id": "P102.8",
       "title": "the docs name the runners red reads, derived from its table by a drift check",
-      "status": "pending",
+      "status": "done",
       "description": "'A run whose output carries no tally the helper reads' never said which runners the helper reads, so an operator who fixed dependencies learned nothing about the rest. Both documents name the runners red reads. A new `_drift` check in _refs.py derives that list from the table instead of letting it be written as prose. _refs.py and _runner_output.py are layer-mates, so the check reads the table from source by AST rather than importing it. The check gets a row in tools/prove-gates.py so a weakened check goes red.",
       "files": [
         "plugins/audit/scripts/_refs.py",
@@ -360,21 +571,38 @@
         "P102.4",
         "P102.7"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a5882254",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_refs.py gains RUNNER_LIST_SOURCE, RUNNER_LIST_TABLE, RUNNER_LIST_DOCS, RUNNER_LIST_TRIGGER ('The runners whose tally the helper reads are'), _tally_table_names(), _named_runners() and runner_list_drift(repo_root=None) -> {runners, problems}. _tally_table_names() parses governance/_runner_output.py with ast (no import: the two modules are layer-mates) and reads the first string of each TALLY_READERS pair; a table that is not literal, is assigned other than exactly once, or cannot be read is a finding, never an empty list. runner_list_drift() reads agents/audit-executor.md and reference/execute-task.md, which must each carry the trigger sentence exactly once; the list is the backticked words from the trigger to the next full stop; each finding names the document and the runner it names wrongly or omits. Both documents carry one list sentence (house, pytest, unittest, jest, vitest), say the output decides rather than the command (a wrapper counts when the runner it wraps prints its own tally; any other runner is could-not-prove), and name runner_list_drift() as the check; neither restates the dependency-link sentences beside them. tools/prove-gates.py gains a red row (execute-task.md's list loses vitest, rl1 must fail) and an allow row (the list runs to the end of the text, an over-fire, rl3 must fail). Decisions: the name ends in _drift so prove-gates reaches it by suffix; only TALLY_READERS is graded (CASE_READERS agreement is not checked); the list ends at the sentence's full stop; the live case rl1 compares the AST reading with the imported table, two readings from two places.\nTests: test__refs rl1-rl5. Red-first: in the shared tree before the implementation (AttributeError, 222/223) and proved through the helper with --introduces runner_list_drift at HEAD 212470e8. Both prove-gates rows mutated in scratch copies: red row -> rl1 FAIL (308/309); allow row over-fire -> rl1-rl4 FAIL (305/309). prove-gates --selftest 37/37; test__refs 309/309, test__output 182/182, test__deps 299/299; ruff and vermin clean.",
+        "descriptive": "The executor's instructions now say which test runners the red-first check can read, and a check fails the build if that list drifts from the table the check actually uses."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-07T02:48:21Z",
+      "completedAt": "2026-10-07T05:16:32Z",
+      "verifiedBy": [
+        "rl1",
+        "rl2",
+        "rl3",
+        "rl4",
+        "rl5"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T05:14:19Z.23fed3",
+        "status": "passed",
+        "at": "2026-10-07T05:14:19Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "a5882254",
+        "at": "2026-10-07T05:16:32Z",
+        "basis": "orchestrator check: both documents name the runners, the list is derived from TALLY_READERS by AST as the layer rule requires, prove-gates rows red in both directions"
+      }
     },
     {
       "id": "P102.9",
       "title": "a usage error names this copy's version and a newer installed copy for this project",
-      "status": "pending",
+      "status": "done",
       "description": "When an older cached copy is asked for a newer subcommand, it exits 2 with a bare argparse 'invalid choice', no version and no hint. Executors concluded the helper did not exist. Add one shared usage hook to _claude_home.py, which sits at layer 1 and is reachable from every entry point. The hook names _output.plugin_version() and asks installed_copies() for the copy that applies to this project, project scope before user scope. installed_plugins.json is undocumented, so the hook fails open and states that basis. Decide in the docstring how the hook attaches under the free-functions rule: an instance patch of parser.error rather than a subclass. Apply it to stamp-verification.py, the reported case, and regenerate the module map.",
       "files": [
         "plugins/audit/scripts/status/_claude_home.py",
@@ -403,21 +631,41 @@
         "P100"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "67f80e77",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_claude_home.py gains a '# --- usage hint ---' section: _version_key (dotted version to an int tuple, or None); _holds (resolved paths, requiring a separator after the root); applicable_copy(home, project) asks installed_copies() for every marketplace's audit@<market> record and picks a project- or local-scope copy whose projectPath contains this project before any user-scope copy, never another project's copy, the highest version within a scope; usage_hint(home, project, version, plugin_root) returns 'this copy: audit <version> at <path>' and then one of a newer applicable copy (with /reload-plugins), no newer copy, no installed copy, a version that cannot be ordered, or install records that could not be read - each line saying it was read off installed_plugins.json, which Claude Code writes and does not document, and failing open so an unexpected record costs the hint, never the usage error; attach_usage_hint(parser, ...) replaces parser.error on the instance (not a subclass - the docstring says why, and that a sub-parser has its own error to attach for the roll-out) and calls argparse's own error after the hint, so the exit stays 2 and a clean parse costs nothing. installed_copies rows gain an installPath key (added only). stamp-verification.py's build_parser returns attach_usage_hint(parser). PLUGIN-BUILD-GUIDE.md: module map regenerated (stamp-verification gains _claude_home) and the _claude_home section extended. Decisions: local scope counts as project-tied beside project; the project is the given directory or any directory below the recorded projectPath; an unparseable version is never called newer.\nTests: test__claude_home ch9-ch16, every case on its own installed_plugins.json under a fixture root, never the operator's; ch13 is the over-fire twin (no newer copy, no /reload-plugins). Red-first proved through the helper at HEAD 212470e8 (8/16, ch9-ch16 failing). In-process mutations each red: _holds always true, prefix without separator, user scope first, versions never comparable. Suites test__claude_home 16/16, test_audit_version 32/32, test_stamp_verification 195/195, test__deps 299/299, test__output 182/182; ruff and vermin clean.",
+        "descriptive": "When an older cached copy of the plugin is asked for something it does not know, its error now says which version it is and where, and points at a newer installed copy that applies to this project and how to load it, instead of a bare 'invalid choice'."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-07T02:48:22Z",
+      "completedAt": "2026-10-07T05:16:33Z",
+      "verifiedBy": [
+        "ch9",
+        "ch10",
+        "ch11",
+        "ch12",
+        "ch13",
+        "ch14",
+        "ch15",
+        "ch16"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T05:16:13Z.80a45a",
+        "status": "passed",
+        "at": "2026-10-07T05:16:13Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "67f80e77",
+        "at": "2026-10-07T05:16:33Z",
+        "basis": "orchestrator check: one shared usage hook at layer 1, project scope before user scope, fails open with its basis stated, attached by an instance patch as the description asked, applied to stamp-verification; red-first proved"
+      }
     },
     {
       "id": "P102.10",
       "title": "every entry point's parser goes through the one usage hook, held by a lint",
-      "status": "pending",
+      "status": "done",
       "description": "Apply the hook from the previous task to every other entry point that builds an ArgumentParser (`grep -rln 'ArgumentParser(' plugins/audit/scripts`). Each gets one call to the shared hook, never its own copy, which would be the DRY failure. A new lint beside the safe_stdio check in _output.py holds the rule, and it gets a row in tools/prove-gates.py. Regenerate the module map for the new edges (`python3 plugins/audit/scripts/_deps.py --render`). Entry points that parse argv by hand are listed in the outcome, not converted here. This touches files that P100, P106 and P107 also edit, so it is blocked by P106 and P107 and runs after them.",
       "files": [
         "plugins/audit/scripts/_output.py",
@@ -476,21 +724,41 @@
       "dependsOn": [
         "P102.9"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b55778c8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_output.py gains a usage-hint check. parser_sites(files) lists every ArgumentParser call under scripts/ and whether it is hooked. usage_hint_violations(dirs) returns the unhooked ones. A parser is hooked when, in the scope that built it, its name is passed to _claude_home.attach_usage_hint before any parse call, or when it is built inside that call. A parents= template is not reported. A parser held by no name, and a file that does not parse, are reported. Every argparse entry point now makes exactly one call to the shared hook, either in its builder (return _claude_home.attach_usage_hint(p)) or in main() before it parses, with the import placed after the pinned preamble. A usage error from an older copy therefore names this copy's version and any newer installed copy; this was checked live on audit-lock and audit-lookup. test__output.py adds uh1-uh8: red fixtures, an exact over-fire twin, a reason on every finding, a clean real tree, and a scan tied to a constructor grep. tools/prove-gates.py gains a red row (drop the hook in one entry point) and an allow row (remove the narrowing). PLUGIN-BUILD-GUIDE's module map is regenerated, with a paragraph on the lint. Sub-parsers and the entry points that parse argv by hand, without argparse, are out of scope and listed in the guide. Red-first proved through the helper (--introduces usage_hint_violations). The prove-gates rows were run on a scratch copy, because prove-gates refuses a dirty tree. A real prove-gates run is owed once the work is committed.",
+        "descriptive": "Every command's usage error now says which copy of the plugin answered and whether a newer one is installed, and a lint keeps every future command on that path."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-07T08:45:42Z",
+      "completedAt": "2026-10-07T09:04:57Z",
+      "verifiedBy": [
+        "uh1",
+        "uh2",
+        "uh3",
+        "uh4",
+        "uh5",
+        "uh6",
+        "uh7",
+        "uh8"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T09:04:29Z.8719d0",
+        "status": "passed",
+        "at": "2026-10-07T09:04:29Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b55778c8",
+        "at": "2026-10-07T09:04:57Z",
+        "basis": "orchestrator check: entry points re-derived from the tree, one shared hook call each, AST lint with red and allow rows, live usage errors observed, hand-parsing entry points named as out of scope"
+      }
     },
     {
       "id": "P102.11",
       "title": "the orchestrator resolves the plugin root per spawn and again after an update",
-      "status": "pending",
+      "status": "done",
       "description": "A brief resolved under an older copy was reused after the plugin updated, so its executors ran the old helper. Change execute-task.md's 'Resolve ${CLAUDE_PLUGIN_ROOT} yourself' line and orchestrator.md to say: resolve the root per spawn from the copy this session runs, and after a plugin update mid-run, re-resolve and say so in the run's output. Name /audit:doctor's running-copy check as where a session still on the old copy shows up. CLAUDE_PLUGIN_ROOT is unset in the Bash tool, so the literal variable is never what a subagent should receive.",
       "files": [
         "plugins/audit/reference/execute-task.md",
@@ -512,16 +780,225 @@
         "P100"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8386fb2e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "reference/execute-task.md and reference/orchestrator.md now tell the orchestrator and executor to resolve ${CLAUDE_PLUGIN_ROOT} per spawn from the copy the session is running, never to reuse a root resolved before a mid-run plugin update, to re-resolve and say which commands moved when the plugin updates during a run, and that /audit:doctor's running plugin row (_doctor_trail) is where a session still on the old copy shows. The orchestrator.md rule sits among the non-negotiable guardrails.",
+        "descriptive": "The orchestrator and executor instructions now say to look up the plugin's location fresh for each spawned agent and again after an update, so a long run never keeps calling an old copy of the plugin."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T21:26:47Z",
+      "completedAt": "2026-10-06T21:42:06Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T21:39:49Z.63f025",
+        "status": "passed",
+        "at": "2026-10-06T21:39:49Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8386fb2e",
+        "at": "2026-10-06T21:42:06Z",
+        "basis": "orchestrator check: both reference files carry the rule; the doctor row it points at exists in _doctor_trail.py"
+      }
+    },
+    {
+      "id": "P102.12-ptn",
+      "title": "red proves on every runner it reads without refusing a run over a directory it does not need",
+      "status": "done",
+      "description": "Fixes review findings P102-R1 to P102-R4 and P102-R6. red proves on every runner it reads without refusing a run over a directory it does not need.\n\n- A dependency directory that holds a link into the tree, such as a workspace link or an editable install's .pth, is skipped. Its reason goes into the plan's skipped list, which the deps clause prints, and the run proceeds without it.\n- jest's node:assert hint line counts as an assertion.\n- Terminal escapes are stripped once, before the tally and failing-case readers.\n- The design note is in the present tense, and it no longer says the pytest patterns became one.\n- The workspace-link scan looks only at entry shapes that can be links: top-level and scoped symlinks, and .pth or __editable__ files under site-packages. It checks the deadline.\n- The docstring, comment and PLUGIN-BUILD-GUIDE describe what jest prints for node:assert.\n\nCases, each with a twin:\n- an editable .pth in an in-repo virtualenv with a system-python unittest command still proves;\n- jest's real node:assert text proves;\n- jest's coloured summary line is read;\n- the scan is bounded.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/scripts/governance/_runner_output.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/tests/test__runner_output.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/reference/execute-task.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "8b6e21f7",
+      "outcome": {
+        "technical": "_runner_output.py: plain_text() removes every terminal control sequence, and read_tally, failing_cases and jest_failures call it once on entry, so a coloured jest summary line (FORCE_COLOR or --colors) is read. _JEST_ASSERTION accepts expect and the hint jest prints for a node:assert failure (assert(...) or assert.<name>(...)). It no longer accepts AssertionError, which jest never printed first, so the change can miss a proof but never invent one. The module docstring and comments describe what jest prints. stamp-verification.py: workspace_links(source, rels, roots, deadline) returns links and a problem. It scans only top-level and @scope entries, plus .pth and __editable__ files directly under a site-packages directory (de-duplicated by inode), and checks the deadline before each entry; a passed deadline is a timeout problem, never a partial list. dependency_plan skips a directory holding a link into the tree, recording the entry and its target in the skipped list the deps clause prints, and the run goes ahead without it. refused_links_problem and the refused key are removed. The design note is in the present tense and keeps the two pytest patterns as two. The build guide, audit-executor.md and execute-task.md describe the skip. Cases: ru11-ru14 (jest's real node:assert text and its coloured output, each with a twin); sd2 rewritten, plus sd6-sd9 (an editable .pth into the tree proves with the virtualenv skipped, a .pth outside the tree stays linked, and the scan's shapes and deadline). Red-first proved for test__runner_output through the helper. For test_stamp_verification the helper could not prove, because HEAD's own suite is red inside the throwaway at two cases about SIGTERM and leftover throwaways that pass in the shared tree; the ordinary tdd red was seen (sd2, sd6, sd8, sd9 failed before the fix).",
+        "descriptive": "The red-first check no longer gives up on a project that has its own package installed in a local virtual environment, reads jest failures from node's assert, and understands coloured test output."
+      },
+      "startedAt": "2026-10-07T09:13:28Z",
+      "completedAt": "2026-10-07T10:31:26Z",
+      "verifiedBy": [
+        "ru11",
+        "ru12",
+        "ru13",
+        "ru14",
+        "sd2",
+        "sd6",
+        "sd7",
+        "sd8",
+        "sd9"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T10:16:56Z.430909",
+        "status": "passed",
+        "at": "2026-10-07T10:16:56Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8b6e21f7",
+        "at": "2026-10-07T10:31:26Z",
+        "basis": "orchestrator check: P102-R1..R4 and R6 fixed, the editable-install regression reproduced and proved, jest text captured from a real run, scan bounded by shape and deadline; helper could-not-prove on one suite is recorded with its reason"
+      }
+    },
+    {
+      "id": "P102.13-ptn",
+      "title": "every hand-parsed verb dispatcher names the newer installed copy on an unknown verb",
+      "status": "done",
+      "description": "Fixes review finding P102-R5. Every entry point that dispatches on a verb by hand prints the shared usage hint lines (_claude_home) on an unknown verb, so an older cached copy that is asked for a newer verb names the newer installed copy. materialize-proposal.py is the one the review drove, and every other hand-parsed verb dispatcher is found from the tree. The usage-hint lint is widened to hold these dispatchers: an unknown-verb branch that prints usage without the hint is reported.\n\nCases:\n- materialize-proposal.py with an unknown verb prints the hint;\n- the lint reports a fixture dispatcher without the hint, with an allow twin;\n- the real tree is clean.",
+      "files": [
+        "plugins/audit/scripts/manifest/materialize-proposal.py",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/tests/test_materialize_proposal.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "099cbade",
+      "outcome": {
+        "technical": "materialize-proposal.py's unknown-verb branch writes the shared _claude_home usage hint to stderr after its usage block, so an older cached copy asked for a verb only a newer copy knows names this copy's version and any newer installed copy. _output.py's usage_hint_violations is widened with verb_dispatch_sites, which covers the hand-parsed dispatch shape that the argparse reader cannot see. A site is reported only when both signals hold: the compared name is later dispatched on with == against a literal in the same scope, and the refusal branch writes the module's usage block. One-shot validation and an ordinary one-line refusal are therefore not reported. Results are de-duplicated so an unparseable file is reported once. Every other candidate in the tree dispatches through argparse and is already hooked; materialize-proposal was the only hand-parsed verb dispatcher. Cases: mz46 and mz47 (an unknown verb still exits 2 and now carries the hint), and vd1-vd4 (a bare dispatcher reported, a hinted twin allowed, two over-fire twins quiet, two shape exclusions, and the real tree clean). Red-first proved for mz47 and vd1-vd3 through the helper.",
+        "descriptive": "Asking an older copy of the proposal command for a verb it does not know now tells you which copy answered and whether a newer one is installed, and a lint keeps every hand-written verb switch on that path."
+      },
+      "startedAt": "2026-10-07T09:13:29Z",
+      "completedAt": "2026-10-07T10:31:27Z",
+      "verifiedBy": [
+        "mz46",
+        "mz47",
+        "vd1",
+        "vd2",
+        "vd3",
+        "vd4"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T10:23:57Z.cc05af",
+        "status": "passed",
+        "at": "2026-10-07T10:23:57Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "099cbade",
+        "at": "2026-10-07T10:31:27Z",
+        "basis": "orchestrator check: P102-R5 fixed, dispatchers found from the tree, lint needs two signals so validation is not reported, red-first proved"
+      }
+    },
+    {
+      "id": "P102.14-ptn",
+      "title": "the readers, the usage lint and the leftover check read what they claim to read",
+      "status": "done",
+      "description": "Fixes review findings P102-R7 to P102-R10.\n- The decisive-line and error readers read the plain text, so a coloured run's basis carries no escape bytes and a coloured error gutter is matched.\n- The usage lint walks each call argument, so a usage block written inside a format expression counts.\n- Comments and docstrings that cite a register id state the constraint instead, and the unbased count is dropped.\n- leftover_throwaways skips the main worktree and matches the throwaway prefix only on the holder directly above a tree directory. The suite's leftover case reads that same function.\n\nCases, each with a twin:\n- a coloured jest red's basis holds no escape;\n- the format-expression usage shape is reported, and its hinted twin is allowed;\n- a fixture built under a throwaway-prefixed parent reports no leftover.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/tests/test_materialize_proposal.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "d0f7fe04",
+      "outcome": {
+        "technical": "stamp-verification.py's _decisive_line reads _runner_output.plain_text, so the basis a coloured run writes quotes the decisive line with no escape bytes (sr200, sr201, using real jest 30.5.2 FORCE_COLOR output). leftover_throwaways skips the main worktree, which git always lists first, and matches the throwaway prefix only on the holder directly above a tree directory. A fixture built under a throwaway-prefixed parent therefore no longer reports itself as a leftover (sr202-sr204, each with a twin). _output.py's _prints_usage_block walks each call argument, so a usage block written inside a format expression counts (vd5, plus its hinted twin vd6); the real tree stays clean. Comments and docstrings that cited a register id now state the constraint, and an unbased count is dropped. Red-first: vd5 was proved through the helper. For test_stamp_verification the helper could not prove, because HEAD's suite is red inside its throwaway at the two leftover-sensitive cases. That is the leftover defect this task fixes, which HEAD still carries; the cases pass in the shared tree.",
+        "descriptive": "A coloured test run's proof now quotes clean text, the usage-hint lint catches a usage block written through a format string, and the leftover check no longer mistakes a project's own checkout for a stray throwaway."
+      },
+      "startedAt": "2026-10-07T10:40:13Z",
+      "completedAt": "2026-10-07T11:16:32Z",
+      "verifiedBy": [
+        "sr200",
+        "sr201",
+        "sr202",
+        "sr203",
+        "sr204",
+        "vd5",
+        "vd6"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T11:16:26Z.ffdc99",
+        "status": "passed",
+        "at": "2026-10-07T11:16:26Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d0f7fe04",
+        "at": "2026-10-07T11:16:32Z",
+        "basis": "orchestrator check: P102-R7..R10 fixed, each reproduced first, twins for every case, could-not-prove on one suite explained by the very defect fixed"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-10-06T21:26:47Z",
+  "testEvidence": {
+    "runId": "2026-10-07T11:35:06Z.5df767",
+    "status": "passed",
+    "at": "2026-10-07T11:35:06Z"
+  },
+  "mergedHead": "871ab1d8b107be136717367a85d3d4cbe403033c"
 }

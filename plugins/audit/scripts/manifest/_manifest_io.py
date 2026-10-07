@@ -183,6 +183,32 @@ def _merge_phase(stub, body):
     return merged
 
 
+def index_without_stub_claim(index, phase_id):
+    """(index, dropped) -- `index` with `phase_id`'s stub carrying no `claim`.
+
+    A FINISHED PHASE MUST LOSE ITS CLAIM IN BOTH HALVES. `_merge_phase` lets a
+    stub's claim stand in for a body that has none, so a writer that pops the
+    claim from the body alone leaves the phase claimed again the next time the
+    manifest is assembled. A claim on a stub is legacy - the writers put it in
+    the shard - but a plan written before that still carries one.
+
+    Returns a NEW index (the stub list and the one stub copied, the rest
+    shared) and the claim it dropped, or None when that stub held none, which
+    is the caller's answer to whether the index needs writing at all. A stub
+    whose claim is `null` is cleared too and answers `{}`, so the answer stays
+    None for exactly the stub that was left alone."""
+    stubs = (index or {}).get("phases") or []
+    for i, stub in enumerate(stubs):
+        if isinstance(stub, dict) and stub.get("id") == phase_id \
+                and "claim" in stub:
+            cleared = dict(stub)
+            dropped = cleared.pop("claim")
+            out = dict(index)
+            out["phases"] = stubs[:i] + [cleared] + stubs[i + 1:]
+            return out, dropped if dropped is not None else {}
+    return index, None
+
+
 def load_manifest_at(git_root, commit, rel):
     """The assembled plan as `commit` holds it, or None when it holds none.
 

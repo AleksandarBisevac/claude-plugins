@@ -1379,6 +1379,107 @@ def _cases(check):
         check("tr6 ...while a cwd inside the project is the project, answered "
               "by containment with no git call at all",
               _tr["moved"] is False and _tr["command"] is None, repr(_tr))
+        # (tm) tree_for's `cache` - one git question per directory, however
+        # many files of it a caller places. The cached answers are compared
+        # with answers computed with no cache at all, so a memo that returned
+        # the wrong tree cannot pass by agreeing with itself.
+        _tm_seen = []
+        _tm_real = M._git_rev_parse
+
+        def _tm_count(cwd, fields):
+            _tm_seen.append(str(cwd))
+            return _tm_real(cwd, fields)
+        _tm_paths = [str(wlink / "src" / ("f%d.py" % n)) for n in range(6)]
+        _tm_paths += [str(wother / ("g%d.py" % n)) for n in range(6)]
+        _tm_plain = [M.tree_for(None, p, wcfg, project=wprim) for p in _tm_paths]
+        M._git_rev_parse = _tm_count
+        try:
+            _tm_ok, _tm_got = _harness.attempt(
+                lambda: (lambda memo: [M.tree_for(None, p, wcfg, project=wprim,
+                                                  cache=memo)
+                                       for p in _tm_paths])({}))
+            _tm_one = len(_tm_seen)
+            del _tm_seen[:]
+            _tm_ok1, _tm_first = _harness.attempt(
+                M.tree_for, None, _tm_paths[0], wcfg, project=wprim, cache={})
+        finally:
+            M._git_rev_parse = _tm_real
+
+        def _tm_key(t):
+            return (str(t["root"]), t["inside"], t["moved"], t["rel"],
+                    t["placed"], t["basis"])
+        check("tm1 a cache answers every file of one directory with the "
+              "answer git gives each of them uncached",
+              _tm_ok and [_tm_key(t) for t in _tm_got]
+              == [_tm_key(t) for t in _tm_plain],
+              _tm_got if not _tm_ok else [
+                  (a["rel"], b["rel"], a["basis"], b["basis"])
+                  for a, b in zip(_tm_got, _tm_plain)])
+        _tm_dirs = set(M._nearest_existing_dir(p) for p in _tm_paths)
+        check("tm2 ...and asks git once for the watched tree and once per "
+              "directory a file sits in, never once per file",
+              _tm_ok and _tm_ok1 and len(_tm_dirs) > 1
+              and len(_tm_seen) == 2 and _tm_one == 1 + len(_tm_dirs),
+              (_tm_one, len(_tm_seen), len(_tm_dirs)))
+        # (tm3) MANY DIRECTORIES, ONE TOPLEVEL. Files each in a directory of
+        # their own inside the linked worktree are answered by containment
+        # under the toplevel git named for the first, so the count is one for
+        # the watched tree and one for the worktree however many directories.
+        # Beside them, the two shapes containment must hand back to git: a
+        # symlinked subdirectory pointing at another repository, and a nested
+        # repository inside the worktree - each its own question, and each
+        # answered as git answers it with no cache at all.
+        for n in range(8):
+            (wlink / ("deep%d" % n)).mkdir(parents=True, exist_ok=True)
+        (wlink / "nested").mkdir(parents=True, exist_ok=True)
+        subprocess.run(_ini, cwd=str(wlink / "nested"), check=True,
+                       capture_output=True, timeout=20)
+        _tm_link = wlink / "via-link"
+        _tm_linked = True
+        try:
+            os.symlink(str(wother), str(_tm_link), target_is_directory=True)
+        except (OSError, NotImplementedError):
+            _tm_linked = False
+        _tm_wide = [str(wlink / ("deep%d" % n) / "f.py") for n in range(8)]
+        _tm_edges = [str(wlink / "nested" / "n.py")]
+        if _tm_linked:
+            _tm_edges.append(str(_tm_link / "l.py"))
+        _tm_plain3 = [M.tree_for(None, p, wcfg, project=wprim)
+                      for p in _tm_wide + _tm_edges]
+        del _tm_seen[:]
+        M._git_rev_parse = _tm_count
+        try:
+            _tm_ok3, _tm_got3 = _harness.attempt(
+                lambda: (lambda memo: [M.tree_for(None, p, wcfg, project=wprim,
+                                                  cache=memo)
+                                       for p in _tm_wide])({}))
+            _tm_wide_calls = len(_tm_seen)
+            del _tm_seen[:]
+            _tm_ok4, _tm_got4 = _harness.attempt(
+                lambda: (lambda memo: [M.tree_for(None, p, wcfg, project=wprim,
+                                                  cache=memo)
+                                       for p in _tm_wide + _tm_edges])({}))
+            _tm_edge_calls = len(_tm_seen)
+        finally:
+            M._git_rev_parse = _tm_real
+        check("tm3 a cache asks git once for the watched tree and once for a "
+              "linked worktree however many of its directories files sit in, "
+              "and answers each as git answers it uncached",
+              _tm_ok3 and _tm_wide_calls == 2
+              and [_tm_key(t) for t in _tm_got3]
+              == [_tm_key(t) for t in _tm_plain3[:len(_tm_wide)]]
+              and all(t["moved"] for t in _tm_got3),
+              (_tm_wide_calls, _tm_got3 if not _tm_ok3 else
+               [(t["rel"], t["basis"]) for t in _tm_got3]))
+        check("tm4 ...while a nested repository and a symlinked subdirectory "
+              "inside that worktree are each asked about on their own, and "
+              "neither is placed in the worktree",
+              _tm_ok4 and _tm_edge_calls == 2 + len(_tm_edges)
+              and [_tm_key(t) for t in _tm_got4] == [_tm_key(t) for t in _tm_plain3]
+              and not any(t["moved"] for t in _tm_got4[len(_tm_wide):]),
+              (_tm_edge_calls, len(_tm_edges), _tm_linked,
+               _tm_got4 if not _tm_ok4 else
+               [(t["rel"], t["basis"]) for t in _tm_got4[len(_tm_wide):]]))
         _cd = M.effective_cwd("cd %s && sed -i x f.ts" % wlink, str(wprim))
         _spaced = os.path.join(str(wprim), "linked worktree")
         check("tr7 effective_cwd reads a literal `cd` - the reading every hook "
@@ -1521,6 +1622,25 @@ def _cases(check):
                  "xargs -a input python3 tools/x.py",
                  "chrt -R python3 tools/x.py",
                  "time FOO=1 python3 tools/x.py")
+    # (la) leading_assignments: the environment a command sets for its program,
+    # bare or through a wrapper that takes assignments - and nothing that is an
+    # argument of the program, which is where an over-reading would fire.
+    _la = getattr(M, "leading_assignments", None)
+    _la_cases = (
+        (["GIT_EDITOR=vi", "git", "commit"], ["GIT_EDITOR=vi"]),
+        (["A=1", "B=2", "ls"], ["A=1", "B=2"]),
+        (["env", "GIT_PAGER=cat", "git", "log"], ["GIT_PAGER=cat"]),
+        (["sudo", "-u", "root", "A=1", "ls"], ["A=1"]),
+        (["git", "commit", "-m", "A=1"], []),
+        (["echo", "A=1"], []),
+        (["make", "CC=gcc"], []),
+        (["env", "ls", "A=1"], []),
+    )
+    check("la1 the assignments ahead of a program, bare or through env or "
+          "sudo, are its environment; one after the program is an argument",
+          _la is not None and all(_la(w) == want for w, want in _la_cases),
+          repr([(w, _la(w) if _la else None) for w, want in _la_cases
+                if _la is None or _la(w) != want]))
     check("pc5 a wrapper before an ordinary script leaves its heredoc as data",
           all(M._head_runs_body(head) is None for head in _pc_heads),
           repr([(head, M._head_runs_body(head)) for head in _pc_heads]))
@@ -1528,6 +1648,50 @@ def _cases(check):
           "inline flag or a script operand after its options",
           all(_ro(w) is want for w, want in _ro_cases),
           repr([(w, _ro(w)) for w, want in _ro_cases if _ro(w) is not want]))
+    # (hc) handed_commands: the command a shell's `-c` or `eval` runs from an
+    # ARGUMENT, found past the same wrappers program_candidates steps over.
+    _hc = getattr(M, "handed_commands", None)
+    _hc_runs = (
+        ("bash -c \"sed -i x a.py\"", ["sed -i x a.py"]),
+        ("sh -lc 'echo hi'", ["echo hi"]),
+        ("zsh -ec \"ls\"", ["ls"]),
+        ("bash -c -e 'ls'", ["ls"]),
+        ("bash --norc -o pipefail -c 'ls'", ["ls"]),
+        ("eval \"sed -i x a.py\"", ["sed -i x a.py"]),
+        ("eval sed -i x a.py", ["sed -i x a.py"]),
+        ("sudo -u root bash -c \"ls\"", ["ls"]),
+        ("env A=1 sh -c \"ls\"", ["ls"]),
+        ("cd x && bash -c \"ls\"; eval 'pwd'", ["ls", "pwd"]),
+        ("bash -c \"echo \\\"x\\\" > a.py\"", ["echo \"x\" > a.py"]),
+    )
+    check("hc1 a command handed to a shell's `-c` (alone or in a cluster) or to "
+          "`eval` is read out of its argument, past wrappers and options",
+          _hc is not None and all(_hc(cmd) == want for cmd, want in _hc_runs),
+          repr([(cmd, _hc(cmd) if _hc else None) for cmd, want in _hc_runs
+                if _hc is None or _hc(cmd) != want]))
+    # The over-fire direction: each is a shell or `eval` NAMED, never one
+    # handed a command - a quoted argument of another program, a script run,
+    # a `-c` that is the script's own option, an interpreter's own `-c`.
+    _hc_quiet = ("git commit -m \"bash -c ls\"", "bash script.sh -c x",
+                 "bash -c", "echo eval x", "python3 -c \"print(1)\"",
+                 "grep -c bash notes.md", "eval")
+    check("hc2 ...and nothing is read where no shell or `eval` is handed one",
+          _hc is not None and all(_hc(cmd) == [] for cmd in _hc_quiet),
+          repr([(cmd, _hc(cmd) if _hc else None) for cmd in _hc_quiet
+                if _hc is None or _hc(cmd) != []]))
+    _hc_cwd = (
+        ("eval \"cd /elsewhere\" && sed -i x a.py",
+         os.path.normpath(os.path.join("/w", "/elsewhere"))),
+        ("eval \"cd $X\" && sed -i x a.py", None),
+        ("bash -c \"cd /elsewhere\" && y", "/w"),
+        ("eval \"echo hi\" && y", "/w"),
+    )
+    check("hc3 a `cd` inside `eval` moves the shell that runs the rest, read "
+          "as a bare `cd` is and withdrawn where one would be - while one "
+          "inside a `bash -c` moves only the child, and an `eval` that changes "
+          "no directory leaves the walk alone",
+          all(M.effective_cwd(cmd, "/w") == want for cmd, want in _hc_cwd),
+          repr([(cmd, M.effective_cwd(cmd, "/w")) for cmd, _w in _hc_cwd]))
     check("jc7 ...while a `#` after a continuation that followed a blank still "
           "opens a comment, whose trailing backslash is kept",
           _jc("x " + _nl + "# y " + _nl + "z") == "x # y " + _nl + "z",

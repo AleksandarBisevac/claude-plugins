@@ -86,6 +86,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _branch                                                       # noqa: E402
 import _manifest_io as _mio                                          # noqa: E402
 import _worktrees as _wt                                             # noqa: E402
@@ -551,7 +552,7 @@ def build_parser():
     # `--include-strangers` was here and is deliberately gone; see the section above
     # `write_provenance`. Removing a worktree the plugin did not create is `remove
     # --path <dir>`: one directory, named by the person who wants it gone.
-    return p
+    return _claude_home.attach_usage_hint(p)
 
 
 def verbs_from(args):

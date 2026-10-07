@@ -156,6 +156,7 @@ claude-plugins/                           # this repo (personal, public)
           record-outside-run.py           # a suite that ran where this plugin could not see it, so a gate run in the same window is not credited with its effects
           import-evidence.py              # a CI build's own evidence ledger file, brought in whole after its chain verifies - never rewrites a row, never re-chains; prints (never runs) the full-gate.py --learn-from command for each red full row it brought in
           full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, then a coupling and a bug per named selection miss of a red run (the red still blocks), or the sentence and exit 0 when no meta.fullGate is declared; --learn-from <runId> runs nothing and learns from an imported row through the same function
+          _runner_output.py               # every reading of what a test runner printed: its summary line (how many checks ran) and the lines naming a failing check
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs; the one POSIX sh (and its PATH) every plan command runs under, or a refusal - never cmd.exe
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
           _verdict_binding.py             # the ONE rule for whether a recorded gate verdict binds the declared work now - a task commit's, a sign-off's, and whether `done` or close-phase may close over the newest verdict (one that no longer holds refuses)
@@ -252,6 +253,10 @@ claude-plugins/                           # this repo (personal, public)
         audit.config.example.json         # per-repo hook config template
         audit-plan.starter.json           # minimal manifest skeleton with $schema
         permissions-deny.example.json     # optional Claude Code permissions.deny fragment
+      evals/                              # `claude plugin eval` cases: plugin arm vs no-plugin baseline, same prompt
+        bugfix/case.yaml                  # a symptom-only defect; graded on the transcript; not runnable until scaffold.sh exists beside it
+        guard-stop/case.yaml              # a dirty tree + a .env canary; the safe outcome leaves both alone; not runnable until scaffold.sh exists beside it
+        results/                          # written by `claude plugin eval`; gitignored
       README.md                           # end-user install/config/extend docs
 ```
 
@@ -304,6 +309,7 @@ L1:
   _priority -> _output
   _proc_group -> _output
   _refs -> _output
+  _runner_output -> _output
   _task_outputs -> _output
   _ui_theme -> _output
   _usage_core -> _output
@@ -378,49 +384,49 @@ L6:
 
 L7:
   ado-connect -> _ado_connect, _output
-  audit-doctor -> _cli_fmt, _doctor_ado, _doctor_completions, _doctor_hygiene, _doctor_policy, _doctor_report, _doctor_setup, _doctor_trail, _output, _panel_runstate
-  audit-journal -> _evidence_io, _journal_io, _output
-  audit-lock -> _locks, _output
-  audit-logs -> _gate_feed, _output
-  audit-lookup -> _evidence_io, _journal_io, _manifest_io, _manifest_vocab, _output
-  audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _areas, _branch, _commit_trail, _evidence_io, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
-  audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
+  audit-doctor -> _claude_home, _cli_fmt, _doctor_ado, _doctor_completions, _doctor_hygiene, _doctor_policy, _doctor_report, _doctor_setup, _doctor_trail, _output, _panel_runstate
+  audit-journal -> _claude_home, _evidence_io, _journal_io, _output
+  audit-lock -> _claude_home, _locks, _output
+  audit-logs -> _claude_home, _gate_feed, _output
+  audit-lookup -> _claude_home, _evidence_io, _journal_io, _loader, _manifest_io, _manifest_vocab, _output
+  audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
+  audit-task -> _areas, _branch, _claude_home, _commit_trail, _evidence_io, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _locks, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
+  audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
-  close-phase -> _branch, _evidence_io, _journal_io, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _tree_stamp, _verdict_binding, _worktrees
-  commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
-  commit-manifest-index -> _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
-  commit-task-work -> _evidence_io, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
-  derive-phase-gate -> _evidence_io, _gate_derive, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
+  close-phase -> _branch, _claude_home, _evidence_io, _journal_io, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _tree_stamp, _verdict_binding, _worktrees
+  commit-audit-state -> _claude_home, _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
+  commit-manifest-index -> _claude_home, _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
+  commit-task-work -> _claude_home, _evidence_io, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
+  derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
-  full-gate -> _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
-  gen-demo-manifest -> _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
-  gen-demo-usage -> _demo_cast, _loader, _output
-  import-evidence -> _evidence_io, _journal_io, _loader, _manifest_io, _output, _panel_write
-  manage-worktrees -> _branch, _manifest_io, _output, _worktrees
-  materialize-proposal -> _manifest_io, _output, _proposals, _warning_groups
-  merge-manifest -> _id_refs, _id_shape, _locks, _manifest_io, _manifest_merge, _manifest_rules, _merge_install, _output
-  migrate-json-encoding -> _manifest_io, _manifest_rules, _output, _panel_write
+  full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
+  gen-demo-manifest -> _claude_home, _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
+  gen-demo-usage -> _claude_home, _demo_cast, _loader, _output
+  import-evidence -> _claude_home, _evidence_io, _journal_io, _loader, _manifest_io, _output, _panel_write
+  manage-worktrees -> _branch, _claude_home, _manifest_io, _output, _worktrees
+  materialize-proposal -> _claude_home, _manifest_io, _output, _proposals, _warning_groups
+  merge-manifest -> _claude_home, _id_refs, _id_shape, _locks, _manifest_io, _manifest_merge, _manifest_rules, _merge_install, _output
+  migrate-json-encoding -> _claude_home, _manifest_io, _manifest_rules, _output, _panel_write
   migrate-manifest -> _id_shape, _manifest_io, _manifest_rules, _output
-  panel-server -> _live_copy, _manifest_io, _output, _panel_discovery, _panel_page, _panel_runstate, _panel_settings, _panel_state, _panel_write, _ui_theme
-  propose-gates -> _evidence_io, _manifest_vocab, _output
+  panel-server -> _claude_home, _live_copy, _manifest_io, _output, _panel_discovery, _panel_page, _panel_runstate, _panel_settings, _panel_state, _panel_write, _ui_theme
+  propose-gates -> _claude_home, _evidence_io, _manifest_vocab, _output
   read-ado-links -> _ado_drift, _ado_tracked, _manifest_io, _output
-  record-outside-run -> _evidence_io, _journal_io, _manifest_io, _output
-  record-risk-confirmation -> _journal_io, _manifest_io, _output
+  record-outside-run -> _claude_home, _evidence_io, _journal_io, _manifest_io, _output
+  record-risk-confirmation -> _claude_home, _journal_io, _manifest_io, _output
   render-report -> _areas, _evidence_io, _evidence_view, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
   repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output
   repair-tests-add -> _journal_io, _locks, _manifest_io, _manifest_rules, _output
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
-  run-test-gate -> _evidence_io, _fmt, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _status_facts, _tree_stamp
-  set-priority -> _manifest_io, _output, _panel_write, _priority, _warning_groups
-  stamp-verification -> _evidence_io, _locks, _manifest_io, _output, _proc_group, _tree_stamp, _worktrees
+  run-test-gate -> _claude_home, _evidence_io, _fmt, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _tree_stamp
+  set-priority -> _claude_home, _manifest_io, _output, _panel_write, _priority, _warning_groups
+  stamp-verification -> _claude_home, _evidence_io, _locks, _manifest_io, _output, _proc_group, _runner_output, _tree_stamp, _worktrees
   validate-config -> _config_rules, _output
   validate-manifest -> _evidence_io, _manifest_io, _manifest_rules, _output, _warning_groups
-  verify-invariants -> _invariants, _manifest_io, _output
+  verify-invariants -> _claude_home, _invariants, _manifest_io, _output
 ```
 
 ---
@@ -606,9 +612,12 @@ The warn tier deliberately does NOT emit a `permissionDecision` — there is no 
 this hook, and adding one would auto-approve the tool call and skip the user's own prompt.
 `_config.manifest_state` reads the ASSEMBLED manifest: sharded index stubs carry no `status`,
 so a raw index read would miss every running phase.
-**Transactional state**: PreToolUse only observes (the edit may still be denied by a sibling
-hook or the user); PostToolUse — which fires only after a successful edit — consumes the
-bypass (logged), records the free-file slot, and appends to the observe tally. All tunables
+**Transactional state**: PreToolUse takes the session's free-file slot — the one slot
+`guard-secrets-read.py` takes for a shell write at its own Pre, read and written through
+`_config.trivial_slot` / `take_trivial_slot` — and does not consume the bypass (the edit may
+still be denied by a sibling hook or the user, so a refused edit has still spent the slot).
+PostToolUse — which fires only after a successful edit — consumes the bypass (logged),
+confirms the slot (taking it only when Pre did not), and appends to the observe tally. All tunables
 from config (`manifestPath`, `exemptGlobs`, `enforce`, `trivialLineThreshold`, `stateDir`,
 `logsDir`, `bypassKeyword`).
 `--selftest`.
@@ -1156,6 +1165,19 @@ raises instead of printing). Every `scripts/` entry point calls it as its first 
 enforced rather than remembered — `entries_missing_guard()` reads the directory and names any
 `__main__` block that skips it. `hooks/` deliberately does not import this module: its only
 output is `json.dumps` (ASCII by construction) plus its own selftest.
+
+**`usage_hint_violations()` holds the sister rule for argument parsing**: every
+`ArgumentParser` built under `scripts/` is handed to `_claude_home.attach_usage_hint()` in
+the scope that built it, before anything in that scope parses argv, so a usage error from an
+older cached copy names this copy's version and any newer installed one. One call beside each
+construction, never a copy of the hook. It reads calls, not text — a parser wrapped at
+construction counts as hooked, and a `parents=` template counts as nothing to hook, because
+it never parses argv itself — so a file that only names the constructor (`_refs.py` reading
+other files' parsers, the hook's own docstring) is neither reported nor exempted.
+`parser_sites()` is the full list it judges, hooked and bare alike. Sub-parsers built by
+`add_subparsers()` are outside it: an unknown verb is the top parser's error, which the
+hook already carries. Entry points that read `sys.argv` by hand build no parser and are
+outside it too.
 
 It is also **the anchor**, and that is why it is the one file that never moves.
 `SCRIPTS_DIR`, `PLUGIN_ROOT`, `HOOKS_DIR`, `TESTS_DIR` and `REPO_ROOT` are the single
@@ -2895,8 +2917,13 @@ one exact install path - the marketplace and the `gitCommitSha` it was made from
 `marketplace_source` finds the clone `known_marketplaces.json` names and the plugin's directory
 inside it off the clone's own `marketplace.json`. Every reader is fail-open: a missing,
 malformed or differently shaped record is None beside the sentence saying why, and the caller
-says the basis is a file Claude Code does not document. Layer 1; its cases are in
-`plugins/audit/tests/test__claude_home.py`.
+says the basis is a file Claude Code does not document. `attach_usage_hint` patches a built
+parser's `error` so every usage error also names this copy's version and path and, through
+`applicable_copy`, the installed copy Claude Code would load for this project (project or
+local scope recorded for it before user scope, another project's never) when that copy is
+newer, with `/reload-plugins` as the way to it; an unreadable record is said to be unreadable.
+It sits here, at layer 1, so every entry point can reach the one hook; `stamp-verification.py`
+carries it. Layer 1; its cases are in `plugins/audit/tests/test__claude_home.py`.
 
 ### `plugins/audit/scripts/status/audit-lookup.py`
 One question, one answer, with the pointer that lets a reader check it — instead of the
@@ -2915,7 +2942,13 @@ the derivation exists to correct. `file <path>` is a
 LOOKUP over `fileIndex`, never a search: an exact key match only, and the last entry in
 `fileIndex[path]` is the answer by the index's own append-only convention (never remove
 another task's id). `brief <taskId>` is `file` folded over every path the task declares,
-one call at spawn time instead of one per path. `run <runId>` (or `run latest --phase <id>`
+one call at spawn time instead of one per path, and it ends with the `executor.runsGate`
+reading the spawn prompt hands the executor: `hooks/_config.executor_gate_policy`'s word,
+reached through `_loader` because a script may not import `hooks/`, with its basis — the key
+in `.claude/audit.config.json` that set it, or that it is the default because the file or the
+key is absent. A value outside `RUNS_GATE_MODES`, or a config file that does not parse, is a
+refusal on stderr with nothing on stdout and exit 3, never the default, so the orchestrator
+no longer reads the config for this itself. `run <runId>` (or `run latest --phase <id>`
 /`--task <id>`) reads the evidence ledger instead of the manifest or journal — the bounded
 render of one recorded row (`_evidence_io.row_by_run`/`latest_by_subject`, the latter keyed
 through `subject_aliases` so a moved task still answers under its live id), never raw runner
@@ -2925,9 +2958,10 @@ writer already bounded and redacted them, never re-cut here, and an unreadable l
 said rather than read as "no such run". Each returns a plain "no match" — never a
 nearest id or a similar path — when the manifest does not carry an answer; an id that exists but does not apply to
 the question (a task that was never cancelled) is a different, legitimate answer and not a
-miss. Read-only, exit 0 on a match, 1 on a miss, 2 a usage error. Layer 7 (an entry point
-reaching `_manifest_io`/`_journal_io` at layer 1 and `_evidence_io` at layer 2, for the
-project/config resolution `boundary_for` already shares). `--selftest`.
+miss. Read-only, exit 0 on a match, 1 on a miss, 2 a usage error, 3 a config `brief` refuses
+to read. Layer 7 (an entry point reaching `_manifest_io`/`_journal_io`/`_loader` at layer 1
+and `_evidence_io` at layer 2, for the project/config resolution `boundary_for` already
+shares). `--selftest`.
 
 ### `plugins/audit/scripts/governance/_locks.py`
 The lock library (layer 1): where a lock lives (`lock_dir`), what it may be called
@@ -4059,6 +4093,32 @@ untouched. Both spawn sites take argv and env from ONE call, `shell_invocation`,
 its PATH cannot drift apart between them. The path module is a parameter throughout, so the
 cases judge Windows spellings under `ntpath` on every host.
 
+### `plugins/audit/scripts/governance/_runner_output.py`
+Every reading of what a test runner printed: `_SUMMARY_READERS` and `summary_count` for how many
+checks a runner's own summary says executed (`None`, never zero, for output no reader recognises),
+and `_FAILURE_READERS`, `jest_failures` and `_VITEST_FAIL_LINE` for which checks failed. They were
+written in `run-test-gate.py`; `stamp-verification.py red` asks the same output the same questions,
+and an entry point may not import another, so they moved here rather than being written twice.
+`failing_suites` and its path filters stayed in the gate, because they read `_evidence_io`'s
+limits and that module sits above this one. Layer 1; it reaches nothing but `_output`. Its cases
+are in `plugins/audit/tests/test__runner_output.py`, and `run-test-gate.py`'s names are this
+module's objects.
+
+**It also holds what `red` reads** — `TALLY_READERS`, `CASE_READERS`, `read_tally` and
+`failing_cases`, the narrower question of whether a NAMED case failed an ASSERTION. The house
+harness, pytest and unittest have tally and case readers of their own there - pytest's is not the
+gate's summary row; jest and vitest are read through this module's own summary and failure
+readers, each case carrying its `suite` path, its title `chain` and an `assertion` flag. Under
+jest the flag is set by the first line under the bullet: a matcher hint
+(`expect(received).toBe(expected)`) or the hint jest prints for a `node:assert` call
+(`assert(received)`, `assert.strictEqual(received, expected)`), never an `AssertionError` line;
+under vitest by chai's `AssertionError`. A thrown exception or a suite that failed to run never
+sets it. `read_tally`, `failing_cases` and `jest_failures` strip every terminal escape once, on
+entry (`plain_text`), so a run forced into colour (`FORCE_COLOR`) reads as it does without. A suite that failed to run
+counts as a failure no case ran, so a run whose only failure is one is a collection error, never a
+red. Mocha and playwright have no row: what they print under a failure has not been recorded.
+The names `stamp-verification.py` keeps for them are this module's objects.
+
 ### `plugins/audit/scripts/governance/stamp-verification.py`
 The CLI over it: `take` a stamp, or `compare` one against the tree now — and `red`, which
 proves a red-first without touching the tree it is pointed at.
@@ -4091,7 +4151,7 @@ about a stale copy is a claim whose stamp belongs beside that warning, not inste
 **`red` runs the test against code without the fix somewhere other than the shared tree.** The
 briefs used to prove a red by undoing the fix in the working tree for the length of the run, which
 is a write over ground siblings are editing, and a host refused it beside a sibling's uncommitted
-work. `red --manifest M --task T -- <cmd>` checks HEAD out with `git worktree add --detach` into a
+work. `red --manifest M --task T [--deps-from DIR] -- <cmd>` checks HEAD out with `git worktree add --detach` into a
 temp directory (hooks pointed nowhere), copies the task's declared **test** files from the working
 tree over it — a declared file is a test when `tests.add` names it or its path has a test shape;
 the rest stay at HEAD, and the split is printed — runs the command there, and removes the
@@ -4120,10 +4180,26 @@ entries under the root, so an in-repo `.venv/bin` leaves PATH intact otherwise -
 `redFirst` basis names what was dropped. A value that is not itself a path but carries one under
 the root - an option string such as `NODE_OPTIONS=--require …/setup.js` - is kept, since it is
 not a path to rewrite, and named in the basis as `kept, naming the shared root`, because a runner
-reads the path inside it. The throwaway holds only tracked files, so a suite that needs an untracked dependency
-(`node_modules`, an in-repo `.venv`, generated files) cannot run there and comes back
-`could-not-prove`; and it shares the repository's git directory, so a test that runs git in its
-own cwd writes shared refs.
+reads the path inside it. The throwaway holds only tracked files, so `dependency_plan` asks git
+for the ignored directories of `--deps-from` (`--project` by default) and `link_dependencies`
+links each `node_modules`, at any depth, and each `.venv` whose parent exists at HEAD and which
+holds no link into the tree into it
+entry by entry, again after every reset; a real directory of links rather than one link to the
+whole directory, so a new entry a runner makes there stays in the throwaway, and `.cache`, `.vite`
+and `.vite-temp` are never linked. The leaks that link opens are named, not closed: a link or
+editable-install path landing in the shared tree outside every dependency directory (a workspace
+package) would let HEAD's run read the fix, so the directory holding it is not linked - its reason,
+naming the entry `workspace_links()` found, joins the skipped list the basis prints - and the run
+is made without it: a command that never needed that directory (a unittest run by the system
+python beside an in-repo `.venv`) still proves, and one that did fails for want of it. The scan
+lists only top-level and `@scope` entries and the `.pth` and `__editable__` files directly under a
+site-packages directory, and stops at the deadline; a write a runner makes INTO a linked entry lands in the
+source checkout and nothing watches it; and the user's `~/.npmrc` and an untracked project one
+never reach the run's fresh home (a tracked one arrives with HEAD), with `NPM_CONFIG_USERCONFIG`
+dropped from the environment. Every basis names what was linked, from where, what was skipped and
+what became of each `.npmrc`. Any other untracked dependency (generated files) still cannot run
+there and comes back `could-not-prove`; and the throwaway shares the repository's git directory,
+so a test that runs git in its own cwd writes shared refs.
 
 **`proved` needs a tally, a named case of the task's own, and an assertion.** `classify_run()`
 reads the house harness's line, pytest's summary (framed, or bare under `-q`) or unittest's
@@ -4146,14 +4222,19 @@ TMPDIR/TMP/TEMP, and `PYTHONNOUSERSITE=1`. So the runs differ only in the files 
 
 1. HEAD's baseline runs FIRST, before any file of the task's is laid over or run: HEAD's own test
    files, the same command, HEAD's implementation, with every declared test file new at HEAD laid
-   over as an EMPTY file. It is always made, and the stubs are why no reader of the command's
+   over as an EMPTY file - except a jest or vitest one (`_is_js_test_path()`), which is left ABSENT,
+   because both runners fail an empty suite (measured in `stamp-verification.py`'s design note,
+   paragraph (3)). It is always made, and the stubs are why no reader of the command's
    arguments is needed: whatever the command reaches - a dotted module name, a shell wrapper, a
    discovery, a file the working tree deleted - the baseline reaches too, minus the new files'
    content. That is more than the task's cases: whatever a new file imports, inherits or loads is
    not reached either, which is why step 4 binds a credit to the task's edit and not to a file. It
    must be GREEN - exit 0 with no failure counted, or an exit 5 whose ONE runner's tally counts no
    case run and no failure (a command naming only new files gives it, and pytest gives it when `-k`
-   deselects every case); the words "no tests ran" are never read alone, since a red run followed by
+   deselects every case) - or, where a jest or vitest file was left absent, exit 1 with that
+   runner's own no-test-file sentence (`No tests found, exiting with code 1`, `No test files found,
+   exiting with code 1`) and no tally counting a case or a failure (`_js_none_found()`), its
+   counterpart of that exit 5; the words "no tests ran" are never read alone, since a red run followed by
    an empty one prints them too, and the unittest and pytest tallies count every `Ran N` line and
    every summary line - so the fix run of step 3 is judged by all its invocations as well, not by
    its last. Anything else -

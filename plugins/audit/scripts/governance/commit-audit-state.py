@@ -99,6 +99,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _evidence_io  # noqa: E402  (where the evidence record lives)
 import _invariants  # noqa: E402  (the phase lookup, the git root, the action name)
 import _journal_io  # noqa: E402  (where the trail lives, and the append)
@@ -396,7 +397,7 @@ def build_parser():
                         help="the commit subject after the conventional prefix; "
                              "say what the run was, not what this script does")
     parser.add_argument("--json", action="store_true", dest="as_json")
-    return parser
+    return _claude_home.attach_usage_hint(parser)
 
 
 def commit_state(manifest, phase, manifest_path, project, git_root, subject=None,

@@ -128,6 +128,11 @@ import sys
 import tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(REPO, "plugins", "audit", "scripts"))
+import _output  # noqa: E402  (install_path: the plugin's folders are labels)
+
+_output.install_path()
+import _journal_io  # noqa: E402  (the machine-path shapes the writer refuses on)
 
 # --- the domain ---------------------------------------------------------------
 # What the plugin GENERATES and tells a user to commit. Everything else this
@@ -202,11 +207,11 @@ def tracked_paths(repo=None):
 # division of labour with `_journal_io`'s redaction -- a detector's false positive
 # costs a human a minute; a rewriter's false negative is already committed.
 #
-# THE TRANSFORM SPELLINGS LIVE HERE, and this is the only place in the tree that
-# should know them. A session directory reaches a command line dash-joined
-# (`-Users-someone-Desktop-...`), a URL percent-escaped, and a Windows path
-# backslashed -- three renderings of one leak, and a substitution table that tried
-# to cover all three is what the redaction deliberately does not do.
+# THE TRANSFORM SPELLINGS ARE THE WRITER'S TOO. A session directory reaches a
+# command line dash-joined (`-Users-someone-Desktop-...`), a URL percent-escaped,
+# and a Windows path backslashed -- renderings of one leak. The writer
+# refuses and redacts each by name rather than substituting one rendering for
+# another, so the patterns live beside its own and are read from there.
 #
 # THE LEADING SEPARATOR IS NOT WHAT MAKES A PATH SOMEBODY'S MACHINE, and keying
 # on it left the narrowest possible hole in the rule this file exists for. A
@@ -221,17 +226,16 @@ def tracked_paths(repo=None):
 # detector that could only see the tidy spelling is the half of that pair which
 # has to stand on its own, because it is the one reading bytes somebody already
 # committed.
-_TOKEN_START = r"(?<![A-Za-z0-9._~$+/\\-])"
-DETECTORS = (
-    ("posix-home", re.compile(_TOKEN_START + r"[/\\]?(?:Users|home)/[A-Za-z0-9._-]+")),
-    ("windows-user-path", re.compile(r"[A-Za-z]:\\{1,2}Users\\|\\{2,4}[A-Za-z0-9._-]+\\{1,2}[A-Za-z0-9._$-]+\\")),
-    ("session-slug", re.compile(r"-(?:Users|home)-[A-Za-z0-9._]+|-private-tmp-")),
-    ("escaped-path", re.compile(r"%2F(?:Users|home)%2F|%5CUsers%5C", re.I)),
-    ("tempdir-session", re.compile(_TOKEN_START + r"/?(?:private/)?tmp/claude-\d+"
-                                   r"|" + _TOKEN_START + r"/?var/folders/[A-Za-z0-9_+]{2,}"
-                                   r"|\\Temp\\claude-", re.I)),
-    ("unexpanded-home", re.compile(r"(?:^|[\s\"'=:(\[,])~/")),
-)
+#
+# NO ROW IS SPELLED HERE. `_journal_io` refuses a caller's free-text value
+# carrying any of these shapes before the row is hashed, and redacts the
+# plugin's own, so the writer and this backstop read one definition -
+# `_journal_io.MACHINE_PATH_SHAPES`, the same pattern objects - and the token
+# boundary with them. A copy here would agree with the writer until the day one
+# side was widened, and the row the other side missed would be the one already
+# committed. The one deliberate difference is the writer's, not this table's:
+# it takes a relative path whose first segment is `home`, which this flags.
+DETECTORS = _journal_io.MACHINE_PATH_SHAPES
 
 # --- the contract checks ------------------------------------------------------
 # NOT heuristics. A journal row has a shape this repository owns, so these ask
@@ -293,6 +297,63 @@ def journal_row_problems(row):
     return out
 
 
+# A phase's `claim` is written into the shard the plugin commits, so a `host` in it
+# is the same machine name the journal stopped storing. `audit-task start` writes a
+# claim with no host; this is the backstop that reads the committed bytes for one a
+# hand edit, an older writer or another tool put there. A shape check like the
+# journal's: the key is the finding, whatever it holds.
+_CLAIM_KEY = re.compile(r'^(\s*)"claim"\s*:\s*\{')
+_HOST_KEY = re.compile(r'"host"\s*:')
+
+
+def _claim_hosts(node):
+    """How many `claim` objects under `node` carry a `host` key."""
+    if isinstance(node, list):
+        return sum(_claim_hosts(item) for item in node)
+    if not isinstance(node, dict):
+        return 0
+    claim = node.get("claim")
+    own = 1 if isinstance(claim, dict) and "host" in claim else 0
+    return own + sum(_claim_hosts(v) for k, v in node.items() if k != "claim")
+
+
+def plan_claim_host_lines(text):
+    """The line of each `host` key inside a phase `claim`, in one plan file.
+
+    THE PARSE DECIDES, THE TEXT LOCATES. Whether a claim carries a host is asked
+    of the parsed document, so a `host` anywhere else in the plan is not a
+    finding; the line is then read off the text, because a finding names the line
+    a person opening the file lands on. A claim the parse found and the text walk
+    could not place is still reported, at line 0, rather than dropped. A file that
+    does not parse answers nothing here: the index's own unparseable row is
+    `plan_files`' to report.
+    """
+    try:
+        want = _claim_hosts(json.loads(text))
+    except ValueError:
+        return []
+    if not want:
+        return []
+    lines, found = text.split("\n"), []
+    for i, line in enumerate(lines):
+        m = _CLAIM_KEY.match(line)
+        if not m:
+            continue
+        rest = line[m.end():]
+        if "}" in rest:
+            # The whole claim on one line.
+            if _HOST_KEY.search(rest):
+                found.append(i + 1)
+            continue
+        for j in range(i + 1, len(lines)):
+            if lines[j].strip().startswith("}"):
+                break
+            if _HOST_KEY.search(lines[j]):
+                found.append(j + 1)
+                break
+    return found[:want] + [0] * max(0, want - len(found))
+
+
 # --- scanning -----------------------------------------------------------------
 def scan_text(rel, text, surface):
     """[(rel, line, detector, column)] for one file's contents."""
@@ -317,6 +378,9 @@ def scan_text(rel, text, surface):
             continue
         if isinstance(row, dict):
             out.extend((rel, n, name, 1) for name in journal_row_problems(row))
+    if surface == "plan":
+        out.extend((rel, n, "plan-claim-host", 1)
+                   for n in plan_claim_host_lines(text))
     return out
 
 
@@ -576,6 +640,32 @@ BASELINE = (
      "posix-home",
      "the task.add row beside it, whose title quotes the same phrase for the same "
      "reason. A phrase, not a directory; chained, so recorded rather than rewritten."),
+    ("docs/audit/journal/2026-10.6c881c24-c1fd-461f-8c48.wt-d215e320.jsonl", 23,
+     "posix-home",
+     "a task.note row whose text quoted an operator's command, and that command's "
+     "argument was an absolute path under the operator's home directory. The "
+     "plan's copy of the note was corrected to a repository-relative spelling; "
+     "this row cannot be - its hash covers these bytes and the chain runs "
+     "through it - so it is recorded here rather than rewritten."),
+    ("docs/audit/journal/2026-10.6c881c24-c1fd-461f-8c48.wt-d215e320.jsonl", 114,
+     "posix-home",
+     "a row whose text quotes a relative 'home/page.tsx' as the example of a "
+     "repository path the writer must accept - a file a repository may hold, "
+     "not a directory of any machine. posix-home flags `home/` at a token start "
+     "by design, and the row is chained, so it is recorded rather than rewritten."),
+    ("docs/audit/journal/2026-10.6c881c24-c1fd-461f-8c48.wt-d215e320.jsonl", 194,
+     "unexpanded-home",
+     "a review-finding row quoting the reviewer's own probe text: the tilde "
+     "config directory every install shares, written to show it is refused at "
+     "the writer's door. A placeholder location, not a path of any machine; the "
+     "row is chained, so it is recorded rather than rewritten."),
+    ("docs/audit/journal/2026-10.6c881c24-c1fd-461f-8c48.wt-d215e320.jsonl", 195,
+     "posix-home",
+     "a review-finding row quoting the reviewer's own probe text: two file URLs "
+     "into a placeholder home directory of a one-letter user, one with no host "
+     "and one naming localhost, showing which of the two the shapes caught. "
+     "Neither names a machine; the row is chained, so it is recorded rather "
+     "than rewritten."),
     # THE PLAN'S ROWS, recorded when the plan entered the domain. Every one is a
     # shape QUOTED in a task's text - an example, a fixture name, a phrase - and
     # names no machine. KEYED BY WHAT THE LINE SAYS (`line_anchor`), not by its
@@ -1012,15 +1102,18 @@ def _plan_fixture():
     scratch = "/".join(["", "priv" + "ate", "t" + "mp", "claude-" + "7",
                         "s", "probe.json"])
 
-    def shard(pid, text):
-        return json.dumps({"id": pid, "tasks": [{"id": pid + ".1",
-                                                 "description": text}]},
-                          indent=2) + "\n"
+    def shard(pid, text, claim=None):
+        body = {"id": pid, "tasks": [{"id": pid + ".1", "description": text}]}
+        if claim is not None:
+            body["claim"] = claim
+        return json.dumps(body, indent=2) + "\n"
+    claim = {"sessionId": "s-1", "branch": "audit/p", "at": "2026-01-01T00:00:00Z"}
     index = json.dumps({"meta": {"version": 2}, "phases": [
         {"id": "P1", "shard": "shards/P1.json"},
         {"id": "P2", "shard": "shards/P2.json"},
         {"id": "P3", "shard": "shards/P3.json"},
-        {"id": "P4", "shard": "P4.json"}]}, indent=2) + "\n"
+        {"id": "P4", "shard": "P4.json"},
+        {"id": "P5", "shard": "shards/P5.json"}]}, indent=2) + "\n"
     files = [
         (".claude/audit.config.json",
          json.dumps({"manifestPath": "plan/roadmap.json"}) + "\n"),
@@ -1030,8 +1123,15 @@ def _plan_fixture():
         # THE ALLOW CASE: repo-relative paths and bare base names are what an
         # honest shard carries, and a plan surface that flagged them would be
         # muted the first day.
+        # ...and its claim is the allow twin of P5's below: session, branch and
+        # moment, no machine name.
         ("plan/shards/P3.json", shard("P3", "edit tools/check-committed-pii.py "
-                                            "and docs/home/notes.md; see probe.sh")),
+                                            "and docs/home/notes.md; see probe.sh",
+                                      claim)),
+        # A claim carrying a `host`: a machine name in a committed shard, which no
+        # detector's vocabulary would see because the value is just a word.
+        ("plan/shards/P5.json", shard("P5", "nothing to see",
+                                      dict(claim, host="a-laptop"))),
         # A shard pointed at BESIDE the index is taken, and the directory it
         # sits in is not swept: that directory is also where the human's note
         # below lives. The domain grew by the plan, not by every JSON file near
@@ -1048,12 +1148,14 @@ def _plan_fixture():
     # expected answer is the line a person opening the file would land on.
     body = dict(files)
 
-    def line_of(rel):
+    def line_of(rel, key='"description"'):
         return [n for n, text in enumerate(body[rel].split("\n"), 1)
-                if '"description"' in text][0]
+                if key in text][0]
     leaks = {"plan/shards/P1.json": (line_of("plan/shards/P1.json"), "posix-home"),
              "plan/shards/P2.json": (line_of("plan/shards/P2.json"),
-                                     "tempdir-session")}
+                                     "tempdir-session"),
+             "plan/shards/P5.json": (line_of("plan/shards/P5.json", '"host"'),
+                                     "plan-claim-host")}
     return _fixture_tree(files), leaks
 
 
@@ -1072,12 +1174,13 @@ def _plan_cases(check, plan, leaks):
           and prun["surfaces"] == ["plan"]
           and sorted(prun["files"]) == ["plan/P4.json", "plan/roadmap.json",
                                         "plan/shards/P1.json",
-                                        "plan/shards/P2.json", "plan/shards/P3.json"])
+                                        "plan/shards/P2.json", "plan/shards/P3.json",
+                                        "plan/shards/P5.json"])
 
     code, text = _captured(["--repo", plan])
     _echo = dict((frag, text.count(frag))
                  for frag in ("some" + "one", "claude-" + "7", "probe.json",
-                              "scratch"))
+                              "scratch", "a-laptop"))
     check("q25 ...and the run names each such shard by file and line and echoes "
           "NOTHING it matched, while the shard carrying only repo-relative paths "
           "and base names is not a finding: exit %d, %r" % (code, _echo),
@@ -1291,6 +1394,73 @@ def _cases(check):
           "alone: the separator became optional, not absent, and a match has "
           "to start where a word starts: %r" % (_wrong,), _wrong == [])
 
+    # EVERY PLACE A REAL SLUG STANDS, each a whole path segment: at a token
+    # start, under the harness's projects directory, under a scratch tempdir,
+    # quoted, and in the Windows spelling whose drive letter carries a dash.
+    _slugs = (
+        "dir -Users-%s-Desktop-x" % _user,
+        "~/.claude/projects/-Users-%s-Desktop-x/s.jsonl" % _user,
+        "/private/tmp/claude-501/-Users-%s-Desktop-x/s" % _user,
+        "/projects/-home-%s-src/s.jsonl" % _user,
+        "/projects/-private-tmp-probe/s.jsonl",
+        '{"b":"-Users-%s-x"}' % _user,
+        "D:\\data\\.claude\\projects\\C--Users-%s-x" % _user,
+    )
+    _unseen = [line for line in _slugs
+               if "session-slug" not in set(h[2] for h in
+                                            scan_text("f.md", line, "report"))]
+    check("q2c a session slug is found at every placement a real one takes: %r"
+          % (_unseen,), _unseen == [])
+    # THE ALLOW TWIN q2c's start rule exists for: a kebab word holding the
+    # same letters mid-word is prose, and a door refusing it gets routed around.
+    _kebab = ("the my-home-page component, the add-Users-list view and "
+              "go-home-now")
+    _kebab_hits = scan_text("f.md", _kebab, "report")
+    check("q2d ALLOW: kebab prose holding -home-<word> and -Users-<word> "
+          "mid-word trips nothing: %r" % (_kebab_hits,), _kebab_hits == [])
+    # A dash-led word at a token start with nothing after it - an option name,
+    # a bare user name in prose - is not a slug either; beside a separator the
+    # same lone segment is.
+    # Each placement q2f takes has its whitespace-led twin here.
+    _lone_u = "-".join(("", "Users", _user))
+    _lone_h = "-".join(("", "home", "dir"))
+    _proses = (
+        "rename %s option, abc %s here" % (_lone_h, _lone_u),
+        '{"b":"see %s here"}' % (_lone_u,),
+        "set HOME = %s for it" % (_lone_h,),
+        "( see %s )" % (_lone_u,),
+        "first line\n  %s is an option" % (_lone_h,),
+        "the C%s page" % (_lone_u,),
+        "an option named `%s`" % (_lone_h,),
+    )
+    _prose_hits = [(p, scan_text("f.md", p, "report")) for p in _proses
+                   if scan_text("f.md", p, "report")]
+    check("q2e ALLOW: prose naming a -home-<word> option and a lone "
+          "-Users-<name> led by whitespace, at every placement q2f convicts, "
+          "trips nothing: %r" % (_prose_hits,), _prose_hits == [])
+    _lone = ("/projects/%s" % (_lone_u,), "-home-%s/s.jsonl" % _user,
+             '{"b":"%s"}' % (_lone_u,), "HOME=%s" % (_lone_u,),
+             "cwd (%s)" % (_lone_u,), "first line\n%s here" % (_lone_u,),
+             "dir C-%s here" % (_lone_u,), "path:%s" % (_lone_u,))
+    _lone_unseen = [line for line in _lone
+                    if "session-slug" not in set(h[2] for h in
+                                                 scan_text("f.md", line,
+                                                           "report"))]
+    check("q2f ...and the same lone segment bounded by a separator, a quote, "
+          "a key's `=`, a parenthesis, a line start, a colon or a drive "
+          "letter is found: "
+          "%r" % (_lone_unseen,), _lone_unseen == [])
+    # A file URL may name a host before its path; an https URL with the same
+    # host and path names a web page.
+    _hosted = scan_text("f.md", "open file://localhost/Users/%s/r.html" % _user,
+                        "report")
+    _web = scan_text("f.md", "open https://localhost/Users/%s/r.html" % _user,
+                     "report")
+    check("q2g a file URL naming a host before a home directory is found, and "
+          "its https twin with the same host and path trips nothing: %r"
+          % ((_hosted, _web),),
+          "posix-home" in set(h[2] for h in _hosted) and _web == [])
+
     # The rule this whole file would otherwise break one layer out. Counted over
     # the rendered line rather than asserted absent, because a report that
     # embedded the match once and elided it once would pass a presence check.
@@ -1373,6 +1543,36 @@ def _cases(check):
           == ["journal-actor-host", "journal-details-command"]
           and journal_row_problems({"actor": {"via": "hook"},
                                     "details": {"commandSha256": "0" * 64}}) == [])
+
+    # A PHASE CLAIM'S `host`, in both layouts and both spellings. The parse
+    # decides and the text only locates, so the allow cases are a claim with no
+    # host and a `host` key that is not under a claim at all.
+    _cl = {"sessionId": "s", "branch": "b", "at": "t"}
+    _shard = json.dumps({"id": "P1", "claim": dict(_cl, host="a-laptop")},
+                        indent=2)
+    _single = json.dumps({"phases": [{"id": "P1", "claim": dict(_cl, host="x")},
+                                     {"id": "P2", "claim": _cl}]}, indent=2)
+    _compact = '{"id": "P1",\n "claim": {"sessionId": "s", "host": "x"}}'
+    _hostless = json.dumps({"id": "P1", "claim": _cl,
+                            "tasks": [{"id": "P1.1", "host": "a-laptop"}]},
+                           indent=2)
+
+    def _host_line(text):
+        return [n for n, line in enumerate(text.split("\n"), 1)
+                if '"host"' in line]
+    _got = dict((name, [(r[1], r[2]) for r in scan_text("f.json", text, "plan")])
+                for name, text in (("shard", _shard), ("single", _single),
+                                   ("compact", _compact),
+                                   ("hostless", _hostless)))
+    check("q32 a `host` under a phase `claim` in a plan file is a finding at the "
+          "line of the key - a shard and a single-file manifest alike, the claim "
+          "spread over lines or on one - while a claim with no host, and a "
+          "`host` key outside any claim, are clean: %r" % (_got,),
+          _got["shard"] == [(_host_line(_shard)[0], "plan-claim-host")]
+          and _got["single"] == [(_host_line(_single)[0], "plan-claim-host")]
+          and _got["compact"] == [(2, "plan-claim-host")]
+          and _got["hostless"] == []
+          and [r[2] for r in scan_text("f.json", _shard, "report")] == [])
 
     check("q11 a journal file's WRITER ID is checked too - it is the one field "
           "with no repair path, because `genesis_prev` seeds the chain from these "

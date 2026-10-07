@@ -128,7 +128,8 @@ def installed_copies(home, name):
         if isinstance(entry, dict):
             rows.append({"scope": entry.get("scope"),
                          "project": entry.get("projectPath"),
-                         "version": entry.get("version")})
+                         "version": entry.get("version"),
+                         "installPath": entry.get("installPath")})
     return rows, ""
 
 
@@ -185,6 +186,129 @@ def marketplace_source(home, name):
             return location, ("" if sub == "." else sub), ""
     return None, None, cwhy or ("the clone at %s names no %r plugin"
                                 % (location, PLUGIN_NAME))
+
+
+# --- usage hint -----------------------------------------------------------------
+# An older cached copy asked for a subcommand only a newer copy knows answers with
+# argparse's bare "invalid choice", which carries no version and no way forward, and
+# reads as "the helper does not exist". The hint below is appended to every usage
+# error of a parser it is attached to: this copy's version and path, and the
+# installed copy that applies to this project when that one is newer.
+PROJECT_SCOPES = ("project", "local")
+
+
+def _version_key(text):
+    """A dotted version as a tuple of ints, or None when it is not one."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+    parts = text.strip().split(".")
+    return tuple(int(p) for p in parts) if all(p.isdigit() for p in parts) else None
+
+
+def _holds(root, path):
+    """Whether `path` is `root` or sits inside it, compared resolved."""
+    if not isinstance(root, str) or not root:
+        return False
+    root, path = os.path.realpath(root), os.path.realpath(path)
+    return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
+
+
+def applicable_copy(home, project):
+    """`(copy, why)` - the installed copy Claude Code would load for `project`.
+
+    A copy installed at project (or local) scope for this project is chosen before
+    any user-scope copy, because that is the one the project's sessions load; a
+    copy recorded for ANOTHER project never applies here. Within one scope the
+    highest recorded version wins. `copy` carries `installed_copies()`'s fields plus
+    `marketplace`; it is None beside the reason when nothing applies or the record
+    could not be read."""
+    plugins, why = installed_plugins(home)
+    if plugins is None:
+        return None, why or "installed_plugins.json holds no plugins map"
+    markets = sorted(key.partition("@")[2] for key in plugins
+                     if key.partition("@")[0] == PLUGIN_NAME and key.partition("@")[2])
+    tiers = ([], [])
+    for market in markets:
+        rows, _why = installed_copies(home, market)
+        for row in rows or []:
+            row = dict(row, marketplace=market)
+            if row["scope"] in PROJECT_SCOPES and _holds(row["project"], project):
+                tiers[0].append(row)
+            elif row["scope"] == "user":
+                tiers[1].append(row)
+    for tier in tiers:
+        if tier:
+            return max(tier, key=lambda r: _version_key(r["version"]) or ()), ""
+    return None, "installed_plugins.json records no copy that applies to %s" % (
+        project,)
+
+
+def usage_hint(home, project, version, plugin_root):
+    """The lines appended to a usage error: this copy, and a newer one if any.
+
+    Every reading of `installed_plugins.json` says it is undocumented, and a record
+    that cannot be read is said to be unreadable - never left out, which would read
+    as "no newer copy"."""
+    record = os.path.join(home, "plugins", "installed_plugins.json")
+    basis = "read off %s, %s" % (record, UNDOCUMENTED)
+    lines = ["this copy: %s %s at %s" % (
+        PLUGIN_NAME, version or "(version unreadable from its .claude-plugin/"
+        "plugin.json)", plugin_root)]
+    plugins, why = installed_plugins(home)
+    if plugins is None:
+        return lines + ["install records could not be read (%s); %s" % (
+            why or "installed_plugins.json holds no plugins map", basis)]
+    try:
+        copy, _why = applicable_copy(home, project)
+    except Exception as exc:                                   # noqa: BLE001
+        # Advisory and fail-open: a record shaped in a way no reader expected costs
+        # the hint, never the usage error it rides on.
+        return lines + ["install records could not be read (%s: %s); %s" % (
+            type(exc).__name__, exc, basis)]
+    if copy is None:
+        return lines + ["no installed copy applies to this project (%s)" % (basis,)]
+    mine, theirs = _version_key(version), _version_key(copy["version"])
+    if mine is not None and theirs is not None and theirs > mine:
+        return lines + [
+            "a newer copy applies to this project: %s %s at %s (%s scope, from %s) "
+            "- run /reload-plugins so this session loads it, or run that copy's "
+            "script by its path (%s)" % (PLUGIN_NAME, copy["version"],
+                                         copy["installPath"], copy["scope"],
+                                         copy["marketplace"], basis)]
+    if mine is None or theirs is None:
+        return lines + ["the copy that applies to this project records version %r "
+                        "at %s (%s scope); it cannot be ordered against this "
+                        "copy's (%s)" % (copy["version"], copy["installPath"],
+                                         copy["scope"], basis)]
+    return lines + ["no newer copy applies to this project (%s)" % (basis,)]
+
+
+def attach_usage_hint(parser, env=None, version=None, plugin_root=None, cwd=None):
+    """Make every usage error `parser` raises carry `usage_hint()`; returns `parser`.
+
+    ATTACHED BY AN INSTANCE PATCH of `parser.error`, not a subclass: the house
+    writes free functions, and a subclass would have to be the class every entry
+    point constructs, where a patch attaches to a parser already built - one line
+    beside each `ArgumentParser(...)`. argparse routes an invalid choice, a missing
+    argument and an unknown flag through `error()`, so that is the one seam. A
+    sub-parser built by `add_subparsers()` has its own `error`, and is attached
+    separately where its errors matter.
+
+    Read when the error happens, never when the parser is built, so a command that
+    parses cleanly pays nothing. The project is CLAUDE_PROJECT_DIR, else the
+    working directory; the home is `claude_home()`."""
+    original = parser.error
+
+    def error(message):
+        source = os.environ if env is None else env
+        project = source.get("CLAUDE_PROJECT_DIR") or cwd or os.getcwd()
+        hint = usage_hint(claude_home(source), project,
+                          _output.plugin_version() if version is None else version,
+                          _output.PLUGIN_ROOT if plugin_root is None else plugin_root)
+        return original("%s\n%s" % (message, "\n".join(hint)))
+
+    parser.error = error
+    return parser
 
 
 # --- cli ----------------------------------------------------------------------

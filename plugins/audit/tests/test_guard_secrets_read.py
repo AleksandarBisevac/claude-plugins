@@ -88,6 +88,1396 @@ def _refresh_cases(check):
             os.environ["CLAUDE_PROJECT_DIR"] = held
 
 
+def _slot_file(root, cfg, session):
+    """The session's free-file slot as require-plan stores it, read off disk
+    rather than through the reader under test."""
+    path = _config.state_dir(root, cfg) / ("plan-gate-%s.json" % session)
+    if not path.exists():
+        return []
+    return json.loads(path.read_text(encoding="utf-8")).get("files", [])
+
+
+def _spend_slot(root, cfg, session=None):
+    """Spend `session`'s free file on a file no case writes.
+
+    The cases that follow assert how an uncovered write is GRADED, which is
+    what a write past the session's one free file gets; without this the first
+    of them would take the slot and be allowed as the trivial file instead.
+    `_slot_cases` is where the slot itself is asserted."""
+    _config.take_trivial_slot(_config.state_dir(Path(root), cfg), session,
+                              ["src/spent-before-these-cases.ts"])
+
+
+def _slot_cases(check):
+    """One free-file slot per session, whichever tool takes it.
+
+    The fixture runs a phase whose task declares one file, so every other
+    source file is uncovered and the tier is deny: what decides a verdict here
+    is the slot alone. require-plan is driven beside this guard on the same
+    project, because the claim is that both read and write ONE slot."""
+    root = Path(_harness.fixture_root("guard-secrets-slot-"))
+    (root / "src").mkdir(parents=True)
+    (root / "docs" / "audit").mkdir(parents=True)
+    (root / "docs" / "audit" / "audit-plan.json").write_text(json.dumps(
+        {"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "in_progress",
+                 "files": ["src/declared.py"]}]}]}), encoding="utf-8")
+    rp = _loader.load(os.path.join(_harness.HOOKS_DIR, "require-plan.py"),
+                      modname="require_plan_for_slot")
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    held = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = str(root)
+
+    def shell(sid, cmd, use_cfg=None, agent=None):
+        data = {"tool_name": "Bash", "session_id": sid, "cwd": str(root),
+                "tool_input": {"command": cmd}}
+        if agent:
+            data["agent_id"] = agent
+        ok, got = _harness.attempt(M.decide, data, cfg=use_cfg or cfg)
+        return got if ok else ("raised", str(got))
+
+    def edit(sid, rel, event="PreToolUse"):
+        ok, got = _harness.attempt(rp.decide, {
+            "tool_name": "Edit", "session_id": sid, "cwd": str(root),
+            "hook_event_name": event,
+            "tool_input": {"file_path": str(root / rel), "old_string": "A = 1",
+                           "new_string": "A = 2"}}, cfg=cfg, event=event)
+        return got if ok else ("raised", str(got))
+
+    try:
+        first = shell("ts-a", "sed -i '' 's/A = 1/A = 2/' src/first.py")
+        check("ts1 the session's first uncovered source file, written by sed -i "
+              "at the deny tier, is allowed as the trivial file an Edit of it "
+              "would be, and takes require-plan's slot: %r, slot %r"
+              % (first, _slot_file(root, cfg, "ts-a")),
+              first[0] == "allow"
+              and _slot_file(root, cfg, "ts-a") == ["src/first.py"])
+        again = shell("ts-a", "sed -i '' 's/A = 2/A = 3/' src/first.py")
+        check("ts2 the slot's own file stays allowed on a second shell write "
+              "(require-plan's 'already being worked'): %r" % (again,),
+              again[0] == "allow")
+        second = shell("ts-a", "sed -i '' 's/A = 1/A = 2/' src/second.py")
+        check("ts3 a second uncovered file through the shell is graded by the "
+              "tier once the slot is spent, and the refusal names the file: %r"
+              % (second,),
+              second[0] == "block" and "src/second.py" in second[1])
+        by_edit = edit("ts-a", "src/third.py")
+        check("ts4 ...and so is a second uncovered file through Edit, the slot "
+              "having been taken by the shell write: %r" % (by_edit,),
+              by_edit[0] == "block")
+        asked = shell("ts-a", "sed -i '' 's/A = 1/A = 2/' src/second.py",
+                      use_cfg=_config._deep_merge(cfg, {"planGate": "ask"}))
+        check("ts5 the graded verdict is the tier's, not a fixed refusal: at "
+              "planGate 'ask' the same second file asks: %r" % (asked,),
+              asked[0] == "ask")
+        took = edit("ts-b", "src/edited.py", event="PostToolUse")
+        after = shell("ts-b", "sed -i '' 's/A = 1/A = 2/' src/other.py")
+        check("ts6 a slot an Edit took counts against a later shell write of a "
+              "different uncovered file: edit %r, then shell %r" % (took, after),
+              took[0] == "allow" and after[0] == "block")
+        same = shell("ts-b", "sed -i '' 's/A = 1/A = 2/' src/edited.py")
+        check("ts7 ...while the shell write of the file that Edit took is "
+              "allowed: %r" % (same,), same[0] == "allow")
+        both = shell("ts-c", "sed -i '' 's/A = 1/A = 2/' src/one.py src/two.py")
+        check("ts8 one command writing two uncovered files in a fresh session "
+              "is graded on the second, and a refused command spends no slot - "
+              "nothing was written: %r, slot %r"
+              % (both, _slot_file(root, cfg, "ts-c")),
+              both[0] == "block" and "src/two.py" in both[1]
+              and _slot_file(root, cfg, "ts-c") == [])
+        warned = shell("ts-e", "sed -i '' 's/A = 1/A = 2/' src/one.py src/two.py",
+                       use_cfg=_config._deep_merge(cfg, {"planGate": "warn"}))
+        check("ts10 ...while at a tier that lets the same command run, the first "
+              "file takes the slot as two Edits would have: %r, slot %r"
+              % (warned, _slot_file(root, cfg, "ts-e")),
+              warned[0] == "allow"
+              and _slot_file(root, cfg, "ts-e") == ["src/one.py"])
+        covered = shell("ts-d","sed -i '' 's/A = 1/A = 2/' src/declared.py")
+        check("ts9 a declared file takes no slot - coverage is answered before "
+              "the slot is consulted: %r, slot %r"
+              % (covered, _slot_file(root, cfg, "ts-d")),
+              covered[0] == "allow" and _slot_file(root, cfg, "ts-d") == [])
+        _ts_more(check, root, cfg, shell)
+        _ts_unreadable(check, root, cfg, shell, edit)
+    finally:
+        if held is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = held
+
+
+def _ts_more(check, root, cfg, shell):
+    """Every target one command writes is graded, whichever arm finds it; a
+    command that states its content is measured; the slot is taken once."""
+    eval_write = "python3 -c \"open('src/a.py','w').write('x')\""
+    mixed = shell("ts-f", eval_write + "; sed -i '' 's/A/B/' src/b.py")
+    check("ts11 an interpreter write that takes the free slot does not end the "
+          "grading: the shell write after it in the same command is a second "
+          "file and is refused at the deny tier: %r, slot %r"
+          % (mixed, _slot_file(root, cfg, "ts-f")),
+          mixed[0] == "block" and "src/b.py" in mixed[1]
+          and _slot_file(root, cfg, "ts-f") == [])
+    plan_write = eval_write + "; echo '{}' > docs/audit/audit-plan.json"
+    sub_deny = shell("ts-g", plan_write, agent="agent-ts")
+    check("ts12 a subagent's interpreter write that would take the free slot "
+          "does not open the manifest write after it - the subagent refusal "
+          "still holds at the deny tier: %r" % (sub_deny,),
+          sub_deny[0] == "block" and "audit plan" in sub_deny[1])
+    sub_warn = shell("ts-h", plan_write, agent="agent-ts",
+                     use_cfg=_config._deep_merge(cfg, {"planGate": "warn"}))
+    check("ts13 ...and at the warn tier, where the interpreter arm's own "
+          "verdict is an allow: %r" % (sub_warn,),
+          sub_warn[0] == "block" and "audit plan" in sub_warn[1])
+    orch = shell("ts-i", plan_write)
+    check("ts14 ...while the orchestrator's same command is allowed - the "
+          "manifest is its to write and src/a.py is the session's free file: %r"
+          % (orch,), orch[0] == "allow")
+    big = shell("ts-j", "cat > src/big.py <<'EOF'\n%s\nEOF"
+                % "\n".join("V%d = %d" % (n, n) for n in range(2000)))
+    check("ts15 a heredoc that states a body far past trivialLineThreshold is "
+          "not the trivial file - it is graded, and names its size: %r, slot %r"
+          % (big[:1] + (big[1][:160],), _slot_file(root, cfg, "ts-j")),
+          big[0] == "block" and "src/big.py" in big[1]
+          and "magnitude" in big[1] and _slot_file(root, cfg, "ts-j") == [])
+    small = shell("ts-k", "cat > src/small.py <<'EOF'\nA = 1\nEOF")
+    check("ts16 ...while a one-line heredoc into the same kind of file is: %r"
+          % (small,), small[0] == "allow"
+          and _slot_file(root, cfg, "ts-k") == ["src/small.py"])
+    state = _config.state_dir(root, cfg)
+    won = _config.take_trivial_slot(state, "ts-l", ["src/won.py"])
+    lost = _config.take_trivial_slot(state, "ts-l", ["src/lost.py"])
+    check("ts17 taking the slot is a create that refuses to overwrite: the "
+          "second taker loses and the first file stays: %r, %r, slot %r"
+          % (won, lost, _slot_file(root, cfg, "ts-l")),
+          won is True and lost is False
+          and _slot_file(root, cfg, "ts-l") == ["src/won.py"]
+          and not list(state.glob("plan-gate-tmp-*")))
+    real = _config.trivial_slot
+    reads = []
+
+    def stale_once(st, sid):
+        reads.append(sid)
+        return [] if len(reads) == 1 else real(st, sid)
+
+    _config.take_trivial_slot(state, "ts-m", ["src/winner.py"])
+    _config.trivial_slot = stale_once
+    try:
+        raced = shell("ts-m", "sed -i '' 's/A/B/' src/loser.py")
+    finally:
+        _config.trivial_slot = real
+    check("ts18 the loser of a race for the slot - it read the slot empty, "
+          "another write took it first - is graded against the winner's "
+          "file, not freed: %r after %d reads" % (raced, len(reads)),
+          raced[0] == "block" and "src/loser.py" in raced[1])
+    odd = "../../outside/" + "x" * 300
+    _config.take_trivial_slot(state, odd, ["src/odd.py"])
+    made = sorted(p.name for p in state.glob("plan-gate-*"))
+    stray = sorted(str(p) for p in root.parent.glob("outside*"))
+    check("ts19 a session id is reduced to a safe file name: the slot stays "
+          "in the state directory, is bounded, and reads back: %r, strays %r"
+          % ([m for m in made if "outside" in m], stray),
+          not stray and _config.trivial_slot(state, odd) == ["src/odd.py"]
+          and all(len(m) < 160 for m in made))
+
+
+def _trivial_rows(root, cfg, sid):
+    """allow.trivial rows the gate feed holds for `sid`."""
+    feed = _config.logs_dir(root, cfg) / "plan-gate-events.jsonl"
+    if not feed.exists():
+        return []
+    rows = [json.loads(x) for x in feed.read_text(encoding="utf-8").splitlines()
+            if x.strip()]
+    return [r for r in rows if r.get("event") == "allow.trivial"
+            and r.get("sessionId") == sid]
+
+
+def _ts_unreadable(check, root, cfg, shell, edit):
+    """A slot file that exists but cannot be read is ONE answer for both tools:
+    spent, on a file nobody can name - and neither hook claims a slot it did
+    not record."""
+    state = _config.state_dir(root, cfg)
+    damaged = (("ts20", "ts-n", "an empty slot file", ""),
+               ("ts21", "ts-o", "a truncated slot file", '{"files": ["src/w'),
+               ("ts21b", "ts-o2", "a slot file that parses but names no file",
+                '{"files": []}'))
+    for cid, sid, what, body in damaged:
+        (state / ("plan-gate-%s.json" % sid)).write_text(body, encoding="utf-8")
+        edits = [edit(sid, "src/e%d.py" % n) for n in (1, 2)]
+        echoed = shell(sid, "echo x > src/s9.py")
+        check("%s %s is a spent slot through BOTH tools at the deny tier, and "
+              "the Edit's refusal says the slot is what could not be read - "
+              "not a size it never measured: edits %r, shell %r"
+              % (cid, what, [e[:1] for e in edits], echoed[:1]),
+              all(e[0] == "block" and _config.SLOT_UNREADABLE in e[1]
+                  for e in edits) and echoed[0] == "block"
+              and _config.trivial_slot(state, sid) == [_config.SLOT_UNREADABLE])
+    raced_rows_before = len(_trivial_rows(root, cfg, "ts-p"))
+    _config.take_trivial_slot(state, "ts-p", ["src/winner.py"])
+    real = _config.trivial_slot
+    reads = []
+
+    def stale_once(st, s):
+        reads.append(s)
+        return [] if len(reads) == 1 else real(st, s)
+
+    _config.trivial_slot = stale_once
+    try:
+        lost = edit("ts-p", "src/loser.py")
+    finally:
+        _config.trivial_slot = real
+    check("ts22 an Edit that loses the race for the slot is graded against the "
+          "winner and logs no allow.trivial: %r, rows %d -> %d"
+          % (lost[:1], raced_rows_before, len(_trivial_rows(root, cfg, "ts-p"))),
+          lost[0] == "block" and "recorded first trivial" not in lost[1]
+          and len(_trivial_rows(root, cfg, "ts-p")) == raced_rows_before)
+    (root / "blocker").write_text("a file where a directory is wanted",
+                                  encoding="utf-8")
+    nowhere = _config._deep_merge(cfg, {"stateDir": "blocker/state"})
+    rp_mod = _loader.load(os.path.join(_harness.HOOKS_DIR, "require-plan.py"),
+                          modname="require_plan_for_slot")
+    ok, got = _harness.attempt(rp_mod.decide, {
+        "tool_name": "Edit", "session_id": "ts-q", "cwd": str(root),
+        "tool_input": {"file_path": str(root / "src/q.py"),
+                       "old_string": "A = 1", "new_string": "A = 2"}},
+        cfg=nowhere, event="PreToolUse")
+    check("ts23 with a state directory that cannot be written, the Edit is "
+          "allowed (the named open door) but neither says nor logs that it "
+          "recorded the slot: %r, rows %r"
+          % (got, _trivial_rows(root, nowhere, "ts-q")),
+          ok and got[0] == "allow" and "recorded first trivial" not in got[1]
+          and "could not be recorded" in got[1]
+          and _trivial_rows(root, nowhere, "ts-q") == [])
+    ok, sgot = _harness.attempt(M.decide, {
+        "tool_name": "Bash", "session_id": "ts-s", "cwd": str(root),
+        "tool_input": {"command": "echo x > src/s.py"}}, cfg=nowhere)
+    check("ts25 ...and the shell write in the same state is allowed with the "
+          "same words, not as a recorded first file, and no slot appears: %r"
+          % (sgot,),
+          ok and sgot[0] == "allow" and "could not be recorded" in sgot[1]
+          and "first trivial code file of the session" not in sgot[1]
+          and _config.trivial_slot(_config.state_dir(root, nowhere),
+                                   "ts-s") == [])
+    _ts_no_links(check, root, cfg, shell, edit)
+
+
+def _ts_no_links(check, root, cfg, shell, edit):
+    """A writable state directory on a volume without hard links still takes
+    the slot: `os.link` refusing is not the directory refusing."""
+    real_link = os.link
+
+    def no_links(src, dst, *args, **kwargs):
+        raise PermissionError(1, "Operation not permitted", dst)
+
+    os.link = no_links
+    try:
+        first = [edit("ts-r", "src/l1.py"), edit("ts-r", "src/l2.py"),
+                 shell("ts-r", "echo x > src/l3.py")]
+        reverse = [shell("ts-r2", "echo x > src/m1.py"),
+                   shell("ts-r2", "echo x > src/m2.py"),
+                   edit("ts-r2", "src/m3.py")]
+    finally:
+        os.link = real_link
+    check("ts24 with os.link refused on a writable state directory, the first "
+          "uncovered file still takes the slot and the next one is graded "
+          "through BOTH tools: edit-first %r slot %r, shell-first %r slot %r"
+          % ([v[0] for v in first], _slot_file(root, cfg, "ts-r"),
+             [v[0] for v in reverse], _slot_file(root, cfg, "ts-r2")),
+          [v[0] for v in first] == ["allow", "block", "block"]
+          and _slot_file(root, cfg, "ts-r") == ["src/l1.py"]
+          and [v[0] for v in reverse] == ["allow", "block", "block"]
+          and _slot_file(root, cfg, "ts-r2") == ["src/m1.py"])
+
+
+def _journal_cases(check):
+    """A shell write into the append-only journal is refused like an Edit of it.
+
+    One operation, one verdict: guard-edits refuses the edit tools the journal at
+    every tier, so the shell spelling of the same append is refused at every tier
+    too - and refused BEFORE the free-file slot is consulted, so a command that
+    appends to the journal and writes a source file takes no slot. The fixture
+    runs a phase, which is the deny tier by evidence; the other tiers are pinned
+    through the knob, and a second fixture with no manifest is the observe tier by
+    evidence."""
+    root = Path(_harness.fixture_root("guard-secrets-journal-"))
+    bare = Path(_harness.fixture_root("guard-secrets-journal-bare-"))
+    (root / "src").mkdir(parents=True)
+    (root / "docs" / "audit" / "journal").mkdir(parents=True)
+    (bare / "docs" / "audit" / "journal").mkdir(parents=True)
+    (root / "docs" / "audit" / "audit-plan.json").write_text(json.dumps(
+        {"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "in_progress",
+                 "files": ["src/declared.py"]}]}]}), encoding="utf-8")
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    held = os.environ.get("CLAUDE_PROJECT_DIR")
+    journal = "docs/audit/journal/2026-10.s.jsonl"
+
+    def shell(at, sid, cmd, use_cfg=None, agent=None):
+        os.environ["CLAUDE_PROJECT_DIR"] = str(at)
+        data = {"tool_name": "Bash", "session_id": sid, "cwd": str(at),
+                "tool_input": {"command": cmd}}
+        if agent:
+            data["agent_id"] = agent
+        ok, got = _harness.attempt(M.decide, data, cfg=use_cfg or cfg)
+        return got if ok else ("raised", str(got))
+
+    try:
+        tiers = [(t, _config._deep_merge(cfg, {"planGate": t}))
+                 for t in _config.PLAN_GATE_TIERS]
+        for tier, tcfg in tiers:
+            got = shell(root, "sj-%s" % tier, "echo '{}' >> " + journal,
+                        use_cfg=tcfg)
+            check("sj1 a shell append to the journal is refused at planGate %r, "
+                  "naming the journal and the plugin's own writer: %r"
+                  % (tier, got),
+                  got[0] == "block" and journal in got[1]
+                  and "append-only" in got[1]
+                  and "audit-journal.py append" in got[1])
+        got = shell(bare, "sj-bare", "echo '{}' > " + journal)
+        check("sj2 ...and with no manifest at all, the observe tier by evidence, "
+              "a plain redirect over it is refused too: %r" % (got,),
+              got[0] == "block" and journal in got[1])
+        for form, spelled in (("tee -a", "echo '{}' | tee -a " + journal),
+                              ("sed -i", "sed -i 's/a/b/' " + journal)):
+            got = shell(root, "sj-forms", spelled)
+            check("sj3 `%s` into the journal is the same act and gets the same "
+                  "refusal: %r" % (form, got), got[0] == "block")
+        got = shell(root, "sj-sub", "echo '{}' >> " + journal, agent="agent-sj")
+        check("sj4 ...from a subagent as from the orchestrator - nobody writes "
+              "the journal by hand: %r" % (got,), got[0] == "block")
+        got = shell(root, "sj-slot", "echo '{}' >> %s; sed -i '' 's/A = 1/A = 2/' "
+                    "src/first.py" % journal)
+        check("sj5 a command appending to the journal and writing an uncovered "
+              "source file is refused on the journal, and spends no free-file "
+              "slot - nothing was written: %r, slot %r"
+              % (got, _slot_file(root, cfg, "sj-slot")),
+              got[0] == "block" and journal in got[1]
+              and _slot_file(root, cfg, "sj-slot") == [])
+        moved = _config._deep_merge(cfg, {"journal": {"dir": "trail"}})
+        got = shell(root, "sj-moved", "echo '{}' >> trail/x.jsonl", use_cfg=moved)
+        check("sj6 a project that MOVED the journal is covered: the directory "
+              "comes from the config, never spelled here: %r" % (got,),
+              got[0] == "block" and "trail/x.jsonl" in got[1])
+        # THE ALLOW TWINS. Each is what an over-block would take: the journal
+        # READ, a write beside it, the moved-away default, and the plugin's own
+        # writer, which is a script and not a redirect.
+        allows = [
+            ("sj7 reading the journal is not writing it",
+             root, "cat " + journal, cfg),
+            ("sj8 ...nor is feeding it to a command on stdin",
+             root, "wc -l < " + journal, cfg),
+            ("sj9 ...nor copying its rows into a file outside it",
+             root, "cat %s > rows.txt" % journal, cfg),
+            ("sj10 a write to a file in the plan's directory that is not the "
+             "journal stays allowed", root, "echo hi > docs/audit/notes.md", cfg),
+            ("sj11 the plugin's own journal writer runs as a script and is not "
+             "refused", root, "python3 scripts/governance/audit-journal.py "
+             "append --event x", cfg),
+            ("sj12 once the journal MOVED, the default directory is an ordinary "
+             "one - the set moved, it did not grow", root,
+             "echo '{}' >> " + journal, moved),
+        ]
+        for name, at, cmd, use_cfg in allows:
+            got = shell(at, "sj-allow", cmd, use_cfg=use_cfg)
+            check("%s: %r" % (name, got), got[0] == "allow")
+    finally:
+        if held is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = held
+
+
+def _two_tree_cases(check):
+    """One command writing uncovered files in two trees is graded in each."""
+    lw = _harness.worktree_pair("gsr-two-trees-")
+    main = Path(lw["main"])
+    (main / "docs" / "audit" / "audit-plan.json").write_text(json.dumps(
+        {"meta": {"version": 2}, "phases": [
+            {"id": "P41", "title": "p", "status": "done", "tasks": [
+                {"id": "P41.1", "title": "t", "status": "done"}]}]}),
+        encoding="utf-8")
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    held = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = str(main)
+    _spend_slot(main, cfg, "tt")
+    wt_file = os.path.join(lw["wt"], "src", "undeclared.ts")
+
+    def run(cmd):
+        ok, got = _harness.attempt(M.decide, {
+            "tool_name": "Bash", "session_id": "tt", "cwd": str(main),
+            "tool_input": {"command": cmd}}, cfg=cfg)
+        return got if ok else ("raised", str(got))
+
+    try:
+        alone = run("echo x > src/undeclared.ts")
+        check("tt1 an uncovered file of the main checkout, whose plan runs "
+              "nothing, is allowed at its warn tier: %r" % (alone[:1],),
+              alone[0] == "allow")
+        both = run("echo x > src/undeclared.ts; echo y > %s" % wt_file)
+        check("tt2 the same command also writing the linked worktree's "
+              "uncovered file - whose phase runs - is refused, naming the "
+              "worktree file: the first file's tier does not grade the second: "
+              "%r" % (both[:1] + (both[1][:200],),),
+              both[0] == "block" and "linked worktree" in both[1])
+        flipped = run("echo y > %s; echo x > src/undeclared.ts" % wt_file)
+        check("tt3 ...in either order: %r" % (flipped[:1],),
+              flipped[0] == "block")
+    finally:
+        if held is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = held
+
+
+# One write in each spelling the plan gate grades, and each way the shell runs
+# a command inside another one. `%s` in a write is the target; `%s` in a
+# wrapper is the whole write.
+_SB_WRITES = (
+    ("redirect", "echo x > %s"),
+    ("tee", "echo x | tee %s"),
+    ("sed -i", "sed -i '' 's/A/B/' %s"),
+    ("interpreter", "python3 -c \"open('%s','w').write('x')\""),
+)
+_SB_WRAPS = (
+    ("subshell", "(%s)"),
+    ("substitution", "$(%s)"),
+    ("backticks", "`%s`"),
+    ("quoted substitution", "x=\"$(%s)\""),
+)
+
+
+def _subshell_cases(check):
+    """A write inside `( )`, `$( )` or backticks is the same write.
+
+    The shell runs the body of each of them, so the file it writes is written
+    exactly as if the command stood alone. The fixture runs a phase whose task
+    declares one file, which is the deny tier by evidence; the other tiers are
+    pinned through the knob."""
+    root = Path(_harness.fixture_root("guard-secrets-subshell-"))
+    (root / "src").mkdir(parents=True)
+    (root / "docs" / "audit" / "journal").mkdir(parents=True)
+    (root / "docs" / "audit" / "audit-plan.json").write_text(json.dumps(
+        {"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "in_progress",
+                 "files": ["src/declared.py"]}]}]}), encoding="utf-8")
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    held = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = str(root)
+    tiers = [(t, _config._deep_merge(cfg, {"planGate": t}))
+             for t in _config.PLAN_GATE_TIERS]
+
+    def shell(sid, cmd, use_cfg=None):
+        ok, got = _harness.attempt(M.decide, {
+            "tool_name": "Bash", "session_id": sid, "cwd": str(root),
+            "tool_input": {"command": cmd}}, cfg=use_cfg or cfg)
+        return got if ok else ("raised", str(got))
+
+    def graded(verdict, target):
+        return (verdict[0], verdict[0] != "allow" and target in verdict[1])
+
+    def sid_of(*parts):
+        # A session id is reduced to a safe file name before the slot is
+        # stored, so one carrying a space would be read back by `_slot_file`
+        # from a file nobody wrote - and an empty slot is what a case asserts.
+        return "-".join(parts).replace(" ", "_")
+
+    try:
+        for wname, write in _SB_WRITES:
+            for pname, wrap in _SB_WRAPS:
+                plain_cmd = write % "src/sb.py"
+                wrapped_cmd = wrap % plain_cmd
+                seen = []
+                for tier, tcfg in tiers:
+                    sids = (sid_of("sb-p", wname, pname, tier),
+                            sid_of("sb-w", wname, pname, tier))
+                    for sid in sids:
+                        _spend_slot(root, cfg, sid)
+                    plain = shell(sids[0], plain_cmd, use_cfg=tcfg)
+                    wrapped = shell(sids[1], wrapped_cmd, use_cfg=tcfg)
+                    seen.append((tier, graded(plain, "src/sb.py"),
+                                 graded(wrapped, "src/sb.py")))
+                check("sb1 a %s inside a %s is graded like the same %s outside "
+                      "it at every tier, and the deny tier refuses it naming the "
+                      "file" % (wname, pname, wname),
+                      all(p == w for _t, p, w in seen)
+                      and dict((t, p) for t, p, _w in seen)["deny"]
+                      == ("block", True), seen)
+        eval_first = "python3 -c \"open('src/sa.py','w').write('x')\"; "
+        warn = _config._deep_merge(cfg, {"planGate": "warn"})
+        for wname, write in _SB_WRITES:
+            for pname, wrap in _SB_WRAPS:
+                cmd = eval_first + wrap % (write % "src/sb2.py")
+                sid = sid_of("sb2", wname, pname)
+                denied = shell(sid, cmd)
+                check("sb2 after an interpreter write that would take the free "
+                      "slot, a %s inside a %s is a second file and is refused at "
+                      "the deny tier, spending no slot" % (wname, pname),
+                      denied[0] == "block" and "src/sb2.py" in denied[1]
+                      and _slot_file(root, cfg, sid) == [],
+                      (denied, _slot_file(root, cfg, sid)))
+                wid = sid_of("sb3", wname, pname)
+                warned = shell(wid, cmd, use_cfg=warn)
+                check("sb3 ...and at the warn tier, the same %s inside a %s "
+                      "runs and the slot is spent once, on the first file"
+                      % (wname, pname),
+                      warned[0] == "allow"
+                      and _slot_file(root, cfg, wid) == ["src/sa.py"],
+                      (warned, _slot_file(root, cfg, wid)))
+        journal = "docs/audit/journal/2026-10.s.jsonl"
+        for pname, wrap in _SB_WRAPS:
+            got = shell(sid_of("sb4", pname), wrap % ("echo '{}' >> " + journal))
+            check("sb4 a journal append inside a %s is refused like the bare "
+                  "append, naming the journal as typed" % (pname,),
+                  got[0] == "block" and (journal + "\n") in got[1], got)
+        # THE ALLOW TWINS: a group or substitution whose body only reads is no
+        # write, at the strictest tier, and takes no slot.
+        for name, cmd in (
+                ("a read-only subshell", "(cd src && ls)"),
+                ("a substitution that only reads", "x=$(cat README.md)"),
+                ("backticks that only read", "x=`cat README.md`"),
+                ("a quoted substitution that only reads",
+                 "x=\"$(git log -1 --format=%s)\"")):
+            sid = sid_of("sb5", name)
+            got = shell(sid, cmd)
+            check("sb5 %s is allowed at the deny tier and takes no slot" % name,
+                  got[0] == "allow" and _slot_file(root, cfg, sid) == [],
+                  (got, _slot_file(root, cfg, sid)))
+        for pname, wrap in _SB_WRAPS:
+            got = M._shell_write_targets(wrap % "echo x > src/a.py")
+            check("sb6 the closer of a %s ends the target, it is not part of "
+                  "the name" % (pname,), got == ["src/a.py"], got)
+        # The over-fire direction: a closer cut wherever it appears would take
+        # a parenthesis out of a quoted name.
+        quoted = M._shell_write_targets("echo hi > \"a(1).py\"")
+        check("sb7 ...while a parenthesis inside a quoted name closes nothing "
+              "and stays in it", quoted == ["a(1).py"], quoted)
+    finally:
+        if held is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = held
+
+
+# A command handed to a shell or to `eval` as an ARGUMENT, and the copy
+# programs whose last operand is the file they write. `%s` is the whole write
+# in a wrapper, the target in a copy.
+_WW_WRAPS = (
+    ("bash -c", "bash -c \"%s\""),
+    ("sh -c", "sh -c '%s'"),
+    ("zsh -c", "zsh -c \"%s\""),
+    ("a clustered sh -ec", "sh -ec \"%s\""),
+    ("sudo bash -c", "sudo bash -c \"%s\""),
+    ("eval", "eval \"%s\""),
+)
+_WW_COPIES = (
+    ("cp", "cp notes.md %s"),
+    ("mv", "mv notes.md %s"),
+    ("install", "install -m 644 notes.md %s"),
+)
+
+
+def _wrapped_write_cases(check):
+    """A write handed to `bash -c`/`eval`, a copy's destination and an
+    interpreter's journal append are the writes they spell.
+
+    Each is graded against the bare form of the same write at every tier. The
+    fixture runs a phase whose task declares one file, which is the deny tier
+    by evidence; the other tiers are pinned through the knob."""
+    root = Path(_harness.fixture_root("guard-secrets-wrapped-"))
+    outside = Path(_harness.fixture_root("guard-secrets-wrapped-out-"))
+    (root / "src").mkdir(parents=True)
+    (root / "docs" / "audit" / "journal").mkdir(parents=True)
+    (root / "docs" / "audit" / "audit-plan.json").write_text(json.dumps(
+        {"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "in_progress",
+                 "files": ["src/declared.py"]}]}]}), encoding="utf-8")
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    held = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = str(root)
+    tiers = [(t, _config._deep_merge(cfg, {"planGate": t}))
+             for t in _config.PLAN_GATE_TIERS]
+    journal = "docs/audit/journal/2026-10.w.jsonl"
+
+    def shell(sid, cmd, use_cfg=None):
+        ok, got = _harness.attempt(M.decide, {
+            "tool_name": "Bash", "session_id": sid, "cwd": str(root),
+            "tool_input": {"command": cmd}}, cfg=use_cfg or cfg)
+        return got if ok else ("raised", str(got))
+
+    def graded(verdict, target):
+        return (verdict[0], verdict[0] != "allow" and target in verdict[1])
+
+    def sid_of(*parts):
+        return "-".join(parts).replace(" ", "_")
+
+    def same_as_bare(label, bare_cmd, cmd, target):
+        """[(tier, bare's grading, cmd's grading)], each on a spent slot."""
+        seen = []
+        for tier, tcfg in tiers:
+            sids = (sid_of("ww-b", label, tier), sid_of("ww-w", label, tier))
+            for sid in sids:
+                _spend_slot(root, cfg, sid)
+            seen.append((tier, graded(shell(sids[0], bare_cmd, use_cfg=tcfg),
+                                      target),
+                         graded(shell(sids[1], cmd, use_cfg=tcfg), target)))
+        return seen
+
+    try:
+        bare_sed = "sed -i '' 's/A/B/' src/ww.py"
+        for wname, wrap in _WW_WRAPS:
+            seen = same_as_bare(wname, bare_sed, wrap % bare_sed, "src/ww.py")
+            check("ww1 `sed -i` handed to %s is graded like the bare `sed -i` at "
+                  "every tier, and the deny tier refuses it naming the file"
+                  % (wname,),
+                  all(b == w for _t, b, w in seen)
+                  and dict((t, w) for t, _b, w in seen)["deny"] == ("block", True),
+                  seen)
+        bare_redirect = "echo x > src/ww.py"
+        for cname, copy in _WW_COPIES:
+            seen = same_as_bare(cname, bare_redirect, copy % "src/ww.py",
+                                "src/ww.py")
+            check("ww2 `%s` onto a source file is graded like a redirect into it "
+                  "at every tier, and the deny tier refuses it naming the file"
+                  % (cname,),
+                  all(b == w for _t, b, w in seen)
+                  and dict((t, w) for t, _b, w in seen)["deny"] == ("block", True),
+                  seen)
+        seen = same_as_bare("cd-in-body", "sed -i '' 's/A/B/' src/ww.py",
+                            "bash -c \"cd src && sed -i '' 's/A/B/' ww.py\"",
+                            "src/ww.py")
+        check("ww3 a `cd` inside the handed command places the write it "
+              "precedes: the file named is the one it reaches",
+              dict((t, w) for t, _b, w in seen)["deny"] == ("block", True), seen)
+        journal_forms = (
+            ("sh -c `sed -i`", "sh -c \"sed -i '' 's/a/b/' %s\"" % journal),
+            ("eval `sed -i`", "eval \"sed -i '' 's/a/b/' %s\"" % journal),
+            ("python3 -c append",
+             "python3 -c \"open('%s','a').write('x')\"" % journal),
+            ("a heredoc program append",
+             "python3 - <<'PY'\nwith open('%s', 'a') as fh:\n"
+             "    fh.write('x')\nPY" % journal),
+            ("cp onto it", "cp notes.md " + journal),
+            ("mv onto it", "mv notes.md " + journal),
+            ("install onto it", "install notes.md " + journal),
+        )
+        for fname, cmd in journal_forms:
+            got = [(tier, shell(sid_of("ww4", fname, tier), cmd, use_cfg=tcfg))
+                   for tier, tcfg in tiers]
+            check("ww4 the journal through %s is refused at every tier, naming "
+                  "it, as the bare append is" % (fname,),
+                  all(v[0] == "block" and journal in v[1] for _t, v in got),
+                  got)
+        # THE ALLOW TWINS, at the deny tier, each taking no slot: what an
+        # over-block of the readers above would refuse.
+        twins = (
+            ("bash -c that only lists", "bash -c \"ls src\""),
+            ("eval that only echoes", "eval \"echo hi\""),
+            ("a copy OUT of the tree",
+             "cp src/app.py %s" % (outside / "x.py")),
+            ("a program that only reads the journal",
+             "python3 -c \"print(len(open('%s').read()))\"" % journal),
+            ("a heredoc program that only reads the journal",
+             "python3 - <<'PY'\nprint(open('%s').read())\nPY" % journal),
+            ("a commit message naming the handed write",
+             "git commit -m \"bash -c 'sed -i x src/app.py'\""),
+            ("a commit message naming a copy",
+             "git commit -m \"cp x src/app.py\""),
+            ("a copy of the journal out to a scratch file",
+             "cp %s %s" % (journal, outside / "rows.txt")),
+        )
+        for name, cmd in twins:
+            sid = sid_of("ww5", name)
+            got = shell(sid, cmd)
+            check("ww5 %s is allowed at the deny tier and takes no slot" % name,
+                  got[0] == "allow" and _slot_file(root, cfg, sid) == [],
+                  (got, _slot_file(root, cfg, sid)))
+        dests = getattr(M, "_copy_destinations", None)
+        want = (
+            (["cp", "a.py", "b.py", "src/"], ["src/a.py", "src/b.py"]),
+            (["cp", "-t", "src", "a.py"], ["src/a.py"]),
+            (["mv", "--target-directory=src", "a.py"], ["src/a.py"]),
+            (["cp", "-r", "--", "a", "b.py"], ["b.py"]),
+            (["install", "-m", "644", "a", "b.py"], ["b.py"]),
+            (["install", "-d", "src/x.py"], []),
+            (["cp", "only.py"], []),
+        )
+        got = [(w, dests(w) if dests else None) for w, _x in want]
+        check("ww6 a copy's written files: the last operand, or each source's "
+              "name inside a directory operand or `-t` - and nothing for "
+              "`install -d` or a lone operand",
+              dests is not None and all(g == x for (_w, g), (_v, x)
+                                        in zip(got, want)), got)
+        _handed_spelling_cases(check, root, outside, journal, shell,
+                               same_as_bare, sid_of, cfg)
+        _live_quoted_cases(check, root, outside, journal, shell,
+                           same_as_bare, sid_of, cfg)
+    finally:
+        if held is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = held
+
+
+def _slash_copy_cases(check):
+    """A trailing slash on a whole copy's destination never changes its
+    verdict. A directory copied or moved whole onto a name that does not
+    exist lands AS that name, slash or no slash - so `cp -r src/ lib/` writes
+    `lib/app.ts`, which the running task declares, and not `lib/src/app.ts`.
+    Onto a directory that exists, or one an earlier clause makes, it lands
+    inside it, and that is the block twin of each spelling."""
+    root = Path(_harness.fixture_root("guard-secrets-slash-copy-"))
+    (root / "src").mkdir(parents=True)
+    for name in ("app.ts", "other.ts"):
+        (root / "src" / name).write_text("export const a = 1;\n",
+                                         encoding="utf-8")
+    (root / "docs" / "audit").mkdir(parents=True)
+    (root / "docs" / "audit" / "audit-plan.json").write_text(json.dumps(
+        {"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "in_progress",
+                 "files": ["lib/app.ts", "lib/other.ts"]}]}]}),
+        encoding="utf-8")
+    cfg = _config._deep_merge(_config.DEFAULTS, {"planGate": "deny"})
+    held = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = str(root)
+
+    def at_deny(label, cmd):
+        sid = "sc-" + re.sub(r"\W+", "_", label)
+        _spend_slot(root, cfg, sid)
+        ok, got = _harness.attempt(M.decide, {
+            "tool_name": "Bash", "session_id": sid, "cwd": str(root),
+            "tool_input": {"command": cmd}}, cfg=cfg)
+        return got if ok else ("raised", str(got))
+
+    spellings = (("cp -r", "cp -r src/ lib/"), ("cp -R", "cp -R src/ lib/"),
+                 ("cp -a", "cp -a src/ lib/"), ("mv", "mv src/ lib/"),
+                 ("cp -r, slashless", "cp -r src lib"),
+                 ("mv, slashless", "mv src lib"))
+    try:
+        dests = M._copy_destinations(["cp", "-r", "src/", "lib/"],
+                                     lambda word: False)
+        check("sc1 a whole copy onto a slash-ended name that is no directory "
+              "lands as that name", dests == ["lib"], dests)
+        # The second direction: only a WHOLE copy, and only with the disk
+        # asked, reads the slash away - a plain copy of a file still lands
+        # inside the slash-ended name, and with no `is_dir` the slash is
+        # still a directory.
+        kept = (M._copy_destinations(["cp", "a.py", "lib/"], lambda w: False),
+                M._copy_destinations(["cp", "-r", "src/", "lib/"]))
+        check("sc1a ...while a plain copy onto it, or a whole copy with "
+              "nothing asked of the disk, still lands inside it",
+              kept == (["lib/a.py"], ["lib/src"]), kept)
+        for name, cmd in spellings:
+            got = at_deny("absent " + name, cmd)
+            check("sc2 `%s` with the destination absent is allowed against a "
+                  "plan declaring the files it lands as" % cmd,
+                  got[0] == "allow", got)
+        got = at_deny("made", "mkdir lib && cp -r src/ lib/")
+        check("sc3 ...while a directory an earlier clause makes takes the "
+              "copy inside it, refused naming the file it lands as",
+              got[0] == "block" and "lib/src/app.ts" in got[1], got)
+        (root / "lib").mkdir()
+        for name, cmd in spellings:
+            got = at_deny("present " + name, cmd)
+            check("sc4 `%s` with the destination present lands inside it, "
+                  "refused naming the file it lands as" % cmd,
+                  got[0] == "block" and "lib/src/app.ts" in got[1], got)
+    finally:
+        if held is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = held
+
+
+def _single_quoted(text):
+    """`text` as one single-quoted shell word."""
+    return "'" + text.replace("'", "'\"'\"'") + "'"
+
+
+def _nested(cmd, levels):
+    """`cmd` handed down `levels` times, cycling through `bash -c`, `sh -c`
+    and `eval`, the outermost first."""
+    wraps = ("bash -c %s", "sh -c %s", "eval %s")
+    for at in range(levels):
+        cmd = wraps[(levels - 1 - at) % len(wraps)] % _single_quoted(cmd)
+    return cmd
+
+
+def _handed_spelling_cases(check, root, outside, journal, shell, same_as_bare,
+                           sid_of, cfg):
+    """A shell write gets its bare form's verdict in every spelling the shell
+    arm reads, and a quoted argument of a program that runs nothing is text.
+
+    Runs inside `_wrapped_write_cases`' fixture: a running phase whose task
+    declares one file, so the tier by evidence is deny."""
+    deny_cfg = _config._deep_merge(cfg, {"planGate": "deny"})
+
+    def deny_of(seen):
+        return dict((t, w) for t, _b, w in seen)["deny"]
+
+    # A copy onto a directory that EXISTS writes the source's name inside it,
+    # whether or not the directory carries a trailing slash.
+    for cname, copy in (("cp", "cp notes.py src"), ("mv", "mv notes.py src"),
+                        ("install", "install -m 644 notes.py src")):
+        seen = same_as_bare("dir-" + cname, "echo x > src/notes.py", copy,
+                            "src/notes.py")
+        check("ww7 `%s` onto an existing directory spelled without a slash "
+              "is graded like a redirect into the file it lands as, at every "
+              "tier" % (copy,),
+              all(b == w for _t, b, w in seen)
+              and deny_of(seen) == ("block", True), seen)
+    for name, cmd in (
+            ("a copy whose landed name is no source file", "cp notes.md src"),
+            ("a copy onto an existing directory outside the tree",
+             "cp src/app.py %s" % outside),
+            ("a copy onto a name that is no directory and no source file",
+             "cp notes.py src-backup")):
+        sid = sid_of("ww7a", name)
+        _spend_slot(root, cfg, sid)
+        got = shell(sid, cmd)
+        check("ww7a %s is allowed at the deny tier" % name,
+              got[0] == "allow", got)
+    dests = M._copy_destinations
+    want = (
+        ((["cp", "a.py", "src"], lambda w: w == "src"), ["src/a.py"]),
+        ((["cp", "a.py", "src"], lambda w: False), ["src"]),
+        ((["cp", "-T", "a.py", "src"], lambda w: True), ["src"]),
+        ((["mv", "--no-target-directory", "a.py", "src"], lambda w: True),
+         ["src"]),
+    )
+    got = []
+    for (words, is_dir), _x in want:
+        ok, res = _harness.attempt(dests, words, is_dir)
+        got.append(res if ok else ("raised", str(res)))
+    check("ww7b the disk decides a slashless last operand: an existing "
+          "directory takes the source's name, anything else - or `-T` - is "
+          "the file written",
+          got == [x for _w, x in want], got)
+
+    # A handed command one level past the bound the walk reads is graded as
+    # a write this guard cannot place: refused at the deny tier, said at the
+    # others. At the bound the write inside is read and graded as bare.
+    bound = M._MAX_HANDED
+    sed = "sed -i '' 's/A/B/' src/ww.py"
+    seen = same_as_bare("nest-at-bound", sed, _nested(sed, bound), "src/ww.py")
+    check("ww8 a write handed down exactly the bound the walk reads is "
+          "graded like the bare write at every tier",
+          all(b == w for _t, b, w in seen)
+          and deny_of(seen) == ("block", True), seen)
+    past = _nested(sed, bound + 1)
+    verdicts = {}
+    for tier in _config.PLAN_GATE_TIERS:
+        sid = sid_of("ww8", "past", tier)
+        _spend_slot(root, cfg, sid)
+        verdicts[tier] = shell(sid, past,
+                               use_cfg=_config._deep_merge(cfg, {"planGate": tier}))
+    check("ww8a a write handed one level past the bound is refused at the "
+          "deny tier, asked at ask, and allowed - said, not silent - at "
+          "observe and warn",
+          verdicts["deny"][0] == "block" and verdicts["ask"][0] == "ask"
+          and all(verdicts[t][0] == "allow" and "not established" in verdicts[t][1]
+                  for t in ("observe", "warn")), verdicts)
+    sid = sid_of("ww8b", "read-only at bound")
+    got = shell(sid, _nested("ls src", bound), use_cfg=deny_cfg)
+    check("ww8b ...while a read-only command handed down exactly the bound is "
+          "allowed at the deny tier", got[0] == "allow", got)
+
+    # A keyword `mode=` is the positional mode spelled another way.
+    jforms = (
+        ("mode='a'", "python3 -c \"open('%s', mode='a').write('x')\"" % journal),
+        ("encoding then mode='a'",
+         "python3 -c \"open('%s', encoding='utf-8', mode='a').write('x')\""
+         % journal),
+        ("a heredoc with mode='w'",
+         "python3 - <<'PY'\nwith open('%s', mode='w') as fh:\n    fh.write('x')"
+         "\nPY" % journal),
+    )
+    for fname, cmd in jforms:
+        got = [(tier, shell(sid_of("ww9", fname, tier), cmd,
+                            use_cfg=_config._deep_merge(cfg, {"planGate": tier})))
+               for tier in _config.PLAN_GATE_TIERS]
+        check("ww9 the journal opened with %s is refused at every tier, naming "
+              "it" % fname,
+              all(v[0] == "block" and journal in v[1] for _t, v in got), got)
+    seen = same_as_bare("kw-mode",
+                        "python3 -c \"open('src/ww.py', 'w').write('x')\"",
+                        "python3 -c \"open('src/ww.py', mode='w').write('x')\"",
+                        "src/ww.py")
+    check("ww9a a source file opened with mode='w' is graded like the "
+          "positional 'w' at every tier",
+          all(b == w for _t, b, w in seen)
+          and deny_of(seen) == ("block", True), seen)
+    for name, cmd in (
+            ("the journal opened with mode='r'",
+             "python3 -c \"print(open('%s', mode='r').read())\"" % journal),
+            ("a source file opened with mode='r'",
+             "python3 -c \"print(open('src/ww.py', mode='r').read())\""),
+            ("a source file opened with a keyword that is not the mode",
+             "python3 -c \"print(open('src/ww.py', newline='').read())\"")):
+        sid = sid_of("ww9b", name)
+        _spend_slot(root, cfg, sid)
+        got = shell(sid, cmd, use_cfg=deny_cfg)
+        check("ww9b %s is allowed at the deny tier" % name,
+              got[0] == "allow", got)
+
+    # A redirect inside a quoted argument of a program that runs nothing is
+    # text; inside a command something runs, it is still a write.
+    for name, cmd in (
+            ("a commit message naming a redirect",
+             "git commit -m \"echo x > src/ww.py\""),
+            ("a commit message naming tee", "git commit -m \"x | tee src/ww.py\""),
+            ("a commit message naming a journal append",
+             "git commit -m \"echo x >> %s\"" % journal),
+            ("an echoed sentence naming a redirect",
+             "echo 'run: echo x > src/ww.py'")):
+        sid = sid_of("ww10", name)
+        _spend_slot(root, cfg, sid)
+        got = shell(sid, cmd, use_cfg=deny_cfg)
+        check("ww10 %s is allowed at the deny tier and takes no slot" % name,
+              got[0] == "allow" and _slot_file(root, cfg, sid)
+              == ["src/spent-before-these-cases.ts"], got)
+    for name, cmd in (
+            ("the bare redirect", "echo x > src/ww.py"),
+            ("a redirect handed to bash -c", "bash -c \"echo x > src/ww.py\""),
+            ("tee handed to sh -c", "sh -c 'echo x | tee src/ww.py'"),
+            ("a substitution inside double quotes",
+             "x=\"$(echo x > src/ww.py)\""),
+            ("backticks inside double quotes",
+             "x=\"`echo x > src/ww.py`\""),
+            ("a heredoc fed to a shell, its target absolute",
+             "bash <<'EOF'\necho x > %s/src/ww.py\nEOF" % root),
+            ("a heredoc program shelling out",
+             "python3 - <<'PY'\nimport os\nos.system('echo x > src/ww.py')\nPY"),
+            ("find running a shell per file",
+             "find . -name a -exec sh -c 'echo x > src/ww.py' \\;"),
+            ("a positional argument the handed command runs",
+             "bash -c 'eval \"$1\"' _ 'echo x > src/ww.py'"),
+            ("a quoted word of a program not known to run nothing",
+             "watch 'echo x > src/ww.py'"),
+            ("a git whose -c may run the quoted text",
+             "git -c core.pager='tee src/ww.py' log")):
+        sid = sid_of("ww10a", name)
+        _spend_slot(root, cfg, sid)
+        got = shell(sid, cmd, use_cfg=deny_cfg)
+        check("ww10a %s is still refused at the deny tier, naming the file"
+              % name, got[0] == "block" and "src/ww.py" in got[1], got)
+    # A shell body ends the directory walk (`_config.effective_cwd`), so a
+    # relative target inside one keeps being said as unestablished - not
+    # dropped as text.
+    sid = sid_of("ww10b", "heredoc relative")
+    _spend_slot(root, cfg, sid)
+    got = shell(sid, "bash <<'EOF'\necho x > src/ww.py\nEOF", use_cfg=deny_cfg)
+    check("ww10b a relative redirect in a heredoc fed to a shell is still said "
+          "as a destination not established, naming it",
+          got[0] == "allow" and "not established (src/ww.py)" in got[1], got)
+
+    # A handed `cd` places the handed write, and the outer read no longer
+    # grades the same redirect a second time at the outer directory.
+    sid = sid_of("ww11", "cd-out")
+    _spend_slot(root, cfg, sid)
+    got = shell(sid, "bash -c \"cd %s && echo x > ww.py\"" % outside,
+                use_cfg=deny_cfg)
+    check("ww11 a handed `cd` out of the tree followed by a redirect is "
+          "allowed at the deny tier", got[0] == "allow", got)
+    sid = sid_of("ww11a", "cd-in")
+    _spend_slot(root, cfg, sid)
+    got = shell(sid, "bash -c \"cd src && echo x > ww.py\"", use_cfg=deny_cfg)
+    check("ww11a ...while a handed `cd` into the tree followed by a redirect is "
+          "refused naming the file it lands in, not the word typed",
+          got[0] == "block" and "gate: src/ww.py\n" in got[1], got)
+
+
+# The git spellings whose quoted word git itself runs: an editor or an external
+# diff named in the environment, bare or through `env`, and `git grep`'s
+# pager option in every spelling git accepts - stuck, long, abbreviated, and
+# inside a cluster of short options. `%s` is the shell command that writes.
+_LIVE_GIT_SPELLINGS = (
+    ("GIT_EDITOR", "GIT_EDITOR=\"sh -c '%s'\" git commit"),
+    ("env GIT_EDITOR", "env GIT_EDITOR=\"sh -c '%s'\" git commit"),
+    ("GIT_EXTERNAL_DIFF", "GIT_EXTERNAL_DIFF=\"sh -c '%s'\" git diff"),
+    ("GIT_CONFIG_PARAMETERS core.editor",
+     "GIT_CONFIG_PARAMETERS=\"'core.editor'='sh -c \\\"%s\\\"'\" git commit"),
+    ("git grep -O stuck", "git grep -O\"sh -c '%s'\" A"),
+    ("git grep -O in a short cluster", "git grep -iO\"sh -c '%s'\" A"),
+    ("git grep --open-files-in-pager=",
+     "git grep --open-files-in-pager=\"sh -c '%s'\" A"),
+    ("git grep --open abbreviated", "git grep --open=\"sh -c '%s'\" A"),
+)
+
+
+def _live_quoted_cases(check, root, outside, journal, shell, same_as_bare,
+                       sid_of, cfg):
+    """A quoted word some program runs is read as a command wherever it sits:
+    in an environment assignment ahead of the program, or in `git grep`'s
+    pager option. Past the nesting bound the journal is refused at every tier
+    and a read is never refused. A directory an earlier clause creates, a
+    recursive copy's files and `git diff --output` are writes too.
+
+    Runs inside `_wrapped_write_cases`' fixture, at the deny tier by evidence."""
+    deny_cfg = _config._deep_merge(cfg, {"planGate": "deny"})
+    tiers = _config.PLAN_GATE_TIERS
+
+    def deny_of(seen):
+        return dict((t, w) for t, _b, w in seen)["deny"]
+
+    def every_tier(label, cmd):
+        return [(tier, shell(sid_of(label, tier), cmd,
+                             use_cfg=_config._deep_merge(cfg, {"planGate": tier})))
+                for tier in tiers]
+
+    def at_deny(label, cmd):
+        sid = sid_of(label)
+        _spend_slot(root, cfg, sid)
+        return shell(sid, cmd, use_cfg=deny_cfg)
+
+    for name, spelling in _LIVE_GIT_SPELLINGS:
+        seen = same_as_bare("live-" + name, "echo x > src/ww.py",
+                            spelling % "echo x > src/ww.py", "src/ww.py")
+        check("lq1 %s running a redirect into a source file is graded like "
+              "the bare redirect at every tier" % name,
+              all(b == w for _t, b, w in seen)
+              and deny_of(seen) == ("block", True), seen)
+        got = every_tier("lq2-" + name, spelling % ("echo x >> %s" % journal))
+        check("lq2 %s running an append to the journal is refused at every "
+              "tier, naming it" % name,
+              all(v[0] == "block" and journal in v[1] for _t, v in got), got)
+    for name, cmd in (
+            ("an external diff that is tee",
+             "GIT_EXTERNAL_DIFF=\"tee src/ww.py\" git diff"),
+            ("a pager option that is tee", "git grep -O\"tee src/ww.py\" A")):
+        got = at_deny("lq1a-" + name, cmd)
+        check("lq1a %s is refused at the deny tier, naming the file" % name,
+              got[0] == "block" and "src/ww.py" in got[1], got)
+    # git takes a separate word after the pager option as the pattern, so the
+    # quoted word is not run there; every spelling of the option is still read
+    # as live, because over-reporting is the safe side on a write guard.
+    got = at_deny("lq1b", "git grep --open-files-in-pager \"tee src/ww.py\" A")
+    check("lq1b a quoted word after a separate --open-files-in-pager is read "
+          "as live too", got[0] == "block" and "src/ww.py" in got[1], got)
+
+    # Every spelling git resolves to the pager option, and none it does not:
+    # `--o` is ambiguous to git, and a lone `-` or a word after `--` is no
+    # option at all.
+    pager = getattr(M, "_git_grep_runs_a_pager", None)
+    spellings = ((["-O"], True), (["-Ocmd"], True), (["-iO"], True),
+                 (["--open-files-in-pager=cmd"], True), (["--op"], True),
+                 (["--open", "x"], True), (["-e", "x"], False),
+                 (["--or", "-e", "x"], False), (["--o"], False), (["-"], False),
+                 (["--only-matching"], False), (["--", "-O"], False),
+                 # A value-taking short option ends its cluster: what follows
+                 # it in the word is its value, and a separate word after it
+                 # is that value too. The pager letter BEFORE one is still read.
+                 (["-eOpen"], False), (["-ieOpen"], False), (["-fOut"], False),
+                 (["-A3O"], False), (["-m1O"], False), (["-e", "-Open"], False),
+                 (["-nOcmd"], True), (["-Oe"], True), (["-e", "x", "-Ocmd"], True),
+                 (["-m", "1", "-O"], True))
+    got = [(w, pager(w) if pager else None) for w, _x in spellings]
+    check("lq9 git grep's pager option is found in every spelling git "
+          "resolves to it, and in no other word",
+          pager is not None and all(g is x for (_w, g), (_v, x)
+                                    in zip(got, spellings)), got)
+
+    # THE ALLOW TWINS: a quoted word nothing runs stays text.
+    for name, cmd in (
+            ("a commit message naming a redirect",
+             "git commit -m \"echo x > src/ww.py\""),
+            ("an echoed redirect", "echo 'echo x > src/ww.py'"),
+            ("a printf of a redirect", "printf 'x > src/ww.py\\n'"),
+            ("a grep pattern naming a redirect", "grep 'x > src/ww.py' notes.md"),
+            ("an rg pattern naming tee", "rg 'x | tee src/ww.py' src"),
+            ("a git grep pattern naming a redirect",
+             "git grep -n 'x > src/ww.py'"),
+            ("a git grep pattern beginning with the letter O",
+             "git grep -e 'Open > src/ww.py'"),
+            ("a git grep pattern beginning with O stuck to -e, beside a "
+             "quoted pattern naming a redirect",
+             "git grep -eOpen -e 'x > src/ww.py' src"),
+            ("a git grep pattern stuck to -e in a short cluster",
+             "git grep -ie'Open > src/ww.py' src"),
+            ("an env-prefixed commit message naming a redirect",
+             "GIT_AUTHOR_DATE=2026-01-01 git commit -m \"docs: the old form "
+             "was echo x > src/ww.py\""),
+            ("an env-prefixed grep pattern naming a redirect",
+             "LC_ALL=C grep -rn 'x > src/ww.py' docs"),
+            ("a commit message naming a redirect, its assignment through env",
+             "env GIT_AUTHOR_NAME=x git commit -m \"echo x > src/ww.py\""),
+            ("a program printing a redirect",
+             "python3 -c \"print('x > src/ww.py')\""),
+            ("a handed cd out of the tree",
+             "bash -c \"cd %s && echo x > ww.py\"" % outside)):
+        got = at_deny("lq3-" + name, cmd)
+        check("lq3 %s is allowed at the deny tier" % name,
+              got[0] == "allow", got)
+
+    # ONLY THE ASSIGNMENT WORDS OF THE PREFIX ARE LIVE. The program's own
+    # arguments keep the data-program reading, so an env-prefixed message
+    # naming a journal append is text at every tier...
+    for name, cmd in (
+            ("a bare assignment", "GIT_AUTHOR_NAME=x git commit -m \"never "
+                                  "echo x >> %s\"" % journal),
+            ("an assignment through env", "env GIT_AUTHOR_NAME=x git commit "
+                                          "-m \"never echo x >> %s\"" % journal)):
+        got = every_tier("lq10-" + name, cmd)
+        check("lq10 a commit message naming a journal append behind %s is "
+              "allowed at every tier" % name,
+              all(v[0] == "allow" for _t, v in got), got)
+    # ...while a redirect inside the assignment word itself is still run, by
+    # what the variable names, beside an ordinary message or pattern.
+    for name, cmd in (
+            ("an editor beside a plain message",
+             "GIT_EDITOR=\"sh -c 'echo x > src/ww.py'\" git commit -m \"tidy\""),
+            ("an editor through env beside a plain message",
+             "env GIT_EDITOR=\"sh -c 'echo x > src/ww.py'\" git commit -m "
+             "\"tidy\""),
+            ("a second assignment after a harmless one",
+             "GIT_AUTHOR_NAME=x GIT_EDITOR=\"tee src/ww.py\" git commit"),
+            ("an assignment ahead of grep",
+             "GREP_COLORS=\"$(echo x > src/ww.py)\" grep -n a notes.md")):
+        got = at_deny("lq11-" + name, cmd)
+        check("lq11 %s is refused at the deny tier, naming the file" % name,
+              got[0] == "block" and "src/ww.py" in got[1], got)
+    got = every_tier("lq11a", "GIT_AUTHOR_NAME=x GIT_EDITOR=\"tee -a %s\" "
+                              "git commit -m \"tidy\"" % journal)
+    check("lq11a an editor variable appending to the journal, after a harmless "
+          "assignment, is refused at every tier",
+          all(v[0] == "block" and journal in v[1] for _t, v in got), got)
+    # A pager option after a value-taking option's stuck value is still the
+    # pager: the cluster scan stops at the value, not at the command.
+    got = at_deny("lq12", "git grep -eOpen -O\"tee src/ww.py\" A")
+    check("lq12 git grep's pager option after a pattern stuck to -e is "
+          "refused at the deny tier, naming the file",
+          got[0] == "block" and "src/ww.py" in got[1], got)
+
+    # Past the nesting bound: the journal at every tier, a read never refused.
+    bound = M._MAX_HANDED
+    got = every_tier("lq4", _nested("echo x >> %s" % journal, bound + 1))
+    check("lq4 a journal append handed one level past the bound is refused at "
+          "every tier, naming the journal",
+          all(v[0] == "block" and journal in v[1] for _t, v in got), got)
+    for name, cmd in (("a listing", "ls src"),
+                      ("a read of the journal", "cat %s" % journal)):
+        got = at_deny("lq5-" + name, _nested(cmd, bound + 1))
+        check("lq5 %s handed one level past the bound is allowed at the deny "
+              "tier" % name, got[0] == "allow", got)
+    got = at_deny("lq5a", _nested("ls src", bound + 2))
+    check("lq5a ...while a command handed two levels past the bound, which "
+          "this guard cannot read, is refused at the deny tier",
+          got[0] == "block", got)
+
+    # A directory an earlier clause makes is a directory to the copy after it.
+    for name, cmd, target in (
+            ("mkdir", "mkdir src/new && cp notes.py src/new", "src/new/notes.py"),
+            ("mkdir -p", "mkdir -p src/a/b; cp notes.py src/a/b",
+             "src/a/b/notes.py"),
+            ("ln -s onto a directory", "ln -s src lnk && cp notes.py lnk",
+             "src/notes.py")):
+        got = at_deny("lq6-" + name, cmd)
+        check("lq6 %s, then a copy into it, is refused naming the file the "
+              "copy lands as" % name,
+              got[0] == "block" and ("gate: %s\n" % target) in got[1], got)
+    for name, cmd in (
+            ("mkdir, then a copy of no source file",
+             "mkdir src/new && cp notes.md src/new"),
+            ("ln -s onto a directory outside the tree, then a copy",
+             "ln -s %s lnk && cp notes.py lnk" % outside),
+            ("a directory made AFTER the copy", "cp notes.py src/late; mkdir src/late")):
+        got = at_deny("lq6a-" + name, cmd)
+        check("lq6a %s is allowed at the deny tier" % name,
+              got[0] == "allow", got)
+
+    # A recursive copy writes every file of the directory it copies.
+    pkg = outside / "pkg"
+    pkg.mkdir(exist_ok=True)
+    (pkg / "m.py").write_text("M = 1\n", encoding="utf-8")
+    docs = outside / "docs-only"
+    docs.mkdir(exist_ok=True)
+    (docs / "readme.md").write_text("r\n", encoding="utf-8")
+    for name, cmd, target in (
+            ("cp -r onto an existing directory", "cp -r %s src" % pkg,
+             "src/pkg/m.py"),
+            ("cp -R onto a new name", "cp -R %s src/pkg2" % pkg, "src/pkg2/m.py"),
+            ("cp -a onto an existing directory", "cp -a %s src" % pkg,
+             "src/pkg/m.py"),
+            ("mv of a directory", "mv %s src/moved" % pkg, "src/moved/m.py")):
+        got = at_deny("lq7-" + name, cmd)
+        check("lq7 %s is refused naming a file inside it" % name,
+              got[0] == "block" and ("gate: %s\n" % target) in got[1], got)
+    for name, cmd in (
+            ("cp -r of a directory holding no source file",
+             "cp -r %s src" % docs),
+            ("cp -r of a source directory out of the tree",
+             "cp -r src %s" % (outside / "copy")),
+            ("cp without -r of a directory", "cp %s src" % pkg)):
+        got = at_deny("lq7a-" + name, cmd)
+        check("lq7a %s is allowed at the deny tier" % name,
+              got[0] == "allow", got)
+
+    # `git diff --output` writes the file it names.
+    for name, cmd, target in (
+            ("git diff --output=", "git diff --output=src/ww.py", "src/ww.py"),
+            ("git diff --output, separate", "git diff --output src/ww.py",
+             "src/ww.py"),
+            ("git log --output=", "git log -p --output=src/ww.py", "src/ww.py"),
+            ("git -C then --output=", "git -C src diff --output=ww.py",
+             "src/ww.py")):
+        got = at_deny("lq8-" + name, cmd)
+        check("lq8 %s naming a source file is refused naming it" % name,
+              got[0] == "block" and ("gate: %s\n" % target) in got[1], got)
+    got = every_tier("lq8b", "git diff --output=%s" % journal)
+    check("lq8b git diff --output onto the journal is refused at every tier",
+          all(v[0] == "block" and journal in v[1] for _t, v in got), got)
+    for name, cmd in (
+            ("--output out of the tree",
+             "git diff --output=%s" % (outside / "d.patch")),
+            ("a pathspec and no --output", "git diff -- src/ww.py"),
+            ("--output after --, a pathspec", "git diff -- --output=src/ww.py")):
+        got = at_deny("lq8a-" + name, cmd)
+        check("lq8a git diff %s is allowed at the deny tier" % name,
+              got[0] == "allow", got)
+
+
+def _away_root():
+    """A directory this project does not contain, for the redaction cases:
+    absolute, short and spelled with no home or slug shape, at the top of the
+    filesystem rather than under the temp root - which a harness may set to
+    a long session directory, so a fixture inheriting it inherited both its
+    slug and its length, and the feed's bounded `file` cell lost its tail.
+    Never created: those cases grade a path, and no read reaches the disk."""
+    return Path(os.path.abspath(os.sep + "guard-secrets-away-%d" % os.getpid()))
+
+
+def _out_tree(top, dirs, files, ext):
+    """A directory `top` holding `dirs` subdirectories of `files` files each,
+    every name ending in `ext`; `top` itself."""
+    for d in range(dirs):
+        sub = Path(top) / ("d%02d" % d)
+        sub.mkdir(parents=True, exist_ok=True)
+        for f in range(files):
+            (sub / ("f%02d%s" % (f, ext))).write_text("x\n", encoding="utf-8")
+    return Path(top)
+
+
+def _git_calls(decide_once):
+    """(how many `git rev-parse` processes `decide_once()` started, its
+    answer). The count is read off `_config`'s one git entry point, never off
+    the clock: a timed case would flake on a loaded machine."""
+    seen = []
+    real = M._config._git_rev_parse
+
+    def counting(cwd, fields):
+        seen.append((str(cwd), tuple(fields)))
+        return real(cwd, fields)
+    M._config._git_rev_parse = counting
+    try:
+        got = decide_once()
+    finally:
+        M._config._git_rev_parse = real
+    return len(seen), got
+
+
+def _lw_copy_cost_cases(check, lw, bash):
+    """A directory copied whole costs git calls by destination root, never by
+    file. Runs in `worktree_pair`'s real repository, so placing a target
+    outside the project asks git exactly what it asks on a real machine.
+
+    Each destination already holds the source's subdirectories and `-T`
+    lands the copy onto it, so every file listed would sit in a directory of
+    its own: a per-directory memo alone would still pay once for each, and
+    only not listing the files keeps the count at the small tree's."""
+    out = Path(lw["root"]) / "copy-cost"
+    small = _out_tree(out / "small", 1, 1, ".txt")
+    big = _out_tree(out / "big", 12, 25, ".txt")
+    for name, dirs in (("small-copy", 1), ("big-copy", 12),
+                       ("small-moved", 1), ("big-moved", 12)):
+        _out_tree(out / name, dirs, 0, ".txt")
+    counts = {}
+    for label, cmd in (
+            ("cp small", "cp -rT %s %s" % (small, out / "small-copy")),
+            ("cp big", "cp -rT %s %s" % (big, out / "big-copy")),
+            ("mv small", "mv -T %s %s" % (small, out / "small-moved")),
+            ("mv big", "mv -T %s %s" % (big, out / "big-moved"))):
+        counts[label] = _git_calls(lambda: bash(lw["main"], cmd))
+    check("lw10 a directory copied or moved whole between two directories "
+          "outside the project is allowed, and costs as many git calls for "
+          "hundreds of files as for one",
+          all(v[1][0] == "allow" for v in counts.values())
+          and counts["cp big"][0] == counts["cp small"][0] >= 1
+          and counts["mv big"][0] == counts["mv small"][0] >= 1,
+          dict((k, (v[0], v[1][0])) for k, v in counts.items()))
+    two_roots, _got = _git_calls(lambda: bash(
+        lw["main"], "cp -r %s %s; cp -r %s %s"
+        % (out / "big-moved", out / "again-1", out / "big-moved",
+           out / "again-2")))
+    check("lw10a ...and two destination roots cost no more than twice one",
+          0 < two_roots <= 2 * counts["cp big"][0],
+          (two_roots, counts["cp big"][0]))
+    # THE OTHER DIRECTION: a destination root inside a linked worktree of this
+    # repository is that worktree's business, so the copy is still expanded
+    # file by file and graded against the worktree's own plan.
+    pkg = _out_tree(out / "pkg", 1, 1, ".ts")
+    verdict, why = bash(lw["main"], "cp -r %s %s"
+                        % (pkg, os.path.join(lw["wt"], "src", "pkg")))
+    check("lw11 a recursive copy into a linked worktree is still read file by "
+          "file, refused under the WORKTREE's running phase naming the file "
+          "it lands as", verdict == "block" and "P48" in why
+          and "src/pkg/d00/f00.ts" in why, repr((verdict, why[:240])))
+    _lw_wide_copy_cases(check, lw, bash, out)
+
+
+def _lw_wide_copy_cases(check, lw, bash, out):
+    """A whole copy onto directories that already exist inside a linked
+    worktree is listed file by file, and each file sits in a directory of its
+    own - so a memo keyed by directory still asked git once per directory.
+    Directories under a toplevel git already named are answered by
+    containment, so the count is the narrow tree's however wide the copy."""
+    counts, hits = {}, {}
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    for label, dirs in (("narrow", 1), ("wide", 12)):
+        source = _out_tree(out / ("wide-src-" + label), dirs, 2, ".ts")
+        dest = Path(lw["wt"]) / ("wide-dest-" + label)
+        _out_tree(dest, dirs, 0, ".ts")
+        cmd = "cp -rT %s %s" % (source, dest)
+        counts[label] = _git_calls(lambda: bash(lw["main"], cmd))
+        hits[label] = [(h["rel"], str(h["root"])) for h in M._source_write_hit(
+            cmd, Path(lw["main"]), cfg, lw["main"])["hits"]]
+    check("lw12 a whole copy onto existing directories inside a linked "
+          "worktree costs as many git calls across many directories as "
+          "across one, and every file is still graded under the worktree's "
+          "own plan",
+          counts["wide"][0] == counts["narrow"][0] >= 1
+          and all(v[1][0] == "block" and "P48" in v[1][1]
+                  for v in counts.values())
+          and len(hits["wide"]) == 12 * 2
+          and ("wide-dest-wide/d11/f01.ts", lw["wt"]) in hits["wide"]
+          and all(r == lw["wt"] for _rel, r in hits["wide"]),
+          (dict((k, (v[0], v[1][0])) for k, v in counts.items()),
+           hits["wide"][-2:], len(hits["wide"])))
+    # THE OTHER DIRECTION: containment must not swallow a directory that
+    # git would place somewhere else. A nested repository inside the worktree
+    # is its own toplevel, so a copy into it is that repository's business
+    # and no plan's here - asked of git, never answered by containment.
+    import subprocess
+    nested = Path(lw["wt"]) / "vendored"
+    (nested / "lib").mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-q", str(nested)], check=True,
+                   capture_output=True, timeout=30)
+    probe = _out_tree(out / "nested-src", 1, 1, ".ts")
+    cmd = "cp %s %s; cp %s %s" % (
+        probe / "d00" / "f00.ts", Path(lw["wt"]) / "src" / "x1.ts",
+        probe / "d00" / "f00.ts", nested / "lib" / "x2.ts")
+    got = bash(lw["main"], cmd)
+    graded = [h["rel"] for h in M._source_write_hit(
+        cmd, Path(lw["main"]), cfg, lw["main"])["hits"]]
+    check("lw13 ...while a nested repository inside the worktree is still "
+          "asked about on its own: a copy into it is not graded under the "
+          "worktree's plan, though the copy beside it is",
+          got[0] == "block" and graded == ["src/x1.ts"],
+          (got[0], graded))
+
+
 def _expand_optional_chars(fragment):
     """`"ya?ml"` -> `["yml", "yaml"]`. Expands every `X?` in a regex alternative
     into its two literal spellings, one character at a time, so a family list
@@ -517,6 +1907,12 @@ def _template_cases(check):
 def _cases(check):
     """Exercise the decision core with fictional secret paths (never real files)."""
     _harness.stage(check, "gs-live", _refresh_cases)
+    _harness.stage(check, "ts", _slot_cases)
+    _harness.stage(check, "sj", _journal_cases)
+    _harness.stage(check, "tt", _two_tree_cases)
+    _harness.stage(check, "sb", _subshell_cases)
+    _harness.stage(check, "ww", _wrapped_write_cases)
+    _harness.stage(check, "sc", _slash_copy_cases)
     _harness.stage(check, "gs-template", _template_cases)
     cfg = _config._deep_merge(_config.DEFAULTS, {})
     tmp = Path(_harness.fixture_root("guard-secrets-selftest-"))
@@ -526,6 +1922,7 @@ def _cases(check):
     # repository happened to be open.
     _prev_project_dir = os.environ.get("CLAUDE_PROJECT_DIR")
     os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
+    _spend_slot(tmp, cfg)
 
     # The shell-write branch is a PLAN gate and is graded like require-plan's. The
     # cases that assert full enforcement say so explicitly.
@@ -739,6 +2136,47 @@ def _cases(check):
           bash("python3 - <<'PY'\n"
                "argv = ['cat', '.env']\n"
                "print(' '.join(argv))\nPY"))
+
+    # A READ CALL SPELLED INSIDE A STRING LITERAL IS TEXT. The read-call pattern
+    # matched a program's text, so a docstring or a sentence quoting the call it
+    # describes was refused as performing it - the operator decided that program
+    # is allowed. The twins below are the half that must stay refused: the same
+    # literal beside a real read, a literal handed to something that runs it as
+    # code, and a literal another interpreter would interpolate.
+    _doc = "DOC = \"the guard refuses open('.env') in a program\"\n"
+    _expect("sl1 a heredoc program whose only secret path sits in a string "
+            "literal no read call is handed reads nothing", "allow",
+            bash("python3 - <<'PY'\n" + _doc + "print(len(DOC))\nPY"))
+    _expect("sl2 ...and the same body as a here-string, the other spelling of a "
+            "program fed to an interpreter", "allow",
+            bash("python3 <<< \"DOC = 'the guard refuses open(.env) in a "
+                 "program'; print(len(DOC))\""))
+    _expect("sl3 ...while the same literal beside a real open() of the secret is "
+            "still a read", "block",
+            bash("python3 - <<'PY'\n" + _doc + "print(open('.env').read())\nPY"))
+    _expect("sl4 ...and a secret literal bound to a name open() is handed is "
+            "still a read", "block",
+            bash("python3 - <<'PY'\n" + _doc + "P = '.env'\n"
+                 "print(open(P).read())\nPY"))
+    _expect("sl5 ...and a literal handed to exec() is code, not text - the over-"
+            "reach this narrowing must not make", "block",
+            bash("python3 - <<'PY'\nexec(\"print(open('.env').read())\")\nPY"))
+    # The body parses as Python too, so it is the live-character check and not
+    # the parser that keeps this refused.
+    _expect("sl6 ...and a literal Ruby would interpolate runs the read inside it, "
+            "so it is never read as inert", "block",
+            bash("ruby - <<'RB'\nDOC = \"#{File.read('.env')}\"\nputs(DOC)\nRB"))
+    _expect("sl7 ...and a shell-out call quoted inside a literal is text too",
+            "allow",
+            bash("python3 - <<'PY'\nDOC = \"subprocess.run(['cat', '.env'])\"\n"
+                 "print(DOC)\nPY"))
+    _expect("sl9 ...and an f-string is code, so a read inside its braces runs",
+            "block",
+            bash("python3 - <<'PY'\nDOC = f\"{open('.env').read()}\"\n"
+                 "print(DOC)\nPY"))
+    _expect("sl8 ...while the same call made for real is still refused", "block",
+            bash("python3 - <<'PY'\nimport subprocess\n"
+                 "subprocess.run(['cat', '.env'])\nPY"))
 
     # --- Bash shell-verb reads ---
     _expect("b11 cat .env blocked", "block", bash("cat apps/foo/.env"))
@@ -1181,7 +2619,7 @@ def _cases(check):
     _expect("sm12 ...nor is a shell write to an exempt path that is not the "
           "manifest, which is where the manifest clause running FIRST could "
           "have cost something", "allow",
-          sub("echo hi > docs/audit/journal/2026-09.jsonl"))
+          sub("echo hi > docs/audit/notes/2026-09.md"))
     cfg_moved = _config._deep_merge(_config.DEFAULTS,
                                     {"manifestPath": "plan/my-plan.json"})
     _expect("sm13 a project that MOVED the manifest is covered: the path comes "
@@ -2075,12 +3513,27 @@ def _cases(check):
     _plan(True, [_covered])
     _we_msgs = [M.decide(bash(c), cfg=cfg)[1] for c in _forms(_uncovered)]
     check("we9 all three refusals name the PATH, the actual cause (the phase "
-          "that is running), the remedy and the exempt classes - the "
-          "interpreter arm printed a sentence with none of them in it",
+          "that is running), the remedy (widening the task with "
+          "/audit:task scope, or asking the operator) and the exempt classes - "
+          "the interpreter arm printed a sentence with none of them in it, "
+          "and NONE steers to the Edit/Write tools (a refusal told a model to "
+          "use a tool auto mode just steered it away from)",
           all(_uncovered in m and "Phase P30 is in_progress" in m
-              and "Use the Edit/Write tools" in m
+              and "/audit:task scope <taskId> --files ..." in m
+              and "ask the operator" in m
               and "Exempt paths (docs, tests, .claude/**)" in m
+              and "Edit/Write" not in m
               for m in _we_msgs), repr(_we_msgs))
+    # ...and the ASK tier (we5's verdict, now its TEXT): the same remedy, never
+    # the Edit/Write tools, because the old ask text repeated the deny text's
+    # steer word for word.
+    _we_ask_msgs = [M.decide(bash(c), cfg=cfg_ask44)[1]
+                    for c in _forms(_uncovered)]
+    check("we9b the ask-tier text names the same remedy and never the "
+          "Edit/Write tools",
+          all(_uncovered in m and "/audit:task scope <taskId> --files ..." in m
+              and "ask the operator" in m and "Edit/Write" not in m
+              for m in _we_ask_msgs), repr(_we_ask_msgs))
     check("we10 ...and each still names the spelling the operator typed, so the "
           "three messages are not one message with the command guessed at",
           "inline-eval one-liner" in _we_msgs[0]
@@ -2849,6 +4302,7 @@ def _cases(check):
     tmp_t = Path(tempfile.mkdtemp(prefix="guard-secrets-events-"))
     _prev_t = os.environ.get("CLAUDE_PROJECT_DIR")
     os.environ["CLAUDE_PROJECT_DIR"] = str(tmp_t)
+    _spend_slot(tmp_t, cfg, "sess-t")
     try:
         _feed = tmp_t / ".claude" / "logs" / "plan-gate-events.jsonl"
 
@@ -2945,7 +4399,7 @@ def _cases(check):
         # shape a home directory has. A path merely outside `src/` would resolve
         # inside the repo and be respelled to itself, and the case would pass
         # against the leaking version too.
-        _away = Path(_harness.fixture_root("guard-secrets-away-"))
+        _away = _away_root()
         _away_secret = str(_away / "deploy" / ".env")
         _v, _m = M.decide({"tool_name": "Read",
                            "tool_input": {"file_path": _away_secret},
@@ -3106,6 +4560,33 @@ def _cases(check):
                       and str(r.get("reason", "")).startswith(
                           "guard-secrets-read:")
                       for r in _rw[_before:]), repr(_rw[_before:]))
+        # t14: t11's fixture root does not inherit the temp root. A temp root
+        # under a harness's session directory is long and slug-shaped, and the
+        # feed bounds each cell, so a fixture built under it lost the tail of
+        # the very `file` cell t11 compares. Built while the temp root is
+        # exactly that shape, the fixture root is the same short one.
+        _deep = (Path(tmp_t) / ("-%s-someone-%s" % ("Users", "x" * 160))
+                 / "nest")
+        _deep.mkdir(parents=True)
+        _held_tempdir = tempfile.tempdir
+        tempfile.tempdir = str(_deep)
+        try:
+            _away_deep = _away_root()
+        finally:
+            tempfile.tempdir = _held_tempdir
+        _away_in_list = str(_away_deep / "deploy" / ".env")
+        _v, _m = M.decide(
+            {"tool_name": "mcp__filesystem__read_multiple_files",
+             "tool_input": {"paths": ["docs/README.md", _away_in_list]},
+             "session_id": "sess-t", "cwd": str(tmp_t)}, cfg=cfg)
+        _rw = _rows()
+        check("t14 t11's deny, with its fixture built under a long slug-shaped "
+              "temp root, still records `file` whole: the fixture root does "
+              "not sit under the temp root",
+              _v == "block" and str(_deep) not in _away_in_list
+              and _rw[-1].get("file") == _config.slashed(_away_in_list)
+              and str(_rw[-1].get("reason", "")).count("<outside-repo>") == 1,
+              repr((_away_in_list, _rw[-1])))
     finally:
         if _prev_t is None:
             os.environ.pop("CLAUDE_PROJECT_DIR", None)
@@ -3186,6 +4667,7 @@ def _cases(check):
     else:
         _prev_lw = os.environ.get("CLAUDE_PROJECT_DIR")
         os.environ["CLAUDE_PROJECT_DIR"] = _lw["main"]
+        _spend_slot(_lw["main"], cfg, "lw")
         try:
             def _lw_bash(cwd, command):
                 ok, got = _harness.attempt(
@@ -3258,6 +4740,7 @@ def _cases(check):
                   "that is NOT the plan is not refused as one - the arm keys on "
                   "the manifest path in the worktree, not on the worktree",
                   _ok9 and _got9[0] == "allow", repr(_got9)[:300])
+            _lw_copy_cost_cases(check, _lw, _lw_bash)
         finally:
             if _prev_lw is None:
                 os.environ.pop("CLAUDE_PROJECT_DIR", None)

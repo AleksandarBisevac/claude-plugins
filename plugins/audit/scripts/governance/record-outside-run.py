@@ -78,6 +78,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _evidence_io as _ev  # noqa: E402  (the ledger, the row shape and the runner words)
 import _journal_io  # noqa: E402  (the config, and the session id a CLI writer files under)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR shards)
@@ -283,7 +284,7 @@ def build_parser():
     parser.add_argument("--status", choices=list(STATUS_WORDS), default=None,
                         help="what it answered; absent means nobody said")
     parser.add_argument("--json", action="store_true", dest="as_json")
-    return parser
+    return _claude_home.attach_usage_hint(parser)
 
 
 def main(argv, out=print):

@@ -77,6 +77,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 import _demo_cast  # noqa: E402  (the demo's author identities, shared with gen-demo-manifest)
 
@@ -288,6 +289,7 @@ def main(argv):
                     help="sampling points of off-pipeline (unattributed) work across the\n                          span. The default reproduces the committed example ledger.")
     ap.add_argument("--stdout", action="store_true",
                     help="print rows instead of writing files")
+    _claude_home.attach_usage_hint(ap)
     args = ap.parse_args(argv)
 
     mio = _load_manifest_io()

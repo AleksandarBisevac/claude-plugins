@@ -2061,6 +2061,110 @@ def _cases(check):
     finally:
         shutil.rmtree(tmp_i, ignore_errors=True)
 
+    _machine_path_value_cases(check)
+
+
+# --- mp: a value holding a machine path never costs the hook its own row -------
+def _machine_path_value_cases(check):
+    """Driven through `main()`, Pre then Post, because `main` is where the row
+    used to vanish: the append's failure is swallowed there by contract, so a
+    row refused over a value's content left no trace anywhere."""
+    import io
+    tmp = tempfile.mkdtemp(prefix="jw-machine-path-")
+    prev_env = os.environ.get("CLAUDE_PROJECT_DIR")
+    real_in, real_out = sys.stdin, sys.stdout
+    try:
+        proj = os.path.join(tmp, "mp")
+        man_rel = "docs/audit/audit-plan.json"
+        man_abs = os.path.join(proj, man_rel)
+        os.makedirs(os.path.dirname(man_abs))
+
+        def doc(outcome):
+            task = {"id": "P1.1", "title": "t", "status": "in_progress"}
+            if outcome is not None:
+                task["outcome"] = outcome
+            return {"meta": {"version": 2}, "phases": [
+                {"id": "P1", "title": "p", "status": "in_progress",
+                 "tasks": [task]}]}
+
+        def hook(event, sid):
+            sys.stdin = io.StringIO(json.dumps(
+                {"hook_event_name": event, "tool_name": "Edit",
+                 "session_id": sid, "cwd": proj,
+                 "tool_input": {"file_path": man_rel, "new_string": "x"}}))
+            sys.stdout = io.StringIO()
+            try:
+                M.main()
+            except SystemExit:
+                pass
+            finally:
+                sys.stdin, sys.stdout = real_in, real_out
+
+        def edits():
+            return [r for r in _journal_io.read_all(proj)
+                    if r.get("action") == "manifest.edit"]
+
+        os.environ["CLAUDE_PROJECT_DIR"] = proj
+        # Neutral, and built so this file never spells one whole.
+        home = "/" + "/".join(("Users", "someone", "notes", "probe.md"))
+        for sid, outcome in (("mp-1", "kept the probe at %s" % (home,)),
+                             ("mp-2", "kept the probe at docs/probe.md")):
+            with open(man_abs, "w", encoding="utf-8") as fh:
+                json.dump(doc(None), fh)
+            hook("PreToolUse", sid)
+            with open(man_abs, "w", encoding="utf-8") as fh:
+                json.dump(doc(outcome), fh)
+            hook("PostToolUse", sid)
+        rows = edits()
+        bytes_ = json.dumps(rows, sort_keys=True)
+        tos = [c.get("to") for r in rows
+               for c in ((r.get("details") or {}).get("changes") or [])
+               if c.get("field") == "outcome"]
+        check("mp1 a manifest edit whose value holds a home path STILL yields "
+              "its manifest.edit row, and the row does not carry the path - "
+              "with the allow twin's clean value beside it, both rows land: %r"
+              % (tos,),
+              len(rows) == 2
+              and tos == ["kept the probe at %s" % (_journal_io.OUTSIDE_TOKEN,),
+                          "kept the probe at docs/probe.md"]
+              and "someone" not in bytes_ and home not in bytes_)
+
+        # Every shape the commit-time detector flags, and a file URL into a
+        # home directory, redacted out of the hook's own row the same way.
+        shapes = (
+            ("session-slug", "/x/" + "-".join(("", "Users", "someone",
+                                               "Desktop", "x")) + "/s"),
+            ("tempdir-session", "/".join(("", "private", "tmp", "claude-501",
+                                          "probe"))),
+            ("unexpanded-home", "~" + "/probe/notes.md"),
+            ("file-url", "file://" + "/".join(("", "Users", "someone",
+                                                "r.html"))),
+            ("allow-https", "https://example.com/Users/guide"),
+        )
+        for n, (name, raw) in enumerate(shapes):
+            with open(man_abs, "w", encoding="utf-8") as fh:
+                json.dump(doc(None), fh)
+            hook("PreToolUse", "mp-s%d" % (n,))
+            with open(man_abs, "w", encoding="utf-8") as fh:
+                json.dump(doc("kept the probe at %s" % (raw,)), fh)
+            hook("PostToolUse", "mp-s%d" % (n,))
+        tos = [c.get("to") for r in edits()[2:]
+               for c in ((r.get("details") or {}).get("changes") or [])
+               if c.get("field") == "outcome"]
+        want = ["kept the probe at %s" % (_journal_io.OUTSIDE_TOKEN,)] * 4
+        want.append("kept the probe at https://example.com/Users/guide")
+        check("mp2 a hook row whose value holds any detector shape or a file URL "
+              "into a home directory lands with that token redacted, and the "
+              "https allow twin lands byte for byte: %r" % (tos,),
+              tos == want)
+    finally:
+        sys.stdin, sys.stdout = real_in, real_out
+        if prev_env is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = prev_env
+        shutil.rmtree(tmp, ignore_errors=True)
+
 
 def _selftest():
     return _harness.run(_cases)

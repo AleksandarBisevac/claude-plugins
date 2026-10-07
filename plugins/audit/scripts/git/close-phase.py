@@ -136,6 +136,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _branch                                                       # noqa: E402
 import _evidence_io  # noqa: E402  (where the ledger lives, and its one strict decode)
 import _journal_io                                                 # noqa: E402
@@ -1911,7 +1912,7 @@ def build_parser():
     p.add_argument("--json", dest="as_json", action="store_true")
     p.add_argument("--override-verdict", dest="override_verdict", default=None,
                    metavar="TEXT")
-    return p
+    return _claude_home.attach_usage_hint(p)
 
 
 def main(argv, out=print):

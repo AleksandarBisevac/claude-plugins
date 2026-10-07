@@ -155,6 +155,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _evidence_io  # noqa: E402  (where the evidence ledger lives)
 import _invariants  # noqa: E402  (the git root, the manifest file pair, the under-test)
 import _journal_io  # noqa: E402  (where the trail lives, and the append)
@@ -574,7 +575,7 @@ def build_parser():
                              "does not bind this work; the reason is written to "
                              "the journal with the commit")
     parser.add_argument("--json", action="store_true", dest="as_json")
-    return parser
+    return _claude_home.attach_usage_hint(parser)
 
 
 def commit_work(manifest, phase, task, manifest_path, project, git_root,

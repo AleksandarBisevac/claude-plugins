@@ -103,6 +103,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _ui_theme as _theme   # noqa: E402  (tokens + labels shared with the report)
 import _panel_settings       # noqa: E402  (settings-form schema + write allow-lists)
@@ -1098,6 +1099,7 @@ def main(argv):
     # restated in the checker, so the browser check cannot go stale against it.
     ap.add_argument("--settings-paths", action="store_true",
                     help="print the config paths the Settings form binds, as JSON")
+    _claude_home.attach_usage_hint(ap)
     args = ap.parse_args(argv)
     if args.selftest:
         # Answers rather than exits silently: `--selftest` is what every other

@@ -115,6 +115,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _evidence_io                  # noqa: E402  (read_rows, subject_key -- the
 #                                       newest red phase-scope row; and
 #                                       named_failing_suites, its suites)
@@ -522,23 +523,22 @@ def _journal_row(project, config, mpath, phase_id, mode, changes, basis):
     write that happened must never be reported as failed because the record
     of it could not be."""
     mod = _panel_write._journalmod()
-    if mod is None or not hasattr(mod, "append_from_cli"):
+    if mod is None or not hasattr(mod, "append_from_cli_why"):
         return {"journaled": False, "journaledWhy": "unavailable"}
     cfg = None if config else {"manifestPath": _output.posix_rel(mpath, project)}
     try:
-        ok = bool(mod.append_from_cli(project, {
+        written, why = mod.append_from_cli_why(project, {
             "action": "phase.gateDerived",
             "target": _output.posix_rel(mpath, project),
             "summary": "%s gate derived (%s): %s" % (phase_id, mode, basis),
             "details": {"phaseId": phase_id, "mode": mode, "changes": changes,
-                       "basis": basis},
+                        "basis": basis},
             "actor": {"author": _panel_write._viewer(project, config).get("author"),
                       "sessionId": os.environ.get("CLAUDE_CODE_SESSION_ID"),
-                      "via": "cli"}}, config=cfg))
-    except Exception:
-        ok = False
-    return {"journaled": True} if ok else {"journaled": False,
-                                           "journaledWhy": "failed"}
+                      "via": "cli"}}, config=cfg)
+    except Exception as exc:
+        written, why = False, exc
+    return _panel_write.journal_block(project, written, why)
 
 
 # --- the locked run ---------------------------------------------------------------
@@ -648,15 +648,20 @@ def _locked_run(args, project, config, mpath, phase_id, out):
     jres = _journal_row(project, config, mpath, phase_id, mode, changes,
                         result["basis"])
     if args.as_json:
-        out(json.dumps({"ok": True, "phase": phase_id, "mode": mode,
-                        "basis": result["basis"], "narrowed": result["narrowed"],
-                        "dryRun": False, "written": written, "lines": human_lines,
-                        "brief": brief_line, "journaled": jres.get("journaled", False)},
-                       indent=2, sort_keys=True))
+        body = {"ok": True, "phase": phase_id, "mode": mode,
+                "basis": result["basis"], "narrowed": result["narrowed"],
+                "dryRun": False, "written": written, "lines": human_lines,
+                "brief": brief_line, "journaled": jres.get("journaled", False)}
+        # A row that did not land says why on this surface too, in the keys
+        # every other writer's JSON block already carries.
+        body.update((k, jres[k]) for k in ("journaledWhy", "journaledReason")
+                    if k in jres)
+        out(json.dumps(body, indent=2, sort_keys=True))
     else:
         out("  written: %s" % ", ".join(written))
         if not jres.get("journaled"):
-            out("  note: not journaled (%s)" % jres.get("journaledWhy"))
+            out("  note: not journaled (%s)" % (jres.get("journaledReason")
+                                                 or jres.get("journaledWhy"),))
     return E_OK
 
 
@@ -700,6 +705,7 @@ def main(argv, out=print):
     p.add_argument("--json", action="store_true", dest="as_json")
     p.add_argument("--project-dir", dest="project_dir", default=None)
     p.add_argument("--takeover", action="store_true")
+    _claude_home.attach_usage_hint(p)
     try:
         args = p.parse_args(argv)
     except SystemExit as exc:

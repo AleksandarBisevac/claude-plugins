@@ -33,6 +33,16 @@ and answering that per path at spawn time is what turns "explore the tree" from
 an agent's default first move into a deliberate step it has to justify, because
 the plan already told it what grepping would have found.
 
+`brief` ALSO CARRIES `executor.runsGate`, RESOLVED, because that word goes into
+the same spawn prompt and was the one other fact the orchestrator had to look up
+for it by hand. The reading is `hooks/_config.executor_gate_policy`'s, reached
+through `_loader` because a script may not import `hooks/`, and it is printed
+with its basis: the key and the file that set it, or that it is the default
+because the file or the key is absent. A value outside the vocabulary, or a
+config file that does not parse, is a REFUSAL - exit `E_CONFIG`, the problem
+named on stderr, nothing on stdout - never the default, because printing the
+default there would make a typo read as a decision.
+
 A MATCH THAT FINDS NOTHING SAYS SO. `cancel` on an id this manifest does not have
 at all, `bug` on an id not in `bugs[]`, `file` on a path `fileIndex` never
 recorded, `brief` on a task id this manifest does not have (or that names a
@@ -89,15 +99,18 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _manifest_io as _mio  # noqa: E402  (layer 1: the loader, the id indexes)
 import _manifest_vocab as _vocab  # noqa: E402  (layer 1: `_strip_line_suffix`, the one
 #                                             reading of a `files` entry's range suffix)
 import _journal_io  # noqa: E402  (layer 1: the trail this cross-checks against)
 import _evidence_io as _evio  # noqa: E402  (layer 2: project/config resolution)
+import _loader  # noqa: E402  (the one way scripts/ loads hooks/_config as a library)
 
 E_OK = 0
 E_NOMATCH = 1
 E_USAGE = 2
+E_CONFIG = 3
 
 
 # --- shared resolution ----------------------------------------------------------
@@ -295,6 +308,59 @@ def brief_lookup(manifest, task_id):
                             % (task_id,)}
 
 
+# --- executor.runsGate ------------------------------------------------------
+def hooks_config():
+    """`hooks/_config`, through `_loader` - the module that owns
+    `executor_gate_policy`, `RUNS_GATE_MODES` and `CONFIG_REL`."""
+    return _loader.load_hooks_config(modname="audit__config")
+
+
+def runs_gate_reading(project, hc=None):
+    """`(ok, payload_or_message)` for "which reading of `executor.runsGate`
+    does the executor get".
+
+    The WORD is `executor_gate_policy`'s and nobody else's; this adds only the
+    basis, which that function cannot give because it reads a merged config
+    where an absent key and a key set to the default look the same. So the
+    project's own file is read as written, and the policy is asked about that
+    dict - for which absent and default are still one answer, by its contract.
+
+    A refusal (`ok=False`) is a value outside the vocabulary or a file that
+    does not parse as a JSON object: the reading cannot be known, and the
+    message names why instead of standing in a default for it."""
+    hc = hc if hc is not None else hooks_config()
+    rel = hc.CONFIG_REL
+    try:
+        with open(os.path.join(project, rel), "r", encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except (FileNotFoundError, NotADirectoryError):
+        return True, {"reading": hc.executor_gate_policy({}), "default": True,
+                      "basis": "the default - no %s" % (rel,)}
+    except Exception as exc:
+        return False, ("%s cannot be read (%s: %s) - no executor.runsGate "
+                       "reading is printed, because the default would be a "
+                       "guess at what the file says"
+                       % (rel, type(exc).__name__, exc))
+    if not isinstance(raw, dict):
+        return False, ("%s is a JSON %s, not an object - no executor.runsGate "
+                       "reading is printed" % (rel, type(raw).__name__))
+    reading = hc.executor_gate_policy(raw)
+    block = raw.get("executor")
+    keyed = isinstance(block, dict) and "runsGate" in block
+    if reading is None:
+        return False, ("executor.runsGate is %r in %s, not one of %s - no "
+                       "reading is printed, because folding it into the "
+                       "default would make a typo read as a decision"
+                       % (block["runsGate"], rel,
+                          ", ".join(hc.RUNS_GATE_MODES)))
+    if keyed:
+        return True, {"reading": reading, "default": False,
+                      "basis": "set by executor.runsGate in %s" % (rel,)}
+    return True, {"reading": reading, "default": True,
+                  "basis": "the default - executor.runsGate not set in %s"
+                           % (rel,)}
+
+
 # --- run ---------------------------------------------------------------------
 # The step fields `run_lookup` reports, in the order the row already carries
 # them - `_evio.STEP_KEYS` minus `ran`, `measured`, `timeoutSeconds`,
@@ -406,15 +472,22 @@ def _render_human(question, node_id, found, payload):
         return lines + ["pointer: %s" % (payload["pointer"],)]
     if question == "brief":
         if not payload["files"]:
-            return ["%s declares no files yet" % (node_id,)]
-        lines = ["%s declares %d file(s):" % (node_id, len(payload["files"]))]
-        for entry in payload["files"]:
-            if entry["last"] is None:
-                lines.append("  %s: not in fileIndex yet" % (entry["path"],))
-            else:
-                lines.append("  %s: last declared by %s (status: %s)"
-                             % (entry["path"], entry["last"], entry["lastStatus"]))
-        lines.append("pointer: %s" % (payload["pointer"],))
+            lines = ["%s declares no files yet" % (node_id,)]
+        else:
+            lines = ["%s declares %d file(s):"
+                     % (node_id, len(payload["files"]))]
+            for entry in payload["files"]:
+                if entry["last"] is None:
+                    lines.append("  %s: not in fileIndex yet" % (entry["path"],))
+                else:
+                    lines.append("  %s: last declared by %s (status: %s)"
+                                 % (entry["path"], entry["last"],
+                                    entry["lastStatus"]))
+            lines.append("pointer: %s" % (payload["pointer"],))
+        gate = payload.get("runsGate")
+        if gate is not None:
+            lines.append("executor.runsGate: %s (%s)"
+                         % (gate["reading"], gate["basis"]))
         return lines
     if question == "run":
         lines = ["run %s (%s %s): %s"
@@ -496,7 +569,8 @@ def build_parser():
     brief_p = sub.add_parser(
         "brief", parents=[common],
         help="who last declared each file this task itself declares - "
-             "one call, for a spawn prompt, instead of one `file` call per path")
+             "one call, for a spawn prompt, instead of one `file` call per "
+             "path - and the executor.runsGate reading, with its basis")
     brief_p.add_argument("id")
     run_p = sub.add_parser(
         "run", parents=[common],
@@ -508,7 +582,7 @@ def build_parser():
     run_p.add_argument("--task", dest="task", default=None, metavar="ID",
                        help="with `latest`: the newest run recorded for this "
                             "task")
-    return p
+    return _claude_home.attach_usage_hint(p)
 
 
 def main(argv):
@@ -534,6 +608,14 @@ def main(argv):
     elif args.question == "brief":
         found, payload = brief_lookup(manifest, args.id)
         node_id = args.id
+        if found:
+            project, _config = _evio.project_config_for(args.manifest,
+                                                        args.project)
+            ok, gate = runs_gate_reading(project)
+            if not ok:
+                sys.stderr.write("audit-lookup.py: %s\n" % (gate,))
+                return E_CONFIG
+            payload["runsGate"] = gate
     elif args.question == "run":
         if args.id == "latest":
             if bool(args.phase) == bool(args.task):

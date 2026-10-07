@@ -380,9 +380,26 @@ live locks would fall silent exactly as the abandonment became certain, which is
 day in, which is when anyone finally looks. What liveness changes is the **repair**,
 so the sentence says which: a live holder means the run is either working or sitting
 idle mid-procedure, and `/audit:phase <id>` picks the remaining waves up; a holder
-that is gone means nothing is going to finish it, so `/audit:resume` continues it and
-`audit-lock.py release phase-<id>` gives the lock back. A zero that prints is the
-exception, under either holder: it is not from the live copy, so it says to re-read
+that is gone means nothing is going to finish it, so `/audit:resume` continues it on its
+own, and what its preflight acquire (`reference/orchestrator.md` → *Concurrency lock*) meets
+depends on whose lock it is. A **different session** meets the dead holder as exit 4 and takes
+the lock over through that same acquire once the human confirms it. The **same session**
+resumed under a new process meets its own lock: the acquire re-records it under the process
+`CLAUDE_PID` names and answers that the hold is this call's now, so that run releases it at the
+end. That needs `CLAUDE_PID` exported to the acquire: with none, there is no live process to
+re-record under, so the session's own lock reads dead and meets exit 4 like any other dead holder
+(`_locks.acquire`, which asks `_locks._holder_pid` for the pid). A start's own yielding lock is
+superseded by that acquire under its note rather than re-recorded. Either way the
+`audit-task.py start` it then runs (`reference/orchestrator.md` → *Branch-per-phase*) reuses that
+already-held lock rather than taking it over a second time — and a hand-typed start that is the
+one to re-record an orchestrator's lock from a dead pid reports it as re-recorded under its own
+note, not as the start's take, because sign-off and a phase cancel release only a lock carrying
+the start's note.
+`start`'s own takeover of a dead holder's lock is for the hand-typed case, with no preflight
+acquire ahead of it. This is the current reading: a claim write now ties to this same lock, so
+"no lock held" is no longer read as "anyone may take the claim" the way it once was — the
+lock's own liveness is what a takeover checks.
+A zero that prints is the exception, under either holder: it is not from the live copy, so it says to re-read
 the count from the copy named, or to check the branch.
 
 **Only a `phase-<id>` lock is a run.** The `index` lock is what a structural write

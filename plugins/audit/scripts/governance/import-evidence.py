@@ -95,6 +95,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _evidence_io as _ev  # noqa: E402  (evidence_dir, verify_rows - the one chain)
 import _journal_io  # noqa: E402  (config loading, rows_from_text)
 import _loader  # noqa: E402  (script_path: the printed full-gate.py, never loaded)
@@ -470,7 +471,7 @@ def build_parser():
                              "else the manifest's own directory); the "
                              "manifest must sit under it")
     parser.add_argument("--json", action="store_true", dest="as_json")
-    return parser
+    return _claude_home.attach_usage_hint(parser)
 
 
 def main(argv, out=print):

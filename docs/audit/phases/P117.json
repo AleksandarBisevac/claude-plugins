@@ -1,0 +1,119 @@
+{
+  "id": "P117",
+  "title": "a pipeline run's fixed cost is measured stage by stage and cut by infrastructure",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "the tokens and time a pipeline run spends are attributed to stages and to the files each stage reads, by offline tools with tests, and an infrastructure design that cuts the fixed part is chosen on that evidence with its saving predicted and a benchmark that will confirm or refute it",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P117.1",
+      "title": "a pipeline run's tokens and time are attributed to stages and files by offline tools with tests",
+      "status": "pending",
+      "description": "Measures where a pipeline run spends its tokens and time, with offline tools that have tests and make no paid call. Requested by the user on 2026-10-07 after the feature benchmark showed that the plugin pipeline costs several times more than plain Claude Code on a task both solve.\n\n1. Static context measure. A tool computes what each command and agent loads before it does any work: the command file, every reference file the command instructs the model to read, the agent definition, auto-loaded skills, and the always-on cost (plugin listing, CLAUDE.md). It reports bytes and an estimated token count, labelled as an estimate with its rule. It is computed for the pipeline's real path (/audit:run, /audit:next, /audit:phase, sign-off, executor, reviewer), at the published tag and at local main.\n\n2. Stream attribution. A tool reads a recorded stream-json session and attributes every model request's tokens to a stage: the main loop before any dispatch, plan and manifest work, executor, reviewer, gate, close. It splits each stage into cache write, cache read, input and output, priced with the shipped table. It names the file reads that created the largest cache writes. Run it on the recorded plugin sessions: the pipeline pilot, and the plugin arm of the feature benchmark under the internal analysis directory's experiments. Report what each stage cost in each.\n\n3. Tests. Each tool has a selftest that meets the repository's contract, with fixtures. Attribution is proved on a hand-built stream whose answer is known, including a twin that must not move a token between stages.\n\n4. docs/research/pipeline-cost-analysis.md states, from these measurements:\n- which part of a run's cost is fixed per run, per task, and per file the work touches;\n- what the prompt cache already saves and what it cannot;\n- the largest single contributors.\nEvery figure sits beside the command that re-derives it.",
+      "files": [
+        "tools/measure-context.py",
+        "tools/stream-cost.py",
+        "docs/research/pipeline-cost-analysis.md",
+        "docs/README.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CONTRIBUTING.md",
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P117.2",
+      "title": "the infrastructure that cuts the fixed cost is chosen on the measured evidence",
+      "status": "pending",
+      "description": "Chooses the infrastructure that cuts the pipeline's fixed cost, on the evidence the analysis produced. docs/research/pipeline-cost-design.md compares candidates on the same criteria. Candidates to evaluate, and any others the evidence points to:\n- a light path chosen by task risk and size;\n- reference prose loaded by section on demand instead of whole documents;\n- a per-task spawn brief, computed by a script, that replaces the reference reading;\n- rules a script already enforces deleted from the prose;\n- the reviewer gated by risk;\n- a layout that keeps the prompt cache warm across stages.\n\nCriteria for each candidate:\n- predicted saving, computed from the measured stage costs and labelled a prediction;\n- what the plugin guarantees that could weaken, and how that is held;\n- maintenance cost;\n- migration and COMPATIBILITY.md obligations;\n- the benchmark run that would confirm or refute it.\n\nThe document recommends the structurally correct option. It also gives the implementation tasks, each with its own measurable target, so the next phase step can be planned from it.",
+      "files": [
+        "docs/research/pipeline-cost-design.md",
+        "docs/README.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P117.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}

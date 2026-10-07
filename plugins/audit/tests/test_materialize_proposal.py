@@ -77,6 +77,14 @@ def _run(argv):
     return code, buf.getvalue()
 
 
+def _run_err(argv):
+    """`main(argv)` with stderr captured - (exit code, what it wrote there)."""
+    buf = io.StringIO()
+    with contextlib.redirect_stderr(buf):
+        code = M.main(argv)
+    return code, buf.getvalue()
+
+
 def _cells(line):
     """One printed row with the column padding collapsed, so ORDER is what is
     compared and column widths (which move with the longest value) are not."""
@@ -177,6 +185,18 @@ def _cases(check):
         check("mz44 an argument `list` does not understand is a usage error "
               "rather than a silent default listing",
               M.main([lpath, "list", "alll"]) == 2)
+
+        # An unknown VERB (not a flag `list` rejects) is the case where naming
+        # the bare usage block and nothing else on that branch would leave an
+        # older cached copy asked for a newer verb naming nothing about the
+        # newer installed one.
+        code6, err6 = _run_err([path, "revive2"])
+        check("mz46 an unknown verb is still a usage error: %r" % (code6,),
+              code6 == 2)
+        check("mz47 ...and the same stderr carries the shared usage hint - this "
+              "copy's own version and path, the line every hooked parser's usage "
+              "error already carries: %r" % (err6,),
+              "this copy: " in err6)
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)

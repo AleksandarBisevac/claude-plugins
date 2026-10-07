@@ -2883,6 +2883,43 @@ def _listing_cases(check):
           and M.still_listed(win_listing, native + "2", as_windows) is False)
 
 
+def _leftover_cases(check):
+    """`leftover_throwaways` reads the HOLDER directly above a `tree` directory
+    - never any ancestor segment, and never the main worktree, however its own
+    path happens to be spelled."""
+    real_git = M._git
+    root = "/nest/%snest/repo" % (M.THROWAWAY_PREFIX,)
+    good_holder = "/tmp/%sabc" % (M.THROWAWAY_PREFIX,)
+    good_path = good_holder + "/tree"
+    deep_path = "/tmp/%snest/mid/tree" % (M.THROWAWAY_PREFIX,)
+    listing = ("worktree %s\nHEAD %s\nbranch refs/heads/main\n\n"
+              "worktree %s\nHEAD %s\ndetached\n\n"
+              "worktree %s\nHEAD %s\ndetached\n"
+              % (root, "a" * 40, good_path, "b" * 40, deep_path, "c" * 40))
+
+    def fake(where, args, timeout=120, strip=True):
+        if args[:2] == ["worktree", "list"]:
+            return 0, listing
+        return 1, "fatal: refused"
+    M._git = fake
+    try:
+        found = [e["path"] for e in M.leftover_throwaways(root)]
+    finally:
+        M._git = real_git
+    check("sr202 a repository checked out under a directory that itself carries "
+          "THROWAWAY_PREFIX - a scratch test root, say - is the MAIN worktree "
+          "and is never reported as its own leftover: %r" % (found,),
+          root not in found)
+    check("sr203 a genuine throwaway, whose HOLDER directly above the `tree` "
+          "directory carries the prefix, is reported: %r" % (found,),
+          good_path in found)
+    check("sr204 THE ALLOW CASE for sr202/sr203: a tree nested two levels under "
+          "a prefixed ancestor, whose DIRECT holder does not itself carry the "
+          "prefix, is not reported - only the immediate holder is read, never "
+          "any ancestor segment: %r" % (found,),
+          deep_path not in found)
+
+
 def _holder_cases(check):
     """The throwaway's temp directory, when the configured one is inside the repo."""
     root = _seeded_repo("stamp-holder-")
@@ -2929,9 +2966,790 @@ def _holder_cases(check):
           and posix != os.path.join(local, "Temp"))
 
 
+# What `npm test` prints when its script reached no test runner at all, with
+# npm's update notice after it. No tally reader and no error reader matches
+# any of it, and none of it is a jest or vitest summary either, so the case
+# keeps holding when those runners get readers of their own.
+_UNREAD_NPM = (
+    "\n> app@1.0.0 test\n> ./scripts/run-suite.sh\n\n"
+    "the suite script stopped before it started a runner\n"
+    "npm notice\n"
+    "npm notice New major version of npm available! 10.8.2 -> 11.6.1\n"
+    "npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.6.1\n"
+    "npm notice To update run: npm install -g npm@11.6.1\n"
+    "npm notice\n")
+
+
+def _unread_basis(code, text, cmd):
+    """The basis `red_verdict` writes for a run made with no HEAD baseline."""
+    run = {"cmd": cmd, "code": code, "text": text, "problem": None,
+           "second": None, "head": None, "fix": None}
+    ctx = {"root": None, "implementation": [], "tests": ["tests/test_mine.py"],
+           "cases": [], "symbols": [], "dropped": [], "new": [],
+           "head_files": None, "head_defs": None, "head_modules": None,
+           "path": None}
+    return (M.red_verdict(run, ctx)[2] or {}).get("basis", "")
+
+
+def _decisive_cases(check):
+    verdict = M.classify_run(1, _UNREAD_NPM, ["npm", "test"])[0]
+    basis = _unread_basis(1, _UNREAD_NPM, ["npm", "test"])
+    quoted = [ln for ln in _UNREAD_NPM.splitlines() if ln.strip() and ln in basis]
+    check("sr195 a run no tally or error reader matches, ending in npm's update "
+          "notice, gets a basis that says no reader matched and quotes none of "
+          "its lines as the decisive one - position is not a cause: verdict %r, "
+          "quoted %r, basis %r" % (verdict, quoted, basis),
+          verdict == M.V_NO_TALLY and not quoted
+          and "no tally or error reader matched" in basis)
+    pytest_basis = _unread_basis(1, _PYTEST_FULL, [sys.executable, "-m", "pytest"])
+    tally_line = "========================= 2 failed, 1 passed in 0.01s " \
+                 "=========================="
+    check("sr196 THE ALLOW CASE for sr195: a run whose pytest tally is read still "
+          "quotes that tally line as decisive, and says nothing of an unread run: "
+          "%r" % (pytest_basis,),
+          pytest_basis.endswith(" - %s; run without nothing" % (tally_line,))
+          and "reader matched" not in pytest_basis)
+    traceback = ("Traceback (most recent call last):\n"
+                 "  File \"tests/test_mine.py\", line 1, in <module>\n"
+                 "ModuleNotFoundError: No module named 'mine'\n"
+                 "npm notice New major version of npm available! 10.8.2 -> 11.6.1\n")
+    error_basis = _unread_basis(1, traceback, ["npm", "test"])
+    check("sr197 THE ALLOW CASE for sr195: a run whose final Error line is read "
+          "still quotes that line as decisive, not the banner printed after it: "
+          "%r" % (error_basis,),
+          ": ModuleNotFoundError: No module named 'mine'; " in error_basis
+          and "npm notice" not in error_basis
+          and "reader matched" not in error_basis)
+
+
+# What jest 30 prints, under `npx jest`, for one test whose `expect` failed: a
+# `FAIL <path>` header, the case's bullet, the matcher hint under it, and the
+# `Tests:` summary. The command is a wrapper and names no runner, so only the
+# output can say this was jest.
+_JEST_ASSERT = (
+    " FAIL  tests/add.test.js\n"
+    "  ● adds two numbers\n\n"
+    "    expect(received).toBe(expected) // Object.is equality\n\n"
+    "    Expected: 3\n"
+    "    Received: -1\n\n"
+    "      3 | test('adds two numbers', () => {\n"
+    "    > 4 |   expect(add(1, 2)).toBe(3);\n"
+    "        |                     ^\n\n"
+    "      at Object.toBe (tests/add.test.js:4:21)\n\n"
+    "Test Suites: 1 failed, 1 total\n"
+    "Tests:       1 failed, 1 total\n"
+    "Snapshots:   0 total\n"
+    "Time:        0.31 s\n"
+    "Ran all test suites.\n")
+# ...and for a suite that never loaded: no case ran, so the only bullet is the
+# failed-to-run heading, with its cause on the line under it.
+_JEST_NO_SUITE = (
+    " FAIL  tests/add.test.js\n"
+    "  ● Test suite failed to run\n\n"
+    "    Cannot find module '../src/add' from 'tests/add.test.js'\n\n"
+    "Test Suites: 1 failed, 1 total\n"
+    "Tests:       0 total\n"
+    "Snapshots:   0 total\n"
+    "Time:        0.2 s\n"
+    "Ran all test suites.\n")
+
+
+# jest 30.5.2's own output for the same failure, captured with FORCE_COLOR=1 set
+# (observed 2026-10-07, `npx jest@30.5.2`): every summary word and bullet is
+# wrapped in a terminal escape, the shape a runner forced into colour through a
+# pipe actually prints, and `_decisive_line` has to read through it rather than
+# quote it raw.
+_JEST_ASSERT_COLORED = (
+    "\x1b[0m\x1b[7m\x1b[1m\x1b[31m FAIL \x1b[39m\x1b[22m\x1b[27m\x1b[0m "
+    "\x1b[2m./\x1b[22m\x1b[1madd.test.js\x1b[22m\n"
+    "\x1b[1m\x1b[31m  \x1b[1m● \x1b[22m\x1b[1madds two numbers\x1b[39m"
+    "\x1b[22m\n\n"
+    "    \x1b[2mexpect(\x1b[22m\x1b[31mreceived\x1b[39m\x1b[2m).\x1b[22mtoBe"
+    "\x1b[2m(\x1b[22m\x1b[32mexpected\x1b[39m\x1b[2m) // Object.is equality"
+    "\x1b[22m\n\n"
+    "    Expected: \x1b[32m4\x1b[39m\n"
+    "    Received: \x1b[31m3\x1b[39m\n\n"
+    "\x1b[1mTest Suites: \x1b[22m\x1b[1m\x1b[31m1 failed\x1b[39m\x1b[22m, "
+    "1 total\n"
+    "\x1b[1mTests:       \x1b[22m\x1b[1m\x1b[31m1 failed\x1b[39m\x1b[22m, "
+    "1 total\n"
+    "\x1b[1mSnapshots:   \x1b[22m0 total\n"
+    "\x1b[1mTime:\x1b[22m        0.275 s, estimated 1 s\n"
+    "\x1b[2mRan all test suites\x1b[22m\x1b[2m matching \x1b[22madd.test.js"
+    "\x1b[2m.\x1b[22m\n")
+
+
+def _jest_cases(check):
+    cmd = ["npx", "jest"]
+    verdict, tally = M.classify_run(1, _JEST_ASSERT, cmd)
+    cases = [(c.get("label"), c.get("assertion"))
+             for c in M.failing_cases(_JEST_ASSERT)]
+    check("sr198 a jest `expect` failure under `npx jest` reads as red, its tally "
+          "jest's own `Tests:` line, with the bullet's case named and its "
+          "assertion flag true - it read as no-tally: %r %r %r"
+          % (verdict, tally, cases),
+          verdict == M.V_RED and (tally or {}).get("runner") == "jest"
+          and (tally or {}).get("collected") == 1
+          and (tally or {}).get("assertions") == 1
+          and cases == [("adds two numbers", True)])
+    verdict_s, tally_s = M.classify_run(1, _JEST_NO_SUITE, cmd)
+    cases_s = [(c.get("label"), c.get("assertion"))
+               for c in M.failing_cases(_JEST_NO_SUITE)]
+    code_s, _v, block_s, _n = M.red_verdict(
+        {"cmd": cmd, "code": 1, "text": _JEST_NO_SUITE, "problem": None,
+         "second": None, "head": None, "fix": None},
+        {"root": None, "implementation": [], "tests": ["tests/add.test.js"],
+         "cases": [], "symbols": [], "dropped": [], "new": [],
+         "head_files": None, "head_defs": None, "head_modules": None,
+         "path": None})
+    basis_s = (block_s or {}).get("basis", "")
+    check("sr199 THE ALLOW CASE for sr198: a jest suite that failed to run is "
+          "named, with its assertion flag false and counted as a failure no case "
+          "ran, so the run is a collection error and red stays could-not-prove, "
+          "quoting jest's own summary line: %r %r %r exit=%r %r"
+          % (verdict_s, tally_s, cases_s, code_s, basis_s),
+          verdict_s == M.V_COLLECT and (tally_s or {}).get("runner") == "jest"
+          and (tally_s or {}).get("failed") == 1
+          and cases_s == [("Test suite failed to run", False)]
+          and code_s == M.E_CANNOT_PROVE
+          and ": Tests:       0 total;" in basis_s)
+    verdict_c, tally_c = M.classify_run(1, _JEST_ASSERT_COLORED, cmd)
+    cases_c = [(c.get("label"), c.get("assertion"))
+               for c in M.failing_cases(_JEST_ASSERT_COLORED)]
+    basis_c = _unread_basis(1, _JEST_ASSERT_COLORED, cmd)
+    check("sr200 a coloured jest red (FORCE_COLOR=1) still reads as red, its "
+          "tally and bullet read the same as the plain run: %r %r %r"
+          % (verdict_c, tally_c, cases_c),
+          verdict_c == M.V_RED and (tally_c or {}).get("runner") == "jest"
+          and (tally_c or {}).get("collected") == 1
+          and (tally_c or {}).get("assertions") == 1
+          and cases_c == [("adds two numbers", True)])
+    check("sr201 ...and the basis it writes quotes the decisive line PLAIN - no "
+          "terminal escape byte in it, even though the run's own output carried "
+          "nothing but coloured lines: %r" % (basis_c,),
+          "Tests:       1 failed, 1 total" in basis_c and "\x1b" not in basis_c)
+
+
+# A jest test file as a task adds it: a comment and strings holding brackets and
+# quotes that a text-level reading would misnest, a regex literal holding a
+# paren, a template literal with a substitution, a `.each` whose title is a
+# format jest fills in at run time, and a loop building titles from a template
+# beside the literal test in the same describe.
+_JS_NEW = "\n".join([
+    "import { add } from '../src/add';",
+    "// a comment with an apostrophe isn't a string ( {",
+    "describe('math', () => {",
+    "  const shape = /^\\(x\\)$/;",
+    "  test('adds two numbers', () => {",
+    "    expect(add(1, 2)).toBe(3); /* ) */",
+    "    expect(`${add(1, {a: 1}.a)}`).toMatch(shape);",
+    "  });",
+    "  it.each([[1, 2]])('doubles %i', (a, b) => {",
+    "    expect(add(a, a)).toBe(b);",
+    "  });",
+    "  for (const n of [1]) test(`loop ${n} done`, () => expect(n).toBe(n));",
+    "});",
+    "test(\"top ( level\", () => { expect('}').toBe('}'); });",
+    ""])
+# The same test file at HEAD, laid out differently and commented, which is no
+# change to any test body.
+_JS_HEAD_SAME = _JS_NEW.replace("expect(add(1, 2)).toBe(3); /* ) */",
+                                "expect(add(1, 2))\n      .toBe(3); // layout")
+_JS_EDITED = _JS_NEW.replace("toBe(3);", "toBe(4);")
+_JS_OTHER = "test('something else', () => { expect(1).toBe(1); });\n"
+
+
+def _jest_fail(path, chain, hint="expect(received).toBe(expected) // Object.is equality"):
+    """What jest prints for one failing `expect` in `path`, its bullet the title
+    chain joined the way jest joins it."""
+    return (" FAIL  %s\n  ● %s\n\n    %s\n\n    Expected: 3\n    Received: -1\n\n"
+            "Test Suites: 1 failed, 1 total\nTests:       1 failed, 1 passed, "
+            "2 total\nSnapshots:   0 total\nTime:        0.31 s\n"
+            % (path, " › ".join(chain), hint))
+
+
+def _jest_credit(text, tests, wt, head, cmd=("npx", "jest")):
+    """`credit_problem` of every assertion failure jest named in `text`, against
+    `head` (`{rel: text}` of HEAD's test files; None when they could not be read)."""
+    scope = {"tests": tests, "cmd": list(cmd), "roots": ("/repo",), "wt": wt,
+             "head_defs": {}, "head_modules": {}, "others": (),
+             "head_js": None if head is None else M.js_test_definitions(head)}
+    return [M.credit_problem(f, "jest", scope)
+            for f in M.failing_cases(text, "jest") if f["assertion"]]
+
+
+def _jest_credit_cases(check):
+    new = "tests/add.test.js"
+    adds = _jest_fail(new, ["math", "adds two numbers"])
+    head_green = {"code": 0, "problem": None,
+                  "text": " PASS  tests/other.test.js\nTests:       1 passed, 1 total\n"}
+    fix_green = {"code": 0, "problem": None,
+                 "text": " PASS  tests/add.test.js\nTests:       2 passed, 2 total\n"}
+    run = {"cmd": ["npx", "jest"], "code": 1, "text": adds, "problem": None,
+           "second": None, "head": head_green, "fix": fix_green}
+    root = _harness.fixture_root("stamp-jest-credit-")
+    try:
+        os.makedirs(os.path.join(root, "tests"))
+        _write(os.path.join(root, new), _JS_NEW)
+        ctx = {"root": root, "implementation": ["src/add.js"], "tests": [new],
+               "cases": [], "symbols": [], "dropped": [], "new": [new],
+               "head_files": ["src/add.js", "tests/other.test.js"],
+               "head_defs": {}, "head_modules": {}, "path": None,
+               "head_js": M.js_test_definitions({"tests/other.test.js": _JS_OTHER})}
+        code, _v, block, _n = M.red_verdict(run, ctx)
+        undefined = dict(run, text=_jest_fail(new, ["math", "subtracts"]))
+        code_u, _v, block_u, _n = M.red_verdict(undefined, ctx)
+        bare = dict(run, text=_jest_fail(new, ["adds two numbers"]))
+        code_b, _v, block_b, _n = M.red_verdict(bare, ctx)
+    finally:
+        _harness.remove_tree(root)
+    basis, basis_u, basis_b = [(b or {}).get("basis", "")
+                               for b in (block, block_u, block_b)]
+    check("sj1 a failing jest case whose title chain is new in a declared test file "
+          "is credited to the task, and red proves it end to end: %r %r"
+          % (code, basis),
+          code == M.E_PROVED and "adds two numbers" in basis)
+    check("sj2 THE DENY TWIN for sj1: the same file, a title chain it does not "
+          "define - a describe-free bullet naming only the test's title, or a "
+          "title under the describe that the file never writes - is not credited, "
+          "so red stays could-not-prove: %r %r %r %r"
+          % (code_u, basis_u, code_b, basis_b),
+          code_u == M.E_CANNOT_PROVE and code_b == M.E_CANNOT_PROVE
+          and "defines no test" in basis_u and "defines no test" in basis_b)
+    wt = {new: _JS_NEW}
+    same = _jest_credit(adds, [new], wt, {new: _JS_HEAD_SAME})
+    edited = _jest_credit(adds, [new], {new: _JS_EDITED}, {new: _JS_HEAD_SAME})
+    copied = _jest_credit(adds, [new], wt, {"tests/old.test.js": _JS_HEAD_SAME})
+    unread = _jest_credit(adds, [new], wt, None)
+    check("sj3 a failing jest case whose title chain and body are identical in "
+          "HEAD's copy of a test file - layout and comments aside - is not "
+          "credited, nor is one copied from another HEAD test file, nor any when "
+          "HEAD's files could not be read; the same chain with a body the task "
+          "edited is credited: same %r edited %r copied %r unread %r"
+          % (same, edited, copied, unread),
+          len(same) == 1 and same[0] and "HEAD's tests/add.test.js" in same[0]
+          and edited == [None]
+          and len(copied) == 1 and copied[0]
+          and "HEAD's tests/old.test.js" in copied[0]
+          and len(unread) == 1 and unread[0] and "could not be read" in unread[0])
+    other = _jest_credit(_jest_fail("tests/other.test.js",
+                                    ["math", "adds two numbers"]),
+                         [new], {new: _JS_NEW}, {})
+    nested = "packages/app/tests/add.test.js"
+    suffix = _jest_credit(adds, [nested], {nested: _JS_NEW}, {})
+    twice = _jest_credit(adds, [nested, "packages/lib/tests/add.test.js"],
+                         {nested: _JS_NEW,
+                          "packages/lib/tests/add.test.js": _JS_NEW}, {})
+    check("sj4 a failure jest locates in a test file the task does not declare is "
+          "not credited, nor one whose path is the tail of two declared files; "
+          "THE ALLOW TWIN: the same failure in a declared file, printed relative "
+          "to a package root, is located by its suffix and credited: other %r "
+          "suffix %r twice %r" % (other, suffix, twice),
+          len(other) == 1 and other[0] and "no declared test file" in other[0]
+          and suffix == [None]
+          and len(twice) == 1 and twice[0] and "no declared test file" in twice[0])
+    each = _jest_credit(_jest_fail(new, ["math", "doubles 1"]), [new], wt, {})
+    loop = _jest_credit(_jest_fail(new, ["math", "loop 1 done"]), [new], wt, {})
+    top = _jest_credit(_jest_fail(new, ["top ( level"]), [new], wt, {})
+    broken = "test('adds two numbers', () => { expect(1).toBe(1);\n"
+    closed = _jest_credit(adds, [new], wt, {"tests/broken.test.js": broken})
+    elsewhere = _jest_credit(adds, [new], wt, {"tests/broken.test.js":
+                                               broken.replace("adds two", "x")})
+    unbalanced = _jest_credit(adds, [new], {new: _JS_NEW + "})"}, {})
+    check("sj5 a jest title built at run time (`.each`) is refused credit by name, "
+          "a HEAD test file the reader cannot balance refuses a case whose title "
+          "it holds, and an unbalanced declared file credits nothing; THE ALLOW "
+          "TWINS: a literal title holding a bracket is credited, and an "
+          "unreadable HEAD file NOT holding the title refuses nothing - and a "
+          "template title built in a loop is refused while the literal test "
+          "beside it stays credited (sj1): each %r loop %r top %r closed %r "
+          "elsewhere %r unbalanced %r"
+          % (each, loop, top, closed, elsewhere, unbalanced),
+          len(each) == 1 and each[0] and "run time" in each[0]
+          and len(loop) == 1 and loop[0] and "run time" in loop[0]
+          and top == [None]
+          and len(closed) == 1 and closed[0]
+          and "tests/broken.test.js" in closed[0]
+          and elsewhere == [None]
+          and len(unbalanced) == 1 and unbalanced[0]
+          and "could not be read as" in unbalanced[0])
+
+
+# A jest-shaped runner, so a `red` over a jest project runs with no npm. Where
+# its cwd has a `node_modules` it writes into `node_modules/.cache`, the way a
+# real runner keeps its cache. It answers as jest 30 was observed to (the
+# design note in stamp-verification.py):
+# a named file that is empty fails to run, exit 1; no named file on disk is
+# `No tests found, exiting with code 1`, exit 0 only under --passWithNoTests.
+# A test is `test('<title>', () => { expect(<v() | int>).toBe(<int>); });`
+# inside one `describe`, and `v()` is the value `src/mine.py` assigns. Its
+# source is ASCII and its output is written as UTF-8 bytes, so the sweep's
+# cp1252 pass reads the same bullets.
+_FAKE_JEST = r'''import os, re, sys
+TEST = re.compile(r"test\('([^']+)', \(\) => \{ expect\((v\(\)|\d+)\)\.toBe\((\d+)\); \}\);")
+DESCRIBE = re.compile(r"describe\('([^']+)'")
+def value(word):
+    if word != "v()":
+        return int(word)
+    with open(os.path.join("src", "mine.py")) as fh:
+        return int(fh.read().split("=")[1])
+out = []
+if os.path.isdir("node_modules"):
+    os.makedirs(os.path.join("node_modules", ".cache", "fakejest"), exist_ok=True)
+    open(os.path.join("node_modules", ".cache", "fakejest", "ran"), "w").close()
+targets = [a for a in sys.argv[1:] if not a.startswith("-") and os.path.isfile(a)]
+if not targets:
+    code = 0 if "--passWithNoTests" in sys.argv else 1
+    out.append("No tests found, exiting with code %d" % (code,))
+    out.append("Run with `--passWithNoTests` to exit with code 0")
+    sys.stdout.buffer.write(("\n".join(out) + "\n").encode("utf-8"))
+    sys.exit(code)
+passed = failed = suites_bad = 0
+for rel in targets:
+    with open(rel) as fh:
+        text = fh.read()
+    if not text.strip():
+        suites_bad += 1
+        out += [" FAIL  %s" % (rel,), "  ● Test suite failed to run", "",
+                "    Your test suite must contain at least one test.", ""]
+        continue
+    outer = DESCRIBE.search(text).group(1)
+    block = []
+    for title, got, want in TEST.findall(text):
+        if value(got) == int(want):
+            passed += 1
+            continue
+        failed += 1
+        block += ["  ● %s › %s" % (outer, title), "",
+                  "    expect(received).toBe(expected) // Object.is equality", "",
+                  "    Expected: %s" % (want,), "    Received: %s" % (value(got),), ""]
+    if block:
+        suites_bad += 1
+    out += [" %s  %s" % ("FAIL" if block else "PASS", rel)] + block
+counts = ", ".join("%d %s" % (n, w) for n, w in ((failed, "failed"), (passed, "passed")) if n)
+out.append("Test Suites: %d failed, %d total" % (suites_bad, len(targets)))
+out.append("Tests:       %s%d total" % (counts + ", " if counts else "", failed + passed))
+sys.stdout.buffer.write(("\n".join(out) + "\n").encode("utf-8"))
+sys.exit(1 if suites_bad else 0)
+'''
+# ...and a pytest-shaped one, which is what the sweep has where pytest is not
+# installed: an empty file collects nothing and exits 5 with `no tests ran`.
+# A test is `def test_<name>():` over `    assert v() == <int>`. Its file is
+# named `pytest`, so the command names the runner the way a real one does.
+_FAKE_PYTEST = r'''import os, re, sys
+TEST = re.compile(r"^def (test_\w+)\(\):\n    assert v\(\) == (\d+)$", re.M)
+with open(os.path.join("src", "mine.py")) as fh:
+    have = int(fh.read().split("=")[1])
+out, passed, failed = [], 0, 0
+for rel in [a for a in sys.argv[1:] if not a.startswith("-")]:
+    with open(rel) as fh:
+        for name, want in TEST.findall(fh.read()):
+            if have == int(want):
+                passed += 1
+                continue
+            failed += 1
+            out.append("FAILED %s::%s - assert %d == %s" % (rel, name, have, want))
+counts = ", ".join("%d %s" % (n, w) for n, w in ((failed, "failed"), (passed, "passed")) if n)
+out.append("=== %s in 0.01s ===" % (counts or "no tests ran",))
+sys.stdout.write("\n".join(out) + "\n")
+sys.exit(1 if failed else (0 if passed else 5))
+'''
+
+
+def _js_test(outer, cases):
+    """A test file `_FAKE_JEST` reads: one `describe(outer)` over `(title,
+    got, want)` cases."""
+    return "\n".join(["describe('%s', () => {" % (outer,)] + [
+        "  test('%s', () => { expect(%s).toBe(%s); });" % case for case in cases]
+        + ["});", ""])
+
+
+def _fake_runner(prefix, name, source):
+    """The absolute path of a fake runner script, outside every fixture tree."""
+    path = os.path.join(_harness.fixture_root(prefix), name)
+    _write(path, source)
+    return path
+
+
+def _new_file_repo(prefix, head_files, wt_files, new):
+    """A repository whose HEAD holds `v = 1` and `head_files`, and whose working
+    tree holds the fix (`v = 2`) and `wt_files`, the task declaring `src/mine.py`
+    and the test file `new` - which HEAD does not have."""
+    root = _seeded_repo(prefix)
+    os.makedirs(os.path.join(root, "tests"))
+    for rel, text in head_files.items():
+        _write(os.path.join(root, *rel.split("/")), text)
+        _git(root, "add", rel)
+    if head_files:
+        _git(root, "commit", "-q", "-m", "tests")
+    _write(os.path.join(root, "src", "mine.py"), "v = 2\n")
+    for rel, text in wt_files.items():
+        _write(os.path.join(root, *rel.split("/")), text)
+    manifest = json.loads(json.dumps(MANIFEST))
+    task = manifest["phases"][0]["tasks"][0]
+    task["files"] = ["src/mine.py", new]
+    task["tests"] = {"mode": "tdd", "add": ["%s: v is two" % (new,)]}
+    man = os.path.join(_harness.fixture_root(prefix + "man-"), "audit-plan.json")
+    _write(man, json.dumps(manifest))
+    return root, man
+
+
+def _new_file_cases(check):
+    py = sys.executable
+    jest = _fake_runner("stamp-fake-jest-", "jest.py", _FAKE_JEST)
+    new_js = "tests/new.test.js"
+    old_green = {"tests/old.test.js": _js_test("old", [("old holds", "1", "1")])}
+    adds = {new_js: _js_test("mine", [("v is two", "v()", "2")])}
+    got = {}
+    for how, cmd in (("naming only the new file", [py, jest, new_js]),
+                     ("naming HEAD's green file and the new one",
+                      [py, jest, "tests/old.test.js", new_js])):
+        root, man = _new_file_repo("stamp-red-newjs-", old_green, adds, new_js)
+        code, payload = _red(root, man, cmd)
+        got[how] = (code, (payload.get("redFirst") or {}).get("basis")
+                    or payload.get("note") or payload,
+                    (payload.get("baseline") or {}).get("absent"))
+    check("sb1 a jest-shaped runner that fails an empty suite: a task adding a new "
+          "failing test file gets a green baseline - HEAD's run made with the new "
+          "file ABSENT, never an empty stub - and the red is proved, the basis "
+          "saying the file was left absent: %r" % (got,),
+          all(code == M.E_PROVED and "left absent" in str(basis)
+              and "Test suite failed to run" not in str(basis)
+              and absent == [new_js]
+              for code, basis, absent in got.values()) and len(got) == 2)
+
+    pytest = _fake_runner("stamp-fake-pytest-", "pytest", _FAKE_PYTEST)
+    new_py = "tests/test_new.py"
+    root_p, man_p = _new_file_repo(
+        "stamp-red-newpy-", {}, {new_py: "def test_two():\n    assert v() == 2\n"},
+        new_py)
+    code_p, payload_p = _red(root_p, man_p, [py, pytest, new_py])
+    basis_p = (payload_p.get("redFirst") or {}).get("basis", json.dumps(payload_p))
+    base_p = payload_p.get("baseline") or {}
+    head_p = (payload_p.get("run") or {}).get("head") or {}
+    check("sb2 THE ALLOW CASE for sb1: a pytest task adding a new test file keeps "
+          "today's baseline - the file laid over as an empty stub, HEAD's run "
+          "exiting 5 with no tests ran and accepted as green - and is proved: "
+          "exit=%r baseline=%r head exit=%r %s"
+          % (code_p, base_p, head_p.get("exit"), basis_p[:300]),
+          code_p == M.E_PROVED and "laid over as empty files" in basis_p
+          and "left absent" not in basis_p
+          and base_p.get("stubbed") == [new_py] and base_p.get("absent") == []
+          and head_p.get("exit") == 5)
+
+    old_red = {"tests/old.test.js": _js_test("old", [("v is already two", "v()", "2")])}
+    root_r, man_r = _new_file_repo("stamp-red-newjs-red-", old_red, adds, new_js)
+    code_r, payload_r = _red(root_r, man_r, [py, jest, "tests/old.test.js", new_js])
+    basis_r = (payload_r.get("redFirst") or {}).get("basis", json.dumps(payload_r))
+    head_r = "\n".join(((payload_r.get("run") or {}).get("head") or {})
+                       .get("outputTail") or [])
+    check("sb3 THE ALLOW CASE for sb1, the over-fire direction: with the new file "
+          "absent, a baseline whose remaining target is red at HEAD still answers "
+          "could-not-prove - the red read off HEAD's own failing case, not off an "
+          "empty suite: exit=%r absent=%r head=%r %s"
+          % (code_r, (payload_r.get("baseline") or {}).get("absent"), head_r,
+             basis_r[:300]),
+          code_r == M.E_CANNOT_PROVE and "already red" in basis_r
+          and (payload_r.get("baseline") or {}).get("absent") == [new_js]
+          and "old › v is already two" in head_r
+          and "Test suite failed to run" not in head_r)
+
+
+def _none_found_cases(check):
+    new_js = ["tests/new.test.js"]
+    sentence = "No tests found, exiting with code 1\n"
+    failing = (sentence + " FAIL  tests/old.test.js\n  ● old › holds\n\n"
+               "    expect(received).toBe(expected) // Object.is equality\n\n"
+               "Test Suites: 1 failed, 1 total\nTests:       1 failed, 1 total\n")
+    refused = M.baseline_problem({"code": 1, "text": failing, "problem": None,
+                                  "absent": new_js}, ["npx", "jest"])
+    check("sb4 jest's no-test-file sentence beside a tally counting a failure is "
+          "NOT a green baseline, a file left absent or not - the sentence alone "
+          "never vouches for a run that failed: %r" % (refused,),
+          refused is not None and "not green" in refused)
+    got = dict((how, M.baseline_problem(dict(head, problem=None), ["npx", "jest"]))
+               for how, head in (
+                   ("the sentence alone", {"code": 1, "text": sentence,
+                                           "absent": new_js}),
+                   ("the sentence and a tally counting nothing",
+                    {"code": 1, "text": sentence + "Tests:       0 total\n",
+                     "absent": new_js}),
+                   ("vitest's sentence", {"code": 1, "absent": new_js,
+                                          "text": "No test files found, exiting "
+                                                  "with code 1\n"})))
+    no_absent = M.baseline_problem({"code": 1, "text": sentence, "problem": None,
+                                    "absent": []}, ["npx", "jest"])
+    check("sb5 THE ALLOW CASE for sb4: with a file left absent, the sentence alone, "
+          "or beside a tally counting nothing, IS a green baseline under jest and "
+          "vitest alike - and with no file left absent it is not, a path that "
+          "matched nothing being a misnamed one: %r absent-none %r"
+          % (got, no_absent),
+          all(v is None for v in got.values()) and len(got) == 3
+          and no_absent is not None)
+
+
+# --- dependencies: the project's ignored node_modules linked into the throwaway ---
+# The throwaway holds tracked files only. These fixtures keep the jest-shaped
+# runner INSIDE an ignored `node_modules`, reached through a `.bin` link the way
+# npm lays one out, so a run can start only when the helper links that directory
+# in - and a sentinel beside it shows the removal unlinked rather than descended.
+def _deps_repo(prefix, wt_cases, head_extra=None, deps=True):
+    """A repository ignoring `node_modules/`, HEAD at `v = 1` and the working tree
+    at `v = 2` with a new `tests/new.test.js` holding `wt_cases`; with `deps`, an
+    ignored `node_modules` holding the runner, a `.bin/jest` link to it and a
+    sentinel file. Returns `(root, man, cmd)`."""
+    new_js = "tests/new.test.js"
+    head = {".gitignore": "node_modules/\n"}
+    head.update(head_extra or {})
+    root, man = _new_file_repo(prefix, head,
+                               {new_js: _js_test("mine", wt_cases)}, new_js)
+    if deps:
+        _deps_dir(root)
+    return root, man, [sys.executable, "node_modules/.bin/jest", new_js]
+
+
+def _deps_dir(base):
+    """`base/node_modules` with the fake runner, its `.bin` link and a sentinel."""
+    nm = os.path.join(base, "node_modules")
+    os.makedirs(os.path.join(nm, "fakejest"))
+    os.makedirs(os.path.join(nm, ".bin"))
+    _write(os.path.join(nm, "fakejest", "jest.py"), _FAKE_JEST)
+    _write(os.path.join(nm, "sentinel.txt"), "the shared tree's dependency\n")
+    os.makedirs(os.path.join(nm, ".cache"))
+    os.symlink(os.path.join("..", "fakejest", "jest.py"),
+               os.path.join(nm, ".bin", "jest"))
+    return nm
+
+
+def _deps_basis(payload):
+    return ((payload.get("redFirst") or {}).get("basis") or payload.get("note")
+            or json.dumps(payload))
+
+
+def _deps_cases(check):
+    root, man, cmd = _deps_repo("stamp-red-deps-", [("v is two", "v()", "2")],
+                                head_extra={".npmrc": "fund=false\n"})
+    code, payload = _red(root, man, cmd)
+    basis = _deps_basis(payload)
+    nm = os.path.join(root, "node_modules")
+    kept = [rel for rel in ("sentinel.txt", "fakejest/jest.py", ".bin/jest")
+            if os.path.lexists(os.path.join(nm, *rel.split("/")))]
+    cache = os.listdir(os.path.join(nm, ".cache"))
+    check("sd1 with --deps-from defaulting to --project, an ignored node_modules "
+          "holding a jest-shaped runner is linked into the throwaway and a new "
+          "failing test answers proved - without the link the runner is absent "
+          "there and the answer was could-not-prove; the basis names the linked "
+          "directory and the TRACKED .npmrc as carried with HEAD, and the removal "
+          "left every file behind the links in place, the runner's write into "
+          "node_modules/.cache staying in the throwaway: exit=%r kept=%r "
+          "source cache=%r %s" % (code, kept, cache, basis[:600]),
+          code == M.E_PROVED and "linked" in basis and "node_modules" in basis
+          and ".npmrc" in basis and "carried" in basis
+          and kept == ["sentinel.txt", "fakejest/jest.py", ".bin/jest"]
+          and cache == []
+          and (payload.get("dependencies") or {}).get("linked") == ["node_modules"]
+          and (payload.get("throwaway") or {}).get("removed") is True)
+
+    outside = _harness.fixture_root("stamp-red-deps-store-")
+    _write(os.path.join(outside, "index.js"), "module.exports = 1;\n")
+    root_w, man_w, cmd_w = _deps_repo("stamp-red-deps-ws-", [("v is two", "v()", "2")])
+    os.makedirs(os.path.join(root_w, "packages", "ws"))
+    _write(os.path.join(root_w, "packages", "ws", "index.js"), "x\n")
+    _git(root_w, "add", "packages/ws/index.js")
+    _git(root_w, "commit", "-q", "-m", "a workspace package")
+    os.symlink(os.path.join(root_w, "packages", "ws"),
+               os.path.join(root_w, "node_modules", "ws"))
+    code_w, payload_w = _red(root_w, man_w, cmd_w)
+    basis_w = _deps_basis(payload_w)
+    run_w = payload_w.get("run") or {}
+    skipped_w = (payload_w.get("dependencies") or {}).get("skipped") or []
+    check("sd2 a node_modules holding an entry that links into the shared working "
+          "tree (a workspace package) is NOT LINKED, its reason naming the entry "
+          "in the skipped list the basis prints, and the run is still made - "
+          "here the runner lived in that node_modules, so the throwaway lacks it "
+          "and the answer is could-not-prove for that reason, not a refusal: "
+          "exit=%r skipped=%r head=%r %s"
+          % (code_w, skipped_w, run_w.get("head"), basis_w[:600]),
+          code_w == M.E_CANNOT_PROVE
+          and [s[0] for s in skipped_w] == ["node_modules"]
+          and "node_modules/ws" in skipped_w[0][1]
+          and "not linked: node_modules (" in basis_w
+          and run_w.get("head") is not None
+          and (payload_w.get("dependencies") or {}).get("linked") == [])
+
+    root_s, man_s, cmd_s = _deps_repo("stamp-red-deps-st-", [("v is two", "v()", "2")])
+    os.symlink(outside, os.path.join(root_s, "node_modules", "stored"))
+    code_s, payload_s = _red(root_s, man_s, cmd_s)
+    basis_s = _deps_basis(payload_s)
+    check("sd3 THE ALLOW CASE for sd2: an entry linking OUTSIDE the project (a "
+          "package store), and the `.bin` link resolving inside node_modules "
+          "itself, are linked and the red is proved - the refusal reads where a "
+          "link lands, not that it is a link: exit=%r %s" % (code_s, basis_s[:600]),
+          code_s == M.E_PROVED and "workspace" not in basis_s)
+
+    root_g, man_g, cmd_g = _deps_repo("stamp-red-deps-green-", [("one is one", "1", "1")])
+    _write(os.path.join(root_g, ".npmrc"), "fund=false\n")
+    os.makedirs(os.path.join(root_g, "scratch", "node_modules", "x"))
+    # Outside the tree on purpose: a value under the root is already dropped as
+    # a path into the shared tree, and would pass this case without the new rule.
+    userrc = os.path.join(_harness.fixture_root("stamp-red-deps-rc-"), "npmrc")
+    code_g, payload_g = _with_env("NPM_CONFIG_USERCONFIG", userrc,
+                                  lambda: _red(root_g, man_g, cmd_g))
+    note = _deps_basis(payload_g)
+    dropped = (payload_g.get("environment") or {}).get("dropped") or []
+    check("sd4 THE ALLOW CASE: a test that passes without the fix stays not red "
+          "(exit 1) with dependencies linked, and the note names the linked "
+          "directory, the source path a runner may write back through, the cache "
+          "directories kept in the throwaway, a node_modules whose parent HEAD "
+          "lacks as not linked, and the untracked project .npmrc as "
+          "dropped, with NPM_CONFIG_USERCONFIG dropped from the environment: "
+          "exit=%r dropped=%r %s" % (code_g, dropped, note[:800]),
+          code_g == M.E_NOT_RED and "linked" in note
+          and any(os.path.join(r, "node_modules") in note
+                  for r in (root_g, os.path.realpath(root_g)))
+          and ".cache" in note and ".npmrc" in note and "dropped" in note
+          and "not linked: scratch/node_modules (its parent directory is not at "
+              "HEAD)" in note
+          and "NPM_CONFIG_USERCONFIG" in dropped)
+
+    root_p, man_p, cmd_p = _deps_repo("stamp-red-deps-from-",
+                                      [("v is two", "v()", "2")], deps=False)
+    source = _harness.fixture_root("stamp-red-deps-source-")
+    subprocess.run(["git", "init", "-q", source], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _write(os.path.join(source, ".gitignore"), "node_modules/\n")
+    _deps_dir(source)
+    code_n, payload_n = _red(root_p, man_p, cmd_p)
+    code_f, payload_f = _red(root_p, man_p, cmd_p, "--deps-from", source)
+    check("sd5 --deps-from names another checkout holding node_modules: a project "
+          "with none of its own proves the red from it, and without the flag the "
+          "same run is could-not-prove: without=%r with=%r %s"
+          % (code_n, code_f, _deps_basis(payload_f)[:600]),
+          code_n == M.E_CANNOT_PROVE and code_f == M.E_PROVED
+          and any(s in _deps_basis(payload_f)
+                  for s in (source, os.path.realpath(source))))
+
+
+# A unittest suite and an in-repo `.venv` git ignores, whose site-packages
+# holds an editable install's `.pth` - the shape `pip install -e .` leaves.
+_UNIT_HEAD = ("import os, sys, unittest\n"
+              "sys.path.insert(0, os.path.join(os.path.dirname("
+              "os.path.abspath(__file__)), '..', 'src'))\n"
+              "import mine\n\n\n"
+              "class Mine(unittest.TestCase):\n"
+              "    def test_v_is_set(self):\n"
+              "        self.assertTrue(mine.v >= 1)\n")
+_UNIT_NEW = _UNIT_HEAD + ("\n    def test_v_is_two(self):\n"
+                          "        self.assertEqual(mine.v, 2)\n")
+
+
+def _venv_repo(prefix, pth_target):
+    """`(root, man, cmd)` - HEAD at `v = 1` with a green unittest file, the
+    working tree at `v = 2` with a new case, and an ignored `.venv` whose
+    site-packages holds an editable `.pth` naming `pth_target`, which is
+    "<root>" for the repository itself."""
+    root = _seeded_repo(prefix)
+    os.makedirs(os.path.join(root, "tests"))
+    _write(os.path.join(root, ".gitignore"), ".venv/\n")
+    _write(os.path.join(root, "tests", "test_mine.py"), _UNIT_HEAD)
+    _git(root, "add", ".gitignore", "tests/test_mine.py")
+    _git(root, "commit", "-q", "-m", "tests")
+    _write(os.path.join(root, "src", "mine.py"), "v = 2\n")
+    _write(os.path.join(root, "tests", "test_mine.py"), _UNIT_NEW)
+    site = os.path.join(root, ".venv", "lib", "python3.12", "site-packages")
+    os.makedirs(site)
+    _write(os.path.join(site, "__editable__.proj-0.1.pth"),
+           pth_target.replace("<root>", root) + "\n")
+    manifest = json.loads(json.dumps(MANIFEST))
+    task = manifest["phases"][0]["tasks"][0]
+    task["files"] = ["src/mine.py", "tests/test_mine.py"]
+    task["tests"] = {"mode": "tdd", "add": ["tests/test_mine.py: test_v_is_two"]}
+    man = os.path.join(_harness.fixture_root(prefix + "man-"), "audit-plan.json")
+    _write(man, json.dumps(manifest))
+    return root, man, [sys.executable, "-m", "unittest", "-v", "tests.test_mine"]
+
+
+def _venv_cases(check):
+    root, man, cmd = _venv_repo("stamp-red-venv-in-", "<root>")
+    code, payload = _red(root, man, cmd)
+    deps = payload.get("dependencies") or {}
+    basis = _deps_basis(payload)
+    check("sd6 an in-repo .venv whose site-packages holds an editable `.pth` "
+          "naming the project, under a unittest command run by the system "
+          "python, still proves: the .venv is not linked, its reason naming the "
+          "`.pth`, and the run the command never needed it for is made: "
+          "exit=%r deps=%r %s" % (code, deps, basis[:600]),
+          code == M.E_PROVED and deps.get("linked") == []
+          and [s[0] for s in deps.get("skipped") or []] == [".venv"]
+          and "__editable__.proj-0.1.pth" in (deps.get("skipped") or [["", ""]])[0][1]
+          and "not linked: .venv (" in basis)
+    outside = _harness.fixture_root("stamp-red-venv-elsewhere-")
+    root_o, man_o, cmd_o = _venv_repo("stamp-red-venv-out-", outside)
+    code_o, payload_o = _red(root_o, man_o, cmd_o)
+    deps_o = payload_o.get("dependencies") or {}
+    check("sd7 THE ALLOW CASE for sd6: a .venv whose `.pth` names a path outside "
+          "the project is linked as before - the skip reads where an entry "
+          "lands, not that a `.pth` exists - and the red still proves: "
+          "exit=%r deps=%r" % (code_o, deps_o),
+          code_o == M.E_PROVED and deps_o.get("linked") == [".venv"]
+          and deps_o.get("skipped") == [])
+
+
+def _scan(source, rels, roots, deadline):
+    """`workspace_links` under the deadline, or the exception it raised named."""
+    try:
+        return M.workspace_links(source, rels, roots, deadline)
+    except Exception as exc:
+        return "raised %r" % (exc,)
+
+
+def _scan_cases(check):
+    root = _harness.fixture_root("stamp-scan-")
+    os.makedirs(os.path.join(root, "packages", "ws"))
+    nm = os.path.join(root, "node_modules")
+    os.makedirs(os.path.join(nm, "@scope"))
+    os.makedirs(os.path.join(nm, "pkg", "deep", "deeper"))
+    pkg = os.path.join(root, "packages", "ws")
+    os.symlink(pkg, os.path.join(nm, "ws"))
+    os.symlink(pkg, os.path.join(nm, "@scope", "ws"))
+    # Neither of these is an entry shape a workspace or an editable install
+    # leaves, so a scan bounded to those shapes does not open them.
+    os.symlink(pkg, os.path.join(nm, "pkg", "deep", "deeper", "inner"))
+    _write(os.path.join(nm, "pkg", "deep", "stray.pth"), pkg + "\n")
+    site = os.path.join(root, ".venv", "lib", "python3.12", "site-packages")
+    os.makedirs(os.path.join(site, "lib"))
+    _write(os.path.join(site, "__editable__.x-1.pth"), pkg + "\n")
+    _write(os.path.join(site, "lib", "nested.pth"), pkg + "\n")
+    roots = [root, os.path.realpath(root)]
+    got = _scan(root, ["node_modules", ".venv"], roots, time.time() + 60)
+    found = sorted(e for e, _t in got[0]) if isinstance(got, tuple) else got
+    check("sd8 the workspace-link scan reads only the entry shapes that can be "
+          "links: top-level and scoped entries, and `.pth` or `__editable__` "
+          "files directly under site-packages - a link deep inside a package and "
+          "a `.pth` outside site-packages are never opened: %r" % (found,),
+          found == [".venv/lib/python3.12/site-packages/__editable__.x-1.pth",
+                    "node_modules/@scope/ws", "node_modules/ws"]
+          and got[1] is None)
+    late = _scan(root, ["node_modules", ".venv"], roots, time.time() - 1)
+    check("sd9 THE ALLOW CASE for sd8, the bound in time: a scan started past "
+          "the deadline answers with a timeout problem and no list, and one "
+          "with time left (sd8) answers with no problem: %r" % (late,),
+          isinstance(late, tuple) and late[0] is None
+          and "timed out" in (late[1] or ""))
+
+
 def _cases(check):
+    _harness.stage(check, "sd-deps", _deps_cases)
+    _harness.stage(check, "sd-venv", _venv_cases)
+    _harness.stage(check, "sd-scan", _scan_cases)
+    _harness.stage(check, "sb-new-file", _new_file_cases)
+    _harness.stage(check, "sb-none-found", _none_found_cases)
+    _harness.stage(check, "sr-decisive", _decisive_cases)
+    _harness.stage(check, "sr-jest", _jest_cases)
+    _harness.stage(check, "sj-credit", _jest_credit_cases)
     _harness.stage(check, "sr-crlf", _crlf_cases)
     _harness.stage(check, "sr-listing", _listing_cases)
+    _harness.stage(check, "sr-leftover", _leftover_cases)
     _harness.stage(check, "sr-holder", _holder_cases)
     _harness.stage(check, "sv-take", _take_cases)
     _harness.stage(check, "sv-compare", _compare_cases)

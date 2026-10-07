@@ -40,6 +40,7 @@ import _manifest_vocab as _vocab                   # noqa: E402  (the gate-basis
 import _manifest_phases as _phases                 # noqa: E402  (the identity pin below: an alias, not a second body)
 import _gate_derive                                # noqa: E402  (the identity pin below: an alias, not a second body)
 import _panel_write                                # noqa: E402  (as audit-task imports it)
+import _locks as _lock_lib                         # noqa: E402  (its claim writer, which the command no longer re-exports)
 
 M = _loader.load_script("audit-task.py", modname="audit_task")
 
@@ -61,7 +62,7 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # carried), eb (the brief a shell had already eaten, and the stdin route out),
 # fg (the `tests.gate` a STARTED task could not change, and the two refusals
 # beside it that must stay), pr (the `start` verb: the promotion the plan gate
-# reads),
+# reads), pc (the phase claim `start` takes on the sharded layout),
 # pd (the `done` verb: the close, and the SHA that makes it a record),
 # tw (the tree the caller stands in against the tree the verb writes),
 # sd (seed: the smallest honest plan, written where none was),
@@ -1010,8 +1011,8 @@ def _cases(check):
         else:
             projk, mpathk = mk("k-lock", base_manifest(), git=True)
             # `audit-lock.py`, and nothing that reads a lock. This group
-            # ACQUIRES and seizes one - it drives `main()` and `_write_lock`,
-            # which are the command's half. The panel used to publish a
+            # ACQUIRES and seizes one - it drives `main()`, the command's half,
+            # and plants a claim through the library's writer. The panel used to publish a
             # READ-side accessor that answered with the library, and the write
             # path reached it for a command entry point the library never
             # promised; the accessor is out of that path now, and a taker says
@@ -1057,7 +1058,7 @@ def _cases(check):
                     lpath = os.path.join(lockmod.lock_dir(projk), "index.lock")
                     info = lockmod.read_lock(lpath)
                     info["pid"] = deadp.pid
-                    lockmod._write_lock(lpath, info)
+                    _lock_lib._write_lock(lpath, info)
                     code, txt = run(["add", "Stale", "--phase", "P2",
                                      "--project-dir", projk])
                     check("k2 an abandoned holder -> exit 4, offering --takeover",
@@ -4029,18 +4030,16 @@ def _cases(check):
                    # `signoff` refuses P2's open task, so every stray flag must
                    # bounce BEFORE that refusal - which is what the grid asks.
                    "signoff": ["signoff", "P2", "--verdict", "passed", "--summary", "s"],
-                   # `next-id` writes nothing and reads no flag of its own, so like
-                   # `start` its row is the bare call and every flag must bounce.
+                   # `next-id` writes nothing and reads no flag of its own, so its
+                   # row is the bare call and every flag must bounce.
                    "next-id": ["next-id", "bug"],
                    "add-phase": ["add-phase", "T", "--outcome", "o"],
                    "cancel": ["cancel", "P2.3", "--reason", "r"],
                    "scope": ["scope", "P2.3", "--files", "src/a.ts"],
                    "retarget": ["retarget", "P2", "--gate", "true"],
-                   # `start` takes an id and NO flag of its own, so its row here
-                   # is the bare call. `vf3` still drives the whole option list
-                   # against it, which is the point: a verb whose `VERB_FLAGS`
-                   # row is empty is the one where a stray flag has nowhere to
-                   # be quietly absorbed.
+                   # `start` reads only `--force` and `--reason`, so its row
+                   # here is the bare call and `vf3` drives every other option
+                   # against it.
                    "start": ["start", "P2.3"],
                    # ...and `done` on the running task the fixture carries, with
                    # the one flag it requires: a base call that could not close
@@ -4052,8 +4051,8 @@ def _cases(check):
                    # running it against the shared fixture still proves the
                    # thing vf3 asks about (a title placeholder is all it needs).
                    "seed": ["seed", "T"],
-                   # `settle` takes no id and no flag of its own, so like `start`
-                   # its row is the bare call and every flag must bounce.
+                   # `settle` takes no id and no flag of its own, so its row is
+                   # the bare call and every flag must bounce.
                    "settle": ["settle"],
                    # `reopen` on the done task the fixture carries, in its open
                    # phase, with the one flag it requires.
@@ -4124,10 +4123,8 @@ def _cases(check):
                  "retarget/--outcome"),
                 (["scope", "P2.3", "--files", "src/a.ts", "--json"],
                  "scope/--json"),
-                # `start` declares NO flag of its own, so the universal ones are
-                # the only thing it can be shown to still take - and a verb with
-                # an empty `VERB_FLAGS` row is exactly where an over-wide
-                # refusal would land first.
+                # `start` on a ready task with a universal flag: the flags it
+                # reads are driven by the `pr` group, which owns their door.
                 (["start", "P2.3", "--json"], "start/--json"),
                 # `done` reads four flags of its own AND the universal ones, and
                 # this is the call that proves the refusal above did not widen
@@ -4760,37 +4757,153 @@ def _cases(check):
               and "RE-STARTED" in (_pr_rows2[1].get("summary") or "")
               and "RE-STARTED" not in (_pr_rows2[0].get("summary") or ""))
 
-        # READINESS IS REPORTED, NEVER ENFORCED: the case this verb exists for
-        # is a task whose edits are being denied right now, and `/audit:run` is
-        # where readiness decides a spawn.
-        _pr_wait = pr_fixture()
-        _pr_wait["phases"][1]["tasks"][-1]["dependsOn"] = ["P2.3"]
-        projwt, mpwt = mk("st-waiting", _pr_wait)
-        codew, txtw = run(["start", "P2.4", "--project-dir", projwt])
-        check("pr10 a task with an unmet `dependsOn` is still promoted, with a "
-              "NOTE naming what it waits on - and the note is the whole of it, "
-              "which is why the status moved anyway: %r" % (txtw[-200:],),
-              codew == 0
-              and (task_in(mpwt, "P2.4") or {}).get("status") == "in_progress"
-              and "NOTE:" in txtw and "P2.3" in txtw.split("NOTE:")[-1])
-        codej, txtj = run(["start", "P2.4", "--project-dir", projwt, "--json"])
-        _pr_json = {}
+        # READINESS IS REFUSED, AND `--force --reason` IS THE RECORDED
+        # EXCEPTION. A start that only REPORTED what a task waited on made
+        # readiness a rule the model followed or did not, and nothing in the plan
+        # could tell which. The refusal reads `_status_facts.unmet_refs` and not a
+        # second copy of the rule, so the expected lists below are asked of that
+        # function AND written out by hand: the hand list is what keeps a case
+        # from going vacuous if the function ever answered `[]` for everything.
+        def pr_rows(proj):
+            jm = _panel_write._journalmod()
+            return [r for r in (jm.read_all(proj) if jm else [])
+                    if r.get("action") == "task.start"]
+
+        def pr_unmet(mp, tid):
+            return M._status_facts.unmet_refs(_mio.load_manifest(mp)).get(tid)
+
+        # Two fixtures, one per place a reference can sit: the task's OWN
+        # `blockedBy` and `dependsOn` (P2.4 waits on a pending phase and a pending
+        # task), and the owning PHASE's `blockedBy` (P3 waits on the running P2,
+        # so its task inherits the wait and `unmet_refs` spells it `(phase)`).
+        _pr_own = pr_fixture()
+        _pr_own["phases"][1]["tasks"][-1]["blockedBy"] = ["P3"]
+        _pr_own["phases"][1]["tasks"][-1]["dependsOn"] = ["P2.3"]
+        _pr_phb = pr_fixture()
+        _pr_phb["phases"][2]["blockedBy"] = ["P2"]
+        _pr_phb["phases"][2]["tasks"] = [dict(_pr_pend["phases"][2]["tasks"][0])]
+        _pr_phb["fileIndex"]["src/parked.ts"] = ["P3.1"]
+        _pr_waits = (("own", _pr_own, "P2.4", ["P3", "P2.3"]),
+                     ("phase", _pr_phb, "P3.1", ["P2 (phase)"]))
+        _pr_refused = {}
+        for _prk, _prfx, _prtid, _prwant in _pr_waits:
+            _prproj, _prmp = mk("st-unready-" + _prk, _prfx)
+            with open(_prmp, "rb") as _fh:
+                _prb = _fh.read()
+            _prc, _prt = run(["start", _prtid, "--project-dir", _prproj])
+            with open(_prmp, "rb") as _fh:
+                _pra = _fh.read()
+            _pr_refused[_prk] = (_prc, _prt, pr_unmet(_prmp, _prtid), _prwant,
+                                 _pra == _prb, len(pr_rows(_prproj)))
+        check("pr10 a start on a pending task whose own `blockedBy`/`dependsOn` "
+              "or whose phase's `blockedBy` is unmet is REFUSED: exit 2, the "
+              "manifest byte identical, no `task.start` row, and the message "
+              "names every unmet reference exactly as `unmet_refs` spells it: %r"
+              % (dict((k, (v[0], v[2], v[1][:140])) for k, v in
+                      _pr_refused.items()),),
+              all(v[0] == 2 and v[4] and v[5] == 0
+                  and sorted(v[2] or []) == sorted(v[3])
+                  and all(ref in v[1] for ref in v[3])
+                  and "--force" in v[1]
+                  for v in _pr_refused.values()))
+        _prjproj, _prjmp = mk("st-unready-json", _pr_own)
+        _prjc, _prjt = run(["start", "P2.4", "--project-dir", _prjproj, "--json"])
+        _prjo = {}
         try:
-            _pr_json = json.loads(txtj)
-        except Exception:
+            _prjo = json.loads(_prjt)
+        except ValueError:
             pass
-        check("pr11 the --json block is the same facts as DATA, with the "
-              "advisory among them rather than printed beside an object a "
-              "caller has to parse: %r" % (sorted(_pr_json),),
-              codej == 0 and _pr_json.get("ok") is True
-              and _pr_json.get("waitingOn") == ["P2.3"]
-              and _pr_json.get("ready") is False
-              and _pr_json.get("restarted") is True
-              and _pr_json.get("was") == "in_progress"
-              and _pr_json.get("attempt") == 2
-              and _pr_json.get("maxAttempts") == 3
-              and _pr_json.get("phase") == "P2"
-              and _pr_json.get("journaled") is True)
+        check("pr10b ...and under --json the refusal is one object a caller can "
+              "parse, still naming what the task waits on: %r" % (_prjo,),
+              _prjc == 2 and _prjo.get("ok") is False
+              and "P2.3" in (_prjo.get("refused") or "")
+              and (task_in(_prjmp, "P2.4") or {}).get("status") == "pending")
+        # THE DOOR'S OTHER HALF: `--force` with no reason is an exception nobody
+        # can read back, so it is refused before anything is written, and a
+        # `--reason` with no `--force` is a why with nothing it explains.
+        _prdproj, _prdmp = mk("st-unready-door", _pr_own)
+        with open(_prdmp, "rb") as _fh:
+            _prdb = _fh.read()
+        _prd = [run(["start", "P2.4", "--force", "--project-dir", _prdproj]),
+                run(["start", "P2.4", "--reason", "why",
+                     "--project-dir", _prdproj])]
+        with open(_prdmp, "rb") as _fh:
+            _prda = _fh.read()
+        check("pr10c `--force` alone and `--reason` alone are each refused with "
+              "exit 2 and no byte written, so a forced start always carries the "
+              "reason its row records: %r" % ([(c, t[:100]) for c, t in _prd],),
+              [c for c, _t in _prd] == [2, 2] and _prda == _prdb
+              and pr_rows(_prdproj) == []
+              and "--reason" in _prd[0][1] and "--force" in _prd[1][1])
+
+        _pr_forced = {}
+        for _prk, _prfx, _prtid, _prwant in _pr_waits:
+            _prproj, _prmp = mk("st-forced-" + _prk, _prfx)
+            _prc, _prt = run(["start", _prtid, "--force", "--reason",
+                              "hand start for the plan gate",
+                              "--project-dir", _prproj])
+            _prr = pr_rows(_prproj)
+            _prdet = (_prr[0].get("details") or {}) if _prr else {}
+            _pr_forced[_prk] = (_prc, (task_in(_prmp, _prtid) or {}).get("status"),
+                                len(_prr), _prdet, _prwant,
+                                (_prr[0].get("summary") or "") if _prr else "", _prt)
+        check("pr11 `--force --reason` on the same tasks starts them, and the "
+              "one `task.start` row records the exception: `mode: forced`, the "
+              "reason verbatim, and every unmet reference in its basis and its "
+              "summary: %r"
+              % (dict((k, (v[0], v[1], v[3].get("mode"), v[3].get("reason"),
+                           v[3].get("basis"))) for k, v in _pr_forced.items()),),
+              all(v[0] == 0 and v[1] == "in_progress" and v[2] == 1
+                  and v[3].get("mode") == "forced"
+                  and v[3].get("reason") == "hand start for the plan gate"
+                  and all(ref in (v[3].get("basis") or "") for ref in v[4])
+                  and "FORCED" in v[5] and all(ref in v[5] for ref in v[4])
+                  and "FORCED" in v[6]
+                  for v in _pr_forced.values()))
+        _prfproj, _prfmp = mk("st-forced-json", _pr_own)
+        _prfc, _prft = run(["start", "P2.4", "--force", "--reason", "r",
+                            "--project-dir", _prfproj, "--json"])
+        _prfo = {}
+        try:
+            _prfo = json.loads(_prft)
+        except ValueError:
+            pass
+        check("pr11b ...and the --json block carries the same facts as DATA: "
+              "`forced` true, the reason, and the references it was forced past: "
+              "%r" % (dict((k, _prfo.get(k)) for k in
+                           ("ok", "forced", "forcedReason", "waitingOn",
+                            "ready")),),
+              _prfc == 0 and _prfo.get("ok") is True
+              and _prfo.get("forced") is True
+              and _prfo.get("forcedReason") == "r"
+              and sorted(_prfo.get("waitingOn") or []) == ["P2.3", "P3"]
+              and _prfo.get("ready") is False)
+
+        # ALLOW TWINS. A ready task starts as it always did, with no `mode` on
+        # its row - the case that goes red if the exception were recorded on
+        # every start - and a task already in_progress is the RETRY of
+        # `reference/orchestrator.md` step 4, which must not need `--force`
+        # even while its references are unmet, or the retry path would be lost.
+        _prrproj, _prrmp = mk("st-ready-allow", pr_fixture())
+        _prrc, _prrt = run(["start", "P2.4", "--project-dir", _prrproj])
+        _prrr = pr_rows(_prrproj)
+        _prre = json.loads(json.dumps(_pr_own))
+        _prre["phases"][1]["tasks"][-1]["status"] = "in_progress"
+        _prre["phases"][1]["tasks"][-1]["attempts"] = 1
+        _prreproj, _prremp = mk("st-retry-allow", _prre)
+        _prrec, _prret = run(["start", "P2.4", "--project-dir", _prreproj])
+        check("pr11c ALLOW CASES: a ready task starts with exit 0 and a row "
+              "carrying no `mode`, and a re-start of an in_progress task whose "
+              "references are unmet is still the retry - exit 0, RE-STARTED, "
+              "attempt 2, no --force asked for: %r"
+              % ((_prrc, [sorted((r.get("details") or {})) for r in _prrr],
+                  _prrec, (task_in(_prremp, "P2.4") or {}).get("attempts"),
+                  _prret[:120]),),
+              _prrc == 0 and len(_prrr) == 1
+              and "mode" not in (_prrr[0].get("details") or {})
+              and _prrec == 0 and "RE-STARTED" in _prret
+              and (task_in(_prremp, "P2.4") or {}).get("attempts") == 2
+              and (task_in(_prremp, "P2.4") or {}).get("status") == "in_progress")
 
         # THE SHARDED LAYOUT, because a promotion writes a TASK and a task lives
         # in its phase's shard: a writer that reached for the index would leave
@@ -4836,6 +4949,1222 @@ def _cases(check):
               and "already invalid -- nothing written" in txtbd
               and "rolled back" not in txtbd
               and open(mpbd, "rb").read() == _pr_bd_before)
+
+        # ---- (pc) the phase claim `start` takes on the sharded layout ----------
+        # The claim used to be a step the orchestrator hand-wrote into the shard
+        # after promoting the phase, so a run that skipped it left a running
+        # phase no other machine could see was taken. Every case pins the
+        # session id it runs under: the sweep drops every `CLAUDE_` variable, a
+        # session running the suite carries its own, and a case that inherited
+        # either would be asserting about whichever one it happened to get.
+        _pc_env_was = os.environ.get("CLAUDE_CODE_SESSION_ID")
+
+        def pc_repo(name, claim=None, sharded=True, git=True):
+            """A git-backed project whose P3 holds one ready pending task and
+            records `audit/p3`, which is checked out - so the start is an
+            `on-branch` entry and nothing about the claim rides on a cut."""
+            m = base_manifest()
+            m["phases"][2]["branch"] = "audit/p3"
+            m["phases"][2]["tasks"] = [
+                {"id": "P3.1", "title": "claimable", "status": "pending",
+                 "description": "", "files": ["src/claim.ts"],
+                 "tests": {"mode": "gate-only", "add": [],
+                           "expectRedFirst": False, "gate": ["test"]},
+                 "model": "sonnet", "skills": [], "risk": "low",
+                 "blockedBy": [], "dependsOn": [], "attempts": 0,
+                 "maxAttempts": 3, "commit": None,
+                 "outcome": {"technical": None, "descriptive": None},
+                 "startedAt": None, "completedAt": None, "verifiedBy": []}]
+            m["fileIndex"]["src/claim.ts"] = ["P3.1"]
+            if claim is not None:
+                m["phases"][2]["claim"] = claim
+            if not git:
+                m["phases"][2].pop("branch", None)
+                return mk(name, m, sharded=sharded)
+            proj, mpath = mk(name, m, sharded=sharded, git=True)
+            for argv in (["checkout", "-q", "-b", "audit/p3"],
+                         ["config", "user.email", "t@example.com"],
+                         ["config", "user.name", "Test User"],
+                         ["add", "-A"], ["commit", "-qm", "seed"]):
+                subprocess.run(["git", "-C", proj] + argv,
+                               stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL)
+            return proj, mpath
+
+        def pc_shard_path(mpath, pid):
+            """The path of `pid`'s shard file, or None on a single-file plan."""
+            idx = _mio.read_json(mpath)
+            for stub in (idx.get("phases") or []):
+                if isinstance(stub, dict) and stub.get("id") == pid \
+                        and "shard" in stub:
+                    return os.path.join(os.path.dirname(mpath), stub["shard"])
+            return None
+
+        def pc_shard(mpath, pid):
+            """The phase body exactly as its SHARD file holds it, or None."""
+            path = pc_shard_path(mpath, pid)
+            return _mio.read_json(path) if path else None
+
+        def pc_phase(mpath, pid):
+            for ph in (_mio.load_manifest(mpath).get("phases") or []):
+                if ph.get("id") == pid:
+                    return ph
+            return {}
+
+        import platform
+        import _locks
+
+        def pc_lock(proj, pid, session="s-other-session"):
+            """Plant the `phase-P3` lock a phase run holds, as `audit-lock.py
+            acquire` by hand records it: on this host, so `_locks.judge` probes
+            `pid` rather than falling back to the lock's age."""
+            ld = _locks.lock_dir(proj)
+            os.makedirs(ld, exist_ok=True)
+            _panel_write._atomic_write_json(
+                os.path.join(ld, "phase-P3.lock"),
+                {"sessionId": session, "pid": pid, "hostname": platform.node(),
+                 "startedAt": "2026-01-01T00:00:00Z", "handedOff": True,
+                 "note": "phase run"})
+
+        def pc_gone_pid():
+            """A pid no process holds: a child that has already been reaped."""
+            child = subprocess.Popen([sys.executable, "-c", "pass"])
+            child.wait()
+            return child.pid
+
+        def pc_json(txt):
+            try:
+                return json.loads(txt)
+            except ValueError:
+                return {}
+
+        _PC_OTHER = {"sessionId": "s-other-session",
+                     "branch": "audit/p3", "at": "2026-01-01T00:00:00Z"}
+        _pc_pid_was = os.environ.pop("CLAUDE_PID", None)
+        try:
+            os.environ["CLAUDE_CODE_SESSION_ID"] = "s-mine-session"
+            pc1_proj, pc1_mp = pc_repo("pc-first")
+            pc1_code, pc1_txt = run(["start", "P3.1", "--project-dir", pc1_proj])
+            pc1_body = pc_shard(pc1_mp, "P3") or {}
+            pc1_claim = pc1_body.get("claim") or {}
+            pc1_task = task_in(pc1_mp, "P3.1") or {}
+            pc1_rows = pr_rows(pc1_proj)
+            pc1_det = (pc1_rows[0].get("details") or {}) if pc1_rows else {}
+            pc1_crow = dict((c.get("field"), c) for c in
+                            (pc1_det.get("changes") or [])
+                            if c.get("id") == "P3")
+            check("pc1 the start of a sharded plan's first task in a phase "
+                  "writes phase.claim into the SHARD - sessionId from "
+                  "$CLAUDE_CODE_SESSION_ID, the phase's branch and "
+                  "the start's own instant - in the same write that set the "
+                  "phase in_progress: %r"
+                  % ((pc1_code, pc1_body.get("status"), pc1_claim,
+                      pc1_body.get("startedAt"), pc1_txt[-200:]),),
+                  pc1_code == 0 and pc1_body.get("status") == "in_progress"
+                  and pc1_claim.get("sessionId") == "s-mine-session"
+                  and pc1_claim.get("branch") == "audit/p3"
+                  and pc1_claim.get("at") == pc1_body.get("startedAt")
+                  == pc1_task.get("startedAt")
+                  and "claim" not in (
+                      [s for s in _mio.read_json(pc1_mp)["phases"]
+                       if s.get("id") == "P3"][0]))
+            # THE SHARD IS COMMITTED, so the claim carries no machine name: the
+            # journal drops `actor.host` for the same reason, and
+            # `tools/check-committed-pii.py` reports one under a claim.
+            check("pc7 the claim a start writes carries NO `host` key - only "
+                  "sessionId, branch and at: %r" % (sorted(pc1_claim),),
+                  pc1_code == 0
+                  and sorted(pc1_claim) == ["at", "branch", "sessionId"])
+            # THE CLAIM THE VERB WRITES IS ONE THE VALIDATOR ACCEPTS WHOLE: a
+            # warning on every start would teach a reader to skip the warnings.
+            # The twin keeps the recommendation alive - a claim with no branch
+            # still warns, so an emptied key set cannot pass for this case.
+            _pc_vm = M._validator()
+            _pc_f, _pc_w = _pc_vm.validate(_mio.load_manifest(pc1_mp))
+            _pc_nb = json.loads(json.dumps(_mio.load_manifest(pc1_mp)))
+            for _ph in _pc_nb["phases"]:
+                if _ph.get("id") == "P3":
+                    _ph["claim"].pop("branch", None)
+            _pc_nbf, _pc_nbw = _pc_vm.validate(_pc_nb)
+            check("pc8 the started sharded plan revalidates with NO claim "
+                  "warning, while the same claim with its branch removed still "
+                  "warns that it is missing branch: %r"
+                  % (([w for w in _pc_w if "claim" in w],
+                      [w for w in _pc_nbw if "claim" in w]),),
+                  pc1_code == 0 and _pc_f == [] and _pc_nbf == []
+                  and [w for w in _pc_w if "claim" in w] == []
+                  and len([w for w in _pc_nbw
+                           if "claim is missing branch" in w]) == 1)
+            check("pc2 ...and the one task.start row records the claim it took, "
+                  "as phase-keyed `changes` rows beside the task's own, from "
+                  "nothing to this session and branch: %r"
+                  % ((len(pc1_rows), sorted(pc1_crow),
+                      (pc1_rows[0].get("summary") if pc1_rows else None)),),
+                  len(pc1_rows) == 1
+                  and (pc1_crow.get("claim.sessionId") or {}).get("from") is None
+                  and (pc1_crow.get("claim.sessionId") or {}).get("to")
+                  == "s-mine-session"
+                  and (pc1_crow.get("claim.branch") or {}).get("to") == "audit/p3"
+                  and (pc1_crow.get("claim.at") or {}).get("to")
+                  == pc1_claim.get("at")
+                  and "claim" in (pc1_rows[0].get("summary") or ""))
+
+            # ALLOW CASES. A single-file plan has no shard for the claim to
+            # conflict in, so it gets none; and a re-start by the session that
+            # already holds the claim leaves it byte for byte - `at` included,
+            # which is why the fixture's claim carries a moment no start writes.
+            pc3_proj, pc3_mp = pc_repo("pc-single", sharded=False)
+            pc3_code, _pc3_txt = run(["start", "P3.1", "--project-dir", pc3_proj])
+            pc3_ph = pc_phase(pc3_mp, "P3")
+            _pc_mine = dict(_PC_OTHER, sessionId="s-mine-session")
+            pc4_proj, pc4_mp = pc_repo("pc-mine", claim=_pc_mine)
+            pc4_code, _pc4_txt = run(["start", "P3.1", "--project-dir", pc4_proj])
+            pc4_claim = (pc_shard(pc4_mp, "P3") or {}).get("claim")
+            pc4_rows = pr_rows(pc4_proj)
+            check("pc3 ALLOW CASES: a single-file plan starts and writes no "
+                  "claim, and a start by the session that already holds the "
+                  "claim leaves it exactly as it was and records no claim row: "
+                  "%r" % ((pc3_code, pc3_ph.get("status"), pc3_ph.get("claim"),
+                           pc4_code, pc4_claim),),
+                  pc3_code == 0 and pc3_ph.get("status") == "in_progress"
+                  and "claim" not in pc3_ph
+                  and pc4_code == 0 and pc4_claim == _pc_mine
+                  and len(pc4_rows) == 1
+                  and not [c for c in ((pc4_rows[0].get("details") or {})
+                                       .get("changes") or [])
+                           if c.get("id") == "P3"])
+
+            # ANOTHER SESSION'S CLAIM REFUSES WHILE ITS HOLDER IS LIVE, naming
+            # it; `--force --reason` is the one way past, and the row keeps the
+            # claim it replaced. The live holder is a `phase-P3` lock on a pid
+            # that is running - this suite's own.
+            pc5_proj, pc5_mp = pc_repo("pc-other", claim=_PC_OTHER)
+            pc_lock(pc5_proj, os.getpid())
+            with open(pc_shard_path(pc5_mp, "P3"), "rb") as _fh:
+                pc5_before = _fh.read()
+            pc5_code, pc5_txt = run(["start", "P3.1", "--project-dir", pc5_proj])
+            with open(pc_shard_path(pc5_mp, "P3"), "rb") as _fh:
+                pc5_after = _fh.read()
+            check("pc4 a start on a phase another session has claimed is "
+                  "REFUSED: exit 2, the shard byte identical, no task.start "
+                  "row, and the message names the claim (session, branch, "
+                  "moment) and --force: %r" % ((pc5_code, pc5_txt[:240]),),
+                  pc5_code == 2 and pc5_after == pc5_before
+                  and pr_rows(pc5_proj) == []
+                  and "s-other-session" in pc5_txt
+                  and "audit/p3" in pc5_txt
+                  and _PC_OTHER["at"] in pc5_txt
+                  and "--force" in pc5_txt
+                  and (task_in(pc5_mp, "P3.1") or {}).get("status") == "pending")
+            pc6_code, pc6_txt = run(["start", "P3.1", "--force", "--reason",
+                                     "the other session died",
+                                     "--project-dir", pc5_proj])
+            pc6_claim = (pc_shard(pc5_mp, "P3") or {}).get("claim") or {}
+            pc6_rows = pr_rows(pc5_proj)
+            pc6_det = (pc6_rows[0].get("details") or {}) if pc6_rows else {}
+            pc6_crow = dict((c.get("field"), c) for c in
+                            (pc6_det.get("changes") or [])
+                            if c.get("id") == "P3")
+            check("pc5 ...and `--force --reason` replaces it with this "
+                  "session's claim, and the task.start row journals the claim "
+                  "it replaced: forced, the reason, the old session as `from`, "
+                  "and the summary naming it: %r"
+                  % ((pc6_code, pc6_claim, pc6_det.get("mode"),
+                      pc6_det.get("reason"), pc6_crow.get("claim.sessionId"),
+                      (pc6_rows[0].get("summary") if pc6_rows else None)),),
+                  pc6_code == 0
+                  and pc6_claim.get("sessionId") == "s-mine-session"
+                  and pc6_claim.get("at") != _PC_OTHER["at"]
+                  and len(pc6_rows) == 1
+                  and pc6_det.get("mode") == "forced"
+                  and pc6_det.get("reason") == "the other session died"
+                  and "s-other-session" in (pc6_det.get("basis") or "")
+                  and (pc6_crow.get("claim.sessionId") or {}).get("from")
+                  == "s-other-session"
+                  and (pc6_crow.get("claim.sessionId") or {}).get("to")
+                  == "s-mine-session"
+                  and "s-other-session" in (pc6_rows[0].get("summary") or ""))
+
+            # NO SESSION ID, NO CLAIM: one naming nobody could never be told
+            # apart from somebody else's, so the start runs, writes none, and
+            # says why - rather than a claim with an empty `sessionId`.
+            os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+            pc7_proj, pc7_mp = pc_repo("pc-nosession")
+            pc7_code, pc7_txt = run(["start", "P3.1", "--project-dir", pc7_proj])
+            pc7_body = pc_shard(pc7_mp, "P3") or {}
+            check("pc6 with $CLAUDE_CODE_SESSION_ID unset the start still runs, "
+                  "writes no claim, and the output says none was taken and why: "
+                  "%r" % ((pc7_code, pc7_body.get("status"),
+                           pc7_body.get("claim"), pc7_txt[-220:]),),
+                  pc7_code == 0 and pc7_body.get("status") == "in_progress"
+                  and "claim" not in pc7_body
+                  and "claim: none taken" in pc7_txt
+                  and "CLAUDE_CODE_SESSION_ID is unset" in pc7_txt)
+
+            # ---- (tk) a claim yields when its holder holds no live run -------
+            # The claim alone has no liveness, so a refusal on it alone refused
+            # every SEQUENTIAL session - the next /audit:next, any resume - and
+            # made --force the routine path. Liveness is asked of the
+            # `phase-<id>` lock through `_locks`, the reader `audit-lock.py
+            # status` answers from.
+            os.environ["CLAUDE_CODE_SESSION_ID"] = "s-mine-session"
+
+            def tk_start(name, claim, lock_pid=None, lock_session=None,
+                         extra=()):
+                proj, mp = pc_repo(name, claim=claim)
+                if lock_pid is not None:
+                    pc_lock(proj, lock_pid, lock_session or "s-other-session")
+                path = pc_shard_path(mp, "P3")
+                with open(path, "rb") as fh:
+                    before = fh.read()
+                code, txt = run(["start", "P3.1", "--json", "--project-dir", proj]
+                                + list(extra))
+                with open(path, "rb") as fh:
+                    after = fh.read()
+                rows = pr_rows(proj)
+                det = (rows[0].get("details") or {}) if rows else {}
+                crow = dict((c.get("field"), c) for c in (det.get("changes") or [])
+                            if c.get("id") == "P3")
+                return {"code": code, "txt": txt, "json": pc_json(txt),
+                        "claim": (pc_shard(mp, "P3") or {}).get("claim"),
+                        "same": before == after, "rows": rows, "det": det,
+                        "crow": crow, "mp": mp}
+
+            # A CLAIM WITH NO LOCK BEHIND IT IS NOT EVIDENCE OF A FINISHED RUN:
+            # it may have been pulled from another clone, whose lock directory
+            # this clone cannot read, or written before a start took a lock. So
+            # it refuses, and says the basis rather than a verdict on the holder.
+            tk1 = tk_start("tk-nolock", dict(_PC_OTHER))
+            check("tk1 another session's claim with NO phase lock in this clone "
+                  "is REFUSED - exit 2, the shard byte identical, no row - and "
+                  "the refusal says liveness could not be asked because no "
+                  "phase-P3 lock is held here: %r"
+                  % ((tk1["code"], tk1["txt"][:400]),),
+                  tk1["code"] == 2 and tk1["same"] and tk1["rows"] == []
+                  and "could not be asked" in tk1["txt"]
+                  and "no phase-P3 lock" in tk1["txt"]
+                  and "in this clone" in tk1["txt"])
+            tk2 = tk_start("tk-deadlock", dict(_PC_OTHER),
+                           lock_pid=pc_gone_pid())
+            check("tk2 a sequential second session whose predecessor's phase "
+                  "lock is still on disk but names a pid that is gone takes the "
+                  "claim over without --force, and the task.start row records "
+                  "the takeover: the replaced session as `from`, this one as "
+                  "`to`, and a claim.takeover row carrying `_locks.judge`'s own "
+                  "basis behind the clone-scoped wording: %r"
+                  % ((tk2["code"], tk2["claim"], tk2["crow"],
+                      tk2["json"].get("claimAction")),),
+                  tk2["code"] == 0
+                  and (tk2["claim"] or {}).get("sessionId") == "s-mine-session"
+                  and tk2["json"].get("claimAction") == "takeover"
+                  and tk2["json"].get("forced") is False
+                  and len(tk2["rows"]) == 1
+                  and tk2["det"].get("mode") is None
+                  and (tk2["crow"].get("claim.sessionId") or {}).get("from")
+                  == "s-other-session"
+                  and (tk2["crow"].get("claim.takeover") or {}).get("from")
+                  == "s-other-session"
+                  and "no live phase-P3 lock in this clone"
+                  in ((tk2["crow"].get("claim.takeover") or {}).get("to") or "")
+                  and "is gone on this host"
+                  in ((tk2["crow"].get("claim.takeover") or {}).get("to") or "")
+                  and "taken over" in (tk2["rows"][0].get("summary") or ""))
+            tk3 = tk_start("tk-livelock", dict(_PC_OTHER), lock_pid=os.getpid())
+            _tk3_op = tk3["txt"].find("operator")
+            check("tk3 SECOND DIRECTION: the same start with a LIVE phase lock "
+                  "held by another session is refused - exit 2, the shard byte "
+                  "identical, no row - and the refusal names the decision as "
+                  "the operator's before it names --force: %r"
+                  % ((tk3["code"], tk3["txt"][:300]),),
+                  tk3["code"] == 2 and tk3["same"] and tk3["rows"] == []
+                  and "is running on this host" in tk3["txt"]
+                  and _tk3_op != -1
+                  and _tk3_op < tk3["txt"].find("--force"))
+            tk4 = tk_start("tk-ourlock", dict(_PC_OTHER), lock_pid=os.getpid(),
+                           lock_session="s-mine-session")
+            check("tk4 ALLOW: a live phase lock THIS session holds is the run "
+                  "the orchestrator took before starting, not the claim's "
+                  "holder, so the claim is taken over: %r"
+                  % ((tk4["code"], tk4["claim"], tk4["txt"][:200]),),
+                  tk4["code"] == 0
+                  and (tk4["claim"] or {}).get("sessionId") == "s-mine-session"
+                  and tk4["json"].get("claimAction") == "takeover")
+            # LIVENESS THAT CANNOT BE ASKED REFUSES: a sharded plan outside any
+            # git repository has no lock directory to read.
+            tk5_proj, _tk5_mp = pc_repo("tk-nogit", claim=dict(_PC_OTHER),
+                                        git=False)
+            tk5_code, tk5_txt = run(["start", "P3.1", "--project-dir", tk5_proj])
+            check("tk5 a start whose holder's liveness CANNOT be asked (no git "
+                  "repository, so no lock directory) is refused like a live "
+                  "one, and says liveness could not be asked: %r"
+                  % ((tk5_code, tk5_txt[:300]),),
+                  tk5_code == 2 and "could not be asked" in tk5_txt
+                  and tk5_txt.find("operator") < tk5_txt.find("--force"))
+
+            # NO SESSION ID UNDER A HELD CLAIM: a forced start has nothing to
+            # replace the claim with, so it keeps it and reports it as KEPT.
+            os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+            tk6 = tk_start("tk-force-nosession", dict(_PC_OTHER),
+                           lock_pid=os.getpid(),
+                           extra=["--force", "--reason", "operator says go"])
+            check("tk6 a forced start with no session id keeps the held claim "
+                  "and reports claimReplaced None and the claim as kept - never "
+                  "as replaced: %r" % ((tk6["code"], tk6["claim"],
+                                        tk6["json"].get("claimReplaced"),
+                                        tk6["json"].get("claimKept"),
+                                        tk6["det"].get("basis")),),
+                  tk6["code"] == 0 and tk6["claim"] == _PC_OTHER
+                  and tk6["json"].get("claimReplaced") is None
+                  and tk6["json"].get("claimKept") == _PC_OTHER
+                  and "kept" in (tk6["det"].get("basis") or "")
+                  and not tk6["crow"])
+            tk7 = tk_start("tk-dead-nosession", dict(_PC_OTHER),
+                           lock_pid=pc_gone_pid())
+            check("tk7 ...and with no live holder an unforced start runs, "
+                  "keeping the claim it cannot replace: %r"
+                  % ((tk7["code"], tk7["claim"], tk7["json"].get("claimKept")),),
+                  tk7["code"] == 0 and tk7["claim"] == _PC_OTHER
+                  and tk7["json"].get("claimReplaced") is None
+                  and tk7["json"].get("claimKept") == _PC_OTHER)
+
+            # AN UNSAFE SESSION ID IS WRITTEN BOUNDED, through the one function
+            # that bounds the value a committed row carries.
+            os.environ["CLAUDE_CODE_SESSION_ID"] = "s mine/../" + "x" * 200
+            import _journal_io as _tk_jio
+            _tk8_want = _tk_jio.env_session_id()
+            tk8 = tk_start("tk-unsafe", None)
+            tk8_sid = (tk8["claim"] or {}).get("sessionId") or ""
+            check("tk8 an over-long, unsafe session id lands in the claim "
+                  "sanitised and bounded - the value `env_session_id` answers, "
+                  "no path separator, no space: %r" % (tk8_sid,),
+                  tk8["code"] == 0 and tk8_sid == _tk8_want
+                  and 0 < len(tk8_sid) <= _tk_jio.MAX_SESSION_ID_CHARS
+                  and "/" not in tk8_sid and " " not in tk8_sid)
+            tk9 = tk_start("tk-unsafe-mine", {"sessionId": _tk8_want,
+                                              "branch": "audit/p3",
+                                              "at": "2026-01-01T00:00:00Z"},
+                           # The lock is the one this session's own start writes:
+                           # `_locks` records the session id as the environment
+                           # spells it, the claim the bounded value.
+                           lock_pid=os.getpid(),
+                           lock_session=os.environ["CLAUDE_CODE_SESSION_ID"])
+            check("tk9 ...and the holder comparison reads the same bounded "
+                  "value, so that session's own claim is kept, not contested: %r"
+                  % ((tk9["code"], tk9["json"].get("claimAction")),),
+                  tk9["code"] == 0 and tk9["json"].get("claimAction") == "keep")
+
+            # A LEGACY CLAIM ON THE INDEX STUB IS DROPPED BY SIGN-OFF AND
+            # CANCEL. `_merge_phase` falls back to a stub claim when the body
+            # has none, so popping the body's alone let it reappear.
+            os.environ["CLAUDE_CODE_SESSION_ID"] = "s-mine-session"
+            for _tk_case, _tk_verb in (("tk10", "signoff"), ("tk11", "cancel")):
+                _tk_m = base_manifest()
+                _tk_m["phases"][1]["tasks"][1]["status"] = "done"
+                _tk_p, _tk_mp = mk("tk-stub-" + _tk_verb, _tk_m, sharded=True,
+                                   git=True)
+                _tk_idx = _mio.read_json(_tk_mp)
+                for _stub in _tk_idx["phases"]:
+                    if _stub.get("id") in ("P2", "P3"):
+                        _stub["claim"] = dict(_PC_OTHER)
+                _panel_write._atomic_write_json(_tk_mp, _tk_idx)
+                if _tk_verb == "signoff":
+                    _tk_code, _tk_txt = run(
+                        ["signoff", "P2", "--verdict", "passed", "--summary",
+                         "s", "--no-evidence-reason", "fixture",
+                         "--project-dir", _tk_p])
+                else:
+                    _tk_code, _tk_txt = run(
+                        ["cancel", "P2", "--reason", "fixture",
+                         "--project-dir", _tk_p])
+                _tk_after = _mio.read_json(_tk_mp)
+                _tk_stub = dict((s.get("id"), s) for s in _tk_after["phases"])
+                check("%s %s drops a legacy claim on the phase's INDEX STUB, "
+                      "so it cannot reappear in the assembled phase, and "
+                      "leaves another phase's stub alone: %r"
+                      % (_tk_case, _tk_verb, (_tk_code, _tk_stub.get("P2"),
+                                    pc_phase(_tk_mp, "P2").get("claim"),
+                                    _tk_txt[-200:]),),
+                      _tk_code == 0
+                      and "claim" not in _tk_stub.get("P2", {})
+                      and "claim" not in pc_phase(_tk_mp, "P2")
+                      and _tk_stub.get("P3", {}).get("claim") == _PC_OTHER)
+
+            # ---- (hl) the hand-off lock a hand-typed start takes ----------------
+            # A start nobody orchestrated used to write a claim and no lock, so the
+            # next session read "no lock" as "no live run" and took the phase over
+            # from a session that was still working it. The start now takes the
+            # `phase-<id>` lock `audit-lock.py acquire` takes, through the same
+            # `_locks.acquire`, recording $CLAUDE_PID as the holder.
+            def hl_lock_path(proj):
+                return os.path.join(_locks.lock_dir(proj), "phase-P3.lock")
+
+            def hl_plant(proj, info):
+                ld = _locks.lock_dir(proj)
+                os.makedirs(ld, exist_ok=True)
+                _panel_write._atomic_write_json(hl_lock_path(proj), info)
+
+            def hl_start(proj, session, pid, extra=()):
+                os.environ["CLAUDE_CODE_SESSION_ID"] = session
+                os.environ["CLAUDE_PID"] = str(pid)
+                path = pc_shard_path(pc_repo_mp[proj], "P3")
+                with open(path, "rb") as fh:
+                    before = fh.read()
+                code, txt = run(["start", "P3.1", "--json", "--project-dir", proj]
+                                + list(extra))
+                with open(path, "rb") as fh:
+                    after = fh.read()
+                return {"code": code, "txt": txt, "json": pc_json(txt),
+                        "same": before == after,
+                        "claim": (pc_shard(pc_repo_mp[proj], "P3") or {})
+                        .get("claim")}
+
+            pc_repo_mp = {}
+            _hl_tokens_was = os.environ.get(_locks.TOKEN_ENV)
+            _hl_child = subprocess.Popen([sys.executable, "-c",
+                                          "import time; time.sleep(120)"])
+            try:
+                hl_proj, hl_mp = pc_repo("hl-hand")
+                pc_repo_mp[hl_proj] = hl_mp
+                hl_a = hl_start(hl_proj, "s-hand-a", _hl_child.pid)
+                hl_info = _locks.read_lock(hl_lock_path(hl_proj))
+                check("hl1 a hand-typed start by session A with a live $CLAUDE_PID "
+                      "and no prior lock takes the phase-P3 lock in "
+                      "`_locks.acquire`'s own format - handed off, A's session, "
+                      "A's pid, this host, a token, and yielding to a longer "
+                      "hold of A's own: %r"
+                      % ((hl_a["code"], sorted(hl_info),
+                          hl_info.get("sessionId"), hl_info.get("pid")),),
+                      hl_a["code"] == 0
+                      and (hl_a["claim"] or {}).get("sessionId") == "s-hand-a"
+                      and hl_info.get("sessionId") == "s-hand-a"
+                      and hl_info.get("pid") == _hl_child.pid
+                      and hl_info.get("handedOff") is True
+                      and hl_info.get("hostname") == platform.node()
+                      and bool(hl_info.get("token"))
+                      and sorted(hl_info) == ["handedOff", "hostname", "note",
+                                              "pid", "sessionId", "startedAt",
+                                              "token", "yields"])
+                hl_b = hl_start(hl_proj, "s-hand-b", os.getpid())
+                check("hl2 ...so session B's start, while A's pid runs, is "
+                      "REFUSED: exit 2, the shard byte identical, A's lock "
+                      "untouched, and the refusal names A's live pid: %r"
+                      % ((hl_b["code"], hl_b["txt"][:300]),),
+                      hl_b["code"] == 2 and hl_b["same"]
+                      and _locks.read_lock(hl_lock_path(hl_proj)) == hl_info
+                      and "is running on this host" in hl_b["txt"])
+                _hl_child.kill()
+                _hl_child.wait()
+                hl_c = hl_start(hl_proj, "s-hand-b", os.getpid())
+                hl_cinfo = _locks.read_lock(hl_lock_path(hl_proj))
+                check("hl3 ...and once A's pid is gone the same start by B takes "
+                      "the claim over without --force, takes the lock over too "
+                      "(B's session and pid on it now), and its line states the "
+                      "basis rather than a verdict on A: %r"
+                      % ((hl_c["code"], hl_c["json"].get("claimAction"),
+                          hl_cinfo.get("sessionId"), hl_cinfo.get("pid")),),
+                      hl_c["code"] == 0
+                      and hl_c["json"].get("claimAction") == "takeover"
+                      and (hl_c["claim"] or {}).get("sessionId") == "s-hand-b"
+                      and hl_cinfo.get("sessionId") == "s-hand-b"
+                      and hl_cinfo.get("pid") == os.getpid()
+                      and "no live phase-P3 lock in this clone"
+                      in (hl_c["json"].get("claimTakeoverBasis") or "")
+                      and (hl_c["json"].get("phaseLock") or {}).get("state")
+                      == "took")
+                # The text line, in the plain (non-JSON) output.
+                hl_tp, hl_tmp = pc_repo("hl-text", claim=dict(_PC_OTHER))
+                pc_lock(hl_tp, pc_gone_pid())
+                os.environ["CLAUDE_CODE_SESSION_ID"] = "s-hand-b"
+                hl_tcode, hl_ttxt = run(["start", "P3.1", "--project-dir", hl_tp])
+                check("hl4 the takeover line says `no live phase-P3 lock in this "
+                      "clone` and never that the holder holds no live run: %r"
+                      % ((hl_tcode, [ln for ln in hl_ttxt.splitlines()
+                                     if "claim:" in ln]),),
+                      hl_tcode == 0
+                      and "no live phase-P3 lock in this clone" in hl_ttxt
+                      and "holds no live run" not in hl_ttxt)
+
+                # AGE ALONE IS NOT DEATH: a lock with no pid, or one from another
+                # host, past the age limit says nothing about whether its run still
+                # holds the phase, so it refuses like a live one.
+                hl_cases = (("hl5", "hl-nopid",
+                             {"sessionId": "s-other-session",
+                              "hostname": platform.node(),
+                              "startedAt": "2026-01-01T00:00:00Z",
+                              "handedOff": True, "note": "phase run"}),
+                            ("hl6", "hl-otherhost",
+                             {"sessionId": "s-other-session", "pid": os.getpid(),
+                              "hostname": "not-" + platform.node(),
+                              "startedAt": "2026-01-01T00:00:00Z",
+                              "handedOff": True, "note": "phase run"}))
+                for _hl_id, _hl_name, _hl_lock in hl_cases:
+                    _hp, _hmp = pc_repo(_hl_name, claim=dict(_PC_OTHER))
+                    pc_repo_mp[_hp] = _hmp
+                    hl_plant(_hp, _hl_lock)
+                    _hr = hl_start(_hp, "s-hand-b", os.getpid())
+                    check("%s a %s lock past the age limit under another "
+                          "session's claim is REFUSED as unaskable, not taken "
+                          "over as dead, and the lock is left as it was: %r"
+                          % (_hl_id, _hl_name, (_hr["code"], _hr["txt"][:300]),),
+                          _hr["code"] == 2 and _hr["same"]
+                          and "could not be asked" in _hr["txt"]
+                          and "threshold" in _hr["txt"]
+                          and _locks.read_lock(hl_lock_path(_hp)) == _hl_lock)
+
+                # THE ORCHESTRATOR'S OWN LOCK IS REUSED, NEVER DOUBLED: the claim is
+                # taken over and the lock file is the orchestrator's, byte for byte.
+                hl_op, hl_omp = pc_repo("hl-orch", claim=dict(_PC_OTHER))
+                pc_repo_mp[hl_op] = hl_omp
+                pc_lock(hl_op, os.getpid(), "s-hand-b")
+                with open(hl_lock_path(hl_op), "rb") as _fh:
+                    _hl_obefore = _fh.read()
+                hl_o = hl_start(hl_op, "s-hand-b", os.getpid())
+                with open(hl_lock_path(hl_op), "rb") as _fh:
+                    _hl_oafter = _fh.read()
+                check("hl7 ALLOW: with the orchestrator's own phase lock held the "
+                      "start takes the claim over without --force and leaves that "
+                      "lock byte for byte - reused, not doubled or replaced: %r"
+                      % ((hl_o["code"], hl_o["json"].get("claimAction"),
+                          hl_o["json"].get("phaseLock")),),
+                      hl_o["code"] == 0
+                      and hl_o["json"].get("claimAction") == "takeover"
+                      and _hl_oafter == _hl_obefore
+                      and (hl_o["json"].get("phaseLock") or {}).get("state")
+                      == "ours")
+
+                # WHERE THE HAND-OFF LOCK GOES BACK: sign-off and a phase cancel
+                # release the lock a start took, and leave anybody else's.
+                for _hl_id, _hl_verb in (("hl8", "signoff"), ("hl9", "cancel")):
+                    _hp, _hmp = pc_repo("hl-rel-" + _hl_verb)
+                    pc_repo_mp[_hp] = _hmp
+                    _hs = hl_start(_hp, "s-hand-a", os.getpid())
+                    _had = os.path.exists(hl_lock_path(_hp))
+                    if _hl_verb == "signoff":
+                        run(["cancel", "P3.1", "--reason", "fixture",
+                             "--project-dir", _hp])
+                        _hc, _ht = run(["signoff", "P3", "--verdict", "passed",
+                                        "--summary", "s", "--no-evidence-reason",
+                                        "fixture", "--project-dir", _hp])
+                    else:
+                        _hc, _ht = run(["cancel", "P3", "--reason", "fixture",
+                                        "--project-dir", _hp])
+                    check("%s %s releases the phase lock the hand start took, and "
+                          "says so: %r" % (_hl_id, _hl_verb,
+                                           (_hs["code"], _had, _hc, _ht[-300:]),),
+                          _hs["code"] == 0 and _had and _hc == 0
+                          and not os.path.exists(hl_lock_path(_hp))
+                          and "released phase-P3" in _ht)
+                for _hl_id, _hl_verb in (("hl10", "signoff"), ("hl11", "cancel")):
+                    _hp, _hmp = pc_repo("hl-keep-" + _hl_verb)
+                    pc_repo_mp[_hp] = _hmp
+                    pc_lock(_hp, os.getpid(), "s-hand-a")
+                    with open(hl_lock_path(_hp), "rb") as _fh:
+                        _hb = _fh.read()
+                    _hs = hl_start(_hp, "s-hand-a", os.getpid())
+                    if _hl_verb == "signoff":
+                        run(["cancel", "P3.1", "--reason", "fixture",
+                             "--project-dir", _hp])
+                        _hc, _ht = run(["signoff", "P3", "--verdict", "passed",
+                                        "--summary", "s", "--no-evidence-reason",
+                                        "fixture", "--project-dir", _hp])
+                    else:
+                        _hc, _ht = run(["cancel", "P3", "--reason", "fixture",
+                                        "--project-dir", _hp])
+                    _ha = b""
+                    if os.path.exists(hl_lock_path(_hp)):
+                        with open(hl_lock_path(_hp), "rb") as _fh:
+                            _ha = _fh.read()
+                    check("%s ALLOW: %s leaves a phase lock the start did NOT "
+                          "take - the orchestrator's, which it releases after "
+                          "the merge - byte for byte: %r"
+                          % (_hl_id, _hl_verb, (_hs["code"], _hc, _ht[-200:]),),
+                          _hs["code"] == 0 and _hc == 0 and _ha == _hb)
+            finally:
+                if _hl_child.poll() is None:
+                    _hl_child.kill()
+                    _hl_child.wait()
+                if _hl_tokens_was is None:
+                    os.environ.pop(_locks.TOKEN_ENV, None)
+                else:
+                    os.environ[_locks.TOKEN_ENV] = _hl_tokens_was
+                os.environ.pop("CLAUDE_PID", None)
+        finally:
+            if _pc_pid_was is not None:
+                os.environ["CLAUDE_PID"] = _pc_pid_was
+            if _pc_env_was is None:
+                os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+            else:
+                os.environ["CLAUDE_CODE_SESSION_ID"] = _pc_env_was
+
+        # ---- (lv) a held phase lock names a live process -----------------------
+        # Every step is its own process with its own session id and $CLAUDE_PID,
+        # the way two sessions and a restarted run really meet: in one process the
+        # token a take carries in the environment would let every later call back
+        # in, and the cases would be about that instead. The pids are sleepers this
+        # suite starts and kills, so "the holder died" is an observed exit.
+        _lv_task_py = os.path.join(_output.SCRIPTS_DIR, "manifest", "audit-task.py")
+        _lv_lock_py = os.path.join(_output.SCRIPTS_DIR, "governance",
+                                   "audit-lock.py")
+
+        def lv_env(session, pid):
+            # None leaves the variable unset: a run with no session id, or one
+            # started where nothing exported $CLAUDE_PID.
+            env = dict((k, v) for k, v in os.environ.items()
+                       if not k.startswith("CLAUDE_") and k != _locks.TOKEN_ENV)
+            if session is not None:
+                env["CLAUDE_CODE_SESSION_ID"] = session
+            if pid is not None:
+                env["CLAUDE_PID"] = str(pid)
+            return env
+
+        def lv_call(script, proj, argv, session, pid):
+            done = subprocess.run([sys.executable, script] + argv,
+                                  env=lv_env(session, pid), cwd=proj,
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            return done.returncode, done.stdout.decode("utf-8", "replace")
+
+        def lv_start(proj, session, pid):
+            code, txt = lv_call(_lv_task_py, proj, ["start", "P3.1", "--json",
+                                                    "--project-dir", proj],
+                                session, pid)
+            return {"code": code, "txt": txt, "json": pc_json(txt)}
+
+        def lv_lock(proj, argv, session, pid):
+            return lv_call(_lv_lock_py, proj, argv + ["--project", proj, "--wait",
+                                                      "0"], session, pid)
+
+        def lv_signoff(proj, session, pid):
+            lv_call(_lv_task_py, proj, ["cancel", "P3.1", "--reason", "fixture",
+                                        "--project-dir", proj], session, pid)
+            return lv_call(_lv_task_py, proj,
+                           ["signoff", "P3", "--verdict", "passed", "--summary",
+                            "s", "--no-evidence-reason", "fixture",
+                            "--project-dir", proj], session, pid)
+
+        def lv_path(proj):
+            return os.path.join(_locks.lock_dir(proj), "phase-P3.lock")
+
+        def lv_shard_bytes(proj, mp):
+            with open(pc_shard_path(mp, "P3"), "rb") as fh:
+                return fh.read()
+
+        def lv_sleeper():
+            return subprocess.Popen([sys.executable, "-c",
+                                     "import time; time.sleep(300)"])
+
+        def lv_kill(proc):
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait()
+
+        _lv_procs = []
+        try:
+            _lv_procs.extend(lv_sleeper() for _n in range(4))
+            _lv_p1, _lv_p2, _lv_pb, _lv_pa = _lv_procs
+
+            # A RESUMED SESSION RUNS UNDER A NEW PROCESS. Its keep start must move
+            # the lock onto that process, or the lock still names the dead one and
+            # the next session reads the phase as abandoned.
+            lv1_proj, lv1_mp = pc_repo("lv-resume")
+            lv1_a1 = lv_start(lv1_proj, "s-lv-a", _lv_p1.pid)
+            lv_kill(_lv_p1)
+            lv1_a2 = lv_start(lv1_proj, "s-lv-a", _lv_p2.pid)
+            lv1_info = _locks.read_lock(lv_path(lv1_proj))
+            lv1_before = lv_shard_bytes(lv1_proj, lv1_mp)
+            lv1_b = lv_start(lv1_proj, "s-lv-b", _lv_pb.pid)
+            check("lv1 a same-session start under a NEW process after the old one "
+                  "died re-records the phase lock under the live process, so "
+                  "another session's start is then REFUSED - exit 2, the shard "
+                  "byte identical: %r"
+                  % ((lv1_a1["code"], lv1_a2["code"],
+                      lv1_a2["json"].get("claimAction"), lv1_info.get("pid"),
+                      _lv_p2.pid, lv1_b["code"], lv1_b["txt"][:200]),),
+                  lv1_a1["code"] == 0 and lv1_a2["code"] == 0
+                  and lv1_a2["json"].get("claimAction") == "keep"
+                  and lv1_info.get("pid") == _lv_p2.pid
+                  and lv1_info.get("sessionId") == "s-lv-a"
+                  and lv1_b["code"] == 2
+                  and lv_shard_bytes(lv1_proj, lv1_mp) == lv1_before)
+            # The allow twin: the refresh does not make a lock immortal. Once the
+            # process it names is gone too, the next session takes the phase.
+            lv_kill(_lv_p2)
+            lv2_b = lv_start(lv1_proj, "s-lv-b", _lv_pb.pid)
+            check("lv2 ALLOW: once the re-recorded process is gone as well, the "
+                  "other session's start takes the claim over without --force: %r"
+                  % ((lv2_b["code"], lv2_b["json"].get("claimAction")),),
+                  lv2_b["code"] == 0
+                  and lv2_b["json"].get("claimAction") == "takeover")
+
+            # A KEEP START ASKS THE LOCK TOO. A session that kept its claim but
+            # gave its lock back must not start again under another run's live
+            # lock just because the claim is its own.
+            lv3_proj, lv3_mp = pc_repo("lv-keep-foreign")
+            lv3_a1 = lv_start(lv3_proj, "s-lv-a", _lv_pa.pid)
+            lv3_rel = lv_lock(lv3_proj, ["release", "phase-P3"], "s-lv-a",
+                              _lv_pa.pid)
+            lv3_acq = lv_lock(lv3_proj, ["acquire", "phase-P3", "--note",
+                                         "phase run"], "s-lv-b", _lv_pb.pid)
+            lv3_lock = _locks.read_lock(lv_path(lv3_proj))
+            lv3_before = lv_shard_bytes(lv3_proj, lv3_mp)
+            lv3_a2 = lv_start(lv3_proj, "s-lv-a", _lv_pa.pid)
+            check("lv3 a keep start while ANOTHER session's live phase lock is "
+                  "held is REFUSED - exit 2, the shard byte identical, the other "
+                  "session's lock untouched: %r"
+                  % ((lv3_a1["code"], lv3_rel[0], lv3_acq[0], lv3_a2["code"],
+                      lv3_a2["json"].get("phaseLock"), lv3_a2["txt"][:200]),),
+                  lv3_a1["code"] == 0 and lv3_rel[0] == 0 and lv3_acq[0] == 0
+                  and lv3_a2["code"] == 2
+                  and lv_shard_bytes(lv3_proj, lv3_mp) == lv3_before
+                  and _locks.read_lock(lv_path(lv3_proj)) == lv3_lock
+                  and lv3_lock.get("sessionId") == "s-lv-b")
+            lv4_proj, _lv4_mp = pc_repo("lv-keep-dead")
+            lv4_a1 = lv_start(lv4_proj, "s-lv-a", _lv_pa.pid)
+            lv_lock(lv4_proj, ["release", "phase-P3"], "s-lv-a", _lv_pa.pid)
+            lv_lock(lv4_proj, ["acquire", "phase-P3", "--note", "phase run"],
+                    "s-lv-b", pc_gone_pid())
+            lv4_a2 = lv_start(lv4_proj, "s-lv-a", _lv_pa.pid)
+            lv4_lock = _locks.read_lock(lv_path(lv4_proj))
+            check("lv4 ALLOW: the same keep start over a lock whose process is "
+                  "gone runs, and the lock is this session's afterwards: %r"
+                  % ((lv4_a1["code"], lv4_a2["code"],
+                      lv4_a2["json"].get("claimAction"), lv4_lock.get("sessionId"),
+                      lv4_lock.get("pid")),),
+                  lv4_a1["code"] == 0 and lv4_a2["code"] == 0
+                  and lv4_a2["json"].get("claimAction") == "keep"
+                  and lv4_lock.get("sessionId") == "s-lv-a"
+                  and lv4_lock.get("pid") == _lv_pa.pid)
+
+            # THE MERGE RUNS UNDER A HELD LOCK. The orchestrator's acquire over the
+            # lock its own hand start took must leave a lock sign-off does not
+            # give back - sign-off releases only the start's.
+            lv5_proj, _lv5_mp = pc_repo("lv-merge")
+            lv5_a = lv_start(lv5_proj, "s-lv-a", _lv_pa.pid)
+            lv5_acq = lv_lock(lv5_proj, ["acquire", "phase-P3", "--note",
+                                         "phase run"], "s-lv-a", _lv_pa.pid)
+            lv5_so = lv_signoff(lv5_proj, "s-lv-a", _lv_pa.pid)
+            lv5_lock = _locks.read_lock(lv_path(lv5_proj))
+            check("lv5 hand start, then the orchestrator's acquire, then sign-off: "
+                  "the phase lock is STILL HELD, under the orchestrator's note: %r"
+                  % ((lv5_a["code"], lv5_acq, lv5_so[0], lv5_lock),),
+                  lv5_a["code"] == 0 and lv5_acq[0] == 0 and lv5_so[0] == 0
+                  and os.path.exists(lv_path(lv5_proj))
+                  and lv5_lock.get("note") == "phase run"
+                  and lv5_lock.get("sessionId") == "s-lv-a")
+            lv6_proj, _lv6_mp = pc_repo("lv-merge-none")
+            lv6_a = lv_start(lv6_proj, "s-lv-a", _lv_pa.pid)
+            lv6_so = lv_signoff(lv6_proj, "s-lv-a", _lv_pa.pid)
+            check("lv6 ALLOW: with no orchestrator acquire in between, sign-off "
+                  "gives back the lock the start took: %r"
+                  % ((lv6_a["code"], lv6_so[0], lv6_so[1][-200:]),),
+                  lv6_a["code"] == 0 and lv6_so[0] == 0
+                  and not os.path.exists(lv_path(lv6_proj))
+                  and "released phase-P3" in lv6_so[1])
+
+            # A SIGN-OFF BY A SESSION THAT NEVER HELD THE LOCK was not taken over,
+            # and must not be told it was.
+            lv7_proj, _lv7_mp = pc_repo("lv-nonholder")
+            lv7_a = lv_start(lv7_proj, "s-lv-a", _lv_pa.pid)
+            lv7_so = lv_signoff(lv7_proj, "s-lv-b", _lv_pb.pid)
+            check("lv7 a sign-off by a non-holder while the holder is live says "
+                  "the lock was LEFT IN PLACE and names the live holder - never "
+                  "that this run was taken over: %r"
+                  % ((lv7_a["code"], lv7_so[0],
+                      [ln for ln in lv7_so[1].splitlines() if "phase lock" in ln]),),
+                  lv7_a["code"] == 0 and lv7_so[0] == 0
+                  and os.path.exists(lv_path(lv7_proj))
+                  and "left in place" in lv7_so[1]
+                  and "s-lv-a" in lv7_so[1]
+                  and "took it over" not in lv7_so[1])
+            lv8_proj, _lv8_mp = pc_repo("lv-takenover")
+            lv8_a = lv_start(lv8_proj, "s-lv-a", _lv_pa.pid)
+            lv8_tk = lv_lock(lv8_proj, ["acquire", "phase-P3", "--takeover",
+                                        "--note", M._START_LOCK_NOTE],
+                             "s-lv-b", _lv_pb.pid)
+            lv8_so = lv_signoff(lv8_proj, "s-lv-a", _lv_pa.pid)
+            check("lv8 ALLOW: a sign-off by the run whose lock WAS taken over "
+                  "keeps the takeover wording: %r"
+                  % ((lv8_a["code"], lv8_tk[0], lv8_so[0],
+                      [ln for ln in lv8_so[1].splitlines() if "phase lock" in ln]),),
+                  lv8_a["code"] == 0 and lv8_tk[0] == 0 and lv8_so[0] == 0
+                  and "took it over" in lv8_so[1]
+                  and "left in place" not in lv8_so[1])
+
+            def lv_lock_lines(text):
+                return [ln for ln in text.splitlines() if "phase lock" in ln]
+
+            def lv_rewrite(proj, changes):
+                info = _locks.read_lock(lv_path(proj))
+                info.update(changes)
+                _panel_write._atomic_write_json(lv_path(proj), info)
+                return info
+
+            # NOT TAKEN OVER IS DECIDED BY THE LOCK'S OWN RECORD, not by whether
+            # its holder reads live: a start lock judged by its age, or one from
+            # another host, is still somebody else's that this session never held.
+            lv13_proj, _lv13_mp = pc_repo("lv-aged")
+            lv13_a = lv_start(lv13_proj, "s-lv-a", None)
+            lv13_lock = lv_rewrite(lv13_proj, {"startedAt": "2020-01-01T00:00:00Z"})
+            lv13_so = lv_signoff(lv13_proj, "s-lv-b", _lv_pb.pid)
+            check("lv13 a sign-off by a non-holder over a start lock with no pid "
+                  "and past the age limit says the lock was LEFT IN PLACE, names "
+                  "the holder and the age basis, never that it was taken over: %r"
+                  % ((lv13_a["code"], lv13_lock.get("pid"), lv13_so[0],
+                      lv_lock_lines(lv13_so[1])),),
+                  lv13_a["code"] == 0 and "pid" not in lv13_lock
+                  and lv13_so[0] == 0 and os.path.exists(lv_path(lv13_proj))
+                  and "left in place" in lv13_so[1]
+                  and "s-lv-a" in "".join(lv_lock_lines(lv13_so[1]))
+                  and "threshold" in "".join(lv_lock_lines(lv13_so[1]))
+                  and "took it over" not in lv13_so[1])
+            lv14_proj, _lv14_mp = pc_repo("lv-foreign")
+            lv14_a = lv_start(lv14_proj, "s-lv-a", _lv_pa.pid)
+            lv_rewrite(lv14_proj, {"hostname": "elsewhere",
+                                   "startedAt": "2020-01-01T00:00:00Z"})
+            lv14_so = lv_signoff(lv14_proj, "s-lv-b", _lv_pb.pid)
+            check("lv14 the same for an old start lock recorded on another host: "
+                  "LEFT IN PLACE, with the foreign-host basis: %r"
+                  % ((lv14_a["code"], lv14_so[0], lv_lock_lines(lv14_so[1])),),
+                  lv14_a["code"] == 0 and lv14_so[0] == 0
+                  and os.path.exists(lv_path(lv14_proj))
+                  and "left in place" in lv14_so[1]
+                  and "not this host" in "".join(lv_lock_lines(lv14_so[1]))
+                  and "took it over" not in lv14_so[1])
+            # The twin: the same foreign lock recording that it took over FROM the
+            # signing session keeps the takeover sentence.
+            lv15_proj, _lv15_mp = pc_repo("lv-foreign-taken")
+            lv15_a = lv_start(lv15_proj, "s-lv-a", _lv_pa.pid)
+            lv_rewrite(lv15_proj, {"hostname": "elsewhere",
+                                   "startedAt": "2020-01-01T00:00:00Z",
+                                   "takenOverFrom": {"sessionId": "s-lv-b"}})
+            lv15_so = lv_signoff(lv15_proj, "s-lv-b", _lv_pb.pid)
+            check("lv15 ALLOW: the same foreign-host lock recording a takeover "
+                  "from the signing session keeps the takeover wording: %r"
+                  % ((lv15_a["code"], lv15_so[0], lv_lock_lines(lv15_so[1])),),
+                  lv15_a["code"] == 0 and lv15_so[0] == 0
+                  and "took it over" in lv15_so[1]
+                  and "left in place" not in lv15_so[1])
+
+            # A RESUMED RUN GIVES BACK THE LOCK IT RE-RECORDED. The orchestrator
+            # releases at the end only what its acquire said was this call's, so
+            # an acquire that re-records its own session's lock from a dead pid
+            # must say it holds it now - or the lock outlives the run.
+            _lv_r1, _lv_r2 = lv_sleeper(), lv_sleeper()
+            _lv_procs.extend([_lv_r1, _lv_r2])
+            lv16_proj, _lv16_mp = pc_repo("lv-resumed")
+            lv16_acq1 = lv_lock(lv16_proj, ["acquire", "phase-P3", "--note",
+                                            "phase run"], "s-lv-a", _lv_r1.pid)
+            lv16_st1 = lv_start(lv16_proj, "s-lv-a", _lv_r1.pid)
+            lv_kill(_lv_r1)
+            lv16_acq2 = lv_lock(lv16_proj, ["acquire", "phase-P3", "--note",
+                                            "phase run"], "s-lv-a", _lv_r2.pid)
+            lv16_acq3 = lv_lock(lv16_proj, ["acquire", "phase-P3", "--note",
+                                            "phase run"], "s-lv-a", _lv_r2.pid)
+            lv16_st2 = lv_start(lv16_proj, "s-lv-a", _lv_r2.pid)
+            lv16_so = lv_signoff(lv16_proj, "s-lv-a", _lv_r2.pid)
+            lv16_held = _locks.read_lock(lv_path(lv16_proj))
+            lv16_rel = lv_lock(lv16_proj, ["release", "phase-P3"], "s-lv-a",
+                               _lv_r2.pid)
+            check("lv16 a resumed run's acquire over its own lock naming a dead "
+                  "pid says the lock was re-recorded and is this call's - not "
+                  "'already yours' - so its release at the end leaves no lock: %r"
+                  % ((lv16_acq1[0], lv16_st1["code"], lv16_acq2,
+                      lv16_st2["code"], lv16_so[0], lv16_held.get("pid"),
+                      lv16_rel),),
+                  lv16_acq1[0] == 0 and lv16_st1["code"] == 0
+                  and lv16_acq2[0] == 0
+                  and "re-recorded" in lv16_acq2[1]
+                  and "already yours" not in lv16_acq2[1]
+                  and "not this call's" not in lv16_acq2[1]
+                  and lv16_st2["code"] == 0 and lv16_so[0] == 0
+                  and lv16_held.get("pid") == _lv_r2.pid
+                  and lv16_rel[0] == 0
+                  and not os.path.exists(lv_path(lv16_proj)))
+            check("lv17 ALLOW: a second acquire in the same resumed run, its "
+                  "holder now live, is still 'already yours' and not this "
+                  "call's to give back: %r" % (lv16_acq3,),
+                  lv16_acq3[0] == 0 and "already yours" in lv16_acq3[1]
+                  and "not yours to give back" in lv16_acq3[1])
+
+            # A LIVE RECORDED HOLDER IS NOT RE-RECORDED. A start of the same
+            # session under another live process leaves the lock naming the
+            # process that took it, so that process's release still works. lv1 is
+            # the twin: a dead recorded holder IS re-recorded.
+            _lv_ra, _lv_rb = lv_sleeper(), lv_sleeper()
+            _lv_procs.extend([_lv_ra, _lv_rb])
+            lv18_proj, _lv18_mp = pc_repo("lv-live-refresh")
+            lv18_acq = lv_lock(lv18_proj, ["acquire", "phase-P3", "--note",
+                                           "phase run"], "s-lv-a", _lv_ra.pid)
+            lv18_st = lv_start(lv18_proj, "s-lv-a", _lv_rb.pid)
+            lv18_lock = _locks.read_lock(lv_path(lv18_proj))
+            lv18_rel = lv_lock(lv18_proj, ["release", "phase-P3"], "s-lv-a",
+                               _lv_ra.pid)
+            check("lv18 a same-session start under a second LIVE process leaves "
+                  "the lock naming the live process that took it, and that "
+                  "process's release gives it back: %r"
+                  % ((lv18_acq[0], lv18_st["code"], lv18_lock.get("pid"),
+                      _lv_ra.pid, lv18_rel),),
+                  lv18_acq[0] == 0 and lv18_st["code"] == 0
+                  and lv18_lock.get("pid") == _lv_ra.pid
+                  and lv18_rel[0] == 0 and "taken over" not in lv18_rel[1]
+                  and not os.path.exists(lv_path(lv18_proj)))
+
+            # A CALLER THAT IS NOT KNOWN TO BE THE HOLDER'S SESSION does not
+            # re-take a yielding start lock or a claim. lv5 is the twin: the same
+            # session's acquire re-takes the yielding lock.
+            lv19_proj, _lv19_mp = pc_repo("lv-sessionless")
+            lv19_a = lv_start(lv19_proj, "s-lv-a", _lv_pa.pid)
+            with open(lv_path(lv19_proj), "rb") as _fh:
+                lv19_before = _fh.read()
+            lv19_acq = lv_lock(lv19_proj, ["acquire", "phase-P3", "--note",
+                                           "phase run"], None, _lv_pa.pid)
+            with open(lv_path(lv19_proj), "rb") as _fh:
+                lv19_after = _fh.read()
+            check("lv19 a hand-off acquire with no session id and the holder's "
+                  "$CLAUDE_PID leaves the start's yielding lock byte for byte: %r"
+                  % ((lv19_a["code"], lv19_acq),),
+                  lv19_a["code"] == 0 and lv19_after == lv19_before
+                  and "from this session's own yielding claim" not in lv19_acq[1])
+            lv20_proj, lv20_mp = pc_repo("lv-shared-pid")
+            lv20_a = lv_start(lv20_proj, "s-lv-a", _lv_pa.pid)
+            lv20_lock = _locks.read_lock(lv_path(lv20_proj))
+            lv20_before = lv_shard_bytes(lv20_proj, lv20_mp)
+            lv20_b = lv_start(lv20_proj, "s-lv-b", _lv_pa.pid)
+            check("lv20 another session sharing the holder's $CLAUDE_PID is not "
+                  "the holder: its start is REFUSED, the shard byte identical and "
+                  "the lock untouched: %r"
+                  % ((lv20_a["code"], lv20_b["code"],
+                      lv20_b["json"].get("claimAction"), lv20_b["txt"][:200]),),
+                  lv20_a["code"] == 0 and lv20_b["code"] == 2
+                  and lv_shard_bytes(lv20_proj, lv20_mp) == lv20_before
+                  and _locks.read_lock(lv_path(lv20_proj)) == lv20_lock)
+
+            # A START REPORTS A LOCK AS ITS OWN TAKE ONLY WHEN IT IS THE START'S.
+            # A resumed session's start re-records its own lock from a dead pid
+            # onto the live one; when that lock is the orchestrator's, sign-off
+            # leaves it (it releases only the start's note), so the start's line
+            # must not promise sign-off gives it back. The twin runs the same
+            # flow over a lock the start itself took.
+            def lv_resumed_flow(name, orchestrated):
+                p0, p1 = lv_sleeper(), lv_sleeper()
+                _lv_procs.extend([p0, p1])
+                proj, _mp = pc_repo(name)
+                acq = (lv_lock(proj, ["acquire", "phase-P3", "--note",
+                                      "phase run"], "s-lv-a", p0.pid)
+                       if orchestrated else (0, ""))
+                first = lv_start(proj, "s-lv-a", p0.pid)
+                lv_kill(p0)
+                again = lv_call(_lv_task_py, proj,
+                                ["start", "P3.1", "--project-dir", proj],
+                                "s-lv-a", p1.pid)
+                so = lv_signoff(proj, "s-lv-a", p1.pid)
+                held = (_locks.read_lock(lv_path(proj))
+                        if os.path.exists(lv_path(proj)) else None)
+                return {"acq": acq[0], "first": first["code"],
+                        "again": again[0], "line": lv_lock_lines(again[1]),
+                        "so": so[0], "soLines": lv_lock_lines(so[1]),
+                        "held": held, "p0": p0.pid, "p1": p1.pid}
+
+            lv23 = lv_resumed_flow("lv-resumed-orch", True)
+            lv23_line = "".join(lv23["line"])
+            lv23_held = lv23["held"] or {}
+            check("lv23 a resumed hand start over the orchestrator's 'phase run' "
+                  "lock whose pid died does NOT call it its own take: its line "
+                  "says the lock was re-recorded and keeps its hold's note, and "
+                  "after sign-off the lock file agrees - still held, note "
+                  "'phase run', pid of the live run, refreshedFrom the dead one: %r"
+                  % (lv23,),
+                  lv23["acq"] == 0 and lv23["first"] == 0 and lv23["again"] == 0
+                  and len(lv23["line"]) == 1
+                  and "re-recorded" in lv23_line and "phase run" in lv23_line
+                  and "gives it back" not in lv23_line
+                  and "taken for this session" not in lv23_line
+                  and lv23["so"] == 0 and not lv23["soLines"]
+                  and lv23_held.get("note") == "phase run"
+                  and lv23_held.get("pid") == lv23["p1"]
+                  and lv23_held.get("refreshedFrom") == lv23["p0"])
+            lv24 = lv_resumed_flow("lv-resumed-start", False)
+            lv24_line = "".join(lv24["line"])
+            check("lv24 ALLOW: the same flow over a lock the start itself took "
+                  "is the start's take - its line says sign-off gives it back, "
+                  "and sign-off does release it: %r" % (lv24,),
+                  lv24["first"] == 0 and lv24["again"] == 0
+                  and len(lv24["line"]) == 1
+                  and "taken for this session" in lv24_line
+                  and "gives it back" in lv24_line
+                  and lv24["so"] == 0
+                  and any("released phase-P3" in ln for ln in lv24["soLines"])
+                  and lv24["held"] is None)
+        finally:
+            for _lv_proc in _lv_procs:
+                lv_kill(_lv_proc)
+
+        # AN EXCEPTION BETWEEN THE LOCK TAKE AND THE VALIDATED WRITE gives the
+        # lock back. Driven in process, because the injection is a replaced
+        # function; the token the take carries is restored with the environment.
+        _lv_env_was = dict((k, os.environ.get(k)) for k in
+                           ("CLAUDE_CODE_SESSION_ID", "CLAUDE_PID",
+                            _locks.TOKEN_ENV))
+        _lv_start_task = M._start_task
+
+        def lv_boom(*_a, **_k):
+            raise RuntimeError("injected between the lock take and the write")
+        try:
+            os.environ["CLAUDE_CODE_SESSION_ID"] = "s-lv-x"
+            os.environ["CLAUDE_PID"] = str(os.getpid())
+            lv9_proj, lv9_mp = pc_repo("lv-raise")
+            lv9_before = lv_shard_bytes(lv9_proj, lv9_mp)
+            M._start_task = lv_boom
+            try:
+                lv9_code, lv9_txt = run(["start", "P3.1", "--project-dir", lv9_proj])
+            finally:
+                M._start_task = _lv_start_task
+            check("lv9 an exception injected between the lock take and the write "
+                  "leaves NO phase lock and the shard as it was: %r"
+                  % ((lv9_code, lv9_txt[-200:],
+                      os.path.exists(lv_path(lv9_proj))),),
+                  lv9_code != 0 and "injected" in lv9_txt
+                  and not os.path.exists(lv_path(lv9_proj))
+                  and lv_shard_bytes(lv9_proj, lv9_mp) == lv9_before)
+            lv10_proj, _lv10_mp = pc_repo("lv-raise-ours")
+            pc_lock(lv10_proj, os.getpid(), "s-lv-x")
+            with open(lv_path(lv10_proj), "rb") as _fh:
+                lv10_before = _fh.read()
+            M._start_task = lv_boom
+            try:
+                lv10_code, _lv10_txt = run(["start", "P3.1", "--project-dir",
+                                            lv10_proj])
+            finally:
+                M._start_task = _lv_start_task
+            lv10_after = b""
+            if os.path.exists(lv_path(lv10_proj)):
+                with open(lv_path(lv10_proj), "rb") as _fh:
+                    lv10_after = _fh.read()
+            # The other direction: the rollback gives back only a lock this start
+            # took. An unconditional release would take the orchestrator's.
+            check("lv10 ALLOW: the same exception under a phase lock this start "
+                  "did NOT take leaves that lock byte for byte: %r" % (lv10_code,),
+                  lv10_code != 0 and lv10_after == lv10_before)
+            lv11_proj, _lv11_mp = pc_repo("lv-noraise")
+            lv11_code, _lv11_txt = run(["start", "P3.1", "--project-dir",
+                                        lv11_proj])
+            check("lv11 ALLOW: with nothing injected the same start keeps the lock "
+                  "it took: %r" % (lv11_code,),
+                  lv11_code == 0 and os.path.exists(lv_path(lv11_proj)))
+
+            # A FAILED START GIVES BACK ONLY A LOCK THAT IS THE START'S. This
+            # session's lock naming a dead pid is re-recorded under the run
+            # asking either way; the orchestrator's stays for its run to release,
+            # and the start's own is given back with the rolled-back write.
+            def lv_failed_resume(name, note):
+                proj, _mp = pc_repo(name)
+                ld = _locks.lock_dir(proj)
+                os.makedirs(ld, exist_ok=True)
+                _panel_write._atomic_write_json(
+                    lv_path(proj),
+                    {"sessionId": "s-lv-x", "pid": pc_gone_pid(),
+                     "hostname": platform.node(), "handedOff": True,
+                     "startedAt": "2026-01-01T00:00:00Z", "note": note})
+                M._start_task = lv_boom
+                try:
+                    code, _txt = run(["start", "P3.1", "--project-dir", proj])
+                finally:
+                    M._start_task = _lv_start_task
+                return {"code": code,
+                        "lock": (_locks.read_lock(lv_path(proj))
+                                 if os.path.exists(lv_path(proj)) else None)}
+
+            lv25 = lv_failed_resume("lv-raise-orch", "phase run")
+            check("lv25 a failed start over this session's 'phase run' lock "
+                  "naming a dead pid leaves that lock in place, re-recorded "
+                  "under the live run with its note kept: %r" % (lv25,),
+                  lv25["code"] != 0 and lv25["lock"] is not None
+                  and lv25["lock"].get("note") == "phase run"
+                  and lv25["lock"].get("pid") == os.getpid())
+            lv26 = lv_failed_resume("lv-raise-startnote", M._START_LOCK_NOTE)
+            check("lv26 ALLOW: the same failed start over the start's own lock "
+                  "naming a dead pid gives that lock back: %r" % (lv26,),
+                  lv26["code"] != 0 and lv26["lock"] is None)
+
+            # A RAISE AFTER THE WRITE LANDED restores the claim WITH the lock:
+            # giving back only the lock left a claim no lock stood behind. The
+            # injection is the branch cut, the one step that runs after the
+            # validated write, made to raise rather than refuse.
+            _lv_entry = M._phase_entry
+            _lv_run = subprocess.run
+
+            def lv_cut_entry(git_root, meta, phase):
+                head = _lv_run(["git", "-C", git_root, "rev-parse", "HEAD"],
+                               stdout=subprocess.PIPE).stdout.decode().strip()
+                return {"state": "cut", "refusal": None, "branch": "audit/p3-cut",
+                        "parent": "audit/p3", "baseRef": head}
+
+            def lv_cut_raises(argv, *a, **k):
+                if isinstance(argv, list) and "switch" in argv:
+                    raise RuntimeError("injected after the write landed")
+                return _lv_run(argv, *a, **k)
+
+            def lv_cut_start(name, boom):
+                proj, mp = pc_repo(name)
+                before = lv_shard_bytes(proj, mp)
+                M._phase_entry = lv_cut_entry
+                if boom:
+                    subprocess.run = lv_cut_raises
+                try:
+                    code, txt = run(["start", "P3.1", "--project-dir", proj])
+                finally:
+                    M._phase_entry = _lv_entry
+                    subprocess.run = _lv_run
+                return {"code": code, "txt": txt,
+                        "same": lv_shard_bytes(proj, mp) == before,
+                        "claim": (pc_shard(mp, "P3") or {}).get("claim"),
+                        "lock": os.path.exists(lv_path(proj))}
+
+            lv21 = lv_cut_start("lv-raise-after", True)
+            check("lv21 a raise after the write landed restores the shard - no "
+                  "claim left - and gives the lock back with it: %r"
+                  % ((lv21["code"], lv21["same"], lv21["claim"], lv21["lock"],
+                      lv21["txt"][-200:]),),
+                  lv21["code"] != 0 and "injected" in lv21["txt"]
+                  and lv21["same"] and lv21["claim"] is None
+                  and not lv21["lock"])
+            lv22 = lv_cut_start("lv-noraise-after", False)
+            check("lv22 ALLOW: the same cut with nothing raised keeps the claim "
+                  "and the lock together: %r"
+                  % ((lv22["code"], lv22["claim"], lv22["lock"],
+                      lv22["txt"][-200:]),),
+                  lv22["code"] == 0 and not lv22["same"]
+                  and (lv22["claim"] or {}).get("sessionId") == "s-lv-x"
+                  and lv22["lock"])
+
+            # ONE PREDICATE FOR "THE HOLDER IS GONE": `_phase_holder` reads it
+            # from `_locks`, so a change to it changes this reading too.
+            # No $CLAUDE_PID here: the planted lock records this suite's pid, and
+            # with the variable naming it too the lock would read as this run's.
+            os.environ.pop("CLAUDE_PID", None)
+            lv12_proj, _lv12_mp = pc_repo("lv-gone")
+            pc_lock(lv12_proj, os.getpid(), "s-lv-other")
+            _lv_had = hasattr(_locks, "holder_gone")
+            _lv_gone_was = getattr(_locks, "holder_gone", None)
+            _locks.holder_gone = lambda *_a, **_k: True
+            try:
+                lv12 = M._phase_holder(lv12_proj, "P3")
+            finally:
+                if _lv_had:
+                    _locks.holder_gone = _lv_gone_was
+                else:
+                    del _locks.holder_gone
+            lv12b = M._phase_holder(lv12_proj, "P3")
+            check("lv12 `_phase_holder` decides a lock's holder is gone through "
+                  "`_locks.holder_gone`: forced true it reads a live lock dead, "
+                  "and left alone the same lock reads live: %r" % ((lv12, lv12b),),
+                  lv12.get("state") == "dead" and lv12b.get("state") == "live")
+        finally:
+            M._start_task = _lv_start_task
+            for _k, _v in _lv_env_was.items():
+                if _v is None:
+                    os.environ.pop(_k, None)
+                else:
+                    os.environ[_k] = _v
 
         # ---- (pd) `done`: the close, and the SHA that makes it a record -------
         # THE LOSS, from this repository and not from a scenario. With no verb
@@ -7895,6 +9224,152 @@ def _cases(check):
         check("nt2 an empty note and a phase id are refused, nothing written: %r"
               % ((_nt_empty[0], _nt_phase[0]),),
               _nt_empty[0] == 2 and _nt_phase[0] == 2 and _nt_after == _nt_before)
+
+        # A note is caller free text: a machine path in it is refused at the
+        # verb's door, before the lock, so neither the shard nor the journal
+        # takes it. Neutral, and built so this file never spells one whole.
+        _nt_home = "/" + "/".join(("Users", "someone", "notes", "probe.md"))
+        _nt_rows_before = len([r for r in _journal_io.read_all(projnt)])
+        _nt_mp = run(["note", "P2.4", "--text", "probe kept at %s" % (_nt_home,),
+                      "--project-dir", projnt])
+        _nt_mp_in = run_on_stdin(["note", "P2.4", "--text", "-",
+                                  "--project-dir", projnt],
+                                 "probe kept at %s\n" % (_nt_home,))
+        with open(mpnt, "rb") as _fh:
+            _nt_mp_after = _fh.read()
+        _nt_rows_after = len([r for r in _journal_io.read_all(projnt)])
+        check("nt3 a note carrying a home path - on argv or on stdin - exits "
+              "non-zero, leaves the shard and the journal unchanged, and names "
+              "the field and the shape without echoing the path: %r"
+              % ((_nt_mp[0], _nt_mp_in[0], _nt_mp[1][:160]),),
+              _nt_mp[0] != 0 and _nt_mp_in[0] != 0
+              and _nt_mp_after == _nt_before
+              and _nt_rows_after == _nt_rows_before
+              and "--text" in _nt_mp[1] and "posix-home" in _nt_mp[1]
+              and "--text" in _nt_mp_in[1]
+              and "someone" not in _nt_mp[1] + _nt_mp_in[1])
+        _nt_ok = run(["note", "P2.4", "--text",
+                      "probe kept at docs/probe.md, see https://example.com/x",
+                      "--project-dir", projnt])
+        check("nt4 ALLOW twin: a note naming a repo-relative path and a URL is "
+              "written - the mutation this catches is a door that refuses "
+              "every path-shaped note: %r" % (_nt_ok,),
+              _nt_ok[0] == 0
+              and [n.get("text") for n in
+                   ((task_in(mpnt, "P2.4") or {}).get("notes") or [])][-1:]
+              == ["probe kept at docs/probe.md, see https://example.com/x"])
+
+        # Every shape the commit-time detector flags is refused at the same
+        # door, and a file URL into a home directory with them. Each sample is
+        # built so this file never spells one whole.
+        _nt_shapes = (
+            ("session-slug", "/x/" + "-".join(("", "Users", "someone",
+                                               "Desktop", "x")) + "/s"),
+            ("escaped-path", "%2F".join(("q=", "Users", "someone", "x"))),
+            ("tempdir-session", "/".join(("", "private", "tmp", "claude-501",
+                                          "probe"))),
+            ("unexpanded-home", "cwd=" + "~" + "/probe/notes.md"),
+            ("posix-home", "file://" + "/".join(("", "Users", "someone",
+                                                  "r.html"))),
+        )
+        with open(mpnt, "rb") as _fh:
+            _nt5_before = _fh.read()
+        _nt5 = [(name, run(["note", "P2.4", "--text", "probe at %s" % (raw,),
+                            "--project-dir", projnt]))
+                for name, raw in _nt_shapes]
+        with open(mpnt, "rb") as _fh:
+            _nt5_after = _fh.read()
+        check("nt5 a note carrying any detector shape, or a file URL into a home "
+              "directory, is refused at the door by that shape's name and the "
+              "shard is unchanged: %r" % ([(n, r[0]) for n, r in _nt5],),
+              all(r[0] == 2 and n in r[1] and "someone" not in r[1]
+                  for n, r in _nt5)
+              and _nt5_after == _nt5_before)
+        _nt6_text = ("probe at https://example.com/Users/guide, "
+                     "docs/users-guide.md and q=%2Fdocs%2Fx")
+        _nt6 = run(["note", "P2.4", "--text", _nt6_text, "--project-dir", projnt])
+        check("nt6 ALLOW twin: an https URL whose path merely holds the word, a "
+              "kebab file name and an encoded repo path are written verbatim - "
+              "the mutation this catches is a shape that refuses every URL: %r"
+              % (_nt6,),
+              _nt6[0] == 0
+              and [n.get("text") for n in
+                   ((task_in(mpnt, "P2.4") or {}).get("notes") or [])][-1:]
+              == [_nt6_text])
+        # Prose naming an option and a bare user name, each a dash-led word
+        # at a token start with nothing after it, is not a session slug.
+        _nt7_text = ("fix the go-home-now button; rename " + "-home-dir"
+                     + " option, abc " + "-Users-bob")
+        _nt7 = run(["note", "P2.4", "--text", _nt7_text, "--project-dir", projnt])
+        check("nt7 ALLOW: a note naming a -home-<word> option and a "
+              "-Users-<name> in prose is written verbatim - the mutation this "
+              "catches is a slug shape that takes the user segment alone: %r"
+              % (_nt7,),
+              _nt7[0] == 0
+              and [n.get("text") for n in
+                   ((task_in(mpnt, "P2.4") or {}).get("notes") or [])][-1:]
+              == [_nt7_text])
+        _nt8_path = "/".join(("", "Users", "someone", "r.html"))
+        with open(mpnt, "rb") as _fh:
+            _nt8_before = _fh.read()
+        _nt8 = run(["note", "P2.4", "--text",
+                    "open file://localhost%s now" % (_nt8_path,),
+                    "--project-dir", projnt])
+        with open(mpnt, "rb") as _fh:
+            _nt8_after = _fh.read()
+        _nt8_web = "open https://localhost%s now" % (_nt8_path,)
+        _nt8_ok = run(["note", "P2.4", "--text", _nt8_web,
+                       "--project-dir", projnt])
+        check("nt8 a file URL naming a host before a home directory is refused "
+              "at the door as posix-home, nothing written, and its https twin "
+              "with the same host and path is written verbatim: %r"
+              % ((_nt8[0], _nt8[1][:160], _nt8_ok[0]),),
+              _nt8[0] == 2 and "posix-home" in _nt8[1]
+              and "someone" not in _nt8[1] and _nt8_after == _nt8_before
+              and _nt8_ok[0] == 0
+              and [n.get("text") for n in
+                   ((task_in(mpnt, "P2.4") or {}).get("notes") or [])][-1:]
+              == [_nt8_web])
+
+        # ---- (md) a gate command and a test name pass the same door ----------------
+        projgd, mpgd = mk("gd-gate-door", pd_fixture())
+        _gd_home = "python3 " + "/".join(("", "Users", "someone", "repo", "tools",
+                                          "t.py"))
+        with open(mpgd, "rb") as _fh:
+            _gd_before = _fh.read()
+        _gd = [
+            ("--gate", run(["retarget", "P3", "--gate", _gd_home,
+                            "--project-dir", projgd])),
+            ("--gate-set", run(["retarget", "P3", "--gate-set", "test", _gd_home,
+                                "--project-dir", projgd])),
+            ("--gate", run(["scope", "P2.3", "--gate", _gd_home,
+                            "--project-dir", projgd])),
+            ("--verified-by", run(["done", "P2.4", "--commit", "abc1234",
+                                   "--verified-by", "t_ok," + _gd_home,
+                                   "--project-dir", projgd])),
+        ]
+        with open(mpgd, "rb") as _fh:
+            _gd_after = _fh.read()
+        check("md1 a home path in retarget's --gate and --gate-set, scope's "
+              "--gate and done's --verified-by is refused before the lock, by "
+              "flag and shape and without the path, and nothing is written: %r"
+              % ([(f, r[0], r[1][:120]) for f, r in _gd],),
+              all(r[0] == 2 and f in r[1] and "posix-home" in r[1]
+                  and "someone" not in r[1] for f, r in _gd)
+              and _gd_after == _gd_before)
+        _gd_ok = run(["retarget", "P3", "--gate", "python3 tools/t.py",
+                      "--project-dir", projgd])
+        _gd_ok_set = run(["retarget", "P3", "--gate-set", "test",
+                          "python3 tools/u.py", "--project-dir", projgd])
+        _gd_phase = [p for p in (_mio.load_manifest(mpgd).get("phases") or [])
+                     if p.get("id") == "P3"]
+        check("md2 ALLOW twin: a plain repo-relative gate command is written by "
+              "both spellings - the mutation this catches is a door that refuses "
+              "every gate value: %r" % ((_gd_ok[0], _gd_ok_set[0],
+                                         _gd_phase[:1]),),
+              _gd_ok[0] == 0 and _gd_ok_set[0] == 0
+              and [p.get("testGate") for p in _gd_phase]
+              == [["test", "python3 tools/u.py"]])
 
         # ---- (rv) review findings: recorded by a verb, the tally derived ----------
         # Sign-off step 1 records the reviewer's findings, and until these verbs

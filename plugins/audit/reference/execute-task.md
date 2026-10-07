@@ -8,26 +8,23 @@ not need to.
 
 ## Execute the task
 
-1. **Phase entry** (first started task of the phase, or after an interruption):
-   a. Set `phase.status = "in_progress"` if it isn't already (Edit the phase's manifest file — the
-      shard when sharded) — resume depends on this write.
+1. a. **Phase entry** (first started task of the phase, or after an interruption) is the verb's in
+   step 2: `audit-task start` sets `phase.status`, and on the sharded layout writes
+   `phase.claim`, in the same write as the task. **On a claim refusal, relay it the way
+   `reference/manifest-conventions.md` → *The operator's words go in unchanged* states** — it
+   refuses only while another session's claim may still be live or unaskable.
    b.–c. **The branch and `phase.baseRef` are the verb's in step 2.** `audit-task start` cuts
       the phase branch from its resolved parent on the phase's first task (or records the one
       `/audit:worktree add` checked out), writes `baseRef`, and refuses — naming why — when HEAD
       is anywhere else; see `reference/orchestrator.md`'s **Phase entry**. Do not cut or switch
       the branch by hand first: on a refusal, stop and ask the human.
-   d. **Claim the phase** (sharded layout only): write `phase.claim = {sessionId, host, branch, at}`
-      into the shard — optimistic cross-machine coordination, so a same-phase double-claim on another
-      branch surfaces as a shard merge conflict. The FS phase-lock is the same-machine guard; the
-      claim is the durable, pushed record for other machines. It is released at sign-off.
-      `sessionId` is **`$CLAUDE_CODE_SESSION_ID`** — say which one, because a session has more than
-      one name and the hooks see a different id in their payload. `meter-usage` accepts either, so
-      spend still lands on the claimed phase; write this one so the record is consistent.
 2. **Promote the task — through the script, not by hand:**
    ```
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" start <taskId>
    ```
-   It sets `task.status = "in_progress"`, stamps `startedAt`, and does `task.attempts += 1` — in
+   **On a readiness refusal, relay it the same way** (`reference/manifest-conventions.md` →
+   *The operator's words go in unchanged*). It sets `task.status = "in_progress"`, stamps
+   `startedAt`, and does `task.attempts += 1` — in
    the phase's manifest file (the shard when sharded), under the lock, revalidated and journaled.
    **If the increment would take `attempts` past `maxAttempts` (default 3), it REFUSES rather than
    spawn** — that transition still owes an ADO echo and a human, neither of which the verb can
@@ -61,29 +58,6 @@ not need to.
      first** — house conventions before task specifics, because a subagent that reads the specifics
      first has already made the decisions the conventions were meant to inform. With no registered
      area this is exactly `task.skills`, unchanged.
-   - **Resolve `executor.runsGate` the same way — at spawn, by you, and stated in the prompt as a
-     word rather than left for the subagent to look up.** Read `.claude/audit.config.json` (through
-     `hooks/_config.load()` and `executor_gate_policy(cfg)`); absent config, or the key absent from
-     it, is `own-tests`, the cheap default. Tell the subagent which reading it got: `never` (run
-     nothing itself — the recorded run below is the only evidence this task gets), `own-tests` (run
-     only the test(s) `task.tests.add` names, as its own quick check — `gate-only` tasks add none, so
-     this is the same as `never` for them), or `full` (every command in `task.tests.gate`, unchanged
-     from before this key existed). **An unrecognized value is refused, not folded into the
-     default** — `executor_gate_policy` returns `None` for it; stop and ask the human rather than
-     guessing which reading a typo meant. This changes only what the SUBAGENT does before it hands
-     back — the recorded run two steps below is unconditional and is what becomes evidence either way.
-     **The `own-tests` reading runs through the script, never bare Bash:**
-     ```
-     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/run-test-gate.py" \
-         <manifestPath> <phaseId> --task <taskId> --own --quiet
-     ```
-     `--own` writes no row and no pointer, ever — it is the executor's own quick check, through
-     the same bracket and coverage answer as the recorded run, with its whole output kept on disk
-     under `<logsDir>/gate-raw/`, in a file named from the run id with every character outside
-     `[A-Za-z0-9._-]`, its colons included, turned to `-` — so read the path off the printed `raw log:` line rather than composing it from the
-     `runId` — rather than spent in the
-     subagent's context. Tell it the finished command in the spawn prompt rather than leaving it
-     to compose its own.
    - Give it `task.description`, `task.files`, `task.docs`, the phase's `desiredOutcome` (so the work
      aims at the phase's stated goal), and the repo hard-rules (no token logging, no secret
      reads, plus any `meta`-level conventions). It must load project skills for domain rules.
@@ -98,7 +72,13 @@ not need to.
      default first move into a deliberate step it justifies in its own outcome when it does reach
      for one. A task with no declared files yet gets an empty answer, which is itself worth
      pasting in rather than silently skipping the step: it tells the executor the plan has nothing
-     to say about its files, not that you forgot to ask.
+     to say about its files, not that you forgot to ask. Its last line,
+     `executor.runsGate: <word> (<basis>)`, is the reading the executor runs — paste it with the
+     rest; with `own-tests`, also hand it the finished
+     `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/run-test-gate.py" <manifestPath> <phaseId> --task <taskId> --own --quiet`.
+     When `brief` exits non-zero and names the config instead, the value is unrecognised or the
+     file does not parse: stop and ask the human — `audit-lookup.py` refuses to print a default
+     there, and you must not supply one.
    - **Test discipline by `task.tests.mode`:**
      - `tdd` → write a test asserting each item in `task.tests.add` that **FAILS on current code** first
        (run it, confirm red — proves the bug), THEN implement until green. (`tests.expectRedFirst` should be true.)
@@ -132,8 +112,11 @@ not need to.
      the `redFirst` block, naming the failing case it rests on — which must be one of the
      task's own. A red counts only against a GREEN baseline: HEAD's own test files, run FIRST
      with the same command on HEAD's code and every declared test file new at HEAD laid
-     over as an empty file, must be green — exit 0 with no failure, or an exit 5 whose one
-     runner's tally counts nothing run and nothing failed — and the fix run (the task's
+     over as an empty file (a jest or vitest one is left absent instead), must be green —
+     exit 0 with no failure, or an exit 5 whose one runner's tally counts nothing run and
+     nothing failed, or, for a file left absent, the runner's own no-test-file sentence
+     with no case or failure counted (step 1 of the `stamp-verification.py` section of
+     `PLUGIN-BUILD-GUIDE.md` is the full rule) — and the fix run (the task's
      test files on the working tree's code) must turn every failure green. A failure is
      the task's own, a new case or an edited one, only where the runner locates it in a
      declared test file (a pytest node id's path, unittest `-v`'s module matched by its
@@ -157,7 +140,21 @@ not need to.
      in the working tree's, a final import/attribute/name error naming it, and a second run
      with the working tree's implementation copied in that loses that error and reaches its
      assertions. The throwaway holds tracked files only and runs with a scrubbed
-     environment, so a suite needing an untracked dependency comes back `could-not-prove`. The executor used to be
+     environment; `--deps-from <dir>` (`--project` by default) links in its ignored
+     dependency directories (`node_modules` at any depth, `.venv`) entry by entry, named
+     on the output's `dependencies:` line. Its leaks are named, not closed: a link landing
+     in the shared tree outside every dependency directory (a workspace package, an
+     editable install) is found by `workspace_links()`, the directory holding it is
+     skipped and named on the `dependencies:` line, and the run goes ahead without it;
+     a runner's write into a linked entry lands in the
+     source checkout unwatched; the user's `~/.npmrc` and an untracked project one never
+     reach the fresh home. Any other untracked dependency still comes back
+     `could-not-prove`. The runners whose tally the helper reads are `house`, `pytest`,
+     `unittest`, `jest` and `vitest`. The output decides rather than the command, so a
+     wrapper counts when the runner it wraps prints its own tally, and a run printing
+     none of theirs is `could-not-prove` whatever was linked in. `runner_list_drift()`
+     in `plugins/audit/scripts/_refs.py` reads that list off `TALLY_READERS` and fails
+     the build when this sentence or the executor's drifts from it. The executor used to be
      told to undo its fix in the shared tree for the length of the run, which is a write
      over ground siblings are editing; a host refused it beside a sibling's uncommitted
      work. Nothing stops an executor overwriting a file anyway — the plan gate grades which
@@ -185,8 +182,12 @@ not need to.
          --project <gitRoot> --manifest <manifestPath> --task <taskId>
      ```
 
-     Resolve `${CLAUDE_PLUGIN_ROOT}` yourself and put the finished command in the spawn prompt —
-     a subagent's prompt is not a hook command string, so the variable may reach it unsubstituted.
+     Resolve `${CLAUDE_PLUGIN_ROOT}` yourself, per spawn, from the copy THIS SESSION is running —
+     a subagent's prompt is not a hook command string, so the variable may reach it unsubstituted —
+     and put the finished command in the spawn prompt. Re-resolve it if the plugin updates mid-run
+     rather than reusing a root a brief resolved before the update, and say in the run's output that
+     you re-resolved and why; `reference/orchestrator.md`'s non-negotiable guardrails say where a
+     session still spawning from the old copy would show up.
    - **It must run whichever reading of `executor.runsGate` you handed it** — the whole of
      `task.tests.gate` on `full` (through `run-test-gate.py`, which applies `meta.nodePreamble`
      itself), only its own added test(s) on `own-tests`, or nothing on `never` — and return **the
@@ -698,4 +699,15 @@ not need to.
      **revert the `attempts` increment from step 2** (Edit it back down), record the cause in
      `task.outcome.technical`, leave `status = "in_progress"`, and **STOP with a human action item**
      (fix `meta.buildCommands` / `tests.gate` first). Never burn retries on missing infrastructure.
+   - **classifier gave no verdict** (a tool call refused with text containing
+     `auto mode cannot determine the safety` or `gave no verdict` — the wording
+     seen in 2.1.2xx transcripts) → the auto-mode permission classifier produced
+     **no verdict** on that step, which this pipeline used to read as a failed
+     attempt. It sits beside the infrastructure arm rather than inside it:
+     **revert the `attempts` increment from step 2** (Edit it back down), record
+     the refusal **verbatim** in `task.outcome.technical`, leave
+     `status = "in_progress"`, and report the classifier as **unavailable** —
+     raise **no human action item**, because there is no infrastructure to
+     repair here: the same classifier meets the same step again regardless. This
+     is `could-not-run`, never rendered as a failure.
 5. Manual gate items (e.g. `"manual: <checklist>"`) cannot be auto-run — surface them as **human action items**.

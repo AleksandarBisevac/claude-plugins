@@ -116,6 +116,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _invariants  # noqa: E402  (the phase lookup, the git root, the layout test, the action name)
 import _journal_io  # noqa: E402  (where the trail lives, and the append)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR shards)
@@ -436,7 +437,7 @@ def build_parser():
                         help="take the index lock from a holder a human has "
                              "confirmed is dead")
     parser.add_argument("--json", action="store_true", dest="as_json")
-    return parser
+    return _claude_home.attach_usage_hint(parser)
 
 
 def commit_index(manifest, phase, manifest_path, project, git_root, subject=None,
