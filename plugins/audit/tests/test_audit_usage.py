@@ -1120,6 +1120,77 @@ def _bw_failed_rewrite_cases(check, root):
           "saves the cursor: code=%r" % (code,),
           code == 0 and (msg or "").startswith("[OK]")
           and os.path.exists(cursor) and _bw_out(ledger, _BW_SID) == _BW_ENTRIES)
+    _bw_spanning_cases(check, root)
+
+
+_BW_PRIOR = "2026-09"
+
+
+def _bw_meter_pass(ledger, transcript, sid):
+    """What the metering hook does on its next turn: resume from the saved
+    cursor (a missing one means a first sight, read from the start), append
+    the rows it found, save the cursor it reached."""
+    cursor = M.ul.load_cursor(ledger, sid)
+    rows, cursor = M.ul.scan_transcripts(
+        transcript, sid, cursor, None,
+        {"backfillOnFirstRun": True, "maxScanBytes": float("inf")})
+    M.ul.append_rows(ledger, rows)
+    M.ul.save_cursor(ledger, sid, cursor)
+
+
+def _bw_month_out(ledger, sid, month):
+    return sum(int(r.get("out") or 0) for r in M.ul.read_ledger(ledger)
+               if r.get("sessionId") == sid
+               and M.ul.bucket_month(r.get("ts")) == month)
+
+
+def _bw_spanning_cases(check, root):
+    """A session with rows in two months, where one month's rewrite fails and
+    the other's lands. The rewritten month already holds every row of the
+    session, so its cursor is saved: holding it back sends the next metering
+    pass over the whole transcript again, and the rewritten month counts the
+    session twice. The failed month misses the session's rows until the next
+    --backfill, which the failure message asks for."""
+    rd = os.path.join(root, "bw12")
+    os.makedirs(rd)
+    project, ledger, args = _bw_fixture(rd, 20)
+    transcript = os.path.join(args.transcript_dir, _BW_SID + ".jsonl")
+    prior = 6
+    with open(transcript, "a", encoding="utf-8") as fh:
+        for i in range(prior):
+            entry = _bw_entry(_BW_SID, "%s-p%04d" % (_BW_SID, i), 10 + i)
+            entry["timestamp"] = "%s-20T%02d:00:00Z" % (_BW_PRIOR, 10 + i)
+            fh.write(json.dumps(entry) + "\n")
+    target = os.path.join(ledger, "%s.jsonl" % _BW_PRIOR)
+
+    def refuse(original):
+        def replace(src, dst, *a, **kw):
+            if os.path.abspath(dst) == os.path.abspath(target):
+                raise OSError("simulated: the replace was refused")
+            return original(src, dst, *a, **kw)
+        return replace
+    code, msg = _bw_with_seam(os, "replace", refuse,
+                              lambda: M.backfill(args, project, ledger, None, None))
+    _bw_meter_pass(ledger, transcript, _BW_SID)
+    rewritten = _bw_month_out(ledger, _BW_SID, _BW_MONTH)
+    check("bw12 a session spanning a month that failed to rewrite and one that "
+          "was rewritten is not counted twice in the rewritten month by the "
+          "next metering pass: code=%r out=%d of %d msg=%r"
+          % (code, rewritten, _BW_ENTRIES, msg),
+          code != 0 and _BW_PRIOR in (msg or "") and _BW_MONTH not in (msg or "")
+          and rewritten == _BW_ENTRIES)
+    # The failed month's half of the trade: it waits for the next backfill,
+    # and that backfill makes both months whole without doubling either.
+    waiting = _bw_month_out(ledger, _BW_SID, _BW_PRIOR)
+    code2, _msg2 = M.backfill(args, project, ledger, None, None)
+    check("bw13 ...the failed month lacks the session's rows until the next "
+          "--backfill, which restores them and leaves the rewritten month "
+          "single-counted: before=%d after=%d/%d code=%r"
+          % (waiting, _bw_month_out(ledger, _BW_SID, _BW_PRIOR),
+             _bw_month_out(ledger, _BW_SID, _BW_MONTH), code2),
+          waiting == 0 and code2 == 0
+          and _bw_month_out(ledger, _BW_SID, _BW_PRIOR) == prior
+          and _bw_month_out(ledger, _BW_SID, _BW_MONTH) == _BW_ENTRIES)
 
 
 def _selftest():

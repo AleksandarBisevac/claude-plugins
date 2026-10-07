@@ -885,9 +885,8 @@ def open_month(ledger_dir, month, drop):
     tail)`, where `rows` are the rows whose session is not in `drop` and `tail`
     is what `rewrite_month` needs to keep rows appended after this read.
 
-    When the file does not exist yet, `tail` holds no descriptor: anything
-    appended from now on creates a new file at the path, which the rewrite's
-    replace would retire - so `rewrite_month` opens it then, from its start."""
+    When the file does not exist yet, `tail` holds no descriptor and
+    `rewrite_month` creates the file and holds that one, from its start."""
     path = os.path.join(ledger_dir, "%s.jsonl" % month)
     try:
         fh = open(path, "rb")
@@ -918,6 +917,12 @@ def rewrite_month(ledger_dir, month, rows, tail=None):
     replace, and - through the descriptor still open on the retired file - from
     a writer that opened the path before the replace and wrote after it.
 
+    A month with no file yet is created empty and held the same way: a writer
+    that creates the path while the month is being rebuilt would otherwise write
+    into a file nothing holds, and the replace would retire it unread. A replace
+    that then fails leaves that empty file behind - it holds no row, so every
+    reader sees the month as it was.
+
     Where the platform refuses to replace a file that is open, the descriptor is
     drained and closed and the replace retried once; there the carry is complete
     up to that last read, and a row written between it and the replace is lost.
@@ -929,10 +934,9 @@ def rewrite_month(ledger_dir, month, rows, tail=None):
     try:
         ensure_ledger_dir(ledger_dir)
         if tail is not None and tail.get("fh") is None:
-            try:
-                tail["fh"] = open(path, "rb")
-            except FileNotFoundError:
-                tail = None
+            tail["fh"] = os.fdopen(os.open(path, os.O_RDONLY | os.O_CREAT
+                                           | getattr(os, "O_BINARY", 0), 0o666),
+                                   "rb")
         rows = list(rows) + (_drain(tail)[0] if tail is not None else [])
         try:
             _replace_rows(path, rows)

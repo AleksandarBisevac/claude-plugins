@@ -715,6 +715,57 @@ def _cases(check):
     finally:
         shutil.rmtree(_tw_tmp, ignore_errors=True)
 
+    # --- nm: a month with no file is held like every other month ------------
+    # The metering hook appends with no lock. When the month file does not
+    # exist yet, a hook that creates it while the backfill is rebuilding that
+    # month writes into a file the replace then retires - so the rewrite must
+    # hold a descriptor on the file it would otherwise never have seen.
+    _nm_tmp = tempfile.mkdtemp(prefix="ledger-new-month-")
+    try:
+        _nm = os.path.join(_nm_tmp, "ledger")
+        os.makedirs(_nm)
+        _nm_rebuilt = {"ts": "2026-09-01T09", "sessionId": "S-BF", "out": 3}
+        _nm_hook = {"ts": "2026-09-01T10", "sessionId": "S-HOOK", "out": 5}
+        _nm_keep, _nm_tail = M.open_month(_nm, "2026-09", {"S-BF"})
+        _nm_real = M._replace_rows
+        _nm_fired = []
+
+        def _nm_replace(path, rows):
+            # The hook's append lands after the rewrite looked for the file and
+            # before the replace: it creates the file, or appends to the one
+            # the rewrite created.
+            if not _nm_fired:
+                _nm_fired.append(M.append_rows(_nm, [_nm_hook]))
+            return _nm_real(path, rows)
+        M._replace_rows = _nm_replace
+        try:
+            _nm_ok = M.rewrite_month(_nm, "2026-09", _nm_keep + [_nm_rebuilt],
+                                     tail=_nm_tail)
+        finally:
+            M._replace_rows = _nm_real
+        _nm_rows = M.read_ledger(_nm)
+        check("nm1 a row a writer appends to a month file created during a "
+              "backfill of a month that had no file survives the rewrite: "
+              "ok=%r fired=%r rows=%r" % (_nm_ok, _nm_fired, _nm_rows),
+              _nm_ok is True and _nm_fired == [1]
+              and _nm_rows.count(_nm_hook) == 1
+              and _nm_rows.count(_nm_rebuilt) == 1 and len(_nm_rows) == 2)
+        # ALLOW TWIN: with no writer in the window, the created month holds
+        # exactly the rows handed over - the mutation it catches is a carry
+        # that re-reads the rebuilt file and doubles its own rows.
+        _nm2 = os.path.join(_nm_tmp, "ledger2")
+        os.makedirs(_nm2)
+        _nm2_keep, _nm2_tail = M.open_month(_nm2, "2026-09", {"S-BF"})
+        _nm2_ok = M.rewrite_month(_nm2, "2026-09", _nm2_keep + [_nm_rebuilt],
+                                  tail=_nm2_tail)
+        check("nm2 ...and a missing month rebuilt with no writer holds exactly "
+              "the rows handed over: ok=%r rows=%r"
+              % (_nm2_ok, M.read_ledger(_nm2)),
+              _nm2_ok is True and M.read_ledger(_nm2) == [_nm_rebuilt]
+              and os.path.isfile(os.path.join(_nm2, "2026-09.jsonl")))
+    finally:
+        shutil.rmtree(_nm_tmp, ignore_errors=True)
+
     # --- rx: the re-export this module exists to keep serving ---------------
     # Nothing imports `usage_ledger` by name: every consumer loads it BY PATH and
     # reads attributes off the module object. A name that quietly stopped being

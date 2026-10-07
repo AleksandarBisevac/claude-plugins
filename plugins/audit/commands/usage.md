@@ -52,12 +52,18 @@ What that still leaves open, stated rather than implied closed:
 - **A writer that opened the month file before the replace and writes after the backfill stopped
   watching the old file.** The backfill keeps reading it until a short settle period passes with
   no byte added and no half-written line waiting, with a bounded number of re-checks.
-
-A month file the backfill could not rewrite cleanly is named in its output, and the backfill
-exits non-zero without saving the cursors of the sessions that have rows in that month. Run it
-again.
 - **A platform that refuses to replace an open file.** There the backfill reads the old file one
   last time, closes it and replaces it; a row written between that read and the replace is lost.
+
+A month with no file yet is created empty before its rebuild and held the same way, so a row the
+hook appends while the backfill writes that month is carried like any other.
+
+A month file the backfill could not rewrite cleanly is named in its output, and the backfill
+exits non-zero. A session whose rows all sit in months that failed keeps its old cursor, which
+matches a month whose replace was refused. A session that also has rows in a month that was
+rewritten has its cursor saved, because that month already holds every row of the session and
+an old cursor would have the next metering pass append them there again; its rows in the failed
+month are missing until the next `--backfill`. Run it again.
 
 ## Arguments
 

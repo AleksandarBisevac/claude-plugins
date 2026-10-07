@@ -4524,7 +4524,9 @@ drawing, no ANSI, no emoji) so the command file can print it verbatim without pa
 to reformat a JSON rollup. With `--by phase|task|model|author|agent|day|hour|session|branch|
 attr` it prints one focused table; without it, the full dashboard. `--backfill` re-reads every
 transcript for the project from offset 0 and rebuilds the ledger — idempotent, and the only
-path that rewrites (and therefore locks) rather than only appending. `--json`'s payload also
+path that rewrites rather than only appending. The lock it takes excludes only another backfill:
+the metering hook appends with no lock, so each month's rewrite carries the rows appended to it
+during the rebuild (`usage_ledger.rewrite_month`), a month with no file yet included. `--json`'s payload also
 carries `planCost` (since P56.6): `_usage_economics.plan_cost_claim`, read against BOTH ledgers
 this command's project has — the usage ledger already loaded for everything else, and
 `_evidence_io.read_rows(project)` for the gate-scope and gate-reuse comparisons, which live in

@@ -856,14 +856,22 @@ def backfill(args, project, ledger_dir, manifest, pricing):
             add = [r for r in fresh if ul.bucket_month(r.get("ts")) == month]
             if not ul.rewrite_month(ledger_dir, month, keep + add, tail=tail):
                 failed.append(month)
-        # A cursor claims its session's rows are in the ledger. A month whose
-        # rewrite failed may not hold what this run read, so the cursors of the
-        # sessions with rows there stay where they were - which matches the
-        # ledger when the replace was refused - and the answer below exits
-        # non-zero asking for the backfill that rebuilds them either way.
-        held_back = {r.get("sessionId") for r in fresh + existing
-                     if r.get("sessionId") in sessions
-                     and ul.bucket_month(r.get("ts")) in failed}
+        # A cursor claims its session's rows are in the ledger, and the next
+        # metering pass resumes from it. A session whose every month failed to
+        # rewrite keeps its old cursor, which matches the ledger when the
+        # replaces were refused. A session with rows in a month that WAS
+        # rewritten gets its new cursor: that month already holds all of the
+        # session's rows, and an old cursor would have the metering hook append
+        # them there a second time. The price is the failed months of such a
+        # session, which miss its rows past the old cursor until the next
+        # --backfill - the one the answer below exits non-zero asking for.
+        spans = {}
+        for r in fresh + existing:
+            if r.get("sessionId") in sessions:
+                spans.setdefault(r.get("sessionId"), set()).add(
+                    ul.bucket_month(r.get("ts")))
+        held_back = {sid for sid, spanned in spans.items()
+                     if spanned and spanned <= set(failed)}
         for sid, cursor in cursors.items():
             if sid not in held_back:
                 ul.save_cursor(ledger_dir, sid, cursor)
@@ -879,8 +887,10 @@ def backfill(args, project, ledger_dir, manifest, pricing):
     if failed:
         return 1, ("[FAIL] backfill: month file(s) %s were not rewritten cleanly "
                    "- either left as they were or missing rows carried during "
-                   "the rewrite; cursors of the %d session(s) with rows there "
-                   "were not saved. Run --backfill again.\n     ledger %s%s" % (
+                   "the rewrite; cursors of the %d session(s) with rows only "
+                   "there were not saved; a session also in a rewritten month "
+                   "had its cursor saved, so its rows in these months wait for "
+                   "the next backfill. Run --backfill again.\n     ledger %s%s" % (
                        ", ".join(failed), len(held_back), ledger_dir,
                        "".join("\n     note: %s" % (n,) for n in notes)))
     return 0, ("[OK] backfill: %d transcript(s), %d session(s), %s rows, "
