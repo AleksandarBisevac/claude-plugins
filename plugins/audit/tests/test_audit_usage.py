@@ -289,36 +289,68 @@ def _cases(check):
         _cfgp = os.path.join(_mr, ".claude", "audit.config.json")
         _noargs = M.build_parser().parse_args([])
 
+        def _rpath(args, project):
+            return M.resolve_manifest(args, project)["path"]
+
         with open(_cfgp, "w", encoding="utf-8") as fh:
             json.dump({"manifestPath": "audit-plan.json"}, fh)
         check("manifest: a configured manifestPath is honoured, not just the "
               "default location",
-              M.resolve_manifest_path(_noargs, _mr) == os.path.normpath(_elsewhere))
+              _rpath(_noargs, _mr) == os.path.normpath(_elsewhere))
         check("manifest: an explicit argument still outranks the config",
-              M.resolve_manifest_path(
-                  M.build_parser().parse_args(["some/other.json"]), _mr)
+              _rpath(M.build_parser().parse_args(["some/other.json"]), _mr)
               == "some/other.json")
+        check("manifest: the rule is the shared one, not a copy - the resolver "
+              "here IS _manifest_io's answer, field for field",
+              M.resolve_manifest(_noargs, _mr)
+              == M.mio.resolve_manifest(_mr, None))
 
+        # A malformed config, or one naming a file that is gone, resolves to NO
+        # plan rather than to the default: the default is some other plan than
+        # the one the project points at, and its meta.usage is not this one's.
         with open(_cfgp, "w", encoding="utf-8") as fh:
             fh.write("{ not json")
-        check("manifest: a malformed config falls back instead of raising - the "
-              "usage view is read-only and must not die on someone else's typo",
-              M.resolve_manifest_path(_noargs, _mr)
-              == os.path.normpath(os.path.join(_mr, M.DEFAULT_MANIFEST_REL)))
+        check("manifest: a malformed config resolves to no plan, with the config "
+              "named as the problem, rather than raising or reading the default",
+              _rpath(_noargs, _mr) is None
+              and _cfgp in (M.resolve_manifest(_noargs, _mr)["problem"] or ""))
         os.remove(_cfgp)
+        _default = os.path.normpath(
+            os.path.join(_mr, *M.mio.DEFAULT_MANIFEST_REL.split("/")))
         check("manifest: no config at all still finds the default location",
-              M.resolve_manifest_path(_noargs, _mr)
-              == os.path.normpath(os.path.join(_mr, M.DEFAULT_MANIFEST_REL)))
+              _rpath(_noargs, _mr) == _default)
 
         with open(_cfgp, "w", encoding="utf-8") as fh:
             json.dump({"manifestPath": "nowhere/absent.json"}, fh)
-        check("manifest: a configured path that does not exist falls back rather "
-              "than reporting a file that is not there",
-              M.resolve_manifest_path(_noargs, _mr)
-              == os.path.normpath(os.path.join(_mr, M.DEFAULT_MANIFEST_REL)))
+        check("manifest: a configured path that does not exist resolves to no "
+              "plan rather than the default one beside it",
+              _rpath(_noargs, _mr) is None)
         check("manifest: nothing anywhere -> None, and the caller renders without "
               "project values rather than crashing",
-              M.resolve_manifest_path(_noargs, os.path.join(tmp, "empty-proj")) is None)
+              _rpath(_noargs, os.path.join(tmp, "empty-proj")) is None)
+        os.remove(_cfgp)
+
+        def _usage_stderr(project):
+            import contextlib
+            import io
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = M.main(["--ledger-dir", ledger, "--project-dir", project,
+                             "--json"])
+            return rc, err.getvalue()
+
+        _empty = os.path.join(tmp, "empty-proj")
+        os.makedirs(_empty, exist_ok=True)
+        _rc_n, _err_n = _usage_stderr(_empty)
+        check("mn1 with no plan to find, the render still exits 0 and SAYS it is "
+              "rendering without the plan, naming where it looked",
+              _rc_n == 0 and "rendering without the plan" in _err_n
+              and os.path.join(_empty, *M.mio.DEFAULT_MANIFEST_REL.split("/"))
+              in _err_n, repr(_err_n))
+        _rc_f, _err_f = _usage_stderr(_mr)
+        check("mn2 SECOND DIRECTION: a plan that resolves carries no note - the "
+              "case that fails if the note is written unconditionally",
+              _rc_f == 0 and _err_f == "", repr(_err_f))
 
         # --json path
         argv = ["--ledger-dir", ledger, "--project-dir", tmp, "--json"]

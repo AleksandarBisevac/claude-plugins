@@ -1,7 +1,7 @@
 {
   "id": "P112",
   "title": "the README demo shows a user's Claude Code session, not the plugin's internals",
-  "status": "pending",
+  "status": "in_progress",
   "description": "The current GIF is drawn from Python: audit-status.py and a hand-fed PreToolUse payload, with typed captions standing in for the user. No user runs those scripts; they use Claude Code and /audit commands. The recording must show that experience while keeping the property the old one had: a check that fails when the words shown stop being the words the gate prints.",
   "desiredOutcome": "the demo GIF is a recording of a real Claude Code session in which the user types /audit commands and the plan gate refuses an edit the plan does not cover, with no personal data in any frame, and CI still fails when the refusal's words drift from what the gate prints",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "b6d9a4a31d2a09b7b126553d6d34e78e2114d631",
+  "branch": "audit/p112-the-readme-demo-shows-a-user-s",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -25,5 +25,118 @@
     "findings": []
   },
   "summary": null,
-  "tasks": []
+  "tasks": [
+    {
+      "id": "P112.1-uce",
+      "title": "the demo GIF is a recorded Claude Code session with /audit commands and a real refusal",
+      "status": "in_progress",
+      "description": "Replace the drawn demo with a recording of a real Claude Code session, made with VHS (installed: vhs 0.12.1, ttyd, ffmpeg) from a committed tape file. The session runs the real `claude` CLI in a demo project built fresh from the existing fixture (the same plan the current GIF shows: a running phase whose task owns src/checkout.ts), with this checkout's plugin loaded through --plugin-dir and an isolated --settings file whose allow list covers exactly the plugin's own commands' script calls, so no permission prompt interrupts and no permission bypass mode is shown. On screen the user types /audit:status and sees the plan; then asks Claude to change src/checkout.ts, which the plan covers, and it goes through; then asks for a change to src/billing.ts, which no task covers, and Claude Code shows the plan gate's refusal as it renders a PreToolUse deny. No frame may show personal data: no user name, email, organisation, machine name, home path or account banner; the project path on screen is a neutral demo path, never one under a home directory or this repo's scratch area. The recording also writes VHS's text output, and the sidecar record in docs/screenshots/captured-at.json (under the existing gifs key) keeps the GIF's sha256, the CLI version and model recorded, and the refusal text as recorded. tools/capture-demo-gif.py --check, which CI runs, keeps its guarantee without a paid session: it rebuilds the fixture, feeds require-plan the same out-of-plan payload, and fails when the gate's refusal text differs from the text the recording captured, or when the committed GIF's sha256 differs from the record. The drawn renderer and its Pillow dependency go, unless something still needs them. README's caption, CONTRIBUTING's re-record instructions (vhs, a logged-in claude, the tape, and what a re-record costs) and PLUGIN-BUILD-GUIDE's entry say what the GIF now is. The executor prepares the tape, the fixture builder, the check and the documents, and dry-runs everything that does not start a Claude session; the orchestrator makes the recording.",
+      "files": [
+        "tools/capture-demo-gif.py",
+        "tools/demo-gate.tape",
+        "docs/screenshots/demo-gate.gif",
+        "docs/screenshots/captured-at.json",
+        "README.md",
+        "CONTRIBUTING.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        ".github/workflows/ci.yml",
+        "tools/capture-screenshots.mjs",
+        "tools/ui-tests/capture-provenance.test.mjs"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/capture-demo-gif.py: --check fails when the gate's refusal text differs from the text the recording captured, and passes when they agree",
+          "tools/capture-demo-gif.py: --check fails when the committed GIF's sha256 differs from the record, or the record is missing"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-06T21:42:56Z",
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P112.2-uce",
+      "title": "the first-contact commands find the manifest themselves, so Claude never narrates an unfilled placeholder",
+      "status": "in_progress",
+      "description": "A user's first commands make Claude narrate an internal placeholder. In a recorded session with the manifest at the default docs/audit/audit-plan.json, /audit:status made Claude say \"The command needs a manifest path that wasn't filled in, so I'll look for one\" and \"The command didn't fill in <manifestPath>, so I used the only manifest in the repo\". Cause: status.md, usage.md, report.md and next.md hand the model a script line carrying a literal `<manifestPath>` to substitute, and a thin command does not read orchestrator.md, where the default is stated. The model has to guess, and it says that it guessed.\n\nFix it in code:\n1. One shared resolver answers where the manifest is: the explicit argument, else `.claude/audit.config.json`'s manifestPath, else docs/audit/audit-plan.json. audit-usage.resolve_manifest_path already implements that rule; audit-task.py and panel-server.py hold copies of it.\n   - Put the resolver in the lowest shared layer every caller can import, with its layer placement and guide section.\n   - Route audit-usage through it.\n2. audit-status.py and render-report.py take the manifest argument as optional and resolve it through the same resolver. When none is found, they say which places they looked.\n3. status.md, usage.md, report.md and next.md drop `<manifestPath>` from their script lines. Every other line keeps working.\n4. A drift check fails a thin command that hands the model a placeholder its script can resolve itself.\n\nOut of scope, reported in the outcome with file:line: the orchestrator-driven commands that read orchestrator.md (phase, init, sync, propose, layout, task, bug, resume, doctor, worktree), and the audit-task and panel-server copies of the rule. A follow-up routes those through the resolver.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/tests/test__manifest_io.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/scripts/report/render-report.py",
+        "plugins/audit/tests/test_render_report.py",
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/tests/test_audit_usage.py",
+        "plugins/audit/commands/status.md",
+        "plugins/audit/commands/usage.md",
+        "plugins/audit/commands/report.md",
+        "plugins/audit/commands/next.md",
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/tests/test__refs.py",
+        "tools/prove-gates.py",
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__manifest_io.py: the shared resolver answers the explicit argument, else the config's manifestPath, else docs/audit/audit-plan.json, and names the places it looked when none exists",
+          "plugins/audit/tests/test_audit_status.py: audit-status with no manifest argument renders the plan at the configured path and at the default path, and refuses with the looked-at places when there is none",
+          "plugins/audit/tests/test_render_report.py: render-report with no manifest argument renders the same report as with the resolved path",
+          "plugins/audit/tests/test__refs.py: a thin command whose script resolves the manifest itself carries no <manifestPath> placeholder, and the real status, usage, report and next commands pass"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-07T00:26:16Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T00:59:08Z.544b30",
+        "status": "passed",
+        "at": "2026-10-07T00:59:08Z"
+      }
+    }
+  ],
+  "startedAt": "2026-10-06T21:42:56Z"
 }

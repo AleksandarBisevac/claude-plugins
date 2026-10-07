@@ -665,6 +665,12 @@ TABLE = (
  ("discovery_projection_drift", "plugins/audit/commands/task.md", "replace",
   "         --discovery --section discovery",
   "         --discovery", REF, "dp1"),
+ # A first-contact command goes back to handing a script that finds the
+ # manifest itself a placeholder for the model to fill in - the guess the
+ # model then narrates to the user.
+ ("manifest_placeholder_drift", "plugins/audit/commands/status.md", "replace",
+  '/audit-status.py" $ARGUMENTS',
+  '/audit-status.py" <manifestPath> $ARGUMENTS', REF, "mp1"),
  ("raw_url_pin_drift", "plugins/audit/README.md", "sub",
   r"raw\.githubusercontent\.com/.*/v[0-9]+\.[0-9]+\.[0-9]+/",
   (r"/v[0-9]+\.[0-9]+\.[0-9]+/", "/main/"), REF, "p1"),
@@ -1825,6 +1831,13 @@ ALLOW = (
  ("discovery_projection_drift", S + "_refs.py", "replace",
   "_DISCOVERY_WINDOW = 60", "_DISCOVERY_WINDOW = 5",
   REF, "dp1"),
+ # The filter to scripts that resolve the manifest themselves, dropped. A
+ # placeholder handed to a script that does NOT resolve it is still needed
+ # (`status.md` hands `verify-invariants.py` one), so a lint that read every
+ # placeholder convicts a line the model genuinely has to fill in.
+ ("manifest_placeholder_drift", S + "_refs.py", "replace",
+  "                if script not in resolving:\n                    continue\n",
+  "", REF, "mp1"),
  # The needle widened from a BOLDED prohibition to any sentence carrying the word.
  # `orchestrator.md` says "never goes out of date" about a manifest and "never
  # recompute it" about a budget - prose about a thing, not a rule about an action -
@@ -2049,6 +2062,12 @@ NOT_A_GATE = (
   "is a pure function of an exit code and some text, has no walk in it, and is "
   "reached through `scratch_debris` and the sweep's own cases rather than through "
   "this name."),
+ ("self_resolving_scripts",
+  "the INPUT to `manifest_placeholder_drift`, not a verdict: it answers which "
+  "scripts call `<module>.resolve_manifest(...)` and so find the manifest "
+  "themselves. A set of script names is what the placeholder lint judges command "
+  "lines against, and an empty or wrong set shows up as that lint's mp1/mp2 going "
+  "red, not as a finding of its own."),
 )
 
 _MIN_NOT_A_GATE_REASON = 80   # a reason short enough to be a label is not a reason

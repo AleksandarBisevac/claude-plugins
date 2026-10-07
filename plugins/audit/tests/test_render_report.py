@@ -1838,8 +1838,86 @@ def _cases(check):
           < M._CSS.index("@media (max-width:52rem){.dtwrap{"))
 
 
+def _in_project(project, argv):
+    """(code, stderr) of `M.main(argv)` with CLAUDE_PROJECT_DIR naming `project`,
+    restored afterwards."""
+    import contextlib
+    import io
+    saved = os.environ.get("CLAUDE_PROJECT_DIR")
+    out, err = io.StringIO(), io.StringIO()
+    try:
+        os.environ["CLAUDE_PROJECT_DIR"] = project
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = M.main(argv)
+    finally:
+        if saved is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = saved
+    return code, err.getvalue()
+
+
+def _read(path):
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+def _resolve_cases(check):
+    """`/audit:report` hands its script no manifest path; the script finds it."""
+    import shutil
+    import tempfile
+    root = tempfile.mkdtemp(prefix="render-report-resolve-")
+    try:
+        proj = os.path.join(root, "proj")
+        default_abs = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(proj)
+
+        c0, e0 = _in_project(proj, ["--out-dir", os.path.join(root, "none")])
+        check("rr-m1 with no manifest anywhere, no argument is a refusal (exit 2) "
+              "naming the default path it looked at, and nothing is written",
+              c0 == 2 and default_abs in e0
+              and not os.path.exists(os.path.join(root, "none")),
+              "code=%r stderr=%r" % (c0, e0))
+
+        os.makedirs(os.path.dirname(default_abs))
+        with open(default_abs, "w", encoding="utf-8") as fh:
+            json.dump({"meta": {"version": 2, "title": "Resolved plan"},
+                       "phases": [{"id": "P1", "title": "Only phase",
+                                   "status": "pending", "tasks": [
+                                       {"id": "P1.1", "title": "t",
+                                        "status": "pending"}]}]}, fh)
+        bare, named = os.path.join(root, "bare"), os.path.join(root, "named")
+        c1, e1 = _in_project(proj, ["--out-dir", bare])
+        c2, _e2 = _in_project(proj, [default_abs, "--out-dir", named])
+        md_bare = _read(os.path.join(bare, "audit-report.md"))
+        md_named = _read(os.path.join(named, "audit-report.md"))
+        html_bare = _read(os.path.join(bare, "audit-report.html"))
+        html_named = _read(os.path.join(named, "audit-report.html"))
+        check("rr-m2 no argument renders the report the resolved path renders - "
+              "the Markdown and the HTML byte for byte",
+              c1 == 0 and c2 == 0 and md_bare is not None
+              and md_bare == md_named and html_bare == html_named
+              and "Only phase" in md_bare,
+              "codes=%r/%r stderr=%r" % (c1, c2, e1))
+
+        c3, _e3 = _in_project(proj, [])
+        check("rr-m3 with no --out-dir either, the report lands beside the "
+              "manifest it resolved",
+              c3 == 0 and os.path.isfile(os.path.join(
+                  os.path.dirname(default_abs), "audit-report.html")),
+              "code=%r" % (c3,))
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _resolve_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

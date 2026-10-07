@@ -172,44 +172,21 @@ def resolve_project(args):
         args.project_dir or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 
 
-DEFAULT_MANIFEST_REL = os.path.join("docs", "audit", "audit-plan.json")
+def resolve_manifest(args, project):
+    """`_manifest_io.resolve_manifest` - argument, else config `manifestPath`,
+    else `docs/audit/audit-plan.json` - asked with this CLI's own argument.
 
-
-def resolve_manifest_path(args, project):
-    """`<manifestPath argument>` > config `manifestPath` > `docs/audit/audit-plan.json`.
-
-    The middle term is the one that was missing, and its absence was not cosmetic.
-    This resolved the default location and nothing else, so a project keeping its
-    manifest anywhere else loaded NO manifest — and then read every project value
-    off `{}`. The shipped example is exactly that project: its config sets
-    `"manifestPath": "audit-plan.json"` and says in its own comment why. So
-    `/audit:usage` there ignored `meta.usage` entirely, including
-    **`showCost: false`** — a repo that had asked for dollars to stay off the
-    screen got them printed anyway, which is the failure the setting exists to
-    prevent. `panel-server.py` has always resolved it this way; this is that.
+    The config term matters here more than anywhere: a project keeping its
+    manifest elsewhere would otherwise load NO manifest and read every project
+    value off `{}`, `meta.usage.showCost: false` included, and print the dollars
+    that setting exists to keep off the screen. The shipped example is exactly
+    that project.
 
     The manifest stays the commands' source for project values and the config is
     read for one key only. That does not cross the standing manifest/hooks split
-    — finding the manifest is not the same act as reading it.
+    - finding the manifest is not the same act as reading it.
     """
-    if args.manifest:
-        return args.manifest
-    rel = None
-    try:
-        with open(os.path.join(project, ".claude", "audit.config.json"),
-                  encoding="utf-8") as fh:
-            cfg = json.load(fh)
-        if isinstance(cfg, dict) and isinstance(cfg.get("manifestPath"), str):
-            rel = cfg["manifestPath"]
-    except Exception:
-        rel = None                    # unreadable or malformed: fall through, never raise
-    for cand in (rel, DEFAULT_MANIFEST_REL):
-        if not cand:
-            continue
-        p = os.path.normpath(os.path.join(project, cand))
-        if os.path.isfile(p):
-            return p
-    return None
+    return mio.resolve_manifest(project, args.manifest)
 
 
 def resolve_ledger(args, project, manifest):
@@ -914,7 +891,13 @@ def build_parser():
 def main(argv):
     args = build_parser().parse_args(argv)
     project = resolve_project(args)
-    manifest_path = resolve_manifest_path(args, project)
+    resolved = resolve_manifest(args, project)
+    manifest_path = resolved["path"]
+    if manifest_path is None:
+        # The ledger renders without a plan, so this is a note and not a
+        # refusal - but it says why the plan's titles and meta.usage are absent.
+        sys.stderr.write("note: rendering without the plan's titles and "
+                         "meta.usage - %s\n" % (mio.describe_unresolved(resolved),))
     manifest = load_manifest(manifest_path)
     ledger_dir = resolve_ledger(args, project, manifest)
 
