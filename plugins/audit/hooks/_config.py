@@ -1413,23 +1413,35 @@ _DIR_CHANGE_CLAUSE = re.compile(
     r"^\s*(cd|pushd|popd)(?:\s+(.*))?$", re.IGNORECASE)
 
 
-def _dir_change_words(text):
-    """Directory-change words with balanced quotes removed, else None.
+_DQUOTE_ESCAPABLE = "$`\"\\"
 
-    A backslash immediately before whitespace keeps that whitespace in its word.
-    Other backslashes stay literal so a Windows path remains one destination.
-    This deliberately reads only the shell shape `effective_cwd` can establish.
-    """
+
+def shell_words(text):
+    """`text` split into the words the shell would hand a program, quotes
+    removed, or None when a quote never closes.
+
+    A backslash before whitespace or a quote keeps that character in its word,
+    and inside double quotes one before `$`, a backtick, `"` or a backslash
+    does the same - which is how a command handed to `bash -c "..."` spells a
+    quote of its own. Other backslashes stay literal so a Windows path remains
+    one word. No expansion is performed: a word carrying `$` keeps it, for
+    `resolvable_destination` to read."""
     words, current, quote, has_word = [], [], None, False
     index = 0
     while index < len(text):
         ch = text[index]
+        if quote == '"' and ch == "\\" and index + 1 < len(text) \
+                and text[index + 1] in _DQUOTE_ESCAPABLE:
+            current.append(text[index + 1])
+            index += 2
+            continue
         if quote:
             if ch == quote:
                 quote = None
             else:
                 current.append(ch)
-        elif ch == "\\" and index + 1 < len(text) and text[index + 1].isspace():
+        elif ch == "\\" and index + 1 < len(text) and (
+                text[index + 1].isspace() or text[index + 1] in "'\""):
             current.append(text[index + 1])
             has_word = True
             index += 1
@@ -1521,13 +1533,22 @@ def effective_cwd(cmd, payload_cwd):
     if shell:
         return None
     for clause in command_clauses(text):
+        # `eval` runs its argument in THIS shell, so a directory change inside
+        # it moves every write after it, and is read exactly as a bare one is.
+        # A shell's `-c` runs in a child, which moves nothing here.
+        handed = _handed_command(shell_words(clause.strip()) or [])
+        if handed is not None and handed[0] == "eval":
+            current = effective_cwd(handed[1], current)
+            if current is None:
+                return None
+            continue
         m = _DIR_CHANGE_CLAUSE.match(clause)
         if not m:
             continue
         verb = m.group(1).lower()
         if verb == "popd":
             return None
-        words = _dir_change_words(m.group(2) or "")
+        words = shell_words(m.group(2) or "")
         if words is None:
             return None
         args = [w for w in words if not w.startswith("-")]
@@ -1670,6 +1691,12 @@ def is_interpreter(word):
 def is_shell(word):
     """Whether `word` names a shell program."""
     return _program_of(word) in _SHELL_PROGRAMS
+
+
+def program_name(word):
+    """The program a command word runs, as the readers here compare it:
+    basename, quotes and `.exe` dropped."""
+    return _program_of(word)
 
 
 # Per interpreter family: the flags that hand it its program inline (or name
@@ -1819,6 +1846,73 @@ def program_candidates(words):
         words = rest
     candidates = words[:1] if words else []
     return (words, candidates + fallback_candidates)
+
+
+# A shell's options that take a separate value, so the value is not read as
+# the script operand that ends the option list.
+_SHELL_VALUE_OPTIONS = ("-o", "+o", "-O", "+O", "--rcfile", "--init-file")
+
+
+def _handed_command(words):
+    """("eval" | "shell", the command it runs) when one command's `words` hand
+    a command to `eval` or to a shell's `-c`, else None.
+
+    The program is found past assignments and wrappers by `program_candidates`,
+    so `sudo bash -c` and `env A=1 sh -c` are read as `bash -c` is. A shell
+    takes its command from the first operand after its options once `c` is in
+    any short-option cluster (`-c`, `-lc`, `-ec`); an operand before that is a
+    script run, whose own `-c` is the script's business. `eval` joins its
+    arguments with a blank and runs the result, as the shell does."""
+    rest, _candidates = program_candidates(words)
+    if not rest:
+        return None
+    program = _program_of(rest[0])
+    if program == "eval":
+        args = rest[1:]
+        if args and args[0] == "--":
+            args = args[1:]
+        return ("eval", " ".join(args)) if args else None
+    if program not in _SHELL_PROGRAMS or program in ("source", "."):
+        return None
+    flagged, index = False, 1
+    while index < len(rest):
+        word = rest[index]
+        if word == "--":
+            index += 1
+            break
+        if word in _SHELL_VALUE_OPTIONS:
+            index += 2
+            continue
+        if word.startswith("--"):
+            index += 1
+            continue
+        if len(word) > 1 and word[0] in "-+":
+            if word[0] == "-" and "c" in word[1:]:
+                flagged = True
+            index += 1
+            continue
+        break
+    if not flagged or index >= len(rest):
+        return None
+    return ("shell", rest[index])
+
+
+def handed_commands(text):
+    """Every command `text` hands to `eval` or to a shell's `-c` as an
+    ARGUMENT, one per clause that does, in command order.
+
+    Such a command is text to every reader of the outer command - a quoted
+    word - and a command to the shell that runs it, so a guard that grades
+    what a command DOES reads it again as a command of its own. One level:
+    a handed command that hands another is the caller's to read again, with
+    whatever bound it keeps. A clause whose quoting never closes hands
+    nothing this can read."""
+    out = []
+    for clause in command_clauses(join_continuations(text or "")):
+        handed = _handed_command(shell_words(clause.strip()) or [])
+        if handed is not None and handed[1].strip():
+            out.append(handed[1])
+    return out
 
 
 def _head_runs_body(head):

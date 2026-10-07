@@ -1528,6 +1528,50 @@ def _cases(check):
           "inline flag or a script operand after its options",
           all(_ro(w) is want for w, want in _ro_cases),
           repr([(w, _ro(w)) for w, want in _ro_cases if _ro(w) is not want]))
+    # (hc) handed_commands: the command a shell's `-c` or `eval` runs from an
+    # ARGUMENT, found past the same wrappers program_candidates steps over.
+    _hc = getattr(M, "handed_commands", None)
+    _hc_runs = (
+        ("bash -c \"sed -i x a.py\"", ["sed -i x a.py"]),
+        ("sh -lc 'echo hi'", ["echo hi"]),
+        ("zsh -ec \"ls\"", ["ls"]),
+        ("bash -c -e 'ls'", ["ls"]),
+        ("bash --norc -o pipefail -c 'ls'", ["ls"]),
+        ("eval \"sed -i x a.py\"", ["sed -i x a.py"]),
+        ("eval sed -i x a.py", ["sed -i x a.py"]),
+        ("sudo -u root bash -c \"ls\"", ["ls"]),
+        ("env A=1 sh -c \"ls\"", ["ls"]),
+        ("cd x && bash -c \"ls\"; eval 'pwd'", ["ls", "pwd"]),
+        ("bash -c \"echo \\\"x\\\" > a.py\"", ["echo \"x\" > a.py"]),
+    )
+    check("hc1 a command handed to a shell's `-c` (alone or in a cluster) or to "
+          "`eval` is read out of its argument, past wrappers and options",
+          _hc is not None and all(_hc(cmd) == want for cmd, want in _hc_runs),
+          repr([(cmd, _hc(cmd) if _hc else None) for cmd, want in _hc_runs
+                if _hc is None or _hc(cmd) != want]))
+    # The over-fire direction: each is a shell or `eval` NAMED, never one
+    # handed a command - a quoted argument of another program, a script run,
+    # a `-c` that is the script's own option, an interpreter's own `-c`.
+    _hc_quiet = ("git commit -m \"bash -c ls\"", "bash script.sh -c x",
+                 "bash -c", "echo eval x", "python3 -c \"print(1)\"",
+                 "grep -c bash notes.md", "eval")
+    check("hc2 ...and nothing is read where no shell or `eval` is handed one",
+          _hc is not None and all(_hc(cmd) == [] for cmd in _hc_quiet),
+          repr([(cmd, _hc(cmd) if _hc else None) for cmd in _hc_quiet
+                if _hc is None or _hc(cmd) != []]))
+    _hc_cwd = (
+        ("eval \"cd /elsewhere\" && sed -i x a.py",
+         os.path.normpath(os.path.join("/w", "/elsewhere"))),
+        ("eval \"cd $X\" && sed -i x a.py", None),
+        ("bash -c \"cd /elsewhere\" && y", "/w"),
+        ("eval \"echo hi\" && y", "/w"),
+    )
+    check("hc3 a `cd` inside `eval` moves the shell that runs the rest, read "
+          "as a bare `cd` is and withdrawn where one would be - while one "
+          "inside a `bash -c` moves only the child, and an `eval` that changes "
+          "no directory leaves the walk alone",
+          all(M.effective_cwd(cmd, "/w") == want for cmd, want in _hc_cwd),
+          repr([(cmd, M.effective_cwd(cmd, "/w")) for cmd, _w in _hc_cwd]))
     check("jc7 ...while a `#` after a continuation that followed a blank still "
           "opens a comment, whose trailing backslash is kept",
           _jc("x " + _nl + "# y " + _nl + "z") == "x # y " + _nl + "z",

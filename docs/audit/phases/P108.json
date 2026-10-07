@@ -691,7 +691,7 @@
     {
       "id": "P108.10-4gh",
       "title": "a machine path in a journal row is redacted when the plugin wrote it, and refused before any write when a caller typed it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P108-R1 and P108-R2 (high), P108-R3 and P108-R4. They concern the machine-path rule on journal rows.\n\nSplit the rule by who wrote the text.\n\n- Text the plugin builds itself. This covers hook rows (journal-writes' rendered changes), program output (scoped-commit withdrawal reasons, verdict sentences, close-phase basis) and anything else not typed by a caller. A machine path there is REDACTED in place, the same way redacted_text already treats program output: the token becomes OUTSIDE_TOKEN or a named marker. The row is still written. A hook or verb never drops its own row because of what a value contains.\n\n- Free text a caller hands a verb. This covers note text, outcomes, reasons, finding text and the panel's free-text saves. The check is public (for example _journal_io.check_free_text(project, field, value)). Each verb calls it BEFORE it writes the plan, the shard or the panel save. When the check fails, the verb refuses with a non-zero exit and the field/shape/remedy text, and neither the manifest nor the journal takes the value. The verbs are audit-task (note, done, cancel, block, reopen, finding, bug-add and every other free-text flag), set-priority, derive-phase-gate and the panel's write path. Any append that still fails carries its reason into journaledWhy, never silently.\n\n- The checkout-root shape requires a token start before the root as well as after it, so a short root (/src, /app, /repo, /workspace) never matches a relative path or URL containing that segment. A relative 'home/<x>' at the start of a token is flagged by the detector only. The writer does not refuse it, because a repository can hold a home/ directory.\n\nCases:\n- A journal-writes manifest edit whose value holds a home path still yields a manifest.edit row, and the row does not contain the path.\n- A withdrawal reason quoting an outside .git path is written tokenised.\n- `audit-task note` with a home path exits non-zero, leaves the shard unchanged and names the field.\n- The panel save of such a value is refused before writing.\n- A short-root fixture writes 'lib/src/foo.ts' and a URL unchanged.",
       "files": [
         "plugins/audit/scripts/governance/_journal_io.py",
@@ -730,18 +730,39 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "179d4f18",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_journal_io.py splits the machine-path rule by who wrote the text. check_free_text(project, field, value) judges caller text as typed and returns None or a refusal naming the field, the shape and the remedy, never the value; redacted_free_text(project, value) is for the plugin's own text and never raises: in-repo absolute paths become repo-relative, any token still carrying a machine path becomes OUTSIDE_TOKEN, and a shape crossing token boundaries replaces the whole value. free_text is removed; _normalise and normalise_details redact instead of raising, so a hook or verb never loses its own row over a value. machine_path_shape needs a token start before the checkout root as well as after it, and the writer's posix-home shape needs a leading separator, so a short root no longer matches relative paths or URLs; the detector still reads the same pattern objects. append_why and append_from_cli_why return the path or (False, reason); append and append_from_cli wrap them. audit-task.py: resolve_briefs runs check_free_text on every prose flag after the stdin read and before the lock, so neither the shard nor the journal takes a refused value; _finding_problems applies the same check to issue and resolution for --findings-file batches; every 'did NOT take' and 'not journaled' line prints the reason. set-priority.py and derive-phase-gate.py take the same append path and print the reason (derive-phase-gate --json adds journaledWhy and journaledReason when a row failed). _panel_write.py builds the journaled block once (journal_block) and refuses a change whose new value carries a machine path before the write, in both the composition and config writers; only the new value is judged, so a save can still remove an old one. The failure reason travels in a new journaledReason key because the panel toast and its pin compare journaledWhy to the exact word. One forward-only BASELINE row in check-committed-pii.py covers a chained journal row that quotes the task's own relative example. Red-first: test__journal_io (10 cases), test_journal_writes mp1 and test__panel_write (3 cases) failed at HEAD and pass with the change; every refusal case has an allow twin. Six other argument-taking appenders now redact rather than drop, but do not refuse caller text at their door.",
+        "descriptive": "A hook or command no longer loses its own audit-trail entry because a value mentions a machine path: the plugin's own text is redacted and written, and a path typed by the caller is refused before anything is saved."
       },
       "startedAt": "2026-10-07T05:02:18Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T05:43:54Z",
+      "verifiedBy": [
+        "ft1",
+        "ft2",
+        "ft2b",
+        "ft3",
+        "ft6",
+        "ft8",
+        "ft9",
+        "ft10",
+        "ft11",
+        "ft12",
+        "mp1",
+        "nt3",
+        "nt4",
+        "panel home-path refusal and twin"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T05:41:54Z.405b99",
         "status": "passed",
         "at": "2026-10-07T05:41:54Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "179d4f18",
+        "at": "2026-10-07T05:43:54Z",
+        "basis": "orchestrator check: P108-R1..R4 fixed, redaction for plugin text and refusal at the door for caller text, panel writers refuse before writing, red-first proved with allow twins, residual appenders named"
       }
     },
     {

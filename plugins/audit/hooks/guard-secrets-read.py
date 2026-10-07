@@ -74,13 +74,14 @@ Rule #2 branch calls it.
   - the write CALLS inside an interpreter — `python -c`, `node -e`, and the
     heredoc spelling of either — naming a non-exempt source path;
   - the high-signal shell write forms into a non-exempt source file: `sed -i`,
-    `tee <file>`, and `>`/`>>` redirects (which also catches
-    `cat > file <<EOF` heredocs). The block message names the path and the
+    `tee <file>`, `>`/`>>` redirects (which also catches
+    `cat > file <<EOF` heredocs) and the destination of `cp`, `mv` and
+    `install`. The block message names the path and the
     remedy: widen the running task's `files`, or stop and ask the operator.
     A write inside a subshell, a `$( )` substitution or backticks is the same
-    write and is read the same way (`_shell_states`); a command handed to
-    another program as a quoted argument (`bash -c "..."`) is not descended
-    into by the `sed -i` arm - `_shell_states`' comment names that residual.
+    write and is read the same way (`_shell_states`), and so is a command
+    handed to a shell's `-c` or to `eval` as a quoted argument
+    (`_write_views`).
   Both arms ask `_ungoverned_write_target` the same questions — can the
   destination be established at all, source extension, inside the repository
   or a linked worktree of it (judged against THAT tree's plan,
@@ -1379,10 +1380,10 @@ def _clauses(cmd):
 # and the same write outside the group was refused. The walk below tracks the
 # groups as the shell nests them: a substitution reopens the unquoted state
 # inside double quotes, a parenthesis inside quotes is a character, and only
-# a closer that pairs with an opener ends a word. What it still cannot see is
-# a command handed to another program as a QUOTED ARGUMENT (`bash -c "..."`,
-# `eval '...'`): that is the quoted-argument residual `_inplace_targets` states,
-# and the redirect and `tee` arms read such text as they always did.
+# a closer that pairs with an opener ends a word. A command handed to a shell's
+# `-c` or to `eval` as a QUOTED ARGUMENT is text at this level, which is why
+# `_inplace_targets` skips a match inside quotes; `_write_views` reads it again
+# as a command of its own, so it is graded where it runs.
 _ESCAPED = "\\"
 
 
@@ -1586,6 +1587,90 @@ def _inplace_targets(text, clause_re, operands):
     return out
 
 
+def _simple_commands(text):
+    """`text` cut into the spans the shell runs as commands: at a separator
+    outside quotes, and at every group opener and closer, so the body of
+    `( )`, `$( )` or backticks is a span of its own. A span left holding half
+    of a quoted word is unreadable to the word split after it, and reads as
+    nothing rather than as a command."""
+    quotes, depths = _shell_states(text)
+    out, start = [], 0
+    for pos, ch in enumerate(text):
+        cut = (quotes[pos] is None and ch in "|&;\n"
+               or depths[pos + 1] != depths[pos]
+               or (ch == "(" and pos and depths[pos] != depths[pos - 1]))
+        if cut:
+            out.append(text[start:pos])
+            start = pos + 1
+    out.append(text[start:])
+    return [span for span in out if span.strip()]
+
+
+# The programs whose last operand is the file they write. Their sources are
+# read, never written - `mv` removes its source, which is a deletion and not a
+# change of content, and is outside what this arm grades.
+_COPY_PROGRAMS = ("cp", "mv", "install")
+_COPY_VALUE_OPTIONS = ("-S", "--suffix", "-m", "--mode", "-o", "--owner",
+                       "-g", "--group")
+
+
+def _copy_destinations(words):
+    """The files a `cp`/`mv`/`install` call, given as its words, writes.
+
+    The last operand, or - when it is spelled as a directory (a trailing
+    slash), when more than one source precedes it, or when `-t` names the
+    directory - each source's name inside that directory. `install -d` creates
+    directories and writes no file. A destination that is a directory spelled
+    WITHOUT the trailing slash is read as the file it names; whether it is a
+    directory is a fact about the disk, not the command."""
+    operands, directory, index = [], None, 1
+    while index < len(words):
+        word = words[index]
+        if word == "--":
+            operands.extend(words[index + 1:])
+            break
+        if word in ("-t", "--target-directory"):
+            directory = words[index + 1] if index + 1 < len(words) else None
+            index += 2
+            continue
+        if word.startswith("--target-directory="):
+            directory = word.split("=", 1)[1]
+        elif word in ("-d", "--directory") and words[0] == "install":
+            return []
+        elif word in _COPY_VALUE_OPTIONS:
+            index += 1
+        elif not (word.startswith("-") and len(word) > 1):
+            operands.append(word)
+        index += 1
+    if directory is not None:
+        sources = operands
+    elif len(operands) < 2:
+        return []
+    elif len(operands) == 2 and not operands[1].endswith(("/", "\\")):
+        return [operands[1]]
+    else:
+        directory, sources = operands[-1], operands[:-1]
+    base = directory.rstrip("/\\")
+    return ["%s/%s" % (base, s.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1])
+            for s in sources]
+
+
+def _copy_targets(text):
+    """Every file a `cp`, `mv` or `install` command in `text` writes, found in
+    command position past the wrappers `_config.program_candidates` steps over -
+    never in a quoted argument of another program."""
+    out = []
+    for span in _simple_commands(text):
+        words = _config.shell_words(_config.join_continuations(span).strip())
+        if not words:
+            continue
+        rest, _candidates = _config.program_candidates(words)
+        if rest and _config.program_name(rest[0]) in _COPY_PROGRAMS:
+            out.extend(_copy_destinations(
+                [_config.program_name(rest[0])] + rest[1:]))
+    return out
+
+
 def _shell_write_targets(cmd):
     """Best-effort extraction of file paths a shell command WRITES to - inside a
     subshell, a substitution or backticks as outside one."""
@@ -1602,7 +1687,40 @@ def _shell_write_targets(cmd):
             if tok and not tok.startswith("-"):
                 targets.append(tok)
     targets.extend(_inplace_targets(cmd, _SED_INPLACE_CLAUSE, _sed_file_operands))
+    targets.extend(_copy_targets(cmd))
     return targets
+
+
+# How deep a command handed inside a handed command is followed: a bound, not
+# a feature - `sh -c "eval '...'"` is two levels, and nobody writes four.
+_MAX_HANDED = 3
+
+
+def _write_views(text, cwd, depth=0):
+    """[(text, the directory its relative writes land in)]: `text` itself at
+    `cwd`, and every command it hands to `eval` or a shell's `-c`, each at the
+    directory that command stands in when its writes run.
+
+    A HANDED COMMAND IS A COMMAND. Each of the write grammars reads a quoted
+    argument as text, which is right for `git commit -m "sed -i ..."` and was
+    the whole of the bypass for `bash -c "sed -i ..."`: one file, written, and
+    graded only in the bare spelling. `_config.handed_commands` says which
+    quoted words a shell runs, past the same wrappers every reader here steps
+    over, and each is graded as if typed alone.
+
+    A `cd` INSIDE IT PLACES THE WRITES AFTER IT: the command's own walk starts
+    where the outer shell stood (`_config.effective_cwd` with `cwd` as the
+    payload directory), so `bash -c "cd src && sed -i ... a.py"` names
+    `src/a.py`. An outer directory nobody could establish stays unestablished
+    inside."""
+    views = [(text, cwd)]
+    if depth >= _MAX_HANDED:
+        return views
+    for span in _simple_commands(text):
+        for handed in _config.handed_commands(span):
+            inner = _config.effective_cwd(handed, cwd) if cwd else None
+            views += _write_views(handed, inner, depth + 1)
+    return views
 
 
 # shared with guard-bash-writes.py — ONE definition of "source file"
@@ -1787,11 +1905,25 @@ def _ungoverned_write_target(targets, root, cfg, cwd):
 
 def _source_write_hit(cmd, root, cfg, cwd):
     """What the plan gate says about the files `cmd` writes via sed -i / tee /
-    a >(>) redirect - `_ungoverned_write_target`'s pair. The shell half of the
+    a >(>) redirect / a copy - `_ungoverned_write_target`'s pair. The shell half of the
     plan gate's write arm. `cwd` is `_effective_cwd`'s answer for this same
     command - the directory a bare relative target is placed against, rather
-    than the repository root every target used to be assumed to sit in."""
-    return _ungoverned_write_target(_shell_write_targets(cmd), root, cfg, cwd)
+    than the repository root every target used to be assumed to sit in.
+
+    Asked of every `_write_views` view, each at its own directory, and merged
+    in command order: a handed command's file is one more file of the same
+    command, graded beside the rest."""
+    merged = {"hit": None, "unresolved": [], "root": root, "hits": []}
+    for text, at in _write_views(cmd, cwd):
+        seen = _ungoverned_write_target(_shell_write_targets(text), root, cfg, at)
+        merged["unresolved"] += [t for t in seen["unresolved"]
+                                 if t not in merged["unresolved"]]
+        merged["hits"] += [h for h in seen["hits"]
+                           if not any(h["shown"] == k["shown"]
+                                      for k in merged["hits"])]
+        if merged["hit"] is None and seen["hit"]:
+            merged["hit"], merged["root"] = seen["hit"], seen["root"]
+    return merged
 
 
 def _eval_write_hit(graded, root, cfg, cwd):
@@ -2040,7 +2172,8 @@ _SHELL_MANIFEST_LOCK = (
 
 def _manifest_write_hit(cmd, root, cfg, cwd):
     """First manifest path `cmd` writes to via sed -i / tee / a `>`(`>>`) redirect
-    - the index, its lockfile, or one of its phase shards - or None.
+    / a copy, bare or handed to a shell or `eval` - the index, its lockfile, or
+    one of its phase shards - or None.
 
     `cwd` (`_effective_cwd`'s answer) places a RELATIVE target before it is
     compared against `manifest_rel`, for the same reason the source arm one
@@ -2096,19 +2229,20 @@ def _manifest_write_placed(cmd, root, cfg, cwd):
     target outside the project pays for the git call that asks."""
     manifest_rel = str(cfg.get("manifestPath")
                        or _config.DEFAULTS["manifestPath"])
-    for t in _shell_write_targets(cmd):
-        if not _config.resolvable_destination(t):
-            continue
-        placed = _placed_target(t, cwd)
-        if placed is None:
-            continue
-        tree = _config.tree_for(None, placed, cfg, project=root)
-        if not tree["inside"]:
-            continue
-        rel = tree["rel"]
-        if (rel == manifest_rel or rel == manifest_rel + ".lock"
-                or _config.governing_lock(manifest_rel, rel)):
-            return (rel, tree["root"])
+    for text, at in _write_views(cmd, cwd):
+        for t in _shell_write_targets(text):
+            if not _config.resolvable_destination(t):
+                continue
+            placed = _placed_target(t, at)
+            if placed is None:
+                continue
+            tree = _config.tree_for(None, placed, cfg, project=root)
+            if not tree["inside"]:
+                continue
+            rel = tree["rel"]
+            if (rel == manifest_rel or rel == manifest_rel + ".lock"
+                    or _config.governing_lock(manifest_rel, rel)):
+                return (rel, tree["root"])
     return None
 
 
@@ -2151,15 +2285,23 @@ _SHELL_JOURNAL = (
     "It is written by the plugin (panel saves, the journal-writes hook, "
     "audit-journal.py append) and never by hand - an edit here is what "
     "`audit-journal.py verify` exists to detect. The Edit tool already refuses "
-    "this file; a redirect, `tee` and `sed -i` are the same write spelled "
+    "this file; a redirect, `tee`, `sed -i`, a copy and a program's append "
+    "are the same write spelled "
     "differently, so they are refused here too. To record something, run "
     "audit-journal.py append; to stop recording, set journal.enabled false."
 )
 
 
-def _journal_write_hit(cmd, root, cfg, cwd):
+def _journal_write_hit(cmd, root, cfg, cwd, program_targets=()):
     """The repo-relative path of the first journal file `cmd` writes via a
-    `>`(`>>`) redirect, `tee` or `sed -i`, or None.
+    `>`(`>>`) redirect, `tee`, `sed -i` or a copy - in a command handed to a
+    shell or `eval` as in the bare one - or that `program_targets` names, or
+    None.
+
+    `program_targets` are the files the interpreter clauses' write calls
+    name (`_eval_write_targets`), placed at `cwd` as that arm places them. An
+    append through `open(path, 'a')` is the shell's `>>` spelled in another
+    language; reading the journal through one is no write call and no target.
 
     THE SAME TARGETS AND THE SAME PLACEMENT AS `_manifest_write_placed`, and the
     same predicate guard-edits asks: `_config.in_journal`, which resolves the
@@ -2171,10 +2313,13 @@ def _journal_write_hit(cmd, root, cfg, cwd):
     A read of the journal is no hit - a `<` redirect is not among the targets -
     and neither is the plugin's own writer, which is a script that opens the
     file itself rather than a redirect the shell performs."""
-    for t in _shell_write_targets(cmd):
+    sites = [(t, at) for text, at in _write_views(cmd, cwd)
+             for t in _shell_write_targets(text)]
+    sites += [(t, cwd) for t in program_targets]
+    for t, at in sites:
         if not _config.resolvable_destination(t):
             continue
-        placed = _placed_target(t, cwd)
+        placed = _placed_target(t, at)
         if placed is None:
             continue
         tree = _config.tree_for(None, placed, cfg, project=root)
@@ -2489,7 +2634,9 @@ def _decide_core(data, root, cfg):
         #
         # ITS TARGET SET IS THE SHELL GRAMMAR ALONE, and that is a residual, not
         # a decision this line can defend: `_manifest_write_hit` reads redirects,
-        # `tee` and `sed -i`, so a subagent writing its own phase shard through
+        # `tee`, `sed -i` and copies, bare or handed to a shell or `eval` - and
+        # not the interpreter's write calls, which the journal arm below does
+        # read - so a subagent writing its own phase shard through
         # `python3 -c "open('docs/audit/phases/P1.json','w')"` reaches neither
         # this arm nor the source arm above it - `docs/audit/**` is exempt there
         # and `.json` is no source extension. Driven, at this line and before it:
@@ -2506,7 +2653,10 @@ def _decide_core(data, root, cfg):
         # tier and no exemption, so the shell spelling of the same write gets the
         # same answer - and a command that also writes a source file is refused
         # as a whole, so it neither takes nor spends the free-file slot.
-        jhit = _journal_write_hit(runnable, root, cfg, cwd)
+        jhit = _journal_write_hit(
+            runnable, root, cfg, cwd,
+            [t for cl, is_eval, _how in graded if is_eval
+             for t in _eval_write_targets(cl)])
         if jhit:
             return ("block", _SHELL_JOURNAL % (jhit,))
         # Over what runs, not over the raw text - a `>` inside prose being

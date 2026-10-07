@@ -658,6 +658,165 @@ def _subshell_cases(check):
             os.environ.pop("CLAUDE_PROJECT_DIR", None)
         else:
             os.environ["CLAUDE_PROJECT_DIR"] = held
+
+
+# A command handed to a shell or to `eval` as an ARGUMENT, and the copy
+# programs whose last operand is the file they write. `%s` is the whole write
+# in a wrapper, the target in a copy.
+_WW_WRAPS = (
+    ("bash -c", "bash -c \"%s\""),
+    ("sh -c", "sh -c '%s'"),
+    ("zsh -c", "zsh -c \"%s\""),
+    ("a clustered sh -ec", "sh -ec \"%s\""),
+    ("sudo bash -c", "sudo bash -c \"%s\""),
+    ("eval", "eval \"%s\""),
+)
+_WW_COPIES = (
+    ("cp", "cp notes.md %s"),
+    ("mv", "mv notes.md %s"),
+    ("install", "install -m 644 notes.md %s"),
+)
+
+
+def _wrapped_write_cases(check):
+    """A write handed to `bash -c`/`eval`, a copy's destination and an
+    interpreter's journal append are the writes they spell.
+
+    Each is graded against the bare form of the same write at every tier. The
+    fixture runs a phase whose task declares one file, which is the deny tier
+    by evidence; the other tiers are pinned through the knob."""
+    root = Path(_harness.fixture_root("guard-secrets-wrapped-"))
+    outside = Path(_harness.fixture_root("guard-secrets-wrapped-out-"))
+    (root / "src").mkdir(parents=True)
+    (root / "docs" / "audit" / "journal").mkdir(parents=True)
+    (root / "docs" / "audit" / "audit-plan.json").write_text(json.dumps(
+        {"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "in_progress",
+                 "files": ["src/declared.py"]}]}]}), encoding="utf-8")
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    held = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = str(root)
+    tiers = [(t, _config._deep_merge(cfg, {"planGate": t}))
+             for t in _config.PLAN_GATE_TIERS]
+    journal = "docs/audit/journal/2026-10.w.jsonl"
+
+    def shell(sid, cmd, use_cfg=None):
+        ok, got = _harness.attempt(M.decide, {
+            "tool_name": "Bash", "session_id": sid, "cwd": str(root),
+            "tool_input": {"command": cmd}}, cfg=use_cfg or cfg)
+        return got if ok else ("raised", str(got))
+
+    def graded(verdict, target):
+        return (verdict[0], verdict[0] != "allow" and target in verdict[1])
+
+    def sid_of(*parts):
+        return "-".join(parts).replace(" ", "_")
+
+    def same_as_bare(label, bare_cmd, cmd, target):
+        """[(tier, bare's grading, cmd's grading)], each on a spent slot."""
+        seen = []
+        for tier, tcfg in tiers:
+            sids = (sid_of("ww-b", label, tier), sid_of("ww-w", label, tier))
+            for sid in sids:
+                _spend_slot(root, cfg, sid)
+            seen.append((tier, graded(shell(sids[0], bare_cmd, use_cfg=tcfg),
+                                      target),
+                         graded(shell(sids[1], cmd, use_cfg=tcfg), target)))
+        return seen
+
+    try:
+        bare_sed = "sed -i '' 's/A/B/' src/ww.py"
+        for wname, wrap in _WW_WRAPS:
+            seen = same_as_bare(wname, bare_sed, wrap % bare_sed, "src/ww.py")
+            check("ww1 `sed -i` handed to %s is graded like the bare `sed -i` at "
+                  "every tier, and the deny tier refuses it naming the file"
+                  % (wname,),
+                  all(b == w for _t, b, w in seen)
+                  and dict((t, w) for t, _b, w in seen)["deny"] == ("block", True),
+                  seen)
+        bare_redirect = "echo x > src/ww.py"
+        for cname, copy in _WW_COPIES:
+            seen = same_as_bare(cname, bare_redirect, copy % "src/ww.py",
+                                "src/ww.py")
+            check("ww2 `%s` onto a source file is graded like a redirect into it "
+                  "at every tier, and the deny tier refuses it naming the file"
+                  % (cname,),
+                  all(b == w for _t, b, w in seen)
+                  and dict((t, w) for t, _b, w in seen)["deny"] == ("block", True),
+                  seen)
+        seen = same_as_bare("cd-in-body", "sed -i '' 's/A/B/' src/ww.py",
+                            "bash -c \"cd src && sed -i '' 's/A/B/' ww.py\"",
+                            "src/ww.py")
+        check("ww3 a `cd` inside the handed command places the write it "
+              "precedes: the file named is the one it reaches",
+              dict((t, w) for t, _b, w in seen)["deny"] == ("block", True), seen)
+        journal_forms = (
+            ("sh -c `sed -i`", "sh -c \"sed -i '' 's/a/b/' %s\"" % journal),
+            ("eval `sed -i`", "eval \"sed -i '' 's/a/b/' %s\"" % journal),
+            ("python3 -c append",
+             "python3 -c \"open('%s','a').write('x')\"" % journal),
+            ("a heredoc program append",
+             "python3 - <<'PY'\nwith open('%s', 'a') as fh:\n"
+             "    fh.write('x')\nPY" % journal),
+            ("cp onto it", "cp notes.md " + journal),
+            ("mv onto it", "mv notes.md " + journal),
+            ("install onto it", "install notes.md " + journal),
+        )
+        for fname, cmd in journal_forms:
+            got = [(tier, shell(sid_of("ww4", fname, tier), cmd, use_cfg=tcfg))
+                   for tier, tcfg in tiers]
+            check("ww4 the journal through %s is refused at every tier, naming "
+                  "it, as the bare append is" % (fname,),
+                  all(v[0] == "block" and journal in v[1] for _t, v in got),
+                  got)
+        # THE ALLOW TWINS, at the deny tier, each taking no slot: what an
+        # over-block of the readers above would refuse.
+        twins = (
+            ("bash -c that only lists", "bash -c \"ls src\""),
+            ("eval that only echoes", "eval \"echo hi\""),
+            ("a copy OUT of the tree",
+             "cp src/app.py %s" % (outside / "x.py")),
+            ("a program that only reads the journal",
+             "python3 -c \"print(len(open('%s').read()))\"" % journal),
+            ("a heredoc program that only reads the journal",
+             "python3 - <<'PY'\nprint(open('%s').read())\nPY" % journal),
+            ("a commit message naming the handed write",
+             "git commit -m \"bash -c 'sed -i x src/app.py'\""),
+            ("a commit message naming a copy",
+             "git commit -m \"cp x src/app.py\""),
+            ("a copy of the journal out to a scratch file",
+             "cp %s %s" % (journal, outside / "rows.txt")),
+        )
+        for name, cmd in twins:
+            sid = sid_of("ww5", name)
+            got = shell(sid, cmd)
+            check("ww5 %s is allowed at the deny tier and takes no slot" % name,
+                  got[0] == "allow" and _slot_file(root, cfg, sid) == [],
+                  (got, _slot_file(root, cfg, sid)))
+        dests = getattr(M, "_copy_destinations", None)
+        want = (
+            (["cp", "a.py", "b.py", "src/"], ["src/a.py", "src/b.py"]),
+            (["cp", "-t", "src", "a.py"], ["src/a.py"]),
+            (["mv", "--target-directory=src", "a.py"], ["src/a.py"]),
+            (["cp", "-r", "--", "a", "b.py"], ["b.py"]),
+            (["install", "-m", "644", "a", "b.py"], ["b.py"]),
+            (["install", "-d", "src/x.py"], []),
+            (["cp", "only.py"], []),
+        )
+        got = [(w, dests(w) if dests else None) for w, _x in want]
+        check("ww6 a copy's written files: the last operand, or each source's "
+              "name inside a directory operand or `-t` - and nothing for "
+              "`install -d` or a lone operand",
+              dests is not None and all(g == x for (_w, g), (_v, x)
+                                        in zip(got, want)), got)
+    finally:
+        if held is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = held
+
+
 def _expand_optional_chars(fragment):
     """`"ya?ml"` -> `["yml", "yaml"]`. Expands every `X?` in a regex alternative
     into its two literal spellings, one character at a time, so a family list
@@ -1091,6 +1250,7 @@ def _cases(check):
     _harness.stage(check, "sj", _journal_cases)
     _harness.stage(check, "tt", _two_tree_cases)
     _harness.stage(check, "sb", _subshell_cases)
+    _harness.stage(check, "ww", _wrapped_write_cases)
     _harness.stage(check, "gs-template", _template_cases)
     cfg = _config._deep_merge(_config.DEFAULTS, {})
     tmp = Path(_harness.fixture_root("guard-secrets-selftest-"))
