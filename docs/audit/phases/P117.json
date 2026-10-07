@@ -653,7 +653,7 @@
     {
       "id": "P117.8-2sz",
       "title": "the per-task ratio states what its two sides hold, and G1 names everything it moves",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes review findings P117-R23 to P117-R27 from the cost phase's fourth review round. Documents only.\n\n- The per-task ratio's definition states that its denominator holds plain's session-level open and close and its numerator does not, and gives the size of that difference. The ladder prints the ratio both ways.\n- G1's guarantee change names everything the per-task review returns that G1 would drop: the intent binding before commit, the red-first grade, and the inherited-test question. Each one is either carried into the phase reviewer's computed brief, or listed as given up. The user chose G1 on the earlier wording, so section 8 restates the decision with the full list.\n- The sensitivity section doubles every row, ties writes to output, and adds a G1 table against the 1.25 ideal.\n- T1's unattributed-row target is limited to the sessions its mechanism explains.\n- The remaining sign-off and G1 estimates are based on readings, or added to a sensitivity row.",
       "files": [
         "docs/research/pipeline-cost-design.md",
@@ -680,16 +680,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T18:10:52Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T18:53:08Z.8303c9",
+        "status": "passed",
+        "at": "2026-10-07T18:53:08Z"
+      }
     }
   ],
   "startedAt": "2026-10-07T11:45:57Z"

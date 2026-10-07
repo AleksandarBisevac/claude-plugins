@@ -24,6 +24,20 @@ pipeline, verbs that compute what the model used to type, and agent definitions.
 What the target overturns is kept once as dated history: the earlier set and its prediction in
 section 5.5, the earlier task targets beside the tasks that replace them.
 
+**Revised after its fourth review (2026-10-07).** Each correction sits in the section it concerns:
+
+- The per-task ratio is printed on two plain figures. The cycle leaves out the plugin's
+  session-level open and close, and whole arm A keeps plain's (section 0.2).
+- G1 names every answer the per-task review returns. Each one is carried to the phase review, and
+  the carrying is priced at sign-off (C14, sections 5.2 and 8).
+- The main loop's writes are tied to its output. A filed return is written back once into its
+  agent's cache (section 5.1).
+- The sensitivity section doubles every estimate and adds G1 (section 5.3).
+- Sign-off rests on readings wherever one exists (section 5.1).
+- T1's phantom-final target is limited to the sessions its mechanism explains (section 6).
+
+The figures this revision replaces are kept once, dated, beside the ones that replace them.
+
 ## 0. How to read this
 
 | Label | Means |
@@ -127,12 +141,29 @@ script, a verb or an agent definition takes its place.
 
 **The two measures**, read on the whole-feature benchmark's nine valid sessions (section 1.5):
 
-- **The per-task ratio.** The task cycle's billed cost, divided by arm A's mean session cost. The
-  cycle is section 1.1's span: the main-loop requests from the first `start` to the last `done`
-  before a request inside it plans, plus every request of the agents those requests dispatched.
-  Arm A did the same tasks in one session, so dividing both sides by the tasks the cycle holds
-  leaves the ratio unchanged. The description leaves the plain side open. This revision takes the
-  whole plain session, because it is the only plain figure for the same tasks.
+- **The per-task ratio.** The task cycle's billed cost, divided by what arm A spent on the same
+  tasks. The cycle is section 1.1's span: the main-loop requests from the first `start` to the last
+  `done` before a request inside it plans, plus every request of the agents those requests
+  dispatched. Arm A did the same tasks in one session, so dividing both sides by the tasks the
+  cycle holds leaves the ratio unchanged.
+
+  **The two sides do not hold the same kind of work unless the plain side is cut to match.** The
+  cycle leaves out the plugin's session-level work: the session start is written in planning, and
+  the closing report falls in the run's close (section 1.5.2). Whole arm A keeps plain's. Its first
+  main-loop request writes the session start and lists the files, and its last writes the closing
+  summary. In `whole-A-1`, `-2` and `-3` those two requests cost `0.079278`, `0.095520` and
+  `0.087694`. That is 15.7, 15.9 and 16.4 percent of each session (the open-and-close command,
+  section 10). So every per-task ratio here is printed both ways:
+
+  - **like for like:** against arm A less its first and last main-loop requests, `0.459507`;
+  - **against whole arm A:** `0.547004`, as the earlier revisions read it. This reading favours the
+    plugin by the size of plain's open and close.
+
+  This document takes the target to mean the like-for-like reading. It is the one in which each side
+  holds its task work alone. Plain's open and close leave the plain side, as the plugin's leave the
+  cycle for the phase overhead, which has a budget of its own. The other repair, adding the plugin's
+  open and close to the cycle, would count that work under both targets. Which reading the target
+  means is the user's to confirm (section 8, decision 1).
 - **The whole-feature ratio.** The session's total, divided by arm A's mean and by arm B's mean.
   Arm B matched the plugin arm on every graded measure (the results document's section 4.6), so B
   is the price reference: what the plugin costs beyond B has to buy something measurable.
@@ -143,15 +174,16 @@ run's own preflight, sign-off with any fix task it runs, and the run's close.
 **The plain figures.** Arm A's mean is `0.547004`, derived: (0.505336 + 0.600682 + 0.534995) / 3.
 Arm B's mean is `0.843470`, derived: (0.764088 + 0.735201 + 1.031121) / 3. Each session's figure is
 `all models priced` in `python3 tools/stream-cost.py <x2>/<session>/stream.jsonl`, which equals that
-session's `total_cost_usd` (section 1.5.1). The results document is
+session's `total_cost_usd` (section 1.5.1). Arm A less its open and close is `0.459507`, derived:
+(0.426059 + 0.505162 + 0.447301) / 3, each the open-and-close command's `the session less both`. The results document is
 `docs/research/benchmark-feature-results.md`, which lands with the whole-feature benchmark phase: on
 the day this was written it was at `186fcf7d` on that phase's branch and on neither this branch nor
 `main`.
 
 **Pins for the new readings.** Every figure in sections 1.5, 1.6 and 5 comes from the result-reading
 commit's `stream-cost.py` (section 0), from its own report, or through section 10's commands. The
-span, billed-span and output-kind commands call the tool's own `analyse()`. The injection, gap and
-agent-calls commands read the stream alone. All of them read records that do not change.
+span, billed-span, output-kind, open-and-close, write-back and review commands call the tool's own
+`analyse()`. The injection, gap and agent-calls commands read the stream alone. All of them read records that do not change.
 
 ## 1. The cost model every prediction uses
 
@@ -499,13 +531,15 @@ every request of the agents they dispatched.
 | cycle: the rebuild fault's row (section 1.5.7) | `−0.0134` | `−0.0115` | `−0.0142` |
 | **cycle** | **`2.2755`** | **`2.1614`** | **`2.5902`** |
 | **per task, and ÷ A's mean** | `0.7585`, **4.16** | `0.7205`, **3.95** | `0.8634`, **4.74** |
+| per task ÷ A less its open and close | 4.95 | 4.70 | 5.64 |
 | sign-off: requests, cost | 45–57: `0.9637` | 35–37 and 44–48: `0.6367` | 43–52: `0.7891` |
 | sign-off's fix task | 37–44: `0.5580` | 38–43: `0.3990` | none |
 | the run's close | 58–61: `0.2428` | 49–52: `0.2457` | 53–55: `0.2005` |
 | **phase overhead**, and ÷ A's mean | `3.3509`, 6.13 | `2.9071`, 5.31 | `3.0107`, 5.50 |
 
 Derived: the cycle is its main loop, plus its agents, plus the fault's row. The per-task figure
-is the cycle divided by three, and the ratio is the cycle divided by `0.547004`. The phase overhead
+is the cycle divided by three, and the ratio is the cycle divided by `0.547004`, or by `0.459507`
+like for like (section 0.2). The phase overhead
 is planning, preflight, sign-off, the fix task and the close. Cycle and overhead together equal each
 session's total to the fourth decimal: 2.2755 + 3.3509 = 5.6264, 2.1614 + 2.9071 = 5.0685, and
 2.5902 + 3.0107 = 5.6009. The executors' and reviewers' figures are the cycle's dispatches summed
@@ -515,8 +549,8 @@ rounded dispatch lines. The span command prints the cycle's agents together: `0.
 
 Read off the table:
 
-- **The task cycle is about four times arm A or more in every session, 3.95 to 4.74.** The target
-  is 2.
+- **The task cycle is about four times arm A or more in every session, 3.95 to 4.74, and 4.70 to
+  5.64 like for like.** The target is 2.
 - **The main loop is the cycle's cost, not the agents**: 69 to 70 percent of it, derived: 1.5717 /
   2.2755, 1.5157 / 2.1614, 1.8124 / 2.5902.
 - **The phase overhead costs more than the cycle**, 5.31 to 6.13 times arm A's mean on its own.
@@ -667,8 +701,8 @@ Ranked by what each cost across the session, with the range over the three arm C
   launched in the background sits in the cycle, and every Sonnet agent of `whole-C-2-r` does too.
   So the table above nets the fault's row into the cycle. The background executors' own per-dispatch
   figures in section 1.5.5 each still hold a phantom final. The phase overhead is untouched. A
-  per-task ratio would move by 0.026 at most if the row belonged elsewhere, derived: 0.0142 /
-  0.547004.
+  per-task ratio would move by 0.026 at most if the row belonged elsewhere, or by 0.031 like for
+  like, derived: 0.0142 / 0.547004 and 0.0142 / 0.459507.
 
 ### 1.6 What each phase-level step caught
 
@@ -957,7 +991,11 @@ write is held is under *Guarantees* below.
 | the close's tool results and text, no longer carried | 0.0158 + 0.0004 + 0.0105 + 0.0005 + 0.0133 + 0.0007 + 0.0127 + 0.0003, less 400 × 8.4 / 10^6 | `0.0508` |
 | **per task** | | **`0.2905`** |
 
-The first draft left out the filing request. Its total was `0.3019`.
+The first draft left out the filing request. Its total was `0.3019`. The filing row still prices a
+read alone. Filing also writes the return into the agent's cache once (C13). In `feature-C-1` that
+is `0.0150` per task, derived: 6142 / 2.63 × 5.0e-6 + 3550 / 2.63 × 2.5e-6, from the two hand-backs'
+bytes. This table leaves it out. Section 5.1's rungs count it, and section 5.5's dated history keeps
+the table's figure.
 
 The tokens a task leaves in the main loop fall from 21857 to 7178 per task. That is derived:
 21857 − (2395 + 2180) − (2764 + 1466) − (1978 + 1318) − (1667 + 1591) + (120 + 160 + 300 + 100). At
@@ -1348,9 +1386,9 @@ what those requests did was a script's job: run a verb, read its output, type th
 Briefs alone were 60 to 65 percent of their output.
 
 **Prediction.** With C2, C3 and C10, which are its parts, the cycle's main loop falls from
-`1.5717`, `1.5157` and `1.8124` to `0.2137`, `0.2262` and `0.2036` (section 5.1, rung 1). Taken in
+`1.5717`, `1.5157` and `1.8124` to `0.2292`, `0.2416` and `0.2191` (section 5.1, rung 1). Taken in
 the order they would land, removing the prose saves `0.4859`, `0.4452` and `0.7345`. The driver with
-its computed briefs and terse output then saves `0.8555`, `0.8314` and `0.8790` (section 5.1's
+its computed briefs and terse output then saves `0.8401`, `0.8159` and `0.8635` (section 5.1's
 attribution).
 
 **Guarantees.** None is weakened:
@@ -1387,7 +1425,8 @@ in full. `--verbose` keeps today's text.
 and carried (section 1.5.3). Under the driver most of it never reaches the main loop. What still
 did at the cycle's start was 2027 to 6995 tokens. One line in place of today's text removes nine
 tenths of it, an estimate: `0.0051` to `0.0176` in the cycle (section 5.1). Terse output is also what
-holds the driver's per-task write at the 1000 tokens rung 1 assumes.
+holds each of the driver's prints at the 300 bytes rung 1 assumes. With the hand-backs and the
+output written back, that puts the cycle's write at 1555 tokens a task (section 5.1).
 
 **Guarantees.** None. A refusal and its remedy still print in full.
 
@@ -1426,8 +1465,9 @@ with one fix task: 5 planning + 14 cycle + 4 sign-off, + 3 per fix task.
 **Cheaper.** A smaller prefix (C2, C8) and less output (C3) make each request cheaper. The model is
 the other lever: a `model:` line on the run command would put the loop on a cheaper model. Per the
 host facts, that switch makes the next request re-read the whole history with no cache hit. At
-rung 1 that re-write costs 41358 × 4.0e-6 = `0.1654` in `whole-C-3`, against `0.047` saved on the
-cycle's writes and output: 3000 × 4.0e-6 + 3500 × 10e-6. **Rejected: a cost of about `0.12`.**
+rung 1 that re-write costs 41358 × 4.0e-6 = `0.1654` in `whole-C-3`, against `0.054` saved on the
+cycle's writes and output: 4664 × 4.0e-6 + 3500 × 10e-6. **Rejected: a cost of about `0.11`.**
+The revision at `b72372f7` gave `0.047` and `0.12`, on writes of 3000.
 Whether a smaller model answers the named decisions as well is unmeasured.
 
 ### C13 — A smaller subagent start
@@ -1456,8 +1496,14 @@ Each lever of the host facts, priced on the whole-feature sessions:
   where n_e and n_r are the executors' and reviewers' requests in the cycle. That is 26 and 9, 23 and
   9, 32 and 8, giving `0.0429`, `0.0406` and `0.0467`. **Taken.** C3's extra agent requests, one to
   read the brief and one to file the return, add `0.0654` per session: 3 tasks × 2 × (0.0067 +
-  0.0042), the executor's and reviewer's `$/request` in `whole-C-3`'s `contexts:`. So the agents' net
-  under rung 1 is `+0.0187` to `+0.0248`.
+  0.0042), the executor's and reviewer's `$/request` in `whole-C-3`'s `contexts:`.
+- **What filing adds beyond the extra request.** Today an agent's return is its last output, and
+  the agent makes no request after it, so the return is never written into the agent's own cache.
+  Filed through C3's verb, the return is the input of a call, so the agent's hand-back request writes
+  it into the agent's cache once, at the agent's write rate. Per session
+  that is `0.0214`, `0.0205` and `0.0211` (section 5.1, *Agents*). `$/request` prices a further read
+  and leaves this write out, and so did the revision at `b72372f7`. So the agents' net under rung 1
+  is `+0.0398` to `+0.0452`, where that revision gave `+0.0187` to `+0.0248`.
 - **Measured, not a lever.** A later dispatch already reads 10109 or 8356 tokens of its start from
   cache (section 1.5.5).
 
@@ -1470,12 +1516,65 @@ Each lever of the host facts, priced on the whole-feature sessions:
 - **Gated on computed signals (G2).** This is C5's option (b). The review runs when the task's
   `redFirst` did not come back `proved`, or when the gate row disagrees with the executor's filed
   return. In these sessions the first signal fired once per session, on the command-line task (the
-  results document's section 4.4). So one review ran where three did. Saving: `0.1981` to `0.2073`
-  per session over rung 1 (section 5.1).
-- **Moved to the phase (G1).** The phase review reads every task's filed return against its
-  description, and no reviewer runs per task. Saving: `0.2887` to `0.3024` per session over rung 1.
-  The phase review gains three returns to read: 3 × 1500 × (5.0e-6 + 0.2e-6 × 4) = `0.0261`, an
-  estimate of 1500 tokens a return, on the project's opus reviewer.
+  results document's section 4.4). So one review ran where three did. Saving: `0.2106` to `0.2193`
+  per session over rung 1, in the cycle (section 5.1). A task it does not review gets none of the
+  three answers listed under G1, and nothing carries them elsewhere.
+- **Moved to the phase (G1).** No reviewer runs per task. Saving: `0.3072` to `0.3202` per session
+  over rung 1, in the cycle (section 5.1). What the phase review then has to answer is everything
+  the per-task review returns today, which is three answers, not one
+  (`reference/execute-task.md:304-377` and `agents/audit-reviewer.md` at `7b489337`):
+  - **the intent binding.** Does the diff do what the description asked, and does the executor's
+    claim describe the diff? It is asked before the task commits. The reviewer prompt gives the
+    reason it is asked per task: "the phase diff has no way back to the task that produced each
+    line";
+  - **the red-first grade.** The executor's `redFirst` word is echoed when its basis holds, and graded
+    when it does not. A `not-proved` on a `tdd` task goes to a human;
+  - **the inherited-test question.** Of the tests the task's own `tests.gate` selects, would any
+    still pass with its behaviour deleted? It is bounded by `tests.gate`, which only a task-mode
+    review is handed.
+
+  A phase-mode review as written answers none of the three per task. It grades red-first
+  `not-attempted`, and with no `tests.gate` its inherited-test answer is `not-asked`. So G1 carries
+  each answer into the phase reviewer's computed brief (T3, T6). For each task the brief holds:
+  - its commit SHA and declared files, so `git show <sha> -- <files>` reaches that task's own diff;
+  - its description verbatim;
+  - its filed return, with the `redFirst` word, the basis and `testsAdded`;
+  - its recorded gate run;
+  - its `tests.gate` commands, resolved.
+
+  The brief asks the three questions of each task. What G1 still gives up is the timing. Each answer
+  arrives before the merge instead of before the commit, so a `diverges` or a `not-proved` reaches a
+  human at sign-off.
+
+  **What carrying costs, at sign-off.** Each part is an estimate on a reading, from the review
+  command (section 10):
+  - the brief. Per task it holds what the main loop handed each per-task reviewer, the same
+    inputs: 2373 to 4597 bytes, and 10842, 9457 and 9110 bytes per session. It is written once on
+    the phase reviewer's Opus and read by that reviewer's four requests and the moved work's 9, 9
+    and 8. For `whole-C-3`: 10842 / 2.63 × (5.0e-6 + 0.2e-6 × 13) = `0.0313`. The other sessions
+    give `0.0273` and `0.0256`;
+  - the work. This is what the three per-task reviewers spent beyond their starts: reading the
+    diff, the test file and the code around it, and writing their answers. Re-priced at the phase
+    reviewer's Opus rates it is `0.2042`, `0.2048` and `0.1996`;
+  - the answers, written back once when the phase reviewer files its return. That is the per-task
+    reviewers' hand-backs, 10322, 9655 and 10251 bytes, / 2.63 × 5.0e-6: `0.0196`, `0.0184` and
+    `0.0195`.
+
+  Together that is `0.2552`, `0.2505` and `0.2447`. It replaces the `0.0261` the revision at
+  `b72372f7` gave, which priced three 1500-token returns read and nothing else. It is an upper
+  estimate, because it assumes the phase reviewer reads each task's diff and code again. A phase
+  reviewer that binds each claim from the phase diff it already reads pays less: the brief, the
+  answers' output (5484, 5501 and 5432 tokens at 20e-6) and their write-back, `0.1532`, `0.1492`
+  and `0.1482`.
+
+  Carrying the two smaller answers costs little beyond the binding. The red-first grade is a reading
+  of the filed return's word and basis. The inherited-test answer was `not-asked` in each of the
+  nine per-task reviews (the review command), because each task's `tests.gate` was `["test"]`, a
+  gate name that selects the whole suite (the findings command). The binding is the cost.
+
+  So G1 does not remove the per-task review's work. It moves that work out of the cycle and into
+  the phase overhead, where it runs on the phase reviewer's model. Over the whole session it saves
+  `0.0641` to `0.0727` on the upper estimate and `0.1606` to `0.1739` on the lower (section 5.1).
 
 Section 5.1 gives both as rungs, with the guarantee each changes and how it is held instead.
 Section 1.6 gives the evidence about value: the per-task reviews raised low findings on P1.1 in
@@ -1491,20 +1590,24 @@ agent, and with it that line. A `PreToolUse` hook could hold the rule instead. I
 an inline task, keyed on a marker the driver sets and clears. The hook keeps the rule enforced. It
 does not keep input isolation, which no hook can give. Re-priced at rung 1's prefix:
 
-- **The light path (C1)**, the main loop doing the task, costs about `1.00` against rung 1's `0.9400`
+- **The light path (C1)**, the main loop doing the task, costs about `1.02` against rung 1's `0.9768`
   in `whole-C-3`. This is an estimate:
   - A's mean work, `0.547004`;
   - the larger prefix it reads, about 3.3 requests a task (A's 9 to 11 over three tasks) × [3 ×
     (41358 − 16607) + 15000 × (0 + 1 + 2)] × 0.2e-6 = `0.0787`. Here 16607 is `whole-A-1`'s first
     read and write (11891 + 4716), and 15000 is an estimate of the work a task leaves;
-  - the driver's requests without the executor's dispatch, 11 of them:
-    0.2e-6 × (11 × 41358 + 3000 × 5) + 3000 × 8.0e-6 + 2750 × 20e-6 = `0.1730`;
-  - the reviewers, `0.2063`.
+  - the driver's requests without the executor's dispatch, 11 of them, with their writes tied to
+    their output as section 5.1 ties them, 2750 + 924 = 3674:
+    0.2e-6 × (11 × 41358 + 3674 × 5) + 3674 × 8.0e-6 + 2750 × 20e-6 = `0.1791`;
+  - the reviewers, `0.2063`, and their returns written back when filed, `0.0098` (section 5.1).
+
+  The revision at `b72372f7` gave about `1.00` against `0.9400`, on writes of 3000.
 
   The executors run on Sonnet and the main loop on Opus, so the work costs more inline.
-- **A forked reviewer (C6b)** reads the main prefix on Opus: 3 × 45358 × 0.2e-6 + 9000 × 5.0e-6 +
-  2000 × 20e-6 = `0.1122` per review, against a Sonnet review at about `0.065`. It costs `0.047` more
-  per task.
+- **A forked reviewer (C6b)** reads the main prefix on Opus: 3 × 43690 × 0.2e-6 + 9000 × 5.0e-6 +
+  2000 × 20e-6 = `0.1112` per review, against a Sonnet review at about `0.065`. It costs `0.046` more
+  per task. 43690 is the prefix halfway through rung 1's cycle, 41358 + 4664 / 2 (section 5.1). The
+  revision at `b72372f7` read 45358, sign-off's flat estimate then, and gave `0.1122` and `0.047`.
 
 **Neither pays, so no rule moves to a hook.** This is recorded so the option is not reopened without
 a new price.
@@ -1556,15 +1659,15 @@ across `whole-C-3`, `whole-C-1` and `whole-C-2-r` in that order of range, from s
 
 | | Saving per session | Guarantees | Verdict |
 |---|---|---|---|
-| C9 step driver, with C2, C3, C8 and C10 as its parts | cycle main loop `1.5157`–`1.8124` → `0.2036`–`0.2262` | none | **recommended** (rung 1) |
+| C9 step driver, with C2, C3, C8 and C10 as its parts | cycle main loop `1.5157`–`1.8124` → `0.2191`–`0.2416` | none | **recommended** (rung 1) |
 | C10 terse output | `0.0051`–`0.0176` in the cycle after C9; it holds C9's per-task write | none | **recommended**, inside C9 |
 | C11 one executor per phase | `−0.0468` (a cost, `whole-C-3`) | per-task isolation and the parallel wave lost | rejected |
-| C12 cheaper main-loop model | about `−0.12` (a cost, `whole-C-3`) | unmeasured decision quality | rejected |
+| C12 cheaper main-loop model | about `−0.11` (a cost, `whole-C-3`) | unmeasured decision quality | rejected |
 | C13 trimmed agent prompts | `0.0406`–`0.0467` | none | **recommended** (rung 1) |
 | C13 `omitClaudeMd` / skills / agent TTL 1h | about `0.02` / `0` / `−0.2396` | the project's rules / none / none | rejected / not taken / rejected |
-| C14 per-task review gated (G2) | `0.1981`–`0.2073` over rung 1 | the intent check becomes conditional | the user's (section 8) |
-| C14 per-task review at the phase (G1) | `0.2887`–`0.3024` over rung 1 | the intent check moves from before each commit to before the merge | the user's (section 8) |
-| C15 light path or fork reviewer, with a hook holding the tool rule | about `−0.065` a session / `−0.047` a task (costs) | input isolation lost | rejected |
+| C14 per-task review gated (G2) | `0.2106`–`0.2193` over rung 1, in the cycle | an unreviewed task gets none of the per-task review's three answers | the user's (section 8) |
+| C14 per-task review at the phase (G1) | `0.3072`–`0.3202` over rung 1 in the cycle, of which `0.1482`–`0.2552` is paid again at sign-off for carrying the review there | the intent binding, the red-first grade and the inherited-test question each move from before the commit to before the merge, carried in the phase review's brief | the user's (section 8) |
+| C15 light path or fork reviewer, with a hook holding the tool rule | about `−0.044` a session / `−0.046` a task (costs) | input isolation lost | rejected |
 
 ## 5. Recommendation: the ladder to the cost target
 
@@ -1604,77 +1707,122 @@ labelled:
 - **Requests**, `k` = 4 per task + 2 = 14. Four per task is C9's shape, and the 2 are the wave's two
   waiting requests as `whole-C-3` recorded them (requests 22 and 23). That is an estimate: a serial
   run would have no waits.
-- **Writes**, 1000 tokens a task, so `W` = 3000. These are two dispatch calls, two one-line
-  hand-backs, two terse `next` prints and the model's text, an estimate.
 - **Output**, 250 tokens a request, so `O` = 3500. The run's own preflight requests, each one short
   script call, emitted 242 tokens on average, derived: (415 + 477 + 318) / 5, the span command's
   `pre` rows.
+- **Writes, tied to the output.** Inside the cycle every request's output enters the main loop's
+  cache at the next request, the rule section 1.1 states for a row. So `W` = `O` + `T`, where `T`
+  is the tool results the cycle receives. Per task that is two one-line hand-backs of 80 tokens
+  (C3's estimate) and two `next` prints at T4's ceiling of 300 bytes, 114 tokens each. So `T` = 3 ×
+  (2 × 80 + 2 × 114) = 1164, and `W` = 3500 + 1164 = `4664`, which is 1555 a task. The revision at
+  `b72372f7` set `W` = 3000, below `O`, which none of the readings below allows.
+
+  The write-back command (section 10) reads how much of the cycle's output came back as the loop's
+  own cache writes: 0.97, 1.02 and 1.32 in `whole-C-3`, `whole-C-1` and `whole-C-2-r`. Readings
+  above 1 hold background agents' reports. These arrive as notifications the tool does not size, so
+  it books them as the loop's own output. `whole-C-3`'s two waits, requests 22 and 23, emitted 183
+  tokens and wrote back 4251 that way (the same command on `22 23`). That the other two sessions'
+  excess has the same cause is inference. Arm A's whole sessions read 0.79 to 0.86, lower because a
+  session's last output is never written back.
 - **Agents**: today's cycle agents, net of the fault's row, plus C3's extra requests (`0.0654`) less
-  the prompt trims (`0.0429`, `0.0406`, `0.0467`), from C13.
+  the prompt trims (`0.0429`, `0.0406`, `0.0467`), from C13. Then each filed return is written back
+  once, at the agent's write rate (C13). The returns are estimates on readings (the review command,
+  section 10):
+  - an executor's return is taken at its session's first executor's hand-back, 4054, 3954 and 3979
+    bytes, because the wave's two came back as notifications the tool does not size;
+  - the reviewers' are their own hand-backs, 10322, 9655 and 10251 bytes for the three.
+
+  For `whole-C-3`: (3 × 4054 + 10322) / 2.63 × 2.5e-6 = `0.0214`. The others are `0.0205` and
+  `0.0211`.
 - **Planning** writes everything the cycle then reads, `P′` less what was cached before the session,
   at `w`. Its five requests (an estimate: invoke, read the code over two requests, write the plan
   file, one batch `add`) read halfway between the cached start and `P′` on average. Its output is
   what today's planning typed, since the plan's text is the irreducible part. The project's explorer
   is kept as recorded.
-- **Sign-off** takes 4 requests, plus 3 per fix task, an estimate:
+- **Sign-off** takes 4 requests, plus 3 per fix task, an estimate and T10's target:
   - the four are the phase reviewer's dispatch, the triage decision, the sign-off step and the final
     report;
   - a fix task's three are `next`, the executor and `next`, and the recorded fix tasks closed
     `not-asked`;
-  - each request reads `P′` + 4000 and writes 600, and emits 250, plus 1000 for the final report,
-    all estimates;
-  - the agents are the project's reviewer as recorded, + `0.005` for its filing request (an
-    estimate), and the fix executor as recorded.
+  - it starts at the prefix the cycle leaves, `P′` + `W`, and grows by its own writes, so its main
+    loop is `main(S, P′ + W, W_s, O_s)`. That replaces the flat `P′` + 4000 a request the revision at
+    `b72372f7` assumed;
+  - its output `O_s` is 250 a request, as in the cycle, an estimate. The exception is the final
+    report, which is a reading: 1898, 1729 and 1722 tokens, each session's last main-loop request
+    (the open-and-close command). An estimate of 1000 stood there;
+  - its writes `W_s` are tied as the cycle's are. They are every output but the report's, plus the
+    reviewer's one-line hand-back, the final step's print and the triage print. The triage print
+    lists the review's findings, so it is taken at the phase reviewer's whole hand-back, 5404, 4610
+    and 4325 bytes / 2.63, an upper reading. A fix task adds its three outputs, a hand-back and two
+    prints. This replaces 600 a request;
+  - the agents are the project's reviewer as recorded, its filing request, and the fix executor as
+    recorded. The filing request is the reviewer's `$/request` at sign-off (`contexts:`, `0.0038`,
+    `0.0038` and `0.0034`), plus its return written back once at 5.0e-6. That is `0.0141`, `0.0125`
+    and `0.0116` in all, where an estimate of `0.005` stood;
+  - the fix executor's own C3 requests and trim are left out. On `whole-C-3`'s they nearly cancel:
+    2 × 0.0047 + 3153 / 2.63 × 2.5e-6 = `0.0124`, against 3722 × (2.5e-6 + 0.2e-6 × 3) = `0.0115`.
 
   The model prices one phase review at what the recorded one cost. In these sessions the plugin's
   review step and the project's own rule 5 merged into one review. Whether they still do under the
-  driver is unmeasured, and T11's probe reads it.
+  driver is unmeasured, and T11's probe reads it. Section 5.4 doubles sign-off's estimates against
+  its budget.
 
 Written out for `whole-C-3`:
 
-- cycle main loop: 0.2e-6 × (14 × 41358 + 3000 × 13 / 2) + 8.0e-6 × 3000 + 20e-6 × 3500
-  = 0.1197 + 0.0240 + 0.0700 = `0.2137`;
-- cycle agents: 0.5219 + 0.1953 − 0.0134 + 0.0654 − 0.0429 = `0.7263`;
-- cycle: `0.9400`, which is 1.72 times A's mean;
+- cycle main loop: 0.2e-6 × (14 × 41358 + 4664 × 13 / 2) + 8.0e-6 × 4664 + 20e-6 × 3500
+  = 0.1219 + 0.0373 + 0.0700 = `0.2292`;
+- cycle agents: 0.5219 + 0.1953 − 0.0134 + 0.0654 − 0.0429 = `0.7263`, and the filed returns
+  `0.0214`;
+- cycle: `0.9768`, which is 2.13 times A less its open and close, and 1.79 times A's mean;
 - planning: 0.2e-6 × 5 × (10950 + 41358) / 2 + 8.0e-6 × (41358 − 10950) + 20e-6 × 6467
   = 0.0262 + 0.2433 + 0.1293 = `0.3988`;
-- sign-off, with its fix task: 0.2e-6 × 7 × 45358 + 8.0e-6 × 4200 + 20e-6 × (1750 + 1000) + 0.1715
-  + 0.005 + 0.0666 = `0.3952`;
-- whole: 0.3988 + 0.9400 + 0.3952 = `1.7340`, which is 3.17 times A's mean and 2.06 times B's.
+- sign-off, with its fix task, at `S` = 7: `W_s` = 6 × 250 + 80 + 2055 + 114 + (114 + 80 + 114) =
+  4057 and `O_s` = 6 × 250 + 1898 = 3398. So `main(7, 46022, 4057, 3398)` = 0.0669 + 0.0325 +
+  0.0680 = `0.1673`, and + 0.1715 + 0.0141 + 0.0666 = `0.4194`;
+- whole: 0.3988 + 0.9768 + 0.4194 = `1.7950`, which is 3.28 times A's mean and 2.13 times B's.
 
 The other two sessions are the same arithmetic on their own readings.
 
 **G2, the per-task review on computed signals**, runs one review where the sessions ran three
 (C14). A task with no review takes two requests: dispatch the executor, then `next`. So
-`k` = 4 + 2 × 2 + 2 = 10, `W` = 1000 + 2 × 600 and `O` = 2500. The agents are the executors, a third
-of the reviewers, C3's extra requests for three executors and one reviewer, less the trims on the
-requests that remain.
+`k` = 4 + 2 × 2 + 2 = 10 and `O` = 2500. `T` = 388 + 2 × 194 = 776, so `W` = 3276. The agents are the
+executors, a third of the reviewers, C3's extra requests for three executors and one reviewer, less
+the trims on the requests that remain, and those four returns written back.
 
-**G1, the per-task review at the phase**, gives `k` = 2 × 3 + 2 = 8, `W` = 1800 and `O` = 2000.
-The agents are the executors with their extra requests, less their trim. Sign-off gains `0.0261`
-for the phase reviewer reading three returns (C14).
+**G1, the per-task review at the phase**, gives `k` = 2 × 3 + 2 = 8, `O` = 2000, `T` = 3 × 194 = 582
+and `W` = 2582. The agents are the executors with their extra requests, less their trim, and their
+returns written back. Sign-off gains what carrying the per-task review costs: `0.2552`, `0.2505` and
+`0.2447` on C14's upper estimate. On C14's lower estimate it gains `0.1532`, `0.1492` and `0.1482`.
 
-| Rung | Guarantee | Per-task ratio, `whole-C-3` / `-C-1` / `-C-2-r`; mean | Whole ÷ A's mean | Whole ÷ B's mean |
-|---|---|---|---|---|
-| 0, today, measured | as today | 4.16 / 3.95 / 4.74; 4.28 | 10.29 / 9.27 / 10.24; 9.93 | 6.67 / 6.01 / 6.64; 6.44 |
-| 1 | **no change** | **1.72 / 1.64 / 1.83; 1.73** | 3.17 / 3.54 / 3.57; 3.43 | 2.06 / 2.29 / 2.32; 2.22 |
-| 1 + G2 | the per-task intent check becomes conditional | 1.34 / 1.26 / 1.47; 1.36 | 2.80 / 3.16 / 3.21; 3.06 | 1.81 / 2.05 / 2.08; 1.98 |
-| 1 + G1 | the per-task intent check moves to before the merge | **1.17 / 1.09 / 1.30; 1.19** | 2.67 / 3.03 / 3.09; 2.93 | 1.73 / 1.97 / 2.01; 1.90 |
+| Rung | Guarantee | Per-task ratio, like for like: `whole-C-3` / `-C-1` / `-C-2-r`; mean | Per-task ratio ÷ whole A | Whole ÷ A's mean | Whole ÷ B's mean |
+|---|---|---|---|---|---|
+| 0, today, measured | as today | 4.95 / 4.70 / 5.64; 5.10 | 4.16 / 3.95 / 4.74; 4.28 | 10.29 / 9.27 / 10.24; 9.93 | 6.67 / 6.01 / 6.64; 6.44 |
+| 1 | **no change** | **2.13 / 2.03 / 2.26; 2.14** | 1.79 / 1.70 / 1.90; 1.80 | 3.28 / 3.63 / 3.68; 3.53 | 2.13 / 2.36 / 2.38; 2.29 |
+| 1 + G2 | an unreviewed task gets none of the per-task review's three answers | 1.65 / 1.55 / 1.80; 1.67 | 1.39 / 1.30 / 1.51; 1.40 | 2.88 / 3.23 / 3.29; 3.13 | 1.87 / 2.09 / 2.13; 2.03 |
+| 1 + G1 | the per-task review's three answers move to before the merge, carried in the phase review's brief | **1.44 / 1.33 / 1.59; 1.45** | 1.21 / 1.12 / 1.33; 1.22 | 3.16 / 3.50 / 3.56; 3.41 | 2.05 / 2.27 / 2.31; 2.21 |
+| 1 + G1, the carried review charged to the cycle | as G1 | 1.99 / 1.88 / 2.12; 2.00 | 1.67 / 1.58 / 1.78; 1.68 | as G1 | as G1 |
 
-Each ratio is derived: the predicted cycle or session divided by `0.547004` or `0.843470`. The
-predicted cycles are:
+Each ratio is derived: the predicted cycle or session divided by `0.459507`, `0.547004` or
+`0.843470`. G1's sessions and its last row take C14's upper estimate of the carrying. On the lower
+estimate the last row is 1.77 / 1.66 / 1.91; 1.78 like for like and 1.49 / 1.39 / 1.60; 1.49 ÷
+whole A, and G1's sessions are 2.98 / 3.32 / 3.38 ÷ A's mean and 1.93 / 2.15 / 2.19 ÷ B's. The last
+row is not the per-task ratio as section 0.2 defines it, because the phase review runs after the
+cycle. It is printed because G1 saves its cycle cost by moving the work there, and the ratio alone
+would not show the move. The predicted cycles are:
 
-- rung 1: `0.9400`, `0.8967`, `1.0001`;
-- G2: `0.7356`, `0.6895`, `0.8020`;
-- G1: `0.6419`, `0.5943`, `0.7114`.
+- rung 1: `0.9768`, `0.9326`, `1.0368`;
+- G2: `0.7600`, `0.7133`, `0.8262`;
+- G1: `0.6602`, `0.6124`, `0.7296`, and with the carried review `0.9154`, `0.8629`, `0.9744`.
 
 The predicted sessions are:
 
-- rung 1: `1.7340`, `1.9347`, `1.9550`;
-- G2: `1.5296`, `1.7275`, `1.7569`;
-- G1: `1.4619`, `1.6584`, `1.6924`.
+- rung 1: `1.7950`, `1.9874`, `2.0105`;
+- G2: `1.5762`, `1.7662`, `1.7989`;
+- G1: `1.7306`, `1.9147`, `1.9464`.
 
-Rung 0's mean is the measured cycles' mean, 2.3424 / 0.547004.
+Rung 0's mean is the measured cycles' mean, 2.3424 / 0.459507 and 2.3424 / 0.547004. The revision at
+`b72372f7` gave rung 1 1.72 / 1.64 / 1.83 and G1 1.17 / 1.09 / 1.30, against whole arm A only. It
+had writes below output, sign-off on estimates, and G1 carrying nothing but three returns read.
 
 **Where each rung-1 saving comes from**, taken in the order the tasks would land, on the cycle's
 modelled main loop:
@@ -1683,21 +1831,22 @@ modelled main loop:
 |---|---|---|---|
 | modelled today | `1.5552` | `1.5027` | `1.8171` |
 | the prose leaves the prefix (C2, C4, C8) | `−0.4859` | `−0.4452` | `−0.7345` |
-| the driver with computed briefs and terse output (C9, C3, C10) | `−0.8555` | `−0.8314` | `−0.8790` |
-| rung 1's cycle main loop | `0.2137` | `0.2262` | `0.2036` |
-| agents: C3's requests less C13's trims | `+0.0225` | `+0.0248` | `+0.0187` |
+| the driver with computed briefs and terse output (C9, C3, C10) | `−0.8401` | `−0.8159` | `−0.8635` |
+| rung 1's cycle main loop | `0.2292` | `0.2416` | `0.2191` |
+| agents: C3's requests and filed returns, less C13's trims | `+0.0439` | `+0.0452` | `+0.0398` |
 
 The prose step is `main(k, P − prose − bodies + 4500, W, O)` at today's `k`, `W` and `O`. The
-driver step then sets `k`, `W` and `O` to rung 1's and removes nine tenths of the script output.
+driver step then sets `k` and `O` to rung 1's, ties `W` to `O`, and removes nine tenths of the script
+output.
 
 **Rejected rungs, priced** (section 3):
 
 | Option | Effect on the cycle | Guarantee given up |
 |---|---|---|
 | one executor per phase (C11) | `+0.0468`, a cost | per-task input isolation, the parallel wave |
-| a cheaper main-loop model (C12) | about `+0.12`, a cost | none in the tables; decision quality unmeasured |
-| the light path with a hook (C15) | about `+0.065`, a cost | input isolation |
-| a forked reviewer with a hook (C15) | `+0.047` a task, a cost | input isolation, `phase.review.model` |
+| a cheaper main-loop model (C12) | about `+0.11`, a cost | none in the tables; decision quality unmeasured |
+| the light path with a hook (C15) | about `+0.044`, a cost | input isolation |
+| a forked reviewer with a hook (C15) | `+0.046` a task, a cost | input isolation, `phase.review.model` |
 | `omitClaudeMd` (C13) | about `−0.02` | none in the tables; it drops the project's rules |
 | a one-hour agent cache (C13) | `+0.2396`, a cost | none |
 
@@ -1705,15 +1854,34 @@ driver step then sets `k`, `W` and `O` to rung 1's and removes nine tenths of th
 there is `0.298019`, derived: (0.284359 + 0.311679) / 2 (the analysis, section 3). Today's session
 is 5.87 times that, and the earlier set predicted 3.37 (1.0047 / 0.298019).
 
-- **Rung 1 with the recorded Opus executor**: `0.6444`, which is 2.16 times plain. The main loop is
-  `0.1625`: five requests at a prefix of 22695 tokens, 11891 cached + 9304 written + 1500 of thin
-  body. The agents are `0.4819`, the executor `0.3998` and the reviewer `0.0957`, + `0.0226` of C3's
-  requests − `0.0362` of trims.
-- **Rung 1 with the executor's own tokens priced on the Sonnet row**: `0.4718`, which is 1.58 times
-  plain. The executor would cost `0.2179`: 31513 × 2.5e-6 + 180263 × 0.2e-6 + 10306 × 10e-6.
-- **Rung 1 + G1**: the reviewer, its two requests, its trim and one main-loop request leave, `0.1043`
-  in all. That gives `0.5401`, 1.81 times plain, with the Opus executor, and `0.3675`, 1.23 times
-  plain, with Sonnet.
+- **Rung 1 with the recorded Opus executor**: `0.6625`, which is 2.22 times plain.
+  - The main loop is `0.1656`. That is five requests at a prefix of 22695 tokens: 11891 cached, 9304
+    written and 1500 of thin body.
+  - Its writes are tied as in the ladder, 4 × 250 + 388 = 1388. Its output is 4 × 250 + 1239. The
+    1239 is the report request `feature-C-1` recorded (`FSeULu`, the open-and-close command's
+    `last`).
+  - The agents are `0.4819`: the executor `0.3998`, the reviewer `0.0957`, `0.0226` of C3's
+    requests, less `0.0362` of trims.
+  - The two returns written back add `0.0151`, derived: 6142 / 2.63 × 5.0e-6 + 3550 / 2.63 × 2.5e-6.
+- **Rung 1 with the executor's own tokens priced on the Sonnet row**: `0.4841`, which is 1.62 times
+  plain. The executor would cost `0.2179`: 31513 × 2.5e-6 + 180263 × 0.2e-6 + 10306 × 10e-6. Its
+  trim is then `0.0160`, not `0.0253`, and its return is written back at 2.5e-6.
+- **Rung 1 + G1**: the main loop makes four requests, with `W` = 3 × 250 + 194 = 944 and `O` = 3 ×
+  250 + 1239, which is `0.1522`. The agents are the executor, its two requests and its trim:
+  0.3998 + 0.0126 − 0.0253. Its return written back adds `0.0117`. That gives `0.5510`, 1.85 times
+  plain, with the Opus executor. With Sonnet it is `0.3725`, 1.25 times plain.
+- **What G1 defers in this shape.** `/audit:run` runs no phase review, so the task's three answers
+  wait for a later sign-off. Priced as C14 prices them, they come to `0.1183`:
+  - the reviewer's brief, 4742 / 2.63 × (5.0e-6 + 0.2e-6 × 8) = `0.0119`;
+  - its work beyond its start at Opus rates, `0.0996`;
+  - its answers written back, 3550 / 2.63 × 5.0e-6 = `0.0067`.
+
+  These are the review command's readings. Charged back, G1 with the Opus executor is `0.6693`,
+  2.25 times plain, above rung 1's 2.22, because the moved review runs on Opus where the per-task one
+  ran on Sonnet.
+
+The revision at `b72372f7` gave `0.6444` (2.16), `0.4718` (1.58), `0.5401` (1.81) and `0.3675` (1.23).
+It had writes below output, a report of 1000 tokens and no returns written back.
 
 An isolated executor on the same model as plain already cost 1.34 times plain on its own (0.3998 /
 0.298019). It pays a start, a brief and a return on top of the work. So which model the plan gives
@@ -1727,10 +1895,13 @@ hands the model what it needs by path, prints each rule at the step it applies t
 judgement as a named decision. That is C9, with C2, C3, C4, C8 and C10 as its parts, the agent half
 of C13, the planning batch and sign-off as one step. Section 6 has its tasks T1 to T4 and T7 to T10.
 
-**It meets the per-task ceiling in every recorded whole-feature session, and not the ideal**: 1.64 to
-1.83 times plain, a mean of 1.73. Those plans gave every executor Sonnet. **In the single-task shape
-with an executor on the plain session's own model it does not:** 2.16 times plain on `feature-C-1`,
-and only G1 brings that under the ceiling, to 1.81 (section 5.1).
+**Like for like it does not meet the per-task ceiling in any recorded whole-feature session**:
+2.03 to 2.26 times plain, a mean of 2.14. Against whole arm A it does meet it, at 1.70 to 1.90, a
+mean of 1.80. That is the reading earlier revisions stated, and it favours the plugin by plain's
+open and close (section 0.2). Those plans gave every executor Sonnet. **In the single-task shape
+with an executor on the plain session's own model it does not meet the ceiling either:** 2.22 times
+plain on `feature-C-1`, a whole session against whole plain sessions. G1 brings that to 1.85, but
+2.25 once the review it defers is charged back (section 5.1).
 
 It is the structurally correct set for three reasons, and cost is not one of them:
 
@@ -1752,7 +1923,7 @@ How each guarantee is held under it:
 | the recorded gate, independent of the executor's claim | the main loop calling `run-test-gate.py --record` | the driver calling it; the model no longer transcribes the result |
 | the stamp comparison | the main loop calling `stamp-verification.py compare` | the driver calling it, printing which field moved |
 | a return's shape and stamp | nothing (`execute-task.md:168`, `:249`) | the filing verb's exit code (C3) |
-| the per-task intent check | the reviewer's dispatch, followed | the driver printing the dispatch; the close refusing without the reviewer's filed return or `--intent not-asked` with a basis (C3) |
+| the per-task review's three answers: the intent binding, the red-first grade, the inherited-test question (C14) | the reviewer's dispatch, followed | the driver printing the dispatch; the close refusing without the reviewer's filed return or `--intent not-asked` with a basis (C3) |
 | each followed rule | a sentence in prose read up front | the same sentence printed at its step or stated in the agent prompt; T2's anchor lint fails a followed row that resolves to neither |
 | the reviewer cannot edit | its `tools:` line | the same line; the filing verb's one write is held as C3 says |
 
@@ -1768,50 +1939,126 @@ How each guarantee is held under it:
   defect would misdrive every run. The anchor lint (T2) and the driver's selftests (T4) hold
   against them. T11's probe reads both before the full benchmark.
 
-**The ideal, and the ceiling for a task whose executor shares plain's model, need one guarantee
-change, and that is the user's decision** (section 8, decision 1):
+**The ceiling like for like, and the ideal on either reading, need more than rung 1. The one
+guarantee change on offer is the user's decision** (section 8, decision 1):
 
-- **G1, the per-task intent check at the phase**: 1.09 to 1.30, a mean of 1.19. This meets the ideal
-  on the arm's mean, in `whole-C-3` and in `whole-C-1`. It misses in `whole-C-2-r`, at 1.30, whose
-  executors cost the most.
-- **G2, gated on computed signals**: 1.26 to 1.47, a mean of 1.36. It does not meet the ideal.
+- **G1, the per-task review at the phase.** Like for like it is 1.33 to 1.59, a mean of 1.45. That
+  meets the ceiling in every session and the ideal in none. Against whole arm A it is 1.12 to 1.33,
+  a mean of 1.22. That is under 1.25 on the mean, in `whole-C-3` and in `whole-C-1`, and over it in
+  `whole-C-2-r`. On that reading the mean's margin is `0.0163` of cycle cost, and doubling any one
+  of four estimates removes it (section 5.3). G1 reaches these figures by moving the per-task
+  review's work to sign-off, where carrying the three answers costs `0.1482` to `0.2552` a session
+  (C14). Charged back to the cycle, G1 is 1.66 to 2.12 like for like and 1.39 to 1.78 against whole
+  arm A.
+- **G2, gated on computed signals.** Like for like it is 1.55 to 1.80, a mean of 1.67. Against whole
+  arm A it is 1.30 to 1.51, a mean of 1.40. It meets the ceiling on both readings and the ideal on
+  neither. It carries nothing, so the two tasks it does not review get none of the three answers.
 
-**Recommendation for the decision: G1.** It puts the check where its result was consumed. In
-both sessions where a per-task review found something, the task was committed in the same request,
-and the finding was acted on at the phase (section 1.6). G1 also makes coverage a script's refusal
-rather than a dispatch the main loop remembers. G2's trigger fired on the command-line task in every
-session, because the red-first helper cannot classify an `argparse` exit (the results document's
-section 4.4). It measures the helper's limit, not the task's risk.
+**No option here reaches the ideal like for like.** The closest is G1 at a mean of 1.45, and the gap
+to 1.25 is `0.0930` of cycle cost on the mean, derived: 0.6674 − 1.25 × 0.459507.
 
-**G1's guarantee change, and how it is held instead.** Today a task's claim is checked against its
-description before that task commits. Under G1 it is checked before the phase merges.
+**Recommendation for the decision: G1, carrying all three answers.** It keeps every answer the
+per-task review gives today, each still bound to its own task's commit, and gives up only their
+timing. It puts the check where its result was consumed. In both sessions where a per-task review
+found something, the task was committed in the same request, and the finding was acted on at the
+phase (section 1.6). G2 gives answers up instead of moving them. Its trigger fired on the
+command-line task in every session, because the red-first helper cannot classify an `argparse` exit
+(the results document's section 4.4). It measures the helper's limit, not the task's risk.
 
-- **Held by:** the phase reviewer's computed brief carries every task's filed return and description
-  verbatim, and asks for one binding per task. The sign-off verb refuses, writing nothing, while any
-  task of the phase lacks an intent answer from that review or a `not-asked` with its basis. The
-  refusal is the mechanism, and T6 pins it with a case.
-- **The consequence to publish:** a misread task is found after its commit, not before. Its repair is
-  a fix task inside the phase, as both recorded per-task findings already were, rather than a
-  re-spawn before the commit. A key with a default of `always` keeps today's behaviour. A default of
-  `phase` would be a major release (section 2).
+The facts about G1 that are not reasons for it: over the whole session it saves `0.0641` to `0.1739`
+against rung 1, and G2 saves `0.2117` to `0.2212` (section 5.1's sessions). The work G1 moves lands in
+the phase overhead, which it takes over its budget (section 5.4).
+
+**G1's guarantee change, and how it is held instead.** Today the per-task review returns three
+answers before the task commits: the intent binding, the red-first grade and the inherited-test
+question (C14). Under G1 each one is answered before the phase merges.
+
+- **Carried by:** the phase reviewer's computed brief (T3, T6). For each task it holds the commit
+  SHA and files, the description verbatim, the filed return with its `redFirst` word and basis, the
+  recorded run and the `tests.gate` commands, and it asks the three questions of each task. The SHA
+  is the way back from a line to its task, which the reviewer prompt says the phase diff lacks
+  (`agents/audit-reviewer.md:48` at `7b489337`).
+- **Held by:** a close state of its own and the sign-off verb's refusal. Under `review.perTask:
+  phase`, `done --from-return` records the task's intent as `deferred` itself. It refuses an
+  `--intent` flag on a task with a diff. So such a task cannot close as `not-asked`, the word
+  sign-off already counts as answered (`reference/execute-task.md:373-377`), and the refusal below
+  cannot be met at the task's own close. The sign-off verb refuses, writing nothing, while any task
+  closed `deferred` lacks any of its three answers in the phase review's filed return. `not-asked`
+  with its basis keeps its meaning for the closes that use it today: `done --no-change`, and the fix
+  tasks sign-off creates from a finding. T6 pins the refusal with a fixture whose tasks closed the G1
+  way.
+- **Given up:** the timing, and nothing else the per-task review returns. A misread task, a
+  `not-proved` on a `tdd` task or a vacuous inherited test is found after its commit, not before.
+  Its repair is a fix task inside the phase, as both recorded per-task findings already were, rather
+  than a re-spawn before the commit.
+- **The consequence to publish:** that timing. A key with a default of `always` keeps today's
+  behaviour. A default of `phase` would be a major release (section 2).
 
 ### 5.3 How far the margin can be trusted
 
-Rung 1's worst session is `whole-C-2-r` at 1.83 times plain. The ceiling is 2.0, so the margin is
-2 × 0.547004 − 1.0001 = `0.0939` of cycle cost. The estimates it rests on, each with what doubling
-it would cost in that session:
+Every estimate the cycle rests on is doubled here, first one at a time and then together. Each
+figure is section 5.1's model run with that one input doubled, with the writes tied to the output as
+section 5.1 ties them. Doubling the output therefore raises the writes by the same amount. A doubled
+request count adds each new request's output, its write-back and one print. The phase overhead's
+estimates are doubled in section 5.4.
 
-| Estimate | Value | Doubled, added to the cycle | Ratio then |
-|---|---|---|---|
-| output per request | 250 tokens | 14 × 250 × 20e-6 = `0.0700` | 1.96 |
-| requests per task | 4 (C7's 5 instead) | 3 × (37755 × 0.2e-6 + 250 × 20e-6) = `0.0377` | 1.90 |
-| writes per task | 1000 tokens | 3000 × (8.0e-6 + 0.2e-6 × 13 / 2) = `0.0279` | 1.88 |
-| thin bodies | 4500 tokens | 4500 × 0.2e-6 × 14 = `0.0126` | 1.85 |
-| the wave's waits | 2 | 2 × (37755 × 0.2e-6 + 250 × 20e-6) = `0.0251` | 1.87 |
+**Rung 1 against the 2.0 ceiling**, in `whole-C-2-r`, its worst session. There it is 1.90 against
+whole arm A and 2.26 like for like, so like for like it is over the ceiling before anything
+doubles. Against whole arm A the margin is 2 × 0.547004 − 1.0368 = `0.0572` of cycle cost.
 
-Any one of them can double and the worst session stays under the ceiling. Doubling the first two
-together would take it to 2.05. So T11's probe reads each of them on its own before the full
-benchmark runs (section 7).
+| Estimate | Value | Doubled | Added to the cycle | Ratio then, ÷ whole A | like for like |
+|---|---|---|---|---|---|
+| output per request, writes tied | 250 tokens | 500 | `0.1025` | 2.08 | 2.48 |
+| requests per task | 4 | 8 | `0.2021` | 2.26 | 2.70 |
+| tool results per task | 388 tokens | 776 | `0.0108` | 1.92 | 2.28 |
+| thin bodies | 4500 tokens | 9000 | `0.0126` | 1.92 | 2.28 |
+| the wave's waits | 2 | 4 | `0.0308` | 1.95 | 2.32 |
+| script output left by terse output | a tenth | a fifth | `0.0006` | 1.90 | 2.26 |
+| trimmed prompts | 9000 and 7000 bytes | 18000 and 14000 | `0.0414` | 1.97 | 2.35 |
+| filed returns | section 5.1's sizes | twice | `0.0211` | 1.93 | 2.30 |
+| output and requests together | | | `0.4003` | 2.63 | 3.13 |
+| every row at once | | | `0.5505` | 2.90 | 3.45 |
+
+Doubling the output alone, or the requests alone, takes `whole-C-2-r` over the ceiling on the whole-A
+reading too. The revision at `b72372f7` said any one estimate could double and the worst session
+would stay under the ceiling. Its requests row went from 4 to 5 rather than to 8, and its writes did
+not follow its output.
+
+**G1 against the 1.25 ideal**, on the arm's mean, where the claim was made, and in `whole-C-2-r`.
+Like for like the mean is 1.45 before anything doubles, so there the table shows only how far the
+ideal is. Against whole arm A the mean's margin is 1.25 × 0.547004 − 0.6674 = `0.0163`.
+
+| Estimate | Value | Doubled | Added, mean | Mean ÷ whole A | Mean like for like | `whole-C-2-r` ÷ whole A | `whole-C-2-r` like for like |
+|---|---|---|---|---|---|---|---|
+| as predicted | | | | 1.22 | 1.45 | 1.33 | 1.59 |
+| output per request, writes tied | 250 tokens | 500 | `0.0574` | 1.33 | 1.58 | 1.44 | 1.71 |
+| requests per task | 2 | 4 | `0.1018` | 1.41 | 1.67 | 1.51 | 1.80 |
+| tool results per task | 194 tokens | 388 | `0.0051` | 1.23 | 1.46 | 1.34 | 1.60 |
+| thin bodies | 4500 tokens | 9000 | `0.0072` | 1.23 | 1.47 | 1.35 | 1.60 |
+| the wave's waits | 2 | 4 | `0.0316` | 1.28 | 1.52 | 1.39 | 1.65 |
+| script output left by terse output | a tenth | a fifth | `0.0007` | 1.22 | 1.45 | 1.33 | 1.59 |
+| trimmed executor prompt | 9000 bytes | 18000 | `0.0270` | 1.27 | 1.51 | 1.39 | 1.65 |
+| filed returns | section 5.1's sizes | twice | `0.0114` | 1.24 | 1.48 | 1.35 | 1.61 |
+| output and requests together | | | `0.2044` | 1.59 | 1.90 | 1.70 | 2.02 |
+| every row at once | | | `0.3119` | 1.79 | 2.13 | 1.90 | 2.26 |
+
+So G1 holds the ideal on the whole-A mean only while every estimate holds. Doubling the output, the
+requests, the waits or the trimmed prompt each takes the mean over 1.25. Like for like G1 never
+reaches it. G1 keeps the 2.0 ceiling like for like unless the output and the requests double
+together, which takes `whole-C-2-r` to 2.02. These figures are the cycle alone. With the carried
+review charged back, G1 starts at 1.66 to 2.12 like for like (section 5.1).
+
+**T11's probe threshold, from the tied model.** Each extra output token a request emits adds
+k × (o + w + r × (k − 1) / 2) to the cycle, because it is written back. That is 14 × 29.3e-6 =
+410e-6 at rung 1 and 8 × 28.7e-6 = 230e-6 under G1, on section 5.1's rates. So:
+
+- G1's mean leaves 1.25 on the whole-A reading at 0.0163 / 230e-6 = 71 tokens over 250, so at about
+  320 tokens a request;
+- rung 1's worst session leaves 2.0 on that reading at 0.0572 / 410e-6 = 140 tokens over, so at
+  about 390.
+
+The probe's stop is set at those two figures (section 7). The revision at `b72372f7` set 500, the
+doubled estimate. With the writes tied, 500 a request puts rung 1's worst session at 2.08.
 
 The other side of the margin is the executors. They are measured, not estimated, and they are what
 `whole-C-2-r` spent most on: 32 executor requests, against 26 and 23 (section 1.5.5's request
@@ -1829,21 +2076,48 @@ project's) are shown apart, because arm B pays them too.
 |---|---|---|---|
 | planning, without the project's explorer | `1.3231` to `1.4924`, plus `0.2493` and `0.3219` of explorer | `0.3832` to `0.4108` | `0.45` |
 | the run's preflight | `0.0532` to `0.2067` | inside the cycle's first `next` | `0` apart |
-| sign-off without a fix task, with its review | `0.6367` to `0.9637`, review `0.2364` to `0.2472` | `0.2498` to `0.2720` | `0.30` |
+| sign-off without a fix task, with its review | `0.6367` to `0.9637`, review `0.2364` to `0.2472` | `0.2687` to `0.3002` | `0.30` |
 | the run's close | `0.2005` to `0.2457` | inside sign-off's last step and the report | `0` apart |
-| **phase overhead** | **`2.9071` to `3.3509`**, with fix tasks and explorers | **`0.63` to `0.68`** | **`0.75`**, 1.37 times A's mean |
-| each fix task | `0.3990`, `0.5580` | `0.1232` in `whole-C-3` | under the per-task target, as a task |
+| **phase overhead** | **`2.9071` to `3.3509`**, with fix tasks and explorers | **`0.65` to `0.70`** | **`0.75`**, 1.37 times A's mean |
+| each fix task | `0.3990`, `0.5580` | `0.1192` in `whole-C-3`, `0.1045` in `whole-C-1` | under the per-task target, as a task |
+| under G1, the per-task review carried to the phase | in the cycle today: reviewers `0.1895` to `0.1953`, plus their dispatches | `0.1482` to `0.2552` (C14) | none set; see below |
 
 Planning without the explorer is derived: 0.3988, 0.6601 − 0.2493 and 0.7051 − 0.3219. Sign-off
-without a fix task is the sign-off formula at 4 requests:
+without a fix task is section 5.1's sign-off at `S` = 4:
 
-- `whole-C-3`: 0.2e-6 × 4 × 45358 + 8.0e-6 × 2400 + 20e-6 × 2000 + 0.1715 + 0.005 = `0.2720`;
-- `whole-C-1`, on its own readings: `0.2693`;
-- `whole-C-2-r`: `0.2498`.
+- `whole-C-3`: `main(4, 46022, 2999, 2648)` + 0.1715 + 0.0141 = 0.1147 + 0.1715 + 0.0141 = `0.3002`,
+  where `W_s` = 3 × 250 + 80 + 2055 + 114 and `O_s` = 3 × 250 + 1898;
+- `whole-C-1`, on its own readings: `0.2902`;
+- `whole-C-2-r`: `0.2687`.
 
-The phase overhead is the sum of the two, for example 0.3988 + 0.2720. The fix task is three
-requests at 45358 tokens plus its recorded executor:
-3 × (0.2e-6 × 45358 + 8.0e-6 × 600 + 20e-6 × 250) + 0.0666 = `0.1232`.
+The phase overhead is the sum of the two, for example 0.3988 + 0.3002. A fix task is what its three
+requests and its recorded executor add to sign-off: the sign-off with it less the sign-off without,
+`0.4194 − 0.3002` = `0.1192` in `whole-C-3`. The revision at `b72372f7` gave sign-off `0.2498` to
+`0.2720`, a phase overhead of `0.63` to `0.68` and a fix task of `0.1232`. It read a flat `P′` +
+4000 a request, wrote 600 a request, and took the report at 1000 and the filing request at `0.005`.
+
+**Rung 1's sign-off has no margin left in `whole-C-3`, where it passes its budget at `0.3002`.** The
+budget stays at `0.30`, because a budget moved to fit its prediction checks nothing. What would
+break it, each estimate doubled, with the planning and sign-off model of section 5.1 and no fix
+task:
+
+| Estimate | Value | Doubled | Sign-off | Phase overhead |
+|---|---|---|---|---|
+| as predicted | | | `0.2687` to `0.3002` | `0.6519` to `0.7009` |
+| sign-off requests | 4 | 8 | `0.3363` to `0.3709` | `0.7195` to `0.7751` |
+| sign-off output per request, writes tied | 250 tokens | 500 | `0.2899` to `0.3214` | `0.6731` to `0.7222` |
+| the triage print | the phase reviewer's hand-back | twice | `0.2823` to `0.3173` | `0.6655` to `0.7160` |
+| planning requests | 5 | 10 | unchanged | `0.6767` to `0.7298` |
+| thin bodies, written in planning and read throughout | 4500 tokens | 9000 | `0.2723` to `0.3038` | `0.6937` to `0.7428` |
+
+Only doubled sign-off requests take the phase overhead over `0.75`. `whole-C-3`'s sign-off is over
+`0.30` as predicted, by `0.0002`, and each doubled sign-off row moves it further.
+
+**Under G1 the phase overhead is `0.7984` to `0.9524`**, over its `0.75` budget on either estimate of
+the carrying (C14). That is the per-task review's work arriving at the phase, not new work. Whether
+the budget absorbs it, or the carried review is budgeted as a part of its own and held to its own
+value test below, is the user's (section 8, decision 1). No figure is set for it here, because a
+budget written to fit a prediction would check nothing.
 
 **Value tests.** Each phase-level step names what it must catch to stay, and where that is read. A
 step that costs no model request stays at no cost. Its value test applies the day it needs one.
@@ -1857,6 +2131,7 @@ step that costs no model request stays at no cost. Its value test applies the da
 | findings bookkeeping | nothing to catch: it is a cost | requests per finding | one request per finding, `0.1253` to `0.4305` | one batch call (T10) |
 | fix tasks | a change a graded measure or a later review reads | the fix task's diff and the after-study's grade | tests added for low findings, nothing graded moved | each fix task becomes a named decision in triage, printed with its predicted price |
 | per-task intent review, if kept per task | a finding that changes the task's commit before it lands | the stream: a `finding` call followed by a re-spawn, not a commit | none: both tasks with findings were committed in the request that recorded them | moves to the phase under G1 |
+| the per-task review carried to the phase, under G1 | a `diverges`, a `not-proved` on a `tdd` task, or a flagged inherited test, acted on before the merge | the phase review's filed return, per task, and the triage decision | per task, every review answered `matches`, red-first `proved` or `could-not-prove`, inherited tests `not-asked` (the review command) | runs under G1. If the after-study shows none of the three acted on, its price is the user's to weigh |
 
 **The value lever the evidence names.** No step today compares the plan with the request, so no
 step can catch the class of failure every arm shared. The phase review's computed brief gains the
@@ -1973,7 +2248,7 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
 | T8 | trimmed agent prompts; the agents' own `submit` | 1 | `measure-context.py` agent totals | offline |
 | T9 | planning in one batch, with the request's open choices | 1 | the batch verb's cases; the `add` body's size | offline |
 | T10 | sign-off as one step; findings in one call | 1 | a drive through sign-off | offline |
-| T11 | the probe, then the full benchmark | — | one single-task paid probe, then three sessions | about `0.64`, then about `5.6` |
+| T11 | the probe, then the full benchmark | — | one single-task paid probe, then three sessions | about `0.66`, then about `5.8` |
 | T12 | optional: the TTL trade in the doctor | — | twin synthetic sessions | offline |
 
 ### T1 — The instruments read what this design predicts
@@ -2050,7 +2325,9 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
     report, as text. So their final requests were not missing, and the rebuild counts each twice.
     In `whole-C-1` the two dispatches launched that way sum to its row exactly. In `whole-C-2-r`
     no set of its dispatches whose last request is text alone does, so its row is not yet
-    explained. The fault is the final-request rebuild's, not the result reading's, and it moves
+    explained. Its two launched that way, `RKf8vq` and `MMJ2sv`, rebuilt finals of cacheR 33634
+    and 32179 in their `dispatch` lines, 65813 together. That leaves −5043 of its −70856 with no
+    cause named. The fault is the final-request rebuild's, not the result reading's, and it moves
     cost between one model's stages, never out of the session.
   - What follows the cycle holds sign-off, any fix task it runs and the run's close. T1 prints them
     as three parts, bounded as section 1.5.2 bounds them. A fix task runs from an `add` after the
@@ -2060,7 +2337,13 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
     the write is split among the request's other sources at 0.01 bytes per token (section 1.5.7).
   - **Added by the cost target.** A dispatch whose tool result is the async-launch notice keeps its
     last visible request as its final and rebuilds none. That removes the rebuild fault's phantom
-    final (section 1.5.7), and the `unattributed` row it leaves.
+    final (section 1.5.7), and the part of the `unattributed` row it explains. In `whole-C-3` and
+    `whole-C-1` that is the whole row. In `whole-C-2-r` it is 65813 of 70856.
+  - **Added by the fourth review.** Before a target is set for `whole-C-2-r`'s row, T1 names the
+    cause of its remaining −5043. The investigation is offline: list that session's dispatches by
+    how each was launched and how its last visible request ends (section 10's dispatch command), and
+    set each rebuilt final's cacheR against what the stream shows of that agent. The target for
+    that session follows from what it finds, and none is set before.
   - **Added by the cost target.** The span command's other readings become the tool's own: the
     prefix the cycle's first request read, by origin; what the cycle read, by origin; and each
     dispatch's start, read and written.
@@ -2090,8 +2373,9 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
     - the spans and their billed figures print as section 1.5.2's table;
     - `whole-C-3`'s two `/audit:phase` injections print as `command body` rows of about 15900 and
       16200 tokens, from 42897 and 42894 bytes;
-    - the `unattributed` row is gone, and each model's total is unchanged (`4.856048` and
-      `0.770360` for `whole-C-3`);
+    - on `whole-C-3` and `whole-C-1`, the `unattributed` row is gone, and each model's total is
+      unchanged (`4.856048` and `0.770360` for `whole-C-3`). On `whole-C-2-r` it is −5043, not
+      −70856, with the same totals, until the investigation above names the rest;
     - a twin pair of synthetic streams, one launching an agent in the background and one in the
       foreground, prices the agent the same in both.
   - Each new selftest case is shown red before it is trusted.
@@ -2173,6 +2457,18 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
   description and filed return, and one fixed question: where does a task choose something the
   request leaves open? (section 5.4). Its case: a brief computed for a phase with a saved request
   holds that text byte-identical, and one with none says so rather than leaving the field empty.
+- **Added by the fourth review: what that brief carries per task under G1.** With `review.perTask:
+  phase` (T6), the brief also carries, for each task, its commit SHA and declared files, its recorded
+  gate run, and its `tests.gate` commands resolved through `meta.buildCommands`. It asks the three
+  per-task questions of each task: the intent binding against `git show <sha> -- <files>`, the
+  red-first grade, and the inherited-test question bounded by that task's `tests.gate` (C14). Its
+  cases:
+  - a brief computed for a phase of three tasks holds each task's SHA, files and `tests.gate`
+    byte-identical to the plan's;
+  - a task whose `tests.gate` names a `key:project` entry the plan cannot resolve is printed with
+    that entry unresolved and says so, rather than dropping it;
+  - a brief for a task with no commit yet is refused, writing nothing, because the binding would
+    have no diff. Without that half, a brief that carried a missing SHA as empty would pass.
 - **Target** (`python3 tools/stream-cost.py <session>/stream.jsonl`, with T1's task cycle). Each
   reading is taken inside the cycle and divided by the tasks it holds, as C3's *Confirming reading*
   says:
@@ -2180,8 +2476,9 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
   - the cycle's main-loop output at most 1500 tokens per task. Rung 1 predicts 1167, an estimate:
     14 requests × 250 / 3 tasks. The target before the cost target was 2350, with `feature-C-1` at
     11374 and the whole-feature sessions at 6461 to 7550 (section 1.5.4: 19382 / 3, 22650 / 3);
-  - the tokens the cycle's requests put into the main loop, at most 1500 per task. Rung 1 predicts
-    1000. The target was 7400 before.
+  - the tokens the cycle's requests put into the main loop, at most 2000 per task. Rung 1 predicts
+    1555, with the writes tied to the output (section 5.1: 4664 / 3). The target was 7400 before
+    the cost target, then 1500 against an untied prediction of 1000, which the tie puts above it.
 - **Micro-test:** the filing verb's and the brief's cases, offline. On T11's probe, the readings
   above.
 
@@ -2229,24 +2526,41 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
 
 - **Files:** the config schema and `_config_rules.py` for `review.perTask` (`always` by default;
   `phase` for G1; `signals` for G2), the panel's control, the doctor's line, the driver's step (T4),
-  the phase reviewer's brief (T3), and the sign-off verb in `audit-task.py`.
+  the phase reviewer's brief (T3), the plan schema's intent answers, and `done --from-return` and
+  the sign-off verb in `audit-task.py`.
 - **Mechanism.**
-  - Under `phase`, the driver dispatches no per-task reviewer. The phase reviewer's brief carries
-    every task's return and description, and asks for one binding per task. The sign-off verb
-    refuses, writing nothing, while any task of the phase lacks an intent answer from that review or
-    a `not-asked` with its basis.
+  - Under `phase`, the driver dispatches no per-task reviewer. The phase reviewer's brief carries,
+    for each task, what T3 lists: its commit SHA and files, description, filed return, recorded run
+    and `tests.gate`. It asks the three per-task questions of each task (C14).
+  - Under `phase`, `done --from-return` records a closing task's intent as `deferred` itself, a new
+    answer in the plan schema, and refuses an `--intent` flag on a task with a diff. So a task the
+    phase review must bind cannot close as `not-asked`, which sign-off counts as answered
+    (`reference/execute-task.md:373-377` at `7b489337`). `not-asked` with its basis stays for a
+    `--no-change` close and for a fix task sign-off creates from a finding.
+  - The sign-off verb refuses, writing nothing, while any task closed `deferred` lacks any of its
+    three answers in the phase review's filed return: an intent answer, a red-first grade, and an
+    inherited-test answer, with its basis where that answer is `not-asked`. When the review answers
+    for a task, sign-off writes the answer onto that task with the task's own commit SHA, so the
+    answer still names the diff it judged.
   - Under `signals`, the driver dispatches the per-task reviewer only when the task's `redFirst` did
     not come back `proved`, or when the gate row disagrees with the filed return.
 - **Micro-test, offline:** a drive over the T4 fixture with each value:
-  - `phase` dispatches no per-task reviewer;
-  - sign-off refuses with one binding removed from the phase review's return, and passes with it
-    restored;
+  - `phase` dispatches no per-task reviewer, and every task it closes records `deferred`;
+  - under `phase`, `done --from-return --intent not-asked` on a task with a diff is refused, writing
+    nothing. A `--no-change` close with `not-asked` and its basis is accepted. Without that half, a
+    close that refused every `not-asked` would pass;
+  - a fixture whose tasks closed the G1 way, `deferred`, is refused at sign-off when one task's
+    intent answer is removed from the phase review's filed return. The same holds with its red-first
+    grade removed, and with its inherited-test answer removed. With all three restored it passes;
+  - a fixture with no `deferred` task signs off as today, so the refusal does not fire where G1 is
+    off;
   - `signals` dispatches exactly the reviewers its two conditions select;
   - `always` drives as T4 does.
 
   Each case is shown red first.
-- **Target:** the per-task ratio of section 5.1's rung for the chosen value. Its confirming
-  sessions are the after-study, run with the key set.
+- **Target:** the per-task ratio of section 5.1's rung for the chosen value, like for like and
+  against whole arm A. Under G1, the carried review's cost at sign-off is read beside it (section 7).
+  Its confirming sessions are the after-study, run with the key set.
 
 ### T7 — Terse success output (C10)
 
@@ -2356,21 +2670,26 @@ micro-tests.
 - **Setup.** A copy of the single-task harness, `fixtures/bench-feature`, that changes
   `pins.json` → `pluginSha` and nothing else. Its arm C cell, `/audit:run P1.1`, runs once.
   `feature-C-1` is its before-reading, and `feature-A-1` and `feature-A-2` are its plain reference.
-- **Expected cost.** About `0.64`, rung 1's single-task prediction with the Opus executor that
-  harness's plan names (section 5.1). It is about `0.54` if G1 has been decided first. Its stop is
+- **Expected cost.** About `0.66`, rung 1's single-task prediction with the Opus executor that
+  harness's plan names (section 5.1). It is about `0.55` if G1 has been decided first. Its stop is
   `--max-budget-usd 1.5`.
 - **What it confirms, each read with T1's rows:**
   - no `Read <plugin>/reference/` row;
   - the prefix the cycle's first request reads is at most 25000 tokens (T2);
   - the cycle's main-loop requests are at most 4 (T4);
-  - the main-loop output per request is at most 500 tokens, which is section 5.3's doubled estimate;
+  - the cycle's main-loop output per request is at most 320 tokens under G1, or 390 without it.
+    These are the points at which section 5.3's tied model puts G1's mean over 1.25, and rung 1's
+    worst session over 2.0, on the whole-A reading;
+  - the cycle's writes per task follow its output as section 5.1 ties them: at most the output plus
+    400 tokens of tool results a task, against the 388 assumed;
   - no brief above 200 tokens among the largest outputs (T3);
   - the executor's first start written is at most 16000 tokens (T8);
   - the session is at most `0.75`.
 - **What it does not confirm.** The per-task target. Its single task runs its executor on the plain
-  session's own model, where rung 1 is predicted at 2.16 times plain and only G1 brings it under 2
-  (section 5.1). A probe reading over a ceiling stops step 3 until the estimate behind it is
-  re-derived and the prediction re-computed.
+  session's own model. There rung 1 is predicted at 2.22 times plain, and G1 at 1.85, or 2.25 with
+  the review it defers charged back (section 5.1). Under G1 the probe runs no phase review, so the
+  carried review is read only in step 3. A probe reading over a ceiling stops step 3 until the
+  estimate behind it is re-derived and the prediction re-computed.
 
 **Step 3, the full benchmark.** It runs only once the probe has passed.
 
@@ -2381,21 +2700,23 @@ micro-tests.
   per arm (`benchmark-feature-design.md`, section 6), in a seeded order, at the commit that lands the
   tasks. One study is enough for every target, because each target reads its own row of
   `stream-cost.py`.
-- **Expected cost.** About `5.6` for the three: rung 1's predicted sessions, 1.7340 + 1.9347 + 1.9550.
-  It is about `4.8` under G1: 1.4619 + 1.6584 + 1.6924. Re-run `python3 <h2>/estimate.py` before
-  agreeing a budget, since it does not model this design.
+- **Expected cost.** About `5.8` for the three: rung 1's predicted sessions, 1.7950 + 1.9874 + 2.0105.
+  It is about `5.6` under G1, on C14's upper estimate of the carried review: 1.7306 + 1.9147 +
+  1.9464. Re-run `python3 <h2>/estimate.py` before agreeing a budget, since it does not model this
+  design. The revision at `b72372f7` gave `5.6` and `4.8`.
 
 **This study's protocol is the whole-feature benchmark's, and it lands with that benchmark's phase,
 not with this one** (section 0). Until that phase merges, the sections cited here are read at
 `a289dcbb`.
 
-| Target | Row read per session | Rung 1 predicts |
+| Target | Row read per session | Predicted |
 |---|---|---|
-| **the per-task ratio** | the cycle's billed cost (T1's cycle, main loop + its agents) ÷ `0.547004` | at most 2.0 in every session: 1.64 to 1.83. Under G1, the ideal is at most 1.25: 1.09 to 1.30 |
-| **the whole-feature ratio** | `all models priced` ÷ `0.547004` and ÷ `0.843470` | 3.17 to 3.57, and 2.06 to 2.32 |
-| **the phase overhead** | planning + sign-off + the close, less the project's own agents and fix tasks | at most `0.75` |
+| **the per-task ratio** | the cycle's billed cost (T1's cycle, main loop + its agents) ÷ `0.459507`, arm A less its first and last main-loop requests (the open-and-close command), which is the reading the target is taken to mean (section 0.2). ÷ `0.547004` is printed beside it | the ceiling is at most 2.0 in every session. Rung 1 predicts 2.03 to 2.26, over it in every session, and 1.70 to 1.90 against whole arm A. G1 predicts 1.33 to 1.59, under it in every session, and over the ideal of 1.25 in every session. Against whole arm A G1 is 1.12 to 1.33 |
+| **the whole-feature ratio** | `all models priced` ÷ `0.547004` and ÷ `0.843470` | rung 1 3.28 to 3.68, and 2.13 to 2.38; G1 3.16 to 3.56, and 2.05 to 2.31 |
+| **the phase overhead** | planning + sign-off + the close, less the project's own agents and fix tasks | at most `0.75`. Rung 1 predicts `0.65` to `0.70`, and G1 `0.80` to `0.95` with the carried review (section 5.4) |
+| under G1, the carried review | the sign-off reviewer's dispatch, billed (the billed-span command over its request), less the recorded phase review's `0.1522` to `0.1715` | `0.1482` to `0.2552` (C14) |
 | T2 | the prefix the cycle's first request read, by origin; `Read <plugin>/reference/…` rows | no reference rows; prefix at most 50000 |
-| T3 | inside the cycle, per task: briefs among its largest outputs, its main-loop output, its writes | none above 200; at most 1500 and 1500 |
+| T3 | inside the cycle, per task: briefs among its largest outputs, its main-loop output, its writes | none above 200; at most 1500 and 2000 |
 | T4 | inside the cycle: main-loop requests per task, waves apart | at most 4, plus 2 a wave |
 | T8 | each dispatch's start written | the first executor at most 16000 |
 | T10 | sign-off's main-loop requests, a fix task apart | at most 4 |
@@ -2435,27 +2756,64 @@ this design's saving.
 
 ## 8. Decisions that are the user's
 
-1. **Where the per-task intent check runs (C5, C14).** Rung 1 meets the per-task ceiling on the
-   whole-feature sessions, 1.64 to 1.83 times plain. It meets neither the ideal there nor the
-   ceiling for a single task whose executor shares plain's model, 2.16 on `feature-C-1`
-   (section 5.1).
-   - (a) Keep the review on every task. Rung 1 as predicted.
+1. **Where the per-task review runs, and what it returns (C5, C14).** The user chose G1 on this
+   decision's earlier wording. That wording named one thing moving, "the per-task intent check". It
+   is restated here with the full list, for the user to confirm.
+
+   **What the per-task review returns today**, before each task commits (C14):
+   - the intent binding: does the diff do what the description asked, and does the claim describe
+     the diff;
+   - the red-first grade, with a `not-proved` on a `tdd` task sent to a human;
+   - the inherited-test question, bounded by the task's `tests.gate`.
+
+   **Which plain figure the target means is part of this decision.** Section 0.2 prints the per-task
+   ratio against arm A less its open and close, and against whole arm A. It takes the first, like for
+   like, as the target's meaning. Like for like, rung 1 is 2.03 to 2.26 times plain and misses the
+   ceiling in every session. Against whole arm A it is 1.70 to 1.90. On `feature-C-1`'s single task,
+   a whole session against whole plain sessions, it is 2.22 (section 5.1).
+   - (a) Keep the review on every task. This is rung 1 as predicted, with all three answers before
+     the commit.
    - (b) G2: add `review.perTask: signals` with a default of `always` (minor). The review then runs
      only on R8's two computed conditions: a `redFirst` that did not come back `proved`, and a gate
-     row that disagrees with the filed return. Never on the self-declared `task.risk` (C5,
-     *Guarantees*). Predicted 1.26 to 1.47 on the whole-feature sessions.
-   - (c) G1: add `review.perTask: phase` with a default of `always` (minor). The phase review binds
-     every task's claim to its description, and sign-off refuses a phase with a task unbound.
-     Predicted 1.09 to 1.30 on the whole-feature sessions, a mean of 1.19, and 1.81 on
-     `feature-C-1`'s single task.
+     row that disagrees with the filed return. It never runs on the self-declared `task.risk` (C5,
+     *Guarantees*). A task it does not review gets none of the three answers, and nothing carries
+     them. Predicted at 1.55 to 1.80 like for like, and 1.30 to 1.51 against whole arm A.
+   - (c) G1: add `review.perTask: phase` with a default of `always` (minor). No reviewer runs per
+     task. Each of the three answers is carried into the phase reviewer's computed brief, per task,
+     with the task's commit SHA, files, filed return, recorded run and `tests.gate`. Each such task
+     closes `deferred`, not `not-asked`. Sign-off refuses while any `deferred` task lacks any of its
+     three answers (section 5.2, T3, T6). What is given up is the timing: each answer arrives before
+     the merge, not before the commit.
+     - Predicted on the cycle: 1.33 to 1.59 like for like, a mean of 1.45, and 1.12 to 1.33 against
+       whole arm A, a mean of 1.22.
+     - Carrying costs `0.1482` to `0.2552` a session at sign-off. Charged back to the cycle, that is
+       1.66 to 2.12 like for like. The phase overhead is then predicted at `0.80` to `0.95` against
+       its `0.75` budget (section 5.4).
+     - On `feature-C-1`'s single task it is 1.85, or 2.25 with the deferred review charged back.
    - (d) Either of the above as the default: a major release (section 2).
 
-   **Recommendation: (c), G1.** It is the only option that reaches the ideal on the arm's mean and the
-   ceiling in the single-task shape. It also puts the check where its findings were acted on in every
-   recorded case (section 1.6). The consequence to publish: a misread task is found before the merge,
-   not before its commit, and repaired by a fix task. Keeping (a) is coherent if the per-task timing
-   is wanted for itself. Then the ideal is out of reach, and so is the single-task ceiling with an
-   executor on plain's model.
+   **Against the target, plainly.** The 2.0 ceiling like for like: rung 1 misses it in every
+   session, and G1 and G2 meet it in every session, on the cycle as section 0.2 defines it. With its
+   carried review charged back, G1 reaches 2.12 in `whole-C-2-r` on the upper estimate. The 1.25
+   ideal: no option reaches it like for like. G1 reaches it only against whole arm A, on the mean,
+   with a margin of `0.0163` that doubling any one of four estimates removes (section 5.3).
+
+   **Recommendation: (c), G1, carrying all three answers.** It keeps every answer the per-task
+   review gives, each still bound to its task's own commit, and moves only their timing. It moves
+   them to where the findings were acted on in every recorded case (section 1.6). (b) gives answers
+   up instead of moving them, on a trigger that measures the red-first helper's limit.
+
+   The facts about (c) that are not reasons for it:
+   - it saves `0.0641` to `0.1739` a session against (a), where (b) saves `0.2117` to `0.2212`. The
+     review's work moves to the phase rather than leaving;
+   - it takes the phase overhead over its budget. So choosing (c) also means deciding whether the
+     `0.75` budget absorbs the carried review or the review gets a budget line of its own
+     (section 5.4).
+
+   The consequence to publish: a misread task, a `not-proved` red-first or a vacuous inherited test
+   is found before the merge, not before its commit, and is repaired by a fix task. Keeping (a) is
+   coherent if the per-commit timing is wanted for itself. Then the ceiling is missed like for like
+   in every session.
 2. **The light path (C1).**
    - (a) Do not build it.
    - (b) Build it behind a key that defaults off. The README's enforced row then has to say it does not
@@ -2464,7 +2822,7 @@ this design's saving.
 
    **Recommendation: (a).** C1 in section 3 predicts that its inline part costs more than it saves
    once C3 lands, and it is the one option that gives up an enforced row. Re-priced at rung 1's prefix
-   with a hook holding the tool rule (C15), it still costs about `0.065` more a session.
+   with a hook holding the tool rule (C15), it still costs about `0.044` more a session.
 3. **Where a filed return lives (C3).**
    - (a) The committed evidence directory, so an executor's claim is part of the record a clone
      receives.
@@ -2482,8 +2840,8 @@ this design's saving.
 4. **The spend on the confirming measurements.** The baseline is run and decomposed (sections 1.5 and
    1.6). What remains is the user's order (section 7):
    - the offline micro-tests, at no cost;
-   - one single-task probe, about `0.64` (about `0.54` under G1), stopped at `1.5`;
-   - the full benchmark's three arm C sessions, about `5.6` (about `4.8` under G1).
+   - one single-task probe, about `0.66` (about `0.55` under G1), stopped at `1.5`;
+   - the full benchmark's three arm C sessions, about `5.8` (about `5.6` under G1).
 
    **Recommendation:** agree both budgets now, so that step 3 is not waiting on a decision once
    step 2 passes.
@@ -2494,9 +2852,10 @@ this design's saving.
      sessions (the gap command). The one-hour write bought nothing there.
    - **Priced.** At five minutes, today's main-loop writes would have cost three eighths less:
      211809, 194155 and 216860 tokens × 3.0e-6 = `0.6354`, `0.5825` and `0.6506` (`cacheW1h` of the
-     `plan`, `gate` and `close` rows). Under rung 1 the main loop writes 31265 to 41114 tokens in a
-     session, an estimate (`P′` less what was cached, plus the cycle's 3000 and sign-off's 600 a
-     request), so the difference falls to `0.094` to `0.123`.
+     `plan`, `gate` and `close` rows). Under rung 1 the main loop writes 33117 to 42331 tokens in a
+     session, an estimate: `P′` less what was cached, plus the cycle's writes and sign-off's, each
+     tied to its output as section 5.1 ties them. So the difference falls to `0.099` to `0.127`.
+     The revision at `b72372f7` gave 31265 to 41114 tokens and `0.094` to `0.123`.
 
    **Recommendation:** a doctor line prints this trade from a recorded session of the user's own: the
    longest main-loop gap, and what each TTL would have cost, computed as here (T12). Whether the usage
@@ -2568,7 +2927,10 @@ And from the records:
 | each dispatch's tool calls (section 1.5.5) | the agent-calls command below; it reads the stream alone |
 | each arm C plan's intent answers and findings (section 1.6) | the findings command below, on the fixture `<x2>/<session>/run-meta.json` → `repo` names |
 | the nine sessions' totals, requests, output pools and `$/request` (section 1.5.1) | `python3 tools/stream-cost.py <x2>/<session>/stream.jsonl`, its `pricing:`, `contexts:` and `output pool` lines |
-| rung 1, G2 and G1 (section 5.1) | the arithmetic written there, on the span command's readings |
+| a session's first and last main-loop request, and the session less both: arm A's open and close, and arm C's final report (sections 0.2, 5.1) | the open-and-close command below, from a checkout of the result-reading commit |
+| how much of the main loop's output came back as its own cache writes (section 5.1) | the write-back command below, from the same checkout |
+| each dispatch's brief and hand-back bytes, the review's three answers, and its work beyond its start, billed and at Opus rates (C14, section 5.1) | the review command below, with the first and last main-loop request, from the same checkout |
+| rung 1, G2 and G1, and every doubled row (sections 5.1, 5.3, 5.4) | the arithmetic written in section 5.1, on the span, open-and-close, write-back and review commands' readings and `contexts:` → `$/request` |
 
 ```
 python3 - <(git show 7b489337:plugins/audit/reference/orchestrator.md) <<'EOF'
@@ -2895,10 +3257,106 @@ for l in open(sys.argv[1], encoding="utf-8"):
 EOF
 ```
 
-The findings command reads an arm C fixture's final plan, read-only. It prints each task's test mode
-and intent answer, then each phase finding with its severity, its fix task and the start of its
-resolution.
+The findings command reads an arm C fixture's final plan, read-only. It prints each task's test
+mode, its `tests.gate` and its intent answer, then each phase finding with its severity, its fix
+task and the start of its resolution. The `tests.gate` column was added by the fourth review. Every
+task of the three arm C plans printed `['test']` there.
 
 ```
-git -C <fixture> show main:docs/audit/audit-plan.json | python3 -c "import json,sys; m=json.load(sys.stdin); [print(t['id'], t['tests']['mode'], (t.get('intentCheck') or {}).get('answer')) for p in m['phases'] for t in p['tasks']]; [print(f['id'], f['severity'], f.get('fixTask'), f['resolution'][:50]) for p in m['phases'] for f in (p.get('review') or {}).get('findings') or []]"
+git -C <fixture> show main:docs/audit/audit-plan.json | python3 -c "import json,sys; m=json.load(sys.stdin); [print(t['id'], t['tests']['mode'], t['tests'].get('gate'), (t.get('intentCheck') or {}).get('answer')) for p in m['phases'] for t in p['tasks']]; [print(f['id'], f['severity'], f.get('fixTask'), f['resolution'][:50]) for p in m['phases'] for f in (p.get('review') or {}).get('findings') or []]"
 ```
+
+The open-and-close command takes a stream. It prints the session's total, the cost of its first
+and last main-loop requests with the last one's output, their share, and the session less both.
+
+```
+python3 - <x2>/<session>/stream.jsonl <<'EOF'
+import importlib.util as u, sys
+s = u.spec_from_file_location("sc", "tools/stream-cost.py"); sc = u.module_from_spec(s); s.loader.exec_module(sc)
+r = sc.analyse(sc.load_events(sys.argv[1])); c = r["costs"]
+main = [q for q in r["requests"] if q["context"] == sc.MAIN and not q["reconstructed"]]
+total = sum(c[q["id"]]["total"] for q in r["requests"])
+a, z = c[main[0]["id"]]["total"], c[main[-1]["id"]]["total"]
+print("total %.6f; first %.6f, last %.6f (output %.0f); both %.1f%%, the session less both %.6f" % (
+    total, a, z, (r["output"] or {}).get(main[-1]["id"], 0.0), 100 * (a + z) / total, total - a - z))
+EOF
+```
+
+On `whole-A-1`, `whole-A-2` and `whole-A-3` it printed first and last `0.041093` and `0.038185`,
+`0.048586` and `0.046934`, `0.040731` and `0.046963`. The shares were 15.7, 15.9 and 16.4 percent,
+and the sessions less both `0.426059`, `0.505162` and `0.447301`. On `whole-C-3`, `whole-C-1` and
+`whole-C-2-r` the last request's output was 1898, 1729 and 1722, and on `feature-C-1` 1239.
+
+The write-back command takes a stream and, optionally, a first and last main-loop request. It sums
+the requests' measured output, and the main loop's own output the tool books as written into the
+cache at the request after each one.
+
+```
+python3 - <x2>/<session>/stream.jsonl [<first> <last>] <<'EOF'
+import importlib.util as u, sys
+s = u.spec_from_file_location("sc", "tools/stream-cost.py"); sc = u.module_from_spec(s); s.loader.exec_module(sc)
+r = sc.analyse(sc.load_events(sys.argv[1]))
+main = [q for q in r["requests"] if q["context"] == sc.MAIN and not q["reconstructed"]]
+lo, hi = (int(sys.argv[2]), int(sys.argv[3])) if len(sys.argv) > 3 else (1, len(main))
+made = dict((main[i]["id"], i) for i in range(1, len(main)))
+out = sum((r["output"] or {}).get(q["id"], 0.0) for q in main[lo - 1:hi])
+back = sum(it["tokens"] for it in r["content"]["items"] if not it.get("base") and it["source"].startswith("output:")
+           and lo <= made.get(it["request"], 0) <= hi)
+print("requests %d-%d: output %.0f, written back as the loop's own output %.0f, %.2f" % (lo, hi, out, back, back / out))
+EOF
+```
+
+On the three arm A sessions, whole, it printed 0.82, 0.79 and 0.86. On the arm C cycles, `15 36`,
+`12 34` and `15 42`, it printed 0.97, 1.02 and 1.32. On `whole-C-3`'s `22 23` it printed 183 and
+4251.
+
+The review command takes a stream and a first and last main-loop request. For each dispatch those
+requests made, it prints the brief's and the hand-back's bytes, and the intent, red-first and
+inherited-test words the hand-back carries. It also prints the dispatch's billed cost, its reads,
+writes and output beyond its first request's start, and those re-priced at Opus's rates.
+
+```
+python3 - <x2>/<session>/stream.jsonl <first> <last> <<'EOF'
+import importlib.util as u, json, re, sys
+s = u.spec_from_file_location("sc", "tools/stream-cost.py"); sc = u.module_from_spec(s); s.loader.exec_module(sc)
+r = sc.analyse(sc.load_events(sys.argv[1])); lo, hi = int(sys.argv[2]), int(sys.argv[3])
+main = [q for q in r["requests"] if q["context"] == sc.MAIN and not q["reconstructed"]]
+pos = dict((q["id"], i + 1) for i, q in enumerate(main))
+brief, back = {}, {}
+for l in open(sys.argv[1], encoding="utf-8"):
+    e = json.loads(l) if l.strip() else {}
+    m = e.get("message") if isinstance(e.get("message"), dict) else {}
+    for c in m.get("content") if isinstance(m.get("content"), list) else []:
+        if c.get("name") in ("Agent", "Task"):
+            brief[c["id"]] = len(((c.get("input") or {}).get("prompt") or "").encode())
+        if c.get("type") == "tool_result" and c.get("tool_use_id") in brief:
+            x = c.get("content")
+            back[c["tool_use_id"]] = x if isinstance(x, str) else "".join(t.get("text") or "" for t in x)
+for t, a in r["session"]["agents"].items():
+    qs = [q for q in r["requests"] if q["context"] == t]
+    if a["context"] != sc.MAIN or not qs or not lo <= pos.get(a["request"], 0) <= hi: continue
+    f = [q for q in qs if not q["reconstructed"]][0]
+    cr = sum(q["cr"] for q in qs) - f["cr"]; cw = sum(q["cw5"] + q["cw1"] for q in qs) - f["cw5"] - f["cw1"]
+    out = sum((r["output"] or {}).get(q["id"], 0.0) for q in qs); h = back.get(t, "")
+    words = [re.findall(r'"%s"\s*:\s*"([a-z-]+)"' % k, h)[:1] for k in ("answer", "redFirst", "inheritedTests")]
+    print("%d %s: brief %dB, hand-back %dB %s; billed %.4f; beyond its start read %d, written %d, output %.0f, %.4f at opus rates" % (
+        pos[a["request"]], a["type"], brief.get(t, 0), len(h.encode()), words, sum(r["costs"][q["id"]]["total"] for q in qs),
+        cr, cw, out, cr * 0.2e-6 + cw * 5.0e-6 + out * 20e-6))
+EOF
+```
+
+Run over each arm C session from its cycle's first request to its last request (`15 61`, `12 52`,
+`15 55`), it printed the following:
+
+- the per-task reviewers' briefs, 2373 to 4597 bytes;
+- their hand-backs, which sum to 10322, 9655 and 10251 bytes;
+- their words, `matches` in each, red-first `proved` six times and `could-not-prove` three times,
+  and inherited tests `not-asked` in each;
+- their work beyond the start at Opus rates, which sums to `0.2042`, `0.2048` and `0.1996` before
+  rounding, from 5484, 5501 and 5432 output tokens;
+- the first executors' hand-backs, 4054, 3954 and 3979 bytes;
+- the phase reviewers' hand-backs, 5404, 4610 and 4325 bytes.
+
+The background executors' hand-backs print 1188 bytes, the launch notice. On `feature-C-1` with
+`6 13` it printed the reviewer's brief at 4742 bytes, its hand-back at 3550, its work at `0.0996`,
+and the executor's hand-back at 6142.
