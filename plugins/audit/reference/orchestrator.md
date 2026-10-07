@@ -346,8 +346,11 @@ exit 3 by looking at `startedAt` yourself** — that is the rule the script exis
 
 **Release** at the END of the command, including failure paths you control — **unless the acquire
 in that step answered that the lock was already yours**, in which case it is not yours to give back.
-A resumed run whose own lock named a gone pid is answered `acquired` (re-recorded under it), so it
-releases that lock too:
+A resumed run whose own lock named a gone pid is answered `acquired` (re-recorded under the
+process `CLAUDE_PID` names), so it releases that lock too; with no `CLAUDE_PID` exported the lock
+reads dead and meets exit 4 like any other dead holder (`_locks.acquire`). A start's yielding lock
+is superseded under your note rather than re-recorded, and a hand start that re-records your lock
+keeps your note, so sign-off leaves it and the release stays yours:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py" release <name> --project <gitRoot>

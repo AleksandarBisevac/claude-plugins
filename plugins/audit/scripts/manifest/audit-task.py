@@ -3367,11 +3367,13 @@ def _take_phase_lock(git_root, phase_id, force):
     session's own from an earlier start - and it is reused, never doubled
     (`_locks.E_OURS`). A HELD LOCK NAMES A LIVE PROCESS: where this session's
     lock records a pid that is gone, `_locks.acquire` re-records it under the
-    run asking and answers that the hold is this call's now (`took`), and where
-    it records no pid `_locks.refresh` names the run asking; a lock naming a
-    live process is left naming it, since that process's release is what gives
-    it back. So a resumed session's lock does not read dead to the next session
-    while that session still holds the phase.
+    run asking and answers `0`; that is this start's take (`took`) only when the
+    lock carries `_START_LOCK_NOTE`, and `ours` otherwise - an orchestrator's
+    lock keeps its note and stays its run's to release (`_took_or_rerecorded`).
+    Where it records no pid `_locks.refresh` names the run asking; a lock naming
+    a live process is left naming it, since that process's release is what
+    gives it back. So a resumed session's lock does not read dead to the next
+    session while that session still holds the phase.
 
     The lock is taken `yields`: the orchestrator's own acquire of the same
     session re-takes it under its note, so sign-off - which releases only a lock
@@ -3391,7 +3393,7 @@ def _take_phase_lock(git_root, phase_id, force):
     code = _locks.acquire(git_root, name, note=_START_LOCK_NOTE, wait=0,
                           handed_off=True, yields=True, out=lines.append)
     if code == 0:
-        return {"state": "took", "name": name, "basis": " ".join(lines)}
+        return _took_or_rerecorded(git_root, name, " ".join(lines))
     if code == _locks.E_OURS:
         said = []
         again = _locks.refresh(git_root, name, out=said.append)
@@ -3412,13 +3414,43 @@ def _take_phase_lock(git_root, phase_id, force):
                                   handed_off=True, takeover=True, yields=True,
                                   out=again.append)
             if code == 0:
-                return {"state": "took", "name": name,
-                        "basis": "taken over: %s" % (holder["basis"],)}
+                return _took_or_rerecorded(git_root, name,
+                                           "taken over: %s" % (holder["basis"],))
             lines = again
         else:
             return {"state": "held", "name": name, "basis": holder["basis"]}
     return {"state": "none", "name": name,
             "basis": " ".join(ln.strip() for ln in lines) or "exit %s" % (code,)}
+
+
+def _took_or_rerecorded(git_root, name, basis):
+    """What an acquire answered `0` means for this start -> `_take_phase_lock`'s
+    shape.
+
+    `0` is the start's own take only when the lock on disk carries
+    `_START_LOCK_NOTE`. `_locks.acquire` also answers `0` when it re-records this
+    session's hand-off lock from a pid that is gone onto the run asking, and that
+    keeps the hold's own note: an orchestrator's lock stays the orchestrator's,
+    which sign-off and a phase cancel never release (`_release_start_lock`) and a
+    failed start must not give back (`undo_lock`). So that lock is `ours`, with
+    a basis read off the lock file, never acquire's line - which tells an
+    orchestrator, not this verb, that the hold is its own to release.
+    """
+    ld = _locks.lock_dir(git_root)
+    info = _locks.read_lock(os.path.join(ld, name + ".lock")) if ld else {}
+    note = info.get("note")
+    if note == _START_LOCK_NOTE:
+        return {"state": "took", "name": name, "basis": basis}
+    if info.get("refreshedFrom") is not None:
+        how = ("re-recorded under pid %s, the run asking, from pid %s, which is "
+               "gone" % (info.get("pid"), info.get("refreshedFrom")))
+    else:
+        how = "read back holding pid %s" % (info.get("pid"),)
+    return {"state": "ours", "name": name,
+            "basis": "%s; the lock keeps its own hold's note (%s), not the "
+                     "start's, so the run that took it releases it - sign-off "
+                     "and a phase cancel leave it"
+                     % (how, note or "none recorded")}
 
 
 def _lock_refusal(phase_id, lock):
@@ -4002,9 +4034,10 @@ def _locked_start(args, project, config, mpath, tid, out):
     snap = None
 
     def undo_lock():
-        # Once only, and only a lock this start took: a reused lock belongs to
-        # the hold that owns it, and a second release would ask about a lock
-        # this start no longer has.
+        # Once only, and only a lock this start took: a reused lock - an
+        # orchestrator's re-recorded from a dead pid included - belongs to the
+        # hold that owns it, and a second release would ask about a lock this
+        # start no longer has.
         if lock and lock["state"] == "took" and not undone:
             undone.append(True)
             _locks.release(git_root, lock["name"], out=lambda _line: None)

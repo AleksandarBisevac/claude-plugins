@@ -5937,6 +5937,63 @@ def _cases(check):
                   lv20_a["code"] == 0 and lv20_b["code"] == 2
                   and lv_shard_bytes(lv20_proj, lv20_mp) == lv20_before
                   and _locks.read_lock(lv_path(lv20_proj)) == lv20_lock)
+
+            # A START REPORTS A LOCK AS ITS OWN TAKE ONLY WHEN IT IS THE START'S.
+            # A resumed session's start re-records its own lock from a dead pid
+            # onto the live one; when that lock is the orchestrator's, sign-off
+            # leaves it (it releases only the start's note), so the start's line
+            # must not promise sign-off gives it back. The twin runs the same
+            # flow over a lock the start itself took.
+            def lv_resumed_flow(name, orchestrated):
+                p0, p1 = lv_sleeper(), lv_sleeper()
+                _lv_procs.extend([p0, p1])
+                proj, _mp = pc_repo(name)
+                acq = (lv_lock(proj, ["acquire", "phase-P3", "--note",
+                                      "phase run"], "s-lv-a", p0.pid)
+                       if orchestrated else (0, ""))
+                first = lv_start(proj, "s-lv-a", p0.pid)
+                lv_kill(p0)
+                again = lv_call(_lv_task_py, proj,
+                                ["start", "P3.1", "--project-dir", proj],
+                                "s-lv-a", p1.pid)
+                so = lv_signoff(proj, "s-lv-a", p1.pid)
+                held = (_locks.read_lock(lv_path(proj))
+                        if os.path.exists(lv_path(proj)) else None)
+                return {"acq": acq[0], "first": first["code"],
+                        "again": again[0], "line": lv_lock_lines(again[1]),
+                        "so": so[0], "soLines": lv_lock_lines(so[1]),
+                        "held": held, "p0": p0.pid, "p1": p1.pid}
+
+            lv23 = lv_resumed_flow("lv-resumed-orch", True)
+            lv23_line = "".join(lv23["line"])
+            lv23_held = lv23["held"] or {}
+            check("lv23 a resumed hand start over the orchestrator's 'phase run' "
+                  "lock whose pid died does NOT call it its own take: its line "
+                  "says the lock was re-recorded and keeps its hold's note, and "
+                  "after sign-off the lock file agrees - still held, note "
+                  "'phase run', pid of the live run, refreshedFrom the dead one: %r"
+                  % (lv23,),
+                  lv23["acq"] == 0 and lv23["first"] == 0 and lv23["again"] == 0
+                  and len(lv23["line"]) == 1
+                  and "re-recorded" in lv23_line and "phase run" in lv23_line
+                  and "gives it back" not in lv23_line
+                  and "taken for this session" not in lv23_line
+                  and lv23["so"] == 0 and not lv23["soLines"]
+                  and lv23_held.get("note") == "phase run"
+                  and lv23_held.get("pid") == lv23["p1"]
+                  and lv23_held.get("refreshedFrom") == lv23["p0"])
+            lv24 = lv_resumed_flow("lv-resumed-start", False)
+            lv24_line = "".join(lv24["line"])
+            check("lv24 ALLOW: the same flow over a lock the start itself took "
+                  "is the start's take - its line says sign-off gives it back, "
+                  "and sign-off does release it: %r" % (lv24,),
+                  lv24["first"] == 0 and lv24["again"] == 0
+                  and len(lv24["line"]) == 1
+                  and "taken for this session" in lv24_line
+                  and "gives it back" in lv24_line
+                  and lv24["so"] == 0
+                  and any("released phase-P3" in ln for ln in lv24["soLines"])
+                  and lv24["held"] is None)
         finally:
             for _lv_proc in _lv_procs:
                 lv_kill(_lv_proc)
@@ -5993,6 +6050,40 @@ def _cases(check):
             check("lv11 ALLOW: with nothing injected the same start keeps the lock "
                   "it took: %r" % (lv11_code,),
                   lv11_code == 0 and os.path.exists(lv_path(lv11_proj)))
+
+            # A FAILED START GIVES BACK ONLY A LOCK THAT IS THE START'S. This
+            # session's lock naming a dead pid is re-recorded under the run
+            # asking either way; the orchestrator's stays for its run to release,
+            # and the start's own is given back with the rolled-back write.
+            def lv_failed_resume(name, note):
+                proj, _mp = pc_repo(name)
+                ld = _locks.lock_dir(proj)
+                os.makedirs(ld, exist_ok=True)
+                _panel_write._atomic_write_json(
+                    lv_path(proj),
+                    {"sessionId": "s-lv-x", "pid": pc_gone_pid(),
+                     "hostname": platform.node(), "handedOff": True,
+                     "startedAt": "2026-01-01T00:00:00Z", "note": note})
+                M._start_task = lv_boom
+                try:
+                    code, _txt = run(["start", "P3.1", "--project-dir", proj])
+                finally:
+                    M._start_task = _lv_start_task
+                return {"code": code,
+                        "lock": (_locks.read_lock(lv_path(proj))
+                                 if os.path.exists(lv_path(proj)) else None)}
+
+            lv25 = lv_failed_resume("lv-raise-orch", "phase run")
+            check("lv25 a failed start over this session's 'phase run' lock "
+                  "naming a dead pid leaves that lock in place, re-recorded "
+                  "under the live run with its note kept: %r" % (lv25,),
+                  lv25["code"] != 0 and lv25["lock"] is not None
+                  and lv25["lock"].get("note") == "phase run"
+                  and lv25["lock"].get("pid") == os.getpid())
+            lv26 = lv_failed_resume("lv-raise-startnote", M._START_LOCK_NOTE)
+            check("lv26 ALLOW: the same failed start over the start's own lock "
+                  "naming a dead pid gives that lock back: %r" % (lv26,),
+                  lv26["code"] != 0 and lv26["lock"] is None)
 
             # A RAISE AFTER THE WRITE LANDED restores the claim WITH the lock:
             # giving back only the lock left a claim no lock stood behind. The
