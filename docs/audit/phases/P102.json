@@ -82,31 +82,39 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/stamp-verification.py _decisive_line and error readers",
         "issue": "Escapes are stripped only on entry to the tally and failing-case readers, so a coloured run's persisted basis carries raw escape bytes and a coloured error gutter is not matched.",
-        "resolution": "Read the plain text once in the decisive-line and error readers; a case that a coloured jest red's basis holds no escape, with an uncoloured twin."
+        "resolution": "fixed in P102.14-ptn (d0f7fe04): Read the plain text once in the decisive-line and error readers; a case that a coloured jest red's basis holds no escape, with an uncoloured twin.",
+        "fixTask": "P102.14-ptn",
+        "commit": "d0f7fe04"
       },
       {
         "id": "P102-R8",
         "severity": "low",
         "file": "plugins/audit/scripts/_output.py _prints_usage_block",
         "issue": "A usage write is recognised only as a bare positional name, so a dispatcher writing the usage block inside a format expression would escape the widened lint.",
-        "resolution": "Walk each call argument so a usage name nested in a format expression counts; a case for that shape with a hinted twin."
+        "resolution": "fixed in P102.14-ptn (d0f7fe04): Walk each call argument so a usage name nested in a format expression counts; a case for that shape with a hinted twin.",
+        "fixTask": "P102.14-ptn",
+        "commit": "d0f7fe04"
       },
       {
         "id": "P102-R9",
         "severity": "low",
         "file": "plugins/audit/scripts/_output.py; plugins/audit/tests/test__output.py; plugins/audit/tests/test_materialize_proposal.py",
         "issue": "Comments and a docstring cite a private register id, and a comment states an unbased count.",
-        "resolution": "Replace each id with the constraint it stands for and drop the count."
+        "resolution": "fixed in P102.14-ptn (d0f7fe04): Replace each id with the constraint it stands for and drop the count.",
+        "fixTask": "P102.14-ptn",
+        "commit": "d0f7fe04"
       },
       {
         "id": "P102-R10",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/stamp-verification.py leftover_throwaways; plugins/audit/tests/test_stamp_verification.py",
         "issue": "The leftover check treats any worktree with a throwaway-prefixed path component as a leftover, the main worktree included, so the suite run inside a throwaway reports its own fixture as a leftover and the helper can never prove red for that suite.",
-        "resolution": "Skip the main worktree and match the prefix only on the holder directly above a tree directory; the suite reads the same function; a case with the fixture under a throwaway-prefixed parent."
+        "resolution": "fixed in P102.14-ptn (d0f7fe04): Skip the main worktree and match the prefix only on the holder directly above a tree directory; the suite reads the same function; a case with the fixture under a throwaway-prefixed parent.",
+        "fixTask": "P102.14-ptn",
+        "commit": "d0f7fe04"
       }
     ],
-    "outcome": "[findings: 10 - 1 high, 2 med, 7 low; 6 with a recorded fix commit]"
+    "outcome": "[findings: 10 - 1 high, 2 med, 7 low; 10 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -925,7 +933,7 @@
     {
       "id": "P102.14-ptn",
       "title": "the readers, the usage lint and the leftover check read what they claim to read",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P102-R7 to P102-R10.\n- The decisive-line and error readers read the plain text, so a coloured run's basis carries no escape bytes and a coloured error gutter is matched.\n- The usage lint walks each call argument, so a usage block written inside a format expression counts.\n- Comments and docstrings that cite a register id state the constraint instead, and the unbased count is dropped.\n- leftover_throwaways skips the main worktree and matches the throwaway prefix only on the holder directly above a tree directory. The suite's leftover case reads that same function.\n\nCases, each with a twin:\n- a coloured jest red's basis holds no escape;\n- the format-expression usage shape is reported, and its hinted twin is allowed;\n- a fixture built under a throwaway-prefixed parent reports no leftover.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -957,18 +965,32 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d0f7fe04",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stamp-verification.py's _decisive_line reads _runner_output.plain_text, so the basis a coloured run writes quotes the decisive line with no escape bytes (sr200, sr201, using real jest 30.5.2 FORCE_COLOR output). leftover_throwaways skips the main worktree, which git always lists first, and matches the throwaway prefix only on the holder directly above a tree directory. A fixture built under a throwaway-prefixed parent therefore no longer reports itself as a leftover (sr202-sr204, each with a twin). _output.py's _prints_usage_block walks each call argument, so a usage block written inside a format expression counts (vd5, plus its hinted twin vd6); the real tree stays clean. Comments and docstrings that cited a register id now state the constraint, and an unbased count is dropped. Red-first: vd5 was proved through the helper. For test_stamp_verification the helper could not prove, because HEAD's suite is red inside its throwaway at the two leftover-sensitive cases. That is the leftover defect this task fixes, which HEAD still carries; the cases pass in the shared tree.",
+        "descriptive": "A coloured test run's proof now quotes clean text, the usage-hint lint catches a usage block written through a format string, and the leftover check no longer mistakes a project's own checkout for a stray throwaway."
       },
       "startedAt": "2026-10-07T10:40:13Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T11:16:32Z",
+      "verifiedBy": [
+        "sr200",
+        "sr201",
+        "sr202",
+        "sr203",
+        "sr204",
+        "vd5",
+        "vd6"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T11:16:26Z.ffdc99",
         "status": "passed",
         "at": "2026-10-07T11:16:26Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d0f7fe04",
+        "at": "2026-10-07T11:16:32Z",
+        "basis": "orchestrator check: P102-R7..R10 fixed, each reproduced first, twins for every case, could-not-prove on one suite explained by the very defect fixed"
       }
     }
   ],
