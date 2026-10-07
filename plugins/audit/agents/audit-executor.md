@@ -160,7 +160,14 @@ Hard rules (non-negotiable):
   error — and a second run with the working tree's implementation copied in no
   longer ends on that error and reaches its assertions. A run whose output
   carries no tally the helper reads is `could-not-prove` too, with the reason in the
-  basis. A test that passes without the fix gets no word at all: it proves nothing
+  basis. The runners whose tally the helper reads are `house`, `pytest`, `unittest`,
+  `jest` and `vitest`. `house` is a `--selftest` printing this repo's
+  `cases passed` line, and the output decides rather than the command, so a wrapper
+  (`npm test`) counts when the runner it wraps prints its own tally; any other runner
+  is `could-not-prove` however its dependencies are linked. That list is derived, not
+  remembered: `runner_list_drift()` in `plugins/audit/scripts/_refs.py` reads it off
+  `TALLY_READERS` in `_runner_output.py` and fails the build when this sentence or
+  the one in `reference/execute-task.md` drifts from the table. A test that passes without the fix gets no word at all: it proves nothing
   yet, and the work is to fix the test.
 - **A red-first proof you were not ALLOWED to make is `could-not-prove`, never an
   inference.** When the helper cannot run, or when anything else that is not the

@@ -1387,6 +1387,103 @@ def return_shape_drift(repo_root=None):
     return {"missing": missing, "keys": keys}
 
 
+# --- the runners red reads, named in the documents that send an executor to it ---
+# "A run whose output carries no tally the helper reads is `could-not-prove`" told
+# an operator the answer and never which runners the helper reads, so one who had
+# just linked their dependencies in learned nothing about whether their runner was
+# one. Both documents now name them, and the list is graded against red's tally
+# table rather than kept as prose a reader has to trust.
+#
+# READ BY AST, NOT IMPORTED. `_runner_output` is a layer-mate of this module, and
+# the layer rule forbids a sideways import; the table is a tuple of literal pairs,
+# so its names can be read off the source without running it. A table that stops
+# being literal is a finding, never an empty list the documents are graded against.
+RUNNER_LIST_SOURCE = ("scripts", "governance", "_runner_output.py")
+RUNNER_LIST_TABLE = "TALLY_READERS"
+RUNNER_LIST_DOCS = (RED_FIRST_EXECUTOR_BRIEF, RETURN_SHAPE_READER)
+
+# The sentence each document carries, once. The runners are the backticked words
+# from here to the sentence's first full stop, so the sentence holds the list and
+# nothing else, and its explanation follows in the next sentence.
+RUNNER_LIST_TRIGGER = "The runners whose tally the helper reads are"
+_RUNNER_NAME = re.compile(r"`([^`\s]+)`")
+
+
+def _tally_table_names(root):
+    """`(names, problem)` - the runner names of red's tally table, read by AST.
+    Exactly one of the two is None."""
+    rel = "/".join(RUNNER_LIST_SOURCE)
+    path = os.path.join(root, PLUGIN_REL, *RUNNER_LIST_SOURCE)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+    except (OSError, SyntaxError, ValueError) as exc:
+        return None, "%s: unreadable (%s)" % (rel, exc)
+    values = [node.value for node in tree.body if isinstance(node, ast.Assign)
+              and any(isinstance(t, ast.Name) and t.id == RUNNER_LIST_TABLE
+                      for t in node.targets)]
+    if len(values) != 1:
+        return None, ("%s: assigns %s %d times at module level, where one is the "
+                      "only count this check can read"
+                      % (rel, RUNNER_LIST_TABLE, len(values)))
+    value = values[0]
+    pairs = value.elts if isinstance(value, (ast.Tuple, ast.List)) else []
+    names = [pair.elts[0].value for pair in pairs
+             if isinstance(pair, ast.Tuple) and pair.elts
+             and isinstance(pair.elts[0], ast.Constant)
+             and isinstance(pair.elts[0].value, str)]
+    if not pairs or len(names) != len(pairs):
+        return None, ("%s: %s is not a literal tuple of (name, reader) pairs, so "
+                      "its runner names cannot be read without running it"
+                      % (rel, RUNNER_LIST_TABLE))
+    return names, None
+
+
+def _named_runners(text):
+    """`(names, count)` - the backticked runners of the one list sentence, and how
+    many times the sentence occurs. `names` is None unless it occurs exactly once."""
+    count = text.count(RUNNER_LIST_TRIGGER)
+    if count != 1:
+        return None, count
+    start = text.index(RUNNER_LIST_TRIGGER) + len(RUNNER_LIST_TRIGGER)
+    stop = text.find(".", start)
+    span = text[start:stop if stop >= 0 else len(text)]
+    return _RUNNER_NAME.findall(span), count
+
+
+def runner_list_drift(repo_root=None):
+    """{"runners": [name, ...], "problems": [finding, ...]} -- documents whose
+    runner list names a runner red's tally table does not hold, or omits one it
+    holds, each reported by document and runner.
+
+    Empty `problems` is the healthy answer. An unreadable table, an unreadable
+    document and a document carrying the sentence zero or several times are
+    findings rather than skips, for the reason `_plugin_doc` gives.
+    """
+    root = repo_root or REPO_ROOT
+    runners, problem = _tally_table_names(root)
+    if problem is not None:
+        return {"runners": [], "problems": [problem]}
+    problems = []
+    for rel in RUNNER_LIST_DOCS:
+        text, unreadable = _plugin_doc(root, rel)
+        if unreadable is not None:
+            problems.append(unreadable)
+            continue
+        named, count = _named_runners(text)
+        if named is None:
+            problems.append("%s: carries %r %d time(s), where once is the only "
+                            "count a reader can follow"
+                            % (rel, RUNNER_LIST_TRIGGER, count))
+            continue
+        problems.extend("%s: names the runner %r, which red's tally table does "
+                        "not hold" % (rel, name)
+                        for name in named if name not in runners)
+        problems.extend("%s: omits the runner %r, which red's tally table holds"
+                        % (rel, name) for name in runners if name not in named)
+    return {"runners": runners, "problems": problems}
+
+
 def command_flag_drift(repo_root=None):
     """{"missing": [(command, flag), ...], "checked": n} -- flags the README omits.
 

@@ -382,7 +382,7 @@
     {
       "id": "P102.7",
       "title": "red links the project's ignored dependency directories into the throwaway",
-      "status": "in_progress",
+      "status": "done",
       "description": "The throwaway is a detached worktree that holds tracked files only, so node_modules is absent. Each run under its fresh HOME re-downloads an unpinned runner, or fails offline, and the .npmrc a private registry needs, kept in the user's home directory, is missing. Add --deps-from <dir>, defaulting to --project. It links into the throwaway the ignored dependency directories that `git ls-files --others --ignored --directory` names (node_modules at any depth, .venv). A workspace link that resolves into the shared tree would let HEAD's run read the fix and answer a false not-red, so it is refused by name. Writes a runner makes back through a link are named in the basis. The fresh HOME stays, and .npmrc is either resolved on purpose or named as dropped. In agents/audit-executor.md and reference/execute-task.md, replace the 'untracked dependency comes back could-not-prove' sentence with the flag and its leaks. The end-to-end check against real jest is the maintainer's field-report probe, driven by hand and recorded in the outcome.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -418,24 +418,36 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "212470e8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stamp-verification.py gains a section 'dependencies: the ignored directories linked into the throwaway': dep_rels picks node_modules and .venv at any depth (outermost only) from git's ignored listing; dependency_plan lists the ignored directories of --deps-from (default --project) with `git ls-files -z --others --ignored --exclude-standard --directory` and links one only where its parent exists at HEAD (otherwise skipped, the basis says why); workspace_links walks each linked directory without following links and refuses by name a symlink, a .pth path line or an __editable__ finder path that lands in the project or --deps-from root outside every dependency directory; _npmrc_state checks only whether each .npmrc exists (a tracked project file arrives with HEAD, an untracked one and the .npmrc in the user's home directory are dropped - every run has a fresh home); link_dependencies builds a real directory of per-entry absolute symlinks (.cache, .vite and .vite-temp never linked, so a runner's cache write stays in the throwaway) and runs again after every reset in _isolated_run; refused_links_problem and deps_clause give the refusal and the basis text. Wiring: the --deps-from flag; a refused workspace link becomes the run's problem before HEAD's run (no run, could-not-prove); NPM_CONFIG_USERCONFIG dropped from the run's environment in any capitalisation; the dependency clause in every basis and the not-red note; a dependencies key in the JSON payload and a dependencies line in the human output. The design note's part (4) is marked built. Decisions: cache entries skipped, not created; a dangling link into the tree counts as a workspace link; a bad --deps-from is a usage error (exit 2); symlinks required (a host that cannot make them answers could-not-prove, not tested on Windows).\nDocs: agents/audit-executor.md and reference/execute-task.md replace the 'an untracked dependency comes back could-not-prove' sentence with the flag and its leaks, naming workspace_links() as the enforcer; PLUGIN-BUILD-GUIDE.md's stamp-verification section states the same rule and its usage line gains [--deps-from DIR]; P102.6's baseline clauses untouched.\nTests: sd1-sd5 (proved by default with the tracked .npmrc carried and the links surviving every reset; a workspace link refused by name with no run made; its allow twin - a link outside the project and a .bin link inside node_modules - proved; a test passing without the fix stays not red with every leak named and NPM_CONFIG_USERCONFIG dropped; --deps-from from another checkout proved, without it could-not-prove). Red-first: the helper is could-not-prove for test_stamp_verification.py (sr23/sr24, known); the red rests on the tdd run in the shared tree before the change (0/5) and eight scratch mutation rows (M1-M8), each red, including an over-fire row turning the allow cases red. Measured once in the throwaway: `npx vitest run tools/ui-tests/calendar.test.mjs` ran with node_modules linked and the helper read its tally (not red, as expected - the file is not declared). Suites 195/195, test__refs 304/304, test__output 182/182, test__deps 299/299.",
+        "descriptive": "The red-first check can now run JavaScript and Python test suites whose tools live in ignored folders such as node_modules: it links them into its throwaway copy, refuses a link that would let the old code read the new fix, and names every way a run could leak."
       },
       "startedAt": "2026-10-07T02:20:56Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T02:48:14Z",
+      "verifiedBy": [
+        "sd1",
+        "sd2",
+        "sd3",
+        "sd4",
+        "sd5"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T02:48:07Z.186604",
         "status": "passed",
         "at": "2026-10-07T02:48:07Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "212470e8",
+        "at": "2026-10-07T02:48:14Z",
+        "basis": "orchestrator check: --deps-from as described, the workspace-link refusal by name before any run, .npmrc resolved or named, the three docs updated, real vitest run read in the throwaway; red rests on the tdd run and eight mutation rows (helper limitation stated)"
       }
     },
     {
       "id": "P102.8",
       "title": "the docs name the runners red reads, derived from its table by a drift check",
-      "status": "pending",
+      "status": "in_progress",
       "description": "'A run whose output carries no tally the helper reads' never said which runners the helper reads, so an operator who fixed dependencies learned nothing about the rest. Both documents name the runners red reads. A new `_drift` check in _refs.py derives that list from the table instead of letting it be written as prose. _refs.py and _runner_output.py are layer-mates, so the check reads the table from source by AST rather than importing it. The check gets a row in tools/prove-gates.py so a weakened check goes red.",
       "files": [
         "plugins/audit/scripts/_refs.py",
@@ -467,21 +479,26 @@
         "P102.4",
         "P102.7"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T02:48:21Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T05:14:19Z.23fed3",
+        "status": "passed",
+        "at": "2026-10-07T05:14:19Z"
+      }
     },
     {
       "id": "P102.9",
       "title": "a usage error names this copy's version and a newer installed copy for this project",
-      "status": "pending",
+      "status": "in_progress",
       "description": "When an older cached copy is asked for a newer subcommand, it exits 2 with a bare argparse 'invalid choice', no version and no hint. Executors concluded the helper did not exist. Add one shared usage hook to _claude_home.py, which sits at layer 1 and is reachable from every entry point. The hook names _output.plugin_version() and asks installed_copies() for the copy that applies to this project, project scope before user scope. installed_plugins.json is undocumented, so the hook fails open and states that basis. Decide in the docstring how the hook attaches under the free-functions rule: an instance patch of parser.error rather than a subclass. Apply it to stamp-verification.py, the reported case, and regenerate the module map.",
       "files": [
         "plugins/audit/scripts/status/_claude_home.py",
@@ -510,16 +527,21 @@
         "P100"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T02:48:22Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T05:16:13Z.80a45a",
+        "status": "passed",
+        "at": "2026-10-07T05:16:13Z"
+      }
     },
     {
       "id": "P102.10",

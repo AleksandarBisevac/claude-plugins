@@ -652,6 +652,12 @@ TABLE = (
  # be grading a reference which asks for nothing as one that asks for everything.
  ("return_shape_drift", "plugins/audit/agents/audit-executor.md", "replace",
   "Report back a structured outcome:", "Report back what happened:", REF, "rs2"),
+ # The runner list loses a runner red still reads - the reference keeps telling an
+ # operator the helper reads fewer runners than it does, which is the shape a list
+ # written from memory takes the day the table grows a reader.
+ ("runner_list_drift", "plugins/audit/reference/execute-task.md", "replace",
+  "`jest` and `vitest`. The output decides", "and `jest`. The output decides",
+  REF, "rl1"),
  # A hidden command spelled inside a fenced block under `reference/` - the shape
  # the sign-off fix loop already uses for `/audit:task`/`/audit:run` - is a command
  # the pipeline would be refused invoking the day it takes that step. `## Reporting`
@@ -1809,6 +1815,12 @@ ALLOW = (
  # noise, which is the same argument `rf7` makes for its trigger.
  ("return_shape_drift", S + "_refs.py", "replace",
   "            if (depth == 1\n", "            if (True\n", REF, "rs6"),
+ # The list sentence's end dropped, so every backticked word after it in the
+ # document reads as a runner - `could-not-prove`, a flag, a file name - and a
+ # document naming exactly the table's runners is convicted for the sentences
+ # that follow it. The full stop is the narrowing that keeps the list the list.
+ ("runner_list_drift", S + "_refs.py", "replace",
+  '    stop = text.find(".", start)\n', "    stop = -1\n", REF, "rl3"),
  # The fence narrowed to nothing: ANY backtick span now counts as "the pipeline
  # runs this", not only a triple-backtick block. `layout`, `migrate`, `sync` and
  # `worktree` are each named in single backticks in ordinary prose across

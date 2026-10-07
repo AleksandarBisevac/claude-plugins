@@ -168,7 +168,12 @@ not need to.
      the answer is `could-not-prove`; a runner's write into a linked entry lands in the
      source checkout unwatched; the user's `~/.npmrc` and an untracked project one never
      reach the fresh home. Any other untracked dependency still comes back
-     `could-not-prove`. The executor used to be
+     `could-not-prove`. The runners whose tally the helper reads are `house`, `pytest`,
+     `unittest`, `jest` and `vitest`. The output decides rather than the command, so a
+     wrapper counts when the runner it wraps prints its own tally, and a run printing
+     none of theirs is `could-not-prove` whatever was linked in. `runner_list_drift()`
+     in `plugins/audit/scripts/_refs.py` reads that list off `TALLY_READERS` and fails
+     the build when this sentence or the executor's drifts from it. The executor used to be
      told to undo its fix in the shared tree for the length of the run, which is a write
      over ground siblings are editing; a host refused it beside a sibling's uncommitted
      work. Nothing stops an executor overwriting a file anyway — the plan gate grades which
