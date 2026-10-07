@@ -5570,7 +5570,7 @@
     {
       "id": "BUG-20-4gh",
       "title": "a redirect inside a subshell or command substitution is not seen as a shell write",
-      "status": "in_progress",
+      "status": "fixed",
       "severity": "med",
       "reportedAt": "2026-10-07T00:15:49Z",
       "reportedBy": null,
@@ -5582,7 +5582,7 @@
         "plugins/audit/hooks/guard-secrets-read.py"
       ],
       "taskId": "P108.8-4gh",
-      "fixedIn": null,
+      "fixedIn": "f62b51e3",
       "notes": null
     },
     {
