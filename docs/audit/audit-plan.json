@@ -1155,7 +1155,8 @@
       "P112.1-uce",
       "P112.3-uce",
       "P114.1",
-      "P114.2-ffv"
+      "P114.2-ffv",
+      "P101.4-1cb"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -5409,19 +5410,19 @@
       "P101.2"
     ],
     "docs/research/benchmark-results.md": [
-      "P101.3"
+      "P101.3",
+      "P101.4-1cb"
     ],
     "docs/README.md": [
       "P101.3"
     ],
-    "plugins/audit/evals/feature/case.yaml": [
-      "P101.3"
-    ],
     "plugins/audit/evals/bugfix/case.yaml": [
-      "P101.3"
+      "P101.3",
+      "P101.4-1cb"
     ],
     "plugins/audit/evals/guard-stop/case.yaml": [
-      "P101.3"
+      "P101.3",
+      "P101.4-1cb"
     ],
     "plugins/audit/scripts/ui/panel-css/tokens-and-reset.css": [
       "P109.1"
