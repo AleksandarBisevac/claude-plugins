@@ -1095,7 +1095,14 @@ def _live_quoted_cases(check, root, outside, journal, shell, same_as_bare,
                  (["--open-files-in-pager=cmd"], True), (["--op"], True),
                  (["--open", "x"], True), (["-e", "x"], False),
                  (["--or", "-e", "x"], False), (["--o"], False), (["-"], False),
-                 (["--only-matching"], False), (["--", "-O"], False))
+                 (["--only-matching"], False), (["--", "-O"], False),
+                 # A value-taking short option ends its cluster: what follows
+                 # it in the word is its value, and a separate word after it
+                 # is that value too. The pager letter BEFORE one is still read.
+                 (["-eOpen"], False), (["-ieOpen"], False), (["-fOut"], False),
+                 (["-A3O"], False), (["-m1O"], False), (["-e", "-Open"], False),
+                 (["-nOcmd"], True), (["-Oe"], True), (["-e", "x", "-Ocmd"], True),
+                 (["-m", "1", "-O"], True))
     got = [(w, pager(w) if pager else None) for w, _x in spellings]
     check("lq9 git grep's pager option is found in every spelling git "
           "resolves to it, and in no other word",
@@ -1114,6 +1121,18 @@ def _live_quoted_cases(check, root, outside, journal, shell, same_as_bare,
              "git grep -n 'x > src/ww.py'"),
             ("a git grep pattern beginning with the letter O",
              "git grep -e 'Open > src/ww.py'"),
+            ("a git grep pattern beginning with O stuck to -e, beside a "
+             "quoted pattern naming a redirect",
+             "git grep -eOpen -e 'x > src/ww.py' src"),
+            ("a git grep pattern stuck to -e in a short cluster",
+             "git grep -ie'Open > src/ww.py' src"),
+            ("an env-prefixed commit message naming a redirect",
+             "GIT_AUTHOR_DATE=2026-01-01 git commit -m \"docs: the old form "
+             "was echo x > src/ww.py\""),
+            ("an env-prefixed grep pattern naming a redirect",
+             "LC_ALL=C grep -rn 'x > src/ww.py' docs"),
+            ("a commit message naming a redirect, its assignment through env",
+             "env GIT_AUTHOR_NAME=x git commit -m \"echo x > src/ww.py\""),
             ("a program printing a redirect",
              "python3 -c \"print('x > src/ww.py')\""),
             ("a handed cd out of the tree",
@@ -1121,6 +1140,45 @@ def _live_quoted_cases(check, root, outside, journal, shell, same_as_bare,
         got = at_deny("lq3-" + name, cmd)
         check("lq3 %s is allowed at the deny tier" % name,
               got[0] == "allow", got)
+
+    # ONLY THE ASSIGNMENT WORDS OF THE PREFIX ARE LIVE. The program's own
+    # arguments keep the data-program reading, so an env-prefixed message
+    # naming a journal append is text at every tier...
+    for name, cmd in (
+            ("a bare assignment", "GIT_AUTHOR_NAME=x git commit -m \"never "
+                                  "echo x >> %s\"" % journal),
+            ("an assignment through env", "env GIT_AUTHOR_NAME=x git commit "
+                                          "-m \"never echo x >> %s\"" % journal)):
+        got = every_tier("lq10-" + name, cmd)
+        check("lq10 a commit message naming a journal append behind %s is "
+              "allowed at every tier" % name,
+              all(v[0] == "allow" for _t, v in got), got)
+    # ...while a redirect inside the assignment word itself is still run, by
+    # what the variable names, beside an ordinary message or pattern.
+    for name, cmd in (
+            ("an editor beside a plain message",
+             "GIT_EDITOR=\"sh -c 'echo x > src/ww.py'\" git commit -m \"tidy\""),
+            ("an editor through env beside a plain message",
+             "env GIT_EDITOR=\"sh -c 'echo x > src/ww.py'\" git commit -m "
+             "\"tidy\""),
+            ("a second assignment after a harmless one",
+             "GIT_AUTHOR_NAME=x GIT_EDITOR=\"tee src/ww.py\" git commit"),
+            ("an assignment ahead of grep",
+             "GREP_COLORS=\"$(echo x > src/ww.py)\" grep -n a notes.md")):
+        got = at_deny("lq11-" + name, cmd)
+        check("lq11 %s is refused at the deny tier, naming the file" % name,
+              got[0] == "block" and "src/ww.py" in got[1], got)
+    got = every_tier("lq11a", "GIT_AUTHOR_NAME=x GIT_EDITOR=\"tee -a %s\" "
+                              "git commit -m \"tidy\"" % journal)
+    check("lq11a an editor variable appending to the journal, after a harmless "
+          "assignment, is refused at every tier",
+          all(v[0] == "block" and journal in v[1] for _t, v in got), got)
+    # A pager option after a value-taking option's stuck value is still the
+    # pager: the cluster scan stops at the value, not at the command.
+    got = at_deny("lq12", "git grep -eOpen -O\"tee src/ww.py\" A")
+    check("lq12 git grep's pager option after a pattern stuck to -e is "
+          "refused at the deny tier, naming the file",
+          got[0] == "block" and "src/ww.py" in got[1], got)
 
     # Past the nesting bound: the journal at every tier, a read never refused.
     bound = M._MAX_HANDED
@@ -1208,6 +1266,83 @@ def _live_quoted_cases(check, root, outside, journal, shell, same_as_bare,
         got = at_deny("lq8a-" + name, cmd)
         check("lq8a git diff %s is allowed at the deny tier" % name,
               got[0] == "allow", got)
+
+
+def _out_tree(top, dirs, files, ext):
+    """A directory `top` holding `dirs` subdirectories of `files` files each,
+    every name ending in `ext`; `top` itself."""
+    for d in range(dirs):
+        sub = Path(top) / ("d%02d" % d)
+        sub.mkdir(parents=True, exist_ok=True)
+        for f in range(files):
+            (sub / ("f%02d%s" % (f, ext))).write_text("x\n", encoding="utf-8")
+    return Path(top)
+
+
+def _git_calls(decide_once):
+    """(how many `git rev-parse` processes `decide_once()` started, its
+    answer). The count is read off `_config`'s one git entry point, never off
+    the clock: a timed case would flake on a loaded machine."""
+    seen = []
+    real = M._config._git_rev_parse
+
+    def counting(cwd, fields):
+        seen.append((str(cwd), tuple(fields)))
+        return real(cwd, fields)
+    M._config._git_rev_parse = counting
+    try:
+        got = decide_once()
+    finally:
+        M._config._git_rev_parse = real
+    return len(seen), got
+
+
+def _lw_copy_cost_cases(check, lw, bash):
+    """A directory copied whole costs git calls by destination root, never by
+    file. Runs in `worktree_pair`'s real repository, so placing a target
+    outside the project asks git exactly what it asks on a real machine.
+
+    Each destination already holds the source's subdirectories and `-T`
+    lands the copy onto it, so every file listed would sit in a directory of
+    its own: a per-directory memo alone would still pay once for each, and
+    only not listing the files keeps the count at the small tree's."""
+    out = Path(lw["root"]) / "copy-cost"
+    small = _out_tree(out / "small", 1, 1, ".txt")
+    big = _out_tree(out / "big", 12, 25, ".txt")
+    for name, dirs in (("small-copy", 1), ("big-copy", 12),
+                       ("small-moved", 1), ("big-moved", 12)):
+        _out_tree(out / name, dirs, 0, ".txt")
+    counts = {}
+    for label, cmd in (
+            ("cp small", "cp -rT %s %s" % (small, out / "small-copy")),
+            ("cp big", "cp -rT %s %s" % (big, out / "big-copy")),
+            ("mv small", "mv -T %s %s" % (small, out / "small-moved")),
+            ("mv big", "mv -T %s %s" % (big, out / "big-moved"))):
+        counts[label] = _git_calls(lambda: bash(lw["main"], cmd))
+    check("lw10 a directory copied or moved whole between two directories "
+          "outside the project is allowed, and costs as many git calls for "
+          "hundreds of files as for one",
+          all(v[1][0] == "allow" for v in counts.values())
+          and counts["cp big"][0] == counts["cp small"][0] >= 1
+          and counts["mv big"][0] == counts["mv small"][0] >= 1,
+          dict((k, (v[0], v[1][0])) for k, v in counts.items()))
+    two_roots, _got = _git_calls(lambda: bash(
+        lw["main"], "cp -r %s %s; cp -r %s %s"
+        % (out / "big-moved", out / "again-1", out / "big-moved",
+           out / "again-2")))
+    check("lw10a ...and two destination roots cost no more than twice one",
+          0 < two_roots <= 2 * counts["cp big"][0],
+          (two_roots, counts["cp big"][0]))
+    # THE OTHER DIRECTION: a destination root inside a linked worktree of this
+    # repository is that worktree's business, so the copy is still expanded
+    # file by file and graded against the worktree's own plan.
+    pkg = _out_tree(out / "pkg", 1, 1, ".ts")
+    verdict, why = bash(lw["main"], "cp -r %s %s"
+                        % (pkg, os.path.join(lw["wt"], "src", "pkg")))
+    check("lw11 a recursive copy into a linked worktree is still read file by "
+          "file, refused under the WORKTREE's running phase naming the file "
+          "it lands as", verdict == "block" and "P48" in why
+          and "src/pkg/d00/f00.ts" in why, repr((verdict, why[:240])))
 
 
 def _expand_optional_chars(fragment):
@@ -4444,6 +4579,7 @@ def _cases(check):
                   "that is NOT the plan is not refused as one - the arm keys on "
                   "the manifest path in the worktree, not on the worktree",
                   _ok9 and _got9[0] == "allow", repr(_got9)[:300])
+            _lw_copy_cost_cases(check, _lw, _lw_bash)
         finally:
             if _prev_lw is None:
                 os.environ.pop("CLAUDE_PROJECT_DIR", None)

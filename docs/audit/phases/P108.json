@@ -172,52 +172,115 @@
         "severity": "med",
         "file": "plugins/audit/hooks/guard-secrets-read.py quoted-word skip; SECURITY.md",
         "issue": "The quoted-word skip reads git's quoted words as text where git runs them: behind an environment prefix (GIT_EDITOR, GIT_SEQUENCE_EDITOR, GIT_EXTERNAL_DIFF, bare or through env) and in git grep -O/--open-files-in-pager, so writes into a source file or the journal that the guard blocked before are now allowed at every tier, reopening the journal's every-tier guarantee.",
-        "resolution": "Treat a span with any NAME=value assignment before the program as live, and treat -O/--open-files-in-pager as making git grep's words live; hook cases for each spelling red-first with the commit-message allow twin kept; correct the SECURITY.md sentence."
+        "resolution": "fixed in P108.16-4gh (f1a96d0e): Treat a span with any NAME=value assignment before the program as live, and treat -O/--open-files-in-pager as making git grep's words live; hook cases for each spelling red-first with the commit-message allow twin kept; correct the SECURITY.md sentence.",
+        "fixTask": "P108.16-4gh",
+        "commit": "f1a96d0e"
       },
       {
         "id": "P108-R18",
         "severity": "med",
         "file": "plugins/audit/hooks/guard-secrets-read.py _beyond_bound_verdict and _journal_write_hit; SECURITY.md journal bullet",
         "issue": "A journal append nested past the walk's bound is allowed at observe and warn, because the journal arm walks only the views inside the bound, while SECURITY.md says such a command naming the journal is refused at every tier.",
-        "resolution": "Run the commands past the bound through the journal arm too, so a journal target is refused at every tier; contract rows at observe and warn."
+        "resolution": "fixed in P108.16-4gh (f1a96d0e): Run the commands past the bound through the journal arm too, so a journal target is refused at every tier; contract rows at observe and warn.",
+        "fixTask": "P108.16-4gh",
+        "commit": "f1a96d0e"
       },
       {
         "id": "P108-R19",
         "severity": "low",
         "file": "plugins/audit/hooks/guard-secrets-read.py _beyond_bound_verdict",
         "issue": "The bound verdict fires on any command handed past the bound, including a read such as ls, so a read is refused at deny and asked at ask.",
-        "resolution": "Grade commands past the bound by their write shapes and refuse only one carrying a write or an unreadable handed command."
+        "resolution": "fixed in P108.16-4gh (f1a96d0e): Grade commands past the bound by their write shapes and refuse only one carrying a write or an unreadable handed command.",
+        "fixTask": "P108.16-4gh",
+        "commit": "f1a96d0e"
       },
       {
         "id": "P108-R20",
         "severity": "low",
         "file": "plugins/audit/hooks/guard-secrets-read.py _existing_directory; SECURITY.md residuals",
         "issue": "A directory or symlink that an earlier clause of the same command creates (mkdir, ln -s) is read as a file, so cp into it writes an uncovered source file at deny, and SECURITY.md does not name the shape.",
-        "resolution": "Read a last operand an earlier clause creates with mkdir or names as an ln -s target as a directory, or name the shape among the residuals."
+        "resolution": "fixed in P108.16-4gh (f1a96d0e): Read a last operand an earlier clause creates with mkdir or names as an ln -s target as a directory, or name the shape among the residuals.",
+        "fixTask": "P108.16-4gh",
+        "commit": "f1a96d0e"
       },
       {
         "id": "P108-R21",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_journal_io.py session-slug and unexpanded-home",
         "issue": "With the shapes shared, the door refuses prose naming no machine: a whitespace-led single-dash word such as -home-dir is refused as a session slug and collapses a whole redacted value, and a tilde path such as the user's config directory is refused as unexpanded-home.",
-        "resolution": "Narrow session-slug to a real slug's shape (more than the user segment, or a path separator around it); record in code why unexpanded-home stays refused at the door, since the detector fails the build on it."
+        "resolution": "fixed in P108.17-4gh (63f88868): Narrow session-slug to a real slug's shape (more than the user segment, or a path separator around it); record in code why unexpanded-home stays refused at the door, since the detector fails the build on it.",
+        "fixTask": "P108.17-4gh",
+        "commit": "63f88868"
       },
       {
         "id": "P108-R22",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_journal_io.py MACHINE_PATH_TOKEN_START",
         "issue": "The :// token start covers a file URL with an empty host but not one naming a host such as localhost before the home directory, which passes the door, redaction and the detector unchanged.",
-        "resolution": "Let a token start after file://<host> for the file scheme only, with refuse, redact and flag cases and an https twin."
+        "resolution": "fixed in P108.17-4gh (63f88868): Let a token start after file://<host> for the file scheme only, with refuse, redact and flag cases and an https twin.",
+        "fixTask": "P108.17-4gh",
+        "commit": "63f88868"
       },
       {
         "id": "P108-R23",
         "severity": "low",
         "file": "SECURITY.md plan-gate residual paragraph",
         "issue": "Two counts are written into prose: the known-divergence case count and the number of open shapes; the first is held by KNOWN_DIVERGENCE and rots when a row is added. Also unnamed residuals: GIT_CONFIG_PARAMETERS editor, git diff --output, cp -r of source files.",
-        "resolution": "Point at KNOWN_DIVERGENCE instead of counting, drop the leading number, and name the unnamed residuals or close them."
+        "resolution": "fixed in P108.16-4gh (f1a96d0e): Point at KNOWN_DIVERGENCE instead of counting, drop the leading number, and name the unnamed residuals or close them.",
+        "fixTask": "P108.16-4gh",
+        "commit": "f1a96d0e"
+      },
+      {
+        "id": "P108-R24",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-secrets-read.py copy expansion and the manifest and journal arms",
+        "issue": "A recursive copy or directory move outside the project now expands into every file and each arm resolves every destination's tree with its own git call, so an ordinary cp -r of a few hundred files takes far longer than the hook's timeout, where it took a fraction of a second before this phase.",
+        "resolution": "Resolve the tree once per destination root (memoized by directory) and skip the expansion when the destination root lies outside the project; a case asserting the number of git calls is bounded by destination roots, not by files."
+      },
+      {
+        "id": "P108-R25",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-secrets-read.py journal arm; SECURITY.md journal bullet",
+        "issue": "An interpreter journal append handed to a shell (bash -c, sh -c, eval around python -c or node -e) is allowed at observe and deny, already open before this phase, while the new SECURITY.md sentence and the task claim say the journal is refused at every tier wherever an append sits.",
+        "resolution": "Narrow the SECURITY.md sentence to what the code reads and name this shape among the residuals, with contract rows recording its per-tier verdict as a reasoned known divergence; the hash-chained journal detects such a write after the fact."
+      },
+      {
+        "id": "P108-R26",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-secrets-read.py past-bound flat read; SECURITY.md",
+        "issue": "A journal redirect handed two or more levels past the bound is allowed at observe and warn, because the flat read skips the quoted words of the command it hands on and no view grades them, and SECURITY.md's every-tier opening reads as covering it.",
+        "resolution": "Narrow the sentence and name the shape as a residual with contract rows recording its per-tier verdict as a reasoned known divergence."
+      },
+      {
+        "id": "P108-R27",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-secrets-read.py _quoted_words_are_data",
+        "issue": "An assignment prefix makes every quoted word of the command live, so an env-prefixed commit message or grep pattern that mentions a redirect is refused as a write, at every tier for the journal, where the same text without the prefix is allowed.",
+        "resolution": "Treat only the assignment words themselves as live and keep the program's arguments under the data-program rule; allow twins for an env-prefixed commit message and grep pattern."
+      },
+      {
+        "id": "P108-R28",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_journal_io.py session-slug",
+        "issue": "The narrowed session-slug no longer catches a lone home slug bounded by a quote, an equals sign, a colon, a parenthesis or a line start, nor the Windows home slug, which the detector caught before, so a JSON value or key=value holding a home slug passes the writer and the build.",
+        "resolution": "Accept the lone user segment when a non-whitespace delimiter or a text or line boundary bounds it, leaving only whitespace-led prose alone; rows in sp10 and q2f for a quoted JSON value and the Windows spelling."
+      },
+      {
+        "id": "P108-R29",
+        "severity": "med",
+        "file": "docs/audit/phases/P108.json (a closed task's outcome text)",
+        "issue": "An outcome text quoted a home word after a slash that the writer accepts and the detector flags, so committing the manifest would turn the build red; the writer and detector still differ on posix-home's leading separator.",
+        "resolution": "Reworded by the orchestrator; record the writer/detector posix-home difference in SECURITY.md as the open class it is."
+      },
+      {
+        "id": "P108-R30",
+        "severity": "low",
+        "file": "plugins/audit/hooks/guard-secrets-read.py _git_grep_runs_a_pager",
+        "issue": "Any single-dash word containing an uppercase O, including a pattern stuck to -e, is read as the pager option, over-reporting.",
+        "resolution": "Stop scanning a short-option cluster at the first option that takes a value."
       }
     ],
-    "outcome": "[findings: 23 - 2 high, 9 med, 12 low; 16 with a recorded fix commit]"
+    "outcome": "[findings: 30 - 2 high, 15 med, 13 low; 23 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1314,7 +1377,7 @@
     {
       "id": "P108.17-4gh",
       "title": "the shared identity shapes match what names a machine and nothing else",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P108-R21 and P108-R22. The shared identity shapes match what names a machine, and nothing else.\n\nsession-slug is narrowed to a real slug's shape: more than the user segment after -Users- or -home-, or a path separator around it. A whitespace-led word such as -home-dir, or -Users-bob alone in prose, no longer matches. Every real slug placement the detector reads is still caught. unexpanded-home stays refused at the door, because the commit-time detector fails the build on it. The code says so beside the shape, so the choice is recorded rather than accidental.\n\nFor the file scheme only, a token may start after file://<host>, so a file URL naming a host before a home directory is refused, redacted and flagged. An https URL with the same path stays allowed.\n\nCases:\n- prose with -home-dir and -Users-bob is allowed;\n- every real slug placement is denied;\n- file://localhost is refused, redacted and flagged, with an https twin;\n- check-committed-pii's selftest carries the same allow and deny pairs.\n\ncheck-committed-pii must still exit 0 on the tree.",
       "files": [
         "plugins/audit/scripts/governance/_journal_io.py",
@@ -1345,18 +1408,132 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "63f88868",
+      "outcome": {
+        "technical": "_journal_io.py: session-slug is narrowed through _SLUG_USER and now matches in three cases. The first is at a slug start with another segment after the user, or a separator right after it. The second is right after a forward or back slash, so a lone user segment beside a separator matches, drive-letter form included. The third is the private-tmp form, as before. Prose such as -home-dir, go-home-now or a lone -Users-<name> is therefore neither refused nor redacted nor flagged. MACHINE_PATH_TOKEN_START gains a branch for the file scheme only, so a token may start after file://<host>; tempdir-session shares it. _shape_fires for posix-home asks _HOME_AFTER_SEPARATOR, so a file URL naming a host fires for the writer, while a home word with no separator before it still does not. A comment beside unexpanded-home records that it stays refused in prose because the commit-time detector fails the build on the same pattern. tools/check-committed-pii.py gains the same allow and deny pairs (q2e, q2f, q2g). Forward-only BASELINE rows cover two chained journal rows that quote a reviewer's probe text. Red-first: sp9 and sp12 in test__journal_io and nt7 and nt8 in test_audit_task failed at HEAD and pass with the change, and q2e and q2g failed in the ordinary tdd red. Seven mutations in a scratch git copy turned the intended cases red in both directions: narrowing reverted, separator alternative dropped, lookahead dropped, file-host branch off, host start for every scheme, the old first-character fire rule, and the whitespace lead removed from unexpanded-home.",
+        "descriptive": "Ordinary words like -home-dir are no longer mistaken for a machine path, and file links that name a host before a home directory are now caught by both the journal writer and the commit check."
+      },
+      "startedAt": "2026-10-07T07:25:06Z",
+      "completedAt": "2026-10-07T08:06:23Z",
+      "verifiedBy": [
+        "sp9",
+        "sp10",
+        "sp11",
+        "sp12",
+        "sp13",
+        "nt7",
+        "nt8",
+        "q2e",
+        "q2f",
+        "q2g"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T08:06:11Z.d5cae1",
+        "status": "passed",
+        "at": "2026-10-07T08:06:11Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "63f88868",
+        "at": "2026-10-07T08:06:23Z",
+        "basis": "orchestrator check: P108-R21 and R22 fixed in the one shared shape table, every real slug placement still caught, unexpanded-home kept by recorded choice, mutations in both directions proved"
+      }
+    },
+    {
+      "id": "P108.18-4gh",
+      "title": "the shell arm costs ordinary work no time or false refusals, and states where its grammar stops",
+      "status": "in_progress",
+      "description": "Fixes review findings P108-R24 to P108-R27, P108-R29 and P108-R30. The shell arm stops costing ordinary work time or false refusals. Where the grammar stops, it says so instead of chasing more spellings.\n\n- Copies: resolve the tree once per destination root, memoized by directory. Do not expand a recursive copy or directory move whose destination root lies outside the project. A case asserts that the number of git calls is bounded by destination roots, not by files, for a large out-of-project cp -r and mv. Count calls; do not time them.\n- Assignments: only the NAME=value words of an assignment prefix are live. The program's own arguments stay under the data-program rule, so an env-prefixed commit message or grep pattern that mentions a redirect is allowed. The git spellings whose redirect sits inside the assignment word stay refused. Add allow twins for both.\n- git grep: a short-option cluster is scanned only up to its first value-taking option (-e, -f, -A, -B, -C, -m), so a pattern stuck to -e is not read as the pager option.\n- SECURITY.md:\n  - Narrow the journal bullet to what the code reads.\n  - Name as residuals an interpreter journal append handed to a shell, and a journal redirect two or more levels past the bound. The hash-chained journal detects either write after the fact.\n  - Record the writer/detector posix-home separator difference as an open class.\n  - test_hooks.py's contract rows record the per-tier verdict of each residual shape as a reasoned KNOWN_DIVERGENCE row, so the verdict is written down per tier.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_hooks.py",
+        "plugins/audit/tests/test__config.py",
+        "SECURITY.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-07T07:25:06Z",
+      "startedAt": "2026-10-07T08:18:39Z",
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-10-07T08:06:11Z.d5cae1",
+        "runId": "2026-10-07T08:46:43Z.e5e13f",
         "status": "passed",
-        "at": "2026-10-07T08:06:11Z"
+        "at": "2026-10-07T08:46:43Z"
+      }
+    },
+    {
+      "id": "P108.19-4gh",
+      "title": "every real home slug placement is caught and prose is left alone",
+      "status": "in_progress",
+      "description": "Fixes review finding P108-R28. Every real home slug placement is caught again, and prose is still left alone.\n\nsession-slug accepts the lone user segment wherever a non-whitespace delimiter, or a text or line boundary, bounds it: a quote, =, :, (, or the start or end of a line. This covers a JSON value, a key=value, and the Windows home slug C--Users-<name>. Only whitespace-led prose, such as an option named -home-dir or a lone dash-led user word in a sentence, is left alone.\n\nsp10 and q2f gain rows for:\n- a quoted JSON value;\n- a key=value;\n- a line start;\n- the Windows spelling.\nEach comes with a prose allow twin.\n\ncheck-committed-pii must still exit 0 on the tree.",
+      "files": [
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "tools/check-committed-pii.py",
+        "plugins/audit/tests/test__journal_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-07T08:18:39Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T08:53:45Z.bf8364",
+        "status": "passed",
+        "at": "2026-10-07T08:53:45Z"
       }
     }
   ],

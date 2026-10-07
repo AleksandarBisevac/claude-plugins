@@ -1634,12 +1634,14 @@ def _simple_commands(text):
 # because over-reporting is the safe side of not knowing on a write guard, and
 # dropping the read there would open a write that only this read saw.
 #
-# AN ASSIGNMENT AHEAD OF THE PROGRAM MAKES EVERY QUOTED WORD OF ITS COMMAND
-# LIVE, bare or through `env`: the program reads its environment, and git runs
-# what `GIT_EDITOR`, `GIT_EXTERNAL_DIFF` or a `core.editor` inside
-# `GIT_CONFIG_PARAMETERS` names. Reading a data program's words as text there
-# let an editor variable holding a redirect into a source file through at the
-# deny tier, ahead of a bare `git commit`.
+# AN ASSIGNMENT AHEAD OF THE PROGRAM IS LIVE, bare or through `env`: the
+# program reads its environment, and git runs what `GIT_EDITOR`,
+# `GIT_EXTERNAL_DIFF` or a `core.editor` inside `GIT_CONFIG_PARAMETERS` names.
+# Reading it as text let an editor variable holding a redirect into a source
+# file through at the deny tier, ahead of a bare `git commit`. Only the
+# prefix's words are live, though (`_program_offset`): the program's own
+# arguments keep the reading below, so an env-prefixed commit message or grep
+# pattern that mentions a redirect is the text it was without the prefix.
 _QUOTED_DATA_PROGRAMS = ("echo", "printf", "grep", "egrep", "fgrep", "rg")
 # The git subcommands whose quoted words are a message, a pattern or a path.
 # A global `-c` (or `--config-env`) can name a pager, an editor or an alias the
@@ -1652,6 +1654,9 @@ _GIT_VALUE_OPTIONS = ("-C", "--git-dir", "--work-tree", "--namespace")
 # other `git grep` option shares.
 _GIT_GREP_PAGER = "--open-files-in-pager"
 _GIT_GREP_PAGER_PREFIX = len("--op")
+# `git grep`'s short options that take a value: in a cluster the rest of the
+# word is that value, and alone the next word is.
+_GIT_GREP_VALUE_SHORTS = "efABCm"
 
 
 def _git_grep_runs_a_pager(words):
@@ -1661,16 +1666,30 @@ def _git_grep_runs_a_pager(words):
     or any prefix of it git still resolves, with or without `=value`. A
     separate word after the option is git's pattern, not the pager, but it is
     read as live all the same - this reader does not follow git's optional-
-    value rule, and over-reporting is the safe side on a write guard."""
-    for word in words:
+    value rule, and over-reporting is the safe side on a write guard.
+
+    A cluster is read only up to its first value-taking option: in `-eOpen`
+    the `O` is the first letter of a pattern, not the pager, and a word that
+    follows a value-taking option on its own is its value."""
+    index = 0
+    while index < len(words):
+        word = words[index]
+        index += 1
         if word == "--":
             return False
         name = word.split("=", 1)[0]
         if (len(name) >= _GIT_GREP_PAGER_PREFIX
                 and _GIT_GREP_PAGER.startswith(name)):
             return True
-        if word.startswith("-") and not word.startswith("--") and "O" in word:
-            return True
+        if not word.startswith("-") or word.startswith("--"):
+            continue
+        for at, letter in enumerate(word[1:]):
+            if letter == "O":
+                return True
+            if letter in _GIT_GREP_VALUE_SHORTS:
+                if at == len(word) - 2:
+                    index += 1
+                break
     return False
 
 
@@ -1695,14 +1714,43 @@ def _git_quoted_words_are_data(rest):
     return False
 
 
-def _quoted_words_are_data(span):
-    """True when a quoted word in the simple command `span` is never run as a
-    command by it: the handed command of `eval` or a shell's `-c` (graded in
-    its own view), or an argument of a program that runs no argument. A span
-    that will not tokenise is not data, and neither is one that sets an
-    environment variable for its program."""
+def _program_offset(span):
+    """Where, in the simple command `span`, the words past an assignment
+    prefix begin - 0 when the command sets no variable for its program, and
+    `len(span)` when the prefix cannot be located in the raw text, so the
+    whole span is read as the prefix and stays live.
+
+    The prefix is `_config.program_candidates`' (assignments, and the
+    wrappers it steps over), counted in words; the raw text is cut into words
+    at whitespace outside quotes, which is the split `shell_words` makes of a
+    command that carries no line continuation."""
     words = _config.shell_words(_config.join_continuations(span).strip())
-    if not words or _config.leading_assignments(words):
+    if not words or not _config.leading_assignments(words):
+        return 0
+    rest, _candidates = _config.program_candidates(words)
+    if not rest or "\\\n" in span:
+        return len(span)
+    wanted = len(words) - len(rest)
+    quotes = _shell_states(span)[0]
+    seen, inside = 0, False
+    for pos, ch in enumerate(span):
+        blank = ch.isspace() and quotes[pos] is None
+        if not blank and not inside:
+            if seen == wanted:
+                return pos
+            seen += 1
+        inside = not blank
+    return len(span)
+
+
+def _quoted_words_are_data(span):
+    """True when a quoted word in the program part of the simple command
+    `span` is never run as a command by it: the handed command of `eval` or a
+    shell's `-c` (graded in its own view), or an argument of a program that
+    runs no argument. A span that will not tokenise is not data. An
+    assignment prefix is not judged here: `_program_offset` keeps it live."""
+    words = _config.shell_words(_config.join_continuations(span).strip())
+    if not words:
         return False
     rest, _candidates = _config.program_candidates(words)
     if not rest:
@@ -1723,7 +1771,9 @@ def _quoted_words_are_data(span):
 
 def _quoted_text_skipper(text):
     """A predicate over positions in `text`: True when the character there is
-    inside a quoted word `_quoted_words_are_data` calls text."""
+    inside a quoted word of a program's arguments that
+    `_quoted_words_are_data` calls text - never inside the assignment prefix
+    ahead of the program, which `_program_offset` marks."""
     states = _shell_states(text)
     spans = _simple_command_spans(text, states)
     verdicts = {}
@@ -1734,9 +1784,11 @@ def _quoted_text_skipper(text):
         for start, end in spans:
             if start <= pos < end:
                 if (start, end) not in verdicts:
-                    verdicts[(start, end)] = _quoted_words_are_data(
-                        text[start:end])
-                return verdicts[(start, end)]
+                    span = text[start:end]
+                    verdicts[(start, end)] = (_program_offset(span),
+                                              _quoted_words_are_data(span))
+                offset, data = verdicts[(start, end)]
+                return pos - start >= offset and data
         return False
     return skip
 
@@ -1775,8 +1827,9 @@ def _copy_destinations(words, is_dir=None, files_of=None):
 
     A DIRECTORY COPIED WHOLE WRITES EVERY FILE IN IT. `mv` of a directory, and
     `cp` under `-r`, `-R`, `-a` or their long names, land each file of the
-    source under the destination; `files_of`, asked of a source at the
-    command's own directory, lists them, and each is a file written. Read as
+    source under the destination; `files_of`, asked of a source and the
+    destination it lands as, lists them - or answers None, and the
+    destination is the one word written - and each is a file written. Read as
     the one directory name, a recursive copy of source files into the tree
     wrote no source file this arm could see."""
     operands, directory, index = [], None, 1
@@ -1826,7 +1879,8 @@ def _copy_destinations(words, is_dir=None, files_of=None):
                               .rsplit("/", 1)[-1]), s) for s in sources]
     out = []
     for dest, source in landed:
-        inside = files_of(source) if whole and files_of is not None else None
+        inside = (files_of(source, dest) if whole and files_of is not None
+                  else None)
         out.extend([dest] if inside is None else
                    ["%s/%s" % (dest.rstrip("/\\"), rel) for rel in inside])
     return out
@@ -1933,12 +1987,20 @@ def _through_links(word, made):
     return made[name] + word[len(name):]
 
 
-def _copy_targets(text, cwd=None):
+def _copy_targets(text, cwd=None, expands=None):
     """Every file a `cp`, `mv` or `install` command in `text` writes, found in
     command position past the wrappers `_config.program_candidates` steps over -
     never in a quoted argument of another program. `cwd` is where the command
     stands, for asking the disk whether a slashless last operand is a
     directory.
+
+    A DIRECTORY COPIED WHOLE OUT OF EVERY PLAN IS ONE DESTINATION, NOT ITS
+    FILES. `expands`, asked of the placed destination root, says whether the
+    tree it lands in is a plan's business; where it says no, the copy's files
+    are not listed, because every one of them would be placed - and git asked
+    about its directory - only to be skipped as outside the project. A root
+    nobody can place is expanded as it always was. With no `expands` every
+    whole copy is expanded.
 
     THE DISK IS NOT THE ONLY THING THAT MAKES A DIRECTORY. A directory an
     earlier clause of the same command creates with `mkdir`, or a link it
@@ -1946,6 +2008,12 @@ def _copy_targets(text, cwd=None):
     disk read `mkdir src/new && cp a.py src/new` as a write to the file
     `src/new` - no source file - while the copy lands as `src/new/a.py`. What
     each clause makes is carried to the clauses after it, in command order."""
+    def files_of(source, dest):
+        placed = _placed_target(dest, cwd) if expands is not None else None
+        if placed is not None and not expands(placed):
+            return None
+        return _directory_files(source, cwd)
+
     out, made = [], {}
     for span in _simple_commands(text):
         words = _config.shell_words(_config.join_continuations(span).strip())
@@ -1960,16 +2028,16 @@ def _copy_targets(text, cwd=None):
                 [program] + [_through_links(w, made) for w in rest[1:]],
                 lambda word: (made.get(word.rstrip("/\\"), 0) is None
                               or _existing_directory(word, cwd)),
-                lambda word: _directory_files(word, cwd)))
+                files_of))
         made = _made_by(rest, made, cwd)
     return out
 
 
-def _shell_write_targets(cmd, cwd=None):
+def _shell_write_targets(cmd, cwd=None, expands=None):
     """Best-effort extraction of file paths a shell command WRITES to - inside a
     subshell, a substitution or backticks as outside one. `cwd` is the
     directory the command stands in, which only a copy's slashless directory
-    operand needs.
+    operand needs; `expands` is `_copy_targets`'.
 
     A redirect or `tee` inside a quoted word that nothing runs, or that a
     shell or `eval` is handed, is skipped (`_quoted_text_skipper`): the first is
@@ -1993,7 +2061,7 @@ def _shell_write_targets(cmd, cwd=None):
             if tok and not tok.startswith("-"):
                 targets.append(tok)
     targets.extend(_inplace_targets(cmd, _SED_INPLACE_CLAUSE, _sed_file_operands))
-    targets.extend(_copy_targets(cmd, cwd))
+    targets.extend(_copy_targets(cmd, cwd, expands))
     targets.extend(_git_output_targets(cmd))
     return targets
 
@@ -2194,7 +2262,25 @@ def _placed_target(t, cwd):
         return None
 
 
-def _ungoverned_write_target(targets, root, cfg, cwd):
+def _tree_placer(root, cfg):
+    """(place, expands) for one arm's pass over one command: `place(path)` is
+    `_config.tree_for` for `path` under `root`, asking git about each
+    directory outside the project once (`tree_for`'s `cache`), and
+    `expands(path)` says whether a directory copied whole onto `path` lands in
+    a tree some plan governs - or in one nobody can place - so its files are
+    worth listing (`_copy_targets`)."""
+    cache = {}
+
+    def place(path):
+        return _config.tree_for(None, path, cfg, project=root, cache=cache)
+
+    def expands(path):
+        tree = place(path)
+        return bool(tree["inside"]) or not tree["placed"]
+    return place, expands
+
+
+def _ungoverned_write_target(targets, root, cfg, cwd, place=None):
     """What the plan gate has to say about `targets`.
 
     -> {"hit", "unresolved"}
@@ -2278,6 +2364,7 @@ def _ungoverned_write_target(targets, root, cfg, cwd):
     graded = {"hit": None, "unresolved": [], "root": root, "hits": []}
     if not targets:
         return graded
+    place = place or _tree_placer(root, cfg)[0]
     exts = _source_exts(cfg)
     exempt = cfg.get("exemptGlobs") or _config.DEFAULTS["exemptGlobs"]
     manifest_rel = cfg.get("manifestPath") or _config.DEFAULTS["manifestPath"]
@@ -2295,7 +2382,7 @@ def _ungoverned_write_target(targets, root, cfg, cwd):
         low = t.lower()
         if not any(low.endswith(e) for e in exts):
             continue
-        tree = _config.tree_for(None, placed, cfg, project=root)
+        tree = place(placed)
         if not tree["placed"]:
             if t not in graded["unresolved"]:
                 graded["unresolved"].append(t)
@@ -2334,8 +2421,10 @@ def _source_write_hit(cmd, root, cfg, cwd):
     in command order: a handed command's file is one more file of the same
     command, graded beside the rest."""
     merged = {"hit": None, "unresolved": [], "root": root, "hits": []}
+    place, expands = _tree_placer(root, cfg)
     for text, at in _write_views(cmd, cwd):
-        seen = _ungoverned_write_target(_shell_write_targets(text, at), root, cfg, at)
+        seen = _ungoverned_write_target(_shell_write_targets(text, at, expands),
+                                        root, cfg, at, place)
         merged["unresolved"] += [t for t in seen["unresolved"]
                                  if t not in merged["unresolved"]]
         merged["hits"] += [h for h in seen["hits"]
@@ -2696,14 +2785,15 @@ def _manifest_write_placed(cmd, root, cfg, cwd):
     target outside the project pays for the git call that asks."""
     manifest_rel = str(cfg.get("manifestPath")
                        or _config.DEFAULTS["manifestPath"])
+    place, expands = _tree_placer(root, cfg)
     for text, at in _every_write_view(cmd, cwd):
-        for t in _shell_write_targets(text, at):
+        for t in _shell_write_targets(text, at, expands):
             if not _config.resolvable_destination(t):
                 continue
             placed = _placed_target(t, at)
             if placed is None:
                 continue
-            tree = _config.tree_for(None, placed, cfg, project=root)
+            tree = place(placed)
             if not tree["inside"]:
                 continue
             rel = tree["rel"]
@@ -2781,8 +2871,9 @@ def _journal_write_hit(cmd, root, cfg, cwd, program_targets=()):
     A read of the journal is no hit - a `<` redirect is not among the targets -
     and neither is the plugin's own writer, which is a script that opens the
     file itself rather than a redirect the shell performs."""
+    place, expands = _tree_placer(root, cfg)
     sites = [(t, at) for text, at in _every_write_view(cmd, cwd)
-             for t in _shell_write_targets(text, at)]
+             for t in _shell_write_targets(text, at, expands)]
     sites += [(t, cwd) for t in program_targets]
     for t, at in sites:
         if not _config.resolvable_destination(t):
@@ -2790,7 +2881,7 @@ def _journal_write_hit(cmd, root, cfg, cwd, program_targets=()):
         placed = _placed_target(t, at)
         if placed is None:
             continue
-        tree = _config.tree_for(None, placed, cfg, project=root)
+        tree = place(placed)
         if tree["inside"] and _config.in_journal(tree["root"], cfg, placed):
             return tree["rel"]
     return None

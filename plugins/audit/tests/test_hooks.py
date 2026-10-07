@@ -47,9 +47,11 @@ the divergence deletes those two keys, and the class verdict becomes the
 assertion. A divergence mark on a row that already agrees with its class is a
 failure too, so the mark cannot outlive the fix.
 
-WHAT IS LEFT OUT, AND WHERE IT LIVES. Shapes the security document lists as
-open are not in this table: their verdict is a known gap, and a contract row
-asserting the gap would read as endorsing it. The pure-function rows that grade
+A RESIDUAL IS A KNOWN DIVERGENCE TOO. A shape the security document names as
+open for a class this table holds carries the same two keys, so its verdict
+at each tier is written down and asserted rather than left to be inferred:
+the row goes red the day the verdict moves, in either direction, and the
+`contradicts` text says which residual it is. The pure-function rows that grade
 `_command_is_read_only` directly go through no hook, so they belong to that
 guard's own suite. `OUT_OF_SCOPE_MATCHERS` names every registered matcher no
 row exercises, with the reason.
@@ -319,6 +321,20 @@ ROWS = (
                     "its own, and the redirect arm, reading the code as text, "
                     "takes the program's closing quote and parenthesis into "
                     "the target, which then names no source file"},
+    {"id": "r03", "class": "large-new-undeclared-file", "tool": "Bash",
+     "input": _bash("GIT_EDITOR=sh git commit -e -m \"cat > src/new_module.py "
+                    "<<EOF\n{BIGCONTENT}EOF\""),
+     "why": "the same new file as b17w, written by a commit message that an "
+            "editor variable naming a bare shell runs as a script",
+     "today": _all("allow"),
+     "contradicts": "require-plan.py header: a magnitude above "
+                    "trivialLineThreshold is not trivial at the deny tier. A "
+                    "residual SECURITY.md names: only the assignment words "
+                    "ahead of a program are read as live, and the program's "
+                    "own arguments keep the data-program reading, so a "
+                    "message a shell named in the environment runs as a "
+                    "script is read as text - the class of text a shell is "
+                    "handed as data, which this write arm does not read"},
     {"id": "b17w", "class": "large-new-undeclared-file", "tool": "Write",
      "input": {"file_path": "{ROOT}/src/new_module.py", "content": "{BIGCONTENT}"},
      "why": "a new uncovered source file above the trivial threshold"},
@@ -541,6 +557,30 @@ ROWS = (
                     % JOURNAL.rsplit("/", 1)[0]),
      "why": "a copy onto a link an earlier clause made to the journal "
             "directory"},
+    {"id": "r01", "class": "journal-write", "tool": "Bash",
+     "input": _bash(_nested("python3 -c \"open('%s','a').write('x')\""
+                            % JOURNAL, 1)),
+     "why": "an interpreter's append to the journal, handed to a shell",
+     "today": _all("allow"),
+     "contradicts": "_config.plan_gate_mode docstring: a guard whose claim "
+                    "binds to a journal file reports at every tier. A residual "
+                    "SECURITY.md names: the interpreter reader reads a program "
+                    "typed at the top of the command, and the handed-command "
+                    "walk grades a handed command's shell write shapes, not "
+                    "the code of a program inside it. The journal's hash chain "
+                    "is what detects the write, after the fact"},
+    {"id": "r02", "class": "journal-write", "tool": "Bash",
+     "input": _bash(_nested("echo x >> %s" % JOURNAL, HANDED_BOUND + 2)),
+     "why": "an append to the journal handed two levels past the nesting the "
+            "write guard follows",
+     "today": _ladder("allow", "allow", "deny"),
+     "contradicts": "_config.plan_gate_mode docstring: a guard whose claim "
+                    "binds to a journal file reports at every tier. A residual "
+                    "SECURITY.md names: a command one level past the bound is "
+                    "read flat for the journal, and one handed on further is "
+                    "a write nobody can place, which only the deny tier "
+                    "refuses. The journal's hash chain is what detects the "
+                    "write, after the fact"},
     # manifest edits
     {"id": "b11", "class": "manifest-edit-orchestrator", "tool": "Edit",
      "input": _edit(MANIFEST, "\"title\": \"r\"", "\"title\": \"renamed\""),
@@ -812,7 +852,10 @@ def _verdict_word(decided):
 
 
 # --- the cases ----------------------------------------------------------------------
-KNOWN_DIVERGENCE = ("b17q",)
+# Each id's reason is its row's `contradicts`: b17q a program's shell-out,
+# r01 and r02 the journal residuals, r03 a shell named in the environment
+# running a commit message.
+KNOWN_DIVERGENCE = ("b17q", "r01", "r02", "r03")
 OPERATOR_DECIDED = ("b06", "b10", "g06")
 
 

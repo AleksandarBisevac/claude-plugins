@@ -1379,6 +1379,48 @@ def _cases(check):
         check("tr6 ...while a cwd inside the project is the project, answered "
               "by containment with no git call at all",
               _tr["moved"] is False and _tr["command"] is None, repr(_tr))
+        # (tm) tree_for's `cache` - one git question per directory, however
+        # many files of it a caller places. The cached answers are compared
+        # with answers computed with no cache at all, so a memo that returned
+        # the wrong tree cannot pass by agreeing with itself.
+        _tm_seen = []
+        _tm_real = M._git_rev_parse
+
+        def _tm_count(cwd, fields):
+            _tm_seen.append(str(cwd))
+            return _tm_real(cwd, fields)
+        _tm_paths = [str(wlink / "src" / ("f%d.py" % n)) for n in range(6)]
+        _tm_paths += [str(wother / ("g%d.py" % n)) for n in range(6)]
+        _tm_plain = [M.tree_for(None, p, wcfg, project=wprim) for p in _tm_paths]
+        M._git_rev_parse = _tm_count
+        try:
+            _tm_ok, _tm_got = _harness.attempt(
+                lambda: (lambda memo: [M.tree_for(None, p, wcfg, project=wprim,
+                                                  cache=memo)
+                                       for p in _tm_paths])({}))
+            _tm_one = len(_tm_seen)
+            del _tm_seen[:]
+            _tm_ok1, _tm_first = _harness.attempt(
+                M.tree_for, None, _tm_paths[0], wcfg, project=wprim, cache={})
+        finally:
+            M._git_rev_parse = _tm_real
+
+        def _tm_key(t):
+            return (str(t["root"]), t["inside"], t["moved"], t["rel"],
+                    t["placed"], t["basis"])
+        check("tm1 a cache answers every file of one directory with the "
+              "answer git gives each of them uncached",
+              _tm_ok and [_tm_key(t) for t in _tm_got]
+              == [_tm_key(t) for t in _tm_plain],
+              _tm_got if not _tm_ok else [
+                  (a["rel"], b["rel"], a["basis"], b["basis"])
+                  for a, b in zip(_tm_got, _tm_plain)])
+        _tm_dirs = set(M._nearest_existing_dir(p) for p in _tm_paths)
+        check("tm2 ...and asks git once for the watched tree and once per "
+              "directory a file sits in, never once per file",
+              _tm_ok and _tm_ok1 and len(_tm_dirs) > 1
+              and len(_tm_seen) == 2 and _tm_one == 1 + len(_tm_dirs),
+              (_tm_one, len(_tm_seen), len(_tm_dirs)))
         _cd = M.effective_cwd("cd %s && sed -i x f.ts" % wlink, str(wprim))
         _spaced = os.path.join(str(wprim), "linked worktree")
         check("tr7 effective_cwd reads a literal `cd` - the reading every hook "

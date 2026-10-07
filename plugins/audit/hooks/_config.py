@@ -742,7 +742,18 @@ def _nearest_existing_dir(path):
         p = parent
 
 
-def path_tree(file_path, root, cfg):
+def _memo_rev_parse(cache, cwd, fields):
+    """`_git_rev_parse(cwd, fields)`, asked once per (directory, fields) when
+    `cache` is a dict the caller keeps, and every time when it is None."""
+    if cache is None:
+        return _git_rev_parse(cwd, fields)
+    key = ("rev-parse", str(cwd), tuple(fields))
+    if key not in cache:
+        cache[key] = _git_rev_parse(cwd, fields)
+    return cache[key]
+
+
+def path_tree(file_path, root, cfg, cache=None):
     """Where a FILE lands, for a caller that already knows `file_path` is not
     under `root` (`within_root` answered False) - the plan gate's own "is this
     even mine" question, asked of a PATH rather than of `command_tree`'s `cwd`.
@@ -785,9 +796,17 @@ def path_tree(file_path, root, cfg):
     PAID FOR ONLY BY A CALLER WHOSE CHEAP CHECK ALREADY FAILED. The ordinary
     edit, inside the tree the session started in, never reaches this function
     and never pays for the git calls inside it - `within_root` answers it with
-    no process started at all."""
+    no process started at all.
+
+    ONE QUESTION PER DIRECTORY, WHEN THE CALLER KEEPS A `cache`. Both git
+    answers depend on a directory and never on the file in it - the watched
+    tree's, and the nearest existing directory's - so a caller placing many
+    files hands one dict to every call and each directory is asked once. A
+    recursive copy out of the tree placed every file it lands with two
+    processes of its own, which outran the hook's timeout on an ordinary
+    directory. With no cache every call asks afresh, as it always did."""
     watching = git_root_dir(root, cfg)
-    ours = _git_rev_parse(watching, ["--git-common-dir"])
+    ours = _memo_rev_parse(cache, watching, ["--git-common-dir"])
     if not ours or not ours[0]:
         return {"root": str(root), "placed": True,
                 "basis": "this project names no git repository to compare "
@@ -796,7 +815,7 @@ def path_tree(file_path, root, cfg):
     if start is None:
         return {"root": str(root), "placed": False,
                 "basis": "no existing directory contains %s" % file_path}
-    got = _git_rev_parse(start, ["--show-toplevel", "--git-common-dir"])
+    got = _memo_rev_parse(cache, start, ["--show-toplevel", "--git-common-dir"])
     if not got or not got[0]:
         return {"root": str(root), "placed": True,
                 "basis": "git names no working tree for %s" % start}
@@ -834,7 +853,7 @@ def in_project(file_path, root, cfg):
 PROJECT_ONLY = object()
 
 
-def tree_for(data, target=None, cfg=None, project=None):
+def tree_for(data, target=None, cfg=None, project=None, cache=None):
     """Which tree's PLAN governs the work this hook is judging - the one
     question every hook that reads the manifest asks before it reads it.
 
@@ -876,6 +895,9 @@ def tree_for(data, target=None, cfg=None, project=None):
         caller wants the config and the state home, and places its own
         targets through this function afterwards.
 
+    `cache` is `path_tree`'s: a dict a caller placing many targets keeps
+    across its calls, so a directory outside the project is asked about once.
+
     RESIDUAL, stated because the containment shortcut is what makes it: a
     linked worktree placed UNDER the project directory is judged as part of
     the project, since `within_root` answers before git is asked. The default
@@ -909,7 +931,7 @@ def tree_for(data, target=None, cfg=None, project=None):
         out["rel"] = rel_path(project, target)
         out["basis"] = "inside the project"
         return out
-    placement = path_tree(target, project, cfg)
+    placement = path_tree(target, project, cfg, cache=cache)
     out["basis"] = placement["basis"]
     if not placement["placed"]:
         out["placed"] = False
