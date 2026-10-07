@@ -728,6 +728,12 @@
       "title": "status shows every in-flight phase from the copy that holds it live",
       "status": "pending",
       "shard": "phases/P115.json"
+    },
+    {
+      "id": "P116",
+      "title": "a whole feature in an existing codebase shows where each way of working fails and what it costs",
+      "status": "pending",
+      "shard": "phases/P116.json"
     }
   ],
   "fileIndex": {
@@ -5551,7 +5557,8 @@
       "P101.4-1cb"
     ],
     "docs/README.md": [
-      "P101.3"
+      "P101.3",
+      "P116.1"
     ],
     "plugins/audit/evals/feature/case.yaml": [
       "P101.3"
@@ -5822,6 +5829,12 @@
     "plugins/audit/tests/test_materialize_proposal.py": [
       "P102.13-ptn",
       "P102.14-ptn"
+    ],
+    "docs/research/benchmark-feature-design.md": [
+      "P116.1"
+    ],
+    "docs/research/benchmark-feature-results.md": [
+      "P116.2"
     ]
   },
   "bugs": [
