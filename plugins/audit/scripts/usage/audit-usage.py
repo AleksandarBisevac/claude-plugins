@@ -192,6 +192,14 @@ def resolve_manifest(args, project):
     return mio.resolve_manifest(project, args.manifest)
 
 
+def _config_named_a_plan(resolved):
+    """True when the config, not the default, is why no plan was found: it could
+    not be read, or its `manifestPath` points at nothing. Either way the project
+    said which plan it has, so rendering without one is not this project's
+    answer."""
+    return bool(resolved["problem"]) or resolved["source"] == "config"
+
+
 def resolve_ledger(args, project, manifest):
     """`--ledger-dir` > manifest `meta.usage.ledgerDir` > `.claude/usage`.
 
@@ -926,9 +934,17 @@ def main(argv):
     project = resolve_project(args)
     resolved = resolve_manifest(args, project)
     manifest_path = resolved["path"]
+    if manifest_path is None and _config_named_a_plan(resolved):
+        # The config is unreadable, or names a plan that is not there. Rendering
+        # without a plan would read meta.usage off nothing - showCost included -
+        # and print the dollars a plan turned off, so this refuses exactly as
+        # /audit:status and /audit:report do.
+        sys.stderr.write(mio.describe_unresolved(resolved) + "\n")
+        return 2
     if manifest_path is None:
-        # The ledger renders without a plan, so this is a note and not a
-        # refusal - but it says why the plan's titles and meta.usage are absent.
+        # Nothing configured and no plan at the default: the ledger renders
+        # without one, so this is a note - it says why titles and meta.usage
+        # are absent.
         sys.stderr.write("note: rendering without the plan's titles and "
                          "meta.usage - %s\n" % (mio.describe_unresolved(resolved),))
     manifest = load_manifest(manifest_path)

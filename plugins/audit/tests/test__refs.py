@@ -3897,6 +3897,26 @@ def _placeholder_cases(check):
               "the table cannot outlive its debt: %r" % (got2,),
               rels == ["commands/clean.md", "commands/thin.md"]
               and [g for g in got2 if g[0] == "commands/clean.md"][0][1] == 0)
+
+        # A command written over backslash-continued lines is one command: the
+        # placeholder on the continuation is handed to the script on the line
+        # above it.
+        _write(tmp, _FX_COMMANDS + "wrapped.md",
+               "intro\n"
+               "python3 \"scripts/status/audit-status.py\" \\\n"
+               "    %s --json\n"
+               "python3 \"scripts/status/audit-status.py\"\n"
+               "%s is the plan the next line reads\n"
+               % (_PH, _PH))
+        got3 = [g for g in M.manifest_placeholder_drift(tmp, pending=())
+                if g[0] == "commands/wrapped.md"]
+        check("mp7 RED: a placeholder on a backslash-continued line is reported "
+              "against the line the command starts on: %r" % (got3,),
+              got3 == [("commands/wrapped.md", 2, "audit-status.py")])
+        check("mp8 ALLOW: without the backslash the next line is a separate "
+              "line and is not joined to the script above it - only line 2 is "
+              "named: %r" % (got3,),
+              [g[1] for g in got3] == [2])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

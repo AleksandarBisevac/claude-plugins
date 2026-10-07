@@ -6,7 +6,34 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ## [Unreleased]
 
+### Added
+- **`audit-status.py` and `render-report.py` take the manifest as an optional argument.**
+  Given none, they find it themselves through one shared resolver,
+  `_manifest_io.resolve_manifest`: the `manifestPath` that `.claude/audit.config.json` names
+  under the project (`CLAUDE_PROJECT_DIR`, else the working directory), else
+  `docs/audit/audit-plan.json` there. An absolute `manifestPath` is used as given, the way the
+  hooks already read it. `audit-usage.py` asks the same resolver, so the three scripts behind the
+  first-contact commands agree on which plan is the project's.
+
 ### Changed
+- **`/audit:status`, `/audit:report` and `/audit:usage` refuse when the config names a manifest
+  they cannot use.** A `.claude/audit.config.json` that does not parse, or whose `manifestPath`
+  names a file that does not exist, makes each of them exit 2 and print the same refusal
+  (`_manifest_io.describe_unresolved`): every place it looked, what it found there, and the ways
+  forward. None of them falls back to `docs/audit/audit-plan.json` in that case, because that
+  is a different plan from the one the project points at. For `/audit:usage` this replaces
+  rendering with no plan, which read `meta.usage` off nothing and so showed equivalent cost for a
+  project whose plan sets `showCost: false`. With no config and no plan at the default location,
+  `/audit:usage` still renders the ledger and says it has no plan, and `/audit:status` and
+  `/audit:report` exit 2 naming where they looked.
+
+- **The first-contact commands no longer hand their script a `<manifestPath>` placeholder.**
+  `/audit:status`, `/audit:usage`, `/audit:report` and `/audit:next` used to leave the model to
+  fill the manifest path in, and a command that reads no reference stating the default got a
+  guess, said out loud. The scripts now find the manifest themselves, and
+  `_refs.manifest_placeholder_drift` reports a command line that hands a self-resolving script
+  the placeholder, including one written over backslash-continued lines.
+
 - **`audit-task.py done` and `close-phase.py` refuse to close over a verdict that no longer
   holds** — except where there is no measurement to vouch for in the first place: no run is
   recorded under the gate, the newest row answers `empty-gate`, the phase's branch has already

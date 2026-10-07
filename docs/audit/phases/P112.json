@@ -22,7 +22,72 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P112-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/usage/audit-usage.py:926-936; scripts/manifest/_manifest_io.py:359-390",
+        "issue": "With a malformed .claude/audit.config.json or a config naming a manifestPath that does not exist, /audit:usage now renders with no plan and defaults showCost to true, so a project whose default-location plan sets meta.usage.showCost false gets dollars printed - the failure the old fall-back existed to prevent - and the malformed case contradicts COMPATIBILITY.md's 'the /audit:* commands refuse to run until it parses'.",
+        "resolution": "Refuse with exit 2 and describe_unresolved when the config is malformed or names a missing manifest, as audit-status and render-report do; a case with a showCost-false plan at the default path plus a malformed config asserts no dollar figure is printed."
+      },
+      {
+        "id": "P112-R2",
+        "severity": "med",
+        "file": "CHANGELOG.md [Unreleased]",
+        "issue": "The first-contact commands' manifest resolution changes behaviour users see (optional manifest positional on audit-status and render-report with an exit-2 refusal naming where they looked; four commands no longer pass <manifestPath>; usage no longer falls back to the default plan when the config names a missing or unreadable manifest) and no CHANGELOG entry records it.",
+        "resolution": "Add Added and Changed entries under [Unreleased] stating what each of status, report and usage now does in that case."
+      },
+      {
+        "id": "P112-R3",
+        "severity": "med",
+        "file": "docs/audit/phases/P112.json (P112.2 outcome); plugins/audit/scripts/_refs.py:1684",
+        "issue": "The rest of the placeholder class (phase.md:110, task.md:171, reference/orchestrator.md:92/102/723 handing the self-resolving audit-status.py a <manifestPath>, status.md:346's verify-invariants line, and the copies of the rule in audit-task.py and _panel_paths.py) is recorded only as prose in a done task's outcome - no task, proposal or bug - and reference/ is outside the lint's scan, so the orchestrator.md lines are invisible to every mechanism.",
+        "resolution": "File the follow-up as a tracked item naming the file:line list, with acceptance that either scans reference/ in manifest_placeholder_drift or adds pending rows for orchestrator.md."
+      },
+      {
+        "id": "P112-R4",
+        "severity": "med",
+        "file": "CONTRIBUTING.md:62-91; tools/demo-gate.tape:99-113; docs/screenshots/demo-gate.gif",
+        "issue": "Claude Code's LSP-recommendation dialog (typescript-lsp, 'Yes, install' preselected) opens after the first .ts edit during --record; a take that answered it installed the plugin at user scope, the tape relies on Escape, the committed GIF shows the dialog on camera (frame 1000), and nothing an operator reads before --record mentions it.",
+        "resolution": "Document the dialog, its possible user-scope install and its undo in CONTRIBUTING; keep it from appearing where a documented switch or an isolated config allows; have the recorder compare the operator's installed plugins before and after a take and refuse a take that changed them."
+      },
+      {
+        "id": "P112-R5",
+        "severity": "low",
+        "file": "tools/capture-demo-gif.py:1040-1160; CONTRIBUTING.md:83-87",
+        "issue": "The recorder leaves operator state behind: the workspace-trust answer for /tmp/acme-store-demo (a fixed path under world-writable /tmp, so a later directory there with its own .claude/settings.json gets a folder this user already trusts) and the take's session transcripts under the operator's projects directory; CONTRIBUTING discloses the trust only as 'as it would for any folder you trust'.",
+        "resolution": "Remove what the take created where that is supported, otherwise print exact undo steps naming the config file and key; mention or remove the transcript directory."
+      },
+      {
+        "id": "P112-R6",
+        "severity": "low",
+        "file": "CONTRIBUTING.md:77-80; tools/capture-demo-gif.py:1093-1110",
+        "issue": "CONTRIBUTING says no frame carries the operator's identity, but the scan reads VHS's text output and failed-Wait screens, never the GIF's frames, and when `claude auth status --json` names no account the organisation check silently narrows to the email pattern.",
+        "resolution": "Narrow the sentence to what is scanned, and refuse a take when the account query gives no answer (or state the narrowed check)."
+      },
+      {
+        "id": "P112-R7",
+        "severity": "low",
+        "file": "tools/demo-gate.tape:49-51; tools/capture-demo-gif.py:507-508",
+        "issue": "Both say the footer shows 'the CLI's own interactive default' permission mode with no basis; the GIF's footer reads 'auto mode on'.",
+        "resolution": "State the basis (the documented interactive default for this CLI version, with its reference) or pin the mode in an isolated config, and say which."
+      },
+      {
+        "id": "P112-R8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_manifest_io.py:385",
+        "issue": "An absolute manifestPath in the config is joined under the project and becomes unresolvable, while the hooks honour an absolute value, so /audit:status and /audit:report refuse a plan the plan gate enforces.",
+        "resolution": "Use the value as given when it is absolute, matching hooks/_config.py, with a resolve case."
+      },
+      {
+        "id": "P112-R9",
+        "severity": "low",
+        "file": "plugins/audit/scripts/_refs.py:1684-1689",
+        "issue": "manifest_placeholder_drift does not see a placeholder on a backslash-continued line after the script, a shape the commands already use, and its cannot-see list does not name it.",
+        "resolution": "Join continued lines before matching, or name the shape in the cannot-see list with a case showing it is not matched."
+      }
+    ],
+    "outcome": "[findings: 9 - 0 high, 4 med, 5 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -236,6 +301,97 @@
         "commit": "a4f8aef4",
         "at": "2026-10-07T02:10:30Z",
         "basis": "orchestrator check: the five sections named in the description carry sentences true of the code they cite; the doc lints and gate-parity are green"
+      }
+    },
+    {
+      "id": "P112.4-uce",
+      "title": "usage refuses an unresolvable manifest instead of printing dollars a plan turned off, and the change is recorded",
+      "status": "in_progress",
+      "description": "Fixes review findings P112-R1, P112-R2, P112-R8 and P112-R9.\n\n(R1) /audit:usage refuses as audit-status and render-report do when the resolver reports a problem: a malformed .claude/audit.config.json, or a config naming a manifestPath that does not exist. It exits 2 and prints describe_unresolved. It never renders with no plan, because that would default showCost to on for a project whose plan turns dollars off. This also keeps COMPATIBILITY.md's 'the /audit:* commands refuse to run until it parses'. When nothing is configured and no plan exists at the default, the existing behaviour stays as it is.\n\n(R8) An absolute manifestPath in the config is used as given, matching how the hooks read it.\n\n(R9) manifest_placeholder_drift reads a command spread over backslash-continued lines as one line, or names that shape in its cannot-see list with a case.\n\n(R2) CHANGELOG.md [Unreleased] records the change users see. Under Added: the optional manifest argument on audit-status and render-report and the shared resolver. Under Changed: what each of /audit:status, /audit:report and /audit:usage does when the config names a missing or unreadable manifest, and that the first-contact commands no longer pass a placeholder.\n\nCases:\n- A default-location plan with showCost false plus a malformed config: /audit:usage exits 2 and prints no dollar figure.\n- A config naming a missing file: refused, naming where it looked.\n- An absolute manifestPath resolves.\n- A continued-line placeholder is reported, or is named as unseen.",
+      "files": [
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/tests/test_audit_usage.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/tests/test__manifest_io.py",
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/tests/test__refs.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_usage.py: a default-location plan with showCost false plus a malformed config makes /audit:usage exit 2 with no dollar figure, and a config naming a missing manifest is refused naming where it looked",
+          "plugins/audit/tests/test__manifest_io.py: an absolute manifestPath in the config resolves as given"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-07T02:21:46Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T02:37:20Z.e3a3c0",
+        "status": "passed",
+        "at": "2026-10-07T02:37:20Z"
+      }
+    },
+    {
+      "id": "P112.5-uce",
+      "title": "the demo recorder keeps its side effects out of the operator's config, or names and checks them",
+      "status": "in_progress",
+      "description": "Fixes review findings P112-R4, P112-R5, P112-R6 and P112-R7, all about what the demo recorder does to the operator's machine and what it claims.\n\nThe structurally correct shape is an isolated Claude Code config for the take: a CLAUDE_CONFIG_DIR created under the take's scratch directory and removed afterwards. Then workspace trust, plugin installs, LSP recommendations, the permission-mode state and session transcripts all stay out of the operator's own config.\n- Use it whenever the take can authenticate there. CLAUDE_CODE_OAUTH_TOKEN in the environment is the documented way to authenticate without an interactive login. Confirm that in the official docs, cite it, and add the URL to the code.\n- When it cannot, fall back to the operator's own config. In that case:\n  - (R4) compare the operator's installed plugins before and after the take, and refuse a take that changed them, naming the change and its undo command;\n  - (R5) print, after the take, exactly what it left behind: the trust entry for the demo folder and the transcript directory, with the steps to remove each.\n\n(R6) CONTRIBUTING's sentence about what the scan reads says what is actually scanned: VHS's text output and failed-Wait screens, not the GIF's pixels. A take whose account query gives no answer is refused, rather than narrowing the check silently.\n\n(R7) The tape and the recorder state the basis for the permission mode the footer shows. Either it is Claude Code's documented interactive default for the recorded CLI version (cite the reference), or the isolated config pins it; say which.\n\n(R4) CONTRIBUTING documents the LSP-recommendation dialog: what it is, that a stray keypress installs a plugin into the operator's user scope, and its undo.\n\nThe committed GIF is not re-recorded by this task. If the change alters the tape or the recorded settings in a way --check compares, say so, and the orchestrator re-records.",
+      "files": [
+        "tools/capture-demo-gif.py",
+        "tools/demo-gate.tape",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/capture-demo-gif.py: a take recorded against the operator's config whose installed plugins changed is refused naming the change and its undo, and a take with an isolated config dir leaves the operator's config untouched; an unanswered account query refuses the take"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-07T02:21:46Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T02:39:44Z.522641",
+        "status": "passed",
+        "at": "2026-10-07T02:39:44Z"
       }
     }
   ],

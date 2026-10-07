@@ -1676,10 +1676,33 @@ def self_resolving_scripts(repo_root=None):
     return sorted(set(out))
 
 
+def _logical_lines(lines):
+    """[(first physical line number, text)] with every backslash-continued run
+    joined into one line, the way the shell reads it - so a placeholder on a
+    continuation is seen beside the script the command starts with. A line that
+    does not end in a backslash is never joined to the next."""
+    out = []
+    start, parts = None, []
+    for lineno, line in enumerate(lines, 1):
+        if start is None:
+            start = lineno
+        stripped = line.rstrip()
+        if stripped.endswith("\\"):
+            parts.append(stripped[:-1])
+            continue
+        parts.append(line)
+        out.append((start, " ".join(parts)))
+        start, parts = None, []
+    if parts:
+        out.append((start, " ".join(parts)))
+    return out
+
+
 def manifest_placeholder_drift(repo_root=None, pending=None):
     """[(doc, lineno, script)] - every line of `commands/*.md` handing a
     self-resolving script `<manifestPath>`, plus `(doc, 0, reason)` for a pending
-    row whose document carries no such line any more.
+    row whose document carries no such line any more. A command continued over
+    backslash-ended lines is read as one line and reported at its first.
 
     WHAT THIS CANNOT SEE: `reference/` is not scanned - it is read by the
     orchestrator-driven commands, which state the default where the placeholder
@@ -1707,7 +1730,7 @@ def manifest_placeholder_drift(repo_root=None, pending=None):
         except OSError as exc:
             out.append(("%s <unreadable: %s>" % (rel, exc), 0, ""))
             continue
-        for lineno, line in enumerate(lines, 1):
+        for lineno, line in _logical_lines(lines):
             for match in _PLACEHOLDER_AFTER_RE.finditer(line):
                 script = match.group(1)
                 if script not in resolving:

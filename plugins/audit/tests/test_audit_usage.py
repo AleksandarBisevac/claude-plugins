@@ -352,6 +352,55 @@ def _cases(check):
               "case that fails if the note is written unconditionally",
               _rc_f == 0 and _err_f == "", repr(_err_f))
 
+        # A plan at the default location turns dollars off; a config the user
+        # wrote is malformed. Rendering with no plan would read showCost off {}
+        # and print the dollars that plan exists to keep off the screen, so the
+        # command refuses the way /audit:status and /audit:report do.
+        _off = os.path.join(tmp, "cost-off")
+        os.makedirs(os.path.join(_off, ".claude"), exist_ok=True)
+        os.makedirs(os.path.join(_off, "docs", "audit"), exist_ok=True)
+        with open(os.path.join(_off, "docs", "audit", "audit-plan.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"meta": {"usage": {"showCost": False}}, "phases": [],
+                       "bugs": []}, fh)
+        _off_cfg = os.path.join(_off, ".claude", "audit.config.json")
+
+        def _usage_text(project):
+            import contextlib
+            import io
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = M.main(["--ledger-dir", ledger, "--project-dir", project,
+                             "--color", "never"])
+            return rc, out.getvalue(), err.getvalue()
+
+        _rc_ok, _out_ok, _err_ok = _usage_text(_off)
+        check("mn3 ALLOW: the showCost-false plan, with no config, renders "
+              "(exit 0) and prints no dollar figure - the plan is honoured",
+              _rc_ok == 0 and _out_ok and "$" not in _out_ok,
+              repr((_rc_ok, _err_ok)))
+        with open(_off_cfg, "w", encoding="utf-8") as fh:
+            fh.write("{ not json")
+        _rc_bad, _out_bad, _err_bad = _usage_text(_off)
+        check("mn4 RED: the same plan plus a malformed config exits 2, prints "
+              "no dollar figure, and names the config as the problem",
+              _rc_bad == 2 and "$" not in _out_bad and "$" not in _err_bad
+              and _off_cfg in _err_bad
+              and "rendering without the plan" not in _err_bad,
+              repr((_rc_bad, _out_bad[:200], _err_bad)))
+        check("mn5 the refusal is the shared wording, not a third one",
+              _err_bad == M.mio.describe_unresolved(
+                  M.mio.resolve_manifest(_off, None)) + "\n", repr(_err_bad))
+        with open(_off_cfg, "w", encoding="utf-8") as fh:
+            json.dump({"manifestPath": "moved/audit-plan.json"}, fh)
+        _gone = os.path.normpath(os.path.join(_off, "moved", "audit-plan.json"))
+        _rc_gone, _out_gone, _err_gone = _usage_text(_off)
+        check("mn6 RED: a config naming a missing manifest is refused (exit 2), "
+              "naming where it looked, and the default plan is not read instead",
+              _rc_gone == 2 and _gone in _err_gone and _out_gone == "",
+              repr((_rc_gone, _err_gone)))
+        os.remove(_off_cfg)
+
         # --json path
         argv = ["--ledger-dir", ledger, "--project-dir", tmp, "--json"]
         import io

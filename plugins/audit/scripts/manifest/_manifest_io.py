@@ -358,7 +358,8 @@ def _config_manifest_rel(cfg_path):
 
 def resolve_manifest(project, explicit=None):
     """Where the manifest is: the explicit argument, else the config's
-    `manifestPath`, else `DEFAULT_MANIFEST_REL` - both relative to `project`.
+    `manifestPath`, else `DEFAULT_MANIFEST_REL` - read against `project`, except
+    an absolute `manifestPath`, which is used as given.
 
     Returns {"path", "source", "looked", "problem"}. `path` is None when no
     manifest exists where the rule points, and `looked` then lists every
@@ -382,7 +383,10 @@ def resolve_manifest(project, explicit=None):
     source = "config" if rel is not None else "default"
     if rel is None:
         rel = DEFAULT_MANIFEST_REL
-    cand = os.path.normpath(os.path.join(project, *rel.split("/")))
+    # An absolute path is used as given - the hooks join it onto the project,
+    # which keeps an absolute path whole - so both readers find the same file.
+    cand = os.path.normpath(rel if os.path.isabs(rel)
+                            else os.path.join(project, *rel.split("/")))
     if os.path.isfile(cand):
         return {"path": cand, "source": source, "looked": looked, "problem": None}
     looked.append((cand, "does not exist"))

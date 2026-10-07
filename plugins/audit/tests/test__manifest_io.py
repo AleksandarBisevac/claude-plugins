@@ -1128,6 +1128,28 @@ def _resolve_cases(check):
               r6["path"] is None and r6["problem"]
               and cfg in r6["problem"] and cfg in M.describe_unresolved(r6),
               repr(r6))
+
+        # An absolute manifestPath is used as given, the way the hooks join it.
+        # The plan sits OUTSIDE the project, so a resolver that glued the path
+        # under the project would look somewhere that does not exist.
+        outside = tempfile.mkdtemp(prefix="manifest-io-abs-")
+        try:
+            abs_plan = os.path.join(outside, "plan.json")
+            _write_json(abs_plan, {"meta": {}, "phases": []})
+            _write_json(cfg, {"manifestPath": abs_plan.replace(os.sep, "/")})
+            r7 = M.resolve_manifest(tmp)
+            check("rm9 an absolute manifestPath in the config resolves as given, "
+                  "not re-rooted under the project",
+                  r7["path"] == os.path.normpath(abs_plan)
+                  and r7["source"] == "config", repr(r7))
+        finally:
+            shutil.rmtree(outside, ignore_errors=True)
+        _write_json(cfg, {"manifestPath": "docs/audit/audit-plan.json"})
+        r8 = M.resolve_manifest(tmp)
+        check("rm10 ALLOW: a relative manifestPath is still read against the "
+              "project - the case that fails if every path is taken as given",
+              r8["path"] == os.path.normpath(default_abs)
+              and r8["source"] == "config", repr(r8))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
