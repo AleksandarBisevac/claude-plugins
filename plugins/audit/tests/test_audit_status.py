@@ -3382,10 +3382,16 @@ def _live_copy_cases(check):
         P3  locked, absent from this checkout's index
         P4  no branch of its own, nothing of its own ready
         P5  branch predates the shard, this checkout's copy none ready
-        P6  branch two ready, and this checkout committed to the shard after
-            the branch forked
+        P6  branch two ready, and this checkout changed a task's status in
+            the shard after the branch forked
+        P7  branch none ready, and this checkout retitled a task in the shard
+            after the branch forked - an edit that moves no readiness
+        P8  branch none ready, and the only commit this checkout gained after
+            the branch forked is a --no-ff landing of a branch that predates
+            the shard, which brings the shard no content at all
     """
-    labels = ("lw1", "lw2", "lw3", "lw4", "lw5", "lw6", "lw7", "lw8", "lw9")
+    labels = ("lw1", "lw2", "lw3", "lw4", "lw5", "lw6", "lw7", "lw8", "lw9",
+              "lw10", "lw11")
     if not shutil.which("git"):
         for _lbl in labels:
             _harness.skip(check, _lbl, "git is not on PATH, and the locks, the "
@@ -3416,13 +3422,20 @@ def _live_copy_cases(check):
 
     phases = [("P1", "worktree", 0, 3), ("P2", "dirty", 0, 3),
               ("P4", "alone", 2, 0), ("P5", "stalezero", 2, 0),
-              ("P6", "behind", 0, 4)]
+              ("P6", "behind", 0, 4), ("P7", "retitled", 0, 2),
+              ("P8", "merged", 0, 2)]
     with open(os.path.join(repo, "README"), "w", encoding="utf-8") as fh:
         fh.write("x\n")
     sh("init", "-q")
     sh("add", "-A")
     sh("commit", "-qm", "before the plan")
     sh("branch", "audit/p5-stalezero")
+    sh("checkout", "-q", "-b", "predates-the-plan")
+    with open(os.path.join(repo, "OTHER"), "w", encoding="utf-8") as fh:
+        fh.write("y\n")
+    sh("add", "-A")
+    sh("commit", "-qm", "work that never touched a shard")
+    sh("checkout", "-q", "main")
     manifest_path = os.path.join(repo, "docs", "audit", "audit-plan.json")
     with open(manifest_path, "w", encoding="utf-8") as fh:
         json.dump({"meta": {"version": 3, "title": "live copies"},
@@ -3439,8 +3452,21 @@ def _live_copy_cases(check):
     write_shard(repo, "P6", "behind", 2, 2)
     sh("commit", "-qam", "two P6 tasks done on the phase branch")
     sh("checkout", "-q", "main")
-    write_shard(repo, "P6", "behind", 0, 4, last="retitled on main")
-    sh("commit", "-qam", "this checkout's copy of P6 moves on without the branch")
+    for pid, title in (("P7", "retitled"), ("P8", "merged")):
+        sh("checkout", "-q", "-b", "audit/%s-%s" % (pid.lower(), title))
+        write_shard(repo, pid, title, 2, 0)
+        sh("commit", "-qam", "every %s task done on the phase branch" % (pid,))
+        sh("checkout", "-q", "main")
+    # The landing sits directly on the commit every phase branch forked from:
+    # that is the shape under which a commit count over the shard's path
+    # counts the merge although it changed nothing there.
+    sh("merge", "-q", "--no-ff", "predates-the-plan", "-m",
+       "land a branch that predates every shard")
+    write_shard(repo, "P6", "behind", 1, 3)
+    sh("commit", "-qam", "this checkout's copy of P6 closes a task the branch "
+                         "never saw")
+    write_shard(repo, "P7", "retitled", 0, 2, last="retitled on main")
+    sh("commit", "-qam", "this checkout's copy of P7 retitles a task")
     tree1 = os.path.join(root, "p1-tree")
     tree2 = os.path.join(root, "p2-tree")
     sh("worktree", "add", "-q", tree1, "audit/p1-worktree")
@@ -3450,7 +3476,7 @@ def _live_copy_cases(check):
 
     quiet = lambda *_a, **_k: None                  # noqa: E731
     sid = "live-copy-fixture"
-    locked = ["P1", "P2", "P3", "P4", "P5", "P6"]
+    locked = ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8"]
     took = [_lockmod.held(_lockmod.acquire(
         repo, "phase-%s" % (p,), note="/audit:phase %s" % (p,), session=sid,
         pid=os.getpid(), out=quiet)) for p in locked]
@@ -3503,36 +3529,55 @@ def _live_copy_cases(check):
               and "could not be read" in basis("P5")
               and "holds the phase live" not in basis("P5"))
         p6 = row("P6")
-        check("lw6 a branch behind this checkout's commits to the shard is "
+        moved = "in a way that moves readiness"
+        check("lw6 a branch whose shard this checkout changed in a way that "
+              "moves readiness - a task's status - after the branch forked is "
               "still counted from the branch, and the basis says this "
-              "checkout's copy has commits to that file the branch lacks: %r"
-              % (p6,),
-              p6.get("readyCount") == 2 and "lacks" in basis("P6")
-              and "commit(s)" in basis("P6") and p6.get("readyLive") is False)
+              "checkout's copy changed after the fork: %r" % (p6,),
+              p6.get("readyCount") == 2 and moved in basis("P6")
+              and "forked" in basis("P6") and p6.get("readyLive") is False)
         check("lw7 ...and its twin: a branch this checkout has not moved past "
               "carries no such note: %r" % (p2,),
-              "lacks" not in basis("P2") and p2.get("readyLive") is True)
+              moved not in basis("P2") and p2.get("readyLive") is True)
+        p7, p8 = row("P7"), row("P8")
+        check("lw10 a landed edit to the shard that moves no readiness - a "
+              "task retitled - carries no note and leaves the zero live; lw6, "
+              "the same shape with a status changed, is its twin: %r" % (p7,),
+              p7.get("readyCount") == 0 and p7.get("readyLive") is True
+              and moved not in basis("P7") and "forked" not in basis("P7"))
+        check("lw11 a --no-ff landing of a branch that predates the shard, "
+              "after the phase branch committed to it, brings the shard no "
+              "content, so it carries no note and the zero is live; lw6 is "
+              "its twin: %r" % (p8,),
+              p8.get("readyCount") == 0 and p8.get("readyLive") is True
+              and moved not in basis("P8") and "forked" not in basis("P8"))
 
         summary = dict(M.rollup(manifest, [], []), locks=block)
         lines = M.unfinished_runs(summary) or []
         per = [sum(("phase %s holds" % (p,)) in ln for ln in lines)
                for p in locked]
-        check("lw8 the live zeros (P1, P4) are silent, and the uncounted lock, "
-              "the stale zero, the worktree's one and the branch behind each get "
-              "exactly one line, so the gate fails: %r" % (lines,),
-              per == [0, 1, 1, 0, 1, 1]
+        p5_line = [ln for ln in lines if "phase P5 holds" in ln]
+        check("lw8 the live zeros (P1, P4, P7, P8) are silent, and the "
+              "uncounted lock, the stale zero, the worktree's one and the "
+              "branch behind each get exactly one line, the stale zero's "
+              "repair sends the reader back to the copy rather than to the "
+              "waves, so the gate fails: %r" % (lines,),
+              per == [0, 1, 1, 0, 1, 1, 0, 0]
               and any("phase P5 holds a lock with 0 task(s)" in ln
                       for ln in lines)
+              and len(p5_line) == 1 and "waves" not in p5_line[0]
+              and "re-read" in p5_line[0]
               and M.evaluate_gate(summary, ["unfinished-run"])
               == ["unfinished-run"])
         quiet_block = dict(block, held=[r for r in block.get("held") or []
-                                        if r.get("name") in ("phase-P1",
-                                                             "phase-P4")])
+                                        if r.get("name") in (
+                                            "phase-P1", "phase-P4",
+                                            "phase-P7", "phase-P8")])
         calm = dict(summary, locks=quiet_block)
         check("lw9 ...and its twin: the live zeros alone pass the gate and print "
               "nothing, so lw8's failure is the other rows: %r"
               % (M.unfinished_runs(calm),),
-              len(quiet_block["held"]) == 2
+              len(quiet_block["held"]) == 4
               and M.unfinished_runs(calm) is None
               and M.evaluate_gate(calm, ["unfinished-run"]) == [])
     finally:

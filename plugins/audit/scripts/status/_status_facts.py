@@ -272,6 +272,33 @@ def ready_tasks(manifest):
     return _priority.rank_ready(rows)
 
 
+def readiness_projection(phase):
+    """The part of one phase body that `ready_tasks` reads, and nothing else.
+
+    Two copies of a phase whose projections are equal give the same ready set
+    for that phase whatever else differs between them - a title, a
+    description, an outcome or a note moves no task into or out of readiness.
+    So a comparison of projections answers "did this edit move readiness",
+    which a comparison of whole files, or a count of commits to the file,
+    cannot: either reads a reworded description, or a merge that brought the
+    file no content, as a change.
+
+    Kept beside `ready_tasks` because it has to name the same fields: the
+    task's id and status, its own `blockedBy` and `dependsOn`, and the phase's
+    `status` and `blockedBy`, which `status_index` and the phase gate read.
+    A field added to the readiness rule belongs here too.
+    """
+    if not isinstance(phase, dict):
+        return None
+    return {"id": phase.get("id"), "status": phase.get("status"),
+            "blockedBy": phase.get("blockedBy"),
+            "tasks": [{"id": t.get("id"), "status": t.get("status"),
+                       "blockedBy": t.get("blockedBy"),
+                       "dependsOn": t.get("dependsOn")}
+                      if isinstance(t, dict) else t
+                      for t in (phase.get("tasks") or [])]}
+
+
 def ready_by_phase(manifest):
     """`{phase id: [ready task ids]}` - `ready_tasks` grouped by the owning phase.
 
@@ -1368,6 +1395,13 @@ UNFINISHED_LIVE = ("its holder is still there, so the run is either working or "
 UNFINISHED_STALE = ("its holder is gone, so nothing is going to finish it - "
                     "`/audit:resume` continues it, and `audit-lock.py release "
                     "phase-%s` gives the lock back")
+# A zero from a copy that is not the live one says nothing about waves left -
+# it says the count is not the run's - so its repair is about the reading, and
+# it is the same whether the lock's holder is there or gone.
+UNFINISHED_UNREAD = ("that zero is not from the copy holding phase %s live, "
+                     "so it says nothing about work left - re-read the count "
+                     "from the copy named, or check the branch, before acting "
+                     "on the lock")
 
 
 def unfinished_runs(summary):
@@ -1400,9 +1434,11 @@ def unfinished_runs(summary):
 
     A ZERO IS SILENT ONLY WHEN IT WAS COUNTED FROM THE LIVE COPY. A zero read
     off a fallback copy is a stale reading of a phase whose real state lives
-    elsewhere, so it prints like any other count and its basis says it is not
-    current. An absent `readyLive` is not a claim that the copy was live, so it
-    is read as False.
+    elsewhere, so it prints, with its basis saying it is not current. Its
+    repair is `UNFINISHED_UNREAD` rather than a resume: it says nothing about
+    work left, only that the count must be re-read from the copy named. An
+    absent `readyLive` is not a claim that the copy was live, so it is read as
+    False.
 
     THE SAME THREE STATES `invariant_breaches` AND `stranded_skills` HAVE, plus
     the reading of a lock this one adds. The `locks` block is INJECTED by
@@ -1454,8 +1490,11 @@ def unfinished_runs(summary):
         # plan still has ready.
         if count == 0 and row.get("readyLive") is True:
             continue
-        repair = (UNFINISHED_LIVE if row.get("live") else UNFINISHED_STALE) % (
-            phase,)
+        if count == 0:
+            repair = UNFINISHED_UNREAD % (phase,)
+        else:
+            repair = (UNFINISHED_LIVE if row.get("live")
+                      else UNFINISHED_STALE) % (phase,)
         out.append("phase %s holds a lock with %d task(s) still ready, %s: %s. %s"
                    % (phase, count, row["readyBasis"], row.get("basis")
                       or "no basis was recorded for the lock, which is itself a "

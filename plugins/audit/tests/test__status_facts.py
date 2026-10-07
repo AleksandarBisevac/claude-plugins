@@ -1848,6 +1848,58 @@ def _own_ready_cases(check):
           and M.evaluate_gate(unsaid, ["unfinished-run"])
           == ["unfinished-run"])
 
+    # A zero read off a copy that is not the live one says nothing about the
+    # run having waves left - it says the count is not the run's. Its repair
+    # sends the reader to the copy, never to the waves, and that holds whether
+    # the lock's holder is there or gone.
+    gone = dict(lock("P8", 0, stale_basis, live=False), live=False)
+    zeros = [(M.unfinished_runs({"locks": {"held": [row]},
+                                 "ready": plan_ready}) or [""])[0]
+             for row in (lock("P8", 0, stale_basis, live=False), gone)]
+    check("ul12 a non-live zero's repair says to re-read the count from the "
+          "copy named or to check the branch, and never to resume the waves - "
+          "with its holder there or gone: %r" % (zeros,),
+          all("re-read" in z and "check the branch" in z for z in zeros)
+          and not any("waves" in z or "/audit:resume" in z for z in zeros))
+    counted = (M.unfinished_runs({"locks": {"held": [
+        lock("P8", 2, stale_basis, live=False)]}, "ready": plan_ready})
+        or [""])[0]
+    check("ul13 ...and its twin: a non-live count that is NOT zero still names "
+          "the waves to pick up, so ul12's sentence is the zero's and not "
+          "every non-live row's: %r" % (counted,),
+          "picks the remaining waves up" in counted and "re-read" not in counted)
+
+    project = getattr(M, "readiness_projection", None)
+    base = {"id": "P8", "title": "a", "status": "in_progress",
+            "blockedBy": [], "tasks": [
+                {"id": "P8.1", "title": "t", "description": "d",
+                 "status": "done"},
+                {"id": "P8.2", "title": "t", "status": "pending",
+                 "dependsOn": ["P8.1"]}]}
+
+    def edited(**task_two):
+        return dict(base, tasks=[base["tasks"][0],
+                                 dict(base["tasks"][1], **task_two)])
+    worded = dict(edited(title="retitled", description="new words"),
+                  title="renamed phase", description="a phase description")
+    check("ul14 the readiness projection of a phase is unchanged by an edit to "
+          "titles and descriptions alone: %r"
+          % ((project(base), project(worded)) if callable(project) else
+             "no readiness_projection",),
+          callable(project) and project(base) == project(worded))
+    moves = ([edited(status="done"), edited(dependsOn=[]),
+              edited(blockedBy=["P9.1"]), dict(base, status="done"),
+              dict(base, blockedBy=["P9"]),
+              dict(base, tasks=base["tasks"] + [
+                  {"id": "P8.3", "title": "t", "status": "pending"}])]
+             if callable(project) else [])
+    check("ul15 ...and its twin: a status, a dependency, a block, the phase's "
+          "own status or block, or a task added each change it, so ul14's "
+          "equality is the words and not a projection that sees nothing: %r"
+          % ([project(m) == project(base) for m in moves],),
+          len(moves) == 6
+          and all(project(m) != project(base) for m in moves))
+
 
 def _selftest():
     def body(check):

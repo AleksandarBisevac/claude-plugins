@@ -317,17 +317,25 @@ copy read is, in order:
 - this checkout's copy, when no branch of that name exists — it is then the only
   copy there is.
 
-When this checkout's HEAD has commits to the phase's file that the branch lacks, the
-line says so: the count is still the branch's, and it may be missing what those
-commits added.
+The count printed is the one from the copy named. When this checkout's copy of the
+phase's file changed after the branch forked, in a way that moves readiness — a task's
+status, its `dependsOn` or `blockedBy`, a task added or removed, the phase's own status
+or `blockedBy` — the line says so: the count is still the branch's, and it may be
+missing that change. It is a question about content, not commits: a landed edit to a
+title or a description moves nothing, and neither does a `--no-ff` merge that brought
+the file no content, so neither earns the note.
 
 **A count nobody could take from the live copy is never a silent zero.** Zero is the
 silent row only when it was counted from the copy that holds the phase live. A branch
 that exists but whose copy could not be read falls back to this checkout's copy, and
 the line says the branch exists, that its copy could not be read, and that the count
 is not current — and it prints, and trips the condition, even when that count is
-zero. So does a count that may be missing the commits above, or one taken while git
-could not say which worktree has the branch out. A held lock for a phase this
+zero. So does a count that may be missing a readiness change above, one taken while
+git could not say whether the file changed, one taken while git could not say which
+worktree has the branch out, and one taken from this checkout or the branch because
+the linked worktree that has the branch out could not be read. A zero that prints
+this way says nothing about work left, so its repair is to re-read the count from the
+copy named or to check the branch — never to pick the waves up. A held lock for a phase this
 checkout's plan does not hold carries **no** count at all: a run of that phase exists
 somewhere this checkout's index never learned of, so the line names the phase, says
 this plan holds no such phase, and the condition fails rather than passing on a zero
@@ -342,7 +350,9 @@ day in, which is when anyone finally looks. What liveness changes is the **repai
 so the sentence says which: a live holder means the run is either working or sitting
 idle mid-procedure, and `/audit:phase <id>` picks the remaining waves up; a holder
 that is gone means nothing is going to finish it, so `/audit:resume` continues it and
-`audit-lock.py release phase-<id>` gives the lock back.
+`audit-lock.py release phase-<id>` gives the lock back. A zero that prints is the
+exception, under either holder: it is not from the live copy, so it says to re-read
+the count from the copy named, or to check the branch.
 
 **Only a `phase-<id>` lock is a run.** The `index` lock is what a structural write
 takes and gives back inside one command, so a reading that counted it would trip on
@@ -365,8 +375,10 @@ and never acquires, releases or takes over one. **The count costs git calls only
 when a phase lock is held**, so a checkout with no run in flight pays nothing more:
 with a lock held, `git worktree list` and `git config user.name` once, then per held
 phase a `git rev-parse --verify` for its branch, a read of its copy (the worktree's
-file, or `git show` of the branch) and a `git rev-list --count` for the commits the
-branch lacks. Each runs with a timeout, and the total grows with the locks held, not
+file, or `git show` of the branch) and one `git diff --quiet <branch>...HEAD` of the
+phase's file; only when that says the file changed, a `git merge-base` and a `git show`
+of each copy, to compare what readiness reads. Each runs with a timeout, and the total
+grows with the locks held, not
 with the plan.
 
 `invariant-breach` is out of the default for a different reason: it reads git several
@@ -407,7 +419,8 @@ act on what the output says.
   lock whose ready work could not be counted from the copy that holds it live. Each
   line names the phase, the copy its count came from (or why there is no count),
   and — for a counted row — the command that picks it up, which depends on whether
-  the lock's holder is still there. Relay it; do not delete the
+  the lock's holder is still there; a printed zero instead says to re-read the count
+  from the copy named or to check the branch. Relay it; do not delete the
   lock without confirming with the human that no run is live.
 - **nothing ready** — the plan is either complete or fully blocked. The `waiting on`
   column says which, per task, so do not guess.

@@ -28,45 +28,78 @@
         "severity": "med",
         "file": "plugins/audit/scripts/status/audit-status.py _phase_ready_count",
         "issue": "A phase branch checked out in a linked worktree - how every phase here runs - is counted from its committed tip, while its live state is that worktree's uncommitted shard, so the line names a copy that is not the live one and the gate can fail on work that is no longer ready.",
-        "resolution": "When the branch is checked out in a linked worktree, count from that worktree's shard file and name the path in the basis; a case with uncommitted shard state that differs from the tip."
+        "resolution": "fixed in P114.2-ffv (43d9f606): When the branch is checked out in a linked worktree, count from that worktree's shard file and name the path in the basis; a case with uncommitted shard state that differs from the tip.",
+        "fixTask": "P114.2-ffv",
+        "commit": "43d9f606"
       },
       {
         "id": "P114-R2",
         "severity": "med",
         "file": "plugins/audit/scripts/status/audit-status.py; plugins/audit/scripts/status/_status_facts.py unfinished_runs",
         "issue": "A held lock for a phase this checkout's index does not hold is given a count of zero, which is the silent row, so no line prints and the gate passes; a fallback row whose stale local count is zero is silent too and never prints its not-current basis.",
-        "resolution": "Return no count with the basis that this checkout's plan holds no such phase so the refusal line names it, and treat zero as silent only when counted from the live copy; a case for each with a twin."
+        "resolution": "fixed in P114.2-ffv (43d9f606): Return no count with the basis that this checkout's plan holds no such phase so the refusal line names it, and treat zero as silent only when counted from the live copy; a case for each with a twin.",
+        "fixTask": "P114.2-ffv",
+        "commit": "43d9f606"
       },
       {
         "id": "P114-R3",
         "severity": "med",
         "file": "plugins/audit/commands/status.md",
         "issue": "The command's contract for UNFINISHED and --fail-on unfinished-run still describes the plan-wide rule, so a CI user predicts the wrong gate verdict.",
-        "resolution": "Rewrite those passages for the per-phase count, the copy it is read from, the uncounted refusal and the extra git calls when a lock is held."
+        "resolution": "fixed in P114.2-ffv (43d9f606): Rewrite those passages for the per-phase count, the copy it is read from, the uncounted refusal and the extra git calls when a lock is held.",
+        "fixTask": "P114.2-ffv",
+        "commit": "43d9f606"
       },
       {
         "id": "P114-R4",
         "severity": "low",
         "file": "plugins/audit/scripts/status/audit-status.py _phase_ready_count",
         "issue": "The branch copy is preferred without regard to ancestry, so a shard the development branch changed after the cut is missed with no note, and the unreadable fallback asserts the branch holds the phase live for any existing branch.",
-        "resolution": "Say in the basis when this checkout's copy has commits to the shard the branch lacks, and word the fallback as 'exists but its copy could not be read'."
+        "resolution": "fixed in P114.2-ffv (43d9f606): Say in the basis when this checkout's copy has commits to the shard the branch lacks, and word the fallback as 'exists but its copy could not be read'.",
+        "fixTask": "P114.2-ffv",
+        "commit": "43d9f606"
       },
       {
         "id": "P114-R5",
         "severity": "low",
         "file": "plugins/audit/scripts/status/audit-status.py _head_branch",
         "issue": "_head_branch duplicates _id_shape.current_branch and reaches into the private _worktrees._git.",
-        "resolution": "Reuse one public head reader."
+        "resolution": "fixed in P114.2-ffv (43d9f606): Reuse one public head reader.",
+        "fixTask": "P114.2-ffv",
+        "commit": "43d9f606"
       },
       {
         "id": "P114-R6",
         "severity": "low",
         "file": "plugins/audit/scripts/status/audit-status.py UNFINISHED header",
         "issue": "The header counts refusal rows as phases with ready work of their own, which nobody counted.",
-        "resolution": "Count only rows that carry a count, or word the header to cover refusals."
+        "resolution": "fixed in P114.2-ffv (43d9f606): Count only rows that carry a count, or word the header to cover refusals.",
+        "fixTask": "P114.2-ffv",
+        "commit": "43d9f606"
+      },
+      {
+        "id": "P114-R7",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/audit-status.py _commits_branch_lacks",
+        "issue": "The behind-check counts commits with rev-list, so a no-content --no-ff landing merge marks a live zero not live: on the real main checkout P102 and P111 print an UNFINISHED line with nothing ready and fail --fail-on unfinished-run, though their shards are unchanged since the branch forked.",
+        "resolution": "Ask about content: git diff --quiet refs/heads/<branch>...HEAD -- <shard> first, and only when it changed compare the readiness projection (task ids, status, dependencies) of the merge-base copy and HEAD's copy, marking the row not live only when that differs; a twin with a no-content landing merge after the branch committed to its shard gives no note and a silent live zero."
+      },
+      {
+        "id": "P114-R8",
+        "severity": "low",
+        "file": "plugins/audit/commands/status.md",
+        "issue": "The list of zeros that print omits the unreadable linked worktree, and 'the count is still the branch's' is wrong when the count came from a worktree file.",
+        "resolution": "Add that case and say the count is the one from the copy named."
+      },
+      {
+        "id": "P114-R9",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/_status_facts.py unfinished_runs",
+        "issue": "A non-live zero prints with the live repair, telling the reader to resume waves for a phase with nothing counted ready.",
+        "resolution": "When the count is zero and not live, word the repair around the caveat: re-read from the copy named or check the branch."
       }
     ],
-    "outcome": "[findings: 6 - 0 high, 3 med, 3 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 9 - 0 high, 4 med, 5 low; 6 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -146,7 +179,7 @@
     {
       "id": "P114.2-ffv",
       "title": "every UNFINISHED count comes from the live copy, and an uncounted phase is never a silent zero",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P114-R1 to P114-R6. Each UNFINISHED count must come from the copy that holds the phase live, and a count nobody computed must never read as zero.\n\n- When a phase branch is checked out in a linked worktree (_worktrees.list_worktrees), the count comes from that worktree's shard file, uncommitted state included, and the basis names the path. Reading a worktree's file is a read, not a write. audit-status.py is the entry point, so this read belongs there; the fact module stays pure.\n- A held lock for a phase this checkout's index does not hold carries no count. Its basis says this checkout's plan holds no such phase, so the refusal line names it and the gate fails rather than passing on a silent zero. A zero is silent only when it was counted from the live copy. A fallback row says its count is not current even when that count is zero.\n- When the development branch's copy has commits to the shard that the branch lacks, the basis says so. The unreadable fallback says the branch exists but its copy could not be read. It no longer asserts that the branch holds the phase live.\n- One public head reader replaces _head_branch, with no reach into a private _worktrees helper.\n- The UNFINISHED header counts only the rows that carry a count, or is worded to cover refusals too.\n- commands/status.md's UNFINISHED and --fail-on unfinished-run passages describe the per-phase count, the copy it is read from, the uncounted refusal, and the git calls made when a lock is held.\n\nCases, each with its twin:\n- a linked worktree whose uncommitted shard differs from the tip;\n- a lock for a phase the index does not hold;\n- a fallback with a stale zero;\n- a branch behind the development branch's shard.",
       "files": [
         "plugins/audit/scripts/status/_status_facts.py",
@@ -179,18 +212,88 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "43d9f606",
+      "outcome": {
+        "technical": "_status_facts.py stays pure. unfinished_runs is silent on a zero only when the row carries readyLive True. A zero from a copy that is not the live one prints a line and fails the gate, and a row without readyLive reads as not live. audit-status.py's _phase_ready_count reads copies in this order: this checkout's own file when it has the branch out; otherwise the file in the linked worktree that has the branch out, read from disk with its uncommitted state (_tree_copy, the path named in the basis); otherwise the branch tip through git show; otherwise this checkout's copy when no branch of that name exists, which is live because it is the only copy. A lock for a phase this checkout's plan does not hold gets no count, and its basis says so, so the refusal line names it and the gate fails. The fallback says the branch exists but its copy could not be read and the count is not current. _commits_branch_lacks (git rev-list --count refs/heads/<b>..HEAD -- <shard>) adds a note when this checkout's HEAD has commits to the shard the branch lacks, and that row is not live. The private head reader is gone: the current branch and the worktree holding each branch come from one public _worktrees.list_worktrees call, and git show and rev-list go through the public _scoped_commit.run_git. With no phase lock held, no git call runs. The UNFINISHED heading covers refusal rows, and the --help text matches. commands/status.md describes the per-phase count, the copy order, the uncounted refusal and the stale zero, and the git calls made while a lock is held. PLUGIN-BUILD-GUIDE names the new import. Red-first proved: ul10 and ul11 in test__status_facts, and uf6, uh1, uh2 and lw1-lw6 in test_audit_status, failed at HEAD and pass with the change. Allow halves are ul3, lw4, lw7 and lw9. sh2 now runs in its own project rather than reading the shared checkout's locks.",
+        "descriptive": "The status view now counts a phase's remaining work from the worktree where it is being done, uncommitted changes included, and warns instead of staying silent when it could not count a phase or the count may be out of date."
+      },
+      "startedAt": "2026-10-07T07:05:56Z",
+      "completedAt": "2026-10-07T07:25:43Z",
+      "verifiedBy": [
+        "ul10",
+        "ul11",
+        "uf6",
+        "uh1",
+        "uh2",
+        "lw1",
+        "lw2",
+        "lw3",
+        "lw4",
+        "lw5",
+        "lw6",
+        "lw7",
+        "lw8",
+        "lw9"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T07:25:28Z.b5effa",
+        "status": "passed",
+        "at": "2026-10-07T07:25:28Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "43d9f606",
+        "at": "2026-10-07T07:25:43Z",
+        "basis": "orchestrator check: P114-R1..R6 fixed, live worktree copy read by the entry point with the fact module kept pure, uncounted and stale zeros refused, reviewer cases reproduced red at HEAD with allow halves, status.md contract rewritten"
+      }
+    },
+    {
+      "id": "P114.3-ffv",
+      "title": "a row is not live only when the phase's readiness changed after its branch forked",
+      "status": "in_progress",
+      "description": "Fixes review findings P114-R7, P114-R8 and P114-R9. A row is marked not live only when the phase's readiness changed after its branch forked, never because a merge brought no content.\n\nReplace the rev-list commit count with a content question: git diff --quiet refs/heads/<branch>...HEAD -- <shard>. This is one call, the same cost as before.\n- Unchanged: no note, and the row stays live.\n- Changed: compare the readiness projection (task ids, status, dependency fields) of the merge-base copy with HEAD's copy. Mark the row not live, with the note, only when that projection differs. A description edit that landed does not count.\n- Unknown: the existing not-current wording.\n\nA non-live zero's repair sentence says to re-read from the copy named or to check the branch. It never says to resume waves.\n\nIn status.md:\n- The list of zeros that print includes an unreadable linked worktree.\n- The count is described as the one from the copy named.\n- The behind note is described as \"this checkout's copy of the phase's file changed after the branch forked, in a way that moves readiness\".\n\nCases, each with its twin:\n- A no-content --no-ff landing merge, after the branch committed to its shard, gives no note and a silent live zero.\n- A landed description-only edit gives no note.\n- A landed status change gives the note.\n- A non-live zero's repair wording.",
+      "files": [
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/commands/status.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-07T07:05:56Z",
+      "startedAt": "2026-10-07T07:32:15Z",
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-10-07T07:25:28Z.b5effa",
+        "runId": "2026-10-07T07:48:33Z.eb5656",
         "status": "passed",
-        "at": "2026-10-07T07:25:28Z"
+        "at": "2026-10-07T07:48:33Z"
       }
     }
   ],

@@ -361,19 +361,7 @@ def _branch_copy(git_root, branch, rel, phase_id):
     checkout of the branch is needed - which is the copy to read when no
     worktree has the branch out, because then nothing uncommitted can exist.
     """
-    spec = "refs/heads/%s:%s" % (branch, rel)
-    code, out, err = _scoped_commit.run_git(git_root, ["show", spec])
-    if code != 0:
-        return None, "git show %s answered %s: %s" % (
-            spec, code, " ".join((err or "").split())[:160] or "no output")
-    try:
-        doc = json.loads(out)
-    except ValueError as exc:
-        return None, "git show %s is not readable JSON (%s)" % (spec, exc)
-    body = _phase_body(doc, phase_id)
-    if body is None:
-        return None, "git show %s holds no phase %s" % (spec, phase_id)
-    return body, None
+    return _show_phase(git_root, "refs/heads/%s" % (branch,), rel, phase_id)
 
 
 def _tree_copy(path, phase_id):
@@ -397,36 +385,73 @@ def _tree_copy(path, phase_id):
     return body, None
 
 
-def _commits_branch_lacks(git_root, branch, rel):
-    """`(note, known)` - whether this checkout's HEAD has commits to `rel`
-    that `branch` does not.
+def _show_phase(git_root, rev, rel, phase_id):
+    """`(phase body, None)` as commit `rev` holds `rel`, or `(None, why)`."""
+    spec = "%s:%s" % (rev, rel)
+    code, out, err = _scoped_commit.run_git(git_root, ["show", spec])
+    if code != 0:
+        return None, "git show %s answered %s: %s" % (
+            spec, code, " ".join((err or "").split())[:160] or "no output")
+    try:
+        body = _phase_body(json.loads(out), phase_id)
+    except ValueError as exc:
+        return None, "git show %s is not readable JSON (%s)" % (spec, exc)
+    if body is None:
+        return None, "git show %s holds no phase %s" % (spec, phase_id)
+    return body, None
+
+
+def _readiness_moved(git_root, branch, rel, phase_id):
+    """`(note, known)` - whether this checkout's copy of `rel` changed after
+    `branch` forked, in a way that moves the phase's readiness.
 
     A copy read off a phase branch is the live copy of the work the run did,
     but the development branch may have moved the same file on since the
     branch forked - a task added, a dependency rewritten - and a count off the
-    branch alone would then miss that. So the count stays the branch's, and the
-    sentence says what it may be missing. `known` is False whenever the note is
-    not empty: a count that may be missing commits, or whose divergence git
-    could not report, is not one a zero may be silent on.
+    branch alone would then miss that. So the count stays the branch's, and
+    the sentence says what it may be missing.
+
+    THE QUESTION IS ABOUT CONTENT, NOT COMMITS. A count of commits to the file
+    reads a `--no-ff` landing of a branch that predates the file as a commit to
+    it, although the merge brought the file nothing, and a landed reword of a
+    description as a change although no task moved. So the common path is one
+    `git diff --quiet <branch>...HEAD` - the file at the fork point against
+    HEAD's - which costs what the count did. Only when that says the file
+    changed are both copies read and their `readiness_projection`s compared.
+
+    `known` is False whenever the note is not empty: a count that may be
+    missing a readiness change, or whose divergence git could not report, is
+    not one a zero may be silent on.
     """
-    spec = "refs/heads/%s..HEAD" % (branch,)
-    code, out, err = _scoped_commit.run_git(
-        git_root, ["rev-list", "--count", spec, "--", rel])
-    try:
-        ahead = int((out or "").strip()) if code == 0 else None
-    except ValueError:
-        ahead = None
-    if ahead is None:
-        return ("; whether this checkout's HEAD has commits to %s that the "
-                "branch lacks could not be asked (git rev-list %s answered %s: "
-                "%s)" % (rel, spec, code,
-                         " ".join((err or "").split())[:160] or "no output"),
-                False)
-    if ahead == 0:
+    spec = "refs/heads/%s...HEAD" % (branch,)
+    code, _out, err = _scoped_commit.run_git(
+        git_root, ["diff", "--quiet", spec, "--", rel])
+    if code == 0:
         return "", True
-    return ("; this checkout's HEAD has %d commit(s) to %s that branch `%s` "
-            "lacks, so that copy may be missing them" % (ahead, rel, branch),
-            False)
+    why = "git diff --quiet %s answered %s: %s" % (
+        spec, code, " ".join((err or "").split())[:160] or "no output")
+    if code == 1:
+        why = None
+        mcode, mout, merr = _scoped_commit.run_git(
+            git_root, ["merge-base", "refs/heads/%s" % (branch,), "HEAD"])
+        fork = (mout or "").strip()
+        if mcode != 0 or not fork:
+            why = "git merge-base answered %s: %s" % (
+                mcode, " ".join((merr or "").split())[:160] or "no output")
+        if why is None:
+            was, why = _show_phase(git_root, fork, rel, phase_id)
+        if why is None:
+            now, why = _show_phase(git_root, "HEAD", rel, phase_id)
+        if why is None:
+            if (_status_facts.readiness_projection(was)
+                    == _status_facts.readiness_projection(now)):
+                return "", True
+            return ("; this checkout's copy of %s changed after branch `%s` "
+                    "forked, in a way that moves readiness, so the branch's "
+                    "copy may be missing that change" % (rel, branch), False)
+    return ("; whether this checkout's copy of %s changed after branch `%s` "
+            "forked could not be asked (%s), so this count is not current"
+            % (rel, branch, why), False)
 
 
 def _fallback(local, on, branch, why):
@@ -434,7 +459,7 @@ def _fallback(local, on, branch, why):
 
     The branch exists, and that is all this sentence asserts about it: its copy
     could not be read, so which copy holds the phase live is exactly what is
-    unknown. A zero here is a stale reading and prints like any other count.
+    unknown. A zero here is a stale reading, and it prints.
     """
     return {"readyCount": local, "readyLive": False,
             "readyBasis": "counted from this checkout's copy %s - branch `%s` "
@@ -547,7 +572,7 @@ def _phase_ready_count(manifest, manifest_path, git_root, phase_id, view, user):
         source = "branch `%s`'s copy of %s" % (branch, rel)
         if body is None:
             return _fallback(local, on, branch, why)
-    note, current = _commits_branch_lacks(git_root, branch, rel)
+    note, current = _readiness_moved(git_root, branch, rel, phase_id)
     counted = dict(manifest)
     counted["phases"] = [dict(p, **body) if p is phase else p
                          for p in (manifest.get("phases") or [])]
@@ -566,7 +591,9 @@ def phase_ready_counts(manifest, manifest_path, git_root, phase_ids):
     checkout with no run in flight pays no git call here. With a lock held: the
     worktree list (which also names the branch this checkout has out, so no
     separate HEAD read) and the identity lookup once, then per held phase a ref
-    probe, a read of its copy and a divergence count. Each call goes through a
+    probe, a read of its copy and one content diff of its file since the fork
+    - and, only when that diff says the file changed, its fork point and a
+    read of each copy, to ask whether the change moved readiness. Each call goes through a
     runner with a timeout, the calls scale with the locks held rather than with
     the plan, and a held lock is exactly the state this view exists to describe
     correctly.
