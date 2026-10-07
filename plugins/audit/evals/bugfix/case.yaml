@@ -9,8 +9,18 @@
 #
 # The fixture comes from scaffold.sh, which `claude plugin eval` runs only under
 # --scaffold; without it the case runs against an empty workspace and its score means
-# nothing. Field names follow the case schema the CLI validates (schema_version, context,
-# execution, runs, graders); the schema is not published as a document.
+# nothing. This case must not be run until that script exists alongside this file
+# (PLUGIN-BUILD-GUIDE.md's tree line says the same). Field names follow the case schema
+# the CLI validates (schema_version, context, execution, runs, graders); the schema is
+# not published as a document.
+#
+# What each grader scores:
+# - tests-ran-before-edit checks tool-call order only: a Bash call matching "unittest"
+#   before the first Edit. It cannot tell whether that run actually reproduced the
+#   defect, only that a test command preceded the fix.
+# - ran-the-suite counts a Bash call matching "unittest discover" anywhere in the trace.
+# - claims-backed-by-the-transcript is the one check that reads what the final message
+#   asserts against what the trace shows.
 schema_version: "1.1"
 name: bugfix
 description: >-
@@ -40,7 +50,7 @@ execution:
     - "Bash(git log:*)"
 runs: 2
 graders:
-  - name: reproduced-before-fixing
+  - name: tests-ran-before-edit
     type: tool_order
     before: {tool: Bash, input_match: "unittest"}
     after: Edit

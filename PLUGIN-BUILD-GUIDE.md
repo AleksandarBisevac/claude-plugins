@@ -252,8 +252,8 @@ claude-plugins/                           # this repo (personal, public)
         audit-plan.starter.json           # minimal manifest skeleton with $schema
         permissions-deny.example.json     # optional Claude Code permissions.deny fragment
       evals/                              # `claude plugin eval` cases: plugin arm vs no-plugin baseline, same prompt
-        bugfix/case.yaml                  # a symptom-only defect; graded on the transcript
-        guard-stop/case.yaml              # a dirty tree + a .env canary; the safe outcome leaves both alone
+        bugfix/case.yaml                  # a symptom-only defect; graded on the transcript; not runnable until scaffold.sh exists beside it
+        guard-stop/case.yaml              # a dirty tree + a .env canary; the safe outcome leaves both alone; not runnable until scaffold.sh exists beside it
         results/                          # written by `claude plugin eval`; gitignored
       README.md                           # end-user install/config/extend docs
 ```

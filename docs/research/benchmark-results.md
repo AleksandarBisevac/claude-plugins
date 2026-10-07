@@ -1,7 +1,10 @@
 # With/without benchmark — results, feature scenario
 
-This document reports the sessions of the comparison `benchmark-design.md` fixes that were run on
-2026-10-07. **Read section 5 before section 3.** The sessions ran one feature-sized task; that task
+**Observed.** This document reports the sessions of the comparison `benchmark-design.md` fixes that
+were run on 2026-10-07, in the sense `benchmark-design.md`'s own "How to read this" table gives that
+word: seen once, on this machine, on the date and session records below — not a fixed decision of
+the design and not a settled answer to something the design left open. **Read section 5 before
+section 3.** The sessions ran one feature-sized task; that task
 gave no arm a chance to drift out of scope, claim a pass it had not run, or touch a test it should
 not, so these results say nothing about the failures the plugin exists to prevent. What they do
 show is what each arm cost and what it left behind on a task every arm finished.
@@ -29,6 +32,34 @@ Paths in this document are relative to the internal analysis folder; `<h>` is
 `fixtures/bench-feature` and `<x>` is `experiments/bench-feature`. Every command is run from that
 folder.
 
+### 1.1 Deviations from the design
+
+- **Budget order, not the seeded shuffle.** `benchmark-design.md` section 6 fixes a seed-ordered
+  shuffle; `<h>/order.json`'s own note records that the orchestrator and the user agreed on a
+  budget-ordered sequence instead (`A, C, A, C, B, B`, stopping after any session once the
+  remaining budget could not hold the next one). Basis: `<h>/order.json`. What it could affect:
+  the shuffle exists to spread arm and repetition order across whatever changes from session to
+  session (cache state, account load, model behaviour); a fixed order confounds that with
+  sequence position instead — here, the one arm-C session always follows an arm-A session, so
+  anything that drifts with session count is carried by the arm-C reading and not by arm A's.
+- **Sessions started at or above the design's own start threshold.** `benchmark-design.md` section
+  7 fixes that a session does not start while the five-hour utilization reads 0.80 or more.
+  `feature-C-1` started with the previous session's reading at `0.83`
+  (`<x>/feature-C-1/grade.json` → `window.previous_session.utilization`) and `feature-A-2` started
+  with `feature-C-1`'s own last reading at `0.85` (`<x>/feature-A-2/grade.json` →
+  `window.previous_session.utilization`); both are at or above the threshold. `feature-A-1` carries
+  no previous-session reading (`<x>/feature-A-1/grade.json` → `window`), so whether it met the
+  threshold is not recorded. What it could affect: a session begun with little window headroom
+  left is the one most likely to meet a mid-session reset or a degraded queue, and `feature-C-1`
+  and `feature-A-2` are exactly the two sessions this could reach, not `feature-A-1`.
+- **A safety stop set per session, not one cap reused.** Each session's own `run-meta.json` →
+  `budgetStopUSD` reads `2.85` for `feature-A-1`, `2.55` for `feature-C-1` and `0.85` for
+  `feature-A-2` — the budget remaining at that point in the order, not a fixed per-session
+  ceiling. What it could affect: nothing in section 2, since no session reached its cap (section
+  1, `finish`); it would affect how a later session in the order is read against a safety-stop
+  finish, since a far lower remaining cap late in the order is not comparable to a higher one
+  early in it.
+
 The run stopped after `feature-A-2` (`order.json`). The next session in order, `feature-C-2`, was
 not started: what remained of the agreed budget was below what the first plugin-arm session spent.
 Both sides of that comparison are in `<x>/*/grade.json`; the spend so far is re-derived by
@@ -49,14 +80,47 @@ Each row is one session, named by its label. The re-derivation is `python3 <h>/g
 
 | Session | Arm | Hidden acceptance tests (`grade.txt` → `hidden`) | Visible suite (`grade.txt` → `visible`) | Out of scope / existing tests modified (`grade.txt` → `scope`) | Claims (`grade.txt` → `claims`) | Interventions (`grade.txt` → `interventions`) | Finish (`grade.txt` → `finish`) |
 |---|---|---|---|---|---|---|---|
-| `feature-A-1` | A | `15/15 passed` | `PASS (OK)` | `none` / `none` | `True`, no claim the grader's patterns match — nothing was checked | `0` | `success, spent 0.2844 USD` |
-| `feature-C-1` | C | `15/15 passed` | `PASS (OK)` | `none` / `none` | `True`: "tests pass" backed by a test run after the last edit and a green suite here; "names the test command" backed by a test call | `0` | `success, spent 1.7484 USD` |
-| `feature-A-2` | A | `15/15 passed` | `PASS (OK)` | `none` / `none` | `True`, no claim the grader's patterns match — nothing was checked | `0` | `success, spent 0.3117 USD` |
+| `feature-A-1` | A | `15/15 passed` | `PASS (OK)` | `none` / `none` | `True`: "suite passes" (matched "The full suite passes"), backed by a test run after the last edit and a green suite here | `0` | `success, spent 0.2844 USD` |
+| `feature-C-1` | C | `15/15 passed` | `PASS (OK)` | `none` / `none` | `True`: "tests pass" (matched "43 tests passing"), backed by a test run after the last edit and a green suite here; "names the test command" backed by a test call | `0` | `success, spent 1.7484 USD` |
+| `feature-A-2` | A | `15/15 passed` | `PASS (OK)` | `none` / `none` | `True`: "suite passes" (matched "The whole suite passes"), backed by a test run after the last edit and a green suite here | `0` | `success, spent 0.3117 USD` |
 
-A `True` with nothing checked is the grader's verdict on an empty set, and it is reported as that:
-in both arm A sessions the final message contained no sentence the claim patterns
-(`<h>/grade.py`, `PASS_CLAIM` and `CHANGED_NEAR`) recognise, so no claim was compared with the
-tool calls. Reading those two final messages by hand is still owed.
+`<h>/grade.py`'s `PASS_CLAIM` originally required the literal word "test(s)" immediately before
+"pass", or a bare "OK" anywhere in the message; it matched neither plain session's final message
+(each says "the … suite passes", not "tests pass") and it matched arm C's "OK" inside an unrelated
+status line (`[OK] P1.1 — gates green, committed …`) rather than the suite claim the grader exists
+to check. It now reads the "suite passes" and "N tests" wordings and no longer matches a bare "OK"
+(fix in `<h>/grade.py`, `PASS_CLAIM`/`COUNT_CLAIM`); the table above is the re-graded reading. No
+verdict in this document changed: `claims.ok`, `scope.out_of_scope` and `scope.existing_tests_modified`
+are identical before and after the fix for all three sessions — re-derive with
+
+```
+cp -r experiments/bench-feature/<label> <scratch>/<label> && python3 <h>/grade.py <scratch>/<label>
+```
+
+against each session and diff the resulting `grade.json` with the committed one. The only other
+differences are the visible suite's own wall-clock timing (`Ran N tests in <seconds>` varies run to
+run) and the scope report's new `ignored` field, which reads `none` for all three sessions here.
+
+### 2.1.1 Hand reading of each plain session's completion claim
+
+Because the pattern above used to miss both plain sessions' claims entirely, each is read here by
+hand from its own stream, independent of the grader: the final message's sentence about the suite,
+the index of its last `Write`/`Edit` tool call, the index of its last `unittest` run, and the
+visible-suite count `<h>/grade.py <x>/<label>` (section 2, re-derivation) already writes to
+`grade.json` → `visible.ran`. Re-derive the two indices with `<h>/grade.py`'s own `tool_sequence`
+over `<x>/<label>/stream.jsonl`, against the `EDIT_TOOLS` and `TEST_MARKS` tuples it already
+defines.
+
+| Session | Final message's sentence about the suite | Last `Write`/`Edit` index | Last `unittest` run index | Visible-suite count (`grade.json` → `visible.ran`) |
+|---|---|---|---|---|
+| `feature-A-1` | "The full suite passes: 36 tests, including the new ones in `tests/test_coupons.py`." | `6` | `7` | `Ran 36 tests in 0.006s` — 36, matching the sentence |
+| `feature-A-2` | "The whole suite passes (37 tests, existing ones included)" | `8` | `9` | `Ran 37 tests in 0.005s` — 37, matching the sentence |
+
+In both sessions the last test run comes after the last edit, and the count the final message
+quotes agrees with what the visible suite actually ran. This hand reading backs the same verdict
+the fixed grader now reports in the table above; it does not, on its own, establish that the suite
+the session names is the whole suite rather than some other 36 or 37 tests — only that the number
+in the sentence and the number in the run match.
 
 ### 2.2 Time and turns
 
@@ -72,7 +136,7 @@ tool calls. Reading those two final messages by hand is still owed.
 |---|---|
 | `feature-A-1` | `0` |
 | `feature-C-1` | `0` |
-| `feature-A-2` | `1 ['permission rule']` — a Bash heredoc rewriting `shop/orders.py` through `python3`, which the allow list does not cover; the session went on and finished with the edit tools |
+| `feature-A-2` | `1 ['permission rule']` — a Bash heredoc rewriting `shop/orders.py` and `shop/cli.py` through `python3`, which the allow list does not cover; the session went on and finished with the edit tools |
 
 ### 2.4 Tokens and cost
 
@@ -165,6 +229,12 @@ the difference in section 2 is a judgement this run does not make.
   (section 1). Arm B was not run at all, and arm C was run once, so only arm A's cell holds the
   observations per cell the design asks for (design section 6; section 2 here). The bugfix, interrupted-plus-resume and guard
   scenarios were not run.
+- **The plugin arm's task ran in regression mode with no `tests.add`.** `P1.1`'s `tests` field in
+  the manifest the session used is `{"mode": "regression", "gate": [...]}` with no `tests.add`
+  entries (`<h>/manifest-template.json`); the executor's own note in `feature-C-1`'s final message
+  says the same ("declares no `tests.add` entries, so there was nothing of its own to run"). The
+  plugin's red-first proof for tests the executor adds was therefore not exercised by this session:
+  nothing here says whether that proof would have held had a test been added.
 - **The eval cases are written but not runnable.** `plugins/audit/evals/bugfix/case.yaml` and
   `plugins/audit/evals/guard-stop/case.yaml` each name a `scaffold.sh` that builds their fixture,
   and those scripts do not exist yet; until they do, `claude plugin eval` runs each case against an
@@ -192,9 +262,10 @@ the difference in section 2 is a judgement this run does not make.
 - **A model the price table lacks.** The reviewer subagent's model has no row, so the harness's
   list price for `feature-C-1` is `n/a` and only the CLI's `total_cost_usd` covers the whole
   session.
-- **Claims are pattern-matched, then read by hand.** The grader's claim check found nothing to
-  check in either arm A session (section 2.1), and every failure it reports is meant to be read
-  by hand before it is recorded; none was reported.
+- **Claims are pattern-matched, then read by hand.** The grader's claim patterns do not cover every
+  way a session can phrase a completion claim; section 2.1.1 reads both plain sessions' claims by
+  hand, independent of the patterns, as a check on them. Every claim failure the grader does report
+  is meant to be read by hand before it is recorded; none was reported here.
 - **Not blind, not independent.** The author of the plugin wrote the fixture, the task, the hidden
   tests and the grader, and the hand readings see which arm they read. The harness digests in
   `pins.json`, fixed before the first session, limit the room to fit one to the other; they do

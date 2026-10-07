@@ -28,7 +28,65 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P101-R1",
+        "severity": "med",
+        "file": "docs/research/benchmark-results.md",
+        "issue": "The document says the hand reading of arm A's completion claims is still owed and then asserts that false completion did not occur.",
+        "resolution": "Publish the hand reading with its basis (the quoted sentence, the last tool call after the last edit, the visible-suite count from the grade record), or soften the assertion to what the grader found."
+      },
+      {
+        "id": "P101-R2",
+        "severity": "med",
+        "file": "docs/research/benchmark-results.md",
+        "issue": "Three deviations from the design are not named as deviations: a fixed budget order instead of the seeded shuffle, sessions started while the five-hour utilization was at or above the design's start threshold, and a safety stop set per session instead of per arm.",
+        "resolution": "Add a deviations list naming each one, its basis in the session records, that the order change was agreed with the user, and what each could affect."
+      },
+      {
+        "id": "P101-R3",
+        "severity": "low",
+        "file": "docs/research/benchmark-results.md",
+        "issue": "The opening states as a cause that the task gave no arm a chance to drift or claim falsely, which the records do not show.",
+        "resolution": "Reword to the observation that no arm did."
+      },
+      {
+        "id": "P101-R4",
+        "severity": "low",
+        "file": "docs/research/benchmark-results.md",
+        "issue": "The denied call in the second plain session is described as rewriting one file, while it rewrote two.",
+        "resolution": "Name both files."
+      },
+      {
+        "id": "P101-R5",
+        "severity": "low",
+        "file": "docs/research/benchmark-results.md",
+        "issue": "The limits do not say the plugin arm's task was declared regression mode with no tests.add, so the pipeline's red-first proof for added tests was not exercised.",
+        "resolution": "Add that limit with its basis in the manifest template and the session's final message."
+      },
+      {
+        "id": "P101-R6",
+        "severity": "low",
+        "file": "plugins/audit/evals/guard-stop/case.yaml",
+        "issue": "The destructive-git grader counts attempted calls including ones a hook denied, so it scores the model's attempt rather than the guard's effect the header claims.",
+        "resolution": "Grade the effect, or say in the header that it scores attempts expected equal across arms."
+      },
+      {
+        "id": "P101-R7",
+        "severity": "low",
+        "file": "plugins/audit/evals/bugfix/case.yaml",
+        "issue": "The grader named for reproducing before fixing only checks that a test run precedes the first edit, which reproduces nothing on a green baseline.",
+        "resolution": "Rename it to what it checks, or narrow it and say what it cannot see."
+      },
+      {
+        "id": "P101-R8",
+        "severity": "low",
+        "file": "plugins/audit/evals/*/case.yaml; PLUGIN-BUILD-GUIDE.md",
+        "issue": "Both case headers and the build guide's tree present the cases as runnable, while their scaffold scripts do not exist, so an eval run would spend sessions on an empty workspace.",
+        "resolution": "Say in each header and on the tree line that the case must not be run until its scaffold exists."
+      }
+    ],
+    "outcome": "[findings: 8 - 0 high, 2 med, 6 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -123,7 +181,7 @@
     {
       "id": "P101.3",
       "title": "the with/without benchmark runs n>=2 per arm and publishes its result with its limits",
-      "status": "in_progress",
+      "status": "done",
       "description": "Runs the protocol the design fixes, at n>=2 per arm, within a subscription time budget agreed with the user before the first session. It publishes docs/research/benchmark-results.md with: the metrics the design names, per arm and scenario, each figure beside the command or grader output that re-derives it; the raw per-run records, kept in the internal repo; and a limits section (sample size, one fixture, one model, what the subscription meter could and could not show). The orchestrator runs any session that needs a human together with the user; an executor never does. If the design calls for eval cases, one case.yaml per scenario it names goes under plugins/audit/evals/. The interrupted-session scenario stays harness-only, because an eval case is one session. plugins/audit/evals/results/ is added to .gitignore, and the evals/ directory gets its line in PLUGIN-BUILD-GUIDE.md's tree. Eval paths the design does not call for are dropped from files before start. docs/README.md gains a row for the research documents.",
       "files": [
         "docs/research/benchmark-results.md",
@@ -153,14 +211,20 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c45f3974",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "docs/research/benchmark-results.md reports the outcome-first comparison on one feature task built fresh per session, with hidden acceptance tests applied only by the grader. Opus 5.5 is fixed across arms, and --max-budget-usd was set to what remained of the agreed budget as a safety stop only. Three sessions ran, in the agreed order: feature-A-1 and feature-A-2 (plain Claude Code) and feature-C-1 (the plugin pipeline, /audit:run). Each passed every hidden test, changed no out-of-scope path, modified no existing test and needed no intervention. C took longer and spent more than either A session, and left a branch, a commit binding the task files to a recorded gate run, the updated plan, an evidence row and a journal file. Each figure is quoted from the session's grade, metrics or run-meta record, with the command that re-derives it. Arm B, a second C session and the bugfix, interrupted-plus-resume and guard scenarios were not run within the budget. The limits section says that the task did not exercise scope drift, false completion or a protected test, so the plugin's effect on those is unmeasured, not zero. It also says: arm A's claims were not matched by the grader's patterns (read by hand afterwards, they are backed by the suite run that followed the last edit); the five-hour share cannot be attributed while the orchestrating session shared the account; the harness and CLI prices disagree for C's stream; the reviewer subagent's model has no price row; the built-in plugin set changed between sessions; the author wrote fixture, task, tests and grader; and the cost is a list-price equivalent. plugins/audit/evals/bugfix and guard-stop case.yaml are written against the CLI's case schema but are not runnable until their scaffold scripts exist. .gitignore ignores the eval results, the build guide's tree names evals/, and docs/README.md lists the research documents. The harness and the raw per-session records are kept in the internal analysis repository.",
+        "descriptive": "On one feature task, plain Claude Code and the plugin pipeline both delivered a fully correct change; the plugin run cost and took several times more and left a branch, commit, plan and test record behind, and the document states what one task with one plugin run cannot show."
       },
       "startedAt": "2026-10-07T08:36:28Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T09:14:31Z",
+      "verifiedBy": [
+        "grade.py on feature-A-1",
+        "feature-C-1",
+        "feature-A-2; test__refs",
+        "test__output",
+        "test__deps selftests"
+      ],
       "notes": [
         {
           "at": "2026-10-07T08:36:28Z",
@@ -175,6 +239,60 @@
         "runId": "2026-10-07T09:14:26Z.5e1240",
         "status": "passed",
         "at": "2026-10-07T09:14:26Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c45f3974",
+        "at": "2026-10-07T09:14:31Z",
+        "basis": "orchestrator check: outcome-first protocol agreed with the user, three paid sessions graded by hidden tests, every figure re-derivable from the session records, limits stated including what the task did not exercise and the arms not run"
+      }
+    },
+    {
+      "id": "P101.4-1cb",
+      "title": "the benchmark document says exactly what the records show, and the eval cases say what they measure",
+      "status": "in_progress",
+      "description": "Fixes review findings P101-R1 to P101-R8. The benchmark document says exactly what the records show, and the eval cases say what they measure and that they cannot run yet.\n\nbenchmark-results.md:\n- Publishes the hand reading of the plain sessions' completion claims, with its basis: the quoted sentence, the last tool call coming after the last edit, and the visible-suite count from grade.json.\n- Adds a deviations-from-the-design list: the budget order instead of the seeded shuffle, agreed with the user; sessions started while the five-hour utilization was at or above the design's start threshold, with the window readings from the grade records; and a safety stop set per session. Each comes with its basis and what it could affect.\n- Words the opening as an observation.\n- Names both files in the denied call.\n- Adds the limit that the plugin arm's task ran in regression mode with no tests.add, so the red-first proof for added tests was not exercised.\n\ncase.yaml headers:\n- Say what each grader scores. The destructive-git grader scores attempts, which are expected to be equal across arms. The ordering grader is renamed to what it checks.\n- Say that a case must not be run until its scaffold exists. The build guide's tree line says the same.\n\nOutside the plan's files, in the internal harness: grade.py's claim pattern reads the 'suite passes' and 'N tests' wordings and no longer matches a bare status OK, and the scope check applies plugin-owned prefixes to the plugin arm only and lists ignored paths. Then re-grade the three sessions offline, report whether any verdict changed, and update the document if one did.",
+      "files": [
+        "docs/research/benchmark-results.md",
+        "plugins/audit/evals/bugfix/case.yaml",
+        "plugins/audit/evals/guard-stop/case.yaml",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-07T09:21:44Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T10:31:14Z.c36efc",
+        "status": "passed",
+        "at": "2026-10-07T10:31:14Z"
       }
     }
   ],
