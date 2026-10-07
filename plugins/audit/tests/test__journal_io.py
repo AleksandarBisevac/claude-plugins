@@ -3817,9 +3817,126 @@ def _free_text_cases(check):
         check("ft7 the detector's rows for the writer's shapes ARE the writer's "
               "rows - one definition, two readers - and the patterns agree too: "
               "%r" % ([r[0] for r in shared],),
-              [r[0] for r in shared] == ["posix-home", "windows-user-path"]
+              [r[0] for r in shared]
+              == ["posix-home", "windows-user-path", "session-slug",
+                  "escaped-path", "tempdir-session", "unexpanded-home"]
               and all(rows.get(r[0]) is r for r in shared)
               and all(rows[r[0]][1].pattern == r[1].pattern for r in shared))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    _shape_parity_cases(check)
+
+
+def _shape_parity_cases(check):
+    """Every shape the commit-time detector flags, judged by the writer too.
+
+    Each sample is built so this file never spells one whole, and each has an
+    allow twin a widened shape would wrongly catch."""
+    tmp = tempfile.mkdtemp(prefix="journal-shape-parity-")
+    try:
+        proj = os.path.join(tmp, "repo")
+        os.makedirs(os.path.join(proj, "src", "real"))
+        tool = _pii_tool()
+        samples = (
+            ("session-slug", "/x/" + "-".join(("", "Users", "someone",
+                                               "Desktop", "x")) + "/s",
+             "see docs/users-guide.md"),
+            ("escaped-path", "%2F".join(("q=", "Users", "someone", "x")),
+             "q=%2Fdocs%2Fx"),
+            ("tempdir-session", "/".join(("", "private", "tmp", "claude-501",
+                                          "probe")),
+             "src/tmp/claude-7.ts"),
+            ("unexpanded-home", "cwd=" + "~" + "/probe/notes.md",
+             "costs ~5% more, see src/~/x"),
+        )
+        got = []
+        for name, raw, allow in samples:
+            said = "probe at %s here" % (raw,)
+            red = M.redacted_free_text(proj, said)
+            msg = M.check_free_text(proj, "--text", said) or ""
+            got.append((name, M.machine_path_shape(said), name in msg,
+                        raw not in red and M.OUTSIDE_TOKEN in red
+                        and M.machine_path_shape(red) is None,
+                        M.machine_path_shape(allow),
+                        M.redacted_free_text(proj, allow) == allow))
+        check("sp1 each detector shape is named by the writer, refused at the "
+              "caller's door by that name, and redacted out of a plugin value: %r"
+              % (got,),
+              all(g[1] == g[0] and g[2] and g[3] for g in got))
+        check("sp2 ALLOW twins: a kebab file name, an encoded repo path, a "
+              "nested tmp directory and a tilde that is no home are neither "
+              "named nor rewritten - the mutation this catches is a shape "
+              "widened past its detector: %r" % (got,),
+              all(g[4] is None and g[5] for g in got))
+
+        slug = "-".join(("", "Users", "someone", "Desktop", "x"))
+        placed = ("dir %s here" % (slug,),
+                  "/".join(("~", ".claude", "projects", slug, "s.jsonl")),
+                  "/".join(("", "private", "tmp", "claude-501", slug, "s")),
+                  "/projects/" + "-".join(("", "home", "someone", "src")),
+                  "/projects/" + "-".join(("", "private", "tmp", "probe")),
+                  '"%s"' % (slug,),
+                  "\\".join(("D:", "data", ".claude", "projects",
+                              "C-" + slug)))
+        got_slug = [(p, M.machine_path_shape(p)) for p in placed]
+        check("sp7 a session slug is named by the writer at every placement a "
+              "real one takes - a token start, the projects directory, a "
+              "scratch tempdir, quoted, and the Windows drive spelling: %r"
+              % (got_slug,),
+              all(g[1] == "session-slug" for g in got_slug))
+        kebab = ("the my-home-page component, the add-Users-list view and "
+                 "go-home-now")
+        check("sp8 ALLOW twin: kebab prose holding -home-<word> and "
+              "-Users-<word> mid-word is neither named, refused nor "
+              "rewritten - the mutation this catches is a slug shape with no "
+              "token start: %r" % (M.machine_path_shape(kebab),),
+              M.machine_path_shape(kebab) is None
+              and M.check_free_text(proj, "--text", kebab) is None
+              and M.redacted_free_text(proj, kebab) == kebab)
+
+        url = "file://" + "/".join(("", "Users", "someone", "r.html"))
+        said = "open %s now" % (url,)
+        hits = [h[2] for h in tool.scan_text("x.md", said, "plan")]
+        check("sp3 a file URL into a home directory is refused, redacted and "
+              "flagged by the detector: %r"
+              % ((M.check_free_text(proj, "--text", said),
+                  M.redacted_free_text(proj, said), hits),),
+              "posix-home" in (M.check_free_text(proj, "--text", said) or "")
+              and M.redacted_free_text(proj, said)
+              == "open %s now" % (M.OUTSIDE_TOKEN,)
+              and "posix-home" in hits)
+        web = "open https://example.com/Users/guide now"
+        check("sp4 ALLOW twin: an https URL whose path merely holds the word is "
+              "neither refused, rewritten nor flagged: %r"
+              % ((M.check_free_text(proj, "--text", web),
+                  tool.scan_text("x.md", web, "plan")),),
+              M.check_free_text(proj, "--text", web) is None
+              and M.redacted_free_text(proj, web) == web
+              and tool.scan_text("x.md", web, "plan") == [])
+
+        try:
+            os.symlink("real", os.path.join(proj, "src", "link"))
+            os.symlink(tmp, os.path.join(proj, "src", "out"))
+        except (OSError, NotImplementedError, AttributeError) as exc:
+            _harness.skip(check, "sp5", "os.symlink is refused here (%s: %s)"
+                          % (type(exc).__name__, exc), True)
+            return
+        through = os.path.join(proj, "src", "link", "x.py")
+        check("sp5 a path through a symlinked directory inside the repo keeps "
+              "the spelling the writer used: %r"
+              % (M.repo_relative_or_token(proj, through),),
+              M.repo_relative_or_token(proj, through) == "src/link/x.py"
+              and M.repo_relative_or_token(
+                  proj, os.path.join(proj, "src", "real", "x.py"))
+              == "src/real/x.py")
+        check("sp6 ...and a link spelled under the root that resolves OUTSIDE it "
+              "is still the outside token - inside or outside is the realpath's "
+              "answer: %r"
+              % (M.repo_relative_or_token(proj, os.path.join(proj, "src", "out",
+                                                             "x")),),
+              M.repo_relative_or_token(proj, os.path.join(proj, "src", "out",
+                                                          "x"))
+              == M.OUTSIDE_TOKEN)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

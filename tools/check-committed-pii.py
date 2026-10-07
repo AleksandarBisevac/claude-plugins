@@ -207,11 +207,11 @@ def tracked_paths(repo=None):
 # division of labour with `_journal_io`'s redaction -- a detector's false positive
 # costs a human a minute; a rewriter's false negative is already committed.
 #
-# THE TRANSFORM SPELLINGS LIVE HERE, and this is the only place in the tree that
-# should know them. A session directory reaches a command line dash-joined
-# (`-Users-someone-Desktop-...`), a URL percent-escaped, and a Windows path
-# backslashed -- three renderings of one leak, and a substitution table that tried
-# to cover all three is what the redaction deliberately does not do.
+# THE TRANSFORM SPELLINGS ARE THE WRITER'S TOO. A session directory reaches a
+# command line dash-joined (`-Users-someone-Desktop-...`), a URL percent-escaped,
+# and a Windows path backslashed -- renderings of one leak. The writer
+# refuses and redacts each by name rather than substituting one rendering for
+# another, so the patterns live beside its own and are read from there.
 #
 # THE LEADING SEPARATOR IS NOT WHAT MAKES A PATH SOMEBODY'S MACHINE, and keying
 # on it left the narrowest possible hole in the rule this file exists for. A
@@ -227,21 +227,15 @@ def tracked_paths(repo=None):
 # has to stand on its own, because it is the one reading bytes somebody already
 # committed.
 #
-# THE FIRST TWO ROWS ARE NOT SPELLED HERE. `_journal_io` refuses a free-text
-# value carrying either shape before the row is hashed, so the writer and this
-# backstop read one definition - `_journal_io.MACHINE_PATH_SHAPES`, the same
-# pattern objects - and the token boundary with them. A copy here would agree
-# with the writer until the day one side was widened, and the row the other side
-# missed would be the one already committed.
-_TOKEN_START = _journal_io.MACHINE_PATH_TOKEN_START
-DETECTORS = _journal_io.MACHINE_PATH_SHAPES + (
-    ("session-slug", re.compile(r"-(?:Users|home)-[A-Za-z0-9._]+|-private-tmp-")),
-    ("escaped-path", re.compile(r"%2F(?:Users|home)%2F|%5CUsers%5C", re.I)),
-    ("tempdir-session", re.compile(_TOKEN_START + r"/?(?:private/)?tmp/claude-\d+"
-                                   r"|" + _TOKEN_START + r"/?var/folders/[A-Za-z0-9_+]{2,}"
-                                   r"|\\Temp\\claude-", re.I)),
-    ("unexpanded-home", re.compile(r"(?:^|[\s\"'=:(\[,])~/")),
-)
+# NO ROW IS SPELLED HERE. `_journal_io` refuses a caller's free-text value
+# carrying any of these shapes before the row is hashed, and redacts the
+# plugin's own, so the writer and this backstop read one definition -
+# `_journal_io.MACHINE_PATH_SHAPES`, the same pattern objects - and the token
+# boundary with them. A copy here would agree with the writer until the day one
+# side was widened, and the row the other side missed would be the one already
+# committed. The one deliberate difference is the writer's, not this table's:
+# it takes a relative path whose first segment is `home`, which this flags.
+DETECTORS = _journal_io.MACHINE_PATH_SHAPES
 
 # --- the contract checks ------------------------------------------------------
 # NOT heuristics. A journal row has a shape this repository owns, so these ask
@@ -1313,6 +1307,31 @@ def _cases(check):
     check("q2b ...and a repo-relative path that merely RESEMBLES one is left "
           "alone: the separator became optional, not absent, and a match has "
           "to start where a word starts: %r" % (_wrong,), _wrong == [])
+
+    # EVERY PLACE A REAL SLUG STANDS, each a whole path segment: at a token
+    # start, under the harness's projects directory, under a scratch tempdir,
+    # quoted, and in the Windows spelling whose drive letter carries a dash.
+    _slugs = (
+        "dir -Users-%s-Desktop-x" % _user,
+        "~/.claude/projects/-Users-%s-Desktop-x/s.jsonl" % _user,
+        "/private/tmp/claude-501/-Users-%s-Desktop-x/s" % _user,
+        "/projects/-home-%s-src/s.jsonl" % _user,
+        "/projects/-private-tmp-probe/s.jsonl",
+        '{"b":"-Users-%s-x"}' % _user,
+        "D:\\data\\.claude\\projects\\C--Users-%s-x" % _user,
+    )
+    _unseen = [line for line in _slugs
+               if "session-slug" not in set(h[2] for h in
+                                            scan_text("f.md", line, "report"))]
+    check("q2c a session slug is found at every placement a real one takes: %r"
+          % (_unseen,), _unseen == [])
+    # THE ALLOW TWIN q2c's start rule exists for: a kebab word holding the
+    # same letters mid-word is prose, and a door refusing it gets routed around.
+    _kebab = ("the my-home-page component, the add-Users-list view and "
+              "go-home-now")
+    _kebab_hits = scan_text("f.md", _kebab, "report")
+    check("q2d ALLOW: kebab prose holding -home-<word> and -Users-<word> "
+          "mid-word trips nothing: %r" % (_kebab_hits,), _kebab_hits == [])
 
     # The rule this whole file would otherwise break one layer out. Counted over
     # the rendered line rather than asserted absent, because a report that

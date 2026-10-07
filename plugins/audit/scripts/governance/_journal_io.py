@@ -1236,8 +1236,9 @@ def repo_relative_or_token(project, path):
         raw = path.replace("\\", "/")
         if not raw:
             return OUTSIDE_TOKEN
-        full = os.path.realpath(raw if os.path.isabs(raw)
-                                else os.path.join(root, raw))
+        joined = raw if os.path.isabs(raw) else os.path.join(root, raw)
+        full = os.path.realpath(joined)
+        spelled = _spelled_under(project, root, joined, full)
     except Exception:
         return OUTSIDE_TOKEN
     root = root.rstrip(os.sep) or root
@@ -1245,7 +1246,27 @@ def repo_relative_or_token(project, path):
         return "."
     if not full.startswith(root + os.sep):
         return OUTSIDE_TOKEN
+    if spelled:
+        return spelled
     return full[len(root) + 1:].replace(os.sep, "/")
+
+
+def _spelled_under(project, real_root, joined, full):
+    """`joined` relative to the root as the writer SPELLED it, or None.
+
+    INSIDE OR OUTSIDE IS THE REALPATH'S ANSWER, and the caller asks it; this
+    only chooses the spelling of a path already known to be inside. A path
+    through a symlinked directory resolves to the link's target, and handing
+    that back would record a file the writer never named - so when the
+    normalised spelling sits under either spelling of the root, and still
+    resolves to the same file, it is the one kept. The resolve check is what
+    keeps a lexical `..` collapse past a symlink from naming a different file."""
+    norm = os.path.normpath(os.path.abspath(joined))
+    for root in (os.path.abspath(str(project)), real_root):
+        root = root.rstrip(os.sep) or root
+        if norm.startswith(root + os.sep) and os.path.realpath(norm) == full:
+            return norm[len(root) + 1:].replace(os.sep, "/")
+    return None
 
 
 # A path token INSIDE a line of free-form program output, and deliberately WIDER
@@ -1349,7 +1370,7 @@ def redacted_text(project, text):
 # THE SHAPES THAT ARE MACHINE IDENTITY, defined once and read twice: here, to
 # refuse a caller's value and redact the plugin's own before either is hashed,
 # and by `tools/check-committed-pii.py`, whose `DETECTORS` takes these very
-# pattern objects for its two rows of the same names. A writer that judged one
+# pattern objects for its rows of the same names. A writer that judged one
 # spelling while the detector flagged another would let through exactly the row
 # the detector then reports, too late, so the agreement is held by identity
 # rather than by a comment - and `ft7` in `test__journal_io.py` is the case that
@@ -1367,13 +1388,40 @@ def redacted_text(project, text):
 # match means the match does not start a token. One class, two readers: the
 # lookbehind below, and the checkout-root search, which uses `str.find` and so
 # asks the character before the root with `_TOKEN_CHAR`.
+#
+# A TOKEN ALSO STARTS RIGHT AFTER A URL SCHEME'S `://`. The character before
+# the path of a `file:///` URL is a separator, which on its own reads as the
+# middle of a path, so a file URL into a home directory used to pass both the
+# writer and the detector. An `https://host/Users/x` still does not fire: the
+# word there follows the host, not the scheme.
+#
+# THE SHAPES AFTER THE HOME-DIRECTORY PAIR WERE THE DETECTOR'S ALONE, and the
+# writer let each through to a hash-chained row the detector then flagged when
+# nothing could change it. They sit here now for the same reason that pair does.
 _TOKEN_CLASS = r"[A-Za-z0-9._~$+/\\-]"
-MACHINE_PATH_TOKEN_START = r"(?<!%s)" % (_TOKEN_CLASS,)
+MACHINE_PATH_TOKEN_START = r"(?:(?<!%s)|(?<=://))" % (_TOKEN_CLASS,)
+# A slug's start: `_TOKEN_CLASS` without the separators, because a slug is
+# itself a segment and so follows one.
+_SLUG_START = r"(?<![A-Za-z0-9._~$+-])"
 _MACHINE_PATH_SHAPES = (
     ("posix-home", re.compile(MACHINE_PATH_TOKEN_START
                               + r"[/\\]?(?:Users|home)/[A-Za-z0-9._-]+")),
     ("windows-user-path", re.compile(
         r"[A-Za-z]:\\{1,2}Users\\|\\{2,4}[A-Za-z0-9._-]+\\{1,2}[A-Za-z0-9._$-]+\\")),
+    # A home directory flattened into one directory NAME, the way the
+    # harness names a project's scratch and session directories. The slug is
+    # a whole path segment, so its leading dash stands at a token start - or
+    # behind a drive letter's own dash, the Windows spelling - and a kebab
+    # word holding `-home-` mid-word is prose, not a slug.
+    ("session-slug", re.compile(
+        _SLUG_START + r"(?:[A-Za-z]-)?-(?:Users|home)-[A-Za-z0-9._]+"
+        r"|" + _SLUG_START + r"-private-tmp-")),
+    ("escaped-path", re.compile(r"%2F(?:Users|home)%2F|%5CUsers%5C", re.I)),
+    ("tempdir-session", re.compile(
+        MACHINE_PATH_TOKEN_START + r"/?(?:private/)?tmp/claude-\d+"
+        r"|" + MACHINE_PATH_TOKEN_START + r"/?var/folders/[A-Za-z0-9_+]{2,}"
+        r"|\\Temp\\claude-", re.I)),
+    ("unexpanded-home", re.compile(r"(?:^|[\s\"'=:(\[,])~/")),
 )
 # THE PUBLIC NAME IS THE DETECTOR'S, and nothing in this module reads it. A row
 # never carries these patterns - a refusal or a redaction is what they produce -
@@ -1450,7 +1498,8 @@ def _root_at(flat, root):
     at = flat.find(root)
     while at != -1:
         end = at + len(root)
-        starts = at == 0 or not _TOKEN_CHAR.match(flat[at - 1])
+        starts = (at == 0 or not _TOKEN_CHAR.match(flat[at - 1])
+                  or flat[:at].endswith("://"))
         ends = end == len(flat) or not re.match(r"[A-Za-z0-9._-]", flat[end])
         if starts and ends:
             return True

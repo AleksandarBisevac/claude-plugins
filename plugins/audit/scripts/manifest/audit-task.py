@@ -1091,6 +1091,35 @@ def resolve_briefs(args, out, stream=None):
     return None
 
 
+# A COMMAND OR A TEST NAME IS STORED VERBATIM TOO, so it passes the same
+# machine-path door as prose. Not on `PROSE_FLAGS`: none of these reads stdin
+# or meets the shell-gap check, and each is a list a repeated flag fills.
+_VERBATIM_LIST_FLAGS = (("gate", "--gate"), ("gate_set", "--gate-set"),
+                        ("verified_by", "--verified-by"))
+
+
+def resolve_verbatim_values(args, out):
+    """The exit code the run must stop on, or None to carry on.
+
+    Before the lock, like `resolve_briefs`: a gate command or a test name
+    holding a machine path lands in the committed plan and its journal row as
+    typed, so it is refused by `_journal_io.check_free_text` before anything
+    is written. `misplaced_flag_refusal` has already run, so every value here
+    is one the verb would write."""
+    carried = [(flag, value) for dest, flag in _VERBATIM_LIST_FLAGS
+               for value in (getattr(args, dest, None) or [])
+               if isinstance(value, str) and value]
+    if not carried:
+        return None
+    root = _free_text_root(args)
+    for flag, value in carried:
+        machine = _journal_io.check_free_text(root, flag, value)
+        if machine:
+            out("[audit-task] " + machine)
+            return E_USAGE
+    return None
+
+
 def stdin_notes_key(args):
     """`{"stdinNotes": [...]}` for a verb's `--json` block, or `{}`.
 
@@ -9689,6 +9718,8 @@ def _dispatch(args, argv, out):
     # they are told now is the true one, from the check above, which is that the
     # verb never reads it.
     stop = resolve_briefs(args, out)
+    if stop is None:
+        stop = resolve_verbatim_values(args, out)
     if stop is not None:
         return stop
     # THE DISPATCH `VERB_FLAGS` IS GRADED AGAINST. `vf` in the suite reads this

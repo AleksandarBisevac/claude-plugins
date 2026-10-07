@@ -2128,6 +2128,35 @@ def _machine_path_value_cases(check):
               and tos == ["kept the probe at %s" % (_journal_io.OUTSIDE_TOKEN,),
                           "kept the probe at docs/probe.md"]
               and "someone" not in bytes_ and home not in bytes_)
+
+        # Every shape the commit-time detector flags, and a file URL into a
+        # home directory, redacted out of the hook's own row the same way.
+        shapes = (
+            ("session-slug", "/x/" + "-".join(("", "Users", "someone",
+                                               "Desktop", "x")) + "/s"),
+            ("tempdir-session", "/".join(("", "private", "tmp", "claude-501",
+                                          "probe"))),
+            ("unexpanded-home", "~" + "/probe/notes.md"),
+            ("file-url", "file://" + "/".join(("", "Users", "someone",
+                                                "r.html"))),
+            ("allow-https", "https://example.com/Users/guide"),
+        )
+        for n, (name, raw) in enumerate(shapes):
+            with open(man_abs, "w", encoding="utf-8") as fh:
+                json.dump(doc(None), fh)
+            hook("PreToolUse", "mp-s%d" % (n,))
+            with open(man_abs, "w", encoding="utf-8") as fh:
+                json.dump(doc("kept the probe at %s" % (raw,)), fh)
+            hook("PostToolUse", "mp-s%d" % (n,))
+        tos = [c.get("to") for r in edits()[2:]
+               for c in ((r.get("details") or {}).get("changes") or [])
+               if c.get("field") == "outcome"]
+        want = ["kept the probe at %s" % (_journal_io.OUTSIDE_TOKEN,)] * 4
+        want.append("kept the probe at https://example.com/Users/guide")
+        check("mp2 a hook row whose value holds any detector shape or a file URL "
+              "into a home directory lands with that token redacted, and the "
+              "https allow twin lands byte for byte: %r" % (tos,),
+              tos == want)
     finally:
         sys.stdin, sys.stdout = real_in, real_out
         if prev_env is None:

@@ -1010,7 +1010,7 @@
     {
       "id": "P108.14-4gh",
       "title": "a shell write gets its bare form's verdict in every spelling the shell arm reads, and a quoted argument is not a redirect",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P108-R10, P108-R13, P108-R14 and P108-R16. A shell write gets its bare form's verdict in every spelling the shell arm reads, and a quoted argument is not read as a redirect.\n\n- cp, mv and install. A last operand that resolves at the effective cwd to an existing directory is read as a directory, so the source's name inside it is the target. This holds even when the directory is spelled without a trailing slash.\n- Nesting depth. When the handed-command walk reaches its depth bound and a further handed command exists, that command is graded unresolved at the deny tier rather than read as nothing.\n- Interpreter writes. The interpreter write grammar reads a keyword mode= (for example mode='a' or mode='w') as well as the positional mode, for the journal arm and the source arm alike.\n- Redirect and tee. Handed commands are already graded through their own views, so the redirect and tee arms skip matches inside quotes, as the in-place arm does. A commit message that mentions a redirect, and a handed cd that leaves the tree, are no longer read as writes. A handed redirect is read once, at its own cwd.\n\nCases, each with an allow twin:\n- cp onto an existing directory with no slash;\n- a nesting one level past the bound;\n- open with a keyword mode, against the journal and a source file, at each tier;\n- a commit message containing a redirect;\n- a handed cd out of the tree followed by a redirect.\n\ntest_hooks.py's contract rows cover the new shapes. KNOWN_DIVERGENCE lists any shape still left open, with its reason.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -1042,18 +1042,52 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b22c2c41",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "guard-secrets-read.py only. cp, mv and install: _copy_destinations reads a slashless last operand as a directory when _existing_directory places it at the command's cwd and finds a directory on disk, while -T/--no-target-directory keeps it a file; the cwd is threaded through _copy_targets and _shell_write_targets, and the source, manifest and journal arms pass their view's own cwd. Nesting: _write_views delegates to _handed_walk, which also returns the handed commands past the bound; _decide_core grades those through _beyond_bound_verdict before the slot (block at deny, ask at ask, named in the not-established allow message at observe and warn), sharing the deny-cause sentence through _plan_gate_cause. Keyword mode: the interpreter write grammar's open arm accepts mode= after other keyword arguments, for journal and source alike, and newline='' is not read as a mode. Redirect and tee: a quoted match is skipped only where it is provably text or graded elsewhere - a quoted argument of echo, printf, grep-family or rg; a quoted argument of git for commit/tag/notes/log/show/grep/diff/status/add with no global -c or --config-env; the handed word of eval or of a shell -c when it is the last word - and every other program keeps the quoted read, so no shape the outer read caught is opened ($( ), backticks, heredocs, find -exec sh -c, watch and git -c core.pager keep their verdicts, with cases). test_hooks.py gains the write-past-handed-bound class and rows for each new shape; HANDED_BOUND is read off the hook; KNOWN_DIVERGENCE names one row, an interpreter os.system redirect whose target touches the closing quote, allowed at HEAD too, with its reason. Red-first proved on test_guard_secrets_read (15 cases) and test_hooks (12 cases) at HEAD; over-fire and under-fire mutations in a scratch copy turned the named cases red. Residuals seen, not fixed: the in-place sed -i arm still skips every quoted match; the read grammar does not read a keyword mode='r' as a read; one journal refusal names its target with a trailing quote.",
+        "descriptive": "Copying into a directory without a trailing slash, a write nested deeper than the guard follows, and a script opening a file with mode= are now judged like the plain write, while a commit message that mentions a redirect is no longer mistaken for one."
       },
       "startedAt": "2026-10-07T06:01:33Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T06:56:44Z",
+      "verifiedBy": [
+        "ww7",
+        "ww7a",
+        "ww7b",
+        "ww8",
+        "ww8a",
+        "ww8b",
+        "ww9",
+        "ww9a",
+        "ww9b",
+        "ww10",
+        "ww10a",
+        "ww10b",
+        "ww11",
+        "ww11a",
+        "b17d",
+        "b17n",
+        "n23",
+        "n24",
+        "n16r",
+        "n16s",
+        "b22",
+        "b22b",
+        "b10d",
+        "b10k",
+        "b10o",
+        "b17o",
+        "b17q"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T06:49:18Z.087b1d",
         "status": "passed",
         "at": "2026-10-07T06:49:18Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b22c2c41",
+        "at": "2026-10-07T06:56:44Z",
+        "basis": "orchestrator check: P108-R10, R13, R14 and R16 fixed in guard-secrets-read only, each reviewer shape reproduced red at HEAD, quoted-skip limited to provably-text or graded-elsewhere arguments with keep-verdict cases, contract rows and one reasoned KNOWN_DIVERGENCE row"
       }
     },
     {
