@@ -617,11 +617,227 @@ def _success_line_cases(check):
           and miss[1] == _in_process([mpath, "file", "src/nope.py"])[1])
 
 
+_BF_START = "2026-01-01T00:00:00Z"
+_BF_REQUEST = "Make refunds add up exactly.\n  Keep the remainder rule as it is.\n"
+_BF_EXEC = ('{"gates": {}, "outcome": {"technical": "t", "descriptive": "d"},\n'
+            ' "testsAdded": ["bf_case"], "stamp": "audit-stamp: v2 x",\n'
+            ' "redFirst": {"status": "proved", "basis": "exit 1", "at": "z"}}\n')
+
+
+def _bf_manifest(attempts=1, request=_BF_REQUEST):
+    phase = {"id": "P1", "title": "Refunds", "status": "in_progress",
+             "desiredOutcome": "refunds add up to the order total",
+             "testGate": ["test"],
+             "tasks": [{"id": "P1.1", "title": "split", "status": "in_progress",
+                        "description": "Split a refund across lines,\n"
+                                       "  remainder to the last line.",
+                        "files": ["src/refund.py", "tests/test_refund.py"],
+                        "docs": ["docs/refunds.md"],
+                        "skills": ["writing-python"],
+                        "tests": {"mode": "tdd", "expectRedFirst": True,
+                                  "add": ["tests/test_refund.py: sums exactly"],
+                                  "gate": ["test", "unit:api",
+                                           "python3 tests/test_refund.py"]},
+                        "startedAt": _BF_START, "attempts": attempts,
+                        "maxAttempts": 3}]}
+    if request is not None:
+        phase["request"] = request
+    return {"meta": {"version": 2,
+                     "buildCommands": {"test": "python3 -m pytest tests"}},
+            "phases": [phase],
+            "fileIndex": {"src/refund.py": ["P1.1"],
+                          "tests/test_refund.py": ["P1.1"]},
+            "bugs": []}
+
+
+def _bf_signed_phase():
+    """A phase of three closed tasks, each with its own commit, files and gate."""
+    man = _bf_manifest()
+    tasks = []
+    for n, sha in ((1, "a" * 40), (2, "b" * 40), (3, "c" * 40)):
+        tasks.append({"id": "P1.%d" % n, "title": "t%d" % n, "status": "done",
+                      "description": "task %d asked this" % n,
+                      "files": ["src/m%d.py" % n],
+                      "tests": {"mode": "gate-only", "add": [],
+                                "expectRedFirst": False,
+                                "gate": ["test", "unit:api"] if n == 2
+                                else ["python3 tests/t%d.py" % n]},
+                      "commit": sha, "startedAt": _BF_START, "attempts": 1,
+                      "maxAttempts": 3,
+                      "testEvidence": {"runId": "run-%d" % n,
+                                       "status": "passed", "at": "z"}})
+    man["phases"][0]["tasks"] = tasks
+    return man
+
+
+def _brief_cases(check):
+    """`brief --role` writes the whole brief to a file the agent is handed by
+    path; the reviewer's waits for the executor's filed return; the phase
+    reviewer's carries the request and every task's own record."""
+    root = _harness.fixture_root("audit-lookup-bf-")
+    # Read with a default so a module without them fails its cases rather
+    # than raising out of the block before any case ran.
+    refused = getattr(M, "E_REFUSED", "no E_REFUSED")
+
+    def project(name, manifest):
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        with open(os.path.join(proj, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(manifest, fh)
+        return proj, mpath
+
+    def brief(proj, mpath, node_id, role):
+        out, err = io.StringIO(), io.StringIO()
+        # argparse answers an unknown flag with SystemExit; caught, so a parser
+        # that does not know `--role` is a failed case and not an aborted run.
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                code = M.main([mpath, "brief", node_id, "--role", role,
+                               "--project", proj])
+            except SystemExit as exc:
+                code = exc.code
+        return code, out.getvalue() + err.getvalue()
+
+    def brief_file(proj, node_id, name):
+        return os.path.join(proj, ".claude", "state", "briefs", node_id, name)
+
+    def read(path):
+        try:
+            with open(path, "r", encoding="utf-8", newline="") as fh:
+                return fh.read()
+        except OSError:
+            return None
+
+    def file_exec(proj, start="20260101T000000Z", text=_BF_EXEC):
+        path = os.path.join(proj, "docs", "audit", "evidence", "returns",
+                            "P1.1", "%s.executor.json" % start)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            fh.write(text)
+
+    # ---- the executor's brief ---------------------------------------------
+    proj, mpath = project("bf-exec", _bf_manifest())
+    code, said = brief(proj, mpath, "P1.1", "executor")
+    path = brief_file(proj, "P1.1", "20260101T000000Z.executor.md")
+    text = read(path) or ""
+    task = _bf_manifest()["phases"][0]["tasks"][0]
+    check("bf1 `brief --role executor` writes the WHOLE brief to a file and "
+          "says where in one line: the description verbatim, every declared "
+          "file with who last declared it, the docs, the desired outcome, the "
+          "skill, the runsGate reading and the resolved commands, the filing "
+          "command among them: %r" % ((code, said),),
+          code == M.E_OK and len(said.splitlines()) == 1 and path in said
+          and task["description"] in text
+          and all(f in text for f in task["files"])
+          and "docs/refunds.md" in text
+          and "refunds add up to the order total" in text
+          and "writing-python" in text
+          and "executor.runsGate: own-tests" in text
+          and "file-return P1.1 --role executor" in text
+          and "--own --quiet" in text and "stamp-verification.py\" take" in text)
+    check("bf2 a first attempt's brief carries no retry section: %r"
+          % (text[-200:],), "Retry" not in text)
+    retry = _bf_manifest(attempts=2)
+    retry["phases"][0]["tasks"][0]["outcome"] = {
+        "technical": "attempt 1: gate red on bf_case"}
+    retry["phases"][0]["tasks"][0]["testEvidence"] = {
+        "runId": "run-red", "status": "failed", "at": "z"}
+    proj2, mpath2 = project("bf-retry", retry)
+    brief(proj2, mpath2, "P1.1", "executor")
+    text2 = read(brief_file(proj2, "P1.1",
+                            "20260101T000000Z.executor.md")) or ""
+    check("bf3 SECOND DIRECTION: a retry's brief carries what the last attempt "
+          "proved - its outcome.technical verbatim and its recorded run - which "
+          "the main loop used to be trusted to paste: %r" % (text2[-300:],),
+          "Retry" in text2 and "attempt 1: gate red on bf_case" in text2
+          and "run-red" in text2)
+
+    # ---- the reviewer's brief waits for the executor's filed return --------
+    proj, mpath = project("bf-review", _bf_manifest())
+    rpath = brief_file(proj, "P1.1", "20260101T000000Z.reviewer.md")
+    code1, said1 = brief(proj, mpath, "P1.1", "reviewer")
+    file_exec(proj, start="20251231T000000Z")
+    code2, _said2 = brief(proj, mpath, "P1.1", "reviewer")
+    check("bf4 the reviewer's brief is REFUSED, writing no brief, while the "
+          "executor's return for the task's CURRENT start is unfiled - and one "
+          "filed under an earlier start does not count: %r"
+          % ((code1, said1[:160], code2),),
+          code1 == refused and code2 == refused
+          and "executor" in said1 and "file-return" in said1
+          and not os.path.exists(rpath))
+    file_exec(proj)
+    code3, said3 = brief(proj, mpath, "P1.1", "reviewer")
+    rtext = read(rpath) or ""
+    check("bf5 ALLOW: once that return is filed the brief is written and "
+          "carries it byte-identical, beside the description verbatim, the "
+          "gate commands resolved through meta.buildCommands and the "
+          "reviewer's own filing command: %r" % ((code3, said3),),
+          code3 == M.E_OK and _BF_EXEC in rtext
+          and task["description"] in rtext
+          and "python3 -m pytest tests" in rtext
+          and "file-return P1.1 --role reviewer" in rtext
+          and "mode: task" in rtext)
+
+    # ---- the phase reviewer's brief ----------------------------------------
+    proj, mpath = project("bf-phase", _bf_signed_phase())
+    code4, said4 = brief(proj, mpath, "P1", "phase")
+    ptext = read(brief_file(proj, "P1", "phase.md")) or ""
+    signed = _bf_signed_phase()["phases"][0]["tasks"]
+    check("bf6 the phase reviewer's brief holds the saved request "
+          "byte-identical and, for each of three tasks, its SHA, its files and "
+          "every tests.gate entry byte-identical to the plan's, with its "
+          "recorded run: %r" % ((code4, said4),),
+          code4 == M.E_OK and _BF_REQUEST in ptext
+          and all(t["commit"] in ptext and t["files"][0] in ptext
+                  and t["testEvidence"]["runId"] in ptext
+                  and all(g in ptext for g in t["tests"]["gate"])
+                  for t in signed)
+          and "where does a task choose something the request leaves open"
+          in ptext.lower())
+    check("bf7 a `key:project` gate entry the plan cannot resolve is printed "
+          "with the entry kept and said to be unresolved, never dropped: %r"
+          % ([ln for ln in ptext.splitlines() if "unit:api" in ln],),
+          any("unit:api" in ln and "unresolved" in ln
+              for ln in ptext.splitlines()))
+    bare = _bf_signed_phase()
+    del bare["phases"][0]["request"]
+    proj2, mpath2 = project("bf-phase-bare", bare)
+    brief(proj2, mpath2, "P1", "phase")
+    ptext2 = read(brief_file(proj2, "P1", "phase.md")) or ""
+    check("bf8 a phase with no saved request SAYS so rather than leaving the "
+          "field empty: %r" % ([ln for ln in ptext2.splitlines()
+                                if "request" in ln.lower()][:3],),
+          "no request was saved" in ptext2.lower()
+          and _BF_REQUEST not in ptext2)
+    open_phase = _bf_signed_phase()
+    open_phase["phases"][0]["tasks"][1].update(status="in_progress", commit=None)
+    proj3, mpath3 = project("bf-phase-open", open_phase)
+    code5, said5 = brief(proj3, mpath3, "P1", "phase")
+    check("bf9 a phase brief over a task with no commit yet is refused and "
+          "writes nothing - the binding would have no diff: %r"
+          % ((code5, said5[:160]),),
+          code5 == refused and "P1.2" in said5
+          and not os.path.exists(brief_file(proj3, "P1", "phase.md")))
+
+    code6, said6 = brief(proj, mpath, "P1", "executor")
+    check("bf11 a phase id asked for a task's role, or a task id for the "
+          "phase's, is a miss rather than a brief about the wrong thing: %r"
+          % ((code6, said6[:120]),),
+          code6 == M.E_NOMATCH
+          and brief(proj, mpath, "P1.1", "phase")[0] == M.E_NOMATCH)
+
+
 def _selftest():
     def body(check):
         # Each block staged, so one that raises still lets the other run.
         _harness.stage(check, "al-block", _cases)
         _harness.stage(check, "sl-block", _success_line_cases)
+        _harness.stage(check, "bf-block", _brief_cases)
     return _harness.run(body)
 
 

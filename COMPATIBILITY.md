@@ -463,6 +463,19 @@ depending on an implementation:
   `noEvidenceReason` (the same additive key named above) rather than letting it outlive the
   sign-off that recorded it. A pipeline that closed over a red gate is a pipeline that now stops,
   and the repair is a green run or the override,
+- **closing against a commit with no review behind it — and it changed.** `audit-task.py done
+  --commit <sha>` used to close whether or not a reviewer had answered: with `--intent matches`
+  typed by the caller, or with no `--intent` at all, recording no answer. Every close that
+  passes `--commit` — with or without `--from-return` — now **exits 2**, writing nothing,
+  unless the reviewer's return is filed for the task's current start (`audit-task.py
+  file-return <taskId> --role reviewer`), whose answer is then the one recorded; a typed
+  `--intent` that differs from that filed answer is refused too, `not-asked` included. A
+  close typed by hand with no review behind it now has to say so: `--intent not-asked
+  --intent-basis "<why>"`. A `--no-change` close is unchanged. The filed return, its
+  directory under the evidence directory and its shape are a new record outside the contract;
+  `--from-return` and `file-return` are additive. A pipeline that closed with a typed or a
+  missing intent is a pipeline that now stops, and the repair is the filed review or the
+  stated `not-asked`,
 - **the id `/audit:phase add` allocates when you do not pass `--id`.** It was the lowest free
   `P<n>` and is the **highest in use plus one**. The taken set is unchanged — live phases and
   every id a parked proposal reserves — and `--id` still overrides it. The old rule re-minted

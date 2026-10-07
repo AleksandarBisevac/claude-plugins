@@ -118,6 +118,7 @@ claude-plugins/                           # this repo (personal, public)
           _manifest_rules.py              # the ORDER those rules run in, and the surface consumers import
           _manifest_vocab.py              # the manifest's words + the shape checks every level shares
           _task_outputs.py                # what a task's `outputs` pattern may be, and what an honoured one reaches
+          _filed_returns.py               # an agent's filed return: its derived path, the shape its role owes, the write-once create
           _manifest_phases.py             # the one walk over phases/tasks, and what a phase carries
           _manifest_ado.py                # meta.ado: the connector config, one front door with the panel
           _manifest_typos.py              # did-you-mean: a model id / skill name one slip from another
@@ -196,7 +197,7 @@ claude-plugins/                           # this repo (personal, public)
           _doctor_hygiene.py              # what is HELD (locks) and what is LEAKING (local artifacts in git)
           _gate_feed.py                   # the plan-gate events feed's prune rule: which rows no longer belong
           audit-logs.py                   # /audit:logs: the door onto that rule - parse, render, exit code
-          audit-lookup.py                 # one question, one pointer: why cancelled, a bug's conclusion, fileIndex's last declarer
+          audit-lookup.py                 # one question, one pointer: why cancelled, a bug's conclusion, fileIndex's last declarer; computed spawn briefs
           audit-version.py                # /audit:version: the running build, the marketplace and installed copies, the newest release
           _claude_home.py                 # Claude Code's own install records (installed_plugins.json, known_marketplaces.json), read fail-open
         report/                           # the report domain: the FIRST subdirectory under scripts/
@@ -296,6 +297,7 @@ L1:
   _commit_trail -> _output
   _demo_cast -> _output
   _deps -> _output
+  _filed_returns -> _output
   _fmt -> _output
   _id_refs -> _output
   _journal_io -> _output
@@ -388,16 +390,16 @@ L7:
   audit-journal -> _claude_home, _evidence_io, _journal_io, _output
   audit-lock -> _claude_home, _locks, _output
   audit-logs -> _claude_home, _gate_feed, _output
-  audit-lookup -> _claude_home, _evidence_io, _journal_io, _loader, _manifest_io, _manifest_vocab, _output
+  audit-lookup -> _areas, _claude_home, _evidence_io, _filed_returns, _journal_io, _loader, _manifest_io, _manifest_vocab, _output
   audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _areas, _branch, _claude_home, _commit_trail, _evidence_io, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _locks, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
+  audit-task -> _areas, _branch, _claude_home, _commit_trail, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _locks, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
   close-phase -> _branch, _claude_home, _evidence_io, _journal_io, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _tree_stamp, _verdict_binding, _worktrees
   commit-audit-state -> _claude_home, _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
   commit-manifest-index -> _claude_home, _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
-  commit-task-work -> _claude_home, _evidence_io, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
+  commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
@@ -1900,6 +1902,23 @@ nothing), a `KNOWN_*` set nothing anchors, and a stale or reasonless exemption. 
 express "equal to" but not "wider" — see the `SCHEMA_ANCHORS` comment for that argument and for
 why the comparison had to live with the walk, a layer up.
 
+### `plugins/audit/scripts/manifest/_filed_returns.py`
+Where an agent's **filed return** lives, what shape it must have, and how it is read
+(layer 1). `audit-task.py file-return` writes a return, `audit-task.py done` and
+`audit-lookup.py brief` read it, and `commit-task-work.py` reads its `claims` — three entry
+points at one layer that may not import each other, so the facts they must agree on live
+here once. `return_rel`/`return_path` derive `<evidence dir>/returns/<taskId>/<start>.<role>.json`
+from the task's current `startedAt`, so a re-start files beside the earlier attempt's return
+and an earlier start's return is never read as this one's; `return_problems` names every field
+a return falls short on against the shape its role's agent definition declares (the
+executor's red-first words are `RED_FIRST_WORDS`, held equal to the schema enum by `fr7`);
+`file_once` is the exclusive create that refuses a second filing and leaves the first
+byte-identical; `read_filed_return` reports a file that will not parse as a problem, never as
+an absence; `claims_from_return` hands the commit path the `claims` text verbatim. The evidence
+directory is handed in rather than resolved — resolving it is `_evidence_io`'s, one layer up —
+so the module reaches nothing but `_output`. What it cannot hold: the task id and role a
+caller files under are the caller's word. Cases in `plugins/audit/tests/test__filed_returns.py`.
+
 ### `plugins/audit/scripts/manifest/_task_outputs.py`
 What a task's **`outputs`** pattern may be, and what an honoured one reaches (layer 1).
 `files` names what a task *edits* and is enumerated, so every entry can owe a `fileIndex`
@@ -2955,11 +2974,29 @@ through `subject_aliases` so a moved task still answers under its live id), neve
 output, because a gate run under `run_in_background` writes its verdict there long before its
 own terminal is read again; the failing lines and `failingSuites` cross through exactly as the
 writer already bounded and redacted them, never re-cut here, and an unreadable ledger file is
-said rather than read as "no such run". Each returns a plain "no match" — never a
+said rather than read as "no such run". `brief <id> --role executor|reviewer|phase` writes
+the WHOLE spawn brief to a file under `stateDir` (`briefs/<id>/<start>.<role>.md`, or
+`briefs/<phaseId>/phase.md`) and prints its path, so the agent is handed a path and the brief
+never passes through the main loop. The executor's carries the resolved skills (area first),
+the description verbatim, the files with their last declarer, the docs, the desired outcome,
+the gate resolved through `meta.buildCommands`, the `executor.runsGate` reading with its
+command, the stamp and red-first helpers resolved against this plugin copy, the filing
+command, and — only when `attempts > 1` — what the last attempt left on the record. The
+reviewer's carries the executor's return as filed for the task's current start
+(byte-identical), the diff, the recorded run and the gate commands, and is refused with exit 4
+(`E_REFUSED`), writing nothing, until that return is filed. The phase reviewer's carries the
+request as saved (`phase.request`, or a sentence saying none was saved), one fixed question
+about what the request left open, and per task its commit, files, description, filed
+executor return, recorded run and `tests.gate` — an entry naming a `key:project` the plan
+cannot resolve is kept and said to be unresolved — and is refused while any task has no
+commit yet. It reads a filed return at the path `audit-task.py file-return` writes, both
+asking `_filed_returns.return_rel` for it.
+Each returns a plain "no match" — never a
 nearest id or a similar path — when the manifest does not carry an answer; an id that exists but does not apply to
 the question (a task that was never cancelled) is a different, legitimate answer and not a
-miss. Read-only, exit 0 on a match, 1 on a miss, 2 a usage error, 3 a config `brief` refuses
-to read. Layer 7 (an entry point reaching `_manifest_io`/`_journal_io`/`_loader` at layer 1
+miss. Read-only over the record (a brief is the one file it writes), exit 0 on a match, 1 on
+a miss, 2 a usage error, 3 a config `brief` refuses to read, 4 a brief whose inputs are not on
+the record yet. Layer 7 (an entry point reaching `_manifest_io`/`_journal_io`/`_loader`/`_areas` at layer 1
 and `_evidence_io` at layer 2, for the project/config resolution `boundary_for` already
 shares). `--selftest`.
 
@@ -4479,6 +4516,26 @@ as unverified rather than accused, which is this tree's rule about a claim whose
 missing. A task that was never started is refused, because a terminal state laid over a hole
 records an attempt nobody made. Closing the last open task does **not** close the phase:
 `phase.status` is sign-off's to write, beside the review verdict and the merge stamp.
+
+**A close against a commit reads the reviewer's FILED answer.** Every `done` that passes
+`--commit` needs the reviewer's return filed for the task's current start, or `--intent
+not-asked` with its basis; a filed answer is the one recorded, and a typed `--intent` that
+differs from it, `not-asked` included, is refused, writing nothing. The rule sits in
+`_locked_done` (`_close_intent`), so it holds for the plain form as well as `--from-return`;
+a `--no-change` close keeps the rule it had. `done --from-return` also takes the outcome,
+`verifiedBy` (from `testsAdded`) and the red-first block — onto `task.redFirst` — from the
+executor's filed return, and refuses when that return is not filed for the current start.
+
+**`file-return <taskId> --role executor|reviewer` is the one write a returning agent
+makes.** The return arrives as JSON on stdin; the verb checks the shape the role's agent
+definition declares (`_filed_returns.return_problems`), takes no path argument and
+refuses one that reads as a path, and writes the text verbatim to
+`<evidence dir>/returns/<taskId>/<start>.<role>.json`, where `<start>` is the task's current
+`startedAt`. The create is exclusive, so a second filing for one task, role and start is
+refused and the first stays byte-identical; a re-start re-stamps `startedAt`, so a retry
+files beside it. The evidence directory travels in the close commit, so a clone receives the
+claim beside the gate row it can be compared with. What it cannot hold: the task id and the
+role are the caller's word.
 
 **`scope <taskId>` gives a task the fields creation could not know**, through the same lock,
 revalidate-from-disk and rollback: `files`, `--tests-mode`, `--tests-add`, `--gate` /

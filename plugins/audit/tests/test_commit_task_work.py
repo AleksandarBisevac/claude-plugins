@@ -641,10 +641,87 @@ def _cases(check):
               and M.foreign_refusal(None, {"indexRel": INDEX_REL}) is None)
         _index_cases(check, repos)
         _verdict_cases(check, repos)
+        _harness.stage(check, "cl-block", lambda c: _claims_cases(c, repos))
         _harness.stage(check, "sl-block",
                        lambda c: _success_line_cases(c, repos))
     finally:
         repos.close()
+
+
+# --- the executor's filed `claims`, carried into the commit message ----------
+_CLAIMS = ("claims:\n1 src/a.py:1 is the change the subject names\n"
+           "2 n/a - no check touched")
+
+
+def _file_executor_return(fx, claims=None):
+    """Start the fixture task and file its executor return for that start, the
+    way `audit-task.py file-return` lays it down: under the evidence directory,
+    at `_filed_returns.return_path`. Written here rather than through the verb,
+    because the verb is not what this suite is about."""
+    import _filed_returns
+    shard = _mio.read_json(fx["shard"])
+    task = [t for t in shard["tasks"] if t.get("id") == TASK][0]
+    task["startedAt"] = "2026-01-01T00:00:00Z"
+    TI._write_json(fx["shard"], shard)
+    body = {"gates": {}, "outcome": {"technical": "t", "descriptive": "d"},
+            "testsAdded": [], "stamp": "audit-stamp: v2 x",
+            "redFirst": {"status": "not-attempted", "basis": "gate-only"}}
+    if claims is not None:
+        body["claims"] = claims
+    path = _filed_returns.return_path(
+        os.path.join(fx["root"], "docs", "audit", "evidence"), task, "executor")
+    _filed_returns.file_once(path, json.dumps(body) + "\n")
+
+
+def _message(fx, sha):
+    return TI._git(fx["root"], "log", "-1", "--format=%B", sha).rstrip("\n")
+
+
+def _git_trailer(fx, sha, key):
+    """The values git ITSELF reads as `key` trailers of `sha`'s message - not a
+    line scan, which would find a nonce git no longer treats as a trailer."""
+    return [ln for ln in TI._git(
+        fx["root"], "log", "-1",
+        "--format=%%(trailers:key=%s,valueonly)" % (key,), sha).splitlines()
+        if ln.strip()]
+
+
+def _claims_cases(check, repos):
+    fx = repos.make()
+    _file_executor_return(fx, claims=_CLAIMS)
+    _dirty_work(fx)
+    _gate(fx)
+    code, text = _run(fx, TASK, "--subject", "the work")
+    sha = _head(fx)
+    paragraphs = _message(fx, sha).split("\n\n")
+    check("cl1 a filed executor return carrying `claims` gives a commit whose "
+          "message holds the block byte-identical as a paragraph of its own, "
+          "after the subject and before the trailers: %r" % (paragraphs,),
+          code == 0 and len(paragraphs) == 3 and paragraphs[1] == _CLAIMS
+          and paragraphs[0].endswith("- the work"))
+    rows = _task_rows(fx)
+    nonce = ((rows[-1].get("details") or {}).get(_invariants.NONCE_KEY)
+             if rows else None)
+    check("cl3 ...and with claims and no co-author line, git still reads the "
+          "Audit-Row trailer - `%%(trailers:key=Audit-Row,valueonly)` prints the "
+          "nonce the row names. Joined onto the claims paragraph it would be a "
+          "line git does not treat as a trailer: %r"
+          % ((_git_trailer(fx, sha, _invariants.ROW_TRAILER), nonce),),
+          nonce is not None
+          and _git_trailer(fx, sha, _invariants.ROW_TRAILER) == [nonce])
+
+    plain = repos.make()
+    _file_executor_return(plain)
+    _dirty_work(plain)
+    _gate(plain)
+    pcode, _ptext = _run(plain, TASK, "--subject", "the work")
+    psha = _head(plain)
+    pparagraphs = _message(plain, psha).split("\n\n")
+    check("cl2 SECOND DIRECTION: a filed return WITHOUT `claims` gives today's "
+          "message - the subject and the row trailer, nothing between: %r"
+          % (pparagraphs,),
+          pcode == 0 and len(pparagraphs) == 2
+          and pparagraphs[1].startswith(_invariants.ROW_TRAILER + ": "))
 
 
 # --- what the index says: renames, deletions, ignored directories -----------

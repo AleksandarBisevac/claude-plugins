@@ -2784,11 +2784,11 @@ def _cases(check):
           and "no retry spent" in _cv_orch)
 
     # --- (rs) P42: the return shape, and the path that stopped asking for it ----
-    # The executor's return is prose an agent writes: nothing parses it, nothing
-    # rejects it, and its only reader is the orchestrator - the one actor that
-    # could fill a missing field in without noticing. So the boundary cannot be
-    # validated and these cases do not pretend otherwise; what they hold is the
-    # pair of DOCUMENTS. The brief declares the shape; the reference tells an
+    # A return the executor files is parsed by `audit-task.py file-return` (its
+    # cases are `fr` in test_audit_task.py); one handed back without filing is
+    # prose nothing parses, and its only reader is the orchestrator - the one
+    # actor that could fill a missing field in without noticing. What these cases
+    # hold is the pair of DOCUMENTS. The brief declares the shape; the reference tells an
     # orchestrator what to ask for and carries the fallback path that restates the
     # rules inline when the agent type is unavailable - and that path named no
     # `testsAdded`, which is the field `task.verifiedBy` is filled from. Every rule
@@ -2809,13 +2809,17 @@ def _cases(check):
           and all(('"%s"' % (k,)) in _rs_brief for k in _rs["keys"]))
     _rs_orch = _product_doc("reference/execute-task.md")
     check("rs3 the reference names what enforces the shape IN THE RULE'S OWN "
-          "SENTENCE, says in the same breath that the return itself is prose and "
-          "unparsed, sends the fallback path to PASTE the brief instead of "
-          "restating it, briefs a retry with what the last attempt proved, and "
-          "calls a return that disagrees with the recorded row a discrepancy "
-          "rather than a thing its own measurement quietly corrects",
+          "SENTENCE - the drift lint for the documents and the filing verb for a "
+          "filed return - says in the same breath that a return handed back "
+          "without filing is prose and unparsed, sends the fallback path to PASTE "
+          "the brief instead of restating it, briefs a retry with what the last "
+          "attempt proved, and calls a return that disagrees with the recorded "
+          "row a discrepancy rather than a thing its own measurement quietly "
+          "corrects",
           "`return_shape_drift()` in" in _rs_orch
-          and "the return itself is prose, and nothing parses it" in _rs_orch
+          and "`file-return` checks the shape" in _rs_orch
+          and "A return handed back without filing is prose, and nothing "
+              "parses it" in _rs_orch
           and "paste `agents/audit-executor.md` into" in _rs_orch
           and "A retry is not a fresh start" in _rs_orch
           and "the failing gate ENTRY, never the failing test" in _rs_orch

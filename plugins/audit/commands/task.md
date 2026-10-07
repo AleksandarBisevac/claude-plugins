@@ -1,6 +1,6 @@
 ---
 description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — promote one to running, close one that landed, move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `start` promotes a task to in_progress so the plan gate resolves its files, without spawning anything; `done` closes it against the commit its work landed in, writing status, completedAt, commit, outcome and verifiedBy in one write — or, with `--no-change --reason`, closes a task whose answer was that nothing needed to change; `reopen` puts a done task back to pending with the reason recorded; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `block` sets a task blocked with the reason beside the status; `note` appends a dated note, the one addition a started task takes; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
-argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] | start <taskId> [--force --reason "<why>"] | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] [--override-verdict TEXT] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id], or --test <path> --caught <runId> | uncouple --test <path> | mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId> | unmute --test <path> | cancel <id> --reason "<why>"'
+argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] | start <taskId> [--force --reason "<why>"] | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] [--override-verdict TEXT] [--from-return] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id], or --test <path> --caught <runId> | uncouple --test <path> | mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId> | unmute --test <path> | cancel <id> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
@@ -539,7 +539,18 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" done P3.2 \
   --descriptive "<one-line impact>" --technical "<what was actually done>" \
   --verified-by "<test names this task added>" \
   [--intent matches|diverges|cannot-tell|not-asked] [--intent-basis TEXT] [--json]
+
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" done P3.2 \
+  --commit "$(git -C <gitRoot> rev-parse HEAD)" --from-return [--json]
 ```
+
+**`--from-return` is the ordinary close of a task run through the pipeline.** It takes the
+outcome, `verifiedBy` (from `testsAdded`) and the red-first block — its word `proved`,
+`could-not-prove` or `not-attempted` with the basis verbatim, written onto
+`task.redFirst` — from the executor's return filed for the task's current start, and the
+intent answer from the reviewer's (below). It is refused, writing nothing, when the
+executor's return for the current start is not filed, and beside a typed `--descriptive`,
+`--technical` or `--verified-by`: one close takes its account from one place.
 
 **Call it at the END of step 4c, after `git rev-parse HEAD`** — the SHA does not exist
 until the commit does. The manifest write then rides along with the next task's commit
@@ -558,18 +569,23 @@ What it writes — exactly the fields step 4 prescribes, and nothing besides:
   there, so a close that rewrote the whole object would delete that on its way to
   recording success. The report says which of them went unrecorded rather than leaving
   you to notice.
-- `intentCheck` from `--intent` — the reviewer's own per-task answer to whether the diff
-  does what `description` asked (`matches` / `diverges` / `cannot-tell`), carried into the
-  SAME commit this call already names. **Omitted means no answer was recorded, never
-  agreement** — a close that received none reads apart from one that received a negative,
-  which is the whole reason this is its own field rather than folded into `outcome`.
-  **`--intent not-asked --intent-basis "<why>"`** is the fourth word, and the only one no
-  reviewer gives: the question was deliberately not put (a two-string edit, a close with no
-  diff). It is refused without `--intent-basis`, because a skip with no reason on the record
-  reads exactly like a reviewer call that never came back; `--intent-basis` alone, with no
-  `--intent` beside it, is refused too. `/audit:phase signoff` and `/audit:status` (on a
-  phase whose sign-off is due) name the done tasks that carry **no** answer — `not-asked`
-  is an answer, so it is not among them.
+- `intentCheck` — the reviewer's own per-task answer to whether the diff does what
+  `description` asked (`matches` / `diverges` / `cannot-tell`), bound to the SAME commit this
+  call names. **On every close that passes `--commit` the answer is read from the
+  reviewer's FILED return** for the task's current start (`file-return`, below), and the
+  record names that file in `intentCheck.return`. Without one the close is **refused,
+  writing nothing**, unless it says the question was deliberately not put: **`--intent
+  not-asked --intent-basis "<why>"`**, the one word no reviewer gives (a two-string edit, a
+  reviewer that never answered). A typed `--intent` word that differs from the filed answer
+  is refused, `not-asked` included, so a typed word cannot replace an answer a reviewer
+  filed; one that agrees with it closes as if it were not typed. A return filed under an
+  earlier start does not count. **A `--no-change` close has no diff to bind and keeps the
+  rule it had**: `--intent` is optional there, and omitting it records no answer at all —
+  which reads apart from a negative one. `not-asked` is refused without `--intent-basis`,
+  because a skip with no reason on the record reads exactly like a reviewer call that never
+  came back; `--intent-basis` alone, with no `--intent` beside it, is refused too.
+  `/audit:phase signoff` and `/audit:status` (on a phase whose sign-off is due) name the
+  done tasks that carry **no** answer — `not-asked` is an answer, so it is not among them.
 - **journal** → one `task.done` row carrying the SHA in its summary and `details`.
   It is deliberately **not** `task.complete`: that action and `task.commit` are derived
   by `hooks/journal-writes.py` from the write itself and step 4c forbids appending them
@@ -608,7 +624,10 @@ refusal of a task that was never started.
 **Refusals, all before any write:** an id that resolves to nothing; a **phase** id (a
 phase reaches `done` only through sign-off, which writes a review verdict and a merge
 stamp beside the status); a `done` or `cancelled` task, named as such; a missing or
-non-SHA `--commit` (with no `--no-change`); a SHA git can be asked about and does not have; and a task that was
+non-SHA `--commit` (with no `--no-change`); a SHA git can be asked about and does not have; a
+`--commit` close with no reviewer return filed for the current start and no `--intent
+not-asked`, or with a typed `--intent` that differs from the filed answer; a `--from-return`
+close with no executor return filed for the current start; and a task that was
 **never started** — `pending` with no attempt recorded means no spawn was ever written
 down, so the close would lay a terminal state over a hole, which is also the shape
 `/audit:doctor` grades as positive evidence of an edit outside the pipeline. Run
@@ -644,6 +663,31 @@ on the phase. **Nothing refuses a close that leaves a phase
 complete-but-unsigned**; the line is the whole of it, and the `pd` group in
 `plugins/audit/tests/test_audit_task.py` is what keeps the field untouched in both
 directions.
+
+### `file-return <taskId> --role executor|reviewer` — the one write a returning agent makes
+
+Not typed by a person: the executor and the task-mode reviewer each run it once, as the
+command their computed brief (`audit-lookup.py brief <taskId> --role …`) names, and then hand
+back one line.
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" file-return P3.2 \
+  --role executor < <the return object, as a file>
+```
+
+The return arrives as JSON on **stdin**. The verb checks the shape the role's agent
+definition declares (`agents/audit-executor.md`, `agents/audit-reviewer.md`) and exits 2
+naming every missing or malformed field, writing nothing. It takes **no path**: an id or a
+role that reads as one is refused, and the one file it writes is derived from the task id,
+the role and the task's current `startedAt` — `<evidence dir>/returns/<taskId>/<start>.<role>.json`,
+the text kept verbatim. The create is exclusive, so a **second filing for one task, role
+and start is refused** and the first stays byte-identical; a re-start re-stamps `startedAt`,
+so a retry files beside the earlier attempt's return rather than over it. A task with no
+start, or one already `done` or `cancelled`, is refused. The evidence directory travels in
+the close commit, so a clone receives the claim beside the gate row it can be compared with;
+an executor return's optional `claims` text becomes its own paragraph of that commit's
+message. **What it cannot hold:** the task id and the role are the caller's word — a filing
+under the wrong role, or for a task nobody has filed for yet, is not refused.
 
 ## Subcommand: `reopen <taskId> --reason "<why>"`
 

@@ -14,8 +14,8 @@ Hard rules (non-negotiable):
 
 - **The prompt already carries which task last declared each of your `files`
   — do not grep the manifest, the journal or the repository to re-derive it.**
-  That answer (`audit-lookup.py brief <taskId>`, folded in by the
-  orchestrator before you were spawned) is exactly the fact exploring the
+  That answer (the brief `audit-lookup.py brief <taskId> --role executor`
+  computed, whose path the orchestrator hands you) is exactly the fact exploring the
   tree would otherwise cost you the whole repository to find. If what you
   were handed does not answer the question in front of you, exploring
   further is fine — but say so, and say why, in your returned outcome,
@@ -91,11 +91,12 @@ Hard rules (non-negotiable):
   shared tree alone. The fix is to re-check the claims that path could affect,
   never to re-take every claim over again. If the grading comes back `unestablished`, git
   could not answer — that is **not** "unchanged", and reporting it as one is the
-  same defect as reporting "verified" with nothing behind it. **Nothing checks
-  that you attached a stamp.** `return_shape_drift()` in
+  same defect as reporting "verified" with nothing behind it. **The filing verb
+  refuses a return with no stamp** (`audit-task.py file-return`, below); a return
+  handed back without filing is checked by nothing, and `return_shape_drift()` in
   `plugins/audit/scripts/_refs.py` holds only that `reference/execute-task.md`
-  asks for every field this brief declares; the return itself is prose nothing
-  parses, so a missing stamp is recorded as absent and never filled in for you.
+  asks for every field this brief declares — so a missing stamp there is recorded
+  as absent and never filled in for you.
 - **Prove a red with the helper, never by undoing the fix in the shared tree.**
   Under `tdd` the first red is the ordinary one: the test is written before the
   implementation, so running it touches nothing. Any red proved AFTER the fix is in
@@ -256,4 +257,14 @@ Report back a structured outcome:
  "outcome": {"technical": "what was actually done — changes, commands, test counts",
              "descriptive": "one-line impact summary"},
  "testsAdded": ["test name/id", ...],
- "stamp": "the audit-stamp: line for the tree the claims above are about"}
+ "stamp": "the audit-stamp: line for the tree the claims above are about",
+ "claims": "optional: a claims: block a task's skill asked for, kept verbatim"}
+
+**File it, then hand back one line.** Write that object to a file and run the
+filing command your brief names — `audit-task.py file-return <taskId> --role
+executor`, the object on stdin. The verb checks the shape above and exits 2 naming
+a missing or malformed field, writing nothing; fix the object and file again. It
+writes the return once, to a path it derives from the task and its current start,
+and refuses a second filing in the same start. Then hand back one line: what the
+command printed. `done --from-return` closes the task from that file, so a field
+you leave out is refused there rather than filled in for you.

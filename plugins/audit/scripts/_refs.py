@@ -1245,11 +1245,16 @@ def red_first_vocabulary_drift(repo_root=None):
 
 
 # --- the shape the executor hands back, and who has to keep asking for it -------
-# THE RETURN IS PROSE AN AGENT WRITES. Nothing parses it, nothing rejects it,
-# and the orchestrator -- the one actor that could quietly fill a gap in -- is also
-# its only reader. So the return itself cannot be validated at the boundary, and
-# saying that plainly is the point rather than an apology: what CAN be checked is
-# the pair of documents that describe it, and this is that check.
+# A RETURN THE AGENT FILES IS CHECKED AT THE BOUNDARY; ONE IT DOES NOT IS PROSE.
+# `audit-task.py file-return` parses a filed return and refuses one missing a
+# field the brief declares (`_filed_returns.return_problems`), and `fr6` in
+# `plugins/audit/tests/test__filed_returns.py` deletes each declared field in
+# turn and holds that the check names it - so the
+# brief and the verb cannot drift apart. A return handed back without filing is
+# still prose nothing parses, and the orchestrator -- the one actor that could
+# quietly fill a gap in -- is its only reader. What THIS function checks is the
+# other pair: the brief that declares the shape and the reference that has to ask
+# for every field of it.
 #
 # THE DEFECT IT WAS WRITTEN FOR. `agents/audit-executor.md` declares the shape.
 # `reference/execute-task.md` (the `## Execute the task` section, split out of

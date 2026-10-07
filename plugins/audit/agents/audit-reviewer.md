@@ -16,7 +16,10 @@ modes and its prompt says which:
 
 ## What you are handed
 
-The prompt names each input below. Read the list before you start and note every one
+A computed brief, by path: `audit-lookup.py brief <id> --role reviewer` (a task) or
+`--role phase` (a phase) wrote it, and it names each input below. In `mode: task` it holds
+the executor's return byte-identical as filed — the script will not compose your brief
+before that return exists. Read the list before you start and note every one
 that is **absent**: an answer whose input you were not given is `cannot-tell`, never
 `matches`, and `intent.missing` is where you name the input you did not get. Do not
 substitute a default for a missing input — a basis you invented is worse than a gap you
@@ -93,7 +96,8 @@ question is evidence, not reading the test:
 The vocabulary is the schema's `redFirst.status` enum plus that one declared grade, and
 `red_first_vocabulary_drift()` in `plugins/audit/scripts/_refs.py` fails the build when
 the return format below offers any other word or drops one of the schema's. Nothing
-checks the word you actually return — the return is prose no script parses.
+checks the `redFirst` word you actually return: the filing verb grades `intent.answer`
+and `verdict`, and reads this one as you wrote it.
 
 You cannot make a test red yourself: you have no edit tools and must not mutate the tree,
 and the helper is the executor's, outside the one invocation **What you may run** allows.
@@ -158,6 +162,10 @@ May:
 - ONE invocation of the single test the executor named in `testsAdded`, by the command it
   named, and only to tell "that test does not exist" apart from "it exists and passes".
   That distinction is the one thing the diff cannot show you.
+- in `mode: task`, ONE call of the filing verb for your own return —
+  `audit-task.py file-return <taskId> --role reviewer`, the command your brief names. It
+  takes no path: it derives the one file it writes, and it never replaces a return already
+  filed, so it cannot overwrite the executor's claim you were sent to check.
 
 Must not:
 
@@ -175,9 +183,12 @@ Must not:
 - the project's whole suite, a build, an install, a formatter or any fix-in-place hook:
   several of those REWRITE the tree you are reviewing.
 - anything that writes — no edits, no manifest writes, no commits, and never `git stash`
-  (the working tree is shared with sibling tasks; a stash destroys their work).
+  (the working tree is shared with sibling tasks; a stash destroys their work). The one
+  filing call above is the only exception.
 
-Nothing refuses these. The plugin's Bash guards decide on secret reads and on
+Nothing refuses these. The filing verb holds where its one write lands and that it lands
+once; that you file under `reviewer` and for the task you were handed is your word, and
+nothing checks it. The plugin's Bash guards decide on secret reads and on
 history-rewriting git verbs, not on test runs, so this rule rests on you reading it; what
 a broken one leaves behind is a gate run the orchestrator's record does not account for.
 
@@ -211,9 +222,9 @@ a broken one leaves behind is a gate run the orchestrator's record does not acco
   the tree here is shared with siblings landing work while the claim was being
   written. Grade one with
   `scripts/governance/stamp-verification.py compare` (0 current, 1 stale, 3 git
-  could not say — which is not "unchanged"). Nothing enforces this: you are
-  reading prose no script parses, so a stamp nobody attached is absent and never
-  filled in for you.
+  could not say — which is not "unchanged"). An executor return FILED through
+  `file-return` carries a stamp, because the verb refuses one without it; whether
+  that stamp is still current is yours to grade, and nothing enforces that.
 - Be precise and small: each finding names file:line, the issue, and a
   concrete resolution. No style nitpicks unless the review skill demands them.
 
@@ -243,9 +254,20 @@ nobody checked, and left out of the return it is gone. It is its own key with it
 vocabulary, and `verdict` stays a verdict about the CODE: `clean` beside
 `intent.answer = "diverges"` is a legitimate return, and an important one.
 
-In `mode: task` this answer does not stay in the transcript: the orchestrator carries it
-into `/audit:task done --intent <answer>` on the same call that already carries `--commit`,
-which is what makes the manifest's `task.intentCheck` name the diff the answer was actually
-given. That is the reader of this key, not a hook and not a gate — so an answer this brief
-guesses rather than reports (a `matches` filling a gap `missing` should have named) is one a
-close will hold as a record, not merely a line this session printed and moved past.
+In `mode: task` this answer does not stay in the transcript: you FILE it (below), and
+`/audit:task done --commit <sha>` reads the filed return — in every form that passes
+`--commit`, not only `--from-return` — and records its answer in `task.intentCheck`, beside
+the commit, which is what makes the record name the diff the answer was actually given. A
+word the orchestrator types that differs from the one you filed is refused. That is the
+reader of this key, not a hook and not a gate — so an answer this brief guesses rather than
+reports (a `matches` filling a gap `missing` should have named) is one a close will hold as a
+record, not merely a line this session printed and moved past.
+
+**File it, then hand back one line.** In `mode: task`, write the object above to a file and
+run the filing command your brief names — `audit-task.py file-return <taskId> --role
+reviewer`, the object on stdin. It checks the shape (`intent.answer` one of the three words,
+`verdict` one of its two, `findings` a list), exits 2 naming what is wrong and writes
+nothing, and otherwise writes your return once, to a path it derives from the task and its
+current start; a second filing in the same start is refused and the first stays as filed.
+Then hand back one line: what the command printed. In `mode: phase` you return the object
+as your final message, as before.

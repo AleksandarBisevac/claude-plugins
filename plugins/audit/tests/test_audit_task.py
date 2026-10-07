@@ -4044,7 +4044,7 @@ def _cases(check):
                    # ...and `done` on the running task the fixture carries, with
                    # the one flag it requires: a base call that could not close
                    # anything would refuse every row for its own reason.
-                   "done": ["done", "P2.9", "--commit", _VF_SHA],
+                   "done": ["done", "P2.9", "--commit", _VF_SHA] + _NOT_ASKED,
                    # `seed` refuses whenever a manifest is already there, which
                    # `vf_proj` is -- but that refusal is `cmd_seed`'s own, and it
                    # fires AFTER the misplaced-flag check this grid drives, so
@@ -4081,7 +4081,11 @@ def _cases(check):
                    "bug-add": ["bug-add", "T", "--severity", "low",
                                "--description", "d"],
                    "mute": ["mute", "--test", "tests/test_vf.py"],
-                   "unmute": ["unmute", "--test", "tests/test_vf.py"]}
+                   "unmute": ["unmute", "--test", "tests/test_vf.py"],
+                   # `file-return` with its one flag; the misplaced-flag check
+                   # fires before the door reads stdin.
+                   "file-return": ["file-return", "P2.9", "--role",
+                                   "executor"]}
         _vf_leaks = []
         for _vfv in sorted(M.VERB_FLAGS):
             _vfknown = set(M.VERB_FLAGS[_vfv]) | set(M.UNIVERSAL_FLAGS)
@@ -4132,7 +4136,8 @@ def _cases(check):
                 # compare could never show.
                 (["done", "P2.9", "--commit", _VF_SHA,
                   "--descriptive", "impact", "--technical", "what was done",
-                  "--verified-by", "t_one,t_two", "--json"], "done/--commit"),
+                  "--verified-by", "t_one,t_two", "--json"] + _NOT_ASKED,
+                 "done/--commit"),
                 (["cancel", "P3", "--reason", "dropped", "--json"],
                  "cancel/--json"),
                 (["next-id", "bug", "--json"], "next-id/--json"),
@@ -4201,6 +4206,15 @@ def _cases(check):
             ["done", "P2.3", "--no-change", "--reason", "nothing to change",
              "--intent", "not-asked", "--intent-basis", "no diff to review",
              "--json", "--project-dir", _vf_nc_proj])[0]
+        # `file-return` on a started task of its own project, its return on
+        # stdin - the one input it takes that is not a flag.
+        _vf_fr = base_manifest()
+        _vf_fr["phases"][1]["tasks"][1].update(
+            status="in_progress", attempts=1, startedAt="2026-01-01T00:00:00Z")
+        _vf_fr_proj, _vf_fr_mp = mk("vf-file-return", _vf_fr)
+        _vf_ok["file-return/--role"] = run_on_stdin(
+            ["file-return", "P2.3", "--role", "executor", "--json",
+             "--project-dir", _vf_fr_proj], _fr_executor())[0]
         # `bug-add`, `mute` and `unmute` in that order on one project: the
         # bug the first files is the one the mute names, and the unmute lifts
         # that mute. Every flag each row declares is passed.
@@ -6230,7 +6244,8 @@ def _cases(check):
         codepd, txtpd = run(["done", "P2.4", "--project-dir", projpd,
                              "--commit", _PD_SHA,
                              "--descriptive", "checkout no longer double-charges",
-                             "--verified-by", "t_double_charge, t_refund"])
+                             "--verified-by", "t_double_charge, t_refund"]
+                            + _NOT_ASKED)
         tpd = task_in(mppd, "P2.4")
         check("pd1 a started task closes with `reference/orchestrator.md` step "
               "4's OWN fields and nothing besides - 4b's status and stamp, 4c's "
@@ -6302,7 +6317,7 @@ def _cases(check):
               and "0" * 12 in _pd_bogus[1]
               and _pd_head_sha != "" and len(_pd_head_sha) == 40)
         _pd_real = run(["done", "P2.4", "--project-dir", projgt, "--json",
-                        "--commit", _pd_head_sha])
+                        "--commit", _pd_head_sha] + _NOT_ASKED)
         _pd_real_json = {}
         try:
             _pd_real_json = json.loads(_pd_real[1])
@@ -6321,7 +6336,7 @@ def _cases(check):
         # CI's default (shallow) checkout and then send the operator to
         # `repair-commits.py --apply`, which NULLS an intact trail.
         _pd_unv = run(["done", "P2.4", "--project-dir", projns, "--json",
-                       "--commit", "0" * 40])
+                       "--commit", "0" * 40] + _NOT_ASKED)
         _pd_unv_json = {}
         try:
             _pd_unv_json = json.loads(_pd_unv[1])
@@ -6333,7 +6348,7 @@ def _cases(check):
         # wrong reason.
         projuh, _mpuh = mk("dn-unverified-human", pd_fixture())
         _pd_unv_human = run(["done", "P2.4", "--project-dir", projuh,
-                             "--commit", "0" * 40])
+                             "--commit", "0" * 40] + _NOT_ASKED)
         check("pd5c ...and where git cannot be asked the same SHA is WRITTEN and "
               "SAID to be unverified, never refused: a project that is not a "
               "repository answers nothing, and a claim with no basis is reported "
@@ -6394,7 +6409,7 @@ def _cases(check):
         _pd_back["phases"][1]["tasks"][1]["attempts"] = 2
         projbk, mpbk = mk("dn-back-to-pending", _pd_back)
         _pd_ran = run(["done", "P2.3", "--project-dir", projbk,
-                       "--commit", _PD_SHA])
+                       "--commit", _PD_SHA] + _NOT_ASKED)
         check("pd7b SECOND DIRECTION, and it is the one a narrower predicate "
               "breaks: the SAME `pending` status with an attempt recorded DOES "
               "close, because the trail has the spawn in it. A guard reading "
@@ -6427,7 +6442,8 @@ def _cases(check):
         # the verb, the way `task.start` and `task.cancel` are.
         projjd, mpjd = mk("dn-journal", pd_fixture())
         run(["done", "P2.4", "--project-dir", projjd, "--commit", _PD_SHA,
-             "--technical", "one module rewritten, cases added beside it"])
+             "--technical", "one module rewritten, cases added beside it"]
+            + _NOT_ASKED)
         _pdjm = _panel_write._journalmod()
         _pd_all = _pdjm.read_all(projjd) if _pdjm else []
         _pd_rows = [r for r in _pd_all if r.get("action") == "task.done"]
@@ -6474,17 +6490,20 @@ def _cases(check):
               and len(_pd_hand["changes"]) <= _pd_jio.MAX_CHANGES)
         check("pd9c the `changes` list is the fields the call WROTE and no "
               "others: `status`, `completedAt` and `commit` every time, the "
-              "outcome halves and `verifiedBy` only when the caller passed them. "
-              "A row for an untouched field would claim a write that did not "
-              "happen, which is the one thing a trail must never do: %r"
+              "outcome halves and `verifiedBy` only when the caller passed them, "
+              "and `intentCheck` for the answer a close against a commit now "
+              "always records. A row for an untouched field would claim a write "
+              "that did not happen, which is the one thing a trail must never "
+              "do: %r"
               % ([c["field"] for c in _pd_det["changes"]],),
               [c["field"] for c in _pd_det["changes"]]
-              == ["status", "completedAt", "commit", "outcome.technical"])
+              == ["status", "completedAt", "commit", "outcome.technical",
+                  "intentCheck"])
 
         # THE PHASE QUESTION, SETTLED AND CHECKABLE IN BOTH DIRECTIONS.
         projls, mpls = mk("dn-last", pd_fixture(last=True))
         codels, txtls = run(["done", "P2.4", "--project-dir", projls, "--json",
-                             "--commit", _PD_SHA])
+                             "--commit", _PD_SHA] + _NOT_ASKED)
         _pd_last = {}
         try:
             _pd_last = json.loads(txtls)
@@ -6497,7 +6516,7 @@ def _cases(check):
         # subject and would otherwise answer this case instead.
         run(["start", "P2.3", "--project-dir", projpd])
         codelh, txtlh = run(["done", "P2.3", "--project-dir", projpd,
-                             "--commit", _PD_SHA])
+                             "--commit", _PD_SHA] + _NOT_ASKED)
         check("pd10 closing the LAST open task does NOT flip the phase, and the "
               "report says whose move that is. A phase reads done only once a "
               "verdict is recorded (`/audit:phase signoff`) and any branch has "
@@ -6536,7 +6555,7 @@ def _cases(check):
         with open(mpsd, "rb") as _fh:
             _sd_index = _fh.read()
         codesd, _txtsd = run(["done", "P2.4", "--project-dir", projsd,
-                              "--commit", _PD_SHA])
+                              "--commit", _PD_SHA] + _NOT_ASKED)
         check("pd12 the sharded layout closes in the phase's SHARD, leaves an "
               "untouched phase's shard and the INDEX byte-identical, and the "
               "assembled manifest agrees with the shard - one place for one "
@@ -6605,7 +6624,7 @@ def _cases(check):
         projrd1, mprd1 = mk("dn-over-red", pd_fixture())
         rd_ledger(projrd1, ["passed", "failed"])
         coderd1, txtrd1 = run(["done", "P2.4", "--project-dir", projrd1,
-                               "--commit", _PD_SHA])
+                               "--commit", _PD_SHA] + _NOT_ASKED)
         check("rd1 RED-FIRST: done --commit over a task whose newest recorded "
               "gate verdict is red refuses, names the row, and writes nothing: "
               "exit %r, status %r, %r"
@@ -6616,7 +6635,8 @@ def _cases(check):
               and (task_in(mprd1, "P2.4") or {}).get("status") == "in_progress")
         coderd2, txtrd2 = run(["done", "P2.4", "--project-dir", projrd1,
                                "--commit", _PD_SHA, "--override-verdict",
-                               "the red was a runner outage, re-run is green"])
+                               "the red was a runner outage, re-run is green"]
+                              + _NOT_ASKED)
         _rd2 = rd_rows(projrd1)
         check("rd2 RED-FIRST: an explicit --override-verdict closes it and "
               "journals the exception - ONE row naming the task, the red run "
@@ -6633,7 +6653,7 @@ def _cases(check):
         projrd3, mprd3 = mk("dn-green-newest", pd_fixture())
         rd_ledger(projrd3, ["failed", "passed"])
         coderd3, txtrd3 = run(["done", "P2.4", "--project-dir", projrd3,
-                               "--commit", _PD_SHA])
+                               "--commit", _PD_SHA] + _NOT_ASKED)
         check("rd3 ALLOW: a red retired by a later green closes with no flag, "
               "says which run it is bound to, and journals no exception: exit "
               "%r, %r" % (coderd3, txtrd3[-300:]),
@@ -6645,7 +6665,7 @@ def _cases(check):
         _rd_free["phases"][1]["tasks"][-1]["tests"]["gate"] = []
         projrd4, mprd4 = mk("dn-no-gate", _rd_free)
         coderd4, txtrd4 = run(["done", "P2.4", "--project-dir", projrd4,
-                               "--commit", _PD_SHA])
+                               "--commit", _PD_SHA] + _NOT_ASKED)
         check("rd4 ALLOW: a task no gate measures closes and says so in the "
               "no-gate arm's own sentence: exit %r, %r"
               % (coderd4, txtrd4[-300:]),
@@ -6665,7 +6685,8 @@ def _cases(check):
         projrd6, mprd6 = mk("dn-over-red-unneeded", pd_fixture())
         rd_ledger(projrd6, ["passed"])
         coderd6, txtrd6 = run(["done", "P2.4", "--project-dir", projrd6,
-                               "--commit", _PD_SHA, "--override-verdict", "x"])
+                               "--commit", _PD_SHA, "--override-verdict", "x"]
+                              + _NOT_ASKED)
         check("rd6 SECOND DIRECTION: --override-verdict with nothing to go over "
               "closes, says the reason was not needed, and journals NO "
               "exception - an override row with nothing overridden would "
@@ -6682,7 +6703,7 @@ def _cases(check):
         with open(os.path.join(projrd7, "src", "fresh.ts"), "w") as _fh:
             _fh.write("changed after the gate\n")
         coderd7, txtrd7 = run(["done", "P2.4", "--project-dir", projrd7,
-                               "--commit", _PD_SHA])
+                               "--commit", _PD_SHA] + _NOT_ASKED)
         check("rd7 RED-FIRST: done over a green whose declared files changed "
               "after the run refuses, names the run, and writes nothing: exit "
               "%r, %r" % (coderd7, txtrd7[:300]),
@@ -6692,7 +6713,7 @@ def _cases(check):
 
         projrd8, mprd8 = mk("dn-no-run", pd_fixture())
         coderd8, txtrd8 = run(["done", "P2.4", "--project-dir", projrd8,
-                               "--commit", _PD_SHA])
+                               "--commit", _PD_SHA] + _NOT_ASKED)
         check("rd8 SECOND DIRECTION: a gate with no run recorded at all closes "
               "and says so - there is no measurement to vouch for: exit %r, %r"
               % (coderd8, txtrd8[-300:]),
@@ -6708,7 +6729,8 @@ def _cases(check):
         with open(mprd9, "rb") as _fh:
             _rd9_before = _fh.read()
         coderd9, txtrd9 = run(["done", "P2.4", "--project-dir", projrd9,
-                               "--commit", _PD_SHA, "--override-verdict", "x"])
+                               "--commit", _PD_SHA, "--override-verdict", "x"]
+                              + _NOT_ASKED)
         check("rd9 RED-FIRST: --override-verdict with journal.enabled false "
               "refuses BEFORE writing and names journal.enabled - an override "
               "recorded nowhere is a gate quietly removed: exit %r, %r"
@@ -6721,7 +6743,14 @@ def _cases(check):
         # default. A close with no `--intent` must not read as one that agreed,
         # and a close that DID get an answer must name the diff (the commit) it
         # was given rather than a bare word.
+        # The reviewer's answer reaches the close through its FILED return, which
+        # is the only way a reviewer word closes a task against a commit.
+        def ic_review(proj, answer):
+            return run_on_stdin(["file-return", "P2.4", "--role", "reviewer",
+                                 "--project-dir", proj], _fr_reviewer(answer))
+
         projic1, mpic1 = mk("dn-intent-matches", pd_fixture())
+        ic_review(projic1, "matches")
         codeic1, txtic1 = run(["done", "P2.4", "--project-dir", projic1,
                                "--commit", _PD_SHA, "--intent", "matches"])
         ticm = task_in(mpic1, "P2.4")
@@ -6735,9 +6764,11 @@ def _cases(check):
               and isinstance(ticm.get("intentCheck", {}).get("at"), str)
               and "matches" in txtic1)
 
+        # A close against a commit can no longer record NO answer, so the absent
+        # half is driven on the one close that still can: no change, no diff.
         projic2, mpic2 = mk("dn-intent-none", pd_fixture())
         codeic2, txtic2 = run(["done", "P2.4", "--project-dir", projic2,
-                               "--commit", _PD_SHA])
+                               "--no-change", "--reason", "already right"])
         ticn = task_in(mpic2, "P2.4")
         check("ic2 a close given NO --intent leaves `intentCheck` ABSENT - not a "
               "default word, and not a `None` answer field either: %r"
@@ -6746,8 +6777,9 @@ def _cases(check):
               and "NO ANSWER RECORDED" in txtic2)
 
         projic3, mpic3 = mk("dn-intent-diverges", pd_fixture())
+        ic_review(projic3, "diverges")
         codeic3, _txtic3 = run(["done", "P2.4", "--project-dir", projic3,
-                               "--commit", _PD_SHA, "--intent", "diverges"])
+                               "--commit", _PD_SHA])
         ticd = task_in(mpic3, "P2.4")
         check("ic3 NO ANSWER and a NEGATIVE answer are opposite facts and read "
               "as such: absent here, a real word there - a shared 'nothing to "
@@ -6800,13 +6832,15 @@ def _cases(check):
         with open(os.path.join(_output.PLUGIN_ROOT, "reference",
                                "execute-task.md"), "r", encoding="utf-8") as _ic_fh:
             _ic_orch = _ic_fh.read()
-        check("ic6 `reference/execute-task.md` tells the orchestrator to carry "
-              "the reviewer's answer into the SAME close that already carries "
-              "`--commit`, for every one of the three words - not only the two "
-              "that already had somewhere to go",
-              "--intent matches" in _ic_orch
-              and "--intent diverges" in _ic_orch
-              and "--intent cannot-tell" in _ic_orch)
+        check("ic6 `reference/execute-task.md` tells the orchestrator that the "
+              "reviewer's answer reaches the SAME close that carries `--commit` "
+              "through the filed return, for whichever word it was, and names "
+              "the one typed word a close may still carry - `not-asked` with "
+              "its basis",
+              "audit-task.py file-return <taskId> --role reviewer" in _ic_orch
+              and "--commit <sha> --from-return" in _ic_orch
+              and "of the three words it was" in _ic_orch
+              and "--intent not-asked --intent-basis" in _ic_orch)
 
         # ---- (tg) P45.1: the gate `add` DERIVES, and the basis it reports -----
         # A generated plan handed every task the phase's whole gate, so a phase of
@@ -7292,7 +7326,10 @@ def _cases(check):
             ("add-phase", ["add-phase", "Later", "--outcome", "it ships"]),
             ("scope", ["scope", "P2.3", "--files", "src/a.ts"]),
             ("start", ["start", "P2.3"]),
-            ("done", ["done", "P2.3", "--commit", _tw_sha]),
+            # `file-return` writes no plan, and still names the tree whose
+            # evidence directory took the return.
+            ("file-return", ["file-return", "P2.3", "--role", "executor"]),
+            ("done", ["done", "P2.3", "--commit", _tw_sha] + _NOT_ASKED),
             ("retarget", ["retarget", "P3", "--outcome", "changed its mind"]),
             ("cancel", ["cancel", "P3", "--reason", "dropped"]),
             ("seed", ["seed", "Fresh plan"]),
@@ -7352,7 +7389,8 @@ def _cases(check):
             _tw_tree, _tw_proj = _tw_pairs.get(_label, (tw_all_tree, tw_all))
             try:
                 _pin(_tw_tree, _tw_proj)
-                _codev, _txtv = run(_argv)
+                _codev, _txtv = (run_on_stdin(_argv, _fr_executor())
+                                 if _label == "file-return" else run(_argv))
             finally:
                 _unpin()
             if _codev != 0 or "standing in" not in _txtv \
@@ -8543,7 +8581,7 @@ def _cases(check):
                            "taskId": None, "fixedIn": None}]
         projbf, mpbf = mk("sv-bugfix", bugfix, sharded=True)
         code, txt = run(["done", "P2.4", "--commit", _PD_SHA,
-                         "--project-dir", projbf])
+                         "--project-dir", projbf] + _NOT_ASKED)
         _bf_idx = _mio.read_json(mpbf)
         _bf = dict((b["id"], b) for b in _bf_idx.get("bugs") or [])
         check("sv1 closing a bug's fix task stores the bug's derived `fixed` and "
@@ -9350,7 +9388,7 @@ def _cases(check):
                             "--project-dir", projgd])),
             ("--verified-by", run(["done", "P2.4", "--commit", "abc1234",
                                    "--verified-by", "t_ok," + _gd_home,
-                                   "--project-dir", projgd])),
+                                   "--project-dir", projgd] + _NOT_ASKED)),
         ]
         with open(mpgd, "rb") as _fh:
             _gd_after = _fh.read()
@@ -9965,7 +10003,7 @@ def _cases(check):
         projlf2, mplf2 = mk("lf-verified", pd_fixture())
         code, txt = run(["done", "P2.4", "--commit", _PD_SHA,
                          "--verified-by", "t_one", "--verified-by", "t_two,t_three",
-                         "--project-dir", projlf2])
+                         "--project-dir", projlf2] + _NOT_ASKED)
         check("lf3 ...and `done --verified-by` repeats the same way: %r"
               % ((task_in(mplf2, "P2.4") or {}).get("verifiedBy"),),
               code == 0 and (task_in(mplf2, "P2.4") or {}).get("verifiedBy")
@@ -12316,11 +12354,288 @@ def _success_line_cases(check):
                               short_proj))
 
 
+# A close against a commit needs the reviewer's filed return or a deliberate
+# `not-asked` with its basis. The cases whose subject is something else close the
+# second way, so the review rule is not what they answer to.
+_NOT_ASKED = ["--intent", "not-asked", "--intent-basis",
+              "the review is not this case's subject"]
+_FR_START = "2026-01-01T00:00:00Z"
+_FR_SHA = "0123456789abcdef0123456789abcdef01234567"
+
+
+def _fr_executor(**over):
+    """An executor return in the shape `agents/audit-executor.md` declares."""
+    body = {"gates": {"python3 t.py": "pass"},
+            "redFirst": {"status": "proved",
+                         "basis": "python3 t.py exit 1, fr_case failed",
+                         "at": "2026-01-01T00:05:00Z"},
+            "outcome": {"technical": "filed technical",
+                        "descriptive": "filed descriptive"},
+            "testsAdded": ["fr_case_one", "fr_case_two"],
+            "stamp": "audit-stamp: v2 head=abc"}
+    body.update(over)
+    return json.dumps(body, indent=1) + "\n"
+
+
+def _fr_reviewer(answer="matches"):
+    """A task-mode reviewer return in the shape `agents/audit-reviewer.md`
+    declares."""
+    return json.dumps({"findings": [], "preExisting": [],
+                       "intent": {"answer": answer, "note": "n", "missing": []},
+                       "verdict": "clean"}) + "\n"
+
+
+def _return_cases(check):
+    """The filing verb and the rule `done` puts on every close that passes
+    `--commit`: a return lands at one derived path, once per start and role, and
+    a close reads the reviewer's filed answer instead of a word typed beside it."""
+    import io
+    root = _harness.fixture_root("audit-task-fr-")
+
+    def project(name, started=_FR_START, attempts=1):
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        _panel_write._atomic_write_json(
+            os.path.join(proj, ".claude", "audit.config.json"),
+            {"manifestPath": "docs/audit/audit-plan.json"})
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        task = {"id": "P1.1", "title": "a", "status": "in_progress",
+                "description": "do a", "files": ["src/a.ts"],
+                "tests": {"mode": "gate-only", "add": [],
+                          "expectRedFirst": False, "gate": ["test"]},
+                "attempts": attempts, "maxAttempts": 3}
+        if started:
+            task["startedAt"] = started
+        _panel_write._atomic_write_json(mpath, {
+            "meta": {"version": 2, "buildCommands": {"test": "true"}},
+            "phases": [{"id": "P1", "title": "Live", "status": "in_progress",
+                        "testGate": ["test"], "tasks": [task]}],
+            "fileIndex": {"src/a.ts": ["P1.1"]}, "bugs": []})
+        return proj, mpath
+
+    def returns_dir(proj):
+        return os.path.join(proj, "docs", "audit", "evidence", "returns")
+
+    def derived(proj, role, start="20260101T000000Z"):
+        return os.path.join(returns_dir(proj), "P1.1",
+                            "%s.%s.json" % (start, role))
+
+    def run(argv, stdin=""):
+        lines = []
+        real = sys.stdin
+        sys.stdin = io.StringIO(stdin)
+        try:
+            code = M.main(argv, out=lines.append)
+        finally:
+            sys.stdin = real
+        return code, "\n".join(str(x) for x in lines)
+
+    def file_return(proj, role, text, tid="P1.1"):
+        return run(["file-return", tid, "--role", role, "--project-dir", proj],
+                   text)
+
+    def read(path):
+        try:
+            with open(path, "rb") as fh:
+                return fh.read()
+        except OSError:
+            return None
+
+    def restart(mpath, started):
+        """A second start of the same task: `start` re-stamps `startedAt`, and
+        that stamp is what keeps two attempts' returns apart."""
+        body = _mio.read_json(mpath)
+        body["phases"][0]["tasks"][0]["startedAt"] = started
+        _panel_write._atomic_write_json(mpath, body)
+
+    def task(mpath):
+        return _mio.tasks_by_id(_mio.load_manifest(mpath)).get("P1.1") or {}
+
+    # ---- (fr) the filing verb ---------------------------------------------
+    proj, mpath = project("fr-path")
+    c1, t1 = file_return(proj, "executor", _fr_executor(), tid="../P1.1")
+    c2, t2 = file_return(proj, "../../reviewer", _fr_reviewer())
+    check("fr1 a path-like task id or role is refused and nothing is written - "
+          "the verb takes no path and derives the one file it writes: %r"
+          % ((c1, t1[:120], c2, t2[:120]),),
+          c1 == M.E_USAGE and c2 == M.E_USAGE
+          and "no path" in t1 and "no path" in t2
+          and not os.path.exists(returns_dir(proj)))
+    c3, t3 = file_return(proj, "executor", _fr_executor())
+    check("fr2 ALLOW: a well-formed executor return is written at the derived "
+          "path, byte-identical to what was handed in on stdin: %r" % (t3,),
+          c3 == 0 and read(derived(proj, "executor"))
+          == _fr_executor().encode("utf-8")
+          and "returns/P1.1/20260101T000000Z.executor.json" in t3)
+
+    proj, mpath = project("fr-shape")
+    bad = json.loads(_fr_executor())
+    del bad["stamp"]
+    c4, t4 = file_return(proj, "executor", json.dumps(bad))
+    c5, t5 = file_return(proj, "executor", "{not json")
+    c6, t6 = file_return(proj, "reviewer", json.dumps(
+        {"findings": [], "intent": {"answer": "maybe"}, "verdict": "clean"}))
+    check("fr3 a malformed return writes nothing and the refusal names what is "
+          "wrong - a missing field, text that is not JSON, a word outside the "
+          "vocabulary: %r" % ((c4, t4[:100], c5, c6, t6[:100]),),
+          c4 == M.E_USAGE and "stamp" in t4
+          and c5 == M.E_USAGE and c6 == M.E_USAGE and "maybe" in t6
+          and not os.path.exists(returns_dir(proj)))
+
+    proj, mpath = project("fr-once")
+    file_return(proj, "executor", _fr_executor())
+    first = read(derived(proj, "executor"))
+    c7, t7 = file_return(proj, "executor", _fr_executor(stamp="audit-stamp: v2 other"))
+    c8, _t8 = file_return(proj, "reviewer", _fr_reviewer())
+    restart(mpath, "2026-01-02T00:00:00Z")
+    c9, _t9 = file_return(proj, "executor", _fr_executor(stamp="audit-stamp: v2 retry"))
+    check("fr4 a second filing for one task and role in one start is refused "
+          "and the first return is byte-identical afterwards; the OTHER role "
+          "files in the same start, and the same role files again after a "
+          "re-start - so a verb refusing every second filing fails here: %r"
+          % ((c7, t7[:100], c8, c9),),
+          c7 == M.E_USAGE and "already filed" in t7
+          and read(derived(proj, "executor")) == first
+          and c8 == 0 and read(derived(proj, "reviewer")) is not None
+          and c9 == 0
+          and b"retry" in (read(derived(proj, "executor",
+                                        "20260102T000000Z")) or b""))
+
+    proj, mpath = project("fr-unstarted", started=None)
+    c10, t10 = file_return(proj, "executor", _fr_executor())
+    check("fr5 a task with no recorded start has no current start to file "
+          "under, so the filing is refused writing nothing: %r" % (t10[:120],),
+          c10 == M.E_USAGE and "start" in t10
+          and not os.path.exists(returns_dir(proj)))
+
+    # ---- (fc) the rule on `done` ------------------------------------------
+    def close(proj, *extra):
+        return run(["done", "P1.1", "--project-dir", proj, "--commit", _FR_SHA]
+                   + list(extra))
+
+    proj, mpath = project("dr-none")
+    before = read(mpath)
+    r1 = close(proj)
+    r2 = close(proj, "--intent", "matches")
+    check("fc1 a plain `done --commit` with no reviewer return filed for the "
+          "current start is refused writing nothing - with no --intent and "
+          "with --intent matches alike: %r" % ((r1[0], r1[1][:160], r2[0]),),
+          r1[0] == M.E_USAGE and r2[0] == M.E_USAGE
+          and "reviewer" in r1[1] and "not-asked" in r1[1]
+          and read(mpath) == before)
+
+    proj, mpath = project("dr-stale")
+    file_return(proj, "reviewer", _fr_reviewer())
+    restart(mpath, "2026-01-02T00:00:00Z")
+    before = read(mpath)
+    r3 = close(proj, "--intent", "matches")
+    check("fc2 a reviewer return from an EARLIER start does not count: the "
+          "same close is refused, nothing written: %r" % ((r3[0], r3[1][:120]),),
+          r3[0] == M.E_USAGE and read(mpath) == before)
+
+    proj, mpath = project("dr-match")
+    file_return(proj, "reviewer", _fr_reviewer("matches"))
+    r4 = close(proj, "--intent", "matches")
+    proj2, mpath2 = project("dr-match-bare")
+    file_return(proj2, "reviewer", _fr_reviewer("matches"))
+    r5 = close(proj2)
+    check("fc3 ALLOW: over a filed `matches` for the current start, `done "
+          "--commit --intent matches` closes, and the same close with no "
+          "--intent records the filed answer: %r"
+          % ((r4[0], r5[0], task(mpath2).get("intentCheck")),),
+          r4[0] == 0 and task(mpath).get("status") == "done"
+          and (task(mpath).get("intentCheck") or {}).get("answer") == "matches"
+          and r5[0] == 0
+          and (task(mpath2).get("intentCheck") or {}).get("answer") == "matches"
+          and (task(mpath2).get("intentCheck") or {}).get("commit") == _FR_SHA)
+
+    proj, mpath = project("dr-diverge")
+    file_return(proj, "reviewer", _fr_reviewer("diverges"))
+    before = read(mpath)
+    r6 = close(proj, "--intent", "matches")
+    r7 = close(proj, "--intent", "not-asked", "--intent-basis", "too small")
+    check("fc4 over a filed `diverges`, a typed `matches` is refused and so is "
+          "`not-asked` with its basis - a typed word cannot replace an answer a "
+          "reviewer filed: %r" % ((r6[0], r6[1][:120], r7[0]),),
+          r6[0] == M.E_USAGE and r7[0] == M.E_USAGE
+          and "diverges" in r6[1] and read(mpath) == before)
+
+    proj, mpath = project("dr-notasked")
+    r8 = close(proj, "--intent", "not-asked", "--intent-basis", "a one-line typo")
+    proj2, mpath2 = project("dr-nochange")
+    r9 = run(["done", "P1.1", "--project-dir", proj2, "--no-change", "--reason",
+              "already right", "--intent", "not-asked", "--intent-basis",
+              "no diff to bind"])
+    check("fc5 ALLOW: `done --commit --intent not-asked` with its basis closes "
+          "with no return filed, and a `--no-change` close with not-asked and "
+          "its basis closes as it does today: %r" % ((r8[0], r9[0], r9[1][:120]),),
+          r8[0] == 0 and task(mpath).get("status") == "done"
+          and (task(mpath).get("intentCheck") or {}).get("answer") == "not-asked"
+          and r9[0] == 0 and task(mpath2).get("status") == "done")
+
+    # ---- (fc) `done --from-return` ----------------------------------------
+    proj, mpath = project("dr-fr-noexec")
+    file_return(proj, "reviewer", _fr_reviewer())
+    before = read(mpath)
+    r10 = close(proj, "--from-return")
+    proj2, mpath2 = project("dr-fr-norev")
+    file_return(proj2, "executor", _fr_executor())
+    before2 = read(mpath2)
+    r11 = close(proj2, "--from-return")
+    check("fc6 `done --from-return` is refused writing nothing when the "
+          "executor's return for the current start is missing, and meets the "
+          "plain form's rule too - no reviewer return and no not-asked is "
+          "refused: %r" % ((r10[0], r10[1][:120], r11[0], r11[1][:120]),),
+          r10[0] == M.E_USAGE and "executor" in r10[1] and read(mpath) == before
+          and r11[0] == M.E_USAGE and "reviewer" in r11[1]
+          and read(mpath2) == before2)
+
+    proj, mpath = project("dr-fr-both")
+    file_return(proj, "executor", _fr_executor())
+    file_return(proj, "reviewer", _fr_reviewer("matches"))
+    r12 = close(proj, "--from-return")
+    t12 = task(mpath)
+    check("fc7 ALLOW: with both returns filed for the current start, "
+          "`--from-return` closes from them - the outcome, verifiedBy from "
+          "testsAdded, the reviewer's answer, and the red-first block onto "
+          "task.redFirst rather than into outcome text alone: %r"
+          % ((r12[0], r12[1][:200], t12.get("redFirst"), t12.get("outcome")),),
+          r12[0] == 0 and t12.get("status") == "done"
+          and (t12.get("outcome") or {}).get("technical") == "filed technical"
+          and (t12.get("outcome") or {}).get("descriptive") == "filed descriptive"
+          and t12.get("verifiedBy") == ["fr_case_one", "fr_case_two"]
+          and (t12.get("intentCheck") or {}).get("answer") == "matches"
+          and t12.get("redFirst") == json.loads(_fr_executor())["redFirst"])
+
+    proj, mpath = project("dr-fr-notasked")
+    file_return(proj, "executor", _fr_executor())
+    r13 = close(proj, "--from-return", "--intent", "not-asked",
+                "--intent-basis", "review skipped on purpose")
+    check("fc8 ALLOW: the executor's return filed and the close passing "
+          "`--intent not-asked` with its basis closes from that return: %r"
+          % ((r13[0], r13[1][:160]),),
+          r13[0] == 0 and (task(mpath).get("redFirst") or {}).get("status")
+          == "proved")
+
+    proj, mpath = project("dr-fr-mixed")
+    file_return(proj, "executor", _fr_executor())
+    file_return(proj, "reviewer", _fr_reviewer())
+    before = read(mpath)
+    r14 = close(proj, "--from-return", "--descriptive", "typed instead")
+    check("fc9 `--from-return` beside a typed --descriptive is refused, "
+          "nothing written - one close takes its account from one place: %r"
+          % ((r14[0], r14[1][:120]),),
+          r14[0] == M.E_USAGE and "--from-return" in r14[1]
+          and read(mpath) == before)
+
+
 def _selftest():
     def body(check):
         # Each block staged, so one that raises still lets the other run.
         _harness.stage(check, "at-block", _cases)
         _harness.stage(check, "sl-block", _success_line_cases)
+        _harness.stage(check, "fr-block", _return_cases)
     return _harness.run(body)
 
 

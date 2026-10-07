@@ -249,6 +249,24 @@ def _row_cases(check, tmp):
           and _trailers(repo, "\n\n".join(both)) == [coauthor,
                                                       M.row_trailer("n1")]
           and _trailers(repo, "\n\n".join(alone)) == [M.row_trailer("n2")])
+    # A PROSE PARAGRAPH LAST - a task's filed `claims` block, with no co-author
+    # line after it - must not take the row trailer: git reads trailers from the
+    # final paragraph only, so the nonce joined onto prose is a nonce no reader
+    # finds. The block is the one a commit carries verbatim, so its bytes are
+    # asserted untouched too.
+    claims = "claims:\n1 audit-task.py:4700 is the refusal\n2 n/a - no check"
+    prose = M.with_row_trailer(["chore(x): a subject", claims], "n3")
+    framed = M.with_row_trailer(["chore(x): a subject", claims, coauthor], "n4")
+    check("sc25b the row trailer keeps a paragraph of trailers: after a prose "
+          "paragraph it is a paragraph of its own and git reads it, the prose "
+          "kept byte-identical; with a co-author line last it joins that line "
+          "as before: %r / %r"
+          % (_trailers(repo, "\n\n".join(prose)), prose),
+          _trailers(repo, "\n\n".join(prose)) == [M.row_trailer("n3")]
+          and prose[1] == claims and len(prose) == 3
+          and _trailers(repo, "\n\n".join(framed)) == [coauthor,
+                                                        M.row_trailer("n4")]
+          and framed[1] == claims and len(framed) == 3)
 
     seen, withdrawn = [], []
 

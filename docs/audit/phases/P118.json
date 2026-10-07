@@ -98,7 +98,7 @@
     {
       "id": "P118.2",
       "title": "plugin verbs print one success line by default and the long form on --verbose",
-      "status": "in_progress",
+      "status": "done",
       "description": "Design section 6, T7. One shared helper in _output.py prints the success line. Each verb the driver or the main loop calls prints, on success, one line of at most 200 bytes naming what was done and the record it wrote. --verbose prints today's text unchanged, and a refusal always prints in full. Micro-test: each verb's success path on its selftest fixture, shown red against a verb that still prints the long form.",
       "files": [
         "plugins/audit/scripts/_output.py",
@@ -148,24 +148,42 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fd4a6cd0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Design T7. One success-line helper in _output.py (success_line, terse_choice and terse_cli, marked \"the success line\") decides what a verb prints. A non-zero exit prints everything unchanged. --verbose prints today's text byte-identical. --json and --help keep the long form. A verb whose output is a payload prints it whole.\n\nEach verb the driver or the main loop calls is wired through it from its __main__, so in-process callers see today's text. The verbs are audit-task, run-test-gate, stamp-verification, commit-task-work, audit-lock, verify-invariants, close-phase, validate-manifest, audit-lookup and audit-status. Success lines measured on the fixtures are 48 to 197 bytes. stamp take and red keep their parsed payloads whole. audit-lookup answers and audit-status's entry view print whole, because callers fold or paste them. run-test-gate prints in full when its machine line is not exclusive.\n\ncheck-git-pipeline g15 passes --verbose to read the long form.\n\nThe suites are green, and so are the sweep (312/312 files), ruff and vermin. New sl cases in each suite were seen red against the long-form verbs or the cut. test_stamp_verification's red-first helper reports could-not-prove, because HEAD's suite is already red in a throwaway tree.\n\nStill owed to T2: the prose that says to print the entry view verbatim.",
+        "descriptive": "The plugin's commands now print one short line when they succeed, so the main loop stops carrying their long success text on every later request; refusals, and answers a caller reads, still print in full."
       },
       "startedAt": "2026-10-07T21:17:01Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T22:38:36Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/tests/test_audit_lock.py",
+        "plugins/audit/tests/test_verify_invariants.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_validate_manifest.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/tests/test_audit_status.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T22:38:21Z.654369",
         "status": "passed",
         "at": "2026-10-07T22:38:21Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "fd4a6cd0",
+        "at": "2026-10-07T22:38:36Z",
+        "basis": "orchestrator check: one shared helper, every listed verb wired, payload verbs kept whole after review, cross-file pin in check-git-pipeline fixed, sweep green"
       }
     },
     {
       "id": "P118.3",
       "title": "agent briefs are computed by a script and agent returns are filed write-once",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Design section 6, T3. brief writes the whole brief to a file. A write-once filing verb takes the task id and the role, and no path; it derives the one file it writes, refuses a second filing in one start, and leaves the first byte-identical, with allow halves. The reviewer's brief refuses while the executor's return for the current start is unfiled. done --from-return closes from the filed returns and carries the red-first block onto task.redFirst (internal fault F561). The phase reviewer's computed brief carries the saved request text and, for each task, its SHA, files, filed return, recorded run and tests.gate. Every case the design lists is shown red first.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -177,7 +195,18 @@
         "PLUGIN-BUILD-GUIDE.md",
         "plugins/audit/tests/test_audit_lookup.py",
         "plugins/audit/tests/test_audit_task.py",
-        "plugins/audit/tests/test__refs.py"
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/README.md",
+        "COMPATIBILITY.md",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "plugins/audit/tests/test__output.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -202,16 +231,21 @@
       "dependsOn": [
         "P118.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T22:38:44Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T23:44:46Z.b0d3f1",
+        "status": "passed",
+        "at": "2026-10-07T23:44:46Z"
+      }
     },
     {
       "id": "P118.4",
@@ -521,11 +555,17 @@
     {
       "id": "P118.10",
       "title": "the doctor prints the main loop's cache TTL trade from the user's own sessions",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Design section 6, T12, the documentation-only decision on the TTL. From a recorded session the doctor prints the longest main-loop gap, the one-hour writes and their price at each TTL. It recommends nothing the gaps do not support, and the setting stays the user's. First establish whether the usage ledger holds per-request times; if it does not, name where the doctor reads them from. Twin synthetic sessions are shown red first.",
       "files": [
         "plugins/audit/scripts/status/_doctor_hygiene.py",
-        "plugins/audit/tests/test__doctor_hygiene.py"
+        "plugins/audit/tests/test__doctor_hygiene.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/scripts/status/audit-doctor.py",
+        "plugins/audit/tests/test_audit_doctor.py",
+        "plugins/audit/commands/doctor.md",
+        "plugins/audit/README.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -550,16 +590,21 @@
       "dependsOn": [
         "P118.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T23:07:40Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T23:51:36Z.0cb183",
+        "status": "passed",
+        "at": "2026-10-07T23:51:36Z"
+      }
     }
   ],
   "startedAt": "2026-10-07T21:17:01Z"

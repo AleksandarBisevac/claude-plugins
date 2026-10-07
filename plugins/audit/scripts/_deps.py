@@ -214,6 +214,13 @@ LAYERS = (
      # nothing on the hook path reaches it, and a path rule is not vocabulary.
      # It reaches nothing but `_output` and `fnmatch`.
      "_task_outputs",
+     # `_filed_returns` is where an agent's filed return lives, the shape each
+     # role owes and the write-once create. Its three readers - `audit-task`,
+     # `audit-lookup` and `commit-task-work` - are entry points at L7 that may
+     # not import each other, so the path they must agree on lives below all
+     # three. The evidence directory is handed in rather than resolved, which
+     # keeps it at the floor: it reaches nothing but `_output`.
+     "_filed_returns",
      # `_ado_conventions` is what a work item must look like to BELONG on a
      # board - required fields, description skeleton, tag vocabulary, parent. It
      # reaches nothing but `_output`, and it is at the floor for the same reason

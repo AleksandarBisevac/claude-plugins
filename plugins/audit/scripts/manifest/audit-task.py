@@ -40,7 +40,10 @@ Usage:
                 [--verified-by t1,t2]
                 [--intent matches|diverges|cannot-tell|not-asked]
                 [--intent-basis TEXT|-] [--override-verdict TEXT|-]
+                [--from-return]
                 [--project-dir DIR] [--takeover] [--json]
+  audit-task.py file-return <taskId> --role executor|reviewer [manifest]
+                [--project-dir DIR] [--takeover] [--json]  < return.json
   audit-task.py move <taskId> --to <phaseId> [manifest]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py block <taskId> --reason "<why>|-" [manifest]
@@ -372,6 +375,8 @@ import _id_shape              # noqa: E402  (the one answer to which id comes ne
                               # branch suffix that keeps two branches from minting it twice)
 import _evidence_io           # noqa: E402  (read_rows: the runs a move leaves keyed
                               # to the old id, which `move` reports)
+import _filed_returns as _fr  # noqa: E402  (a filed return's path, shape and
+                              # write-once create, shared with the brief and the commit)
 import _gate_derive           # noqa: E402  (is_shared_key, path_scoped_sibling,
                               # repointed: a TASK's own gate and a PHASE's derived
                               # one ask the same three questions, so both entry
@@ -4280,6 +4285,128 @@ def _locked_start(args, project, config, mpath, tid, out):
     return 0
 
 
+# --- file-return: the one write a returning agent makes ---------------------------
+# AN AGENT'S RETURN USED TO BE PROSE THE MAIN LOOP READ AND RETYPED, so nothing
+# checked its shape and the close carried whatever the retyping kept. A return is
+# now FILED: the agent hands its JSON to this verb on stdin, the verb checks the
+# shape its role declares, and writes it once to a path it derives itself. `done`
+# and the reviewer's computed brief read the file, never a transcription.
+#
+# NO PATH ARGUMENT, AND THAT IS THE GUARANTEE. The reviewer may make exactly this
+# one write, so the verb decides where it lands: `_filed_returns.return_path`
+# under the evidence directory, which travels in the close commit so a clone
+# receives the claim beside the gate row it can be compared with. The path, the
+# shape each role owes and the exclusive create are `_filed_returns`'s, shared
+# with `audit-lookup.py brief` and `commit-task-work.py`, which read the file.
+# WHAT NOTHING CHECKS: the task id and the role are the caller's word. A filing
+# under the wrong role, or for a task nobody has filed for yet, is not refused.
+
+# What reads as a path rather than an id: a separator, a parent step, a leading
+# dot, or a drive colon.
+_PATHLIKE = re.compile(r"[/\\:]|\.\.|^\.")
+
+
+def return_path(project, mpath, task, role):
+    """Absolute path of `task`'s `role` return for its current start, under THIS
+    manifest's evidence directory (`_evidence_io.project_config_for`, the
+    resolution every ledger reader makes), or None with no start recorded."""
+    proj, cfg = _evidence_io.project_config_for(mpath, project)
+    return _fr.return_path(_evidence_io.evidence_dir(proj, cfg), task, role)
+
+
+def _file_return_refusal(tid, role):
+    """The door's refusal for an argument that names a path, or None."""
+    for label, value in (("task id", tid), ("role", role)):
+        if _PATHLIKE.search(value or "") or os.path.isabs(value or ""):
+            return ("[audit-task] file-return takes no path: the %s %r reads as "
+                    "one. The verb derives the one file it writes from the task "
+                    "id, the role and the task's current start - pass the id "
+                    "and --role %s."
+                    % (label, value, "|".join(_fr.RETURN_ROLES)))
+    if role not in _fr.RETURN_ROLES:
+        return ("[audit-task] file-return needs --role %s, got %r"
+                % ("|".join(_fr.RETURN_ROLES), role))
+    return None
+
+
+def cmd_file_return(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    tid = (args.title or "").strip()
+    if not tid:
+        out("[audit-task] file-return needs a task id")
+        return E_USAGE
+    role = (args.role or "").strip()
+    refusal = _file_return_refusal(tid, role)
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    text = sys.stdin.read() if not sys.stdin.isatty() else ""
+    try:
+        body = json.loads(text)
+    except ValueError as exc:
+        out("[audit-task] file-return reads the return as JSON on stdin, and "
+            "what arrived does not parse (%s) -- nothing written" % (exc,))
+        return E_USAGE
+    problems = _fr.return_problems(role, body)
+    if problems:
+        out("[audit-task] REFUSED: the %s return for %s does not have the shape "
+            "its role declares -- nothing written:" % (role, tid))
+        for line in problems:
+            out("  " + line)
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_file_return(
+                           args, project, mpath, tid, role, text, out))
+
+
+def _locked_file_return(args, project, mpath, tid, role, text, out):
+    """Write one return, once. The manifest is read for the task's current start
+    and never written."""
+    try:
+        assembled = _mio.load_manifest(mpath)
+    except Exception as exc:
+        out("[audit-task] cannot read/assemble manifest: %s" % exc)
+        return E_USAGE
+    kind, node, _phase = _find_target(assembled, tid)
+    if kind != "task":
+        out("[audit-task] no task with id %r in %s" % (tid, mpath))
+        return E_USAGE
+    if node.get("status") in _mio.TERMINAL:
+        out("[audit-task] %s is already %s -- a return filed after the close is "
+            "one the close never read" % (tid, node.get("status")))
+        return E_USAGE
+    path = return_path(project, mpath, node, role)
+    if path is None:
+        out("[audit-task] %s records no start (`startedAt`), so there is no "
+            "current start to file a return under -- /audit:task start %s "
+            "first" % (tid, tid))
+        return E_USAGE
+    rel = _output.posix_rel(path, project)
+    try:
+        _fr.file_once(path, text)
+    except FileExistsError:
+        out("[audit-task] REFUSED: the %s return for %s is already filed for this "
+            "start (%s) -- it stays as filed. A re-spawn files after "
+            "/audit:task start re-stamps the start." % (role, tid, rel))
+        return E_USAGE
+    except OSError as exc:
+        out("[audit-task] the return could not be written (%s) -- nothing "
+            "filed" % (exc,))
+        return E_INVALID
+    if args.as_json:
+        result = {"ok": True, "id": tid, "role": role,
+                  "startedAt": node.get("startedAt"), "written": [rel]}
+        result.update(project_basis_key(args))
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    out("[audit-task] %s %s return filed" % (tid, role))
+    out("  written: %s" % (rel,))
+    return 0
+
+
 # --- done: the close the record is made of ---------------------------------------
 # `start` gave the promotion a verb and the close still had none, so
 # `reference/orchestrator.md`'s step 4 stayed two hand Edits: 4b's status and
@@ -4383,7 +4510,8 @@ def _examined_head(git_root):
 
 
 def _done_task(task, now, commit, descriptive, technical, verified, intent,
-               intent_basis=None, no_change=None):
+               intent_basis=None, no_change=None, red_first=None,
+               intent_return=None):
     """Close one task; returns the values it held before.
 
     THE FIELDS ARE `reference/orchestrator.md`'s STEP 4 VERBATIM -- 4b's *Set
@@ -4418,6 +4546,11 @@ def _done_task(task, now, commit, descriptive, technical, verified, intent,
     by the door and written beside it: a skip with no reason on the record reads
     exactly like a reviewer call that never came back.
 
+    `red_first` IS THE EXECUTOR'S FILED BLOCK, copied onto `task.redFirst` when
+    the close reads the filed returns; None leaves the field as it was. And
+    `intent_return` names the filed reviewer return an answer was read from, so
+    the record says the word came off a file and not off a flag.
+
     `no_change` IS THE CLOSE WITH NO COMMIT, `{reason, examinedAt}` into
     `outcome.noChange`: `commit` stays None because nothing was committed, and
     the HEAD that was examined is what the claim "nothing needed to change" was
@@ -4435,6 +4568,7 @@ def _done_task(task, now, commit, descriptive, technical, verified, intent,
            "technical": prior.get("technical"),
            "noChange": prior.get("noChange"),
            "verifiedBy": task.get("verifiedBy"),
+           "redFirst": task.get("redFirst"),
            "intentCheck": task.get("intentCheck")
            if isinstance(task.get("intentCheck"), dict) else None}
     task["status"] = "done"
@@ -4457,6 +4591,10 @@ def _done_task(task, now, commit, descriptive, technical, verified, intent,
         task["intentCheck"] = {"answer": intent, "commit": commit, "at": now}
         if intent_basis is not None:
             task["intentCheck"]["basis"] = intent_basis
+        if intent_return is not None:
+            task["intentCheck"]["return"] = intent_return
+    if red_first is not None:
+        task["redFirst"] = dict(red_first)
     return was
 
 
@@ -4493,6 +4631,9 @@ def _done_changes(tid, was, task):
     if task.get("intentCheck") != was["intentCheck"]:
         rows.append({"id": tid, "field": "intentCheck",
                      "from": was["intentCheck"], "to": task.get("intentCheck")})
+    if task.get("redFirst") != was.get("redFirst"):
+        rows.append({"id": tid, "field": "redFirst",
+                     "from": was.get("redFirst"), "to": task.get("redFirst")})
     return rows
 
 
@@ -4597,6 +4738,86 @@ def _gate_key(gate, refusal, override):
             "runId": (gate.get("row") or {}).get("runId"),
             "overridden": bool(refusal),
             "overrideReason": override if refusal else None}
+
+
+def _close_returns(project, mpath, node, from_return):
+    """`(filed, refusal)` - the returns a close reads, for the task's CURRENT
+    start only, keyed by role as `(rel, body)`; a return from an earlier start is
+    at another path and is never read.
+
+    The executor's is read only under `--from-return`, which is the one form that
+    takes anything from it; a filed file that will not parse refuses the close
+    rather than reading as absent."""
+    filed = {}
+    roles = ("executor", "reviewer") if from_return else ("reviewer",)
+    for role in roles:
+        path = return_path(project, mpath, node, role)
+        _text, body, problem = _fr.read_filed_return(path)
+        if problem:
+            return None, ("[audit-task] REFUSED: the filed %s return %s -- "
+                          "nothing written" % (role, problem))
+        if body is not None:
+            filed[role] = (_output.posix_rel(path, project), body)
+    return filed, None
+
+
+def _close_intent(args, tid, filed, no_change):
+    """`(intent, basis, intent_return, refusal)` - the intent answer a close
+    records, and the rule every close that passes `--commit` is held to.
+
+    THE RULE SITS HERE, ON EVERY FORM, AND NOT ON `--from-return` ALONE: a plain
+    `done --commit --intent matches` closed with no review behind it, and a plain
+    `done --commit` closed recording no answer at all, so a rule on one form
+    would leave the other two as the way past it.
+
+      * a reviewer return filed for the current start IS the answer, and a typed
+        `--intent` word that differs from it is refused, `not-asked` included -
+        a typed word cannot replace an answer a reviewer filed;
+      * with none filed, only `--intent not-asked` with its basis closes;
+      * a `--no-change` close has no diff to bind and keeps the rule it had.
+
+    This is the seam a per-phase review setting reads: a close whose review is
+    carried to the phase would record its own word here instead.
+    """
+    if no_change:
+        return args.intent, args.intent_basis, None, None
+    reviewer = filed.get("reviewer")
+    if reviewer is not None:
+        rel, body = reviewer
+        answer = (body.get("intent") or {}).get("answer")
+        if args.intent is not None and args.intent != answer:
+            return None, None, None, (
+                "[audit-task] REFUSED: %s's reviewer return (%s) answers %r, and "
+                "--intent %s differs from it -- a typed word does not replace "
+                "an answer a reviewer filed. Nothing written; drop --intent to "
+                "record the filed answer." % (tid, rel, answer, args.intent))
+        return answer, None, rel, None
+    if args.intent == "not-asked":
+        return args.intent, args.intent_basis, None, None
+    return None, None, None, (
+        "[audit-task] REFUSED: %s closes against a commit with no reviewer "
+        "return filed for its current start, so nothing on the record answers "
+        "whether the diff does what the task asked. File the reviewer's return "
+        "(audit-task.py file-return %s --role reviewer), or say the question was "
+        "deliberately not put: --intent not-asked --intent-basis \"<why>\". "
+        "Nothing written." % (tid, tid))
+
+
+def _from_return_values(filed, tid):
+    """`(values, refusal)` - what `--from-return` takes off the executor's filed
+    return: the outcome halves, `verifiedBy` from `testsAdded`, and `redFirst`."""
+    executor = filed.get("executor")
+    if executor is None:
+        return None, ("[audit-task] REFUSED: --from-return closes from the "
+                      "executor's filed return, and none is filed for %s's "
+                      "current start (audit-task.py file-return %s --role "
+                      "executor). Nothing written." % (tid, tid))
+    body = executor[1]
+    outcome = body.get("outcome") or {}
+    return {"descriptive": outcome.get("descriptive"),
+            "technical": outcome.get("technical"),
+            "verified": list(body.get("testsAdded") or []),
+            "redFirst": body.get("redFirst")}, None
 
 
 def _still_open(phase):
@@ -4726,6 +4947,16 @@ def _locked_done(args, project, config, mpath, tid, out):
         if refusal:
             out(refusal)
             return E_USAGE
+    filed, refusal = _close_returns(project, mpath, node, args.from_return)
+    if refusal is None:
+        intent, intent_basis, intent_return, refusal = _close_intent(
+            args, tid, filed, no_change is not None)
+    from_values = None
+    if refusal is None and args.from_return:
+        from_values, refusal = _from_return_values(filed, tid)
+    if refusal:
+        out(refusal)
+        return E_USAGE
     gate = _close_gate(project, mpath, assembled, phase, node)
     override = (args.override_verdict or "").strip() or None
     refused = _vb.close_refusal(gate)
@@ -4747,9 +4978,15 @@ def _locked_done(args, project, config, mpath, tid, out):
 
     now = _utc_now()
     verified = None if args.verified_by is None else _split_csv(args.verified_by)
-    was = _done_task(node, now, sha, args.descriptive, args.technical, verified,
-                     args.intent, intent_basis=args.intent_basis,
-                     no_change=no_change)
+    descriptive, technical, red_first = args.descriptive, args.technical, None
+    if from_values is not None:
+        descriptive, technical = (from_values["descriptive"],
+                                  from_values["technical"])
+        verified, red_first = from_values["verified"], from_values["redFirst"]
+    was = _done_task(node, now, sha, descriptive, technical, verified,
+                     intent, intent_basis=intent_basis,
+                     no_change=no_change, red_first=red_first,
+                     intent_return=intent_return)
     phase_id = phase.get("id")
     # A bug this task fixes derives `fixed` (and its `fixedIn`) from this close, so
     # both are stored on the bug - in the index, which is where `bugs[]` lives.
@@ -4815,6 +5052,7 @@ def _locked_done(args, project, config, mpath, tid, out):
                   # word `intentCheck.answer` can hold - a close with no such
                   # answer must not render as one that agrees.
                   "intentCheck": node.get("intentCheck"),
+                  "redFirst": node.get("redFirst"),
                   "changes": _done_changes(tid, was, node),
                   "phaseOpenTasks": open_left,
                   "phaseComplete": not open_left,
@@ -4873,6 +5111,9 @@ def _locked_done(args, project, config, mpath, tid, out):
     else:
         out("  intentCheck: NO ANSWER RECORDED -- pass --intent %s"
             % ("|".join(INTENT_ANSWERS),))
+    if red_first is not None:
+        out("  redFirst: %s, from the executor's filed return"
+            % ((node.get("redFirst") or {}).get("status"),))
     if open_left:
         out("  %s still has open work: %s" % (phase_id, ", ".join(open_left)))
     else:
@@ -7057,6 +7298,14 @@ def _done_flags_refusal(args):
                 "question was not put>\" -- it is the one answer no reviewer "
                 "gave, and without its reason it reads exactly like a reviewer "
                 "call that never came back")
+    typed = [flag for flag, value in (("--descriptive", args.descriptive),
+                                      ("--technical", args.technical),
+                                      ("--verified-by", args.verified_by))
+             if value is not None]
+    if args.from_return and typed:
+        return ("[audit-task] --from-return takes the outcome and verifiedBy off "
+                "the executor's filed return, so %s beside it would be a second "
+                "account of one close -- pass one or the other" % (", ".join(typed),))
     return None
 
 
@@ -9855,7 +10104,11 @@ VERB_FLAGS = {
     # without it, which is a different check from this one: this table says which
     # flags the verb READS, and the door says which of them it requires.
     "done": ("commit", "descriptive", "technical", "verified_by", "intent",
-             "intent_basis", "no_change", "reason", "override_verdict"),
+             "intent_basis", "no_change", "reason", "override_verdict",
+             "from_return"),
+    # `file-return` takes the role and nothing that could name a path; the
+    # return itself arrives on stdin.
+    "file-return": ("role",),
     "scope": ("files", "tests_mode", "tests_add", "gate", "gate_clear",
               "description", "risk", "blocked_by", "depends_on"),
     "retarget": ("gate", "gate_clear", "gate_drop", "gate_set", "area",
@@ -9951,7 +10204,7 @@ def build_parser():
                             "signoff", "settle", "reopen", "move", "block",
                             "note", "couple", "uncouple", "finding",
                             "resolve-finding", "correct", "bug-add", "mute",
-                            "unmute"])
+                            "unmute", "file-return"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -10082,6 +10335,18 @@ def build_parser():
     # with it, and refused without it.
     p.add_argument("--override-verdict", dest="override_verdict", default=None,
                    metavar="TEXT", help=_PROSE_HELP)
+    # `done` only. Close from the filed returns of the task's current start:
+    # the outcome, verifiedBy and redFirst off the executor's, the intent
+    # answer off the reviewer's.
+    p.add_argument("--from-return", dest="from_return", action="store_true",
+                   default=False,
+                   help="done: take the outcome, verifiedBy, redFirst and the "
+                        "intent answer from the returns filed for this start")
+    # `file-return` only. Whose return arrives on stdin; no value names a path.
+    # No `choices`: argparse would refuse on stderr before `main` buffers
+    # anything, so the door grades the word and says it takes no path.
+    p.add_argument("--role", default=None,
+                   help="file-return: %s" % ("|".join(_fr.RETURN_ROLES),))
     # `move` only. The phase the task moves into - `--phase` stays `add`'s, where
     # it names the phase a new task is born in.
     p.add_argument("--to", default=None, metavar="PHASE")
@@ -10393,7 +10658,8 @@ def _dispatch(args, argv, out):
              "note": cmd_note, "couple": cmd_couple, "uncouple": cmd_uncouple,
              "finding": cmd_finding, "resolve-finding": cmd_resolve_finding,
              "correct": cmd_correct, "bug-add": cmd_bug_add,
-             "mute": cmd_mute, "unmute": cmd_unmute}
+             "mute": cmd_mute, "unmute": cmd_unmute,
+             "file-return": cmd_file_return}
     try:
         return doors[args.command](args, out)
     except Exception as exc:                    # never leave a caller guessing
