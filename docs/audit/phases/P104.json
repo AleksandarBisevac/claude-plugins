@@ -205,38 +205,48 @@
         "severity": "med",
         "file": "plugins/audit/scripts/ui/panel/usage-metrics.js uCsvText; plugins/audit/scripts/panel/_panel_usage.py usage_state",
         "issue": "With showCost false the panel's Usage-tab Export CSV still writes a costUSD column with every row's dollar figure, while the report's CSV drops costUSD and its data layer zeroes costs under the same setting.",
-        "resolution": "Gate the costUSD column in uCsvText on showCost, header and cells together, as the report's usageCsv does, with an off/on twin in usage-edges.test.mjs. The /api/usage payload is the page's local token-protected data source rather than a shareable artifact; keep its cost data and record that as the decision."
+        "resolution": "fixed in P104.18-tog (4bc4796d): Gate the costUSD column in uCsvText on showCost, header and cells together, as the report's usageCsv does, with an off/on twin in usage-edges.test.mjs. The /api/usage payload is the page's local token-protected data source rather than a shareable artifact; keep its cost data and record that as the decision.",
+        "fixTask": "P104.18-tog",
+        "commit": "4bc4796d"
       },
       {
         "id": "P104-R21",
         "severity": "med",
         "file": "plugins/audit/scripts/panel/_panel_settings.py FIELD_HELP usage.pricingAsOf",
         "issue": "The Settings help for usage.pricingAsOf still says that until it is set both surfaces say the rates are undated, but since the resolver change a project with no table is shown the shipped table's date and a pricingAsOf beside no usage.pricing dates nothing.",
-        "resolution": "Reword the help to match the README and rate_basis_phrase: it dates the config's own usage.pricing table, is printed only when that table priced the rows, and 'rates undated' is said only of a project table that carries no date; a case fails while the old sentence stands."
+        "resolution": "fixed in P104.18-tog (4bc4796d): Reword the help to match the README and rate_basis_phrase: it dates the config's own usage.pricing table, is printed only when that table priced the rows, and 'rates undated' is said only of a project table that carries no date; a case fails while the old sentence stands.",
+        "fixTask": "P104.18-tog",
+        "commit": "4bc4796d"
       },
       {
         "id": "P104-R22",
         "severity": "low",
         "file": "plugins/audit/hooks/meter-usage.py advisory; CHANGELOG.md; plugins/audit/README.md",
         "issue": "The advisory counts kept rows over the whole ledger while the CHANGELOG and README say the count is of the rows the printed figure rests on; for an absolute band an unrelated legacy row is counted.",
-        "resolution": "Count only the rows the advisory's figure rests on (the task's rows, plus on the relative basis the completed tasks' rows the bands were read from), with an mt case holding a kept row outside the task for an absolute band."
+        "resolution": "fixed in P104.18-tog (4bc4796d): Count only the rows the advisory's figure rests on (the task's rows, plus on the relative basis the completed tasks' rows the bands were read from), with an mt case holding a kept row outside the task for an absolute band.",
+        "fixTask": "P104.18-tog",
+        "commit": "4bc4796d"
       },
       {
         "id": "P104-R23",
         "severity": "low",
         "file": "CHANGELOG.md [Unreleased]",
         "issue": "The changelog records that the panel payload drops pricingAsOfDeclared but not that /api/usage also drops the merged config's pricingAsOf.",
-        "resolution": "Extend the sentence: the panel's payload drops both pricingAsOf and pricingAsOfDeclared; the date beside a panel cost is pricingBasis.asOf."
+        "resolution": "fixed in P104.18-tog (4bc4796d): Extend the sentence: the panel's payload drops both pricingAsOf and pricingAsOfDeclared; the date beside a panel cost is pricingBasis.asOf.",
+        "fixTask": "P104.18-tog",
+        "commit": "4bc4796d"
       },
       {
         "id": "P104-R24",
         "severity": "low",
         "file": "plugins/audit/tests/test_meter_usage.py mt1-mt4",
         "issue": "No case pins that the session line counts only this session's kept rows; a regression summing the whole ledger's kept flags would leave every case green.",
-        "resolution": "Add a kept row from another session to the fixture, assert the session line's count excludes it, and prove it red by counting over the whole ledger."
+        "resolution": "fixed in P104.18-tog (4bc4796d): Add a kept row from another session to the fixture, assert the session line's count excludes it, and prove it red by counting over the whole ledger.",
+        "fixTask": "P104.18-tog",
+        "commit": "4bc4796d"
       }
     ],
-    "outcome": "[findings: 24 - 1 high, 8 med, 15 low; 19 with a recorded fix commit]"
+    "outcome": "[findings: 24 - 1 high, 8 med, 15 low; 24 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1450,7 +1460,7 @@
     {
       "id": "P104.18-tog",
       "title": "the panel's CSV and Settings help honour showCost and the resolver, and the meter counts only the rows its figure rests on",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P104-R20 to P104-R24.\n\n- When showCost is off, the panel's Usage-tab CSV export drops the costUSD column, header and cells together, the way the report's usage CSV already does. usage-edges.test.mjs gets an off/on twin for it. The /api/usage payload keeps its cost data: it is the page's local, token-protected data source, not a shareable artifact. Record that decision in a code comment beside the payload.\n- The Settings help for usage.pricingAsOf says what the resolver does now, matching the README and rate_basis_phrase:\n  - it dates the config's own usage.pricing table;\n  - it is printed only when that table priced the rows;\n  - 'rates undated' is said only of a project table that carries no date.\n  A case in test__panel_settings fails while the old sentence stands.\n- The meter's advisory counts only the kept rows its printed figure rests on: the task's rows, plus, on the relative basis, the completed tasks' rows the bands were read from. One mt case holds a kept row outside the task, for an absolute band.\n- Another mt case adds a kept row from another session and asserts that the session line's count excludes it. Prove it red by counting over the whole ledger.\n- The CHANGELOG [Unreleased] entry says the panel payload drops both pricingAsOf and pricingAsOfDeclared, and that the date beside a panel cost is pricingBasis.asOf. Its meter sentence and the README's matching sentence describe the narrowed count. It also notes that the panel's CSV honours showCost.\n\nThe orchestrator re-captures the screenshots if the help text appears in one.",
       "files": [
         "plugins/audit/scripts/ui/panel/usage-metrics.js",
@@ -1513,18 +1523,31 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4bc4796d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "usage-metrics.js: uCsvText gates the costUSD column, header and cells together, on showCost the way the report's usageCsv does, defaulting to shown when no usage block is loaded. _panel_usage.py records beside the payload why /api/usage keeps its cost data under showCost false: it is the page's local token-protected source, not a shareable artifact, and showCost is honoured by what the tab draws and by the CSV. _panel_settings.py's help for usage.pricingAsOf now says it dates the config's own usage.pricing table, is printed only when that table priced the rows, and that 'rates undated' is said only of a project table with no date; its case drives rate_basis_phrase rather than copying its strings. meter-usage.py: _advisory_scope limits the advisory's kept-row count to the warned task's rows plus, on the relative basis only, the completed tasks cost_bands read; the session line was already scoped to its own rows and is now pinned. CHANGELOG [Unreleased] names the CSV gate, the help wording and the narrowed count, and says the panel payload drops both pricingAsOf and pricingAsOfDeclared with pricingBasis.asOf as the date beside a panel cost. Screenshots re-captured. Red-first: ab2 in test_meter_usage, the help case in test__panel_settings and the CSV pins in test__panel_page failed at HEAD and pass with the change; rt4 is a regression lock that passes at HEAD; the vitest off/on twin was run directly (the throwaway tree has no node_modules).",
+        "descriptive": "With costs turned off the panel's CSV export no longer carries dollars, the help for the pricing date says what the setting actually does, and the meter's cost note counts only the rows its figure depends on."
       },
       "startedAt": "2026-10-07T05:47:36Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T06:14:50Z",
+      "verifiedBy": [
+        "ab1",
+        "ab2",
+        "rt4",
+        "usage.pricingAsOf help case",
+        "CSV showCost pins",
+        "usage-edges uCsvText off/on twin"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T06:14:38Z.890966",
         "status": "passed",
         "at": "2026-10-07T06:14:38Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "4bc4796d",
+        "at": "2026-10-07T06:14:50Z",
+        "basis": "orchestrator check: P104-R20..R24 fixed, CSV gated like the report's, payload decision recorded in code, help text driven from rate_basis_phrase, advisory count scoped to the rows behind the figure, red-first proved for ab2, the help case and the CSV pins"
       }
     }
   ],
