@@ -618,17 +618,26 @@ uncertain resolves to *allow*, in keeping with the fail-open posture above.
 
 `require-plan` names the tool half of it. The same denial is asked of the shell write forms
 `guard-secrets-read` can see — `sed -i`, `tee`, `>`/`>>` redirects, the destination of
-`cp`/`mv`/`install`, and any of those handed to a shell's `-c` or to `eval` as a quoted
+`cp`/`mv`/`install` (a slashless last operand is read as a directory, the same as one spelled
+with a trailing slash, when it resolves at the command's own directory to one that already
+exists on disk), and any of those handed to a shell's `-c` or to `eval` as a quoted
 argument — against the same resolved paths, on the same fail-open table, so a live holder's
-shard is refused before the write lands rather than reported after it. **A further shape stays open,
+shard is refused before the write lands rather than reported after it. A command handed past
+the walk's own nesting bound is graded as a write this arm cannot place — refused where the
+gate denies, held for approval where it asks — rather than read as nothing. **A further shape stays open,
 named rather than left to be found: a write call inside an interpreter** (`python -c`,
 `node -e`, or either's heredoc spelling) **that names the manifest, its lock or a phase shard is
 not read by this arm**, unlike the same call aimed at the journal, which this arm does read —
 a subagent reaching its own shard through `python3 -c "open('docs/audit/phases/P1.json','w')"`
-meets neither this arm nor the source-file arm above it. What stays uncatchable beyond that is
-the residual of bypass class 1 below, the writes no static reading of a command can find at
-all; `guard-bash-writes` reports both residuals afterwards, from `git status`, once the write
-has already landed.
+meets neither this arm nor the source-file arm above it. Two shapes of the reading itself stay
+open too: the in-place `sed -i` reading skips every quoted match regardless of the program
+holding it, so a `sed -i` reached through `find -exec sh -c '...'` is not read; and an
+interpreter's `os.system(...)` redirect whose target string touches the call's own closing
+quote is read as naming that quote and parenthesis, so it names no source file — the one case
+`test_hooks.py` marks a known divergence rather than fixing. What stays uncatchable beyond all
+of that is the residual of bypass class 1 below, the writes no static reading of a command can
+find at all; `guard-bash-writes` reports both residuals afterwards, from `git status`, once the
+write has already landed.
 
 Both `_config.manifest_state` and `_config.plan_gate_mode` degrade to the **least** aggressive
 verdict on any internal error, in keeping with the fail-open posture above: a crash in the
@@ -846,12 +855,36 @@ point:
   of those scripts asks whether a caller's own free text carries a machine
   path before writing it anywhere. The two places a human's prose becomes a
   committed document do ask, and ask first: `audit-task`'s description, outcome
-  and note flags, and a panel save, each refuse a value carrying a machine path
+  and note flags, a `--gate`, `--gate-set` or `--verified-by` value on any verb
+  that takes one, and a panel save, each refuse a value carrying a machine path
   at the verb, before the manifest write or the row for it exists — because a
   redacted row would still leave the raw path sitting in the manifest itself,
   which nothing afterwards un-writes. The fail-mode table above still holds for
   both: the journal hook's own failure stays silent and no-op either way, since
   the refusal a caller meets is the verb's door, never the recorder's.
+- **The writer's own check and the commit-time detector read one shared table
+  of regex shapes**, rather than two separately spelled lists that could
+  drift apart: a POSIX home directory, a Windows user path, a home directory
+  flattened into one directory-name slug the way a harness names its scratch
+  and session directories (anchored at the slug's own start, so prose such as
+  `my-home-page` is left alone while a real slug is caught wherever it sits),
+  a URL-escaped path, a tokenized temp-directory session, and an unexpanded
+  `~/`. A token in any of these may also start right after a URL scheme's
+  `://`, so a `file://` URL into a home directory is refused, redacted and
+  flagged exactly as a bare path is, while an `https://` URL whose path merely
+  contains the word `Users` is left alone. `tools/check-committed-pii.py`
+  takes these same pattern objects for its own rows rather than keeping a copy
+  of its own, so a shape added to one side is read by the other without being
+  told twice. The one deliberate difference: the writer additionally requires
+  a leading separator before `Users`/`home`, because a repository may hold a
+  `home/` directory of its own with nobody left to overrule a refusal of it;
+  the detector, reading committed bytes a human reviews, does not. The
+  writer's own check asks one more shape the regex table does not carry — the
+  checkout's own root, resolved per project rather than pattern-matched, so it
+  is not a shape the detector (which has no one project to ask about) reads at
+  all. A path through a symlinked directory is redacted and recorded in the
+  spelling the writer used, not the link's resolved target — whether it falls
+  inside or outside the project is still decided on the resolved path.
 - **What it deliberately does NOT record, because the journal is committed.**
   A user found their own user name and their whole directory layout inside a
   committed row ([CWE-532](https://cwe.mitre.org/data/definitions/532.html)),
@@ -918,17 +951,28 @@ point:
 - Hand edits to the journal are refused by `guard-edits.py`, and a shell meets
   the same refusal: `guard-secrets-read`'s PreToolUse Bash arm reads the
   journal as a write target too, and refuses a redirect, `tee`, `sed -i`, the
-  destination of `cp`/`mv`/`install`, any of those handed to a shell's `-c` or
-  to `eval` as a quoted argument, and a write call inside an interpreter
-  (`python -c`, `node -e`, or either's heredoc spelling) that names the
+  destination of `cp`/`mv`/`install` (a slashless last operand that already
+  exists as a directory on disk is read as one, the same as a trailing-slash
+  spelling), any of those handed to a shell's `-c` or to `eval` as a quoted
+  argument, a command nested past the walk's own bound (graded as a write
+  this arm cannot place rather than read as nothing), and a write call inside
+  an interpreter (`python -c`, `node -e`, or either's heredoc spelling,
+  reading a keyword `mode=` — `open(p, mode='a')`, with other keyword
+  arguments ahead of it too — the same as the positional mode) that names the
   journal — at every tier, to every session, exactly as `guard-edits` refuses
   the edit tools. **This closes what used to be open**: a `sed -i` reached
   through `bash -c "..."` used to be read only in its bare spelling, and an
   interpreter write naming the journal was not read by this arm at all. What
   is left is narrower and named rather than assumed: the quoted-argument
-  reading here is this hook's own, built for this write arm, and is not shared
-  with `guard-history-rewrite`'s older reader for a shell's `-c` and for
-  `eval` elsewhere in this document — that reader still takes `eval`'s
+  reading here is this hook's own, built for this write arm — a redirect or
+  `tee` inside a quoted word is skipped only where the word is provably text
+  (an argument of `echo`, `printf` or a `grep`-family program, or of `git` for
+  a subcommand whose quoted words are a message, a pattern or a path with no
+  global `-c`/`--config-env` in play) or is already graded in its own view
+  (the handed command of `eval` or of a shell's `-c`), and every other
+  program's quoted redirect or `tee` still reads as a write — and is not
+  shared with `guard-history-rewrite`'s older reader for a shell's `-c` and
+  for `eval` elsewhere in this document — that reader still takes `eval`'s
   argument as only the next word, so a fix to one reading does not reach the
   other. `journal.enabled: false` turns the whole thing off.
 - **A shell command is blamed for a journal file only when the bytes do not show

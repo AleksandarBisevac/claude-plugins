@@ -100,59 +100,75 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/_journal_io.py machine_path_shape; tools/check-committed-pii.py DETECTORS",
         "issue": "The writer knows fewer identity shapes than the detector: session-slug, tempdir-session, escaped-path and unexpanded-home pass both redacted_free_text and check_free_text, so a note naming an agent scratchpad path lands verbatim in the manifest and a chained journal row that check-committed-pii then fails and that can only be baselined.",
-        "resolution": "Move those detector shapes into _journal_io as shared pattern objects like MACHINE_PATH_SHAPES and have machine_path_shape read them, so redaction replaces and the door refuses them; keep only the deliberate relative home/ difference; a case per shape in both directions."
+        "resolution": "fixed in P108.13-4gh (33173cfc): Move those detector shapes into _journal_io as shared pattern objects like MACHINE_PATH_SHAPES and have machine_path_shape read them, so redaction replaces and the door refuses them; keep only the deliberate relative home/ difference; a case per shape in both directions.",
+        "fixTask": "P108.13-4gh",
+        "commit": "33173cfc"
       },
       {
         "id": "P108-R10",
         "severity": "med",
         "file": "plugins/audit/hooks/guard-secrets-read.py _copy_destinations",
         "issue": "cp onto an existing directory spelled without a trailing slash is allowed at the deny tier and writes an uncovered source file inside it, while the slash and -t spellings are blocked; SECURITY.md lists no such residual and KNOWN_DIVERGENCE has no row.",
-        "resolution": "Treat a last operand that resolves at the effective cwd to an existing directory as a directory, with a test_hooks row and an allow twin."
+        "resolution": "fixed in P108.14-4gh (b22c2c41): Treat a last operand that resolves at the effective cwd to an existing directory as a directory, with a test_hooks row and an allow twin.",
+        "fixTask": "P108.14-4gh",
+        "commit": "b22c2c41"
       },
       {
         "id": "P108-R11",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/_journal_io.py MACHINE_PATH_TOKEN_START",
         "issue": "A file URL into a home directory passes check_free_text, comes back unchanged from redacted_free_text and is written raw into a chained row, and no detector flags it; reports here are opened over file://, so this shape will appear in notes.",
-        "resolution": "Let a token start after a URL scheme's slashes so posix-home matches file:// paths in writer and detector alike; cases for refuse, redact and flag, with an https allow twin."
+        "resolution": "fixed in P108.13-4gh (33173cfc): Let a token start after a URL scheme's slashes so posix-home matches file:// paths in writer and detector alike; cases for refuse, redact and flag, with an https allow twin.",
+        "fixTask": "P108.13-4gh",
+        "commit": "33173cfc"
       },
       {
         "id": "P108-R12",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py resolve_briefs",
         "issue": "Caller text outside the prose flags (--gate, --gate-set, --verified-by) is never put to check_free_text, so a gate command carrying a home path is stored in the manifest while its journal row is redacted.",
-        "resolution": "Put gate-command and verified-by values through the same door before the lock, with a retarget --gate case."
+        "resolution": "fixed in P108.13-4gh (33173cfc): Put gate-command and verified-by values through the same door before the lock, with a retarget --gate case.",
+        "fixTask": "P108.13-4gh",
+        "commit": "33173cfc"
       },
       {
         "id": "P108-R13",
         "severity": "low",
         "file": "plugins/audit/hooks/guard-secrets-read.py _write_views depth bound",
         "issue": "Handed commands are followed only to a fixed depth; one level deeper a write is allowed at the deny tier while its bare form is blocked, and the bound is stated only in a code comment.",
-        "resolution": "When the bound is reached and a further handed command exists, grade it unresolved at the deny tier rather than as nothing, with a case at the bound and one past it."
+        "resolution": "fixed in P108.14-4gh (b22c2c41): When the bound is reached and a further handed command exists, grade it unresolved at the deny tier rather than as nothing, with a case at the bound and one past it.",
+        "fixTask": "P108.14-4gh",
+        "commit": "b22c2c41"
       },
       {
         "id": "P108-R14",
         "severity": "low",
         "file": "plugins/audit/hooks/guard-secrets-read.py _eval_write_targets; SECURITY.md hand-edits bullet",
         "issue": "An interpreter open() with a keyword mode='a' or mode='w' is not read as a write, so the journal arm's 'refused at every tier' sentence is untrue for that spelling, and the source arm misses it the same way.",
-        "resolution": "Teach the interpreter grammar the mode= keyword, with a journal case and a source-file case at each tier."
+        "resolution": "fixed in P108.14-4gh (b22c2c41): Teach the interpreter grammar the mode= keyword, with a journal case and a source-file case at each tier.",
+        "fixTask": "P108.14-4gh",
+        "commit": "b22c2c41"
       },
       {
         "id": "P108-R15",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_journal_io.py repo_relative_or_token",
         "issue": "Redaction relativises the realpath, so a path through a symlinked directory is recorded as the link target's path, a path the writer never wrote.",
-        "resolution": "Decide inside or outside on the realpath, but relativise the normalised spelling when it lies under the root; a case with a symlinked directory."
+        "resolution": "fixed in P108.13-4gh (33173cfc): Decide inside or outside on the realpath, but relativise the normalised spelling when it lies under the root; a case with a symlinked directory.",
+        "fixTask": "P108.13-4gh",
+        "commit": "33173cfc"
       },
       {
         "id": "P108-R16",
         "severity": "low",
         "file": "plugins/audit/hooks/guard-secrets-read.py redirect and tee arms",
         "issue": "The redirect and tee arms still read a > inside a quoted argument at the outer cwd, so a commit message mentioning a redirect is blocked as a source write, a handed cd that leaves the tree is blocked, and a handed redirect is read twice with the misplaced outer hit named first.",
-        "resolution": "Now that handed commands are graded through their own views, have the redirect and tee arms skip matches inside quotes as the in-place arm does; allow cases for a commit message and a handed cd out of the tree."
+        "resolution": "fixed in P108.14-4gh (b22c2c41): Now that handed commands are graded through their own views, have the redirect and tee arms skip matches inside quotes as the in-place arm does; allow cases for a commit message and a handed cd out of the tree.",
+        "fixTask": "P108.14-4gh",
+        "commit": "b22c2c41"
       }
     ],
-    "outcome": "[findings: 16 - 2 high, 7 med, 7 low; 8 with a recorded fix commit]"
+    "outcome": "[findings: 16 - 2 high, 7 med, 7 low; 16 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -960,7 +976,7 @@
     {
       "id": "P108.13-4gh",
       "title": "the journal writer and the commit-time detector recognise the same identity shapes, at every caller door",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P108-R9, P108-R11, P108-R12 and P108-R15. The journal writer and the commit-time detector must recognise the same identity shapes.\n\n- Detector shapes in the writer. tools/check-committed-pii.py flags session-slug, tempdir-session, escaped-path and unexpanded-home. Move these into _journal_io as shared pattern objects, the way MACHINE_PATH_SHAPES already is, so the detector reads the same objects. machine_path_shape reads them too, so redacted_free_text replaces them and check_free_text refuses them. The one deliberate difference stays: a relative path whose first segment is home.\n- File URLs. A token may start after a URL scheme's slashes, so a file URL into a home directory is refused at the door, redacted in a plugin row, and flagged by the detector. An https URL whose path merely contains the word Users stays allowed.\n- More flags at the door. Values of --gate, --gate-set, scope's --gate and done's --verified-by go through the same check_free_text door before the lock, like the prose flags.\n- Symlinks. Redaction decides inside or outside on the realpath, but relativises the normalised spelling when that spelling lies under the root. A path through a symlinked directory therefore keeps the spelling the writer used.\n\nCases, each in both directions:\n- each detector shape, redacted in a hook row and refused at the audit-task door;\n- a file URL refused, redacted and flagged, with an https allow twin;\n- a retarget --gate carrying a home path refused, with a plain-command twin allowed;\n- a symlinked directory keeps its own spelling.",
       "files": [
         "plugins/audit/scripts/governance/_journal_io.py",
@@ -993,18 +1009,41 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "33173cfc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_journal_io.py: session-slug, escaped-path, tempdir-session and unexpanded-home join _MACHINE_PATH_SHAPES, so machine_path_shape, check_free_text and redacted_free_text read every shape the detector flags; the only shape read differently by the writer is still posix-home, which needs a leading separator. session-slug is anchored at a slug start (start of text, whitespace, a quote, =, / or backslash, never a letter or dash), keeping the Windows C--Users- spelling, so kebab prose such as my-home-page is neither refused nor flagged while a real slug is caught wherever it sits. MACHINE_PATH_TOKEN_START also matches right after ://, so a file URL into a home directory is refused, redacted and flagged, while an https URL whose path holds the word Users is not; the checkout-root check uses the same rule. repo_relative_or_token still decides inside or outside on the realpath, but _spelled_under returns the normalised spelling when it lies under the root and resolves to the same file, so a path through a symlinked directory keeps the writer's spelling and a link pointing outside still gets the outside token. A value whose shape has no separator turns whole into the token. tools/check-committed-pii.py assigns DETECTORS from _journal_io.MACHINE_PATH_SHAPES and defines no shape of its own. audit-task.py: resolve_verbatim_values runs after resolve_briefs and before the lock and puts every --gate, --gate-set and --verified-by value through check_free_text, on every verb that takes them. Red-first proved at HEAD for ft7, sp1, sp3, sp5, mp2, nt5 and md1; sp7/sp8 and q2c/q2d proved by scratch-copy mutation; over-fire mutations (slug start dropped, token start emptied, _spelled_under widened, unexpanded-home widened, door widened) turned sp2, sp4, sp6, sp8, nt6, md2 and q2d red; narrowing mutations turned the deny cases red. check-committed-pii exits 0 on the tree with no new BASELINE row.",
+        "descriptive": "Every machine path the commit check would flag is now redacted from the plugin's own journal rows and refused when a caller types it, including file URLs and gate commands, while ordinary hyphenated words are left alone."
       },
       "startedAt": "2026-10-07T06:01:33Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T06:56:45Z",
+      "verifiedBy": [
+        "ft7",
+        "sp1",
+        "sp2",
+        "sp3",
+        "sp4",
+        "sp5",
+        "sp6",
+        "sp7",
+        "sp8",
+        "mp2",
+        "nt5",
+        "nt6",
+        "md1",
+        "md2",
+        "q2c",
+        "q2d"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T06:56:37Z.149c35",
         "status": "passed",
         "at": "2026-10-07T06:56:37Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "33173cfc",
+        "at": "2026-10-07T06:56:45Z",
+        "basis": "orchestrator check: P108-R9, R11, R12 and R15 fixed through one shared shape table read by writer and detector, slug anchored to its real placements, red-first and over-fire mutations proved in both directions"
       }
     },
     {
@@ -1093,7 +1132,7 @@
     {
       "id": "P108.15-4gh",
       "title": "SECURITY.md states the journal door, the shared identity shapes and the shell arm's remaining open shapes as the code leaves them",
-      "status": "pending",
+      "status": "in_progress",
       "description": "SECURITY.md describes the journal door, the redaction and the shell arm as P108.13 and P108.14 leave them:\n- which caller flags are asked at the door;\n- which identity shapes the writer and the detector share;\n- the shell arm's directory, nesting, keyword-mode and quoted-redirect behaviour;\n- the residual list, stating every shape still open and nothing already closed.\n\nEvery sentence must be true of the committed code of the two tasks this one depends on.",
       "files": [
         "SECURITY.md"
@@ -1122,16 +1161,21 @@
         "P108.13-4gh",
         "P108.14-4gh"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T06:56:55Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T07:13:13Z.50f095",
+        "status": "passed",
+        "at": "2026-10-07T07:13:13Z"
+      }
     }
   ],
   "startedAt": "2026-10-06T21:26:46Z"
