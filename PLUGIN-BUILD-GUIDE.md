@@ -4109,14 +4109,19 @@ TMPDIR/TMP/TEMP, and `PYTHONNOUSERSITE=1`. So the runs differ only in the files 
 
 1. HEAD's baseline runs FIRST, before any file of the task's is laid over or run: HEAD's own test
    files, the same command, HEAD's implementation, with every declared test file new at HEAD laid
-   over as an EMPTY file. It is always made, and the stubs are why no reader of the command's
+   over as an EMPTY file - except a jest or vitest one (`_is_js_test_path()`), which is left ABSENT,
+   because both runners fail an empty suite (measured in `stamp-verification.py`'s design note,
+   paragraph (3)). It is always made, and the stubs are why no reader of the command's
    arguments is needed: whatever the command reaches - a dotted module name, a shell wrapper, a
    discovery, a file the working tree deleted - the baseline reaches too, minus the new files'
    content. That is more than the task's cases: whatever a new file imports, inherits or loads is
    not reached either, which is why step 4 binds a credit to the task's edit and not to a file. It
    must be GREEN - exit 0 with no failure counted, or an exit 5 whose ONE runner's tally counts no
    case run and no failure (a command naming only new files gives it, and pytest gives it when `-k`
-   deselects every case); the words "no tests ran" are never read alone, since a red run followed by
+   deselects every case) - or, where a jest or vitest file was left absent, exit 1 with that
+   runner's own no-test-file sentence (`No tests found, exiting with code 1`, `No test files found,
+   exiting with code 1`) and no tally counting a case or a failure (`_js_none_found()`), its
+   counterpart of that exit 5; the words "no tests ran" are never read alone, since a red run followed by
    an empty one prints them too, and the unittest and pytest tallies count every `Ran N` line and
    every summary line - so the fix run of step 3 is judged by all its invocations as well, not by
    its last. Anything else -

@@ -3198,7 +3198,217 @@ def _jest_credit_cases(check):
           and "could not be read as" in unbalanced[0])
 
 
+# A jest-shaped runner, so a `red` over a jest project runs with no npm. It
+# answers as jest 30 was observed to (the design note in stamp-verification.py):
+# a named file that is empty fails to run, exit 1; no named file on disk is
+# `No tests found, exiting with code 1`, exit 0 only under --passWithNoTests.
+# A test is `test('<title>', () => { expect(<v() | int>).toBe(<int>); });`
+# inside one `describe`, and `v()` is the value `src/mine.py` assigns. Its
+# source is ASCII and its output is written as UTF-8 bytes, so the sweep's
+# cp1252 pass reads the same bullets.
+_FAKE_JEST = r'''import os, re, sys
+TEST = re.compile(r"test\('([^']+)', \(\) => \{ expect\((v\(\)|\d+)\)\.toBe\((\d+)\); \}\);")
+DESCRIBE = re.compile(r"describe\('([^']+)'")
+def value(word):
+    if word != "v()":
+        return int(word)
+    with open(os.path.join("src", "mine.py")) as fh:
+        return int(fh.read().split("=")[1])
+out = []
+targets = [a for a in sys.argv[1:] if not a.startswith("-") and os.path.isfile(a)]
+if not targets:
+    code = 0 if "--passWithNoTests" in sys.argv else 1
+    out.append("No tests found, exiting with code %d" % (code,))
+    out.append("Run with `--passWithNoTests` to exit with code 0")
+    sys.stdout.buffer.write(("\n".join(out) + "\n").encode("utf-8"))
+    sys.exit(code)
+passed = failed = suites_bad = 0
+for rel in targets:
+    with open(rel) as fh:
+        text = fh.read()
+    if not text.strip():
+        suites_bad += 1
+        out += [" FAIL  %s" % (rel,), "  ● Test suite failed to run", "",
+                "    Your test suite must contain at least one test.", ""]
+        continue
+    outer = DESCRIBE.search(text).group(1)
+    block = []
+    for title, got, want in TEST.findall(text):
+        if value(got) == int(want):
+            passed += 1
+            continue
+        failed += 1
+        block += ["  ● %s › %s" % (outer, title), "",
+                  "    expect(received).toBe(expected) // Object.is equality", "",
+                  "    Expected: %s" % (want,), "    Received: %s" % (value(got),), ""]
+    if block:
+        suites_bad += 1
+    out += [" %s  %s" % ("FAIL" if block else "PASS", rel)] + block
+counts = ", ".join("%d %s" % (n, w) for n, w in ((failed, "failed"), (passed, "passed")) if n)
+out.append("Test Suites: %d failed, %d total" % (suites_bad, len(targets)))
+out.append("Tests:       %s%d total" % (counts + ", " if counts else "", failed + passed))
+sys.stdout.buffer.write(("\n".join(out) + "\n").encode("utf-8"))
+sys.exit(1 if suites_bad else 0)
+'''
+# ...and a pytest-shaped one, which is what the sweep has where pytest is not
+# installed: an empty file collects nothing and exits 5 with `no tests ran`.
+# A test is `def test_<name>():` over `    assert v() == <int>`. Its file is
+# named `pytest`, so the command names the runner the way a real one does.
+_FAKE_PYTEST = r'''import os, re, sys
+TEST = re.compile(r"^def (test_\w+)\(\):\n    assert v\(\) == (\d+)$", re.M)
+with open(os.path.join("src", "mine.py")) as fh:
+    have = int(fh.read().split("=")[1])
+out, passed, failed = [], 0, 0
+for rel in [a for a in sys.argv[1:] if not a.startswith("-")]:
+    with open(rel) as fh:
+        for name, want in TEST.findall(fh.read()):
+            if have == int(want):
+                passed += 1
+                continue
+            failed += 1
+            out.append("FAILED %s::%s - assert %d == %s" % (rel, name, have, want))
+counts = ", ".join("%d %s" % (n, w) for n, w in ((failed, "failed"), (passed, "passed")) if n)
+out.append("=== %s in 0.01s ===" % (counts or "no tests ran",))
+sys.stdout.write("\n".join(out) + "\n")
+sys.exit(1 if failed else (0 if passed else 5))
+'''
+
+
+def _js_test(outer, cases):
+    """A test file `_FAKE_JEST` reads: one `describe(outer)` over `(title,
+    got, want)` cases."""
+    return "\n".join(["describe('%s', () => {" % (outer,)] + [
+        "  test('%s', () => { expect(%s).toBe(%s); });" % case for case in cases]
+        + ["});", ""])
+
+
+def _fake_runner(prefix, name, source):
+    """The absolute path of a fake runner script, outside every fixture tree."""
+    path = os.path.join(_harness.fixture_root(prefix), name)
+    _write(path, source)
+    return path
+
+
+def _new_file_repo(prefix, head_files, wt_files, new):
+    """A repository whose HEAD holds `v = 1` and `head_files`, and whose working
+    tree holds the fix (`v = 2`) and `wt_files`, the task declaring `src/mine.py`
+    and the test file `new` - which HEAD does not have."""
+    root = _seeded_repo(prefix)
+    os.makedirs(os.path.join(root, "tests"))
+    for rel, text in head_files.items():
+        _write(os.path.join(root, *rel.split("/")), text)
+        _git(root, "add", rel)
+    if head_files:
+        _git(root, "commit", "-q", "-m", "tests")
+    _write(os.path.join(root, "src", "mine.py"), "v = 2\n")
+    for rel, text in wt_files.items():
+        _write(os.path.join(root, *rel.split("/")), text)
+    manifest = json.loads(json.dumps(MANIFEST))
+    task = manifest["phases"][0]["tasks"][0]
+    task["files"] = ["src/mine.py", new]
+    task["tests"] = {"mode": "tdd", "add": ["%s: v is two" % (new,)]}
+    man = os.path.join(_harness.fixture_root(prefix + "man-"), "audit-plan.json")
+    _write(man, json.dumps(manifest))
+    return root, man
+
+
+def _new_file_cases(check):
+    py = sys.executable
+    jest = _fake_runner("stamp-fake-jest-", "jest.py", _FAKE_JEST)
+    new_js = "tests/new.test.js"
+    old_green = {"tests/old.test.js": _js_test("old", [("old holds", "1", "1")])}
+    adds = {new_js: _js_test("mine", [("v is two", "v()", "2")])}
+    got = {}
+    for how, cmd in (("naming only the new file", [py, jest, new_js]),
+                     ("naming HEAD's green file and the new one",
+                      [py, jest, "tests/old.test.js", new_js])):
+        root, man = _new_file_repo("stamp-red-newjs-", old_green, adds, new_js)
+        code, payload = _red(root, man, cmd)
+        got[how] = (code, (payload.get("redFirst") or {}).get("basis")
+                    or payload.get("note") or payload,
+                    (payload.get("baseline") or {}).get("absent"))
+    check("sb1 a jest-shaped runner that fails an empty suite: a task adding a new "
+          "failing test file gets a green baseline - HEAD's run made with the new "
+          "file ABSENT, never an empty stub - and the red is proved, the basis "
+          "saying the file was left absent: %r" % (got,),
+          all(code == M.E_PROVED and "left absent" in str(basis)
+              and "Test suite failed to run" not in str(basis)
+              and absent == [new_js]
+              for code, basis, absent in got.values()) and len(got) == 2)
+
+    pytest = _fake_runner("stamp-fake-pytest-", "pytest", _FAKE_PYTEST)
+    new_py = "tests/test_new.py"
+    root_p, man_p = _new_file_repo(
+        "stamp-red-newpy-", {}, {new_py: "def test_two():\n    assert v() == 2\n"},
+        new_py)
+    code_p, payload_p = _red(root_p, man_p, [py, pytest, new_py])
+    basis_p = (payload_p.get("redFirst") or {}).get("basis", json.dumps(payload_p))
+    base_p = payload_p.get("baseline") or {}
+    head_p = (payload_p.get("run") or {}).get("head") or {}
+    check("sb2 THE ALLOW CASE for sb1: a pytest task adding a new test file keeps "
+          "today's baseline - the file laid over as an empty stub, HEAD's run "
+          "exiting 5 with no tests ran and accepted as green - and is proved: "
+          "exit=%r baseline=%r head exit=%r %s"
+          % (code_p, base_p, head_p.get("exit"), basis_p[:300]),
+          code_p == M.E_PROVED and "laid over as empty files" in basis_p
+          and "left absent" not in basis_p
+          and base_p.get("stubbed") == [new_py] and base_p.get("absent") == []
+          and head_p.get("exit") == 5)
+
+    old_red = {"tests/old.test.js": _js_test("old", [("v is already two", "v()", "2")])}
+    root_r, man_r = _new_file_repo("stamp-red-newjs-red-", old_red, adds, new_js)
+    code_r, payload_r = _red(root_r, man_r, [py, jest, "tests/old.test.js", new_js])
+    basis_r = (payload_r.get("redFirst") or {}).get("basis", json.dumps(payload_r))
+    head_r = "\n".join(((payload_r.get("run") or {}).get("head") or {})
+                       .get("outputTail") or [])
+    check("sb3 THE ALLOW CASE for sb1, the over-fire direction: with the new file "
+          "absent, a baseline whose remaining target is red at HEAD still answers "
+          "could-not-prove - the red read off HEAD's own failing case, not off an "
+          "empty suite: exit=%r absent=%r head=%r %s"
+          % (code_r, (payload_r.get("baseline") or {}).get("absent"), head_r,
+             basis_r[:300]),
+          code_r == M.E_CANNOT_PROVE and "already red" in basis_r
+          and (payload_r.get("baseline") or {}).get("absent") == [new_js]
+          and "old › v is already two" in head_r
+          and "Test suite failed to run" not in head_r)
+
+
+def _none_found_cases(check):
+    new_js = ["tests/new.test.js"]
+    sentence = "No tests found, exiting with code 1\n"
+    failing = (sentence + " FAIL  tests/old.test.js\n  ● old › holds\n\n"
+               "    expect(received).toBe(expected) // Object.is equality\n\n"
+               "Test Suites: 1 failed, 1 total\nTests:       1 failed, 1 total\n")
+    refused = M.baseline_problem({"code": 1, "text": failing, "problem": None,
+                                  "absent": new_js}, ["npx", "jest"])
+    check("sb4 jest's no-test-file sentence beside a tally counting a failure is "
+          "NOT a green baseline, a file left absent or not - the sentence alone "
+          "never vouches for a run that failed: %r" % (refused,),
+          refused is not None and "not green" in refused)
+    got = dict((how, M.baseline_problem(dict(head, problem=None), ["npx", "jest"]))
+               for how, head in (
+                   ("the sentence alone", {"code": 1, "text": sentence,
+                                           "absent": new_js}),
+                   ("the sentence and a tally counting nothing",
+                    {"code": 1, "text": sentence + "Tests:       0 total\n",
+                     "absent": new_js}),
+                   ("vitest's sentence", {"code": 1, "absent": new_js,
+                                          "text": "No test files found, exiting "
+                                                  "with code 1\n"})))
+    no_absent = M.baseline_problem({"code": 1, "text": sentence, "problem": None,
+                                    "absent": []}, ["npx", "jest"])
+    check("sb5 THE ALLOW CASE for sb4: with a file left absent, the sentence alone, "
+          "or beside a tally counting nothing, IS a green baseline under jest and "
+          "vitest alike - and with no file left absent it is not, a path that "
+          "matched nothing being a misnamed one: %r absent-none %r"
+          % (got, no_absent),
+          all(v is None for v in got.values()) and len(got) == 3
+          and no_absent is not None)
+
+
 def _cases(check):
+    _harness.stage(check, "sb-new-file", _new_file_cases)
+    _harness.stage(check, "sb-none-found", _none_found_cases)
     _harness.stage(check, "sr-decisive", _decisive_cases)
     _harness.stage(check, "sr-jest", _jest_cases)
     _harness.stage(check, "sj-credit", _jest_credit_cases)

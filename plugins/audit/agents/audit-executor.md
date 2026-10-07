@@ -121,8 +121,11 @@ Hard rules (non-negotiable):
 - **`proved` means one of YOUR cases failed an assertion.** The helper names the
   failing cases, and a red counts only against a GREEN baseline: the helper first runs
   HEAD's own test files with the same command on HEAD's code — every declared test file
-  new at HEAD laid over as an empty file — and they must be green (exit 0 with no failure,
-  or an exit 5 whose one runner's tally counts nothing run and nothing failed); then a
+  new at HEAD laid over as an empty file, a jest or vitest one left absent instead — and
+  they must be green (exit 0 with no failure, or an exit 5 whose one runner's tally counts
+  nothing run and nothing failed, or, for a file left absent, the runner's own no-test-file
+  sentence with no case or failure counted — step 1 of the `stamp-verification.py` section
+  of `PLUGIN-BUILD-GUIDE.md` is the full rule); then a
   failure of your run counts only where the runner locates it in one of your declared
   test files (a pytest node id, unittest `-v`'s module and class, a run of exactly one
   declared file), the class it names there defines the case (its last binding there — an

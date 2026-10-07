@@ -80,10 +80,10 @@ reported instead.
 
 RED UNDER JEST AND VITEST - THE DESIGN, BUILT IN PART. Where a paragraph below
 does not say it is built, it describes code that does not exist yet: `red` now
-reads a jest or vitest tally, names its failing cases and credits one to the
-task by its title chain, and a jest or vitest run whose baseline lays a new
-test file over as an empty stub still comes back `could-not-prove`, since (3)
-is not built. It is written here, before the code, so that the tasks that
+reads a jest or vitest tally, names its failing cases, credits one to the
+task by its title chain, and runs HEAD's baseline with a new jest or vitest
+test file absent (3); (4) is not built, so a suite needing `node_modules`
+still comes back `could-not-prove`. It is written here, before the code, so that the tasks that
 build it share one answer to each question below rather than each settling its
 own; a case of the implementing work is what makes each paragraph true, and
 until one exists the paragraph is a plan. Nothing enforces that order; whoever
@@ -130,7 +130,7 @@ program basenames; a wrapper (`npm test`, `npx vitest`) names no runner and
 the output decides. The house, pytest and unittest patterns moved unchanged,
 so the two pytest summary patterns are still two: taking their union changes
 what `red` reads, and is left to a change of its own. What is NOT built yet is
-(3) and (4).
+(4).
 
 (2) WHICH CASE IS THE TASK'S: THE HEADER PATH AND THE TITLE CHAIN - BUILT. A jest or
 vitest case is identified by the suite path its `FAIL` header or line names
@@ -166,7 +166,7 @@ known blind spots: a misreading either unbalances the file, which is refused,
 or misreads HEAD's copy and the working tree's alike, so an unchanged body
 still compares equal.
 
-(3) THE BASELINE: A NEW FILE IS ABSENT, NOT AN EMPTY STUB. HEAD's own run
+(3) THE BASELINE: A NEW FILE IS ABSENT, NOT AN EMPTY STUB - BUILT. HEAD's own run
 lays each declared test file new at HEAD over as an empty file, and under
 pytest that is what keeps a command naming the file runnable. Both JS runners
 were driven on 2026-10-06, in a scratch directory outside this repository:
@@ -196,13 +196,19 @@ were driven on 2026-10-06, in a scratch directory outside this repository:
                                             with code 1`, exit 1
 So an empty stub is RED under jest whatever the flag, and red under vitest
 unless the command passes `--passWithNoTests`: HEAD's baseline would never be
-green and every proof would be `could-not-prove`. For jest and vitest a new
-test file is therefore left ABSENT in HEAD's run - the reset already removes
-it - and the stub stays the rule for the Python runners. The baseline is then
-green on exit 0, or on the runner's own no-tests sentence quoted above with no
-tally counting a failure: the JS counterpart of pytest's exit 5, and read off
-the same sentence for the same reason - the exit code alone is the one a
-crash gives too. Measured once per runner and version, on one machine.
+green and every proof would be `could-not-prove`. So a new test file
+`_is_js_test_path` reads as jest's or vitest's is left ABSENT in HEAD's run -
+the reset already removes it - and the stub stays the rule for the Python
+runners; the payload's `baseline` names which way each new file went. The
+baseline is then green on exit 0, or on exit 1 with the runner's own
+no-test-file sentence quoted above and no tally counting a case or a failure
+(`_js_none_found`), read only when a file was left absent: the JS counterpart
+of pytest's exit 5, and read off the sentence for the same reason - the exit
+code alone is the one a crash gives too. `--passWithNoTests` is NOT added to
+the command: under jest it does not rescue an empty stub, the absent file
+makes the stub question moot for both runners, and a flag appended to a
+wrapper's argv (`npm test`) reaches the wrapper rather than the runner.
+Measured once per runner and version, on one machine.
 
 (4) DEPENDENCIES: `--deps-from <dir>`, DEFAULTING TO `--project`. The
 throwaway holds tracked files only, so a suite that imports from
@@ -252,6 +258,8 @@ registry fails, and the result is `could-not-prove`.
 WHAT THIS DESIGN ADDRESSES, from what was observed on 2026-10-06:
   - vitest's red being `could-not-prove` for want of `node_modules` in the
     throwaway: (4), with (1) to (3) to read the run once it can start.
+  - a new jest or vitest test file turning HEAD's baseline red as an empty
+    suite: (3).
   - an inline suite under `tools/`, whose test file is its implementation
     file, so no HEAD-versus-fix split exists: NOT addressed; left to a later
     task.
@@ -430,8 +438,9 @@ def read_stamp_text(args, stdin=None):
 # directory, with the working tree's copy of the task's TEST files laid over it
 # and its implementation files left at HEAD. HEAD's own test files run FIRST,
 # before any file of the task's is laid over - each declared test file new at
-# HEAD written as an EMPTY file, so the same command reaches what the task's run
-# reaches minus the new files' content - and must be green; then the task's run
+# HEAD written as an EMPTY file, or left absent where it is a jest or vitest
+# one, so the same command reaches what the task's run reaches minus the new
+# files' content - and must be green; then the task's run
 # must be red, the fix run - the task's tests on the working tree's
 # implementation - green, and only a failure the runner locates in a declared
 # test file, whose named class defines it with no ast-identical def of that class
@@ -734,25 +743,48 @@ def introduced(root, implementation, symbol, deadline=None):
 # own; the fix run then shows each one passes with the working tree's code.
 NARROW = ("the command is already red (or unreadable) at HEAD - narrow it to the "
           "task's cases")
+# What jest (`No tests found, ...`) and vitest (`No test files found, ...`) print
+# when no test file matched - the sentence the design note's (3) records them
+# printing, exit 1, for a command naming only a file that is not there.
+_JS_NO_TESTS = re.compile(r"^[ \t]*No test(?:s| files) found, exiting with code \d+",
+                          re.M)
+
+
+def _js_none_found(head, tally):
+    """Whether HEAD's run is jest's or vitest's no-test-file answer: exit 1, the
+    runner's own sentence, no tally counting a case or a failure - and only for
+    a run that left a new test file absent, which is what makes "nothing
+    matched" the expected answer rather than a misnamed path."""
+    if head["code"] != 1 or not head.get("absent"):
+        return False
+    if not _JS_NO_TESTS.search(_runner_output._ANSI.sub("", head["text"])):
+        return False
+    return tally is None or (tally["runner"] is not None and not tally["collected"]
+                             and not tally["failed"])
 
 
 def baseline_problem(head, cmd):
     """Why HEAD's own run is not a GREEN baseline, or None when it is.
 
-    `head` is `{"code", "text", "problem"}` of HEAD's own test files run on
-    HEAD's code, FIRST, in a fresh throwaway and an isolated environment, with
-    every declared test file new at HEAD laid over as an EMPTY file - so the
-    same command reaches what the task's run reaches, however it is spelled,
-    minus the new files' content. Green is exit 0 with no failure counted, or the
-    runner's own no-tests-ran exit 5 - which a command naming only new files
-    legitimately gives, and pytest gives when `-k` deselects every case - read
-    as ONE runner's tally counting no case run and no failure. The text alone
-    is not read: a red run followed by an empty one prints "NO TESTS RAN" too,
-    and a mixed tally counts nothing because it reads no cases.
+    `head` is `{"code", "text", "problem", "absent"}` of HEAD's own test files
+    run on HEAD's code, FIRST, in a fresh throwaway and an isolated
+    environment, with every declared test file new at HEAD laid over as an
+    EMPTY file - or, for a jest or vitest test file (`_is_js_test_path`), left
+    ABSENT and named in `absent`, since both runners fail an empty suite - so
+    the same command reaches what the task's run reaches, however it is
+    spelled, minus the new files' content. Green is exit 0 with no failure
+    counted, or the runner's own no-tests-ran exit 5 - which a command naming
+    only new files legitimately gives, and pytest gives when `-k` deselects
+    every case - read as ONE runner's tally counting no case run and no
+    failure; or, with a file left absent, jest's or vitest's no-test-file
+    sentence (`_js_none_found`), their counterpart of that exit 5. The text
+    alone is not read: a red run followed by an empty one prints "NO TESTS
+    RAN" too, and a mixed tally counts nothing because it reads no cases.
 
-    The stubs remove the new files' CONTENT, and with it everything that
-    content reaches - a HEAD case a new file imports, inherits or loads is not
-    run here. `credit_problem` is what keeps such a case from being credited."""
+    The stubs and the absent files remove the new files' CONTENT, and with it
+    everything that content reaches - a HEAD case a new file imports, inherits
+    or loads is not run here. `credit_problem` is what keeps such a case from
+    being credited."""
     if head is None:
         return "HEAD's own run was not made - %s" % (NARROW,)
     if head.get("problem"):
@@ -760,6 +792,8 @@ def baseline_problem(head, cmd):
     tally = read_tally(head["text"], cmd)
     if head["code"] == 5 and tally is not None and tally["runner"] is not None \
             and not tally["collected"] and not tally["failed"]:
+        return None
+    if _js_none_found(head, tally):
         return None
     if head["code"] != 0 or (tally is not None and (tally["runner"] is None
                                                     or tally["failed"])):
@@ -1874,12 +1908,13 @@ def red_verdict(run, ctx):
     `second` is the `--introduces` re-run with the working tree's
     implementation copied in, `head` the baseline - HEAD's own test files on
     HEAD's code, made FIRST in the fresh throwaway with the new declared test
-    files as empty stubs - and `fix` the task's test files on the working
-    tree's code, made when the task's run is red on a green baseline. Every
-    run has an isolated environment of its own. `ctx` is `{"root",
-    "implementation", "tests", "cases", "symbols", "dropped", "new",
-    "head_files", "head_defs", "head_modules", "head_js", "path"}` -
-    `head_tree`'s answer, and the throwaway's path."""
+    files as empty stubs, the jest and vitest ones among them (`absent`) left
+    out instead - and `fix` the task's test files on the working tree's code,
+    made when the task's run is red on a green baseline. Every run has an
+    isolated environment of its own. `ctx` is `{"root", "implementation",
+    "tests", "cases", "symbols", "dropped", "new", "absent", "head_files",
+    "head_defs", "head_modules", "head_js", "path"}` - `head_tree`'s answer,
+    and the throwaway's path."""
     at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     shown = " ".join(run["cmd"])
     env_clause = "; run without %s" % (", ".join(ctx["dropped"]) or "nothing",)
@@ -1904,9 +1939,14 @@ def red_verdict(run, ctx):
     failing = (failing_cases(text, tally["runner"])
                if tally is not None and tally["runner"] is not None else [])
     how = "HEAD's own tests green on HEAD's code"
-    if ctx.get("new"):
+    absent = ctx.get("absent") or []
+    stubbed = [rel for rel in ctx.get("new") or [] if rel not in absent]
+    if stubbed:
         how += (", its declared test files new at HEAD (%s) laid over as empty "
-                "files" % (", ".join(ctx["new"]),))
+                "files" % (", ".join(stubbed),))
+    if absent:
+        how += (", its declared jest or vitest test files new at HEAD (%s) left "
+                "absent" % (", ".join(absent),))
     if ctx["cases"]:
         how = "named by --case, " + how
     baseline = baseline_problem(run.get("head"), run["cmd"])
@@ -2203,7 +2243,7 @@ def run_red(args, cmd, out):
         pass
     run = {"cmd": cmd, "code": None, "text": "", "problem": None, "second": None,
            "head": None, "fix": None}
-    state = {"new": [], "head_files": None, "head_defs": None,
+    state = {"new": [], "absent": [], "head_files": None, "head_defs": None,
              "head_modules": None, "head_js": None}
     copied = []
     previous = _arm()
@@ -2212,6 +2252,11 @@ def run_red(args, cmd, out):
             present, run["problem"] = _at_head(root, scope["declared"], deadline)
             if run["problem"] is None:
                 state["new"] = sorted(set(scope["tests"]) - present)
+                # jest and vitest fail an empty suite, so a new file of theirs
+                # is left absent - the reset already removes it - and the
+                # stub stays the rule for every other runner.
+                state["absent"] = [rel for rel in state["new"]
+                                   if _is_js_test_path(rel, set(scope["tests"]))]
                 (state["head_files"], state["head_defs"], state["head_modules"],
                  state["head_js"]) = head_tree(
                     root, set(scope["tests"]), deadline)
@@ -2221,9 +2266,11 @@ def run_red(args, cmd, out):
                 run["problem"] = ("the run timed out: building the throwaway spent "
                                   "the %s-second deadline" % (args.timeout,))
             if run["problem"] is None:
-                run["head"], _c = _isolated_run(root, path, [], cmd, deadline,
-                                                args.timeout, env, holder, "baseline",
-                                                stubs=state["new"])
+                run["head"], _c = _isolated_run(
+                    root, path, [], cmd, deadline, args.timeout, env, holder,
+                    "baseline", stubs=[rel for rel in state["new"]
+                                       if rel not in state["absent"]])
+                run["head"]["absent"] = state["absent"]
             if run["problem"] is None:
                 task, copied = _isolated_run(root, path, scope["declared"], cmd,
                                              deadline, args.timeout, env, holder,
@@ -2250,7 +2297,8 @@ def run_red(args, cmd, out):
             "root": root, "implementation": scope["implementation"],
             "tests": scope["tests"], "cases": args.case,
             "symbols": args.introduces, "dropped": dropped, "naming": naming,
-            "new": state["new"], "head_files": state["head_files"],
+            "new": state["new"], "absent": state["absent"],
+            "head_files": state["head_files"],
             "head_defs": state["head_defs"],
             "head_modules": state["head_modules"],
             "head_js": state["head_js"], "path": path,
@@ -2262,6 +2310,9 @@ def run_red(args, cmd, out):
     payload = {"verdict": verdict, "redFirst": block, "note": note,
                "atHead": scope["implementation"], "copied": copied,
                "leftovers": leftovers,
+               "baseline": {"stubbed": [rel for rel in state["new"]
+                                        if rel not in state["absent"]],
+                            "absent": state["absent"]},
                "environment": {"dropped": dropped, "naming": naming,
                                "set": ["%s=%s" % (k, env[k]) for k in
                                        ("PYTHONDONTWRITEBYTECODE",) if k in env]},

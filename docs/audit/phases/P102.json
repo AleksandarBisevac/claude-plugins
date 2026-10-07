@@ -258,7 +258,7 @@
     {
       "id": "P102.5",
       "title": "a jest or vitest failure is credited to the task by suite path and title chain",
-      "status": "in_progress",
+      "status": "done",
       "description": "case_site, credit_problem and module_key use Python's ast to decide whether a failing case is the task's own. So for a JS failure there is no notion of a case HEAD already has. Implement the per-runner identity the design note chose: jest and vitest locate a failure by suite path and title chain, and HEAD's case is the same chain with an identical body in HEAD's copy of the file. The Python credit rule is unchanged.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -290,28 +290,43 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c40fa690",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stamp-verification.py gains a section '# --- which jest or vitest case a JS/TS test file defines ---': a small stdlib JS/TS tokenizer (_js_scan: strings, template literals with nested ${} substitutions, both comment styles, regex literals). js_test_cases(text) returns {tests: [(chain, body tokens)], dynamic: [chain]} or None when a literal is left open or brackets do not balance (fails closed); it reads describe/test/it calls with any modifiers between. A .each call or a template title with a substitution is a run-time title, turned by _js_title_pattern into a regex from its literal parts (a variable title matches anything at its depth). js_test_definitions(texts) returns {defs: {(chain, body): rel}, unread: {rel: text}}.\ncase_site locates a jest/vitest case by the failure's suite path through _one_declared(real_path=True): an exact match is the file; a tail must match exactly one declared file and no other file. credit_problem sends jest/vitest cases to _js_credit_problem, which refuses credit when the declared working-tree file cannot be read; a run-time title in it could fill the same chain; the file defines no test with that chain; HEAD's test files could not be read; any HEAD test file has the same chain with a token-identical body (comments and layout ignored); or an unreadable HEAD test file may hold the title. The Python credit rule is unchanged. head_tree returns (files, defs, modules, js) from one `git cat-file --batch` over .py and JS/TS test files (.test./.spec. names, __tests__, or declared); run_red and red_verdict carry head_js; the could-not-prove basis states the JS rule for jest/vitest. The design note's part (2) is now present tense and marked built; a new jest/vitest test file stays could-not-prove end to end until part (3).\nDecisions: an identical body in ANY HEAD jest/vitest test file refuses credit (the design note's rule); a run-time title is matched as a pattern, not as any title, so template-titled loops do not block literal tests in the same describe; a HEAD dynamic test elsewhere is not compared. Checked against real source: the tokenizer read every tracked tools/ui-tests/*.test.mjs file with none unreadable (measured once).\nTests: stage sj-credit, sj1 (end-to-end red_verdict proved) to sj5 (identical/edited/copied HEAD bodies, undeclared/suffix/ambiguous paths, .each and template titles, unreadable files). Red-first: the helper is could-not-prove for test_stamp_verification.py (sr23/sr24 red inside its own throwaway, a known limitation); the red rests on the tdd red in the shared tree before the credit code existed (180/185, sj1-sj5 failing on assertions) and nine scratch mutation rows in a unique mktemp copy, each red on its named cases, two of them over-fire rows turning the allow twins red. Suite 185/185; test__runner_output 10/10; ruff, vermin and house lints clean.",
+        "descriptive": "The red-first check can now tell whether a failing jest or vitest test belongs to the task: it finds the test by its file and its describe/test titles, and refuses credit for a test HEAD already had unchanged, for titles built at run time, and for files it cannot read."
       },
       "startedAt": "2026-10-07T00:55:41Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T01:34:27Z",
+      "verifiedBy": [
+        "sj1",
+        "sj2",
+        "sj3",
+        "sj4",
+        "sj5"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T01:34:16Z.a6aca1",
         "status": "passed",
         "at": "2026-10-07T01:34:16Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c40fa690",
+        "at": "2026-10-07T01:34:27Z",
+        "basis": "orchestrator check: per-runner identity as the design note chose, Python rule unchanged, the helper's known could-not-prove stated verbatim with the tdd red and nine mutation rows as the proof"
       }
     },
     {
       "id": "P102.6",
       "title": "a new jest or vitest test file's baseline runs with the file absent",
-      "status": "pending",
+      "status": "in_progress",
       "description": "For HEAD's run, _isolated_run lays each declared test file that is new at HEAD over as an EMPTY file, and jest refuses an empty suite. So every new JS test file turned the baseline red, and the answer became 'HEAD's own tests are already red'. For the runners the design note names, the baseline runs with the new file absent and the command's other targets run. The measurement in the note decides whether --passWithNoTests, or its vitest equivalent, is passed. A fake runner script keeps the sweep free of npm.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
-        "plugins/audit/tests/test_stamp_verification.py"
+        "plugins/audit/tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/agents/audit-executor.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -336,16 +351,21 @@
       "dependsOn": [
         "P102.4"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T01:34:28Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T02:20:38Z.7d0d74",
+        "status": "passed",
+        "at": "2026-10-07T02:20:38Z"
+      }
     },
     {
       "id": "P102.7",

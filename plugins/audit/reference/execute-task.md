@@ -132,8 +132,11 @@ not need to.
      the `redFirst` block, naming the failing case it rests on — which must be one of the
      task's own. A red counts only against a GREEN baseline: HEAD's own test files, run FIRST
      with the same command on HEAD's code and every declared test file new at HEAD laid
-     over as an empty file, must be green — exit 0 with no failure, or an exit 5 whose one
-     runner's tally counts nothing run and nothing failed — and the fix run (the task's
+     over as an empty file (a jest or vitest one is left absent instead), must be green —
+     exit 0 with no failure, or an exit 5 whose one runner's tally counts nothing run and
+     nothing failed, or, for a file left absent, the runner's own no-test-file sentence
+     with no case or failure counted (step 1 of the `stamp-verification.py` section of
+     `PLUGIN-BUILD-GUIDE.md` is the full rule) — and the fix run (the task's
      test files on the working tree's code) must turn every failure green. A failure is
      the task's own, a new case or an edited one, only where the runner locates it in a
      declared test file (a pytest node id's path, unittest `-v`'s module matched by its
