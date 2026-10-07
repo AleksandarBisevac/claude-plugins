@@ -28,14 +28,18 @@
         "severity": "med",
         "file": "plugins/audit/scripts/usage/audit-usage.py:926-936; scripts/manifest/_manifest_io.py:359-390",
         "issue": "With a malformed .claude/audit.config.json or a config naming a manifestPath that does not exist, /audit:usage now renders with no plan and defaults showCost to true, so a project whose default-location plan sets meta.usage.showCost false gets dollars printed - the failure the old fall-back existed to prevent - and the malformed case contradicts COMPATIBILITY.md's 'the /audit:* commands refuse to run until it parses'.",
-        "resolution": "Refuse with exit 2 and describe_unresolved when the config is malformed or names a missing manifest, as audit-status and render-report do; a case with a showCost-false plan at the default path plus a malformed config asserts no dollar figure is printed."
+        "resolution": "fixed in P112.4-uce (6368e175): Refuse with exit 2 and describe_unresolved when the config is malformed or names a missing manifest, as audit-status and render-report do; a case with a showCost-false plan at the default path plus a malformed config asserts no dollar figure is printed.",
+        "fixTask": "P112.4-uce",
+        "commit": "6368e175"
       },
       {
         "id": "P112-R2",
         "severity": "med",
         "file": "CHANGELOG.md [Unreleased]",
         "issue": "The first-contact commands' manifest resolution changes behaviour users see (optional manifest positional on audit-status and render-report with an exit-2 refusal naming where they looked; four commands no longer pass <manifestPath>; usage no longer falls back to the default plan when the config names a missing or unreadable manifest) and no CHANGELOG entry records it.",
-        "resolution": "Add Added and Changed entries under [Unreleased] stating what each of status, report and usage now does in that case."
+        "resolution": "fixed in P112.4-uce (6368e175): Add Added and Changed entries under [Unreleased] stating what each of status, report and usage now does in that case.",
+        "fixTask": "P112.4-uce",
+        "commit": "6368e175"
       },
       {
         "id": "P112-R3",
@@ -77,17 +81,21 @@
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/_manifest_io.py:385",
         "issue": "An absolute manifestPath in the config is joined under the project and becomes unresolvable, while the hooks honour an absolute value, so /audit:status and /audit:report refuse a plan the plan gate enforces.",
-        "resolution": "Use the value as given when it is absolute, matching hooks/_config.py, with a resolve case."
+        "resolution": "fixed in P112.4-uce (6368e175): Use the value as given when it is absolute, matching hooks/_config.py, with a resolve case.",
+        "fixTask": "P112.4-uce",
+        "commit": "6368e175"
       },
       {
         "id": "P112-R9",
         "severity": "low",
         "file": "plugins/audit/scripts/_refs.py:1684-1689",
         "issue": "manifest_placeholder_drift does not see a placeholder on a backslash-continued line after the script, a shape the commands already use, and its cannot-see list does not name it.",
-        "resolution": "Join continued lines before matching, or name the shape in the cannot-see list with a case showing it is not matched."
+        "resolution": "fixed in P112.4-uce (6368e175): Join continued lines before matching, or name the shape in the cannot-see list with a case showing it is not matched.",
+        "fixTask": "P112.4-uce",
+        "commit": "6368e175"
       }
     ],
-    "outcome": "[findings: 9 - 0 high, 4 med, 5 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 9 - 0 high, 4 med, 5 low; 4 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -306,7 +314,7 @@
     {
       "id": "P112.4-uce",
       "title": "usage refuses an unresolvable manifest instead of printing dollars a plan turned off, and the change is recorded",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P112-R1, P112-R2, P112-R8 and P112-R9.\n\n(R1) /audit:usage refuses as audit-status and render-report do when the resolver reports a problem: a malformed .claude/audit.config.json, or a config naming a manifestPath that does not exist. It exits 2 and prints describe_unresolved. It never renders with no plan, because that would default showCost to on for a project whose plan turns dollars off. This also keeps COMPATIBILITY.md's 'the /audit:* commands refuse to run until it parses'. When nothing is configured and no plan exists at the default, the existing behaviour stays as it is.\n\n(R8) An absolute manifestPath in the config is used as given, matching how the hooks read it.\n\n(R9) manifest_placeholder_drift reads a command spread over backslash-continued lines as one line, or names that shape in its cannot-see list with a case.\n\n(R2) CHANGELOG.md [Unreleased] records the change users see. Under Added: the optional manifest argument on audit-status and render-report and the shared resolver. Under Changed: what each of /audit:status, /audit:report and /audit:usage does when the config names a missing or unreadable manifest, and that the first-contact commands no longer pass a placeholder.\n\nCases:\n- A default-location plan with showCost false plus a malformed config: /audit:usage exits 2 and prints no dollar figure.\n- A config naming a missing file: refused, naming where it looked.\n- An absolute manifestPath resolves.\n- A continued-line placeholder is reported, or is named as unseen.",
       "files": [
         "plugins/audit/scripts/usage/audit-usage.py",
@@ -337,18 +345,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6368e175",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(R1) audit-usage.py: _config_named_a_plan(resolved) is true when the resolver reports a problem or the source is the config; when it is true and no path was found, main() prints the shared describe_unresolved text (the same text audit-status and render-report print) and exits 2, so a project whose default-location plan turns dollars off never gets them printed off a malformed or wrong config; with nothing configured and no plan at the default, usage keeps its existing note and renders (exit 0). (R8) _manifest_io.resolve_manifest takes an absolute manifestPath as given, as the hooks do. (R9) _refs._logical_lines joins backslash-continued lines and reports each at its first line; manifest_placeholder_drift reads through it (reported, not listed as unseen). (R2) CHANGELOG.md [Unreleased] gains an Added section (the optional manifest argument on audit-status and render-report, the shared resolver, the absolute-path rule) and two Changed entries (status, report and usage exit 2 when the config does not parse or names a missing manifest, with what each does when nothing is configured; the first-contact commands no longer pass a placeholder). No count in prose.\nTests: test_audit_usage mn3 (allow: showCost-false plan, no config, renders with no dollar figure), mn4 (malformed config: exit 2, no dollar figure, names the config), mn5 (the shared wording), mn6 (missing manifest refused, naming where it looked); test__manifest_io rm9 (absolute path), rm10 (allow: relative still project-relative); test__refs mp7 (continued line reported), mp8 (allow: no backslash, no join). Red-first proved through the helper at HEAD 26fcbf5c for all three files (mn4-mn6; rm9; mp7, mp8). Suites 136/136, 166/166, 312/312; ruff, vermin and the prose lints clean.",
+        "descriptive": "/audit:usage now refuses with the same message as /audit:status and /audit:report when the project's config is broken or points at a missing plan, so it can no longer show dollar figures a plan asked to hide; an absolute plan path now works and the change is in the CHANGELOG."
       },
       "startedAt": "2026-10-07T02:21:46Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T02:39:55Z",
+      "verifiedBy": [
+        "mn3",
+        "mn4",
+        "mn5",
+        "mn6",
+        "rm9",
+        "rm10",
+        "mp7",
+        "mp8"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T02:37:20Z.e3a3c0",
         "status": "passed",
         "at": "2026-10-07T02:37:20Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6368e175",
+        "at": "2026-10-07T02:39:55Z",
+        "basis": "orchestrator check: P112-R1, R2, R8 and R9 addressed, one refusal wording shared, red-first proved with allow twins"
       }
     },
     {
@@ -389,9 +412,9 @@
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-10-07T02:39:44Z.522641",
+        "runId": "2026-10-07T02:44:04Z.507234",
         "status": "passed",
-        "at": "2026-10-07T02:39:44Z"
+        "at": "2026-10-07T02:44:04Z"
       }
     }
   ],

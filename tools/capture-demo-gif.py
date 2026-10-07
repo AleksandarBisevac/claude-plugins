@@ -18,13 +18,21 @@ Nothing on screen is drawn by this file.
     python3 tools/capture-demo-gif.py --check  [--out docs/screenshots/demo-gate.gif]
 
 --record needs `vhs` and a logged-in `claude`, and costs a short paid model session.
-It builds the fixture and the kit, runs the tape, and only then decides whether the
-recording may ship: Claude must have tried to edit the out-of-plan file, the gate fed
+With CLAUDE_CODE_OAUTH_TOKEN set it hands the take a Claude Code config of its own
+under the kit, removed afterwards; without it the take runs against the operator's
+config, and the tool prints what it left there (`config_plan()`). It refuses to
+start when `claude auth status --json` names no account or `claude plugin list
+--json` gives no answer. It builds the fixture and the kit, runs the tape, and only
+then decides whether the recording may ship: the operator's installed plugins must
+be what they were, Claude must have tried to edit the out-of-plan file, the gate fed
 that SAME payload again must refuse it, the refusal must be on screen at least as far
 as its first line, and no frame of VHS's text output may carry the recording host's
-user name, home path, machine name, git identity or an email address. Any failure
-writes nothing and keeps the evidence in a temp directory it names. --dry-run builds
-everything, validates the tape, prints the commands, and starts no session.
+user name, home path, machine name, git identity, the account's email or
+organisation, or an email address. That text is what is scanned, not the GIF's
+pixels; a take whose Wait failed is refused before the scan, on VHS's exit and the
+screens its log keeps. Any failure writes nothing and keeps the evidence in a temp
+directory it names. --dry-run builds everything, validates the tape, prints the
+commands, and starts no session.
 
 --check needs neither: CI runs it. It rebuilds the fixture, feeds `require-plan.py`
 the out-of-plan payload the recording captured, and fails naming the GIF when the
@@ -404,20 +412,22 @@ def account_markers_from(status_json):
             if isinstance(v, str) and len(v.strip()) >= _MIN_MARKER]
 
 
-def account_markers(env):
+def account_markers(env, run=subprocess.run):
     """The logged-in account's email and organisation, asked of the CLI's own status
     command - which reads no secret into this process and starts no session - or []
-    with the reason when it gives no answer."""
+    with the reason when it gives no answer. `env` is the take's own, so the account
+    asked about is the one the session will show. `take_preconditions()` refuses a
+    take on that reason: without the account's own values the scan could look only
+    for the email pattern, and an organisation name has no pattern."""
     try:
-        out = subprocess.run(["claude", "auth", "status", "--json"],
-                             capture_output=True, text=True, env=env)
+        out = run(["claude", "auth", "status", "--json"],
+                  capture_output=True, text=True, env=env)
     except OSError as exc:
         return [], "`claude auth status` could not run: %s" % (exc,)
     found = account_markers_from(out.stdout) if out.returncode == 0 else []
     if not found:
-        return [], ("`claude auth status --json` named no account (exit %d), so the "
-                    "organisation name is checked only by the email pattern"
-                    % out.returncode)
+        return [], ("`claude auth status --json` named no account email or "
+                    "organisation (exit %d)" % out.returncode)
     return found, None
 
 
@@ -467,13 +477,268 @@ _ENV_DROPPED_PREFIXES = ("CLAUDE", "AUDIT_")
 _ENV_ADDED = (("IS_DEMO", "1"), ("DISABLE_AUTOUPDATER", "1"))
 
 
-def session_env(environ):
+def session_env(environ, config_dir=None):
     """A new environment for the recording: `environ` without the caller's session
     markers, plus the demo's own switches. VHS hands it to the shell that launches
-    `claude`, so the scrub is done once, before any process of the take starts."""
+    `claude`, so the scrub is done once, before any process of the take starts.
+    `config_dir`, when given, is the take's isolated config (`config_plan()`) and
+    replaces whatever config dir the caller named."""
     out = dict((k, v) for k, v in environ.items()
                if k in _ENV_KEPT or not k.startswith(_ENV_DROPPED_PREFIXES))
     out.update(dict(_ENV_ADDED))
+    if config_dir:
+        out["CLAUDE_CONFIG_DIR"] = config_dir
+    return out
+
+
+# --- which Claude Code config the take writes into ------------------------------
+# A session writes into its config: the folder-trust answer, its transcript, a
+# plugin a recommendation dialog installed on a stray key. So the take gets a config
+# of its own under the kit's scratch directory, removed with the kit, whenever it can
+# authenticate there without an interactive login - which a CLAUDE_CODE_OAUTH_TOKEN
+# in the environment provides. Claude Code's authentication page documents both
+# halves (https://code.claude.com/docs/en/authentication): `claude setup-token`
+# prints a token to set "as the `CLAUDE_CODE_OAUTH_TOKEN` environment variable
+# wherever you want to authenticate", and with CLAUDE_CONFIG_DIR set "Each directory
+# has its own settings, session history, and claude.ai login or API key" - the
+# macOS Keychain entry included, keyed to that directory. Whether a session
+# authenticated by the token alone writes a Keychain entry is not documented there.
+# Without a token the take runs against the
+# operator's own config, and `footprint_refusals()` and `leftover_lines()` say what
+# it did there. Either way the operator's config is read before and after, so an
+# isolation that leaked is a refusal rather than an assumption.
+ISOLATED_CONFIG = KIT_DIR + "/claude-config"
+_TOKEN_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
+
+
+def config_plan(environ):
+    """{"isolated", "configDir", "why"} - which config the take is handed."""
+    if (environ.get(_TOKEN_VAR) or "").strip():
+        return {"isolated": True, "configDir": ISOLATED_CONFIG,
+                "why": "%s is set, so the take runs against its own config at %s, "
+                       "removed afterwards" % (_TOKEN_VAR, ISOLATED_CONFIG)}
+    return {"isolated": False, "configDir": None,
+            "why": "%s is not set, so the take can authenticate only through your "
+                   "own Claude Code config and runs against it; what it leaves "
+                   "there is listed after the take" % (_TOKEN_VAR,)}
+
+
+def seed_isolated_config(config_dir):
+    """Create the take's config with onboarding marked complete, and nothing else.
+
+    Without it the tape's first launch - the one that answers the trust question -
+    meets the first-run onboarding instead and its Wait times out before any prompt
+    is sent. `hasCompletedOnboarding` is not a documented key: it is the one the
+    2.1.292 binary writes when onboarding finishes, and the one it seeds into the
+    scratch configs it builds for itself. Trust is not seeded: the tape grants it
+    through the CLI's own dialog, as a user would."""
+    os.makedirs(config_dir)
+    with open(os.path.join(config_dir, ".claude.json"), "w", encoding="utf-8") as fh:
+        json.dump({"hasCompletedOnboarding": True}, fh)
+
+
+def _row_key(row):
+    return (row["id"], row["scope"], row.get("projectPath") or "")
+
+
+def plugin_rows(list_json):
+    """(rows, why) parsed from `claude plugin list --json`; rows None with the
+    reason when the answer is not that list. Only what identifies an install and
+    what a take could change are kept - id, scope, project, version, enabled."""
+    try:
+        body = json.loads(list_json or "")
+    except ValueError as exc:
+        return None, "`claude plugin list --json` did not answer JSON: %s" % (exc,)
+    if not isinstance(body, list) or not all(
+            isinstance(r, dict) and isinstance(r.get("id"), str)
+            and isinstance(r.get("scope"), str) for r in body):
+        return None, "`claude plugin list --json` did not answer a list of plugins"
+    rows = [{"id": r["id"], "scope": r["scope"],
+             "projectPath": r.get("projectPath") or "",
+             "version": r.get("version"), "enabled": r.get("enabled")} for r in body]
+    return sorted(rows, key=_row_key), None
+
+
+def installed_plugins(env, run=subprocess.run):
+    """(rows, why) - the plugins the config `env` names has installed."""
+    try:
+        out = run(["claude", "plugin", "list", "--json"],
+                  capture_output=True, text=True, env=env)
+    except OSError as exc:
+        return None, "`claude plugin list --json` could not run: %s" % (exc,)
+    if out.returncode != 0:
+        return None, "`claude plugin list --json` exited %d" % out.returncode
+    return plugin_rows(out.stdout)
+
+
+def _where(row):
+    place = "%s scope" % row["scope"]
+    if row.get("projectPath"):
+        place += " (project %s; run the undo there)" % row["projectPath"]
+    return place
+
+
+def plugin_changes(before, after):
+    """[change, ...] between two `plugin_rows()` lists, each naming the plugin, its
+    scope and the command that undoes it; [] when nothing changed."""
+    old = dict((_row_key(r), r) for r in before)
+    new = dict((_row_key(r), r) for r in after)
+    out = []
+    for key in sorted(set(old) | set(new)):
+        a, b = old.get(key), new.get(key)
+        if a is None:
+            out.append("%s was installed at %s - undo: claude plugin uninstall %s "
+                       "--scope %s" % (b["id"], _where(b), b["id"], b["scope"]))
+        elif b is None:
+            out.append("%s was uninstalled from %s - undo: claude plugin install %s "
+                       "--scope %s" % (a["id"], _where(a), a["id"], a["scope"]))
+        elif a["enabled"] != b["enabled"]:
+            verb = "enable" if a["enabled"] else "disable"
+            out.append("%s was %sd at %s - undo: claude plugin %s %s --scope %s"
+                       % (b["id"], "disable" if a["enabled"] else "enable",
+                          _where(b), verb, b["id"], b["scope"]))
+        elif a["version"] != b["version"]:
+            out.append("%s at %s moved from version %s to %s - no single command "
+                       "puts a version back; reinstall the one you want"
+                       % (b["id"], _where(b), a["version"], b["version"]))
+    return out
+
+
+def global_config_file(env):
+    """The config file Claude Code keeps folder trust in: `.claude.json` in
+    CLAUDE_CONFIG_DIR when set, else in the home directory (read off the 2.1.292
+    binary's config-path function; the trust entry is keyed by the resolved path)."""
+    home = env.get("HOME") or os.path.expanduser("~")
+    return os.path.join(env.get("CLAUDE_CONFIG_DIR") or home, ".claude.json")
+
+
+def trust_entries(config_text, roots):
+    """(keys, why) - the `projects` entries in a global config naming a fixture root.
+    An absent file is no entries; one that will not parse is a reason, never []."""
+    if config_text is None:
+        return [], None
+    try:
+        body = json.loads(config_text)
+    except ValueError as exc:
+        return [], "the config does not parse: %s" % (exc,)
+    projects = body.get("projects") if isinstance(body, dict) else None
+    if not isinstance(projects, dict):
+        return [], None
+    return sorted(k for k in projects if k in roots), None
+
+
+def transcript_names(roots):
+    """The transcript directory name of each fixture root: the path with every
+    character outside letters and digits replaced by a dash - the shape every
+    directory under the CLI's projects directory has."""
+    return sorted(set(re.sub(r"[^A-Za-z0-9]", "-", r) for r in roots))
+
+
+def _projects_dir(env, run):
+    """(path, why) - the transcript root, as `claude auth status --json` reports it."""
+    try:
+        out = run(["claude", "auth", "status", "--json"],
+                  capture_output=True, text=True, env=env)
+    except OSError as exc:
+        return None, "`claude auth status` could not run: %s" % (exc,)
+    try:
+        body = json.loads(out.stdout or "")
+    except ValueError:
+        body = None
+    where = body.get("projectsDirectory") if isinstance(body, dict) else None
+    if not isinstance(where, str) or not where:
+        return None, ("`claude auth status --json` named no projectsDirectory "
+                      "(exit %d)" % out.returncode)
+    return where, None
+
+
+def config_footprint(env, roots, run=subprocess.run):
+    """What the config `env` names holds that a take could have put there: its
+    installed plugins, its trust entries for the demo folder, and the demo folder's
+    transcript directories. Every part that could not be read carries its reason."""
+    plugins, plugins_why = installed_plugins(env, run)
+    trust_file = global_config_file(env)
+    trust, trust_why = trust_entries(_read_text(trust_file), roots)
+    projects, projects_why = _projects_dir(env, run)
+    transcripts = []
+    if projects:
+        transcripts = [os.path.join(projects, n) for n in transcript_names(roots)
+                       if os.path.isdir(os.path.join(projects, n))]
+    return {"plugins": plugins, "pluginsWhy": plugins_why,
+            "trustFile": trust_file, "trust": trust, "trustWhy": trust_why,
+            "transcripts": transcripts, "transcriptsWhy": projects_why}
+
+
+def take_preconditions(account_why, plugins_why):
+    """[refusal, ...] that stop a take before it starts; [] when it may run."""
+    out = []
+    if account_why:
+        out.append("%s - the scan needs the account's own email and organisation "
+                   "to look for, so the take is refused" % (account_why,))
+    if plugins_why:
+        out.append("%s - without the installed plugins before the take, nothing "
+                   "could say afterwards whether it changed them" % (plugins_why,))
+    return out
+
+
+def footprint_refusals(plan, before, after):
+    """[refusal, ...] about what a take did to the operator's config.
+
+    A changed plugin list refuses the take in either mode - against the operator's
+    config it is a stray dialog answer, against an isolated one a leak. A trust entry
+    or transcript directory that appeared refuses an ISOLATED take only: against the
+    operator's own config they are expected, and `leftover_lines()` names them."""
+    out = []
+    if after.get("plugins") is None:
+        out.append("the installed plugins could not be read after the take (%s), so "
+                   "whether it changed them is unknown" % (after.get("pluginsWhy"),))
+    elif before.get("plugins") is not None:
+        lead = ("the take ran against an isolated config, yet the operator's "
+                "plugins changed: " if plan["isolated"] else
+                "the take changed the operator's installed plugins: ")
+        out.extend(lead + c for c in plugin_changes(before["plugins"], after["plugins"]))
+    if not plan["isolated"]:
+        return out
+    for why in (after.get("trustWhy"), after.get("transcriptsWhy")):
+        if why:
+            out.append("the operator's config could not be read after the take "
+                       "(%s), so whether the isolation held is unknown" % (why,))
+    for key in sorted(set(after.get("trust") or []) - set(before.get("trust") or [])):
+        out.append("the take ran against an isolated config, yet %s gained a trust "
+                   "entry for %s" % (after["trustFile"], key))
+    for path in sorted(set(after.get("transcripts") or [])
+                       - set(before.get("transcripts") or [])):
+        out.append("the take ran against an isolated config, yet a transcript "
+                   "directory appeared in the operator's: %s" % (path,))
+    return out
+
+
+def leftover_lines(plan, before, after):
+    """[line, ...] - what the take left in a config that outlives it, each with the
+    step that removes it. An isolated take leaves nothing of its own behind."""
+    if plan["isolated"]:
+        return ["the take's own config at %s was removed with the kit; the operator's "
+                "plugins, trust entries and transcripts were compared before and "
+                "after" % (plan["configDir"],)]
+    out = []
+    if after.get("trustWhy"):
+        out.append("%s could not be read (%s), so the trust entry for the demo folder "
+                   "is unknown - look under \"projects\" there"
+                   % (after["trustFile"], after["trustWhy"]))
+    for key in after.get("trust") or []:
+        was = " (it was there before this take)" if key in (before.get("trust") or []) \
+            else ""
+        out.append("trust entry %r in %s%s - to remove it, with no Claude Code "
+                   "session open, delete that key under \"projects\" in the file"
+                   % (key, after["trustFile"], was))
+    if after.get("transcriptsWhy"):
+        out.append("the transcript directory could not be located (%s)"
+                   % (after["transcriptsWhy"],))
+    for path in after.get("transcripts") or []:
+        out.append("transcripts in %s - to remove them: rm -rf '%s'" % (path, path))
+    if not out:
+        out.append("no trust entry and no transcript directory for the demo folder "
+                   "were found in %s" % (after.get("trustFile"),))
     return out
 
 
@@ -504,8 +769,12 @@ def demo_settings(plugin_root, script_calls, tap_path):
     through without a permission prompt, and the gate's deny is decided before any
     allow rule is read, so allowing the edit cannot let the refused one through.
     `Edit(...)` covers every file-editing tool; the CLI warns on a `Write(...)` rule
-    and matches nothing with it. No mode is set, so the footer shows the CLI's own
-    interactive default rather than a mode this demo chose. The one hook is
+    and matches nothing with it. No mode is set - here, on the command line, or in
+    the isolated config - so the footer shows Claude Code's own starting mode and
+    not one this demo chose. For the recorded CLI that is auto mode, documented at
+    https://code.claude.com/docs/en/permission-modes: "With Claude Code v2.1.283 or
+    later, auto mode is the built-in starting permission mode for interactive
+    terminal and VS Code sessions." The one hook is
     the tap: it appends each edit's PreToolUse payload to `tap_path` and prints
     nothing, which is how --check later replays exactly what Claude sent.
 
@@ -1079,15 +1348,31 @@ def run_record(out_path, dry_run):
             print("\nOK: dry run - no session started, nothing written")
             return 0
         cli = _tool_version(["claude", "--version"])
-        account, why = account_markers(session_env(os.environ))
-        if why:
-            print("  NOTE: %s" % why)
+        plan = config_plan(os.environ)
+        print("  config: %s" % plan["why"])
+        if plan["isolated"]:
+            seed_isolated_config(plan["configDir"])
+        take_env = session_env(os.environ, plan["configDir"])
+        # The operator's config as the operator's own shell names it, read on both
+        # sides of the take whichever config the take was handed.
+        operator_env = session_env(os.environ)
+        roots = fixture_roots(FIXTURE_DIR)
+        before = config_footprint(operator_env, roots)
+        account, why = account_markers(take_env)
+        blocked = take_preconditions(why, before["pluginsWhy"])
+        for p in blocked:
+            sys.stderr.write("COULD NOT RUN: %s\n" % p)
+        if blocked:
+            return 2
         vhs = _tool_version(["vhs", "--version"])
         with open(os.path.join(KIT_DIR, "vhs.log"), "w", encoding="utf-8") as log:
             ran = subprocess.run(["vhs", TAPE], cwd=KIT_DIR, stdout=log,
-                                 stderr=subprocess.STDOUT,
-                                 env=session_env(os.environ))
-        problems = []
+                                 stderr=subprocess.STDOUT, env=take_env)
+        after = config_footprint(operator_env, roots)
+        print("  what the take left in a Claude Code config:")
+        for line in leftover_lines(plan, before, after):
+            print("    %s" % line)
+        problems = footprint_refusals(plan, before, after)
         if ran.returncode != 0:
             problems.append("vhs exited %d (its log is kept)" % ran.returncode)
         screen = _read_text(os.path.join(KIT_DIR, VHS_TEXT))
@@ -1207,6 +1492,9 @@ def _cases(check):
     _prompt_cases(check)
     _limit_cases(check)
     _tape_step_cases(check)
+    _config_isolation_cases(check)
+    _plugin_change_cases(check)
+    _account_query_cases(check)
 
 
 def _refusal_record_cases(check):
@@ -1785,8 +2073,206 @@ def _env_cases(check):
           and "IS_DEMO" not in host and host.get("CLAUDECODE") == "1")
 
 
+def _fake_cli(plugins_json, status_json, status_exit=0):
+    """A stand-in for `subprocess.run` answering the two read-only queries a take
+    asks of the CLI, so the cases never start the operator's own `claude`."""
+    def run(argv, **_kw):
+        if argv[1:3] == ["plugin", "list"]:
+            return subprocess.CompletedProcess(argv, 0, plugins_json, "")
+        if argv[1:3] == ["auth", "status"]:
+            return subprocess.CompletedProcess(argv, status_exit, status_json, "")
+        return subprocess.CompletedProcess(argv, 1, "", "unexpected call %r" % (argv,))
+    return run
+
+
+def _tree_bytes(root):
+    """{relative path: bytes} of every file under `root` - a whole-tree snapshot, so
+    a write anywhere in it is a difference and not only a write to a named file."""
+    out = {}
+    for r, _dirs, files in os.walk(root):
+        for f in files:
+            p = os.path.join(r, f)
+            with open(p, "rb") as fh:
+                out[os.path.relpath(p, root)] = fh.read()
+    return out
+
+
+_LSP_ROW = {"id": "typescript-lsp@claude-plugins-official", "version": "1.0.0",
+            "scope": "user", "enabled": True}
+_KEPT_ROW = {"id": "audit@quality-gates", "version": "3.1.0", "scope": "project",
+             "enabled": True, "projectPath": "/srv/work/shop"}
+
+
+def _config_isolation_cases(check):
+    host = {"PATH": "/usr/bin", "HOME": "/h", "CLAUDE_CONFIG_DIR": "/operator/cfg",
+            "CLAUDE_CODE_OAUTH_TOKEN": "tok"}
+    plan = config_plan(host)
+    env = session_env(host, plan["configDir"])
+    check("ci0 a token in the environment gives the take a config of its own under "
+          "the kit's scratch directory, which replaces the caller's config dir in "
+          "the take's environment: %r" % ((plan["isolated"], plan["configDir"],
+                                           env.get("CLAUDE_CONFIG_DIR")),),
+          plan["isolated"] is True
+          and plan["configDir"].startswith(KIT_DIR + "/")
+          and env.get("CLAUDE_CONFIG_DIR") == plan["configDir"]
+          and env.get("CLAUDE_CODE_OAUTH_TOKEN") == "tok")
+    bare = dict(host)
+    del bare["CLAUDE_CODE_OAUTH_TOKEN"]
+    fallback = config_plan(bare)
+    env2 = session_env(bare, fallback["configDir"])
+    check("ci1 THE TWIN: with no token the take falls back to the operator's own "
+          "config - the caller's config dir reaches it unchanged - and the plan says "
+          "why, naming the variable: %r" % (fallback["why"],),
+          fallback["isolated"] is False and fallback["configDir"] is None
+          and env2.get("CLAUDE_CONFIG_DIR") == "/operator/cfg"
+          and "CLAUDE_CODE_OAUTH_TOKEN" in fallback["why"])
+    check("ci2 an empty token is no token: blank is not a credential",
+          config_plan(dict(bare, CLAUDE_CODE_OAUTH_TOKEN="  "))["isolated"] is False)
+
+    roots = ["/private/tmp/acme-store-demo", "/tmp/acme-store-demo"]
+    d = tempfile.mkdtemp(prefix="audit-demo-gif-selftest-")
+    try:
+        operator = os.path.join(d, "operator")
+        scratch = os.path.join(d, "kit", "claude-config")
+        os.makedirs(os.path.join(operator, "projects", "-srv-work-shop"))
+        with open(os.path.join(operator, ".claude.json"), "w", encoding="utf-8") as fh:
+            json.dump({"projects": {"/srv/work/shop": {"hasTrustDialogAccepted": True}}},
+                      fh)
+        op_env = {"HOME": d, "CLAUDE_CONFIG_DIR": operator}
+        status = json.dumps({"loggedIn": True,
+                             "projectsDirectory": os.path.join(operator, "projects")})
+        cli = _fake_cli(json.dumps([_KEPT_ROW]), status)
+        before_bytes = _tree_bytes(operator)
+        before = config_footprint(op_env, roots, run=cli)
+        seed_isolated_config(scratch)
+        take = session_env(dict(op_env, CLAUDE_CODE_OAUTH_TOKEN="tok"), scratch)
+        # What a take does to the config it was handed: trust the folder, keep a
+        # transcript, install the plugin a stray key accepted.
+        cfg = take["CLAUDE_CONFIG_DIR"]
+        with open(os.path.join(cfg, ".claude.json"), "w", encoding="utf-8") as fh:
+            json.dump({"projects": {roots[0]: {"hasTrustDialogAccepted": True}}}, fh)
+        os.makedirs(os.path.join(cfg, "projects", "-private-tmp-acme-store-demo"))
+        after = config_footprint(op_env, roots, run=cli)
+        isolated = {"isolated": True, "configDir": scratch, "why": ""}
+        refused = footprint_refusals(isolated, before, after)
+        check("ci3 a take run against an isolated config leaves the operator's config "
+              "byte-identical - trust, transcripts and plugins all landed in the "
+              "scratch config - and the comparison finds nothing: %r" % (refused,),
+              _tree_bytes(operator) == before_bytes and refused == []
+              and before["trust"] == [] and after["trust"] == []
+              and after["transcripts"] == [])
+        report = leftover_lines(isolated, before, after)
+        check("ci4 ...and the report after such a take names the scratch config as "
+              "removed and no path of the operator's: %r" % (report,),
+              len(report) == 1 and scratch in report[0]
+              and operator not in report[0])
+        # The leak the comparison exists for: the same take, writing into the
+        # operator's config after all.
+        with open(os.path.join(operator, ".claude.json"), "w", encoding="utf-8") as fh:
+            json.dump({"projects": {"/srv/work/shop": {"hasTrustDialogAccepted": True},
+                                    roots[0]: {"hasTrustDialogAccepted": True}}}, fh)
+        leaked = footprint_refusals(isolated, before,
+                                    config_footprint(op_env, roots, run=cli))
+        check("ci5 THE TWIN: an isolated take whose trust entry reached the "
+              "operator's config anyway is REFUSED, naming the entry and the file: %r"
+              % (leaked,),
+              len(leaked) == 1 and roots[0] in leaked[0] and ".claude.json" in leaked[0])
+        fallback_plan = {"isolated": False, "configDir": None, "why": ""}
+        os.makedirs(os.path.join(operator, "projects", "-private-tmp-acme-store-demo"))
+        now = config_footprint(op_env, roots, run=cli)
+        left = leftover_lines(fallback_plan, before, now)
+        check("ci6 a take against the operator's own config prints what it left there "
+              "- the trust entry for the demo folder with the file it sits in, the "
+              "transcript directory - each with the step that removes it: %r" % (left,),
+              footprint_refusals(fallback_plan, before, now) == []
+              and any(roots[0] in ln and ".claude.json" in ln and "delete" in ln
+                      for ln in left)
+              and any("-private-tmp-acme-store-demo" in ln and "rm -rf" in ln
+                      for ln in left))
+    finally:
+        # Plain files only, no repository.
+        shutil.rmtree(d, ignore_errors=True)
+
+    found, why = trust_entries("{ not json", roots)
+    check("ci7 a global config that will not parse is a reason, never an empty "
+          "answer read as 'no trust entry': %r" % ((found, why),),
+          found == [] and why is not None)
+    check("ci8 the transcript directory name is the path with every character "
+          "outside letters and digits turned into a dash, as the CLI names it",
+          transcript_names(roots) == ["-private-tmp-acme-store-demo",
+                                      "-tmp-acme-store-demo"])
+
+
+def _plugin_change_cases(check):
+    rows, why = plugin_rows(json.dumps([_KEPT_ROW, _LSP_ROW]))
+    check("pc0 the installed plugins are read off `claude plugin list --json`: %r"
+          % ((len(rows), why),),
+          why is None and len(rows) == 2)
+    bad, bad_why = plugin_rows("Plugins: none")
+    check("pc1 an answer that is not that JSON is a reason, never an empty list "
+          "that would compare equal to another empty list: %r" % (bad_why,),
+          bad is None and bad_why is not None)
+    before, _w = plugin_rows(json.dumps([_KEPT_ROW]))
+    after, _w2 = plugin_rows(json.dumps([_KEPT_ROW, _LSP_ROW]))
+    same = plugin_changes(before, before)
+    check("pc2 THE ALLOW TWIN: an unchanged plugin list is no change: %r" % (same,),
+          same == [])
+    added = plugin_changes(before, after)
+    check("pc3 a plugin a take installed is ONE change, naming the plugin, the scope "
+          "it landed in and the command that undoes it: %r" % (added,),
+          len(added) == 1 and "typescript-lsp@claude-plugins-official" in added[0]
+          and "user" in added[0]
+          and "claude plugin uninstall typescript-lsp@claude-plugins-official "
+              "--scope user" in added[0])
+    gone = plugin_changes(after, before)
+    flipped_row = dict(_KEPT_ROW, enabled=False)
+    flipped = plugin_changes(before, plugin_rows(json.dumps([flipped_row]))[0])
+    check("pc4 each other kind of change names its own undo - an uninstall is put "
+          "back by an install, a disable by an enable run in that project: %r"
+          % (gone + flipped,),
+          len(gone) == 1 and "claude plugin install typescript-lsp@claude-plugins-"
+                             "official --scope user" in gone[0]
+          and len(flipped) == 1
+          and "claude plugin enable audit@quality-gates --scope project" in flipped[0]
+          and "/srv/work/shop" in flipped[0])
+    fallback = {"isolated": False, "configDir": None, "why": ""}
+    snap = {"plugins": before, "pluginsWhy": None, "trust": [], "trustWhy": None,
+            "trustFile": "/c/.claude.json", "transcripts": [], "transcriptsWhy": None}
+    refused = footprint_refusals(fallback, snap, dict(snap, plugins=after))
+    check("pc5 a take recorded against the operator's config whose installed plugins "
+          "changed is REFUSED, naming the change and its undo: %r" % (refused,),
+          len(refused) == 1 and "claude plugin uninstall" in refused[0]
+          and "typescript-lsp" in refused[0])
+    blind = footprint_refusals(fallback, snap, dict(snap, plugins=None,
+                                                    pluginsWhy="exit 1"))
+    check("pc6 a plugin list that could not be read after the take is a refusal of "
+          "its own - an unreadable answer is never 'unchanged': %r" % (blind,),
+          len(blind) == 1 and "exit 1" in blind[0])
+
+
+def _account_query_cases(check):
+    status = json.dumps({"loggedIn": True, "email": "dev@acme.example",
+                         "orgName": "Acme Widgets"})
+    found, why = account_markers({}, run=_fake_cli("[]", status))
+    check("aq0 THE ALLOW TWIN: an account query that names the account gives its "
+          "markers and no refusal: %r" % ((len(found), why),),
+          len(found) == 2 and why is None
+          and take_preconditions(why, None) == [])
+    none, none_why = account_markers({}, run=_fake_cli("[]", "", status_exit=1))
+    refused = take_preconditions(none_why, None)
+    check("aq1 an account query that gives no answer REFUSES the take before it "
+          "starts, rather than narrowing the scan to the email pattern: %r"
+          % (refused,),
+          none == [] and none_why is not None and len(refused) == 1
+          and "auth status" in refused[0] and "narrow" not in refused[0])
+    blind = take_preconditions(None, "`claude plugin list --json` exited 1")
+    check("aq2 a plugin list that cannot be read BEFORE the take refuses it too: "
+          "nothing could be compared afterwards: %r" % (blind,),
+          len(blind) == 1 and "plugin list" in blind[0])
+
+
 def _selftest():
-    from _suite import run          # the house runner; tools/_suite.py says why here
+    from _suite import run         # the house runner; tools/_suite.py says why here
     return run(_cases)
 
 

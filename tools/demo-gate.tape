@@ -46,8 +46,17 @@ Set WaitTimeout 4m
 # The recording tool starts VHS with the caller's own Claude Code session variables
 # removed and the demo's switches added (see session_env()). The user's own settings
 # are not loaded (--setting-sources) and no MCP server of theirs is
-# (--strict-mcp-config). No permission mode is chosen here: the footer shows the
-# CLI's own interactive default.
+# (--strict-mcp-config). With CLAUDE_CODE_OAUTH_TOKEN set, the tool also points
+# CLAUDE_CONFIG_DIR at a config of the take's own under the kit, removed afterwards;
+# without it the take runs in the operator's own config, and the tool lists what it
+# left there (see config_plan()).
+#
+# WHICH PERMISSION MODE THE FOOTER SHOWS, AND WHY. No mode is chosen here, in the
+# settings file, or in the take's config, and `tape_problems()` refuses a tape that
+# names one. The footer shows Claude Code's own starting mode: "With Claude Code
+# v2.1.283 or later, auto mode is the built-in starting permission mode for
+# interactive terminal and VS Code sessions."
+# (https://code.claude.com/docs/en/permission-modes)
 Hide
 Type "export PS1='$ ' HISTFILE=/dev/null; cd /tmp/acme-store-demo && clear"
 Enter
@@ -56,8 +65,10 @@ Enter
 # folder it has not been told to trust - and the plan gate is a hook. IS_DEMO skips
 # the trust question without granting trust (read from the 2.1.292 binary's trust
 # and hook-registration code), so this launch runs without it, answers the question,
-# and exits. The answer is stored by Claude Code itself, as for any user; a folder
-# already trusted asks nothing, and the keys below then land on an empty prompt.
+# and exits. The answer is stored by Claude Code itself, as for any user, in the
+# config the take was handed - its own, removed afterwards, or the operator's, where
+# the tool names the entry once the take ends; a folder already trusted asks
+# nothing, and the keys below then land on an empty prompt.
 # The question opens with "No, exit" selected, so Down moves to "Yes, I trust this
 # folder" before Enter.
 Type "env -u IS_DEMO claude --model sonnet --plugin-dir /tmp/acme-store-demo-kit/audit --settings /tmp/acme-store-demo-kit/settings.json --setting-sources project,local --strict-mcp-config"
