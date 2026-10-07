@@ -28,80 +28,130 @@
         "severity": "med",
         "file": "tools/stream-cost.py:446-452, 1318-1324",
         "issue": "No case can catch a broken check behind the '(agrees)' verdict. That verdict compares a rebuilt final request's cache read with the prefix identity's prediction, and the analysis (§1.1) cites it as evidence. I mutated a scratch copy and two mutations stayed green at 21/21: `verdict = (\"agrees\" if True` (M6), and `cr = predicted` in the single-dispatch branch (M7). The fixture's residual and identity always agree, so no case ever produces 'DIFFERS'. A third mutation also stayed green: `one_hour = False` (M8), because every subagent in the fixture writes at the five-minute rate. Today's verdicts are correct: I rebuilt both by hand (29497+513=30010, 22133+1337=23470). The gap is that a regression would print the same evidence word with the suite green. P117.1's outcome says scratch mutations 'each turned their intended case red: sc1-sc21', but it names no command or exit code.",
-        "resolution": "Add a case whose modelUsage cacheRead is off from the identity by a known k, and assert that 'DIFFERS by k' is printed and '(agrees)' is not. Add a case with a one-hour subagent write, and assert the rebuilt request's cw1. Show both red against the two mutations above."
+        "resolution": "fixed in P117.3-2sz (9501aa91): Add a case whose modelUsage cacheRead is off from the identity by a known k, and assert that 'DIFFERS by k' is printed and '(agrees)' is not. Add a case with a one-hour subagent write, and assert the rebuilt request's cw1. Show both red against the two mutations above.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
       },
       {
         "id": "P117-R2",
         "severity": "med",
         "file": "docs/research/pipeline-cost-design.md:348-350, 370, 404-407; plugins/audit/agents/audit-reviewer.md:153, 177",
         "issue": "C3 needs the reviewer to write, and the design does not say so. C3 says 'Each agent files its return through a verb … and the agent hands back one line'. Under decision 3(a) that file goes into the committed evidence directory. The reviewer's definition says 'You have Bash so you can LOOK' and 'Must not: anything that writes'. The design still says 'Guarantees. None is weakened' and 'The enforced and followed tables lose no row'. The README row 'the reviewer cannot edit' is still literally true, because Bash is not Edit. But the reviewer's read-only contract has to be loosened for C3 to work: if the main loop filed the reviewer's return instead, the hand-back would land back in its context and the C3 saving would be lost. T3 lists 'both agent prompts' as files to change without saying this.",
-        "resolution": "In C3's Guarantees and in T3, name the loosening: the reviewer gains one write, and say where it goes. Say how it is held, for example a filing verb that can only write the reviewer's own return path, checked by commit-scope. Alternatively, choose 3(b) for the reviewer and state the trade."
+        "resolution": "fixed in P117.3-2sz (9501aa91): In C3's Guarantees and in T3, name the loosening: the reviewer gains one write, and say where it goes. Say how it is held, for example a filing verb that can only write the reviewer's own return path, checked by commit-scope. Alternatively, choose 3(b) for the reviewer and state the trade.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
       },
       {
         "id": "P117-R3",
         "severity": "low",
         "file": "docs/research/pipeline-cost-design.md:93-98, 510-528; docs/research/pipeline-cost-analysis.md:258-260",
         "issue": "The design lists 'the stamp comparison' as one of eight fixed per-task requests, and the stream does not show that. In feature-C-1 the comparison ran inside the gate request (…nt66Ew ran run-test-gate.py and then stamp-verification.py compare in one Bash call). The separate request …yyXaVM was a re-check: its own text reads 'The stamp came back stale, so I'll check which field moved'. The second close attempt was a retry after zsh passed `$V` as one word. The design names that one-off, but only per candidate, not in the §5 headline. The analysis §4 lists six per-task steps (start, dispatch, gate, review dispatch, commit, done), so the two documents disagree. Through m = 4 + 8N, both repeats are assumed to happen on every one of five tasks, and that feeds C7's 0.0795 per task and the 8→5 reduction in §5.",
-        "resolution": "Describe …yyXaVM as a re-check after a stale verdict, with its recurrence unmeasured. Give §1.2 and §5 with m = 4+6N beside 4+8N, or state how much of the 43.0% and 41.1% comes from removing the two repeats. Make the analysis and the design agree on the per-task count."
+        "resolution": "fixed in P117.3-2sz (9501aa91): Describe …yyXaVM as a re-check after a stale verdict, with its recurrence unmeasured. Give §1.2 and §5 with m = 4+6N beside 4+8N, or state how much of the 43.0% and 41.1% comes from removing the two repeats. Make the analysis and the design agree on the per-task count.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
       },
       {
         "id": "P117-R4",
         "severity": "low",
         "file": "docs/research/pipeline-cost-design.md:110-113, 211-214, 484-487, 629-640",
         "issue": "Arithmetic problems in the cost model:\n(a) The task formula adds c·r·2·(N−1) for the release and the report re-reading earlier tasks. The measured 0.7742 per task already includes those two requests' reads of its task, so this counts them twice (0.0400 at N=5 today, 0.0165 after).\n(b) C1 subtracts 9 × 16952 from the executor's 180263 cache reads to get 27695. The executor's first request read 0, so the right figure is 8 × 16952, giving 44647. The read term becomes 0.1264, not 0.1229, and the net per task 0.0593, not 0.0627. The verdict does not change.\n(c) Some figures cannot be reproduced from what is shown. C6b's −0.0653 has no arithmetic. C7's 0.0264 'not already in the run class' has none either. The run figure 0.3291 needs an unstated ~0.0109 for reads made before the prose was written, beyond the 'three quantities' the text names.",
-        "resolution": "Drop the 2(N−1) term, or justify it. Correct 27695 to 44647. Write out the arithmetic for −0.0653 and 0.0264, and add the early-reads term to the §5 run line."
+        "resolution": "fixed in P117.3-2sz (9501aa91): Drop the 2(N−1) term, or justify it. Correct 27695 to 44647. Write out the arithmetic for −0.0653 and 0.0264, and add the early-reads term to the §5 run line.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
       },
       {
         "id": "P117-R5",
         "severity": "low",
         "file": "docs/research/pipeline-cost-design.md:546-549, 562, 702-709",
         "issue": "T2's target table, which a ceiling gate is meant to hold, compares three different quantities under one header, 'Read first, at most':\n- `/audit:run` 153701 is the read-first files only, without the command body;\n- both `/audit:phase` rows, 242068, are measure-context's total, which includes the 39769-byte phase.md body;\n- `/audit:task add` 110599 is `wc -c` on whole files, frontmatter included, while measure-context counts bodies without frontmatter.",
-        "resolution": "Pick one quantity, either read-first only or the entry total, and restate every row and target in it. Make `--gate` measure exactly that quantity."
+        "resolution": "fixed in P117.3-2sz (9501aa91): Pick one quantity, either read-first only or the entry total, and restate every row and target in it. Make `--gate` measure exactly that quantity.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
       },
       {
         "id": "P117-R6",
         "severity": "low",
         "file": "tools/measure-context.py:200-220; docs/research/pipeline-cost-analysis.md:320",
         "issue": "listing() counts every command's description as always-on, including the 8 of 21 commands that set `disable-model-invocation: true`. At HEAD those 8 account for 2860 of the 9659 listing bytes. The design's own §0.1 marks R4, 'descriptions out of startup context', as shipped through exactly that frontmatter. So the analysis prints a measured always-on figure that the design's premise says is about 30% too high. No case covers this rule.",
-        "resolution": "Leave out of the listing any command or skill whose frontmatter sets disable-model-invocation: true. Add a fixture case for it, show it red, and regenerate §6's block."
+        "resolution": "fixed in P117.3-2sz (9501aa91): Leave out of the listing any command or skill whose frontmatter sets disable-model-invocation: true. Add a fixture case for it, show it red, and regenerate §6's block.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
       },
       {
         "id": "P117-R7",
         "severity": "low",
         "file": "tools/stream-cost.py:590-592, 737, 820-826, 1426-1443",
         "issue": "Two problems with how manifest edits are classed:\n- An Edit of plan state is classed as `file` work. The tool result goes through classify(), which treats a plan-state path as `task`, but the emitted Edit bytes always go to `file` through emitFile. In feature-C-1, plan's $file of 0.0082 is the Edit of docs/audit/audit-plan.json, and the pilot shows the same for 0.0074.\n- The plan-state rule for the Read and Edit tools has no case. Mutating line 592 to always return \"file\" (M14) stays green at 21/21. sc12 covers only the Bash `cat` form.",
-        "resolution": "Class emitted Edit/Write bytes by their target path, the same way classify() does. Add sc12 shapes for Read and Edit of docs/audit/audit-plan.json and show them red against M14."
+        "resolution": "fixed in P117.3-2sz (9501aa91): Class emitted Edit/Write bytes by their target path, the same way classify() does. Add sc12 shapes for Read and Edit of docs/audit/audit-plan.json and show them red against M14.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
       },
       {
         "id": "P117-R8",
         "severity": "low",
         "file": "docs/research/pipeline-cost-design.md:27, 773, 799",
         "issue": "The confirming benchmark's protocol is cited at docs/research/benchmark-feature-design.md. That file is not on this branch or on main. It exists only at a289dcbb, on the unmerged branch audit/p116-a-whole-feature-in-an-existing. P117 does not declare P116 in blockedBy. The citation is a code span, so the link lint will not catch it, and if P117 lands first its §7 points at nothing.",
-        "resolution": "Declare P117 blockedBy P116, or say in the text that the protocol lands with P116."
+        "resolution": "fixed in P117.3-2sz (9501aa91): Declare P117 blockedBy P116, or say in the text that the protocol lands with P116.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
       },
       {
         "id": "P117-R9",
         "severity": "low",
         "file": "docs/research/pipeline-cost-analysis.md:317, 348, 386; docs/research/pipeline-cost-design.md:292, 547, 702, 764-766, 862",
         "issue": "Several re-derivation commands use refs that move: `--ref main`, `--ref HEAD`, and `git diff --stat f7eaade4 HEAD`. `main` already resolves to 17570502, not the a73b836a9e8c printed in the analysis. Once T2 changes the reference files, the 'At HEAD' figures can no longer be re-derived with the printed command.",
-        "resolution": "Pin the SHAs the figures were taken at (a73b836a, 7b489337), as the T1 target already does."
+        "resolution": "fixed in P117.3-2sz (9501aa91): Pin the SHAs the figures were taken at (a73b836a, 7b489337), as the T1 target already does.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
       },
       {
         "id": "P117-R10",
         "severity": "low",
         "file": "docs/research/pipeline-cost-design.md:102-103, 138-152, 459-461, 482-483, 828",
         "issue": "Three claims go beyond their basis:\n(a) §8.5 says 'The plugin cannot set it', but C6a and §9 call the same question unknown, and the host facts only say it is not documented.\n(b) The design says 'R8's risky arm gates on computed properties instead'. R8 (token-efficiency-audit.md:644-646) gates on task.risk med/high OR redFirst not proved OR the gate disagreeing.\n(c) Every dollar prediction uses w = 8.0, the one-hour main-loop write. The host facts say that is the default only on a subscription within plan usage; an API key gets five minutes. §1.4 does not list this.",
-        "resolution": "In §8.5, call it unknown. Restate R8's `risky` arm accurately. Add the TTL and billing assumption to §1.4."
+        "resolution": "fixed in P117.3-2sz (9501aa91): In §8.5, call it unknown. Restate R8's `risky` arm accurately. Add the TTL and billing assumption to §1.4.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
       },
       {
         "id": "P117-R11",
         "severity": "low",
         "file": "docs/research/pipeline-cost-analysis.md:118-121",
         "issue": "The analysis says 'The differences have two causes' (output apportioned by input share, and missing final requests) as if measured. No arithmetic splits the published-minus-billed differences between those two causes.",
-        "resolution": "Mark it as inference, or show the decomposition."
+        "resolution": "fixed in P117.3-2sz (9501aa91): Mark it as inference, or show the decomposition.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
+      },
+      {
+        "id": "P117-R12",
+        "severity": "med",
+        "file": "docs/research/pipeline-cost-design.md:519-525, 808, 914-917, 980-986, 1099-1100",
+        "issue": "R2 only partly holds. The reviewer's new write is now named, but the claim about what holds it is stronger than the mechanism described. C3 says the verb 'takes the task id and the role, and no path argument … So the only file this write can produce is the reviewer's own return.' That conclusion does not follow. The task id and the role both come from the caller, so a reviewer's one call can write the executor's return for the same task, or a return for any other task. T3's three cases (a path-like argument refused, a malformed return writes nothing, the written path equals the derived one) do not pin either one. This matters because `done --from-return` takes the outcome, `verifiedBy` and `redFirst` from the filed returns (lines 467-469). An executor return that the reviewer overwrote would become the recorded claim, and the claim-to-task binding is what the reviewer exists to check. The fix task asked for 'one filing verb that can only write the reviewer's own return path'. The same overstatement is repeated in the §4 table ('held to its own return by the filing verb'), in §5's *What it does not do*, in §8.3 and in T3 ('Those cases are what holds the write to the reviewer's own return').",
+        "resolution": "Pick one of two. (a) Make the verb write-once for each task and role: it refuses a second filing and leaves the first byte-identical. Add that as a fourth T3 case. Then list under *What nothing checks* that the role and task id are the caller's word, so a filing under a role or task not yet filed is a followed rule. (b) Keep the mechanism and change the claim: replace 'the reviewer's own return' with 'a return path the verb derives from the task id and role it is given', move the caller-chosen role and task id under *What nothing checks*, and reword the four echoes to match."
+      },
+      {
+        "id": "P117-R13",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:182-190, 198, 200, 869, 874-878 (same shape at 598-607 and 705-716)",
+        "issue": "The new k = 6 baseline undercounts what the two one-off requests cost, so t at k = 6 comes out about 0.0011 too high. The removal counts:\n- reads of their content by the surviving requests (1229 × 4, 3569 × 1);\n- their own reads, with 1229 subtracted from the retry's.\nIt leaves out 5672 tokens of reads:\n- the retry's own read of the re-check's 1229, subtracted as if it were counted elsewhere, which it is not;\n- the read lost by the request after each removed one, which now writes the content instead of reading it: 1458 at the reviewer dispatch and 2985 at the release.\n§5 counts reads in full, by position (lines 862-864). Applied to the six-request shape, that gives (99642 − 63636) × r = 0.0072 against the document's 0.0061. So the removal is 0.0936, not 0.0925, and t is 0.6113, not 0.6124. The knock-on, with every other term unchanged:\n- §1.2: 1.6229 → about 1.6217 and 5.5257 → about 5.5200;\n- §5: 0.2252 → 0.2241; the k = 6 savings 0.6181 (38.1%) → 0.6170 (38.0%) and 1.8841 (34.1%) → 1.8784 (34.0%); the one-off differences 0.1256 → 0.1267 and 0.7725 → 0.7782.\nThe k = 8 column and the 1.0047 / 3.6416 headline do not move. C5 and C7 remove single requests the same way and also miss the shifted read: about 0.0002 and 0.0005. No verdict changes. The executor's model.py builds the same partial delta (`carry_rm`, `reads_av`), and its 'check from six' line is a tautology, so it could not catch this.",
+        "resolution": "Compute t at k = 6 the way §5 computes the after state: positional reads over the six-request shape, (2616×6 + 5159×5 + 1458×4 + 3646×3 + 1195×2 + 2985×1) × r, against today's 99642 × r. Restate the k = 6 figures above. For C5 and C7, either add the shifted read or say it is left out."
+      },
+      {
+        "id": "P117-R14",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-analysis.md:35-39, 418; docs/research/pipeline-cost-design.md:35-37, 1145 (against 931-933 and 1004-1013)",
+        "issue": "R9's pin for the stream-cost figures still moves. The pin is 'the commit that last changed this document' (`git log -1 -- <doc>`), so it moves with every later edit of the document. The design already plans such an edit: T5 is 'an addendum' to this file, and it lands after T1 changes `tools/stream-cost.py`. From then on, the printed command points at a different tool than the one these figures came from. The other pins (a73b836a, 7b489337, f7eaade4, v3.1.0) are fixed and reproduce.",
+        "resolution": "Now that the commit exists, write `9501aa91` in. A later commit can name an earlier one. Alternatively, name the tool's blob (`git rev-parse <commit>:tools/stream-cost.py`), which is known before the commit is made."
+      },
+      {
+        "id": "P117-R15",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:737-738, 999-1001",
+        "issue": "This diff did not change these lines. C7's confirming reading and T4's target read 'at most 5 plan, gate and close requests per task' off `per stage, as billed` → `req`. Those stages also hold the five run-level requests. In feature-C-1: plan 5 + gate 3 + close 5 = 13 = 5 run-level + 8 per task. So a one-task after-session would read 10 and fail a target it actually meets. The second clause, `7 + 5N` main-loop requests, is stated correctly.",
+        "resolution": "Either subtract the five run-level requests before dividing by N, or keep only the `7 + 5N` clause."
       }
     ],
-    "outcome": "[findings: 11 - 0 high, 2 med, 9 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 15 - 0 high, 3 med, 12 low; 11 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -222,7 +272,7 @@
     {
       "id": "P117.3-2sz",
       "title": "the cost tools' verdicts and classes are pinned by cases, and the design's arithmetic and guarantees are stated exactly",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P117-R1 to P117-R11 of the cost phase's first review round.\n\nTools:\n- stream-cost.py gains these cases, each shown red against the mutation the review named before it is trusted:\n  - a modelUsage cache read that is off from the prefix identity by a known amount, which must print the DIFFERS verdict with that amount and never the agrees verdict;\n  - a subagent that writes at the one-hour rate, which must carry the one-hour write into the rebuilt final request;\n  - Read and Edit of the plan files, classed as plan work.\n- Emitted Edit and Write bytes are classed by their target path, the same way tool results are.\n- measure-context.py leaves out of the always-on listing any command or skill whose frontmatter sets disable-model-invocation, with a case for it.\n- The analysis block that prints the listing is regenerated.\n\nDocuments:\n- The design names that C3 needs the reviewer to file its return, and says how that write is held. It is one filing verb that can only write the reviewer's own return path, or 3(b) is chosen for the reviewer with the trade stated.\n- The per-task request count is made to agree between the analysis and the design, the re-check after a stale stamp is described as one observation, and the predictions are given with both counts.\n- The cost-model arithmetic is corrected and written out:\n  - the double-counted re-read term;\n  - the executor's read subtraction;\n  - the reviewer-fork and C7 figures;\n  - the early-reads term in the run line.\n- T2's target table uses one quantity throughout, the one the ceiling gate measures.\n- The confirming benchmark's protocol is said to land with the whole-feature benchmark phase.\n- Every re-derivation command is pinned to the SHA its figures were taken at.\n- These claims are restated to their basis:\n  - the main-loop TTL is called unknown;\n  - R8's risky arm is quoted accurately;\n  - the TTL and billing assumption is listed with the model's assumptions;\n  - the two-cause sentence in the analysis is marked as inference or decomposed.",
       "files": [
         "tools/stream-cost.py",
@@ -253,19 +303,72 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "9501aa91",
+      "outcome": {
+        "technical": "Fixes P117-R1 to P117-R11. stream-cost.py: emitted Edit and Write bytes are classed by their target path through classify(); new cases sc22 (a residual off by a known amount prints DIFFERS with that amount, never agrees, and the rebuilt request keeps the billed read), sc23 (a one-hour subagent write is carried into the rebuilt final request and pricing still agrees with costUSD), sc24 and four new sc12 shapes (Read and Edit of the plan files classed as plan work, with a source-file twin). measure-context.py leaves commands and skills that set disable-model-invocation out of the always-on listing and prints how many it withheld (mc13, with a false twin). Every new case went red against the mutation the review named (M6, M7, M8, M14) and against the new rules' own mutations, in scratch copies, with each anchor checked on disk; at HEAD those mutations survive 21/21; two probe runs about 45 minutes apart were identical. Documents: C3 now names that the reviewer files its return through one verb that derives its own path and takes none, says commit-scope does not hold that write, and keeps \"the reviewer writes nothing else\" as an unenforced rule; the README's enforced row is untouched. Both documents list six per-task steps plus two one-offs each seen once, and predictions are given at eight and six requests per task. The cost model's arithmetic is corrected and written out: R4's four terms and nine more of the same class found on re-derivation (run carry split exactly, run-level work no longer multiplied by N, C1, C3, C5, C6a terms and the fresh-loop break-even). The new prediction is a one-task run from 1.7484 (measured) to 1.0047 USD and a five-task run from 6.2983 to 3.6416 at eight requests per task. T2's targets use measure-context's entry total throughout. The confirming protocol is said to land with the whole-feature benchmark phase. Re-derivation commands are pinned to SHAs. The main-loop TTL is called unknown, R8's risky arm is quoted with its three conditions, the TTL and billing assumption is listed, and the two-cause sentence is marked as inference. The red-first helper could not run: \"task P117.3-2sz declares no test file, so a throwaway at HEAD would prove nothing about this task's test\" (exit 2).",
+        "descriptive": "The cost tools now have tests that fail if their verdicts or content classes break, and the design's cost model is restated so every figure can be recomputed; a one-task run is still predicted to fall from about 1.75 to about 1.00 USD."
+      },
+      "startedAt": "2026-10-07T13:21:25Z",
+      "completedAt": "2026-10-07T14:06:42Z",
+      "verifiedBy": [
+        "sc12",
+        "sc22",
+        "sc23",
+        "sc24",
+        "mc13"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T14:06:29Z.287412",
+        "status": "passed",
+        "at": "2026-10-07T14:06:29Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9501aa91",
+        "at": "2026-10-07T14:06:42Z",
+        "basis": "orchestrator check: each of the eleven findings maps to a change with evidence; the four surviving mutations now go red; the corrected prediction re-derives from the written arithmetic"
+      }
+    },
+    {
+      "id": "P117.4-2sz",
+      "title": "the reviewer's filed return is held write-once and the six-request figures count every read",
+      "status": "pending",
+      "description": "Fixes review findings P117-R12 to P117-R15 from the cost phase's second review round. Documents only.\n\n- The design's filing verb is made write-once for each task and role. It refuses a second filing and leaves the first byte-identical, which becomes a fourth T3 case. The design then lists under what nothing checks that the role and task id are the caller's word, so a filing under a role or a task not yet filed is a followed rule. The four places that repeat the claim are reworded to match: the side-by-side table, the recommendation's \"What it does not do\", decision 3 and T3.\n- The six-request baseline's removal of the two one-off requests counts reads by position, the way section 5 counts the after state, and the six-request figures are restated. C5 and C7 either add the shifted read or say it is left out.\n- The stream-cost pin names the commit 9501aa91 in place of \"the commit that last changed this document\".\n- C7's confirming reading and T4's target subtract the run-level requests before dividing by the task count, or keep only the 7 + 5N clause.",
+      "files": [
+        "docs/research/pipeline-cost-design.md",
+        "docs/research/pipeline-cost-analysis.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-07T13:21:25Z",
+      "startedAt": null,
       "completedAt": null,
-      "verifiedBy": [],
-      "testEvidence": {
-        "runId": "2026-10-07T14:06:29Z.287412",
-        "status": "passed",
-        "at": "2026-10-07T14:06:29Z"
-      }
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-07T11:45:57Z"
