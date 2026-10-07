@@ -708,7 +708,7 @@
     {
       "id": "P112",
       "title": "the README demo shows a user's Claude Code session, not the plugin's internals",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P112.json"
     }
   ],
@@ -765,7 +765,8 @@
       "P92.4",
       "P109.3",
       "P109.9",
-      "P103.8"
+      "P103.8",
+      "P112.1-uce"
     ],
     ".gitignore": [
       "P4.4",
@@ -907,7 +908,10 @@
       "P99.1",
       "P100.1",
       "P100.4-zxo",
-      "P105.9-m32"
+      "P105.9-m32",
+      "P112.4-uce",
+      "P112.6-uce",
+      "P112.8-uce"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -977,7 +981,10 @@
       "P103.12",
       "P104.7",
       "P103.14-xi3",
-      "P105.6"
+      "P105.6",
+      "P112.1-uce",
+      "P112.5-uce",
+      "P112.7-uce"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -1117,6 +1124,8 @@
       "P103.8",
       "P105.10-m32",
       "P110.4-exo",
+      "P112.1-uce",
+      "P112.3-uce",
       "P107.5-gwk"
     ],
     "QUICKSTART.md": [
@@ -1138,7 +1147,8 @@
       "P103.4",
       "P103.5",
       "P103.9",
-      "P103.14-xi3"
+      "P103.14-xi3",
+      "P112.1-uce"
     ],
     "SECURITY.md": [
       "P2.2",
@@ -1256,7 +1266,8 @@
       "P105.3",
       "P105.2",
       "P105.7",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P112.1-uce"
     ],
     "examples/acme-store/acme-store-audit.html": [
       "P13.3",
@@ -1534,7 +1545,8 @@
       "P31.2",
       "P57.1",
       "P57.4",
-      "P106.1"
+      "P106.1",
+      "P112.2-uce"
     ],
     "plugins/audit/commands/panel.md": [
       "P57.3",
@@ -1582,7 +1594,8 @@
     ],
     "plugins/audit/commands/report.md": [
       "P7.1",
-      "P57.1"
+      "P57.1",
+      "P112.2-uce"
     ],
     "plugins/audit/commands/resume.md": [
       "P7.1",
@@ -1621,7 +1634,8 @@
       "P75.2-j5h",
       "P80.17-rtb",
       "P81.12",
-      "P103.5"
+      "P103.5",
+      "P112.2-uce"
     ],
     "plugins/audit/commands/sync.md": [
       "P3.1",
@@ -1675,7 +1689,9 @@
       "P31.2",
       "P107.3",
       "P103.14-xi3",
-      "P107.5-gwk"
+      "P112.2-uce",
+      "P107.5-gwk",
+      "P112.8-uce"
     ],
     "plugins/audit/commands/version.md": [
       "P67.2"
@@ -2205,7 +2221,9 @@
       "P85.4",
       "P109.9",
       "P102.8",
-      "P103.8"
+      "P103.8",
+      "P112.2-uce",
+      "P112.4-uce"
     ],
     "plugins/audit/scripts/_ui_theme.py": [
       "P20.5",
@@ -2700,7 +2718,9 @@
       "P71.2-zso",
       "P76.3-6qa",
       "P107.4",
-      "P103.6"
+      "P103.6",
+      "P112.2-uce",
+      "P112.4-uce"
     ],
     "plugins/audit/scripts/manifest/_manifest_merge.py": [
       "P60.1"
@@ -3086,7 +3106,8 @@
       "P80.7",
       "P86.2",
       "P80.14-rtb",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P112.2-uce"
     ],
     "plugins/audit/scripts/status/_doctor_ado.py": [
       "P57.5"
@@ -3234,7 +3255,8 @@
       "P81.9",
       "P81.12",
       "P81.10",
-      "P102.10"
+      "P102.10",
+      "P112.2-uce"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -3322,7 +3344,11 @@
       "P102.10",
       "P107.3",
       "P104.5",
-      "P107.5-gwk"
+      "P112.2-uce",
+      "P107.5-gwk",
+      "P112.4-uce",
+      "P112.6-uce",
+      "P112.8-uce"
     ],
     "plugins/audit/scripts/usage/usage_ledger.py": [
       "P14.1",
@@ -3653,7 +3679,9 @@
       "P65.1",
       "P69.3",
       "P69.4-j6r",
-      "P71.3-zso"
+      "P71.3-zso",
+      "P112.2-uce",
+      "P112.4-uce"
     ],
     "plugins/audit/tests/test__manifest_merge.py": [
       "P60.1"
@@ -3851,7 +3879,9 @@
       "P94.4",
       "P109.7",
       "P102.8",
-      "P108.3"
+      "P108.3",
+      "P112.2-uce",
+      "P112.4-uce"
     ],
     "plugins/audit/tests/test__report_html.py": [
       "P25.1",
@@ -4001,7 +4031,8 @@
       "P80.15-rtb",
       "P81.9",
       "P81.12",
-      "P94.1"
+      "P94.1",
+      "P112.2-uce"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -4088,7 +4119,11 @@
       "P53.7",
       "P107.3",
       "P104.5",
-      "P107.5-gwk"
+      "P112.2-uce",
+      "P107.5-gwk",
+      "P112.4-uce",
+      "P112.6-uce",
+      "P112.8-uce"
     ],
     "plugins/audit/tests/test_audit_version.py": [
       "P67.1",
@@ -4353,7 +4388,8 @@
       "P51.9",
       "P80.7",
       "P80.14-rtb",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P112.2-uce"
     ],
     "plugins/audit/tests/test_repair_commits.py": [
       "P59.13",
@@ -4533,7 +4569,11 @@
     ],
     "tools/capture-demo-gif.py": [
       "P59.13",
-      "P103.8"
+      "P103.8",
+      "P112.1-uce",
+      "P112.5-uce",
+      "P112.7-uce",
+      "P112.8-uce"
     ],
     "tools/capture-screenshots.mjs": [
       "BF1.2",
@@ -4545,7 +4585,8 @@
       "P63.9",
       "P80.20-rtb",
       "P80.23-rtb",
-      "P103.8"
+      "P103.8",
+      "P112.1-uce"
     ],
     "tools/check-committed-pii.py": [
       "P51.4",
@@ -4618,6 +4659,7 @@
       "P93.2",
       "P93.4-287",
       "P109.9",
+      "P112.2-uce",
       "P107.4"
     ],
     "tools/harvest-worktree.py": [
@@ -4662,7 +4704,8 @@
       "P102.8",
       "P102.10",
       "P107.4",
-      "P100.3-zxo"
+      "P100.3-zxo",
+      "P112.2-uce"
     ],
     "tools/redfirst.sh": [
       "P55.13"
@@ -4883,7 +4926,8 @@
     ],
     "docs/screenshots/demo-gate.gif": [
       "P84.7-791",
-      "P103.8"
+      "P103.8",
+      "P112.1-uce"
     ],
     "docs/screenshots/expanded.png": [
       "P84.7-791",
@@ -5236,7 +5280,8 @@
       "P108.4"
     ],
     "tools/ui-tests/capture-provenance.test.mjs": [
-      "P103.8"
+      "P103.8",
+      "P112.1-uce"
     ],
     ".github/ISSUE_TEMPLATE/bug_report.md": [
       "P103.11"
@@ -5302,6 +5347,10 @@
     ],
     "examples/acme-store/.claude/.gitignore": [
       "P105.9-m32"
+    ],
+    "tools/demo-gate.tape": [
+      "P112.1-uce",
+      "P112.5-uce"
     ]
   },
   "bugs": [
@@ -6101,6 +6150,49 @@
           "status": "pending",
           "description": "Human-written (guard-reading code). Tasks: (1) Measure which share of 3.0.x guard refusals hit generic destructive operations the host would block anyway. (2) Design: keep plan scope, journal/manifest integrity and recorded-SHA protection; ship a recommended permissions.deny fragment for the rest. (3) One release reports instead of blocking the moved rules, then remove them. Risk: users without auto mode get only spelling-based permission rules; SECURITY.md must say so.",
           "desiredOutcome": "the plugin's command-reading guards keep the verdicts that depend on the plan and its own state, and generic destructive-command blocking is left to Claude Code's own layers through a recommended permissions fragment, with SECURITY.md saying which layer holds which guarantee",
+          "testGate": [
+            "selftests",
+            "validate",
+            "plugin-validate",
+            "gate",
+            "report",
+            "lint",
+            "shots",
+            "interactive"
+          ],
+          "blockedBy": [],
+          "baseRef": null,
+          "branch": null,
+          "mergedAt": null,
+          "review": {
+            "tool": null,
+            "model": "sonnet",
+            "status": "pending",
+            "findings": []
+          },
+          "summary": null,
+          "tasks": []
+        }
+      }
+    },
+    {
+      "id": "PROP-11-uce",
+      "name": "every command and reference hands scripts no manifest placeholder",
+      "status": "proposed",
+      "origin": "audit-task add-phase --park",
+      "createdISO": "2026-10-07T02:21:40Z",
+      "branch": "audit/p112-the-readme-demo-shows-a-user-s",
+      "benefit": "no command or reference document asks the model to fill in a manifest path a script can resolve, and the rule for where the manifest is lives in one resolver",
+      "openQuestions": [],
+      "materializedAs": null,
+      "materializedAt": null,
+      "payload": {
+        "phase": {
+          "id": "P113-uce",
+          "title": "every command and reference hands scripts no manifest placeholder",
+          "status": "pending",
+          "description": "The orchestrator-driven commands and reference documents still hand the model a <manifestPath> placeholder to fill in, and three of them hand it to a script that now resolves the manifest itself. Remaining sites, as recorded when the first-contact commands were fixed:\n- commands/phase.md:110 (audit-status.py)\n- commands/task.md:171 (audit-status.py)\n- reference/orchestrator.md:92, 102 and 723 (audit-status.py)\n- commands/status.md:346 (verify-invariants.py, which does not resolve)\n\nThe rule is also copied in two places: plugins/audit/scripts/manifest/audit-task.py:96-97 and :1479, and plugins/audit/scripts/panel/_panel_paths.py:139. Default-path constants exist in _journal_io.py:337, hooks/_config.py:153, _doctor_setup.py:773 and _doctor_trail.py:944.\n\nRoute every script a command or reference document hands a manifest through _manifest_io.resolve_manifest, drop the placeholders, and fold the copies of the rule into the one resolver where the layer rule allows. The acceptance includes one of two things: either manifest_placeholder_drift scans reference/ as well as commands/, or explicit pending rows cover orchestrator.md. MANIFEST_PLACEHOLDER_PENDING empties as each command is repaired.",
+          "desiredOutcome": "no command or reference document asks the model to fill in a manifest path a script can resolve, and the rule for where the manifest is lives in one resolver",
           "testGate": [
             "selftests",
             "validate",

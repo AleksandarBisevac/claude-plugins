@@ -6,7 +6,45 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ## [Unreleased]
 
+### Added
+- **`audit-status.py` and `render-report.py` take the manifest as an optional argument.**
+  Given none, they find it themselves through one shared resolver,
+  `_manifest_io.resolve_manifest`: the `manifestPath` that `.claude/audit.config.json` names
+  under the project (`CLAUDE_PROJECT_DIR`, else the working directory), else
+  `docs/audit/audit-plan.json` there. An absolute `manifestPath` is used as given, the way the
+  hooks already read it. `audit-usage.py` asks the same resolver, so the three scripts behind the
+  first-contact commands agree on which plan is the project's.
+
 ### Changed
+- **`/audit:status`, `/audit:report` and `/audit:usage` refuse when the config names a manifest
+  they cannot use.** A `.claude/audit.config.json` that does not parse, or whose `manifestPath`
+  names a file that does not exist, makes each of them exit 2 and print the same refusal
+  (`_manifest_io.describe_unresolved`): every place it looked, what it found there, and the ways
+  forward. None of them falls back to `docs/audit/audit-plan.json` in that case, because that
+  is a different plan from the one the project points at. For `/audit:usage` this replaces
+  rendering with no plan, which read `meta.usage` off nothing and so showed equivalent cost for a
+  project whose plan sets `showCost: false`. With no config and no plan at the default location,
+  `/audit:usage` still renders the ledger and says it has no plan, and `/audit:status` and
+  `/audit:report` exit 2 naming where they looked. A plan that is found but cannot be loaded -
+  it does not parse, a shard of a sharded plan is missing, or an explicit argument names a file
+  that is not there - makes all three exit 2 with the same `cannot read/parse <path>` line;
+  `/audit:usage` used to render that case with an empty plan, whose `showCost` defaults to on.
+- **`/audit:usage` prints no dollar figure when `showCost` is false.** The cost-band thresholds
+  and the routing advice's re-priced figures were printed regardless of the setting, unlike the
+  totals beside them. With `showCost` off the band line names its basis and says the thresholds
+  are withheld, and the routing advice states its saving as a share.
+- **`/audit:usage --json` keeps its cost fields beside `showCost`, which the payload now carries
+  at top level.** `showCost` is a render setting - the schema describes it as rendering
+  equivalent API cost alongside token counts - so a machine consumer deciding whether to print a
+  dollar figure needs the setting next to the data, not withheld with it.
+
+- **The first-contact commands no longer hand their script a `<manifestPath>` placeholder.**
+  `/audit:status`, `/audit:usage`, `/audit:report` and `/audit:next` used to leave the model to
+  fill the manifest path in, and a command that reads no reference stating the default got a
+  guess, said out loud. The scripts now find the manifest themselves, and
+  `_refs.manifest_placeholder_drift` reports a command line that hands a self-resolving script
+  the placeholder, including one written over backslash-continued lines.
+
 - **`audit-task.py done` and `close-phase.py` refuse to close over a verdict that no longer
   holds** — except where there is no measurement to vouch for in the first place: no run is
   recorded under the gate, the newest row answers `empty-gate`, the phase's branch has already
@@ -53,6 +91,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `--stop` removes any such file, warning on one it cannot. A pidfile an older build left at a
   wider mode is narrowed to owner-only when `--status` or a launch that finds a panel already
   running reads it, on POSIX; the docstring claiming owner-only now limits that claim to POSIX.
+
+- **The demo recorder's after-take report names both places it searched when nothing was left
+  behind, and states an isolated take's config removal only after checking it.** An empty report
+  used to name only the config directory, dropping the trust file entirely whenever
+  `CLAUDE_CONFIG_DIR` is unset and the two sit apart - the global config's trust entries live
+  beside `HOME`, everything else the take writes under `HOME/.claude`. It now names both. Under
+  an isolated take the report used to assert the kit's config was "removed" before the kit's own
+  cleanup ever ran; `tools/capture-demo-gif.py` now removes that take's own config directory and
+  checks it is gone before printing the line, and says so when a removal cannot complete instead
+  of claiming one happened.
 
 ## [3.1.0] - 2026-10-05
 

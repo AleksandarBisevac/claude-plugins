@@ -1482,9 +1482,13 @@ than per run, because `--only report` rewrites some images and leaves others, an
 version would then claim the new build for pictures nobody re-shot. The hash is what stops the
 sidecar being edited into agreement without the pictures being the ones captured; it does not
 make the claim unforgeable, only impossible to break by accident. `demo-gate.gif` is out of
-scope on purpose — its record lives in the same sidecar under its own `gifs` key, written by
-`tools/capture-demo-gif.py` when it records, and it is graded by that tool's `--check`, not by
-this rule.
+scope on purpose — it is a VHS recording of a real Claude Code session (`tools/demo-gate.tape`,
+driven by `tools/capture-demo-gif.py --record`), not a picture of a surface this tree
+assembles. Its record lives in the same sidecar under its own `gifs` key: the GIF's sha256,
+the CLI version and model it was recorded with, the out-of-plan edit Claude sent, and the
+plan gate's refusal as the session showed it. It is graded by that tool's `--check`, which
+replays the recorded edit against `require-plan.py` without a session and fails when the
+refusal or the bytes moved, not by this rule.
 
 **That version answered only half the question, and the source digest below is the other half.**
 "Was this captured at this release" is not "does this picture still show the current UI", and
@@ -1536,6 +1540,18 @@ catching an option that was really removed. The one place a page may name someth
 does not carry is `HANDBOOK_ABSENT_VERBS` / `HANDBOOK_FOREIGN_OPTIONS`, each row carrying a
 reason and checked in **both** directions: a row for a verb that has since been built, or for
 something the page no longer names, is reported exactly as a violation is.
+
+`manifest_placeholder_drift()` asks whether a command file still hands a script the
+`<manifestPath>` placeholder after that script learned to find the manifest itself.
+`self_resolving_scripts()` reads the AST of every `.py` under `plugins/audit/scripts/` for a CALL
+to `<module>.resolve_manifest(...)` — not the string or the docstring naming it, which this file
+and `_manifest_io.py` both carry — and returns the basenames that make the call. The drift check
+then walks `commands/*.md` for a line handing one of those scripts the placeholder right after its
+name and reports it: the command still types the path for a script that would find it alone.
+`MANIFEST_PLACEHOLDER_PENDING` excuses the two command files that still hand the placeholder to an
+orchestrator-driven step reading `reference/orchestrator.md` rather than calling the resolver
+directly, each row carrying the reason; a row whose document no longer carries that line is itself
+a finding, so the excuse cannot go stale quietly either.
 
 `--selftest`.
 
@@ -2546,7 +2562,9 @@ has recorded a run, so an unchanged plan renders exactly as it did before.
 `--submodules <.gitmodules> [--git-root
 <prefix>]` (v0.6.2) is the submodule preflight guard — exit 1 when any `task.files` entry lives
 inside a git submodule (which the parent repo cannot stage/commit). Exit 0/1/2. `--selftest`
-.
+. Its `<manifest>` positional is optional, resolved the same way as every other first-contact
+command: `_manifest_io.resolve_manifest` against the argument, else the config's `manifestPath`,
+else `docs/audit/audit-plan.json`.
 
 ### `plugins/audit/scripts/status/audit-doctor.py`
 `/audit:doctor`'s "is this working?" diagnostics — every check reuses an existing
@@ -4532,7 +4550,10 @@ this command's project has — the usage ledger already loaded for everything el
 `_evidence_io.read_rows(project)` for the gate-scope and gate-reuse comparisons, which live in
 the OTHER, evidence, ledger. Unfiltered by the CLI's own `--since`/`--phase`/etc: the three
 comparisons it folds together are already narrow, so a window on top would only thin them
-further.
+further. It finds the manifest through `_manifest_io.resolve_manifest` (its own `resolve_manifest`
+wraps that call with the CLI's `--manifest` argument) rather than requiring one: the ledger still
+renders with no plan at all, so a missing manifest is a note on stderr naming
+`describe_unresolved`'s places-looked, never a refusal.
 
 ### `plugins/audit/scripts/manifest/_manifest_io.py` + `migrate-manifest.py` + `commands/layout.md` + `commands/migrate.md` (v0.15.0)
 The **sharded manifest layout**. `_manifest_io.py` is the dependency-free dual-format loader/writer:
@@ -4562,6 +4583,13 @@ restoring the index does not undo. No lock is taken in the script: the index loc
 command driving it. Locks moved to the shared git dir(two-tier: index + per-phase-shard); ids allocate under the index lock; bug status is derived from the
 linked task (so runs never write `bugs[]`). Schema bumped to v3 (phase requires only `id`/`title`; adds
 `shard`/`claim`). Fully back-compat — v2 manifests keep working, migration is opt-in.
+
+The module also owns WHERE the manifest is: `resolve_manifest(project, explicit)` answers the
+explicit argument when one was given, else `.claude/audit.config.json`'s `manifestPath`, else
+`docs/audit/audit-plan.json`, and returns every place it looked so `describe_unresolved()` can
+name them in a refusal. A config naming a path that does not exist is never followed by the
+default — that would silently render some other plan than the one the project points at — so
+`resolve_manifest` reports no path found there instead of falling through.
 
 ### `plugins/audit/scripts/manifest/_manifest_merge.py` + `merge-manifest.py` + `_merge_install.py`
 **The manifest merged by record, so appends stop conflicting.** Every structural writer appends at
@@ -4666,7 +4694,11 @@ What is left in this file after the split is `main()` — argument parsing, the 
 read, the theme resolve, the files it writes — plus `_verdict`, and the cases that
 read a report `main()` actually wrote into a temp directory. Those cases pin the emitted
 DOCUMENT (its markup, its emission order, the stylesheet, the embedded script), so they can
-live nowhere else: a fragment module cannot render one. `--selftest` (includes XSS cases).
+live nowhere else: a fragment module cannot render one. Its `<manifest>` positional is optional
+too, resolved through `_manifest_io.resolve_manifest` the same way the other first-contact
+commands are; `describe_unresolved` is what it prints to stderr, then exits 2, when neither the
+argument nor the config nor the default names a file that exists. `--selftest` (includes XSS
+cases).
 
 ### `plugins/audit/scripts/report/_report_page.py`
 The report as a whole document, moved out of `render-report.py`: the report's vocabulary

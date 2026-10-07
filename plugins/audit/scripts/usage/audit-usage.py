@@ -175,44 +175,29 @@ def resolve_project(args):
         args.project_dir or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 
 
-DEFAULT_MANIFEST_REL = os.path.join("docs", "audit", "audit-plan.json")
+def resolve_manifest(args, project):
+    """`_manifest_io.resolve_manifest` - argument, else config `manifestPath`,
+    else `docs/audit/audit-plan.json` - asked with this CLI's own argument.
 
-
-def resolve_manifest_path(args, project):
-    """`<manifestPath argument>` > config `manifestPath` > `docs/audit/audit-plan.json`.
-
-    The middle term is the one that was missing, and its absence was not cosmetic.
-    This resolved the default location and nothing else, so a project keeping its
-    manifest anywhere else loaded NO manifest — and then read every project value
-    off `{}`. The shipped example is exactly that project: its config sets
-    `"manifestPath": "audit-plan.json"` and says in its own comment why. So
-    `/audit:usage` there ignored `meta.usage` entirely, including
-    **`showCost: false`** — a repo that had asked for dollars to stay off the
-    screen got them printed anyway, which is the failure the setting exists to
-    prevent. `panel-server.py` has always resolved it this way; this is that.
+    The config term matters here more than anywhere: a project keeping its
+    manifest elsewhere would otherwise load NO manifest and read every project
+    value off `{}`, `meta.usage.showCost: false` included, and print the dollars
+    that setting exists to keep off the screen. The shipped example is exactly
+    that project.
 
     The manifest stays the commands' source for project values and the config is
     read for one key only. That does not cross the standing manifest/hooks split
-    — finding the manifest is not the same act as reading it.
+    - finding the manifest is not the same act as reading it.
     """
-    if args.manifest:
-        return args.manifest
-    rel = None
-    try:
-        with open(os.path.join(project, ".claude", "audit.config.json"),
-                  encoding="utf-8") as fh:
-            cfg = json.load(fh)
-        if isinstance(cfg, dict) and isinstance(cfg.get("manifestPath"), str):
-            rel = cfg["manifestPath"]
-    except Exception:
-        rel = None                    # unreadable or malformed: fall through, never raise
-    for cand in (rel, DEFAULT_MANIFEST_REL):
-        if not cand:
-            continue
-        p = os.path.normpath(os.path.join(project, cand))
-        if os.path.isfile(p):
-            return p
-    return None
+    return mio.resolve_manifest(project, args.manifest)
+
+
+def _config_named_a_plan(resolved):
+    """True when the config, not the default, is why no plan was found: it could
+    not be read, or its `manifestPath` points at nothing. Either way the project
+    said which plan it has, so rendering without one is not this project's
+    answer."""
+    return bool(resolved["problem"]) or resolved["source"] == "config"
 
 
 def resolve_ledger(args, project, manifest):
@@ -240,12 +225,21 @@ def resolve_ledger(args, project, manifest):
 
 
 def load_manifest(path):
+    """(manifest, refusal). No path is the one case that renders without a plan
+    (`main` has already said so); a path that resolved but does not load or is
+    not an object is refused, in the words /audit:status and /audit:report print
+    for the same load. Reading it as `{}` instead would default showCost to on
+    for a plan that may have turned it off."""
     if not path:
-        return {}
+        return {}, None
     try:
-        return mio.load_manifest_safe(path)
-    except Exception:
-        return {}
+        manifest = mio.load_manifest(path)
+    except Exception as exc:
+        return None, "ERROR: cannot read/parse %s: %s" % (path, exc)
+    if not isinstance(manifest, dict):
+        return None, ("ERROR: %s is not a JSON object (got %s)"
+                      % (path, type(manifest).__name__))
+    return manifest, None
 
 
 def titles_of(manifest):
@@ -445,11 +439,12 @@ def render(rows, args, manifest, window, show_cost, pt=None):
         else:
             out += group_table("task", "TOP TASKS", limit=args.top)
         out.append("")
-        out.append(("" if md else "  ") + pt.paint(band_note(bands), "dim"))
+        out.append(("" if md else "  ")
+                   + pt.paint(band_note(bands, show_cost), "dim"))
         out += routing_advice_lines(
             ul.routing(manifest, rows,
                        (meta_usage or {}).get("pricing")).get("advice") or [],
-            fmt=fmt, pt=pt)
+            fmt=fmt, pt=pt, show_cost=show_cost)
     out += render_monthly(manifest, rows, show_cost, fmt=fmt, pt=pt)
     out += render_trend(rows, fmt=fmt, pt=pt)
     return "\n".join(out)
@@ -549,11 +544,15 @@ def render_monthly(manifest, rows, show_cost, fmt="ascii", pt=None):
     return out
 
 
-def routing_advice_lines(advice, fmt="ascii", pt=None):
+def routing_advice_lines(advice, fmt="ascii", pt=None, show_cost=True):
     """The one recommendation the CLI makes. Silent unless the ledger's own
     evidence clears every gate — which on a well-routed project is normal.
     md nests the two evidence lines under their advice bullet; markdown
-    would otherwise merge all three into one paragraph."""
+    would otherwise merge all three into one paragraph.
+
+    With `show_cost` off the re-priced figures are dollars like any other, so
+    the saving is stated as a share alone and the line says the dollars are
+    withheld rather than dropping the basis the advice stands on."""
     if not advice:
         return []
     md = fmt == "md"
@@ -566,11 +565,16 @@ def routing_advice_lines(advice, fmt="ascii", pt=None):
         out.append(("- " if md else "  ")
                    + "%s work is running on %s - %d task(s) at %.1f mean attempts"
                    % (a["risk"], a["from"], a["tasks"], a["fromMeanAttempts"] or 0))
-        out.append(("  - " if md else "    ")
-                   + "those same tokens cost %s at %s rates vs %s  ->  %s less (%.0f%%)"
-                   % (fmt_cost(a["atToRates"]), a["to"],
-                      fmt_cost(a["atFromRates"]), fmt_cost(a["saving"]),
-                      a["savingPct"]))
+        if show_cost:
+            priced = ("those same tokens cost %s at %s rates vs %s  ->  %s less "
+                      "(%.0f%%)" % (fmt_cost(a["atToRates"]), a["to"],
+                                    fmt_cost(a["atFromRates"]),
+                                    fmt_cost(a["saving"]), a["savingPct"]))
+        else:
+            priced = ("those same tokens cost %.0f%% less at %s rates (dollar "
+                      "figures withheld: showCost is off)"
+                      % (a["savingPct"], a["to"]))
+        out.append(("  - " if md else "    ") + priced)
         out.append(("  - " if md else "    ")
                    + "%s has already run %d task(s) in this band here, at %.1f "
                    "mean attempts" % (a["to"], a["evidenceTasks"],
@@ -581,20 +585,25 @@ def routing_advice_lines(advice, fmt="ascii", pt=None):
     return out
 
 
-def band_note(bands):
+def band_note(bands, show_cost=True):
     """One line saying where the band thresholds came from, or why there are none.
 
     "This task is an outlier" is a claim, and a claim whose basis is invisible
     cannot be checked. On a young project this line is the entire content: it says
-    the band is waiting for a sample rather than leaving a blank column."""
+    the band is waiting for a sample rather than leaving a blank column.
+
+    The thresholds are dollar figures, so with `show_cost` off the line keeps the
+    basis and says the thresholds are withheld rather than printing them."""
     if not bands.get("sufficient"):
         return ("band: not calibrated yet - needs %d completed tasks, there are %d "
                 "(or set usage.bands.highUSD / outlierUSD for a fixed budget)"
                 % (bands.get("gate", 5), bands.get("sample", 0)))
+    basis = ("configured thresholds" if bands.get("basis") == "absolute"
+             else "this project's completed tasks (median / p90)")
+    if not show_cost:
+        return ("band: %s - thresholds withheld: showCost is off" % basis)
     return ("band: %s - typical <= %s, high <= %s, outlier above"
-            % ("configured thresholds" if bands.get("basis") == "absolute"
-               else "this project's completed tasks (median / p90)",
-               fmt_cost(bands.get("high")), fmt_cost(bands.get("outlier"))))
+            % (basis, fmt_cost(bands.get("high")), fmt_cost(bands.get("outlier"))))
 
 
 def render_trend(rows, width=28, fmt="ascii", pt=None):
@@ -947,8 +956,25 @@ def build_parser():
 def main(argv):
     args = build_parser().parse_args(argv)
     project = resolve_project(args)
-    manifest_path = resolve_manifest_path(args, project)
-    manifest = load_manifest(manifest_path)
+    resolved = resolve_manifest(args, project)
+    manifest_path = resolved["path"]
+    if manifest_path is None and _config_named_a_plan(resolved):
+        # The config is unreadable, or names a plan that is not there. Rendering
+        # without a plan would read meta.usage off nothing - showCost included -
+        # and print the dollars a plan turned off, so this refuses exactly as
+        # /audit:status and /audit:report do.
+        sys.stderr.write(mio.describe_unresolved(resolved) + "\n")
+        return 2
+    if manifest_path is None:
+        # Nothing configured and no plan at the default: the ledger renders
+        # without one, so this is a note - it says why titles and meta.usage
+        # are absent.
+        sys.stderr.write("note: rendering without the plan's titles and "
+                         "meta.usage - %s\n" % (mio.describe_unresolved(resolved),))
+    manifest, refusal = load_manifest(manifest_path)
+    if refusal:
+        sys.stderr.write(refusal + "\n")
+        return 2
     ledger_dir = resolve_ledger(args, project, manifest)
 
     meta_usage = ((manifest or {}).get("meta") or {}).get("usage") or {}
@@ -970,6 +996,14 @@ def main(argv):
 
     if args.as_json:
         payload = {
+            # A render setting, not derived data - the schema describes it as
+            # rendering equivalent cost alongside token counts. --json keeps the
+            # cost fields regardless, so a consumer honouring this itself needs
+            # the plan's own setting beside them rather than losing it to
+            # whatever --no-cost happened to do on this invocation.
+            "showCost": bool(
+                meta_usage.get("showCost", True) if isinstance(meta_usage, dict)
+                else True),
             "window": {"since": since, "until": args.until},
             "ledgerDir": ledger_dir,
             "pricingAsOf": rate_basis(meta_usage),

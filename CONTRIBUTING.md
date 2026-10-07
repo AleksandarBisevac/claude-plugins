@@ -59,10 +59,90 @@ plugin ships with: Node (`npx vitest`, `npx ajv-cli`, the browser gates), `ruff`
 and `vermin` (pip-installed; CI's lint job pins their versions), and the Claude
 Code CLI (`claude plugin validate`; CI installs it with `npm install -g`). None
 of these ship with the plugin's own stdlib-only hooks and scripts — they're
-tooling the gate set reaches for, not a product dependency. Pillow is not
-needed by `tools/verify.sh` or CI at all; it's only for manually regenerating
-the demo GIF itself with `tools/capture-demo-gif.py` (no `--check`), a release
-step the one pre-PR command above does not run.
+tooling the gate set reaches for, not a product dependency.
+
+**Re-recording the demo GIF** is the one step here that needs more than that, and
+neither `tools/verify.sh` nor CI ever takes it. `docs/screenshots/demo-gate.gif` is a
+recording of a real Claude Code session, so making a new one needs
+[VHS](https://github.com/charmbracelet/vhs) (with the `ttyd` and `ffmpeg` it drives) and
+a `claude` CLI you are logged in to:
+
+```bash
+python3 tools/capture-demo-gif.py --record --dry-run   # builds and validates everything, starts no session
+python3 tools/capture-demo-gif.py --record             # records tools/demo-gate.tape
+```
+
+It builds the demo project at `/tmp/acme-store-demo` and a copy of this checkout's
+plugin with an isolated settings file at `/tmp/acme-store-demo-kit`, runs the tape, and
+writes the GIF and its record in `docs/screenshots/captured-at.json` only when the
+refused edit replays to the refusal on screen and no frame of VHS's text output
+carries your user name, any home directory path, your machine name, git identity, an
+email address, or the account email and organisation name `claude auth status
+--json` reports. **The scan reads text, not pixels:** it reads the text output VHS
+writes beside the GIF, frame by frame, and never the GIF itself; a take whose Wait
+timed out is refused before the scan, on VHS's exit and the screens its log keeps. A
+take for which `claude auth status --json` names no account is refused before it
+starts, because without the account's own values the scan could look only for the
+email pattern. The session runs with Claude Code's documented recording mode (`IS_DEMO`),
+which hides that email and organisation and keeps the model and plan line, so the
+header is shown as a user sees it and the scan checks that the mode did its job.
+
+**Which Claude Code config the take writes into.** A session writes into its config:
+the answer to the folder-trust question, its transcript, and any plugin a dialog
+installs. Nothing the demo loads sets a permission mode, so the footer shows Claude
+Code's own starting mode - auto mode from v2.1.283, per the
+[permission-modes page](https://code.claude.com/docs/en/permission-modes). Hooks - the
+plan gate among them - load only in a folder Claude Code trusts, and the recording
+mode skips that question without granting it, so the tape first launches once
+without it and answers "Yes, I trust this folder".
+
+- **With `CLAUDE_CODE_OAUTH_TOKEN` set** (the token `claude setup-token` prints, per
+  Claude Code's [authentication page](https://code.claude.com/docs/en/authentication)),
+  the take gets a config of its own, `CLAUDE_CONFIG_DIR` pointed under
+  `/tmp/acme-store-demo-kit`, removed with the kit. Trust, transcripts and plugin
+  installs stay in it; that page documents that each config directory has its own
+  settings, session history and login, with its own macOS Keychain entry. Whether a
+  session authenticated by the token alone writes a Keychain entry is not documented,
+  and neither is that entry's name, so after the take the tool does not say nothing
+  was left: it names the Keychain entry that may remain for the removed config
+  directory and says to look for it in Keychain Access. **No isolated take has been
+  observed yet.** It also depends on `claude auth status --json`, asked under the
+  token alone, naming the account; that is unverified, and when it names nobody the
+  take is refused before it starts.
+- **Without it**, the take runs against your own config, because that is where it can
+  log in. The tool then prints what the take left there - the trust entry for
+  `/tmp/acme-store-demo` (a whole project key) and the file it sits in, the transcript
+  directory, the count of `history.jsonl` lines whose project is the demo folder, the
+  per-session directories under `file-history/` and `session-env/` that the take's
+  sessions wrote to, and any file that appeared in `shell-snapshots/` during the take -
+  each with the step that removes it. That list is what the tool knows to look for,
+  not everything a session writes, and the report says so.
+
+Either way it reads your installed plugins before and after the take - `claude plugin
+list --json`, and the install records in the config's `plugins/installed_plugins.json`,
+which also hold a local-scope install into the demo folder that a list run from
+another folder does not show - and refuses a take that changed them, naming each
+change and the command that undoes it. Under the isolated config it also refuses a
+take that left a trust entry, a transcript directory or a history line for the demo
+folder in your own config, since that means the isolation leaked. A plugin list or
+install record it cannot read, before or after, refuses the take as well.
+
+**The LSP-recommendation dialog.** When a session reads a file in a language with a
+language-server plugin in a known marketplace (the demo's `.ts` files do), Claude Code
+may open an *LSP plugin recommendation* at the end of a turn: "Would you like to
+install this LSP plugin?" with numbered options, the first of them *Yes, install*. It
+has the keys while it is open, so a stray Enter, or that option's digit, from the tape
+installs that plugin into the **user** scope of whatever config the take runs in -
+yours, unless the token above isolated it. The tape presses Escape before every prompt and types no digit
+into one for that reason, and the plugin comparison refuses a take where it got
+through anyway. The undo is the one the refusal names, for example
+`claude plugin uninstall typescript-lsp@claude-plugins-official --scope user`.
+
+A refused recording is kept in a temp directory it names. **What a re-record costs:**
+one short Sonnet session - the
+prompts `tools/demo-gate.tape` types - billed to whatever account the `claude` CLI is
+logged in to, and the model can answer differently each time, so a take may need
+repeating. Re-record when `--check` says the gate's refusal moved.
 
 Writing a change a *user* will see? [COMPATIBILITY.md](COMPATIBILITY.md) is the
 contract over the manifest and the config file they own, and
@@ -283,6 +363,9 @@ python3 tools/check-rendered-artifacts.py
 # cmp and goes red when one stops carrying it.
 cmp docs/index.html examples/acme-store/acme-store-audit.html
 
+# the demo GIF is a recorded session, so this starts none: it replays the edit the
+# recording refused against require-plan and fails naming the GIF when the refusal
+# moved from the recorded text, or the committed bytes from the recorded sha256.
 python3 tools/capture-demo-gif.py --check
 
 # the same committed files, asked the other question: does any of them carry the

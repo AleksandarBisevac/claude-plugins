@@ -8,12 +8,16 @@ manifest is escaped (manifest content is untrusted input), and ado/link URLs
 render as links only when they are http(s).
 
 Usage:
-  render-report.py <manifest> [--out-dir DIR] [--format html|md|both|artifact]
-                              [--summary-file PATH] [--basename NAME]
+  render-report.py [<manifest>] [--out-dir DIR] [--format html|md|both|artifact]
+                                [--summary-file PATH] [--basename NAME]
 
   --format artifact writes <basename>.artifact.html: the same report with no
   document wrapper, for a host that supplies its own (a Claude Code Artifact).
   render-report.py --selftest
+
+With no <manifest>, the plan is found by `_manifest_io.resolve_manifest`: the
+project's (CLAUDE_PROJECT_DIR, else the cwd) configured manifestPath, else
+docs/audit/audit-plan.json; when neither exists it exits 2 naming where it looked.
 
 Writes <basename>.html / <basename>.md into --out-dir (default: the manifest's
 own directory) and prints the paths. `basename` is `--basename` › the manifest's
@@ -385,13 +389,19 @@ def main(argv):
             else:
                 cli_basename = val
             del args[i:i + 2]
-    if fmt not in ("html", "md", "both", "artifact") or len(args) != 1:
-        sys.stderr.write("usage: render-report.py <manifest> [--out-dir DIR] "
+    if fmt not in ("html", "md", "both", "artifact") or len(args) > 1:
+        sys.stderr.write("usage: render-report.py [<manifest>] [--out-dir DIR] "
                          "[--format html|md|both|artifact] [--summary-file PATH] "
                          "[--basename NAME] [--no-proposals]\n")
         return 2
 
-    manifest_path = args[0]
+    resolved = _mio.resolve_manifest(
+        os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd(),
+        args[0] if args else None)
+    manifest_path = resolved["path"]
+    if manifest_path is None:
+        sys.stderr.write(_mio.describe_unresolved(resolved) + "\n")
+        return 2
     try:
         manifest = _mio.load_manifest(manifest_path)
     except Exception as exc:
