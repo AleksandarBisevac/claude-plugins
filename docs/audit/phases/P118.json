@@ -634,9 +634,23 @@
         "resolution": "fixed in P118.22-v7t (9d254e78): Renumber the cases or cite them by name.",
         "fixTask": "P118.22-v7t",
         "commit": "9d254e78"
+      },
+      {
+        "id": "P118-R69",
+        "severity": "med",
+        "file": "plugins/audit/scripts/git/close-phase.py read_set_refusal; plugins/audit/scripts/manifest/_filed_returns.py needs_human keys",
+        "issue": "A settlement is keyed by a return's name, not its content. Under a read-set verdict, a settlement given for a return the verdict read also covers a different, unread answer filed later under the same name. A sibling worktree filing at the same head collides, the different diverges return lands, and no human sees it. This was simulated with the real filing verb. The per-place reading refused this layout (vr7). The schema, COMPATIBILITY, CHANGELOG and the guide all say a settlement names the return.",
+        "resolution": "Bind the settlement to content. The driver records the signature it settled. On the read-set path, a settlement counts only for a return with that signature, and a return whose name matches a read row with a different signature is refused. Pin the deny case and its byte-identical allow twin, and reword the documents."
+      },
+      {
+        "id": "P118-R70",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py _returns_read / _human_settlement at sign-off",
+        "issue": "This is a regression. Take a plan outside the repo with the branch in a linked worktree, a return committed at the tip, and a human settlement in the worktree's record. Signing off from the parent now refuses, because the tip's returns are asked only against the signing checkout's record, while the landing settles through every known checkout. The remedy sends the user to a fresh review.",
+        "resolution": "At sign-off, ask the tip's returns against the same settlement set the landing honours. Add the case and its unsettled twin."
       }
     ],
-    "outcome": "[findings: 68 - 5 high, 25 med, 38 low; 68 with a recorded fix commit]"
+    "outcome": "[findings: 70 - 5 high, 27 med, 38 low; 68 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2187,6 +2201,58 @@
         "at": "2026-10-08T14:00:21Z",
         "basis": "orchestrator check: the place-based class (eight instances over seven rounds) is replaced by a read set written at sign-off; mutation probe re-run, eight rows killed with exact cases"
       }
+    },
+    {
+      "id": "P118.23-v7t",
+      "title": "a human's settlement binds to the answer it settled, not to the return's name",
+      "status": "pending",
+      "description": "Fixes P118 review round 8 findings R69-R70. A human's settlement binds to the content it settled, not to the return's name. When the driver records a settlement, it records the settled return's content signature. On the read-set path, close-phase honours a settlement only for a return carrying that signature. A return whose name matches a read row but whose signature differs is refused whatever any record says. A name-only settlement, written before this field existed, is not honoured on the read-set path, and the refusal names how to settle it again. The sign-off asks the tip's returns against the same settlement set the landing honours, which is every non-prunable worktree's record, so signing off from the parent no longer refuses a return settled where the branch is checked out. The schema, COMPATIBILITY.md, the guide, manifest-conventions and CHANGELOG say exactly what a settlement binds. Every new case is shown red first with its allow twin.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/reference/manifest-conventions.md",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-07T21:17:01Z"
