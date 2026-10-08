@@ -21,7 +21,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P119-R1",
@@ -80,7 +80,7 @@
     ],
     "outcome": "[findings: 6 - 0 high, 1 med, 5 low; 6 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "The phase overhead and the task cycle cost less, and every guarantee is kept. The levers, designed from the recorded benchmark streams in docs/research/pipeline-cost-levers.md:\n- A: planning reads its batch from stdin, so no scratch file is written that could be refused or collide.\n- B: submit ends on the one-line hand-back instruction.\n- C: a clean phase review is signed off in the same call that files it, and only when sign-off is the triage's single admissible answer.\n- D: the review's mechanical answers are computed, a human escalation is always accepted over a computed answer, and the brief lists the existing test files the phase modified.\n\nOther changes in this phase:\n- the executor brief prints a test command that can run, with one shared own-gate rule;\n- the driver's suite runs its stages in parallel, about four times faster, with identical cases;\n- BUG-17 is fixed: index-only fields stay out of phase shards, through one writer path;\n- stream-cost reads a resumed session from its streams and refuses a follow-up read alone.\n\nEach lever was confirmed by its offline micro-test and a mutation probe re-run by the orchestrator.\n\nOne paid probe at this phase's head (probe2-C-1, CLI 2.1.295; one observation):\n- 15/15 hidden tests, no out-of-scope change, no refusal;\n- 0.449 against 0.505 for the same task at the P118 head, and 80 s against 97 s;\n- 1.32 times the fresh plain mean, against 1.49.\n\nThe full benchmark is deferred to after the release, by the user's choice to release tonight. The phase review's findings were fixed by P119.9: a computed answer that blocked a human escalation, and a gate that selects tests read as the whole project. Faults found along the way are in the internal plan (F572-F577).",
   "tasks": [
     {
       "id": "P119.1",
@@ -674,5 +674,10 @@
       }
     }
   ],
-  "startedAt": "2026-10-08T16:35:57Z"
+  "startedAt": "2026-10-08T16:35:57Z",
+  "testEvidence": {
+    "runId": "2026-10-08T22:07:11Z.55d863",
+    "status": "passed",
+    "at": "2026-10-08T22:07:11Z"
+  }
 }
