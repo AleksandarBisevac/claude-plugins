@@ -4392,7 +4392,8 @@
       "P71.2-zso",
       "P80.7",
       "P80.15-rtb",
-      "P120.1"
+      "P120.1",
+      "P120.2-byv"
     ],
     "plugins/audit/tests/test__report_md.py": [
       "P63.6",
@@ -5273,7 +5274,8 @@
       "P80.20-rtb",
       "P80.15-rtb",
       "P92.4",
-      "P120.1"
+      "P120.1",
+      "P120.2-byv"
     ],
     "tools/gate-parity.py": [
       "P19.2",
@@ -6439,7 +6441,8 @@
       "P119.1"
     ],
     "plugins/audit/scripts/ui/report-css": [
-      "P120.1"
+      "P120.1",
+      "P120.2-byv"
     ],
     "plugins/audit/scripts/ui/shared": [
       "P120.1"
