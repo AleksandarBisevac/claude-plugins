@@ -1063,16 +1063,31 @@ def _cases(check):
           '[data-tev="ledger-unreadable"]' in _amber
           and '[data-tev="dangling"]' in _amber
           and _rcss.count('[data-tev="ledger-unreadable"]') == 1)
-    # The full-run line is ONE sentence in ONE `.ptev` span, and `.ptev` does
-    # not wrap - so the phase cell's narrowest width was the whole sentence, and
-    # a narrow viewport scrolled sideways. The rule that lets it wrap is pinned
-    # here as text; that the page no longer scrolls is
+    # A `.ptev` mark that is bare text is a sentence of any length, and on one
+    # unbreakable line it sets the phase cell's narrowest width to that length,
+    # so a narrow viewport scrolls sideways. The rule that lets it wrap is pinned
+    # here as text, and so is the fact that the full-run mark IS bare text -
+    # it has no rule of its own, so a child element added to it would silently
+    # put it back on one line. That the page no longer scrolls is
     # tools/check-report-interactive.mjs's to say, in a real browser.
-    check("css2 CONSTRUCT: the full-run mark alone may wrap - every other "
-          "`.ptev` mark stays on one line, and the full-run one does not",
+    _pm_full = M._tev_phase_marks({"own": None, "rollup": [], "fullRun": _fr_whole})
+    _pm_full_span = _pm_full[_pm_full.index("data-fullrun="):]
+    _pm_full_span = _pm_full_span[_pm_full_span.index(">") + 1:]
+    _pm_full_span = _pm_full_span[:_pm_full_span.index("</span>")]
+    _pm_rollup = M._tev_phase_marks({"own": None, "fullRun": None,
+                                     "rollup": [("passed", "Passed", 2)]})
+    check("css2 CONSTRUCT: a `.ptev` mark that is bare text may wrap, and one "
+          "built from pills or counts keeps nowrap - the full-run mark is bare "
+          "text, the tasks rollup is built from counts: %r / %r"
+          % (_pm_full_span[:60], _pm_rollup[:80]),
           ".ptev{margin-left:var(--sp-2);font-size:.76rem;color:var(--muted);"
           "white-space:nowrap}" in _rcss
-          and _rcss.count(".ptev[data-fullrun]{white-space:normal") == 1)
+          and _rcss.count(".ptev:not(:has(*)){white-space:normal}") == 1
+          and ".tevn{" in _rcss and "white-space:nowrap}" in
+          _rcss[_rcss.index(".tevn{"):_rcss.index("}", _rcss.index(".tevn{")) + 1]
+          and "<" not in _pm_full_span and _pm_full_span.strip() != ""
+          and '<span class="tevn"' in _pm_rollup
+          and ".ptev[data-fullrun]" not in _rcss)
 
     # --- _tev_step_rows(): why a could-not-run step has no verdict -------------
     # A step that measured cleanly stays exactly as it was - no basis was ever

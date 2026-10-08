@@ -2316,6 +2316,102 @@ expect('...nor the panel inside it', onPaper.panel, true);
   await page.waitForTimeout(200);
 }
 
+// 10b. Content no fixture carries. The ladder above measures the plan it was
+//     handed, so it can only ever be as hostile as that plan's prose - and the
+//     demo's is short. A plan whose phases record paragraphs of summary, and an
+//     accepted-commit reason as long as an essay, pushed this table far past the
+//     viewport while every committed fixture stayed green. So the hostile content is PUT INTO the rendered page: one row per
+//     table, cloned from the table's own first body row so it wears the markup
+//     the renderer really emits, every prose cell of it filled with a very long
+//     summary and a very long unbroken token, and the phase row also given the
+//     free-text evidence chip that once carried such a reason. Each width either
+//     side of a breakpoint is then asked one question: did that row make the
+//     DOCUMENT any wider than it already was? Compared to the page's own width
+//     before the row went in, so a plan that already overflows is accused of
+//     nothing it did not do here - the ladder above owns that.
+//
+//     The second expectation is the one that keeps the first honest: a row that
+//     never reached the page, or a token that was never painted, would widen
+//     nothing and pass. It must be on screen, at the narrowest rung too, and
+//     wrapped onto more than one line.
+{
+  const LONG_TOKEN = '0123456789abcdef'.repeat(60);
+  const LONG_PROSE = Array.from({ length: 120 }, (_, i) =>
+    `sentence ${i} of a summary that runs on far past any measure a reader keeps`).join(', ');
+  const planted = await page.evaluate(({ token, prose }) => {
+    const made = [];
+    for (const table of document.querySelectorAll('table.phases, table.data')) {
+      const body = table.tBodies[0];
+      const proto = body && ([...body.rows].find((r) => r.classList.contains('phase'))
+        || body.rows[0]);
+      if (!proto) continue;
+      const row = proto.cloneNode(true);
+      row.removeAttribute('id');
+      row.removeAttribute('hidden');
+      row.style.display = '';
+      row.setAttribute('data-hostile-row', '');
+      const cells = [...row.cells].filter((c) => !c.className || c.colSpan > 1);
+      for (const cell of cells) {
+        // A phase with no desired outcome and no summary renders no .pmeta,
+        // and that is the one block this row exists to fill.
+        let meta = cell.querySelector('.pmeta');
+        if (!meta && row.classList.contains('phase')) {
+          meta = document.createElement('div');
+          meta.className = 'pmeta muted';
+          cell.append(meta);
+        }
+        if (meta) {
+          meta.textContent = `${prose} ${token}`;
+          const chip = document.createElement('span');
+          chip.className = 'ptev';
+          chip.textContent = `accepted ${token.slice(0, 12)}: ${prose}`;
+          meta.before(chip);
+          const unbroken = document.createElement('span');
+          unbroken.className = 'ptev';
+          unbroken.textContent = token;
+          meta.before(unbroken);
+        } else {
+          cell.textContent = `${prose} ${token}`;
+        }
+      }
+      if (!cells.length) continue;
+      proto.after(row);
+      made.push(table.className);
+    }
+    return made;
+  }, { token: LONG_TOKEN, prose: LONG_PROSE });
+  const widened = [];
+  let narrowest = null;
+  for (const w of RESPONSIVE_LADDER) {
+    await page.setViewportSize({ width: w, height: 945 });
+    await page.waitForTimeout(60);
+    const m = await page.evaluate(() => {
+      const de = document.documentElement;
+      const rows = [...document.querySelectorAll('[data-hostile-row]')];
+      const off = rows.map((r) => { const s = r.style.display; r.style.display = 'none'; return s; });
+      const before = de.scrollWidth;
+      rows.forEach((r, i) => { r.style.display = off[i]; });
+      const after = de.scrollWidth;
+      // Taller than a handful of lines: the prose alone is thousands of
+      // characters, so a row this short never laid it out.
+      const painted = rows.length > 0 && rows.every((r) => r.checkVisibility()
+        && r.getBoundingClientRect().height > 120);
+      return { before, after, cw: de.clientWidth, painted };
+    });
+    if (m.after > Math.max(m.before, m.cw + 1)) widened.push(`${w}px (${m.before} -> ${m.after})`);
+    if (narrowest === null) narrowest = m;
+  }
+  await page.evaluate(() => {
+    for (const r of document.querySelectorAll('[data-hostile-row]')) r.remove();
+  });
+  await page.setViewportSize({ width: 1512, height: 945 });
+  await page.waitForTimeout(200);
+  expect(`a very long summary and a very long unbroken token, planted in ${planted.join(' + ') || 'no table'}, `
+    + 'widen the document at no width', widened.join(', ') || 'none', 'none');
+  expect('...and the planted rows were really on the page, wrapped, at the narrowest width',
+    planted.length > 0 && narrowest !== null && narrowest.painted, true);
+}
+
 // --- the full-run line: the third place's verdict, as a reader gets it -------
 // `_report_html._verified_line` is pinned string by string in Python, and no
 // browser had ever looked at what it paints: a stylesheet rule hiding the chip,

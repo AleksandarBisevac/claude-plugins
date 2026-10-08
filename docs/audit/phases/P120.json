@@ -37,7 +37,13 @@
         "plugins/audit/scripts/ui/shared",
         "tools/check-report-interactive.mjs",
         "plugins/audit/tests/test_render_report.py",
-        "plugins/audit/scripts/report/render-report.py"
+        "plugins/audit/scripts/report/render-report.py",
+        "plugins/audit/tests/test__report_html.py",
+        "examples/acme-store/acme-store-audit.html",
+        "examples/acme-store/acme-store-audit.md",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots"
       ],
       "tests": {
         "mode": "tdd",
@@ -72,7 +78,12 @@
       "startedAt": "2026-10-08T22:27:29Z",
       "completedAt": null,
       "verifiedBy": [],
-      "bugId": "BUG-22"
+      "bugId": "BUG-22",
+      "testEvidence": {
+        "runId": "2026-10-08T23:10:16Z.0c1853",
+        "status": "passed",
+        "at": "2026-10-08T23:10:16Z"
+      }
     }
   ],
   "startedAt": "2026-10-08T22:27:29Z"

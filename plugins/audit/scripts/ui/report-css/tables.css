@@ -37,6 +37,25 @@ th.sorted::after{content:"\25B2";font-size:.75em;margin-left:.35em;color:var(--a
 th.sorted[data-sort="desc"]::after{content:"\25BC"}
 td{padding:.5rem .75rem;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
 td.when,td.mono{font-variant-numeric:tabular-nums}
+/* Prose the plan wrote may break inside a word, because otherwise a cell's
+   narrowest width is its longest word - and the plan decides that, not this
+   sheet. A single unbroken token in a phase's summary would set the table's
+   narrowest width to the token's length, and the whole document would scroll
+   sideways. The detail drawer's `.dt-v` already does this for its values; these
+   are the same rule where the drawer is not.
+   A full-width cell (a phase row, a task's drawer) takes it at every width: its
+   prose is laid out against the whole table and never squeezes a column.
+   A cell of BARE TEXT - a title, a severity - takes it only where no frame
+   holds the table. Below the breakpoint the table scrolls inside its own frame
+   (forced-colors.css), so a long token cannot widen the document there; and
+   there the rule would cost something real, because the table would shrink to
+   its frame's minimum and split ordinary words mid-letter to get there. A cell
+   holding elements (a chip, a link, a dash) is the renderer's own atoms, which
+   it bounds, so it never takes the rule. */
+:where(table.phases,table.data) td[colspan]{overflow-wrap:anywhere}
+@media not all and (max-width:52rem){
+  :where(table.phases,table.data) td:not([class]):not(:has(*)){overflow-wrap:anywhere}
+}
 /* vw: the label and its select are one control and wrap as one — the toolbar
    is a flex row, and letting the words break away from the box they name is
    how a reader ends up reading "View:" over an unrelated line.
