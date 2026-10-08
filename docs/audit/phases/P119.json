@@ -64,17 +64,21 @@
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/_filed_returns.py _runner_width; CHANGELOG.md lever D line",
         "issue": "Same class as R1: `npm run test:unit` and `node scripts/test.js` read `whole`, because a package script or script file counts as the runner. The CHANGELOG says 'the runner with no operand'.",
-        "resolution": "Read a package-script name other than `test`, and a script file other than one the project names as its whole suite, as an operand (`unknown`). Make the CHANGELOG line state the rule exactly."
+        "resolution": "fixed in P119.10-g0k (c1a95d27): Read a package-script name other than `test`, and a script file other than one the project names as its whole suite, as an operand (`unknown`). Make the CHANGELOG line state the rule exactly.",
+        "fixTask": "P119.10-g0k",
+        "commit": "c1a95d27"
       },
       {
         "id": "P119-R6",
         "severity": "low",
         "file": "CHANGELOG.md lever C line",
         "issue": "Same class as R3: the line still says the advance call prints `done` unconditionally.",
-        "resolution": "End the clause at 'so the sign-off steps run as they would after it'."
+        "resolution": "fixed in P119.10-g0k (c1a95d27): End the clause at 'so the sign-off steps run as they would after it'.",
+        "fixTask": "P119.10-g0k",
+        "commit": "c1a95d27"
       }
     ],
-    "outcome": "[findings: 6 - 0 high, 1 med, 5 low; 4 with a recorded fix commit]"
+    "outcome": "[findings: 6 - 0 high, 1 med, 5 low; 6 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -617,7 +621,7 @@
     {
       "id": "P119.10-g0k",
       "title": "a package script or a script file is read as a selection unless the project names it as its whole suite",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes P119 review round 2 findings R5-R6, both the same class as round 1's.\n1. gate_reading counts only a fixed runner as the runner. A package-script name (`npm|yarn|pnpm run <script>`) reads `whole` only when the script is `test`; any other script name is an operand, so it reads `unknown`. A script file run by an interpreter (`node scripts/test.js`, `python3 tools/x.py`) is an operand too, unless it is a file the project's own gate names as its whole suite. Decide that by one explicit rule, state it in the classifier's comment, and keep `python3 tools/sweep-selftests.py` reading `whole` by that rule, not by a special case.\n2. CHANGELOG: the lever D line states exactly which commands read `whole`. The lever C line ends at \"so the sign-off steps run as they would after it\".\nCases, each red first: `npm run test:unit` and `node scripts/test.js` read unknown. Allow twins: `npm test`, `npm run test` and the sweep stay whole. Deliver a mutation probe.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -647,18 +651,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c1a95d27",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes P119-R5 and R6, the same class as round 1's: a word after the runner was treated as part of it. One stated rule lives above _SUBCOMMANDS in _filed_returns.py, and _runner_width is the only place that widens the runner.\n- `npm|yarn|pnpm run <script>` counts as the runner only when the script is `test`. Any other script name is an operand, so it reads `unknown` and the basis names it.\n- A script file run by an interpreter counts as the runner only when meta.buildCommands declares exactly that [interpreter, script] pair (`_declared_scripts`). So the sweep reads `whole` because the plan declares it, not by a special case. An undeclared `node scripts/test.js` reads unknown.\n\nStated limit: a project that declares a subset script as its own build command still reads whole. This is the existing config-selection blind spot.\n\nCHANGELOG:\n- The lever D line lists exactly which commands read whole.\n- The lever C line ends at \"so the sign-off steps run as they would after it\".\n\nCase ma12:\n- unknown: `npm run test:unit`, an undeclared script, and a declaration with more words after it;\n- whole (allow twins): `npm test`, `npm run test`, `yarn run test`, and the declared sweep.\n\nRed-first: proved (ma12 red at HEAD).\n\nMutation probe (scratchpad P119.10-g0k/mut.py), re-run by the orchestrator: exit 0, baseline 63/63, all six mutations killed, including two over-fire rows.",
+        "descriptive": "A test command that runs a named subset through a script is no longer counted as running every test, and the changelog says exactly which commands are."
       },
       "startedAt": "2026-10-08T21:45:39Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T21:59:25Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__filed_returns.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-08T21:59:16Z.11564c",
         "status": "passed",
         "at": "2026-10-08T21:59:16Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c1a95d27",
+        "at": "2026-10-08T21:59:25Z",
+        "basis": "orchestrator check: one rule for a named script, declared by the plan; mutation probe re-run 6/6"
       }
     }
   ],
