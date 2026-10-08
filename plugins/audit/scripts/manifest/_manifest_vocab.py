@@ -526,6 +526,10 @@ KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                # purpose — most phases will not carry one, and the surfaces render
                # an absent budget as "—" rather than as 0% or 100%.
                "budgetUSD",
+               # The request a phase was planned from, verbatim, and the choices
+               # it left open; written by `audit-task.py add --from-file`, read by
+               # the sign-off reviewer's brief.
+               "request", "openChoices",
                # v0.15 sharded layout: an index stub points at its shard file and
                # may carry an optimistic parallel-run claim (both surface on the
                # assembled phase via _manifest_io):

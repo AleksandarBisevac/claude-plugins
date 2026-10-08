@@ -1,7 +1,7 @@
 ---
 description: 'Audit pipeline: everything a phase has done to it — add one to a plan that already exists, run it end to end (every ready task, parallel where safe, then sign-off), pin which phase the pipeline reaches for first, or cancel one that will not be done. A bare `<phaseId>` runs it; --dry-run previews the run without mutating.'
 argument-hint: '<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] | add "<title>" --outcome "<what success is>" [--park] [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--gate-set <entry> ...] [--gate-drop <entry>] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>" | signoff <phaseId[,phaseId...]> --verdict VERDICT --summary TEXT [--review-outcome TEXT] [--no-evidence-reason TEXT] [--branch NAME] [--plan] [--bind] [--accept SHA --reason TEXT] | settle'
-allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 ---
 
 # /audit:phase — add a phase, run it, order it, or close it
@@ -189,126 +189,105 @@ line exists to refuse.
 
 ## Subcommand: `add "<title>" --outcome "<what success looks like>"`
 
-One more phase in a plan that already exists. Until this verb nothing in the tree
-appended to `phases[]` except the ADO pull: `/audit:init` synthesizes a WHOLE plan,
-`/audit:propose materialize` MOVES a payload that was parked earlier, and
-`/audit:task add` needs the phase to be there already. So a maintainer whose plan
-had outlived its first round — the state every long-lived plan ends in — could
-re-run init over finished work, pull from a board, or hand-edit the index and write
-a shard. All three are wrong, and the third is wrong twice in the sharded layout,
-where a new phase means a new shard file **and** an index stub pointing at it.
+A new phase and its tasks, planned from the human's request and written in **one
+call**. The script takes the index lock itself, so hold no lock by hand around it.
 
-This is a SCRIPT call — it takes the index lock itself, so hold no lock by hand
-around it. Read `${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` → *New
-phase template* first; the script IS that template, and hand-writing the fields is
-the class of error it exists to delete.
+**1. Gather** only what `$ARGUMENTS` and the conversation do not already carry:
+
+- **the outcome** — the one-line `desiredOutcome`. `/audit:status` shows it, task
+  subagents receive it, and sign-off must address it. A phase whose success cannot be
+  stated in a line is too big; split it.
+- **the tasks** — each with a title, a description, the files it edits, and a test mode.
+- **the open choices** — every decision the request leaves to whoever implements it (a
+  rounding rule, a name, a default). List them rather than settling them silently; the
+  phase reviewer asks where a task chose one. Write `[]` when the request leaves none.
+
+Check the alternatives first and say which you ruled out: a parked proposal already
+covering the work → `/audit:propose materialize <PROP-id>`, which is a move; an open
+phase whose `desiredOutcome` this work serves → `/audit:task add --phase <id>`.
+
+**2. Write the plan file with the Write tool** — never a shell heredoc, which a host
+refuses for a JSON document. Put it outside the tracked tree, in the session's scratch
+directory:
+
+```json
+{
+  "request": "<the request, exactly as the human typed it>",
+  "openChoices": ["<a choice the request left open>"],
+  "phase": {"title": "<title>", "desiredOutcome": "<one line>",
+            "description": "<why and how>"},
+  "tasks": [
+    {"key": "sum", "title": "<task>", "description": "<what to do>",
+     "files": ["src/b.ts"],
+     "tests": {"mode": "tdd", "add": ["tests/b.test.ts: <what it asserts>"]}},
+    {"title": "<task>", "description": "<what to do>", "files": ["docs/b.md"],
+     "dependsOn": ["sum"]}
+  ]
+}
+```
+
+Optional on the phase: `testGate` (omitted, the plan's `meta.buildCommands`; `[]`, no
+gate, so sign-off rests on review alone), `blockedBy`, `area`, `reviewSkill`, and `id`.
+Omit `id`: the script takes the **highest** `P<n>` in use and adds one, over live
+phases and every id a parked proposal reserves. Over a plan holding `P0`, `P1` and `P3`, the next id is `P4`, and never the `P2` the gap makes look free:
+a gap is a phase that happened, and `meta.branch` derives branch names from the id.
+Optional on a task: `key`, `outputs`, `risk`, `model`, `skills`, `tests.gate`,
+`blockedBy`. A `key` is the name the file's other tasks use in `dependsOn` or
+`blockedBy` before the task has an id; every other reference names an id the plan
+already holds.
+
+**3. Run it**, and print its line verbatim:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" add --from-file <the file> [--json]
+```
+
+It allocates the phase id and each task's id, resolves every `key`, and writes the
+phase, with `request` and `openChoices` on it, and every task in one write — the new
+shard and its index stub in the sharded layout, **appended last**, because the written
+order is the plan's order. It re-reads the plan from disk and validates once, and on a
+finding rolls every written file back byte for byte. Then it journals one `phase.add`
+row and one `task.add` row per task. `--verbose` adds the gate and its basis, the open
+choices it saved, and the validator's warnings.
+
+**Every refusal comes before any write, and the file is the thing to fix:** a file that
+is not JSON or carries a key the batch does not read; a missing request, open-choices
+list, title, outcome or task list; a dependency neither the plan nor the file holds,
+named; a task `key` that is already an id; a phase `id` that is live, reserved by a
+parked proposal, a task id, or stored in a shard file another phase occupies; and any
+other `audit-task.py add` flag beside `--from-file`.
+
+**Which branch are you on? Phases are minted on the development branch.** A phase id is
+a branch name, a lock name and a shard name, so two phase branches that each added a
+phase would both mint the next `P<n>`. On a phase branch, ask the user before running:
+work **needed by the phase in hand** is a task in it (`/audit:task add --phase <that
+phase>`); **new work** is parked with the single-phase verb below and `--park`, then
+materialized with `/audit:propose materialize` after this branch merges. The first
+phase minted on a side branch prints a WARNING naming `--park`; relay it verbatim — it
+is addressed to the user.
+
+**One phase with no tasks yet**, or a parked one, is the single-phase verb — the same
+template, refusals and rollback:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" add-phase "<title>" \
         --outcome "<what success looks like>" \
-        [--id P7] [--description "<why & how>"] [--area a,b] \
-        [--gate "<entry>" ...] [--blocked-by id,id] [--review-skill NAME] [--json]
+        [--park] [--id P7] [--description "<why & how>"] [--area a,b] \
+        [--gate "<entry>" ... | --gate-clear] [--blocked-by id,id] [--review-skill NAME] [--json]
 ```
 
-**Print the script's output verbatim — validator warnings included.** It names the id,
-the outcome, the gate and where it came from, and the files it wrote.
+**A flag belongs to the verb whose alternative in the hint carries it.** One parser
+serves every verb, so a pair like `/audit:phase add --files` is refused with exit 2,
+and the message names the verb that does read it; relay it rather than retrying.
+**`--risk` is one of those here and not on `/audit:task`** — a phase carries no risk and a
+task does, so `/audit:phase add --risk` is refused.
 
-**What you gather before running it** (ask only for what `$ARGUMENTS` does not carry):
+**Exit codes:** `0` written. `1` the plan was already invalid, or the write would have
+left it invalid and was rolled back. `2` usage — the refusals above. `3` the index lock
+is held by a live run — stop; do not take it over. `4` the lock looks abandoned —
+confirm with the human (AskUserQuestion), then re-run with `--takeover`.
 
-- **`--outcome` is required, and it is the one question worth insisting on.** It is
-  the one-line `desiredOutcome`: `/audit:status` shows it, task subagents receive it,
-  and Phase sign-off must address it. A phase whose success cannot be stated in a
-  line is already too big — that is the conventions' own splitting rule, and this is
-  where it gets applied. The script refuses a blank one.
-- **`--id`** — omit it. The script takes the **highest** `P<n>` in use and adds one, over
-  live phases AND every id a parked `proposals[].payload` reserves (conventions → ID
-  allocation) — the same taken set `/audit:propose materialize` allocates against, and
-  deliberately a different rule over it. Over a plan holding `P0`, `P1` and `P3`, the next
-  id is `P4`, and never the `P2` the gap makes look free: a gap is a phase that happened,
-  `meta.branch` derives the branch name from the phase id, and re-minting the number hands
-  you a phase colliding with branches and merges already carrying it. Materialize fills
-  that gap on purpose, because it re-places a payload whose id collided with live work and
-  the gap was never anybody's. Pass `--id` only when the human named one, and relay the
-  refusal if it collides.
-- **`--gate`** — repeatable. Omitted, the gate comes from `meta.buildCommands` keys.
-  The report says which of the two happened, and says so when the gate is EMPTY: a
-  phase with no gate is signed off on review alone, which is a decision rather than a
-  detail.
-- **`--area`** — the area tag(s) whose `root` the phase's work falls under. One tag is
-  written as a string, several as a list, in the order you want them to resolve.
-- **`--description`**, **`--blocked-by`**, **`--review-skill`** — optional.
-
-**Which branch are you on? Phases are minted on the development branch.** A phase id
-is a branch name, a lock name and a shard name, so it is the one id that carries no
-branch suffix - and two phase branches that each add a phase would both mint the next
-`P<n>`. So new work found while a phase branch is checked out goes one of two ways:
-
-- **it is needed by the phase in hand** → it is a task in that phase
-  (`/audit:task add --phase <the phase whose branch this is>`), not a new phase;
-- **it is new work** → `add ... --park` writes the same phase as a parked proposal
-  (`PROP-<n>-<suffix>`, reserving its phase id), and after this phase branch merges it
-  is materialized on the development branch with `/audit:propose materialize`, that
-  branch is committed, and only then is the new phase started.
-
-Ask the user which of the two it is BEFORE calling the script when you are on a side
-branch. The script never refuses a live `add` there: the first phase minted on a side
-branch prints a WARNING saying the above and naming `--park`, and later ones on the
-same branch are silent. "The first" is read from the `phase.add` journal rows, which
-record the branch a phase was minted on. Relay that WARNING to the user verbatim - it
-is addressed to them, not to you.
-
-**Before creating one, check the alternatives** and say which you ruled out:
-
-- a still-parked proposal (`proposals[]`, status `proposed`) already covering this
-  work → `/audit:propose materialize <PROP-id>` is a MOVE and keeps the reservation
-  honest, where a parallel hand-made phase would duplicate it;
-- an open phase whose `desiredOutcome` this work already serves → `/audit:task add
-  --phase <id>` instead. Two phases whose gate and outcome are indistinguishable are
-  one phase.
-
-**What it writes**: the phase, template-initialized exactly once — `status: "pending"`,
-`baseRef`/`branch`/`mergedAt`/`summary` null, the `review` object, an empty `tasks` —
-**appended last**, because the written order is the plan's order and `/audit:phase
-priority` is what says "reach for this one first". In the **sharded** layout it writes
-the phase's new shard and adds the index stub that points at it, and touches no other
-shard. Then it re-reads the manifest from disk, revalidates, and **rolls every written
-file back byte-for-byte** on findings — including deleting a shard it had just created,
-so a refusal never leaves a phase body the index does not point at. Finally it appends
-a `phase.add` journal row carrying the outcome.
-
-**A flag belongs to the verb whose alternative in the hint carries it.** One `argparse`
-parser serves `add`, `retarget` and the three `/audit:task` verbs, so argparse accepts
-every flag on every one of them — and each verb's writer only read its own subset, so a
-pair like `/audit:phase add --files` or `retarget --files` is refused now with exit 2
-rather than accepted, where before it wrote nothing and reported success. The message
-names the verb that does read the flag (`--files` is read by `/audit:task add` and
-`scope`); relay it rather than retrying. **`--risk` is one of those here and not on `/audit:task`** — a phase carries
-no risk and a task does, so `/audit:phase add --risk` is refused. On the task verb it
-is exactly right; `/audit:task add --risk high` writes it.
-
-**One claim per sentence, deliberately.** A case in
-`plugins/audit/tests/test_audit_task.py` reads every `` `<verb> --<flag>` `` pair out
-of a sentence here that talks about refusing and asks the script's own table whether
-that verb really ignores the flag — so a paragraph mixing a refused pair with a
-correct one would grade the correct one as a false claim. That is the price of having
-the claim checked rather than merely written, and it is why the two halves above are
-two sentences.
-
-**Refusals, all before any write:** a missing or blank `--outcome`; an `--id` that is
-already a live phase (it says so, and offers `/audit:task add --phase <id>` when that
-phase is still open); an `--id` a parked proposal reserves (it names the proposal and
-points at `/audit:propose materialize`); an `--id` that is already a task id; and — in
-the sharded layout — an `--id` whose shard FILENAME an existing phase already occupies,
-because two ids the filename cannot tell apart would overwrite one another.
-
-**Exit codes:** `0` written. `1` the manifest was already invalid (nothing written), or
-the phase would have left it invalid and every written file was rolled back. `2` usage —
-the refusals above. `3` the index lock is held by a live run — stop; do not take it over.
-`4` the lock looks abandoned — confirm with the human (AskUserQuestion), then re-run with
-`--takeover`.
-
-**Then hand off**: `/audit:task add "<the first task>" --phase <newId>`, which the report
-already prints, and `/audit:status` to see the phase in the plan.
+**Then hand off:** `/audit:phase <newId>` runs it, and `/audit:status` shows it in the plan.
 
 ## Subcommand: `retarget <phaseId>`
 

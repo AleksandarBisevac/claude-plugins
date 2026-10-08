@@ -1126,6 +1126,17 @@
           "type": "string",
           "description": "One-line statement of what success looks like for the phase. Shown by /audit:status, given to every task subagent, and phase.summary must address it at sign-off."
         },
+        "request": {
+          "type": "string",
+          "description": "The request the phase was planned from, as the human typed it. Written by `audit-task.py add --from-file`; the phase reviewer's brief (`audit-lookup.py brief --role phase`) prints it verbatim. Absent on a phase planned any other way."
+        },
+        "openChoices": {
+          "type": "array",
+          "description": "The choices the request left open, one string each, written beside `request` by `audit-task.py add --from-file`. An empty list is the planner's answer that the request left none; absent means nobody was asked.",
+          "items": {
+            "type": "string"
+          }
+        },
         "testGate": {
           "type": "array",
           "description": "Commands (or 'key:project' entries resolved via meta.buildCommands) that must all pass at sign-off.",

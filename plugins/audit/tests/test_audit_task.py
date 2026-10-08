@@ -12630,12 +12630,199 @@ def _return_cases(check):
           and read(mpath) == before)
 
 
+def _batch_doc(**over):
+    """A planning file in the shape `add --from-file` reads: the request as
+    typed, its open choices, one phase and two tasks, the second waiting on the
+    first by its key and the first on a task the plan already holds."""
+    doc = {"request": "  Make refunds exact.\nKeep the API as it is.  ",
+           "openChoices": ["round half-even or half-up"],
+           "phase": {"title": "Exact refunds",
+                     "desiredOutcome": "refunds sum to the cent"},
+           "tasks": [{"key": "sum", "title": "sum in integer cents",
+                      "files": ["src/b.ts"], "dependsOn": ["P1.1"],
+                      "tests": {"mode": "tdd",
+                                "add": ["tests/b.test.ts: sums exactly"]}},
+                     {"title": "document the rounding", "files": ["docs/b.md"],
+                      "dependsOn": ["sum"]}]}
+    doc.update(over)
+    return doc
+
+
+def _batch_cases(check):
+    """`add --from-file`: a phase and its tasks from one file in one write, the
+    request saved verbatim beside its open choices, and a malformed file or a
+    dependency the plan does not hold refused with nothing written."""
+    root = _harness.fixture_root("audit-task-fb-")
+
+    def project(name, sharded=False):
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        _panel_write._atomic_write_json(
+            os.path.join(proj, ".claude", "audit.config.json"),
+            {"manifestPath": "docs/audit/audit-plan.json"})
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        plan = {"meta": {"version": 2, "buildCommands": {"test": "true"}},
+                "phases": [{"id": "P1", "title": "Live", "status": "pending",
+                            "testGate": ["test"], "tasks": [
+                                {"id": "P1.1", "title": "a",
+                                 "status": "pending", "files": ["src/a.ts"],
+                                 "attempts": 0, "maxAttempts": 3}]}],
+                "fileIndex": {"src/a.ts": ["P1.1"]}, "bugs": []}
+        if sharded:
+            _mio.save_sharded(mpath, plan)
+        else:
+            _panel_write._atomic_write_json(mpath, plan)
+        return proj, mpath
+
+    def batch(proj, doc, raw=None):
+        path = os.path.join(proj, "plan-batch.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(raw if raw is not None else json.dumps(doc, indent=1))
+        return path
+
+    def tree_bytes(proj):
+        """Every file under the plan's directory, by relative path - a refused
+        batch must leave each one as it was and add none."""
+        base = os.path.join(proj, "docs", "audit")
+        seen = {}
+        for dirpath, _dirs, files in os.walk(base):
+            for name in files:
+                full = os.path.join(dirpath, name)
+                with open(full, "rb") as fh:
+                    seen[os.path.relpath(full, base)] = fh.read()
+        return seen
+
+    def phase_of(mpath, pid):
+        for ph in _mio.load_manifest(mpath).get("phases") or []:
+            if ph.get("id") == pid:
+                return ph
+        return None
+
+    proj, mpath = project("valid")
+    doc = _batch_doc()
+    code, txt = _cli(["add", "--from-file", batch(proj, doc)], proj)
+    ph = phase_of(mpath, "P2") or {}
+    tasks = dict((t.get("id"), t) for t in ph.get("tasks") or [])
+    written = _mio.load_manifest(mpath)
+    findings = M._validator().validate(written)[0]
+    check("fb1 a valid file writes the phase and its tasks in one call: the "
+          "request byte for byte, its open choices, each task under an "
+          "allocated id with a key resolved to that id and a plan id kept, "
+          "the fileIndex rows, and a plan the validator passes: %r"
+          % ((code, txt, sorted(tasks), findings),),
+          code == 0 and ph.get("request") == doc["request"]
+          and ph.get("openChoices") == doc["openChoices"]
+          and ph.get("desiredOutcome") == "refunds sum to the cent"
+          and sorted(tasks) == ["P2.1", "P2.2"]
+          and tasks["P2.1"].get("dependsOn") == ["P1.1"]
+          and tasks["P2.2"].get("dependsOn") == ["P2.1"]
+          and tasks["P2.1"]["tests"]["mode"] == "tdd"
+          and "tests/b.test.ts" in tasks["P2.1"]["files"]
+          and written["fileIndex"].get("src/b.ts") == ["P2.1"]
+          and findings == [])
+    check("fb2 ...said in one success line naming the phase, its tasks and "
+          "the file written: %r" % (txt,),
+          txt.count("\n") == 1
+          and txt.startswith("[audit-task] phase P2 added with P2.1, P2.2")
+          and "written: docs/audit/audit-plan.json" in txt)
+
+    proj, mpath = project("sharded", sharded=True)
+    code, txt = _cli(["add", "--from-file", batch(proj, _batch_doc())], proj)
+    stubs = [s.get("id") for s in _mio.read_json(mpath).get("phases") or []]
+    shard = os.path.join(os.path.dirname(mpath), "phases", "P2.json")
+    check("fb3 in the sharded layout the batch writes the new phase's shard "
+          "and its index stub, tasks inside the shard: %r"
+          % ((code, txt, stubs),),
+          code == 0 and stubs == ["P1", "P2"] and os.path.isfile(shard)
+          and [t.get("id") for t in _mio.read_json(shard).get("tasks") or []]
+          == ["P2.1", "P2.2"])
+
+    proj, mpath = project("no-choices")
+    code, txt = _cli(["add", "--from-file",
+                      batch(proj, _batch_doc(openChoices=[]))], proj)
+    check("fb4 ALLOW: an empty list of open choices is an answer, and is "
+          "written as one: %r" % ((code, txt),),
+          code == 0 and (phase_of(mpath, "P2") or {}).get("openChoices") == [])
+
+    proj, mpath = project("not-json")
+    before = tree_bytes(proj)
+    code, txt = _cli(["add", "--from-file",
+                      batch(proj, None, raw='{"request": "x", ')], proj)
+    check("fb5 a file that is not JSON is refused and nothing is written: %r"
+          % ((code, txt),),
+          code == M.E_USAGE and "cannot read it as JSON" in txt
+          and tree_bytes(proj) == before)
+
+    proj, mpath = project("shape")
+    before = tree_bytes(proj)
+    bad = _batch_doc()
+    del bad["openChoices"]
+    bad["tasks"][1]["dependOn"] = ["sum"]
+    code, txt = _cli(["add", "--from-file", batch(proj, bad)], proj)
+    check("fb6 a malformed file is refused naming every fault - the missing "
+          "open choices and the misspelt key - and nothing is written: %r"
+          % ((code, txt),),
+          code == M.E_USAGE and "openChoices" in txt and "dependOn" in txt
+          and tree_bytes(proj) == before)
+
+    proj, mpath = project("missing-dep")
+    before = tree_bytes(proj)
+    gone = _batch_doc()
+    gone["tasks"][1]["dependsOn"] = ["sum", "P9.9"]
+    code, txt = _cli(["add", "--from-file", batch(proj, gone)], proj)
+    check("fb7 a task naming a dependency the plan does not hold is refused "
+          "by that name, and nothing is written - the allow twin is fb1, "
+          "whose key and plan id both resolve: %r" % ((code, txt),),
+          code == M.E_USAGE and "P9.9" in txt and "'sum'" not in txt
+          and tree_bytes(proj) == before)
+
+    proj, mpath = project("stray-flag")
+    before = tree_bytes(proj)
+    code, txt = _cli(["add", "--from-file", batch(proj, _batch_doc()),
+                      "--files", "src/c.ts"], proj)
+    check("fb8 a task flag beside --from-file is refused rather than applied "
+          "to some of the tasks, and nothing is written: %r" % ((code, txt),),
+          code == M.E_USAGE and "--files" in txt
+          and tree_bytes(proj) == before)
+
+    schema_path = os.path.join(_output.PLUGIN_ROOT, "schema",
+                               "audit-plan.schema.json")
+    with open(schema_path, encoding="utf-8") as fh:
+        props = json.load(fh)["$defs"]["phase"]["properties"]
+    check("fb9 the plan's schema names the saved request and its open "
+          "choices on the phase, the fields the phase reviewer's brief reads: "
+          "%r" % ((props.get("request"), props.get("openChoices")),),
+          (props.get("request") or {}).get("type") == "string"
+          and (props.get("openChoices") or {}).get("type") == "array"
+          and ((props.get("openChoices") or {}).get("items") or {})
+          .get("type") == "string")
+
+    with open(os.path.join(_output.PLUGIN_ROOT, "commands", "phase.md"),
+              encoding="utf-8") as fh:
+        doc_text = fh.read()
+    head = doc_text.split("\n---", 1)[0]
+    start = doc_text.find("\n## Subcommand: `add")
+    end = doc_text.find("\n## ", start + 1)
+    section = doc_text[start:end] if start >= 0 and end > start else ""
+    check("fb10 the `add` section of commands/phase.md is the batch's own: it "
+          "names `add --from-file`, the command may use the file tool it "
+          "tells the main loop to write the file with, and the section is at "
+          "most 8000 bytes: %r"
+          % ((len(section.encode("utf-8")), "Write" in head),),
+          "add --from-file" in section
+          and "allowed-tools:" in head
+          and "Write" in head.split("allowed-tools:", 1)[1].splitlines()[0]
+          and 0 < len(section.encode("utf-8")) <= 8000)
+
+
 def _selftest():
     def body(check):
         # Each block staged, so one that raises still lets the other run.
         _harness.stage(check, "at-block", _cases)
         _harness.stage(check, "sl-block", _success_line_cases)
         _harness.stage(check, "fr-block", _return_cases)
+        _harness.stage(check, "fb-block", _batch_cases)
     return _harness.run(body)
 
 

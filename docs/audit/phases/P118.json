@@ -262,13 +262,19 @@
     {
       "id": "P118.4",
       "title": "planning is one batch call that saves the request and its open choices",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Design section 6, T9. audit-task add --from-file adds a phase and its tasks in one call, revalidates once, and refuses a malformed file or a missing dependency while writing nothing. The file carries the request's text verbatim and a list of its open choices. The add section of phase.md is verb-scoped. Cases are shown red first.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/commands/phase.md",
         "plugins/audit/schema/audit-plan.schema.json",
-        "plugins/audit/tests/test_audit_task.py"
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/README.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -293,32 +299,34 @@
       "dependsOn": [
         "P118.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T23:51:51Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T00:29:15Z.bddcc2",
+        "status": "passed",
+        "at": "2026-10-08T00:29:15Z"
+      }
     },
     {
       "id": "P118.5",
       "title": "a step driver runs every step that needs no judgement, in four main-loop requests a task",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Design section 6, T4. drive-phase.py next <phase> reads the plan and the filed returns, performs every due step that needs no judgement by calling the existing verbs, and prints one instruction: dispatch, decide or done. A refusal prints the verb's own refusal and stops. The recorded gate stays before the reviewer. The new entry point owes everything CLAUDE.md names for a new .py. stream-cost's cycle rule reads the driver's start and done in the same change. Micro-test: a drive over a three-task fixture plan, with four model-facing steps a task, success prints of at most 300 bytes, a stale stamp naming the moved field, and a refused verb stopping the drive, each shown red against a mutated driver.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
         "plugins/audit/tests/test_drive_phase.py",
         "plugins/audit/scripts/_deps.py",
         "PLUGIN-BUILD-GUIDE.md",
-        "plugins/audit/commands/phase.md",
-        "plugins/audit/commands/run.md",
-        "plugins/audit/commands/next.md",
-        "plugins/audit/commands/resume.md",
-        "tools/stream-cost.py"
+        "tools/stream-cost.py",
+        "plugins/audit/tests/test__output.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -344,16 +352,21 @@
         "P118.3",
         "P118.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T23:51:52Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T00:36:12Z.aa8b75",
+        "status": "passed",
+        "at": "2026-10-08T00:36:12Z"
+      }
     },
     {
       "id": "P118.6",
@@ -567,7 +580,7 @@
     {
       "id": "P118.10",
       "title": "the doctor prints the main loop's cache TTL trade from the user's own sessions",
-      "status": "in_progress",
+      "status": "done",
       "description": "Design section 6, T12, the documentation-only decision on the TTL. From a recorded session the doctor prints the longest main-loop gap, the one-hour writes and their price at each TTL. It recommends nothing the gaps do not support, and the setting stays the user's. First establish whether the usage ledger holds per-request times; if it does not, name where the doctor reads them from. Twin synthetic sessions are shown red first.",
       "files": [
         "plugins/audit/scripts/status/_doctor_hygiene.py",
@@ -604,18 +617,27 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d5b6c67b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Design T12, documentation only. The usage ledger keeps no per-request times, so the check reads the named session's transcript.\n\ncheck_ttl_trade, main_loop_requests and ttl_trade live in _doctor_trail.py, layer 4, beside check_ledger. They parse timestamps through usage_ledger.parse_ts and price through usage_ledger.price, so the local duplicates are gone and _doctor_hygiene.py is back to its pre-task bytes.\n\naudit-doctor gains --transcript <path>. Pricing is resolved through usage_ledger.project_pricing. With no transcript named, the row says the trade needs one and prints no figure. With one named, the row prints the longest main-loop gap, the one-hour writes and their price at each TTL, recommends nothing, and says the setting stays the user's.\n\ndoctor.md's argument-hint and the README row name the flag, and command_flag_drift is clean. Cases dt55-dt63 cover no transcript, an unreadable transcript, too few requests, no one-hour writes, no pricing table, the under/over-five-minute twin and dedup by message id. test_audit_doctor adds the wiring, no-figure, priced end-to-end and parser cases. Red-first is proved for both suites.\n\nThe README row is committed with whichever task in this phase commits README first, because P118.3 also edits that file.",
+        "descriptive": "/audit:doctor --transcript <session> now shows how long the main loop sat idle and what its one-hour cache writes cost against five-minute ones, without recommending a setting - that stays the user's."
       },
       "startedAt": "2026-10-07T23:07:40Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T23:51:51Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/tests/test_audit_doctor.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T23:51:36Z.0cb183",
         "status": "passed",
         "at": "2026-10-07T23:51:36Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d5b6c67b",
+        "at": "2026-10-07T23:51:51Z",
+        "basis": "orchestrator check: documentation-only as the user decided; no figure without a named session; pricing through the shared usage functions with the duplicates removed"
       }
     }
   ],

@@ -1234,6 +1234,15 @@ SCHEMA_EXEMPTIONS = {
         "and not read by the orchestrator. Measured: no reader anywhere under "
         "scripts/, hooks/, commands/ or agents/ - only the schema and "
         "`_manifest_vocab.KNOWN_PHASE`. The demo shows what the plugin does.",
+    "phase.request":
+        "the request a phase was planned from, written only by `audit-task.py "
+        "add --from-file`; its one reader is the sign-off reviewer's brief, "
+        "which no rendered surface shows. A demo request would be prose "
+        "invented for a plan nobody asked for. REVISIT when the report or "
+        "the panel renders it.",
+    "phase.openChoices":
+        "written beside phase.request by the same verb and read by the same "
+        "brief, for the same reason: no rendered surface shows it.",
     "review.noEvidenceReason":
         "written only for a `passed` sign-off that no gate run backs, and the demo's "
         "phases are signed off on runs its ledger carries - a reason beside a run "

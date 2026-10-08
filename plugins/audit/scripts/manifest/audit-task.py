@@ -19,6 +19,8 @@ Usage:
                 [--tests-add TEXT ...] [--gate CMD ... | --gate-clear]
                 [--failing-from RUNID] [--dry-run] [--project-dir DIR]
                 [--takeover] [--json]
+  audit-task.py add --from-file PATH [manifest] [--project-dir DIR]
+                [--takeover] [--json]
   audit-task.py add-phase "<title>" [manifest] --outcome "<what success is>|-"
                 [--park] [--id P7] [--description TEXT|-] [--area a,b]
                 [--gate CMD ... | --gate-clear]
@@ -107,7 +109,11 @@ Usage:
   --files, --blocked-by, --depends-on and --verified-by repeat too, and each
   value is still split on commas, so `--files a --files b,c` is three paths.
   `add --dry-run` builds the task and validates the plan with it in memory,
-  and writes nothing. Under --json every refusal is one object,
+  and writes nothing. `add --from-file <plan.json>` writes a NEW phase and
+  its tasks from one JSON file {request, openChoices, phase, tasks} under one
+  lock, in one write, revalidated once; a malformed file, a dependency neither
+  the plan nor the file holds, or another `add` flag beside it is refused
+  with nothing written (`batch_problems` reads the file's shape). Under --json every refusal is one object,
   {ok: false, exit, refused, findings}, never prose on stdout.
   A --tests-add value reaches `files` through the PATH it names, written as
   "<path>: <what it asserts>"; the field is free prose, so an entry
@@ -5898,6 +5904,12 @@ def _phase_gate(args, assembled):
         return [], "from --gate-clear"
     if args.gate:
         return list(args.gate), "from --gate"
+    return _default_phase_gate(assembled)
+
+
+def _default_phase_gate(assembled):
+    """`(testGate, basis)` for a phase that names no gate of its own: the
+    plan's default, and the sentence saying which part of it answered."""
     meta = assembled.get("meta")
     build = (meta or {}).get("buildCommands") if isinstance(meta, dict) else None
     if not isinstance(build, dict):
@@ -5939,7 +5951,19 @@ def _phase_gate(args, assembled):
            _output.some_of(excluded, render=repr)))
 
 
-def _build_phase(pid, title, args, gate):
+def _phase_fields(args):
+    """The flags `add-phase` writes into the phase, as the values
+    `_build_phase` takes. Read here and not inside the builder, so a caller
+    whose values come from somewhere other than flags builds the same phase
+    without reading a flag it does not accept."""
+    return {"description": args.description or "",
+            "outcome": args.outcome or "",
+            "blocked_by": _split_csv(args.blocked_by),
+            "area": _split_csv(args.area),
+            "review_skill": args.review_skill}
+
+
+def _build_phase(pid, title, fields, gate):
     """The new phase, fully template-initialized -- every field from the
     conventions' New phase template, exactly once, in _PHASE_TEMPLATE_KEYS
     order.
@@ -5951,10 +5975,10 @@ def _build_phase(pid, title, args, gate):
         "id": pid,
         "title": title,
         "status": "pending",
-        "description": args.description or "",
-        "desiredOutcome": (args.outcome or "").strip(),
+        "description": fields["description"],
+        "desiredOutcome": fields["outcome"].strip(),
         "testGate": gate,
-        "blockedBy": _split_csv(args.blocked_by),
+        "blockedBy": list(fields["blocked_by"]),
         "baseRef": None,
         "branch": None,
         "mergedAt": None,
@@ -5963,15 +5987,15 @@ def _build_phase(pid, title, args, gate):
         "summary": None,
         "tasks": [],
     }
-    areas = _split_csv(args.area)
+    areas = list(fields["area"])
     if areas:
         # A LIST only when there is more than one. The conventions spell a single
         # tag as a bare string and `_areas` reads both, so writing a one-element
         # list would make this command's phases the odd ones out in every diff
         # and every hand comparison against a phase /audit:init wrote.
         phase["area"] = areas[0] if len(areas) == 1 else areas
-    if args.review_skill:
-        phase["reviewSkill"] = args.review_skill
+    if fields["review_skill"]:
+        phase["reviewSkill"] = fields["review_skill"]
     return phase
 
 
@@ -6025,7 +6049,7 @@ def _locked_phase_add(args, project, config, mpath, title, out):
         return E_USAGE
 
     gate, gate_basis = _phase_gate(args, assembled)
-    phase = _build_phase(pid, title, args, gate)
+    phase = _build_phase(pid, title, _phase_fields(args), gate)
     side = _side_branch(mpath, assembled)
     if args.park:
         return _park_phase(args, project, config, mpath, raw_index, assembled,
@@ -6111,6 +6135,380 @@ def _locked_phase_add(args, project, config, mpath, title, out):
         for line in _side_branch_warning(pid, side):
             out(line)
     out("  next: /audit:task add \"<the first task>\" --phase %s" % pid)
+    return 0
+
+
+# --- add --from-file: a phase and its tasks, one write ----------------------------
+# Planning a phase was one `add-phase` and then one `add` per task: each its own
+# lock, read, write, revalidation and main-loop request, each typed as a shell
+# line. The batch is one file the main loop writes with its file tool, because a
+# JSON document on a shell heredoc is the shape a host refuses, and one call that
+# reads it under one lock, writes once and revalidates once.
+#
+# The file also carries the request as the human typed it and the choices that
+# request left open, on the phase as `request` and `openChoices`: sign-off's
+# reviewer is asked where a task chose what the request left open, and a request
+# not saved cannot be asked about.
+
+BATCH_KEYS = ("request", "openChoices", "phase", "tasks")
+BATCH_PHASE_KEYS = ("id", "title", "desiredOutcome", "description", "testGate",
+                    "blockedBy", "area", "reviewSkill")
+BATCH_TASK_KEYS = ("key", "title", "description", "files", "outputs", "risk",
+                   "model", "skills", "tests", "dependsOn", "blockedBy")
+BATCH_TESTS_KEYS = ("mode", "add", "gate")
+_RISKS = ("low", "med", "high")
+_TEST_MODES = ("tdd", "regression", "gate-only")
+
+
+def _is_text(value):
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _is_text_list(value):
+    return isinstance(value, list) and all(_is_text(v) for v in value)
+
+
+def _unknown_keys(obj, allowed, where):
+    """A key the batch does not read is a refusal, not a skip: a misspelt
+    `dependOn` dropped in silence is a dependency the caller believes was
+    written."""
+    extra = sorted(k for k in obj if k not in allowed)
+    if not extra:
+        return []
+    return ["%s carries %s, which the batch does not read (it reads %s)"
+            % (where, ", ".join(repr(k) for k in extra), ", ".join(allowed))]
+
+
+def _batch_phase_problems(phase):
+    if not isinstance(phase, dict):
+        return ["`phase` must be an object"]
+    out = _unknown_keys(phase, BATCH_PHASE_KEYS, "`phase`")
+    for key in ("title", "desiredOutcome"):
+        if not _is_text(phase.get(key)):
+            out.append("`phase.%s` must be a non-empty string" % (key,))
+    for key in ("id", "reviewSkill"):
+        if key in phase and not _is_text(phase[key]):
+            out.append("`phase.%s`, when present, must be a non-empty string"
+                       % (key,))
+    if "description" in phase and not isinstance(phase["description"], str):
+        out.append("`phase.description` must be a string")
+    for key in ("testGate", "blockedBy"):
+        if key in phase and not _is_text_list(phase[key]):
+            out.append("`phase.%s` must be a list of non-empty strings" % (key,))
+    area = phase.get("area")
+    if "area" in phase and not (_is_text(area)
+                                or (_is_text_list(area) and area)):
+        out.append("`phase.area` must be a tag or a non-empty list of tags")
+    return out
+
+
+def _batch_tests_problems(tests, where):
+    if not isinstance(tests, dict):
+        return ["%s.tests must be an object" % (where,)]
+    out = _unknown_keys(tests, BATCH_TESTS_KEYS, "%s.tests" % (where,))
+    if "mode" in tests and tests["mode"] not in _TEST_MODES:
+        out.append("%s.tests.mode must be one of %s"
+                   % (where, ", ".join(_TEST_MODES)))
+    for key in ("add", "gate"):
+        if key in tests and not _is_text_list(tests[key]):
+            out.append("%s.tests.%s must be a list of non-empty strings"
+                       % (where, key))
+    return out
+
+
+def _batch_task_problems(task, where):
+    if not isinstance(task, dict):
+        return ["%s must be an object" % (where,)]
+    out = _unknown_keys(task, BATCH_TASK_KEYS, where)
+    if not _is_text(task.get("title")):
+        out.append("%s.title must be a non-empty string" % (where,))
+    for key in ("key", "model"):
+        if key in task and not _is_text(task[key]):
+            out.append("%s.%s, when present, must be a non-empty string"
+                       % (where, key))
+    if "description" in task and not isinstance(task["description"], str):
+        out.append("%s.description must be a string" % (where,))
+    for key in ("files", "outputs", "dependsOn", "blockedBy"):
+        if key in task and not _is_text_list(task[key]):
+            out.append("%s.%s must be a list of non-empty strings" % (where, key))
+    if "skills" in task and not (task["skills"] is None
+                                 or _is_text_list(task["skills"])):
+        out.append("%s.skills must be a list of skill names, or null for the "
+                   "explicit opt-out" % (where,))
+    if "risk" in task and task["risk"] not in _RISKS:
+        out.append("%s.risk must be one of %s" % (where, ", ".join(_RISKS)))
+    if "tests" in task:
+        out.extend(_batch_tests_problems(task["tests"], where))
+    # The two path rules `--files` and `--outputs` are graded by, asked of the
+    # same helpers, so a path the flag refuses the file refuses too.
+    if _is_text_list(task.get("files", [])):
+        out.extend("%s.files %s" % (where, bad)
+                   for bad in _path_problems(task.get("files")))
+    if _is_text_list(task.get("outputs", [])):
+        out.extend("%s.outputs %r: %s" % (where, entry, why) for entry, why
+                   in _touts.output_problems(task.get("outputs")))
+    return out
+
+
+def batch_problems(doc):
+    """Every reason `doc` is not a planning batch this verb can write, or [].
+
+    ALL OF THEM AT ONCE, because the file is the caller's to fix and one round
+    trip per fault is the cost the batch exists to remove."""
+    if not isinstance(doc, dict):
+        return ["the file must hold one JSON object"]
+    out = _unknown_keys(doc, BATCH_KEYS, "the file")
+    if not _is_text(doc.get("request")):
+        out.append("`request` must be the request's text as the human typed "
+                   "it, non-empty")
+    choices = doc.get("openChoices")
+    if not isinstance(choices, list) or not all(_is_text(c) for c in choices):
+        out.append("`openChoices` must be a list of the choices the request "
+                   "left open, each a non-empty string - [] when it left none")
+    out.extend(_batch_phase_problems(doc.get("phase")))
+    tasks = doc.get("tasks")
+    if not isinstance(tasks, list) or not tasks:
+        out.append("`tasks` must be a non-empty list")
+        return out
+    for i, task in enumerate(tasks):
+        out.extend(_batch_task_problems(task, "tasks[%d]" % (i,)))
+    keys = [t.get("key") for t in tasks if isinstance(t, dict) and "key" in t]
+    dups = sorted(set(k for k in keys if keys.count(k) > 1 and isinstance(k, str)))
+    if dups:
+        out.append("task keys must be unique; repeated: %s" % (", ".join(dups),))
+    return out
+
+
+def read_batch(path):
+    """`(doc, problems)` for the file at `path`; `problems` non-empty means the
+    file cannot be written, and `doc` is then None."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as exc:
+        return None, ["cannot read it as JSON: %s" % (exc,)]
+    problems = batch_problems(doc)
+    return (None, problems) if problems else (doc, [])
+
+
+def _batch_stray_flags(args):
+    """The `add` flags passed beside `--from-file`, as the caller spelled them.
+    The file carries every field, so a flag beside it has no task to land on."""
+    parser = build_parser()
+    flags = option_dests(parser)
+    default = dict((a.dest, a.default)
+                   for a in getattr(parser, "_actions", ()))
+    return [flags.get(d, d) for d in VERB_FLAGS["add"]
+            if d != "from_file" and getattr(args, d, None) != default.get(d)]
+
+
+def _cmd_batch_add(args, out):
+    _manifest_from_positional(args)
+    stray = _batch_stray_flags(args) + (["a title"] if args.title else [])
+    if stray:
+        out("[audit-task] add --from-file reads the phase and every task from "
+            "the file, so it takes nothing beside it -- put %s in the file; "
+            "nothing written" % (", ".join(stray),))
+        return E_USAGE
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    doc, problems = read_batch(args.from_file)
+    if problems:
+        out("[audit-task] REFUSED: %s is not a planning batch this verb can "
+            "write -- nothing written:" % (args.from_file,))
+        for line in problems:
+            out("  - " + line)
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_batch_add(
+                           args, project, config, mpath, doc, out))
+
+
+def _batch_phase_gate(spec, assembled):
+    """`(testGate, basis)` for the batch's phase: the file's own list when it
+    names one, the empty gate when it names `[]`, the plan's default otherwise."""
+    if "testGate" not in spec:
+        return _default_phase_gate(assembled)
+    if not spec["testGate"]:
+        return [], "the batch file's phase.testGate is empty"
+    return list(spec["testGate"]), "from the batch file's phase.testGate"
+
+
+def _batch_missing_refs(doc, ids, keys, assembled, pid):
+    """The `(where, field, ref)` triples naming nothing this plan or this file
+    holds, over the universes the validator grades: `dependsOn` names a task,
+    `blockedBy` a task, a phase or a decision."""
+    task_ids = set(t.get("id") for _p, t in _mio.iter_tasks(assembled))
+    known = (task_ids | set(p.get("id") for p in assembled.get("phases") or []
+                            if isinstance(p, dict))
+             | set(d.get("id") for d in assembled.get("decisions") or []
+                   if isinstance(d, dict)))
+    missing = [("phase %s" % (pid,), "blockedBy", r)
+               for r in doc["phase"].get("blockedBy") or [] if r not in known]
+    for task, tid in zip(doc["tasks"], ids):
+        for field, universe in (("dependsOn", task_ids), ("blockedBy", known)):
+            missing.extend((tid, field, r) for r in task.get(field) or []
+                           if keys.get(r, r) not in universe)
+    return missing
+
+
+def _batch_task_args(task, keys):
+    """The values `_build_task` reads, off one task of the file, with every
+    key the file named resolved to the id it was given. A namespace rather
+    than a second task builder: the template, the `tests.add` union and the
+    gate derivation stay the ones `add` uses."""
+    tests = task.get("tests") or {}
+    gate = tests.get("gate")
+    skills = task.get("skills", [])
+    return argparse.Namespace(
+        risk=task.get("risk"), model=task.get("model"),
+        tests_mode=tests.get("mode"), tests_add=list(tests.get("add") or []),
+        files=list(task.get("files") or []),
+        outputs=list(task.get("outputs") or []),
+        skills="null" if skills is None else ",".join(skills),
+        blocked_by=[keys.get(r, r) for r in task.get("blockedBy") or []],
+        depends_on=[keys.get(r, r) for r in task.get("dependsOn") or []],
+        description=task.get("description") or "",
+        gate=list(gate) if gate else None, gate_clear=gate == [],
+        failing_from=None)
+
+
+def _locked_batch_add(args, project, config, mpath, doc, out):
+    """Everything between acquire and release for `add --from-file`: read,
+    allocate the phase and every task, refuse before the first write, write
+    once, validate once from disk, roll back on findings, journal, report."""
+    try:
+        raw_index = _mio.read_json(mpath)
+        assembled = _mio.load_manifest(mpath)
+    except Exception as exc:
+        out("[audit-task] cannot read/assemble manifest: %s" % exc)
+        return E_USAGE
+    if not isinstance(assembled, dict) or not isinstance(raw_index, dict):
+        out("[audit-task] manifest root is not an object")
+        return E_USAGE
+    vm = _validator()
+    pre_findings, _pre_w = vm.validate(assembled)
+    if pre_findings:
+        out("[audit-task] the manifest is already invalid -- nothing "
+            "written; fix these first:")
+        for line in pre_findings:
+            out("FINDING: " + line)
+        return E_INVALID
+
+    spec = doc["phase"]
+    pid = spec["id"].strip() if "id" in spec else _allocate_phase_id(assembled)
+    refusal = _phase_id_refusal(assembled, raw_index, pid)
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    gate, gate_basis = _batch_phase_gate(spec, assembled)
+    area = spec.get("area")
+    phase = _build_phase(pid, spec["title"].strip(), {
+        "description": spec.get("description") or "",
+        "outcome": spec["desiredOutcome"],
+        "blocked_by": spec.get("blockedBy") or [],
+        "area": [area] if isinstance(area, str) else (area or []),
+        "review_skill": spec.get("reviewSkill")}, gate)
+    phase["request"] = doc["request"]
+    phase["openChoices"] = list(doc["openChoices"])
+    side = _side_branch(mpath, assembled)
+    warn_side = side["suffix"] is not None and not _side_branch_warned(
+        project, config, mpath, side["branch"])
+    assembled.setdefault("phases", []).append(phase)
+    suffix = _mint_suffix(mpath, assembled)
+    ids = []
+    for _task in doc["tasks"]:
+        # A placeholder per task, so the next allocation counts the one before.
+        ids.append(_allocate_id(assembled, pid, suffix))
+        phase["tasks"].append({"id": ids[-1]})
+    keys = dict((t["key"], tid) for t, tid in zip(doc["tasks"], ids) if "key" in t)
+    # A key spelled like an id - one the plan holds or one just allocated -
+    # would make a reference to it mean either.
+    held = set(t.get("id") for _p, t in _mio.iter_tasks(assembled)) | set(
+        p.get("id") for p in assembled.get("phases") or [] if isinstance(p, dict))
+    clash = sorted(k for k in keys if k in held)
+    if clash:
+        out("[audit-task] REFUSED: task key %s is also an id in this plan, so "
+            "a reference to it could mean either -- nothing written"
+            % (", ".join(clash),))
+        return E_USAGE
+    missing = _batch_missing_refs(doc, ids, keys, assembled, pid)
+    if missing:
+        out("[audit-task] REFUSED: the batch names a dependency neither this "
+            "plan nor the file holds -- nothing written:")
+        for where, field, ref in missing:
+            out("  - %s %s %r" % (where, field, ref))
+        return E_USAGE
+
+    fidx = assembled.setdefault("fileIndex", {})
+    for i, (spec_task, tid) in enumerate(zip(doc["tasks"], ids)):
+        task, _unnamed, _basis = _build_task(
+            tid, spec_task["title"].strip(), _batch_task_args(spec_task, keys),
+            phase, assembled, None, project)
+        phase["tasks"][i] = task
+        for fpath in task["files"]:
+            entry = fidx.setdefault(_vocab._strip_line_suffix(fpath), [])
+            if tid not in entry:
+                entry.append(tid)
+
+    snap = _snapshot(_write_paths(project, mpath, raw_index, pid,
+                                  new_phase=phase))
+    try:
+        written = _write_add(project, mpath, raw_index, assembled, pid, True)
+    except Exception as exc:
+        _restore(snap)
+        out("[audit-task] write failed -- manifest restored: %s" % exc)
+        return E_INVALID
+    written_manifest = {}
+    try:
+        written_manifest = _mio.load_manifest(mpath)
+        findings, warnings = vm.validate(written_manifest)
+    except Exception as exc:
+        findings, warnings = ["cannot re-read the written manifest: %s"
+                              % exc], []
+    if findings:
+        _restore(snap)
+        out("[audit-task] REFUSED: the batch would leave the manifest invalid "
+            "-- every written file rolled back, nothing kept:")
+        for line in findings:
+            out("FINDING: " + line)
+        return E_INVALID
+
+    jrows = [_journal_phase_add(project, config, mpath, pid, phase["title"],
+                                phase["desiredOutcome"],
+                                side["branch"] if side["suffix"] else None)]
+    jrows.extend(_journal_add(project, config, mpath, task["id"], pid,
+                              task["title"], []) for task in phase["tasks"])
+    unjournaled = [r for r in jrows if not r.get("journaled")
+                   and r.get("journaledWhy") == "failed"]
+    index_note = _index_dirty_note(written, mpath, project, pid)
+    if args.as_json:
+        result = {"ok": True, "id": pid, "phase": phase, "tasks": ids,
+                  "written": written, "testGateBasis": gate_basis,
+                  "warnings": _wg.collapse_machine(warnings, written_manifest),
+                  "journaled": not unjournaled}
+        result.update(project_basis_key(args))
+        result.update(_index_dirty_key(index_note))
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    out("[audit-task] phase %s added with %s -- %s"
+        % (pid, ", ".join(ids), phase["title"]))
+    out("  outcome: %s" % phase["desiredOutcome"])
+    out("  gate: %s (%s)" % (", ".join(gate) if gate else "none", gate_basis))
+    out("  request: saved verbatim as phase.request; open choices: %s"
+        % ("; ".join(phase["openChoices"]) or "none, as the file says",))
+    for line in _wg.collapse(warnings, written_manifest):
+        out("WARNING: " + line)
+    if unjournaled:
+        out(_not_journaled_line(unjournaled[0], "a phase.add or task.add row"))
+    out("  written: %s" % ", ".join(written))
+    if index_note:
+        out(index_note)
+    if warn_side:
+        for line in _side_branch_warning(pid, side):
+            out(line)
     return 0
 
 
@@ -7331,6 +7729,8 @@ def cmd_cancel(args, out):
 
 
 def cmd_add(args, out):
+    if args.from_file is not None:
+        return _cmd_batch_add(args, out)
     project = _resolve_project(args)
     if not os.path.isdir(project):
         out("[audit-task] not a directory: %s" % project)
@@ -9898,13 +10298,13 @@ def _seed_phase(pid, title, gate):
     """The new phase's dict, template fields only (conventions -> New phase
     template).
 
-    NOT `_build_phase`. That function reads `args.description`, `.outcome`,
-    `.blocked_by`, `.area` and `.review_skill` off the caller's namespace, none
-    of which `seed` exposes as a flag -- there is nothing yet to describe,
-    block on or tag. Calling it anyway would put every one of those reads in
-    `seed`'s own derived flag set the way the suite's `vf6` computes it, which
-    would make a verb that accepts none of those flags LOOK like it reads all
-    of them. The one piece of real judgement -- deriving an honest gate -- is
+    NOT `_build_phase`, which was written to read `args.description`,
+    `.outcome`, `.blocked_by`, `.area` and `.review_skill` off the caller's
+    namespace, none of which `seed` exposes as a flag -- there is nothing yet
+    to describe, block on or tag. Calling it that way would have put every one
+    of those reads in `seed`'s own derived flag set the way the suite's `vf6`
+    computes it. It now takes those values as arguments (`_phase_fields`), so
+    the reason is gone and this copy of the template is debt kept as it was. The one piece of real judgement -- deriving an honest gate -- is
     still shared, through `_phase_gate`; this is the fixed shape the
     conventions document, applied to fixed values.
     """
@@ -10090,7 +10490,8 @@ VERB_FLAGS = {
     # afterwards is its own verb and its own refusals.
     "add": ("phase", "skills", "model", "files", "outputs", "risk",
             "blocked_by", "depends_on", "description", "tests_mode",
-            "tests_add", "gate", "gate_clear", "dry_run", "failing_from"),
+            "tests_add", "gate", "gate_clear", "dry_run", "failing_from",
+            "from_file"),
     "add-phase": ("phase_id", "outcome", "description", "area", "review_skill",
                   "blocked_by", "gate", "gate_clear", "park"),
     "cancel": ("reason",),
@@ -10361,6 +10762,13 @@ def build_parser():
     # the ordinary tests.add/files/phase-wide chain. The runId is opaque and
     # looked up through `_evidence_io.row_by_run`, never parsed -- see
     # `_failing_from_lookup`'s docstring for the three things the row must be.
+    # `add` only. A phase and its tasks from one JSON file, in one write; the
+    # file carries every field, so no other `add` flag is read beside it.
+    p.add_argument("--from-file", dest="from_file", default=None,
+                   metavar="PATH",
+                   help="add: a new phase and its tasks from one JSON file "
+                        "{request, openChoices, phase, tasks}, written in one "
+                        "call and revalidated once")
     p.add_argument("--failing-from", dest="failing_from", default=None,
                    metavar="RUNID",
                    help="add: point the new task's gate at the suites this "
