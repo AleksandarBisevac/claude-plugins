@@ -617,7 +617,7 @@
     {
       "id": "P119.10-g0k",
       "title": "a package script or a script file is read as a selection unless the project names it as its whole suite",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes P119 review round 2 findings R5-R6, both the same class as round 1's.\n1. gate_reading counts only a fixed runner as the runner. A package-script name (`npm|yarn|pnpm run <script>`) reads `whole` only when the script is `test`; any other script name is an operand, so it reads `unknown`. A script file run by an interpreter (`node scripts/test.js`, `python3 tools/x.py`) is an operand too, unless it is a file the project's own gate names as its whole suite. Decide that by one explicit rule, state it in the classifier's comment, and keep `python3 tools/sweep-selftests.py` reading `whole` by that rule, not by a special case.\n2. CHANGELOG: the lever D line states exactly which commands read `whole`. The lever C line ends at \"so the sign-off steps run as they would after it\".\nCases, each red first: `npm run test:unit` and `node scripts/test.js` read unknown. Allow twins: `npm test`, `npm run test` and the sweep stay whole. Deliver a mutation probe.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -645,16 +645,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T21:45:39Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T21:59:16Z.11564c",
+        "status": "passed",
+        "at": "2026-10-08T21:59:16Z"
+      }
     }
   ],
   "startedAt": "2026-10-08T16:35:57Z"

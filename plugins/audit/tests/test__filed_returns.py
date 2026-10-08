@@ -367,7 +367,8 @@ def _mechanical_cases(check):
           and helper_red(_executor(redFirst=typed)) is None
           and helper_red(None) is None)
 
-    build = {"test": "python3 -m pytest tests", "sweep": "python3 tools/sweep.py"}
+    build = {"test": "python3 -m pytest tests", "sweep": "python3 tools/sweep.py",
+             "selftests": "python3 tools/sweep-selftests.py"}
 
     def kind(entries):
         resolved = [(e, build.get(e, e)) for e in entries]
@@ -405,6 +406,36 @@ def _mechanical_cases(check):
           and "`-m`" in read["pytest -m unit"][1]
           and "`auth::login`" in read["cargo test auth::login"][1]
           and "`pkg.test_auth`" in read["python -m unittest pkg.test_auth"][1])
+    # A package script other than `test`, and a script file the plan's build
+    # commands do not declare, are operands; each allow twin below is the
+    # mutation that reads every script as part of its runner gone the other way.
+    sweep = "python3 tools/sweep-selftests.py"
+    declared = {"selftests": sweep, "unit": "npm run test:unit"}
+    scripts = dict((label, (gate_reading(b, r) or (None, ""))) for label, b, r in (
+        ("npm run test:unit", {}, [("npm run test:unit",) * 2]),
+        ("unit key", declared, [("unit", "npm run test:unit")]),
+        ("node scripts/test.js", {}, [("node scripts/test.js",) * 2]),
+        ("undeclared sweep", {}, [(sweep, sweep)]),
+        ("declared with more", {"u": "node scripts/test.js --only unit"},
+         [("node scripts/test.js",) * 2]),
+        ("npm test", {}, [("npm test",) * 2]),
+        ("npm run test", {}, [("npm run test",) * 2]),
+        ("yarn run test", {}, [("yarn run test",) * 2]),
+        ("selftests key", declared, [("selftests", sweep)]),
+        ("declared sweep -q", declared, [(sweep + " -q",) * 2])))
+    check("ma12 a package script other than `test`, and a script file run by an "
+          "interpreter that `meta.buildCommands` does not declare as a command of "
+          "its own, read `unknown` with the script named; `npm test`, "
+          "`npm run test` and a declared sweep read `whole`: %r" % (scripts,),
+          [k for k, v in scripts.items() if v[0] == "unknown"] == [
+              "npm run test:unit", "unit key", "node scripts/test.js",
+              "undeclared sweep", "declared with more"]
+          and [k for k, v in scripts.items() if v[0] == "whole"] == [
+              "npm test", "npm run test", "yarn run test", "selftests key",
+              "declared sweep -q"]
+          and "`test:unit`" in scripts["npm run test:unit"][1]
+          and "`scripts/test.js`" in scripts["node scripts/test.js"][1]
+          and "`tools/sweep-selftests.py`" in scripts["undeclared sweep"][1])
     paths = dict((p, bool(is_test(p))) for p in (
         "tests/test_refund.py", "lib/specs/test__x.rb",
         "tools/ui-tests/a.test.js", "src/b.spec.ts", "pkg/x_test.go",

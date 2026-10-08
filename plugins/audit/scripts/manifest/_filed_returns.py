@@ -535,8 +535,19 @@ NO_SELECTION_FLAGS = ("-q", "-qq", "-v", "-vv", "-s", "-x", "--quiet",
 # An operand meaning every package rather than one: `go test ./...`.
 WHOLE_OPERANDS = ("./...",)
 # Runners whose first word takes a subcommand that is part of the runner, not
-# an operand: `go test`, `npm test`. `npm run <script>` takes the script's name
-# too, and `npx <tool>` the tool's (`run` as well, for vitest).
+# an operand: `go test`, `npm test`. `npx <tool>` takes the tool's name too
+# (`run` as well, for vitest).
+#
+# THE ONE RULE FOR A NAMED SCRIPT. A word naming a script is part of the runner
+# only where the plan itself vouches for it as the suite, and is an operand
+# everywhere else, because a script is how a project selects a subset as often
+# as how it runs everything. A package script (`npm|yarn|pnpm run <script>`)
+# is the runner only when the script is `test`, the name the package manager
+# itself runs as the suite. A script file run by an interpreter
+# (`python3 tools/x.py`, `node scripts/test.js`) is the runner only when one of
+# `meta.buildCommands` is exactly that interpreter and that file, nothing after
+# them; that is how `python3 tools/sweep-selftests.py` reads `whole` in a plan
+# declaring it. `-m <module>` is not a script: the module is the runner.
 _SUBCOMMANDS = {"go": ("test",), "cargo": ("test",), "npm": ("test", "t"),
                 "yarn": ("test",), "pnpm": ("test",)}
 _INTERPRETER = re.compile(r"^(?:python[0-9.]*|py|node)(?:\.exe)?$")
@@ -571,17 +582,32 @@ def _names_tests(token):
     return not token.startswith("-") and "=" not in token and is_test_path(token)
 
 
-def _runner_width(words):
-    """How many leading `words` are the runner: an interpreter with its script
-    or `-m` module, a known runner with its subcommand, else the first word."""
+def _declared_scripts(build):
+    """The `[interpreter, script]` word pairs `meta.buildCommands` declares as
+    a whole command - the only script files `_runner_width` reads as a runner."""
+    pairs = []
+    for command in build.values():
+        try:
+            words = shlex.split(command) if isinstance(command, str) else []
+        except ValueError:
+            continue
+        if len(words) == 2 and _INTERPRETER.match(os.path.basename(words[0])):
+            pairs.append(words)
+    return pairs
+
+
+def _runner_width(words, declared):
+    """How many leading `words` are the runner: an interpreter with its `-m`
+    module, or with a script file `declared` names; a package manager's
+    `run test`; a known runner with its subcommand; else the first word."""
     head = os.path.basename(words[0]) if words else ""
     nxt = words[1] if len(words) > 1 else None
     if _INTERPRETER.match(head):
         if nxt == "-m" and len(words) > 2:
             return 3
-        return 2 if nxt is not None and not nxt.startswith("-") else 1
+        return 2 if words[:2] in declared else 1
     if head in ("npm", "yarn", "pnpm") and nxt == "run" and len(words) > 2:
-        return 3
+        return 3 if words[2] == "test" else 2
     if nxt is not None and nxt in _SUBCOMMANDS.get(head, ()):
         return 2
     if head == "npx" and nxt is not None:
@@ -600,7 +626,8 @@ def gate_reading(build, resolved):
     `_evidence_io.resolved_commands`'s `[(entry, command)]`, `build` the plan's
     `meta.buildCommands`. `named` when a command names a test path or a
     selection flag; `whole` only when every entry resolves and every command
-    is its runner (`_runner_width`) followed by nothing but
+    is its runner (`_runner_width`, a script counted only by the one rule
+    stated above `_SUBCOMMANDS`) followed by nothing but
     `NO_SELECTION_FLAGS` and `WHOLE_OPERANDS`; `unknown` otherwise - no entry,
     an entry resolving to nothing, a command that does not split into words or
     is empty, or one passing its runner anything else."""
@@ -621,12 +648,13 @@ def gate_reading(build, resolved):
         named += [w for w in words if _names_tests(w) and w not in named]
         split.append((command, words))
     shown = "; ".join("`%s`" % (c,) for _e, c in resolved)
+    declared = _declared_scripts(build)
     if named:
         return "named", "the gate names %s (%s)" % (", ".join(named), shown)
     for command, words in split:
         if not words:
             return "unknown", "a gate command is empty (%s)" % (shown,)
-        width = _runner_width(words)
+        width = _runner_width(words, declared)
         passed = [w for w in words[width:] if not _selects_nothing(w)]
         if passed:
             return "unknown", (
