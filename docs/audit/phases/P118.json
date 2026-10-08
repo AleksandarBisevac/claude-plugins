@@ -1064,7 +1064,7 @@
     {
       "id": "P118.12-v7t",
       "title": "the driver puts every phase-review answer, banner and stop in front of a human before landing",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes P118 review findings R2, R9, R6, R10, R11, R12, R13, R14, R15, R16, R19 and the driver half of R21 and R25, in the step driver and its instruments. The triage reads every per-task answer and the phase intent from the filed phase return, and diverges, cannot-tell and a tdd not-proved become lines a human answers before sign-off. A task added after the review's head re-dispatches the phase review. Fix tasks closed after the head get a re-review or a reasoned sign-off. Pre-given high-risk confirmations are honoured. meta.runtimeBoot gets its decide. The gate's NO OVERLAP and TREE CHANGED banners are carried into the did-line and decided at the phase gate. not-fast-forward offers no-ff or leave with the never-rebase rule. A blocked task's stop names audit-task.py unblock <id> --reason, which the sibling task builds, and decide stalled carries a rule. The driver prints stable did-words for a fix task added, signed off, landed and the lock released, and stream-cost reads them as spans. The serial one-task-at-a-time choice is recorded honestly in CHANGELOG and the README row. The ADO echo's hard rules go into its step text, and the fix-task price names a basis the user can open. Every new case is shown red first.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1095,21 +1095,26 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T05:18:14Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T06:30:01Z.299231",
+        "status": "passed",
+        "at": "2026-10-08T06:30:01Z"
+      }
     },
     {
       "id": "P118.13-v7t",
       "title": "the landing property reads the merged copy and every close form keeps its rule",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes P118 review findings R1, R3, R4, R5, R7, R8, R17, R26 and the verb half of R14, in the guarantee core. close-phase asks the landing property of the branch tip's copy as well as the handed copy, and refuses when the tip cannot be read. A recorded fix task's close under phase has one pinned rule. audit-task.py unblock <id> --reason resets an exhausted task's attempts after a human's reason, and is journaled. done --no-change refuses when the task's files changed since its start. commit_landing skips and reports when the parent tree holds other pending plan or journal changes. Success lines keep the gate basis and any warning naming an id the write touched. The README, COMPATIBILITY and CHANGELOG wording matches what the code enforces, with a followed row for what it does not. Every new case is shown red first.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -1124,7 +1129,8 @@
         "plugins/audit/commands/task.md",
         "PLUGIN-BUILD-GUIDE.md",
         "plugins/audit/scripts/_refs.py",
-        "plugins/audit/tests/test__refs.py"
+        "plugins/audit/tests/test__refs.py",
+        "tools/check-git-pipeline.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1147,21 +1153,26 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T05:18:14Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T06:37:35Z.eb12f4",
+        "status": "passed",
+        "at": "2026-10-08T06:37:35Z"
+      }
     },
     {
       "id": "P118.14-v7t",
       "title": "command bodies route every hint, preview what will run, and point at no reference prose",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes P118 review findings R18, R20, R22, R23, R24 and the command half of R21 and R25, in the command bodies and small verbs. phase.md's add section lists every optional phase key, maps each hint flag, and routes --park and a phase with no tasks to add-phase. The dry-run preview shows the ready tasks and reads a not-started phase as such. Pipeline bodies drop their reference pointers where the rule is inline, and measure-context's gate flags a reference path in a pipeline body. The briefs name where an agent writes its return. commit-audit-state prints one success line. The doctor's TTL row skips sidechain entries, states what its five-minute figure leaves out, and words the boundary consistently. verbs-in-full.md's stale guard and dry-run paragraphs match the driver. Every new case is shown red first.",
       "files": [
         "plugins/audit/commands/phase.md",
@@ -1176,7 +1187,10 @@
         "plugins/audit/tests/test_audit_lookup.py",
         "plugins/audit/scripts/status/_doctor_trail.py",
         "plugins/audit/tests/test__doctor_trail.py",
-        "plugins/audit/reference/verbs-in-full.md"
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/commands/doctor.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1199,16 +1213,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T05:18:14Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T06:45:07Z.bde08d",
+        "status": "failed",
+        "at": "2026-10-08T06:45:07Z"
+      }
     }
   ],
   "startedAt": "2026-10-07T21:17:01Z"

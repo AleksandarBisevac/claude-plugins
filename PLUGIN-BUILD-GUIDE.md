@@ -402,7 +402,7 @@ L7:
   commit-manifest-index -> _claude_home, _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
   commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
-  drive-phase -> _areas, _claude_home, _config_rules, _evidence_io, _filed_returns, _loader, _manifest_io, _output, _status_facts
+  drive-phase -> _areas, _claude_home, _config_rules, _evidence_io, _filed_returns, _journal_io, _loader, _manifest_io, _output, _status_facts
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
@@ -1012,7 +1012,15 @@ re-mirrors the index stub from the shard. **The stamp is then committed where it
 `landed on <parent>`; or, with the parent checked out nowhere and the stamp in the tree holding
 the phase branch, on that branch, with the parent fast-forwarded to it once more and the
 ancestry read back. A stamp in a tree holding any other branch is left there and said
-(`landingCommitSkipped`, not a failure); a commit verb that refuses makes the run exit 1. A re-run
+(`landingCommitSkipped`, not a failure), and so is one in a tree holding other pending changes to
+the files the audit-state commit stages whole - a plan file differing from HEAD beyond this phase's
+stamp fields, a journal row about anything else, any evidence change (`pending_beyond_stamp`), so
+another session's work never rides into the landing's commit. A commit verb that refuses makes the
+run exit 1. Under `review.perTask: phase` the merge is refused while a task recording a commit
+lacks its answers, asked of the handed plan AND of the branch tip's copy (`landed_answers_refusal`):
+from the parent's checkout the handed copy is the plan as it stood at the fork, where no task
+records a commit yet, so it alone asks nothing; a tip whose copy cannot be read is refused wherever
+the property could apply. A re-run
 over a landed phase - its branch gone or not - commits a stamp an earlier landing left as an
 edit, and commits nothing when there is none. `lt` in `plugins/audit/tests/test_close_phase.py`
 and `g17`/`g17b` in `tools/check-git-pipeline.py` hold it against real git. Each of the three plan writes here — the stamp, the
@@ -4058,12 +4066,19 @@ resolves for the phase or a task is owed its answers there (`review_due`); the r
 through `submit <phaseId> --head`. The `next` after it reads that filed return, records every
 finding in one `audit-task.py finding --findings-file -` call (`record_findings`), and prints one
 `decide triage`: each finding no fix task names yet, with its options, and what a fix task is
-predicted to cost - `FIX_TASK_PREDICTED`, with `FIX_TASK_PRICE_BASIS` printed beside it, the
-range the pipeline-cost design gives for rung 1 and never a measurement of the project. Each line
-of that print stays inside `TRIAGE_LINE_BYTES`. `--answer fix --fix <id>` adds a task per finding
+predicted to cost - `FIX_TASK_PREDICTED`, with `FIX_TASK_PRICE_BASIS` printed beside it, which
+says it is a benchmark prediction and never a measurement of the project. Each line of that print
+stays inside `TRIAGE_LINE_BYTES`. **The review's answers reach a human there too**
+(`human_answers`): every task entry of a filed phase return answering `diverges` or `cannot-tell`,
+grading red-first `not-proved` or inherited tests `flagged`, and a phase intent of `diverges` or
+`cannot-tell`, is an `[accept]` line, and `sign-off` is refused (`triage_refusal`) until `--answer
+accept --reason` settles them - the reason is kept in the summary. A review filed at the marked
+head while a task added since is owed its answers is dispatched again (`owed_tasks`), and a
+recorded fix task closed at a commit the head does not hold (`fixes_after`) is listed as
+unreviewed, with `--answer re-review` beside a `sign-off` whose summary then names it. `--answer fix --fix <id>` adds a task per finding
 through `audit-task.py add --fixes` (`add_fix_tasks`), which the drive runs like any other - under
-`review.perTask: phase` closed `not-asked` with the finding as its basis, the answer the landing
-takes from a recorded fix task - and the triage is printed again. `--answer sign-off --reason
+`review.perTask: phase` closed `not-asked` with a basis saying its own diff is unreviewed, the
+answer the landing takes from a recorded fix task - and the triage is printed again. `--answer sign-off --reason
 <summary>` runs the rest as one step (`signoff_step`): the phase gate (`derive-phase-gate.py`
 first when `meta.phaseGate.mode` is set, then `run-test-gate.py --record`), `verify-invariants.py`,
 `audit-task.py signoff --verdict passed`, the commit (`commit-audit-state.py`, and
@@ -4071,8 +4086,12 @@ first when `meta.phaseGate.mode` is set, then `run-test-gate.py --record`), `ver
 that records no branch), and the lock release. **A red phase gate stops before the sign-off verb**
 (`red_gate_stop`): the invariants still run and are printed beside it, with the fix-task command
 carrying the run's id for `--failing-from`, and the next `next` prints the triage again. Sign-off's other
-decisions are a phase reviewer that filed nothing (`redispatch`), an invariant breach
-(`accept`, whose reason is kept in the summary) and a parent that moved (`no-ff`). The `sg` cases
+decisions are a phase reviewer that filed nothing (`redispatch`), a runtime boot owed when
+`meta.runtimeBoot` is set and the phase touched its `appRootPath` (`runtime_boot_root`; `booted`
+or `not-reachable`, each with a reason, asked before the gate runs), a green phase gate that
+printed `NO OVERLAP` or `TREE CHANGED` (`gate_banners`; `accept`), an invariant breach
+(`accept`), and a parent that moved (`no-ff`, or `leave` with a reason, the rule printed under
+it forbidding a rebase). Every reason is kept in the summary (`signoff_summary`). The `sg` cases
 drive it over the fixture plan: sign-off's model-facing steps are the review's dispatch, the
 triage and the final step, a red phase gate never reaches `signoff`, and several findings are one
 `finding` call - each beside a mutant driver that breaks it.
@@ -4087,12 +4106,17 @@ its reason, a held lock, what to do with any other stop - is printed at that ste
 with a rule. A red gate offers `rerun` beside `retry` and `block`: `rerun` measures again without
 re-starting the task, so a gate that could not run spends no attempt; `block` runs
 `commit-audit-state.py` after the block verb (`keep_record`), since a blocked task gets no task
-commit to carry the rows its gate wrote. A print whose call closed, blocked or signed off an item
+commit to carry the rows its gate wrote, and a blocked task's stop and a stalled phase both print
+the remedy, `audit-task.py unblock <id> --reason`. A task gate's banners ride its did-line
+(`gate P1.1 green (NO OVERLAP)`), and a high-risk task a `risk.confirmed` journal row of this
+phase names (`confirmed_in_advance`) commits without the decision, its did-line saying so. A print whose call closed, blocked or signed off an item
 carrying an `ado` link, on a plan whose board takes the echo, adds `ado echo owed: <ids>`
 (`ado_echo_lines`) - no verb sends the board update, so the instruction is the whole of it. `reviewer_due` is the one place the
-per-task reviewer's dispatch is decided. `did_tasks` reads the driver's own did-line back, and is
-what `tools/stream-cost.py` reads a driver session's task cycle from, since the driver's `start`
-and `done` run in subprocesses the session's stream never shows.
+per-task reviewer's dispatch is decided. `did_tasks` reads the driver's own did-line back, and
+`did_events` adds the words for a fix task added, the sign-off, the landing and the lock release
+(`FIX_ADDED`, `SIGNED`, `LANDED`, `RELEASED`); `tools/stream-cost.py` reads a driver session's
+task cycle, fix-task and close spans from them, since those steps run in subprocesses the
+session's stream never shows.
 
 **Bounded output.** Every print that is not a stop stays inside `INSTRUCTION_BYTES`; `dp3` holds
 it over the fixture drive, and `--verbose` adds each verb's run above the instruction. The brief
@@ -4667,7 +4691,9 @@ records an attempt nobody made. Closing the last open task does **not** close th
 not-asked` with its basis; a filed answer is the one recorded, and a typed `--intent` that
 differs from it, `not-asked` included, is refused, writing nothing. The rule sits in
 `_locked_done` (`_close_intent`), so it holds for the plain form as well as `--from-return`;
-a `--no-change` close keeps the rule it had. `done --from-return` also takes the outcome,
+a `--no-change` close keeps the rule it had. Under `phase`, a recorded fix task closes only
+`--intent not-asked` with its basis: the phase review owes it no answer (`_fr.owed_answer`), so a
+`deferred` it recorded could never be answered. `done --from-return` also takes the outcome,
 `verifiedBy` (from `testsAdded`) and the red-first block — onto `task.redFirst` — from the
 executor's filed return, and refuses when that return is not filed for the current start.
 
@@ -4743,7 +4769,9 @@ phase is signed off - done, or awaiting its merge - because that verdict is not 
 stored `done` over an open task is a finding every later verb refuses on.
 
 `done --no-change --reason TEXT` is the one close without a SHA, for a task whose answer was that
-nothing needed to change: `commit` stays null and `outcome.noChange` records the reason and the HEAD
+nothing needed to change, and it is refused when the task's declared files changed since its start
+(`_no_change_moves`: a commit since `startedAt`, bounded below by `baseRef`, touching one, or an
+uncommitted change to one): `commit` stays null and `outcome.noChange` records the reason and the HEAD
 it was examined at (`_examined_head`; null, and said, when git cannot name one), which is the block
 `_commit_trail.no_change_close` answers from for the doctor's no-SHA warning as well. `--intent
 not-asked --intent-basis TEXT` records an intent question deliberately not put; `_done_flags_refusal`
@@ -4762,7 +4790,12 @@ which never mints one of those ids again, and for `_evidence_io.subject_aliases`
 doctor and `reconcile` join runs recorded under an old id to the live task. `block` writes `status` and `blockedReason`
 (cleared by the next `start`, whose row keeps it as the value it moved from); `note` appends one
 `{at, text}` entry to `notes[]`, the one addition a started task takes. Each journals its own row -
-`task.move`, `task.block`, `task.note`.
+`task.move`, `task.block`, `task.note`. `unblock <taskId> --reason TEXT` is the way past the
+attempt ceiling `start` refuses at, `--force` included: on a task that has spent its attempts it
+resets `attempts` to 0 and, on a blocked one, moves it to `pending` and drops `blockedReason`,
+journaling `task.unblock` with the human's reason. A task with attempts left is refused
+(`_unblock_refusal`) - `start` still runs it - so a count is never reset for a block about
+something else.
 
 `finding <phaseId>`, `resolve-finding <findingId>` and `correct <phaseId>` write a sign-off's
 review record, which used to be hand-edited into the shard. `finding` appends entries in the

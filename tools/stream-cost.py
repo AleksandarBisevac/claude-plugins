@@ -1088,8 +1088,10 @@ def _calls_in(flat):
 def request_marks(req, results=None):
     """What one main-loop request did that a span bound reads: whether it planned, the
     tasks it started and closed, whether it called a planning verb, landed the phase or
-    released the lock. A step driver's call starts and closes what its result says it
-    did, read from `results` (tool id -> the parsed result)."""
+    released the lock. A step driver's call does what its result's did-lines say it
+    did, read from `results` (tool id -> the parsed result): the tasks it started and
+    closed, a fix task it added - a planning verb run in its subprocess - and the
+    landing and lock release its final step made."""
     marks = {"plans": False, "adds": False, "starts": [], "dones": [], "lands": False,
              "releases": False}
     for tool in req["tools"]:
@@ -1103,10 +1105,14 @@ def request_marks(req, results=None):
             continue
         for script, verb, operand in script_calls(data.get("command") or ""):
             if script == DRIVER_SCRIPT:
-                did = _DRIVE.did_tasks(((results or {}).get(tool.get("id")) or {})
-                                       .get("text"))
+                did = _DRIVE.did_events(((results or {}).get(tool.get("id")) or {})
+                                        .get("text"))
                 marks["starts"].extend(did[_DRIVE.STARTED])
                 marks["dones"].extend(did[_DRIVE.CLOSED])
+                if did["added"]:
+                    marks["plans"] = marks["adds"] = True
+                marks["lands"] = marks["lands"] or did["landed"]
+                marks["releases"] = marks["releases"] or did["released"]
             elif script == TASK_SCRIPT and verb in PLAN_VERBS:
                 marks["plans"] = marks["adds"] = True
             elif script == TASK_SCRIPT and verb in ("start", "done") and operand:
@@ -2814,6 +2820,37 @@ def _driver_span_cases(check):
           "starts nothing either - so no cycle: %r" % (spread_echo["found"]["why"],),
           spread_echo["found"]["lo"] is None
           and "no task cycle" in (spread_echo["found"]["why"] or ""))
+
+    # A driven sign-off with a fix task: the review's dispatch, the triage, the fix
+    # task added and started inside the driver, its close beside the triage again,
+    # and the final step that signs off, lands and releases the lock.
+    signed = [(_FX_DRIVE, "[drive-phase] P1: started P1.1\n"
+                          "dispatch audit:audit-executor P1.1 model=sonnet brief=/b/1"),
+              (_FX_DRIVE, "[drive-phase] P1: gate P1.1 green; stamp current; closed "
+                          "P1.1 at abc1234\n"
+                          "dispatch audit:audit-reviewer P1 model=sonnet brief=/b/2"),
+              (_FX_DRIVE, "[drive-phase] P1: 1 finding(s) of the phase review filed\n"
+                          "decide triage P1: the phase review returned `findings`"),
+              (_FX_DRIVE, "[drive-phase] P1: fix task P1.2-fcb added for P1-R1; "
+                          "started P1.2-fcb\n"
+                          "dispatch audit:audit-executor P1.2-fcb model=sonnet brief=/b/3"),
+              (_FX_DRIVE, "[drive-phase] P1: gate P1.2-fcb green; stamp current; "
+                          "closed P1.2-fcb at def5678\n"
+                          "decide triage P1: the phase review returned `findings`"),
+              (_FX_DRIVE, "[drive-phase] P1: phase gate green; invariants clean; "
+                          "signed off; committed 1234567; landed (audit/p1 -> main); "
+                          "lock released\ndone P1: signed off (passed)")]
+    _r, spread_signed = _fx_driven(signed)
+    found = spread_signed["found"]
+    parts = (_fx_numbers(spread_signed, "cycle"), _fx_numbers(spread_signed, "sign-off"),
+             _fx_numbers(spread_signed, "fix task"), _fx_numbers(spread_signed, "close"))
+    check("sp14 a driven sign-off with a fix task reads as the driver's did-words say: "
+          "the cycle holds the phase's own task, the fix task runs from the request that "
+          "added it to the one that closed it, the triage is sign-off, and the request "
+          "that landed and released the lock is the close: %r"
+          % ((found["tasks"], parts),),
+          found["tasks"] == ["P1.1"]
+          and parts == ([1, 2], [3], [4, 5], [6]))
 
 
 def _selftest():

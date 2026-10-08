@@ -25,8 +25,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   for a config that does not set the key** - see *Changed*.
 - **`audit-task.py add --fixes <findingId>[,<findingId>]`** writes `task.fixes` and each
   finding's `fixTask` in the write that adds the task, refusing a finding of another phase or
-  one already naming a task. Under `phase` such a task may close `--intent not-asked` with its
-  basis.
+  one already naming a task. Under `phase` such a task closes only `--intent not-asked` with
+  its basis: a close with no `--intent` is refused, because the phase review owes a fix task no
+  answer and the `deferred` it would record could never be answered.
 - **A phase review files its return:** `audit-task.py file-return <phaseId> --role reviewer
   --head <sha>`, with a `tasks` array holding one entry per task owed its answers. The phase
   reviewer's brief (`audit-lookup.py brief <phaseId> --role phase`) now prints the phase's
@@ -57,8 +58,41 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   that reads a reference file first. CI and `tools/verify.sh` run it.
 - **`_refs.followed_anchor_drift()`** holds every row of the README's followed table to a step
   text the driver prints or a bullet of an agent prompt.
+- **`audit-task.py unblock <taskId> --reason "<the human's words>"`** resets the attempts of a
+  task that has spent them, after a human says try again: a blocked task goes back to
+  `pending`, and the reason goes on a `task.unblock` journal row. A task with attempts left is
+  refused, since `start` still runs it. The step driver's stop on a blocked task names it.
+- **An agent's return is filed, and a close can read it.** `audit-task.py file-return <taskId>
+  --role executor|reviewer` files the return from stdin, once per task, role and start;
+  `done --from-return` takes the outcome, `verifiedBy` and `redFirst` from the executor's filed
+  return. `audit-lookup.py <manifest> brief <id> --role executor|reviewer|phase` writes an
+  agent's whole spawn brief to a file and prints its path.
+- **`audit-task.py add --from-file <path>`** adds a phase and its tasks from one planning file
+  in one write, saving the request as typed and its open choices on the phase.
+- **`/audit:doctor --transcript <path>`** reports one session's main-loop cache TTL trade: its
+  longest gap between main-loop requests, its one-hour cache writes, and what those writes would
+  have cost at a five-minute TTL.
 
 ### Changed
+- **`/audit:phase` runs a phase's tasks one at a time, in id order.** It used to run a wave's
+  tasks in parallel where their files were disjoint. The step driver records each task's gate
+  before the next task starts, because a gate run while a sibling executor edits the same tree
+  measures that sibling's unfinished work. The cost is wall clock: a wide phase now takes time
+  in proportion to its task count. The README's `/audit:phase` row says so.
+- **Under `review.perTask: phase`, the step driver puts the phase review's answers in front of a
+  human before the landing.** The triage lists each task the review answered `diverges` or
+  `cannot-tell`, each red-first `not-proved` and each inherited-test `flagged`, and a phase intent
+  of `diverges` or `cannot-tell`, and refuses `sign-off` until `--answer accept --reason` settles
+  them; the reason goes into the summary. A task added after the review's head gets a fresh phase
+  review, and a fix task closed after it is listed as unreviewed, with `--answer re-review`
+  beside `sign-off` (whose summary then names it). Sign-off also asks again what it had stopped
+  asking: a `meta.runtimeBoot` boot when the phase touched its app root (`booted` or
+  `not-reachable`, each with a reason), a phase gate that printed `NO OVERLAP` or `TREE CHANGED`
+  (`accept --reason`; a task gate's did-line now carries the banner too), and a parent that moved
+  (`no-ff`, or `leave --reason`, never a rebase). A high-risk task covered by a `--confirm-high-risk`
+  answer commits without asking again. A blocked task's stop names `audit-task.py unblock <id>
+  --reason`. `tools/stream-cost.py` reads the driver's did-words for a fix task added, the landing
+  and the lock release, so a driven sign-off with a fix task is no longer counted as task cycle.
 - **No pipeline command makes the main loop read reference prose first.** `/audit:run`,
   `/audit:next`, `/audit:resume`, `/audit:phase`, `/audit:review` and `/audit:task` are cut to
   the step driver's loop and each verb's own command line. The rule a step needs is printed by
@@ -86,13 +120,36 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   recorded as a fix task. The step driver (`drive-phase.py`) dispatches no per-task reviewer
   and still records each task's gate before its close. The phase review answers each task at
   sign-off; `/audit:phase signoff` writes those answers onto each task's `intentCheck` and
-  **refuses, under `--verdict skipped` as under `passed`, while a task with a commit lacks them**,
-  and `close-phase.py` refuses to merge on the same reading of the plan's record. A phase
-  already under way when you upgrade reads the new default too. **To keep today's behaviour,
-  set `"review": {"perTask": "always"}`** in `.claude/audit.config.json` - before upgrading if a
-  phase is in flight. This ships in a minor release by the maintainer's decision;
+  **refuses, under `--verdict skipped` as under `passed`, while a task that records a commit
+  lacks them**, and `close-phase.py` refuses its own merge on the same reading - of the plan it
+  is handed and of the copy the branch tip brings in, refusing when the tip's cannot be read.
+  It does not ask a task that no longer records its commit, a merge made by hand or through a
+  pull request, or who filed the phase return; the plugin README's followed table names each.
+  A phase already under way when you upgrade reads the new default too. **To keep a reviewer
+  per task, set `"review": {"perTask": "always"}`** in `.claude/audit.config.json` - before
+  upgrading if a phase is in flight. That is not the last release's behaviour: a close with a
+  commit is still held to the filed-return rule in the next entry. This ships in a minor release by the maintainer's decision;
   `COMPATIBILITY.md` records it as a named exception to the promise that a new key never
   changes behaviour for a config that does not set it.
+- **A close with a commit needs the review behind it, under every `review.perTask` value.**
+  `audit-task.py done --commit <sha>` used to accept a typed `--intent matches`, or no `--intent`
+  at all. Under `always` and `signals` it now exits 2, writing nothing, unless the reviewer's
+  return is filed for the task's current start, or the close says `--intent not-asked
+  --intent-basis "<why>"`. `COMPATIBILITY.md` records the change.
+- **The plugin's verbs print one success line by default**, naming what was done and the record
+  written; `audit-task.py` follows it with any gate basis, `ready now` command and warning about
+  the id it wrote. `--verbose` prints the text each printed before, and a script that read the
+  old lines passes it.
+- **A stamp no longer goes stale when the only paths that moved are ones this plugin's recorders
+  write** - a filed return, a recorded gate. This loosens `stamp-verification.py compare`:
+  a change to those paths between a stamp and its comparison is not reported.
+- **`done --no-change` is refused when one of the task's declared files changed since its
+  start**: a commit since `startedAt` touching one, or an uncommitted change to one. A task with
+  no commit is never asked for review answers, so the claim is checked against git instead.
+- **`close-phase.py` leaves the stamp uncommitted when the tree holds other pending changes**
+  to the plan file, the journal or the evidence that this landing did not write, and says so.
+  The audit-state commit stages each of those whole, so committing there would carry another
+  session's work under a subject saying the phase landed.
 - **`/audit:status`, `/audit:report` and `/audit:usage` refuse when the config names a manifest
   they cannot use.** A `.claude/audit.config.json` that does not parse, or whose `manifestPath`
   names a file that does not exist, makes each of them exit 2 and print the same refusal

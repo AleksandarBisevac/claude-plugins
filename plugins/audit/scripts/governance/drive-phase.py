@@ -28,6 +28,11 @@ call and prints one `decide triage`: each open finding with its options, and
 what a fix task is predicted to cost, with the basis of that figure. Answered
 `fix`, each named finding becomes a task through `audit-task.py add --fixes`,
 which the drive then runs like any other, and the triage is printed again.
+The triage also puts to a human what the review answered that only a human
+settles - a task that diverges, a red-first not proved - and refuses
+`sign-off` until `accept` gives their reason; it lists a fix task closed after
+the review's head with `re-review` beside it, and dispatches the review again
+when a task added since is owed its answers.
 Answered `sign-off` with the summary, one `next` runs the phase gate, the
 invariants check, the sign-off verb, the commit, the landing and the lock
 release, and prints `done`. A red phase gate stops that step before the
@@ -158,6 +163,7 @@ import _loader  # noqa: E402  (script_path: every verb resolved by basename, nev
 #                              for `stateDir`)
 import _manifest_io as _mio  # noqa: E402  (loader, phase resolver, TERMINAL)
 import _evidence_io as _evio  # noqa: E402  (project_config_for, evidence_dir)
+import _journal_io  # noqa: E402  (read_all: a high-risk answer given before the run)
 import _filed_returns as _fr  # noqa: E402  (where a filed return lives, and its read;
 #                                            the per-task review key a task holds)
 import _config_rules  # noqa: E402  (review_per_task_mode: the config's reading now)
@@ -180,6 +186,15 @@ DRIVE_DIRNAME = "drive"
 # session's task cycle from - the driver's own start and close happen in its
 # subprocesses, where the session's stream cannot see them.
 STARTED, CLOSED = "started", "closed"
+# The did-line words for the steps after the task cycle, read back by
+# `did_events` - stream-cost's sign-off, fix-task and close spans. A fix task
+# added inside the driver, its landing and its lock release happen in
+# subprocesses too, so a session's stream sees no planning verb, no landing and
+# no release of its own.
+FIX_ADDED = "fix task"            # "fix task <id> added for <finding>"
+SIGNED = "signed off"
+LANDED = "landed"                 # "landed (<close-phase's line>)"
+RELEASED = "lock released"
 
 
 # --- the text of every step ------------------------------------------------------
@@ -195,6 +210,12 @@ STARTED, CLOSED = "started", "closed"
 # is here with a rule that is not empty. A rule printed on a success step costs
 # bytes inside `INSTRUCTION_BYTES` on every task, so each is one short line.
 DISPATCH_RULE = "Description starts with the id; dispatch nothing alongside."
+UNBLOCK_RULE = ("A blocked task moves only on a human's yes: audit-task.py unblock "
+                "<id> --reason \"<their words>\", then next again.")
+# The triage's rule when a reviewer's answer waits on a human; printed only then,
+# so a clean review's triage carries no line it does not need.
+ANSWERS_RULE = ("Each [accept] line is the human's to settle (AskUserQuestion); "
+                "accept only on their word, with their reason.")
 STEPS = {
     "dispatch-executor": {
         "line": "dispatch %(agent)s %(task)s model=%(model)s brief=%(brief)s",
@@ -227,7 +248,7 @@ STEPS = {
         "rule": ()},
     "decide-stalled": {
         "line": "decide stalled %(phase)s: no task is ready - %(why)s",
-        "rule": ()},
+        "rule": (UNBLOCK_RULE,)},
     "answer": {
         "line": "answer: next %(phase)s --answer %(options)s%(reason)s",
         "rule": ()},
@@ -247,9 +268,19 @@ STEPS = {
         "rule": ("verify-invariants.py found a breach; signing off over it is a "
                  "human's decision, and the reason is kept in the summary",)},
     "decide-not-fast-forward": {
-        "line": "decide not-fast-forward %(phase)s: the parent moved during the "
-                "phase, so close-phase.py did not merge (%(why)s)",
-        "rule": ()},
+        "line": "decide not-fast-forward %(phase)s: the parent moved, so "
+                "close-phase made no merge (%(why)s)",
+        "rule": ("Ask the human; never rebase - it rewrites the task commit SHAs.",)},
+    "decide-runtime-boot": {
+        "line": "decide runtime-boot %(phase)s: meta.runtimeBoot is set and the "
+                "phase touched %(why)s",
+        "rule": ("Cold-boot per meta.runtimeBoot: primary screen, one navigation "
+                 "away and back. Unreachable: ask the human.",)},
+    "decide-gate-coverage": {
+        "line": "decide gate-coverage %(phase)s: the green phase gate printed "
+                "%(why)s",
+        "rule": ("A gate that ran none of this work, or beside a changed tree, may "
+                 "grade nothing: ask the human; the reason is kept.",)},
     "done": {
         "line": "done %(phase)s: %(why)s",
         "rule": ("Report where it landed: a parent that is not the development "
@@ -259,12 +290,11 @@ STEPS = {
         "rule": ()},
     "ado-echo": {
         "line": "ado echo owed: %(items)s",
-        "rule": ("Update each linked item's board state as reference/tracker-sync.md "
-                 "says - never create one, never ask, a failure is one report line.",)},
+        "rule": ("Update each item's board state only: never create one, never ask, "
+                 "no retry; a failure is one report line - /audit:sync push mends it.",)},
     "stop-blocked": {
         "line": "[drive-phase] %(phase)s: stopped - %(task)s is blocked: %(why)s",
-        "rule": ("Ask the human; only on their yes run audit-task.py start "
-                 "<id> (it spends an attempt), then next again.",)},
+        "rule": (UNBLOCK_RULE,)},
     "stop-lock": {
         "line": "",
         "rule": ("Held by a live run: stop, never take it over. Looks abandoned: "
@@ -285,24 +315,48 @@ DECISIONS = {
     "no-change": (("no-change", "retry"), ("no-change",)),
     "review-answer": (("continue",), ()),
     "stalled": ((), ()),
-    "triage": (("sign-off", "fix"), ("sign-off",)),
+    # `accept` settles the reviewer answers a human decides, and `re-review`
+    # dispatches the phase review again over fix tasks it never saw; the triage
+    # refuses each where it has nothing to act on (`answer_refusal`).
+    "triage": (("sign-off", "fix", "accept", "re-review"), ("sign-off", "accept")),
     "no-phase-review-return": (("redispatch",), ()),
     "invariant-breach": (("accept",), ("accept",)),
-    "not-fast-forward": (("no-ff",), ()),
+    "gate-coverage": (("accept",), ("accept",)),
+    "runtime-boot": (("booted", "not-reachable"), ("booted", "not-reachable")),
+    "not-fast-forward": (("no-ff", "leave"), ("leave",)),
 }
+# The decisions sign-off owns, answered by `apply_phase_answer`.
+PHASE_DECISIONS = ("triage", "no-phase-review-return", "invariant-breach",
+                   "gate-coverage", "runtime-boot", "not-fast-forward")
 
 # --- sign-off's constants -------------------------------------------------------
 # The triage print holds one line per open finding, so it is bounded per line
 # rather than as a whole: a review with many findings is a longer decision, not a
 # cut one.
 TRIAGE_LINE_BYTES = 160
-# What a fix task is predicted to cost, in USD-equivalent: the range the
-# pipeline-cost design gives for rung 1 (section 5.4: the sign-off with a fix
-# task less the sign-off without, in two benchmark sessions). A prediction for a
-# task of that benchmark's size, never a measurement of this project's.
+# What a fix task is predicted to cost, in USD-equivalent: the sign-off with a
+# fix task less the sign-off without, in two benchmark sessions of the plugin's
+# own cost work. A prediction for a task of that benchmark's size, never a
+# measurement of this project's - and the printed basis says only that, since
+# the document the range came from is not part of an install.
 FIX_TASK_PREDICTED = (0.1045, 0.1192)
-FIX_TASK_PRICE_BASIS = ("pipeline-cost design 5.4, rung 1, predicted for a "
-                        "benchmark-size task; not measured here")
+FIX_TASK_PRICE_BASIS = ("a benchmark prediction for a small task, not this "
+                        "project's measurement")
+# The reviewer answers only a human settles, read off a filed review: an intent
+# answer, and a red-first grade or an inherited-test answer.
+HUMAN_ANSWERS = ("diverges", "cannot-tell")
+HUMAN_RED_FIRST = ("not-proved",)
+HUMAN_INHERITED = ("flagged",)
+# The gate's banners a green exit still prints, and the clause each becomes.
+GATE_BANNERS = (("NO OVERLAP WITH THIS WORK", "NO OVERLAP"),
+                ("TREE CHANGED OUTSIDE THIS WORK", "TREE CHANGED"))
+# The journal row `record-risk-confirmation.py` writes, and the sentence its
+# summary carries the covered ids in. An entry point may not import another,
+# so both are spelled here; the `hr` cases drive the real verb, which is what
+# goes red if either drifts.
+RISK_CONFIRMED = "risk.confirmed"
+RISK_COVERED = "%s: high-risk commits confirmed in advance for "
+TRUNCATED = " [truncated]"
 # The verdict sign-off records, and the word a phase's review status carries
 # once it is recorded.
 SIGNED_OFF = ("passed", "skipped")
@@ -326,6 +380,28 @@ def did_tasks(text):
             continue
         for word, task in pattern.findall(line):
             found[word].append(task)
+    return found
+
+
+def did_events(text):
+    """`{"started", "closed", "added": [ids], "signedOff", "landed", "released"}`
+    - what a driver's printed text says it did, read off its did-lines only,
+    one `; `-separated clause at a time."""
+    found = dict(did_tasks(text), added=[], signedOff=False, landed=False,
+                 released=False)
+    for line in (text or "").splitlines():
+        if not line.startswith(PREFIX):
+            continue
+        for clause in line.partition(": ")[2].split("; "):
+            words = clause.split(" ")
+            if clause.startswith(FIX_ADDED + " ") and words[3:5] == ["added", "for"]:
+                found["added"].append(words[2])
+            elif clause == SIGNED:
+                found["signedOff"] = True
+            elif words[0] == LANDED:
+                found["landed"] = True
+            elif clause == RELEASED:
+                found["released"] = True
     return found
 
 
@@ -676,23 +752,63 @@ def advance(ctx, state, manifest, phase, task):
             return relay_refusal(ctx, "run-test-gate.py", code, out + err)
         _mark(state, "gated", task)
         write_state(ctx, state)
-        ctx["did"].append("gate %s green" % (task["id"],))
+        banners = gate_banners(out + err)
+        ctx["did"].append("gate %s green%s" % (task["id"], " (%s)" % (
+            "; ".join(banners),) if banners else ""))
         ctx["did"].append(grade_stamp(ctx, executor.get("stamp")))
     if due and reviewer is None:
         return dispatch(ctx, state, phase, task, "reviewer")
     if task.get("risk") == "high" and not _marked(state, "confirmed", task):
-        return decision(ctx, state, "high-risk", task, "")
+        if task["id"] not in confirmed_in_advance(ctx, phase["id"]):
+            return decision(ctx, state, "high-risk", task, "")
+        _mark(state, "confirmed", task)
+        write_state(ctx, state)
+        ctx["did"].append("high-risk %s confirmed in advance" % (task["id"],))
     if key == "signals" and not due:
         return close_task(ctx, state, phase, task, intent_basis=(
             "review.perTask signals: no signal fired - red-first proved and the "
             "return's gates agree with the recorded green"))
     if key == _fr.KEY_PHASE and _fr.is_fix_task(task, phase):
-        # A fix task answers to the phase review that raised its findings, and
-        # the landing reads `not-asked` with this basis as its answer.
+        # A fix task closes `not-asked`, the answer the landing takes from one;
+        # its diff is the triage's to put to a re-review (`fixes_after`).
         return close_task(ctx, state, phase, task, intent_basis=(
-            "a fix task for %s: the phase review that raised the finding is its "
-            "review" % (", ".join(str(f) for f in task.get("fixes") or []),)))
+            "a fix task for %s: the phase review raised the finding; the fix's "
+            "own diff is unreviewed unless sign-off re-reviews it"
+            % (", ".join(str(f) for f in task.get("fixes") or []),)))
     return close_task(ctx, state, phase, task)
+
+
+def gate_banners(text):
+    """The clauses for the banners a green gate printed - a run that named none
+    of the work's paths, a tree changed outside the work - in a fixed order."""
+    lines = (text or "").splitlines()
+    return [clause for banner, clause in GATE_BANNERS
+            if any(ln.startswith(banner) for ln in lines)]
+
+
+def confirmed_in_advance(ctx, phase_id):
+    """The task ids a `risk.confirmed` row of this phase names - the answer to
+    the high-risk gate given before the run, for exactly the tasks it covered.
+    A clipped summary's last id may be cut, so it is not read as covered, and a
+    journal that cannot be read covers nothing: the gate then asks, as it would
+    with no answer given."""
+    try:
+        rows = _journal_io.read_all(ctx["project"])
+    except Exception:                                          # noqa: BLE001
+        return set()
+    head = RISK_COVERED % (phase_id,)
+    covered = set()
+    for row in rows:
+        summary = str(row.get("summary") or "")
+        if row.get("action") != RISK_CONFIRMED or str(row.get("target")) != phase_id \
+                or not summary.startswith(head):
+            continue
+        ids = summary[len(head):]
+        clipped = ids.endswith(TRUNCATED)
+        ids = [i.strip() for i in ids[:-len(TRUNCATED)].split(",")] if clipped \
+            else [i.strip() for i in ids.split(",")]
+        covered.update(i for i in (ids[:-1] if clipped else ids) if i)
+    return covered
 
 
 # --- answering a decision ---------------------------------------------------------
@@ -718,6 +834,24 @@ def answer_refusal(ctx, pending, answer, reason, fixes=()):
                                          if unknown else ""))
     elif fixes:
         return "--fix belongs to --answer fix"
+    if pending["decision"] == "triage":
+        return triage_refusal(pending, answer)
+    return None
+
+
+def triage_refusal(pending, answer):
+    """A triage answer refused for what this triage holds, or None: sign-off
+    while a reviewer answer waits on a human, and `accept` or `re-review` where
+    there is nothing for it to act on."""
+    answers = pending.get("answers") or []
+    if answer == "sign-off" and answers:
+        return ("sign-off waits on %d reviewer answer(s) a human settles: answer "
+                "accept --reason <their word on each> first" % (len(answers),))
+    if answer == "accept" and not answers:
+        return "no reviewer answer waits on a human here, so accept settles nothing"
+    if answer == "re-review" and not pending.get("fixesAfter"):
+        return "no fix task closed after the review's head, so there is no " \
+               "unreviewed diff to re-review"
     return None
 
 
@@ -745,8 +879,7 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
     task = _mio.tasks_by_id(manifest).get(pending.get("task")) if pending.get("task") else None
     state.pop("pending", None)
     write_state(ctx, state)
-    if pending["decision"] in ("triage", "no-phase-review-return",
-                               "invariant-breach", "not-fast-forward"):
+    if pending["decision"] in PHASE_DECISIONS:
         return apply_phase_answer(ctx, state, manifest, phase, pending, answer,
                                   reason, fixes)
     if answer == "block":
@@ -812,6 +945,7 @@ def finish(ctx, state, why):
             "release", "phase-%s" % (ctx["phase"],), "--project", ctx["gitRoot"]])
         if stop is not None:
             return stop
+        ctx["did"].append(RELEASED)
     try:
         os.remove(state_path(ctx))
         os.rmdir(os.path.dirname(state_path(ctx)))
@@ -835,22 +969,85 @@ def git_head(ctx):
     return done.stdout.strip() if done.returncode == 0 else None
 
 
+def owed_tasks(ctx, phase):
+    """`(ids, problem)` - the tasks a phase review owes its answers: each one
+    whose commit no filed phase return answers yet."""
+    live, problem = None, None
+    if any(t.get("commit") and _fr.review_key(t, phase, None)[1] == "config"
+           for t in _tasks(phase)):
+        live, problem = _config_rules.review_per_task_mode(ctx["config"])
+    if problem:
+        return [], problem
+    answered = _fr.answered_entries(_fr.phase_returns(ctx["evidence"],
+                                                      phase["id"]))
+    return [t["id"] for t in _tasks(phase)
+            if _fr.owed_answer(t, phase, live, answered)], None
+
+
 def review_due(ctx, manifest, phase):
     """`(due, problem)` - whether sign-off dispatches the phase reviewer: a
     review skill resolves for the phase, or a task is owed its answers there."""
     skill, _basis = _areas.resolve_review_skill(manifest, phase)
     if skill:
         return True, None
-    live, problem = None, None
-    if any(t.get("commit") and _fr.review_key(t, phase, None)[1] == "config"
-           for t in _tasks(phase)):
-        live, problem = _config_rules.review_per_task_mode(ctx["config"])
-    if problem:
-        return False, problem
-    answered = _fr.answered_entries(_fr.phase_returns(ctx["evidence"],
-                                                      phase["id"]))
-    return any(_fr.owed_answer(t, phase, live, answered)
-               for t in _tasks(phase)), None
+    owed, problem = owed_tasks(ctx, phase)
+    return bool(owed), problem
+
+
+def human_answers(ctx, phase):
+    """`[{"key", "who", "what", "note"}]` - every reviewer answer in a filed
+    phase return that only a human settles: a task entry answering `diverges`
+    or `cannot-tell`, grading red-first `not-proved` or inherited tests
+    `flagged`, and a phase intent of `diverges` or `cannot-tell`. Under
+    `always` the per-task reviewer's `review_items` raise the same answers at
+    each close; under `phase` this is where they meet a human, before the
+    landing. Every filed return of the phase is read, so a review dispatched
+    again does not drop an answer an earlier one gave."""
+    found = []
+    for rel, body, _problem in _fr.phase_returns(ctx["evidence"], phase["id"]):
+        if not isinstance(body, dict):
+            continue
+        entries = body.get("tasks") if isinstance(body.get("tasks"), list) else []
+        for entry in [e for e in entries if isinstance(e, dict)]:
+            said = []
+            if entry.get("answer") in HUMAN_ANSWERS:
+                said.append(("intent %s" % (entry["answer"],), entry.get("note")))
+            if entry.get("redFirst") in HUMAN_RED_FIRST:
+                said.append(("red-first %s" % (entry["redFirst"],),
+                             entry.get("redFirstBasis")))
+            if entry.get("inheritedTests") in HUMAN_INHERITED:
+                said.append(("inherited tests %s" % (entry["inheritedTests"],),
+                             entry.get("inheritedTestsBasis")))
+            found += [{"key": "%s#%s#%s" % (rel, entry.get("id"), what),
+                       "who": str(entry.get("id")), "what": what, "note": note}
+                      for what, note in said]
+        intent = body.get("intent") if isinstance(body.get("intent"), dict) else {}
+        if intent.get("answer") in HUMAN_ANSWERS:
+            found.append({"key": "%s#phase" % (rel,), "who": "phase",
+                          "what": "intent %s" % (intent["answer"],),
+                          "note": intent.get("note")})
+    return found
+
+
+def is_ancestor(ctx, commit, head):
+    """True when `commit` is in `head`'s history, False when it is not, None
+    when git cannot say."""
+    try:
+        done = subprocess.run(["git", "-C", ctx["gitRoot"], "merge-base",
+                               "--is-ancestor", str(commit), str(head)],
+                              capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return {0: True, 1: False}.get(done.returncode)
+
+
+def fixes_after(ctx, phase, head):
+    """The recorded fix tasks closed at a commit the phase review's `head` does
+    not hold - diffs no review saw. One git could not place is listed too: an
+    unknown is not a reviewed diff."""
+    return [t["id"] for t in _tasks(phase)
+            if t.get("commit") and _fr.is_fix_task(t, phase)
+            and is_ancestor(ctx, t["commit"], head) is not True]
 
 
 def dispatch_phase_review(ctx, state, phase):
@@ -905,27 +1102,49 @@ def _clip(text, width):
 
 def render_triage(ctx, pending):
     """The triage decision: each open finding with its options, a fix task's
-    predicted price with its basis, and how to answer."""
+    predicted price with its basis, each reviewer answer a human settles, each
+    fix task no review saw, and how to answer. Sign-off is not offered while an
+    answer waits on a human."""
     found = pending.get("findings") or []
+    answers = pending.get("answers") or []
+    after = pending.get("fixesAfter") or []
     head = step_text("decide-triage", phase=ctx["phase"], why=pending.get("why") or "")
     lines = head[:1]
     for f in found:
         lines.append(_clip("  %s %s %s - %s [fix|leave]" % (
             f.get("id"), f.get("severity"), f.get("file"), f.get("issue")),
             TRIAGE_LINE_BYTES))
+    for a in answers:
+        lines.append(_clip("  %s %s - %s" % (a.get("who"), a.get("what"),
+                                             a.get("note") or "no note"),
+                           TRIAGE_LINE_BYTES - len(" [accept]")) + " [accept]")
+    if after:
+        lines.append(_clip("  %s: fix task(s) closed after the review's head %s, "
+                           "their diff unreviewed [re-review|sign-off]" % (
+                               ", ".join(after), pending.get("head") or "?"),
+                           TRIAGE_LINE_BYTES))
     if found:
         lines.append(_clip("  a fix task: %.2f-%.2f USD-eq predicted (%s)" % (
             FIX_TASK_PREDICTED + (FIX_TASK_PRICE_BASIS,)), TRIAGE_LINE_BYTES))
         lines.append("answer: next %s --answer fix --fix <id>[,<id>]" % (
             ctx["phase"],))
-    lines.append("answer: next %s --answer sign-off --reason <the summary>%s" % (
-        ctx["phase"], " (a finding left is kept as recorded)" if found else ""))
-    return instruction("decide", lines + head[1:])
+    if after:
+        lines.append("answer: next %s --answer re-review" % (ctx["phase"],))
+    if answers:
+        lines.append("answer: next %s --answer accept --reason <the human's word "
+                     "on each>" % (ctx["phase"],))
+    else:
+        lines.append("answer: next %s --answer sign-off --reason <the summary>%s" % (
+            ctx["phase"], " (a finding left is kept as recorded)" if found else ""))
+    return instruction("decide", lines + head[1:]
+                       + ([ANSWERS_RULE] if answers else []))
 
 
 def triage(ctx, state, manifest, phase):
     """The phase review, its findings and the triage: the dispatch, a decision,
-    or a stop."""
+    or a stop. A review filed at the marked head is dispatched afresh when a
+    task added since is owed its answers - the sign-off verb would refuse a
+    triage over a review that never saw it."""
     mark = state.get("phaseReview") or {}
     if not mark.get("head"):
         due, problem = review_due(ctx, manifest, phase)
@@ -954,14 +1173,28 @@ def triage(ctx, state, manifest, phase):
             ctx["did"].append("%d finding(s) of the phase review filed"
                               % (len(found),))
             manifest, phase = load_phase(ctx)
+        owed, problem = owed_tasks(ctx, phase)
+        if problem:
+            return _stopped(ctx, problem)
+        if owed:
+            state.pop("phaseReview", None)
+            write_state(ctx, state)
+            ctx["did"].append("phase review again: %s owed" % (", ".join(owed[:3]),))
+            return dispatch_phase_review(ctx, state, phase)
     still = [dict((k, f.get(k)) for k in ("id", "severity", "file", "issue"))
              for f in open_findings(phase)]
+    settled = set((state.get("answersAccepted") or {}).get("keys") or [])
+    answers = [a for a in human_answers(ctx, phase) if a["key"] not in settled]
+    after = fixes_after(ctx, phase, mark["head"]) if mark.get("head") else []
     said = ("the phase review returned `%s`" % ((review or {}).get("verdict")
                                                  or "no verdict",)
             if review is not None else "no phase review is due")
-    return decision(ctx, state, "triage", None, "%s; %s" % (
+    return decision(ctx, state, "triage", None, "%s; %s%s" % (
         said, "%d finding(s) open" % (len(still),) if still
-        else "no finding open"), extra={"findings": still})
+        else "no finding open", "; %d answer(s) for a human" % (len(answers),)
+        if answers else ""), extra={
+            "findings": still, "answers": answers, "fixesAfter": after,
+            "head": (mark.get("head") or "")[:12]})
 
 
 def add_fix_tasks(ctx, phase, fixes):
@@ -1023,15 +1256,62 @@ def red_gate_stop(ctx, phase, out, err):
     return E_STOPPED, "\n".join(lines)
 
 
+def runtime_boot_root(manifest, phase):
+    """`(due, root)` - whether sign-off owes a runtime boot: `meta.runtimeBoot`
+    is set and a file of the phase lies under its `appRootPath` (every file,
+    when it names none)."""
+    boot = (manifest.get("meta") or {}).get("runtimeBoot")
+    if not isinstance(boot, dict):
+        return False, None
+    root = str(boot.get("appRootPath") or "").strip().strip("/")
+    if not root or root == ".":
+        return True, "the app (no appRootPath, so every file counts)"
+    files = [_posix_rel(f) for t in _tasks(phase) for f in t.get("files") or []]
+    return any(f == root or f.startswith(root + "/") for f in files), root
+
+
+def _posix_rel(path):
+    text = str(path).replace("\\", "/")
+    return text[2:] if text.startswith("./") else text
+
+
+def signoff_summary(state):
+    """The summary the sign-off verb records: the one the triage was answered
+    with, then every answer a human gave on the way - each kept in their words."""
+    parts = [state.get("summary") or ""]
+    reasons = (state.get("answersAccepted") or {}).get("reasons") or []
+    if reasons:
+        parts.append("Reviewer answers accepted: %s" % ("; ".join(reasons),))
+    if state.get("unreviewedFixes"):
+        parts.append("Fix task(s) %s signed off with their diff unreviewed."
+                     % (", ".join(state["unreviewedFixes"]),))
+    if state.get("bootConfirmed"):
+        parts.append("Runtime boot: %s" % (state["bootConfirmed"],))
+    if state.get("coverageAccepted"):
+        parts.append("Gate banner accepted: %s" % (state["coverageAccepted"],))
+    if state.get("breachAccepted"):
+        parts.append("Invariant breach accepted: %s" % (state["breachAccepted"],))
+    return " ".join(p for p in parts if p)
+
+
 def run_signoff(ctx, state, phase):
-    """The phase gate, the invariants and the sign-off verb - None when the
-    verdict is recorded, else the decision or the stop."""
+    """The runtime boot's answer, the phase gate, the invariants and the
+    sign-off verb - None when the verdict is recorded, else the decision or the
+    stop."""
+    due, root = runtime_boot_root(_mio.load_manifest(ctx["manifest"]), phase)
+    if due and not state.get("bootConfirmed"):
+        return decision(ctx, state, "runtime-boot", None, _clip(root, 60))
     code, out, err = phase_gate(ctx, phase)
     if code == 1:
         return red_gate_stop(ctx, phase, out, err)
     if code != 0:
         return relay_refusal(ctx, "run-test-gate.py", code, out + err)
+    # The decision names the banners and, once accepted, the summary keeps
+    # them; the did-line stays plain, since the final print carries the landing.
+    banners = [] if state.get("coverageAccepted") else gate_banners(out + err)
     ctx["did"].append("phase gate green")
+    if banners:
+        return decision(ctx, state, "gate-coverage", None, "; ".join(banners))
     if not state.get("breachAccepted"):
         code, out, err = run_verb(ctx, "verify-invariants.py", [
             ctx["manifest"], phase["id"], "--project", ctx["project"]])
@@ -1043,10 +1323,7 @@ def run_signoff(ctx, state, phase):
         if code != 0:
             return relay_refusal(ctx, "verify-invariants.py", code, out + err)
         ctx["did"].append("invariants clean")
-    summary = state.get("summary") or ""
-    if state.get("breachAccepted"):
-        summary = "%s Invariant breach accepted: %s" % (summary,
-                                                        state["breachAccepted"])
+    summary = signoff_summary(state)
     args = ["signoff", phase["id"], ctx["manifest"], "--project-dir",
             ctx["project"], "--verdict", "passed", "--summary", summary]
     mark = state.get("phaseReview") or {}
@@ -1056,7 +1333,7 @@ def run_signoff(ctx, state, phase):
     _out, stop = _verb_or_stop(ctx, "audit-task.py", args)
     if stop is not None:
         return stop
-    ctx["did"].append("signed off")
+    ctx["did"].append(SIGNED)
     return None
 
 
@@ -1085,21 +1362,26 @@ def commit_signoff(ctx, phase):
 
 
 def land(ctx, state, phase):
-    """`(said, None)` - what the landing did, in a clause - or `(None, stop)`."""
+    """`(said, None)` - what the landing did, in a did-line clause - or `(None,
+    stop)`. Only a merge close-phase made is said with `LANDED`."""
     if not phase.get("branch"):
         return "no branch recorded, so nothing to land", None
+    if state.get("leave"):
+        return _clip("left unmerged: %s" % (state["leave"],), 100), None
     args = [ctx["manifest"], phase["id"], "--project", ctx["project"]]
     if state.get("noFf"):
         args.append("--no-ff")
     code, out, err = run_verb(ctx, "close-phase.py", args)
     if code == 3:
-        return None, decision(ctx, state, "not-fast-forward", None,
-                              "close-phase exit 3")
+        return None, decision(ctx, state, "not-fast-forward", None, "exit 3")
     if code != 0:
         return None, relay_refusal(ctx, "close-phase.py", code, out + err)
     if "NOT MERGED" in out:
         return "meta.merge.auto is false, so the merge is handed to a human", None
-    return "landed (%s)" % (_clip((out.strip().splitlines() or [""])[0], 90),), None
+    first = (out.strip().splitlines() or [""])[0]
+    if first.startswith("[close-phase] "):
+        first = first[len("[close-phase] "):]
+    return "%s (%s)" % (LANDED, _clip(first, 60)), None
 
 
 def finish_signoff(ctx, state, phase):
@@ -1113,8 +1395,9 @@ def finish_signoff(ctx, state, phase):
     said, stop = land(ctx, state, phase)
     if stop is not None:
         return stop
-    return finish(ctx, state, "signed off (%s); %s" % (
-        (phase.get("review") or {}).get("status") or "passed", said))
+    ctx["did"].append(said)
+    return finish(ctx, state, "signed off (%s)" % (
+        (phase.get("review") or {}).get("status") or "passed",))
 
 
 def signoff_step(ctx, state, phase):
@@ -1130,18 +1413,43 @@ def signoff_step(ctx, state, phase):
 def apply_phase_answer(ctx, state, manifest, phase, pending, answer, reason,
                        fixes):
     """Act on an answer to one of sign-off's decisions."""
+    name = pending["decision"]
     if answer == "fix":
         return add_fix_tasks(ctx, phase, fixes)
-    if answer == "redispatch":
+    if answer in ("redispatch", "re-review"):
         state.pop("phaseReview", None)
         write_state(ctx, state)
         return dispatch_phase_review(ctx, state, phase)
+    if answer == "not-reachable":
+        # The question stays open: the next `next` asks it again, and nothing
+        # signs the phase off until a human answers booted.
+        state["pending"] = pending
+        write_state(ctx, state)
+        return _stopped(ctx, "the runtime boot was not confirmed (%s), so the "
+                        "phase is not signed off; answer booted once a human "
+                        "has booted it" % (_clip(reason, 120),))
+    if name == "triage" and answer == "accept":
+        held = state.get("answersAccepted") or {}
+        state["answersAccepted"] = {
+            "keys": list(held.get("keys") or [])
+            + [a["key"] for a in pending.get("answers") or []],
+            "reasons": list(held.get("reasons") or []) + [reason]}
+        write_state(ctx, state)
+        ctx["did"].append("%d reviewer answer(s) accepted"
+                          % (len(pending.get("answers") or []),))
+        return None
     if answer == "sign-off":
         state["summary"] = reason
+        state["unreviewedFixes"] = list(pending.get("fixesAfter") or [])
     elif answer == "accept":
-        state["breachAccepted"] = reason
+        state["coverageAccepted" if name == "gate-coverage"
+              else "breachAccepted"] = reason
+    elif answer == "booted":
+        state["bootConfirmed"] = reason
     elif answer == "no-ff":
         state["noFf"] = True
+    elif answer == "leave":
+        state["leave"] = reason
     write_state(ctx, state)
     return signoff_step(ctx, state, phase)
 
@@ -1179,6 +1487,7 @@ def finish_task(ctx, state, task):
         if stop is not None:
             return stop
         state.pop("lock", None)
+        ctx["did"].append(RELEASED)
     for kind in [k for k, v in state.items() if isinstance(v, dict)]:
         state[kind].pop(task["id"], None)
         if not state[kind]:

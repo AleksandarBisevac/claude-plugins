@@ -201,22 +201,37 @@ _BRIEF = re.compile(r"\bbrief=(\S+)")
 _HEAD_LINE = re.compile(r"^head: ([0-9a-f]{7,40})\s*$", re.M)
 
 
-def _file_phase_review(root, mpath, text, findings=()):
+def _answered(root, mpath):
+    """`{(task id, commit)}` some filed phase return already answers."""
+    project, config = _evio.project_config_for(mpath, root)
+    return set(_fr.answered_entries(_fr.phase_returns(
+        _evio.evidence_dir(project, config), PHASE)))
+
+
+def _file_phase_review(root, mpath, text, findings=(), entry_over=None,
+                       phase_intent="matches"):
     """Play the phase reviewer: read the head off the brief the dispatch names,
-    answer every task the plan holds as `deferred` - the tasks owed their
-    answers - and file through `submit --head`. Returns its `(code, text)`."""
+    answer every task the plan holds as `deferred` that no filed phase return
+    answers yet - the tasks owed their answers - and file through `submit
+    --head`. `entry_over` maps a task id to the fields its entry answers
+    differently; `phase_intent` is the phase-level answer. Returns its
+    `(code, text)`."""
     brief = _BRIEF.search(text)
     with open(os.path.join(root, *brief.group(1).split("/"))) as fh:
         head = _HEAD_LINE.search(fh.read()).group(1)
-    entries = [{"id": tid, "commit": t.get("commit"), "answer": "matches",
-                "note": "as asked", "missing": [], "redFirst": "not-attempted",
-                "redFirstBasis": "gate-only: no test is owed",
-                "inheritedTests": "not-asked",
-                "inheritedTestsBasis": "the gate is `true` and selects no test file"}
+    answered = _answered(root, mpath)
+    entries = [dict({"id": tid, "commit": t.get("commit"), "answer": "matches",
+                     "note": "as asked", "missing": [], "redFirst": "not-attempted",
+                     "redFirstBasis": "gate-only: no test is owed",
+                     "inheritedTests": "not-asked",
+                     "inheritedTestsBasis": "the gate is `true` and selects no "
+                                            "test file"},
+                    **((entry_over or {}).get(tid) or {}))
                for tid, t in sorted(tasks_of(mpath).items())
-               if (t.get("intentCheck") or {}).get("answer") == "deferred"]
+               if (t.get("intentCheck") or {}).get("answer") == "deferred"
+               and (tid, t.get("commit")) not in answered]
     review = {"findings": list(findings),
-              "intent": {"answer": "matches", "note": "the phase as asked"},
+              "intent": {"answer": phase_intent, "note": "the phase as asked"},
               "verdict": "findings" if findings else "clean", "tasks": entries}
     return _verb(root, DRIVER, ["submit", PHASE, "--role", "reviewer", mpath,
                                 "--project-dir", root, "--head", head],
@@ -255,7 +270,8 @@ def sign_off(kind, text):
 
 
 def drive(M, root, mpath, on_dispatch=None, cap=40, returns=None,
-          answer=sign_off, phase_review=True, findings=(), target=PHASE):
+          answer=sign_off, phase_review=True, findings=(), target=PHASE,
+          entry_over=None, phase_intent="matches"):
     """Play the main loop until `done`, a stop, or `cap` calls.
 
     -> {"prints": [(code, text)], "steps": [instruction], "nexts", "dispatches"}
@@ -296,7 +312,8 @@ def drive(M, root, mpath, on_dispatch=None, cap=40, returns=None,
                 if role == "executor":
                     _file_executor(root, mpath, tid, (returns or {}).get(tid))
                 elif tid == PHASE:
-                    _file_phase_review(root, mpath, text, findings)
+                    _file_phase_review(root, mpath, text, findings,
+                                       entry_over, phase_intent)
                 else:
                     _file_reviewer(root, mpath, tid)
                 if on_dispatch is not None:
@@ -1103,7 +1120,7 @@ def _signoff_cases(check):
           all(any(fid in ln for ln in lines)
               for fid in ("P1-R1", "P1-R2", "P1-R3"))
           and "--fix" in triage and "sign-off" in triage
-          and "predicted" in triage and "design" in triage
+          and "predicted" in triage and "benchmark" in triage
           and all(len(ln.encode("utf-8")) <= bound for ln in lines))
     mutant, _w = _load("drive_phase_signoff_each")
     seen_m = _counting(mutant)
@@ -1143,6 +1160,405 @@ def _signoff_cases(check):
           and "P1-R1" not in triages[1] and "P1-R2" in triages[1]
           and run["steps"][-1] == DONE
           and (_phase_of(mpath).get("review") or {}).get("status") == "passed")
+    summary = _phase_of(mpath).get("summary") or ""
+    fix_id = fix[0].get("id") if fix else "-"
+    check("sf4 a phase signed off over a fix task closed after the review's head "
+          "records that in its summary: the fix's own diff went unreviewed, by "
+          "name, beside the summary given: %r" % (summary,),
+          summary.startswith(SUMMARY) and fix_id in summary
+          and "unreviewed" in summary)
+    events = getattr(M2, "did_events", None)
+    got = events("\n".join(t for _c, t in run["prints"])) if events else None
+    check("dw1 the driver's did-lines carry stable words for a fix task added, the "
+          "phase signed off, landed and the lock released, and `did_events` reads "
+          "them back - what stream-cost reads a driven sign-off's spans from: %r"
+          % (got,),
+          bool(got) and got.get("added") == [fix_id] and got.get("signedOff")
+          and got.get("landed") and got.get("released"))
+    quiet = events("\n".join(t for _c, t in run["prints"][:1])) if events else None
+    check("dw2 THE OVER-FIRE TWIN: a print from before any of those happened reads "
+          "none of them - a reader that answered yes to every print would put the "
+          "whole session in the close: %r" % (quiet,),
+          bool(quiet) is True and quiet.get("added") == []
+          and not quiet.get("signedOff") and not quiet.get("landed")
+          and not quiet.get("released"))
+
+
+# --- what a human decides before the landing ----------------------------------
+def _next(M, root, mpath, *extra):
+    """`(code, text)` of one `next` with `extra` flags."""
+    with _Env(root):
+        said = []
+        code = M.main(["next", PHASE, mpath, "--project-dir", root] + list(extra),
+                      out=said.append)
+    return code, "\n".join(said)
+
+
+def _stop_at_other(kind, text):
+    """Sign the triage off; stop at any other decision for the case to read."""
+    if kind[1] == "triage":
+        return ["--answer", "sign-off", "--reason", SUMMARY]
+    return False
+
+
+def _signed(mpath):
+    return (_phase_of(mpath).get("review") or {}).get("status") in ("passed",
+                                                                    "skipped")
+
+
+def _commit_plan(root, mpath, edit, message):
+    """Apply `edit(plan)` to the fixture's plan and commit it."""
+    with open(mpath) as fh:
+        plan = json.load(fh)
+    edit(plan)
+    with open(mpath, "w") as fh:
+        json.dump(plan, fh, indent=2)
+    subprocess.run(_GIT + ["commit", "-qam", message], cwd=root, check=True,
+                   capture_output=True, timeout=60)
+
+
+def _answer_lines(text):
+    """The triage lines that put a reviewer's answer to a human."""
+    return [ln for ln in text.splitlines()
+            if ln.startswith("  ") and ln.rstrip().endswith("[accept]")]
+
+
+def _review_answer_cases(check):
+    """Under `phase`, the phase review's per-task answers and its phase-level
+    intent reach a human before the landing: a `diverges`, `cannot-tell` or
+    red-first `not-proved` is a triage line, and sign-off waits until a human
+    accepts them with a reason the summary keeps."""
+    M, why = _load("drive_phase_answers")
+    if M is None:
+        check("sa1 the driver loads", False, why)
+        return
+    root, mpath = _repo("answers", task_ids=TASKS[:2], per_task="phase")
+    over = {"P1.1": {"answer": "diverges", "note": "it edits f2, not f1"},
+            "P1.2": {"redFirst": "not-proved",
+                     "redFirstBasis": "the basis names no failing case"}}
+    run = drive(M, root, mpath, entry_over=over, phase_intent="cannot-tell",
+                answer=None)
+    triage = run["prints"][-1][1]
+    lines = _answer_lines(triage)
+    check("sa1 a phase review whose findings are empty but whose answers say "
+          "P1.1 diverges, P1.2's red-first is not proved and the phase intent "
+          "cannot tell prints one triage line for each, beside no finding: %r"
+          % (lines,),
+          run["steps"][-1] == TRIAGE and len(lines) == 3
+          and any("P1.1" in ln and "diverges" in ln for ln in lines)
+          and any("P1.2" in ln and "not-proved" in ln for ln in lines)
+          and any("phase" in ln and "cannot-tell" in ln for ln in lines)
+          and all(len(ln.encode("utf-8")) <= M.TRIAGE_LINE_BYTES
+                  for ln in triage.splitlines()))
+    code, text = _next(M, root, mpath, "--answer", "sign-off", "--reason", SUMMARY)
+    check("sa2 sign-off is refused while those answers wait on a human, and "
+          "nothing is signed off: %r" % ((code, text),),
+          code == M.E_USAGE and "accept" in text and not _signed(mpath))
+    bare, _t = _next(M, root, mpath, "--answer", "accept")
+    words = "the human: P1.1 was asked to edit f2 after all"
+    code, text = _next(M, root, mpath, "--answer", "accept", "--reason", words)
+    after = _answer_lines(text)
+    code_s, text_s = _next(M, root, mpath, "--answer", "sign-off", "--reason",
+                           SUMMARY)
+    summary = _phase_of(mpath).get("summary") or ""
+    check("sa3 accept needs a reason; given one, the triage is printed again "
+          "with the answers settled, sign-off then lands, and the summary keeps "
+          "the human's words: %r" % ((bare, code, after, code_s, summary),),
+          bare == M.E_USAGE and code == 0
+          and instruction(text) == TRIAGE and after == []
+          and code_s == 0 and instruction(text_s) == DONE
+          and summary.startswith(SUMMARY) and words in summary)
+    # The over-fire twin: a review that answers `matches` everywhere puts
+    # nothing to a human. A triage that listed every entry would make every
+    # phase stop for an `accept`, and only this case says so.
+    root, mpath = _repo("answers-ok", task_ids=TASKS[:1], per_task="phase")
+    run = drive(M, root, mpath, answer=None)
+    triage = run["prints"][-1][1]
+    check("sa4 THE OVER-FIRE TWIN: a review answering `matches` everywhere puts "
+          "no answer line and no `accept` in the triage: %r" % (triage,),
+          run["steps"][-1] == TRIAGE and _answer_lines(triage) == []
+          and "--answer accept" not in triage)
+
+
+def _redispatch_cases(check):
+    """A task added after the phase review's head is owed its answers, so the
+    drive dispatches a fresh phase review rather than a triage the sign-off verb
+    then refuses."""
+    M, why = _load("drive_phase_redispatch")
+    if M is None:
+        check("sr1 the driver loads", False, why)
+        return
+    root, mpath = _repo("readd", task_ids=TASKS[:1], per_task="phase",
+                        phase_gate=("false",))
+    first = drive(M, root, mpath)
+    code, out = _verb(root, "audit-task.py", [
+        "add", "the fix the red phase gate asked for", mpath, "--project-dir",
+        root, "--phase", PHASE, "--files", "src/f1.txt", "--description",
+        "fix what the phase gate found", "--gate", "true", "--json"])
+    try:
+        added = json.loads(out).get("id")
+    except ValueError:
+        added = None
+    run = drive(M, root, mpath, phase_review=False)
+    steps = run["steps"]
+    check("sr1 after a red phase gate and a task added with no --fixes, the "
+          "added task is driven and sign-off dispatches a new phase review at "
+          "the new head - not a triage over a review that never saw the task: %r"
+          % ((first["steps"][-1], code, added, steps),),
+          first["prints"][-1][0] == 1 and code == 0 and added
+          and ("dispatch", "executor", added) in steps
+          and steps[-1] == ("dispatch", "reviewer", PHASE))
+
+
+def _fix_review_cases(check):
+    """A fix task closed after the phase review's head has a diff no review
+    saw: the triage says so, offers `re-review`, and the re-review is the phase
+    reviewer dispatched at the new head."""
+    M, why = _load("drive_phase_rereview")
+    if M is None:
+        check("sf1 the driver loads", False, why)
+        return
+    root, mpath = _repo("rereview", task_ids=TASKS[:1], per_task="phase")
+    answers = iter([["--answer", "fix", "--fix", "P1-R1"]])
+    run = drive(M, root, mpath, findings=FINDINGS[:1],
+                answer=lambda kind, text: next(answers, False))
+    # The brief file is rewritten at each dispatch, so its head is read now.
+    heads = [_head_of_brief(root, b.group(1)) for b in (
+        _BRIEF.search(t) for (_c, t), s in zip(run["prints"], run["steps"])
+        if s == ("dispatch", "reviewer", PHASE)) if b]
+    triage = run["prints"][-1][1]
+    fix = [t for t in tasks_of(mpath).values() if t.get("fixes") == ["P1-R1"]]
+    fix_id = fix[0].get("id") if fix else "-"
+    basis = ((fix[0].get("intentCheck") or {}).get("basis") or "") if fix else ""
+    check("sf1 after the fix task closes, the triage names it as closed after "
+          "the review's head and offers `re-review`, and its close basis says "
+          "its own diff is unreviewed: %r" % ((triage, basis),),
+          run["steps"][-1] == TRIAGE and fix_id in triage
+          and "--answer re-review" in triage and "unreviewed" in basis)
+    code, text = _next(M, root, mpath, "--answer", "re-review")
+    old = heads[0] if heads else None
+    new = _BRIEF.search(text)
+    check("sf2 `re-review` dispatches the phase reviewer again, with a brief at "
+          "a head after the fix's commit: %r" % ((code, text, old),),
+          code == 0 and instruction(text) == ("dispatch", "reviewer", PHASE)
+          and new and old and _head_of_brief(root, new.group(1)) != old)
+    if new:
+        _file_phase_review(root, mpath, text)
+    code, text = _next(M, root, mpath)
+    check("sf3 THE TWIN: once the re-review is filed, the triage names no fix "
+          "task as unreviewed and offers no `re-review`: %r" % (text,),
+          code == 0 and instruction(text) == TRIAGE
+          and "--answer re-review" not in text and fix_id not in text)
+
+
+def _head_of_brief(root, rel):
+    with open(os.path.join(root, *rel.split("/"))) as fh:
+        found = _HEAD_LINE.search(fh.read())
+    return found.group(1) if found else None
+
+
+def _risk_cases(check):
+    """A high-risk confirmation given before the run covers the tasks it named;
+    any other high-risk task still stops and asks."""
+    M, why = _load("drive_phase_risk")
+    if M is None:
+        check("hr1 the driver loads", False, why)
+        return
+    root, mpath = _repo("risk", task_ids=TASKS[:2])
+
+    def risky(ids):
+        def edit(plan):
+            for task in plan["phases"][0]["tasks"]:
+                if task["id"] in ids:
+                    task["risk"] = "high"
+        return edit
+    _commit_plan(root, mpath, risky(("P1.1",)), "P1.1 is high risk")
+    code, said = _verb(root, "record-risk-confirmation.py", [
+        mpath, PHASE, "--confirm-high-risk", "yes, commit P1.1 unattended",
+        "--project", root])
+    _commit_plan(root, mpath, risky(("P1.2",)), "P1.2 became high risk after")
+    run = drive(M, root, mpath, answer=None)
+    asked = [s for s in run["steps"] if s[:2] == ("decide", "high-risk")]
+    last = run["prints"][-1][1]
+    text = "\n".join(t for _c, t in run["prints"])
+    check("hr1 a task the pre-given confirmation covers commits without asking, "
+          "and the print says it was confirmed in advance: %r"
+          % ((code, said, asked, text[-600:]),),
+          code == 0 and tasks_of(mpath).get("P1.1", {}).get("status") == "done"
+          and "high-risk P1.1 confirmed in advance" in text)
+    check("hr2 THE TWIN: a task that became high-risk after the confirmation is "
+          "not covered by it, and still stops at the high-risk decision: %r"
+          % (last,),
+          run["steps"][-1] == ("decide", "high-risk", None)
+          and "decide high-risk P1.2" in last
+          and tasks_of(mpath).get("P1.2", {}).get("status") == "in_progress")
+
+
+def _boot_cases(check):
+    """`meta.runtimeBoot`, when the phase touched its app root, is a human's
+    answer before the verdict: booted, or not reachable and not signed off."""
+    M, why = _load("drive_phase_boot")
+    if M is None:
+        check("rb1 the driver loads", False, why)
+        return
+
+    def booting(app_root):
+        def edit(plan):
+            plan["meta"]["runtimeBoot"] = {"appRootPath": app_root,
+                                           "launch": "open the app",
+                                           "verify": "the home screen renders"}
+        return edit
+    root, mpath = _repo("boot", task_ids=TASKS[:1], per_task="phase")
+    _commit_plan(root, mpath, booting("src"), "boot")
+    run = drive(M, root, mpath, answer=_stop_at_other)
+    last = run["prints"][-1][1]
+    check("rb1 a phase that touched meta.runtimeBoot.appRootPath stops before "
+          "the verdict at a runtime-boot decision, and nothing is signed off: "
+          "%r" % (last,),
+          run["steps"][-1] == ("decide", "runtime-boot", None)
+          and "runtimeBoot" in last and not _signed(mpath)
+          and len(last.encode("utf-8")) <= BOUND)
+    code_n, text_n = _next(M, root, mpath, "--answer", "not-reachable",
+                           "--reason", "no simulator on this machine")
+    code_r, text_r = _next(M, root, mpath)
+    check("rb2 answered not-reachable, the drive stops with the phase unsigned, "
+          "and the next `next` asks the boot question again: %r"
+          % ((code_n, text_n, text_r),),
+          code_n == 1 and "not signed off" in text_n and not _signed(mpath)
+          and code_r == 0 and instruction(text_r)[1] == "runtime-boot")
+    bare, _t = _next(M, root, mpath, "--answer", "booted")
+    seen = "booted on the simulator; home renders, settings and back"
+    code, text = _next(M, root, mpath, "--answer", "booted", "--reason", seen)
+    summary = _phase_of(mpath).get("summary") or ""
+    check("rb3 booted needs a reason; given one, the phase signs off and lands, "
+          "and the summary keeps what was seen: %r" % ((bare, code, summary),),
+          bare == M.E_USAGE and code == 0 and instruction(text) == DONE
+          and _signed(mpath) and seen in summary)
+    # The over-fire twin: a phase that touched nothing under the app root owes
+    # no boot. A driver asking whenever `meta.runtimeBoot` is set fails here.
+    root, mpath = _repo("boot-other", task_ids=TASKS[:1], per_task="phase")
+    _commit_plan(root, mpath, booting("app"), "boot elsewhere")
+    run = drive(M, root, mpath, answer=_stop_at_other)
+    check("rb4 THE OVER-FIRE TWIN: a phase whose files lie outside the app root "
+          "signs off with no boot decision: %r" % (run["steps"][-3:],),
+          run["steps"][-1] == DONE
+          and not any(s[1] == "runtime-boot" for s in run["steps"]))
+
+
+UNRELATED_GATE = "echo tests/unrelated_test.py 1 passed"
+
+
+def _banner_cases(check):
+    """A green gate that printed NO OVERLAP or TREE CHANGED is not reported as
+    a plain green: the task's did-line carries it, and at the phase gate it is a
+    decision before the verdict."""
+    M, why = _load("drive_phase_banner")
+    if M is None:
+        check("gb1 the driver loads", False, why)
+        return
+    root, mpath = _repo("banner", task_ids=TASKS[:1], gate=(UNRELATED_GATE,),
+                        per_task="phase", phase_gate=(UNRELATED_GATE,))
+    run = drive(M, root, mpath, answer=_stop_at_other)
+    text = "\n".join(t for _c, t in run["prints"])
+    last = run["prints"][-1][1]
+    check("gb1 a task gate that ran none of the task's paths is printed as "
+          "`gate P1.1 green (NO OVERLAP)`, not a plain green: %r" % (text[:500],),
+          "gate P1.1 green (NO OVERLAP)" in text)
+    check("gb2 the same banner on the phase gate is a decision before the "
+          "verdict, and nothing is signed off: %r" % (last,),
+          run["steps"][-1] == ("decide", "gate-coverage", None)
+          and "NO OVERLAP" in last and not _signed(mpath)
+          and len(last.encode("utf-8")) <= BOUND)
+    words = "the human: the suite exercises f1 through its import"
+    code, text = _next(M, root, mpath, "--answer", "accept", "--reason", words)
+    check("gb3 accepted with a reason, the phase signs off and the summary "
+          "keeps the reason: %r" % ((code, text),),
+          code == 0 and instruction(text) == DONE
+          and words in (_phase_of(mpath).get("summary") or ""))
+
+
+def _landing_cases(check):
+    """A parent that moved is a human's call between a merge commit and leaving
+    the phase unmerged, and the rule says never to rebase."""
+    M, why = _load("drive_phase_landing")
+    if M is None:
+        check("nf1 the driver loads", False, why)
+        return
+    real = M.run_verb
+
+    def moved(ctx, script, args, stdin=None):
+        if script == "close-phase.py" and "--no-ff" not in args:
+            return 3, "[close-phase] the parent moved\n", ""
+        return real(ctx, script, args, stdin=stdin)
+    M.run_verb = moved
+    root, mpath = _repo("nff", task_ids=TASKS[:1], per_task="phase")
+    run = drive(M, root, mpath, answer=_stop_at_other)
+    last = run["prints"][-1][1]
+    check("nf1 a moved parent offers no-ff and leave, with the rule that a "
+          "human decides and that a rebase is never the answer: %r" % (last,),
+          run["steps"][-1] == ("decide", "not-fast-forward", None)
+          and "no-ff|leave" in last and "never rebase" in last
+          and len(last.encode("utf-8")) <= BOUND)
+    bare, _t = _next(M, root, mpath, "--answer", "leave")
+    code, text = _next(M, root, mpath, "--answer", "leave", "--reason",
+                       "the human merges it by hand tomorrow")
+    phase = _phase_of(mpath)
+    check("nf2 leave needs a reason; given one, the drive is done with the phase "
+          "signed off and not merged, and the lock released: %r"
+          % ((bare, code, text),),
+          bare == M.E_USAGE and code == 0 and instruction(text) == DONE
+          and "left unmerged" in text and _signed(mpath)
+          and not phase.get("mergedAt")
+          and "phase-%s" % (PHASE,) not in _verb(
+              root, "audit-lock.py", ["status", "--project", root])[1])
+
+
+def _blocked_cases(check):
+    """A blocked task has a way forward, named where the drive stops on it."""
+    M, why = _load("drive_phase_blocked")
+    if M is None:
+        check("bk1 the driver loads", False, why)
+        return
+    root, mpath = _repo("stall", task_ids=TASKS[:1], gate=("false",))
+
+    def block_it(kind, text):
+        if kind[1] == "gate-red":
+            return ["--answer", "block", "--reason", "the gate is red"]
+        return False
+    run = drive(M, root, mpath, answer=block_it)
+    last = run["prints"][-1][1]
+    check("bk1 a phase whose only task is blocked prints `decide stalled` with "
+          "the rule naming the remedy - audit-task.py unblock with the human's "
+          "reason: %r" % (last,),
+          run["steps"][-1] == ("decide", "stalled", None)
+          and "audit-task.py unblock" in last and "--reason" in last
+          and len(last.encode("utf-8")) <= BOUND)
+    single = drive(M, root, mpath, target="P1.1", cap=2)
+    code, text = single["prints"][-1]
+    check("bk2 the task drive's stop on the same blocked task names the same "
+          "remedy, and no longer `start`, which refuses a task past its "
+          "attempts: %r" % (text,),
+          code == 1 and "audit-task.py unblock" in text
+          and "audit-task.py start" not in text)
+
+
+def _text_cases(check):
+    """The texts a user meets name nothing a plugin install does not ship."""
+    M, why = _load("drive_phase_text")
+    if M is None:
+        check("tx1 the driver loads", False, why)
+        return
+    echo = " ".join((M.STEPS.get("ado-echo") or {}).get("rule") or ())
+    check("tx1 the ADO echo's rule states its hard rules itself - update only, "
+          "never create, never ask - and sends the model to no reference "
+          "file: %r" % (echo,),
+          "reference/" not in echo and "never create" in echo
+          and "never ask" in echo)
+    basis = getattr(M, "FIX_TASK_PRICE_BASIS", "")
+    check("tx2 the fix-task price names its basis as a benchmark prediction, not "
+          "a section of a design document the install does not ship: %r"
+          % (basis,),
+          "benchmark" in basis and "design" not in basis)
 
 
 _TALLY = "%s: %d/%d cases " + "passed"
@@ -1165,24 +1581,37 @@ def _house_suite(cases):
     return "\n".join(body) + "\n"
 
 
-def _selftest():
+STAGES = (("dp-block", "_drive_cases"), ("dr-block", "_refusal_cases"),
+          ("dd-block", "_decide_cases"), ("dd3-block", "_rerun_cases"),
+          ("dt-block", "_single_task_cases"), ("dl-block", "_lock_stop_cases"),
+          ("dk-block", "_key_cases"), ("ds-block", "_submit_cases"),
+          ("dsm-block", "_submit_mutant_cases"), ("sg-block", "_signoff_cases"),
+          ("sa-block", "_review_answer_cases"), ("sr-block", "_redispatch_cases"),
+          ("sf-block", "_fix_review_cases"), ("hr-block", "_risk_cases"),
+          ("rb-block", "_boot_cases"), ("gb-block", "_banner_cases"),
+          ("nf-block", "_landing_cases"), ("bk-block", "_blocked_cases"),
+          ("tx-block", "_text_cases"))
+
+
+def _selftest(only=()):
+    """Every stage, or only the ones `--stage <label>` names - a narrowed run
+    for one block, which a red-first proof in a throwaway tree can afford."""
+    unknown = [o for o in only if o not in dict(STAGES)]
+
     def body(check):
-        _harness.stage(check, "dp-block", _drive_cases)
-        _harness.stage(check, "dr-block", _refusal_cases)
-        _harness.stage(check, "dd-block", _decide_cases)
-        _harness.stage(check, "dd3-block", _rerun_cases)
-        _harness.stage(check, "dt-block", _single_task_cases)
-        _harness.stage(check, "dl-block", _lock_stop_cases)
-        _harness.stage(check, "dk-block", _key_cases)
-        _harness.stage(check, "ds-block", _submit_cases)
-        _harness.stage(check, "dsm-block", _submit_mutant_cases)
-        _harness.stage(check, "sg-block", _signoff_cases)
+        if unknown:
+            check("--stage names a block of this suite: %r" % (unknown,), False)
+        for label, fn in STAGES:
+            if not only or label in only:
+                _harness.stage(check, label, globals()[fn])
     return _harness.run(body)
 
 
 if __name__ == "__main__":
     safe_stdio()
     if "--selftest" in sys.argv[1:]:
-        raise SystemExit(_selftest())
-    sys.stderr.write("usage: test_drive_phase.py --selftest\n")
+        args = sys.argv[1:]
+        raise SystemExit(_selftest([args[i + 1] for i, a in enumerate(args[:-1])
+                                    if a == "--stage"]))
+    sys.stderr.write("usage: test_drive_phase.py --selftest [--stage LABEL ...]\n")
     raise SystemExit(2)
