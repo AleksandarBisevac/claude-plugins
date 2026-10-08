@@ -744,7 +744,7 @@
     {
       "id": "P118",
       "title": "the plugin pipeline costs at most 2x plain per task",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P118.json"
     }
   ],
@@ -952,7 +952,11 @@
       "P112.4-uce",
       "P112.6-uce",
       "P112.8-uce",
-      "P118.9"
+      "P118.9",
+      "P118.6",
+      "P118.8",
+      "P118.12-v7t",
+      "P118.13-v7t"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -963,7 +967,8 @@
       "P92.5",
       "P92.6-a1x",
       "P93.4-287",
-      "P109.9"
+      "P109.9",
+      "P118.9"
     ],
     "COMPATIBILITY.md": [
       "P18.8",
@@ -997,7 +1002,10 @@
       "P87.2",
       "P96.1",
       "P100.4-zxo",
-      "P104.14-tog"
+      "P104.14-tog",
+      "P118.3",
+      "P118.6",
+      "P118.13-v7t"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -1029,7 +1037,8 @@
       "P112.1-uce",
       "P112.5-uce",
       "P112.7-uce",
-      "P117.1"
+      "P117.1",
+      "P118.9"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -1187,7 +1196,12 @@
       "P117.1",
       "P118.3",
       "P118.5",
-      "P118.9"
+      "P118.9",
+      "P118.6",
+      "P118.7",
+      "P118.8",
+      "P118.12-v7t",
+      "P118.13-v7t"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1209,7 +1223,8 @@
       "P103.5",
       "P103.9",
       "P103.14-xi3",
-      "P112.1-uce"
+      "P112.1-uce",
+      "P118.9"
     ],
     "SECURITY.md": [
       "P2.2",
@@ -1490,7 +1505,15 @@
       "P104.14-tog",
       "P104.17-tog",
       "P104.18-tog",
-      "P118.9"
+      "P118.9",
+      "P118.3",
+      "P118.10",
+      "P118.4",
+      "P118.6",
+      "P118.7",
+      "P118.8",
+      "P118.12-v7t",
+      "P118.13-v7t"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -1531,7 +1554,8 @@
       "P102.6",
       "P102.12-ptn",
       "P118.3",
-      "P118.7"
+      "P118.7",
+      "P118.9"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -1555,7 +1579,10 @@
       "P79.11-5bh",
       "P109.7",
       "P118.3",
-      "P118.7"
+      "P118.7",
+      "P118.6",
+      "P118.8",
+      "P118.9"
     ],
     "plugins/audit/commands/audit.md": [
       "P1.6",
@@ -1574,7 +1601,8 @@
       "P57.3",
       "P61.14",
       "P81.2",
-      "P81.18-j7p"
+      "P81.18-j7p",
+      "P118.9"
     ],
     "plugins/audit/commands/doctor.md": [
       "P31.2",
@@ -1587,7 +1615,9 @@
       "P77.2",
       "P77.3-6u9",
       "P77.4-6u9",
-      "P81.18-j7p"
+      "P81.18-j7p",
+      "P118.10",
+      "P118.9"
     ],
     "plugins/audit/commands/init.md": [
       "P1.6",
@@ -1612,23 +1642,27 @@
       "P63.11",
       "P79.7",
       "P80.12",
-      "P80.21-rtb"
+      "P80.21-rtb",
+      "P118.9"
     ],
     "plugins/audit/commands/layout.md": [
       "P57.1",
       "P57.3",
       "P60.3",
       "P61.11",
-      "P63.11"
+      "P63.11",
+      "P118.9"
     ],
     "plugins/audit/commands/logs.md": [
       "P31.2",
-      "P57.3"
+      "P57.3",
+      "P118.9"
     ],
     "plugins/audit/commands/migrate.md": [
       "P50.6",
       "P57.3",
-      "P109.8"
+      "P109.8",
+      "P118.9"
     ],
     "plugins/audit/commands/next.md": [
       "P7.1",
@@ -1638,13 +1672,14 @@
       "P57.4",
       "P106.1",
       "P112.2-uce",
-      "P118.5",
-      "P118.9"
+      "P118.9",
+      "P118.14-v7t"
     ],
     "plugins/audit/commands/panel.md": [
       "P57.3",
       "P105.6",
-      "P105.9-m32"
+      "P105.9-m32",
+      "P118.9"
     ],
     "plugins/audit/commands/phase.md": [
       "P7.1",
@@ -1679,26 +1714,28 @@
       "P84.1",
       "P84.6-791",
       "P118.4",
-      "P118.5",
-      "P118.9"
+      "P118.9",
+      "P118.14-v7t"
     ],
     "plugins/audit/commands/propose.md": [
       "P31.2",
       "P57.3",
       "P61.3",
-      "P61.8"
+      "P61.8",
+      "P118.9"
     ],
     "plugins/audit/commands/report.md": [
       "P7.1",
       "P57.1",
-      "P112.2-uce"
+      "P112.2-uce",
+      "P118.9"
     ],
     "plugins/audit/commands/resume.md": [
       "P7.1",
       "P73.1",
       "P106.9-b6f",
-      "P118.5",
-      "P118.9"
+      "P118.9",
+      "P118.14-v7t"
     ],
     "plugins/audit/commands/review.md": [
       "P7.1",
@@ -1709,7 +1746,9 @@
       "P81.8",
       "P81.14-j7p",
       "P81.18-j7p",
-      "P118.9"
+      "P118.9",
+      "P118.8",
+      "P118.14-v7t"
     ],
     "plugins/audit/commands/run.md": [
       "P7.1",
@@ -1719,8 +1758,8 @@
       "P76.3-6qa",
       "P106.5-b6f",
       "P106.7-b6f",
-      "P118.5",
-      "P118.9"
+      "P118.9",
+      "P118.14-v7t"
     ],
     "plugins/audit/commands/status.md": [
       "P7.1",
@@ -1748,13 +1787,15 @@
       "P114.2-ffv",
       "P114.3-ffv",
       "P114.4-ffv",
-      "P115.2-4yc"
+      "P115.2-4yc",
+      "P118.9"
     ],
     "plugins/audit/commands/sync.md": [
       "P3.1",
       "P57.3",
       "P57.5",
-      "P61.14"
+      "P61.14",
+      "P118.9"
     ],
     "plugins/audit/commands/task.md": [
       "P1.7",
@@ -1799,7 +1840,12 @@
       "P106.5-b6f",
       "P106.7-b6f",
       "P106.9-b6f",
-      "P118.9"
+      "P118.9",
+      "P118.3",
+      "P118.4",
+      "P118.6",
+      "P118.8",
+      "P118.13-v7t"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -1808,10 +1854,12 @@
       "P103.14-xi3",
       "P107.5-gwk",
       "P112.2-uce",
-      "P112.8-uce"
+      "P112.8-uce",
+      "P118.9"
     ],
     "plugins/audit/commands/version.md": [
-      "P67.2"
+      "P67.2",
+      "P118.9"
     ],
     "plugins/audit/commands/worktree.md": [
       "P18.5",
@@ -1823,7 +1871,8 @@
       "P75.1",
       "P75.2-j5h",
       "P75.3-j5h",
-      "P75.4-j5h"
+      "P75.4-j5h",
+      "P118.9"
     ],
     "plugins/audit/hooks/_config.py": [
       "P1.1",
@@ -1880,7 +1929,8 @@
       "P108.14-4gh",
       "P108.16-4gh",
       "P108.18-4gh",
-      "P108.20-4gh"
+      "P108.20-4gh",
+      "P118.6"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -2112,7 +2162,8 @@
       "P106.7-b6f",
       "P102.12-ptn",
       "P118.3",
-      "P118.9"
+      "P118.9",
+      "P118.7"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -2283,7 +2334,8 @@
       "P80.17-rtb",
       "P96.1",
       "P106.2",
-      "P118.4"
+      "P118.4",
+      "P118.6"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -2340,7 +2392,8 @@
       "P104.14-tog",
       "P104.17-tog",
       "P115.3-4yc",
-      "P118.5"
+      "P118.5",
+      "P118.3"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -2391,7 +2444,10 @@
       "P112.4-uce",
       "P118.3",
       "P118.7",
-      "P118.9"
+      "P118.9",
+      "P118.6",
+      "P118.8",
+      "P118.13-v7t"
     ],
     "plugins/audit/scripts/_ui_theme.py": [
       "P20.5",
@@ -2409,7 +2465,8 @@
       "P9.1",
       "P18.7",
       "P26.2",
-      "P44.1"
+      "P44.1",
+      "P118.9"
     ],
     "plugins/audit/scripts/config/validate-config.py": [
       "P15.4",
@@ -2442,7 +2499,9 @@
       "P102.10",
       "P104.1",
       "P106.2",
-      "P104.2"
+      "P104.2",
+      "P118.4",
+      "P118.6"
     ],
     "plugins/audit/scripts/demo/gen-demo-usage.py": [
       "P10.3",
@@ -2493,7 +2552,9 @@
       "P100.3-zxo",
       "P107.6-gwk",
       "P118.2",
-      "P118.8"
+      "P118.8",
+      "P118.6",
+      "P118.13-v7t"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -2561,7 +2622,8 @@
       "P81.11",
       "P81.7",
       "P81.14-j7p",
-      "P81.16-j7p"
+      "P81.16-j7p",
+      "P118.11-v7t"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -2577,7 +2639,8 @@
       "P73.4-9h1",
       "P73.5-9h1",
       "P73.6-9h1",
-      "P73.7-9h1"
+      "P73.7-9h1",
+      "P118.8"
     ],
     "plugins/audit/scripts/governance/_journal_io.py": [
       "P29.3",
@@ -2652,7 +2715,9 @@
       "P73.4-9h1",
       "P73.5-9h1",
       "P73.6-9h1",
-      "P73.7-9h1"
+      "P73.7-9h1",
+      "P118.3",
+      "P118.8"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
@@ -2662,7 +2727,8 @@
       "P71.2-zso",
       "P71.4-zso",
       "P74.3-qq5",
-      "P100.1"
+      "P100.1",
+      "P118.11-v7t"
     ],
     "plugins/audit/scripts/governance/audit-journal.py": [
       "BF1.1",
@@ -2711,7 +2777,9 @@
       "P73.5-9h1",
       "P73.6-9h1",
       "P73.7-9h1",
-      "P102.10"
+      "P102.10",
+      "P118.8",
+      "P118.14-v7t"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
@@ -2745,7 +2813,8 @@
       "P73.7-9h1",
       "P74.3-qq5",
       "P102.10",
-      "P118.2"
+      "P118.2",
+      "P118.3"
     ],
     "plugins/audit/scripts/governance/record-risk-confirmation.py": [
       "P42.6",
@@ -2839,7 +2908,9 @@
       "P102.9",
       "P102.12-ptn",
       "P102.14-ptn",
-      "P118.2"
+      "P118.2",
+      "P118.11-v7t",
+      "P118.7"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -2849,7 +2920,8 @@
       "P75.3-j5h",
       "P75.4-j5h",
       "P102.10",
-      "P118.2"
+      "P118.2",
+      "P118.8"
     ],
     "plugins/audit/scripts/manifest/_areas.py": [
       "P15.4",
@@ -2859,7 +2931,8 @@
       "P55.3",
       "P57.1",
       "P75.4-j5h",
-      "P80.21-rtb"
+      "P80.21-rtb",
+      "P118.9"
     ],
     "plugins/audit/scripts/manifest/_branch.py": [
       "P18.2",
@@ -2979,7 +3052,9 @@
       "P80.17-rtb",
       "P80.15-rtb",
       "P96.1",
-      "P106.2"
+      "P106.2",
+      "P118.4",
+      "P118.6"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -3090,7 +3165,8 @@
       "P118.3",
       "P118.4",
       "P118.6",
-      "P118.8"
+      "P118.8",
+      "P118.13-v7t"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -3187,7 +3263,8 @@
       "P18.7",
       "P44.1",
       "P85.1",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P118.6"
     ],
     "plugins/audit/scripts/panel/_panel_state.py": [
       "P12.3",
@@ -3402,7 +3479,9 @@
       "P80.15-rtb",
       "P81.11",
       "P81.17-j7p",
-      "P81.18-j7p"
+      "P81.18-j7p",
+      "P118.10",
+      "P118.14-v7t"
     ],
     "plugins/audit/scripts/status/_gate_feed.py": [
       "P48.3",
@@ -3432,7 +3511,8 @@
       "P114.3-ffv",
       "P115.2-4yc",
       "P115.3-4yc",
-      "P115.4-4yc"
+      "P115.4-4yc",
+      "P118.8"
     ],
     "plugins/audit/scripts/status/audit-doctor.py": [
       "P10.3",
@@ -3449,7 +3529,8 @@
       "P80.9",
       "P81.6",
       "P81.17-j7p",
-      "P102.10"
+      "P102.10",
+      "P118.10"
     ],
     "plugins/audit/scripts/status/audit-lookup.py": [
       "P56.3",
@@ -3463,7 +3544,10 @@
       "P106.3",
       "P118.2",
       "P118.3",
-      "P118.6"
+      "P118.6",
+      "P118.7",
+      "P118.8",
+      "P118.14-v7t"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -3643,7 +3727,8 @@
       "P55.9",
       "P50.8",
       "P63.8",
-      "P80.21-rtb"
+      "P80.21-rtb",
+      "P118.9"
     ],
     "plugins/audit/tests/test__branch.py": [
       "P18.2",
@@ -3688,7 +3773,8 @@
       "P108.14-4gh",
       "P108.16-4gh",
       "P108.18-4gh",
-      "P108.20-4gh"
+      "P108.20-4gh",
+      "P118.6"
     ],
     "plugins/audit/tests/test__deps.py": [
       "P32.5",
@@ -3791,7 +3877,9 @@
       "P80.14-rtb",
       "P80.15-rtb",
       "P81.11",
-      "P81.17-j7p"
+      "P81.17-j7p",
+      "P118.10",
+      "P118.14-v7t"
     ],
     "plugins/audit/tests/test__evidence_io.py": [
       "P32.7",
@@ -3835,7 +3923,8 @@
       "P81.11",
       "P81.7",
       "P81.14-j7p",
-      "P81.16-j7p"
+      "P81.16-j7p",
+      "P118.11-v7t"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
       "P32.7",
@@ -3857,7 +3946,8 @@
       "P18.7",
       "P20.6",
       "P26.2",
-      "P106.2"
+      "P106.2",
+      "P118.9"
     ],
     "plugins/audit/tests/test__id_refs.py": [
       "P61.7",
@@ -3883,7 +3973,8 @@
       "P73.4-9h1",
       "P73.5-9h1",
       "P73.6-9h1",
-      "P73.7-9h1"
+      "P73.7-9h1",
+      "P118.8"
     ],
     "plugins/audit/tests/test__journal_io.py": [
       "P29.3",
@@ -4018,7 +4109,9 @@
       "P76.4-6qa",
       "P94.4",
       "P96.1",
-      "P106.2"
+      "P106.2",
+      "P118.4",
+      "P118.6"
     ],
     "plugins/audit/tests/test__merge_install.py": [
       "P60.5",
@@ -4059,7 +4152,9 @@
       "P102.13-ptn",
       "P102.14-ptn",
       "P115.3-4yc",
-      "P118.2"
+      "P118.2",
+      "P118.3",
+      "P118.5"
     ],
     "plugins/audit/tests/test__panel_composition.py": [
       "P18.7",
@@ -4187,7 +4282,10 @@
       "P108.12-4gh",
       "P118.3",
       "P118.7",
-      "P118.9"
+      "P118.9",
+      "P118.6",
+      "P118.8",
+      "P118.13-v7t"
     ],
     "plugins/audit/tests/test__report_html.py": [
       "P25.1",
@@ -4220,7 +4318,9 @@
       "P73.4-9h1",
       "P73.5-9h1",
       "P73.6-9h1",
-      "P73.7-9h1"
+      "P73.7-9h1",
+      "P118.3",
+      "P118.8"
     ],
     "plugins/audit/tests/test__status_facts.py": [
       "P32.7",
@@ -4243,7 +4343,8 @@
       "P114.2-ffv",
       "P114.3-ffv",
       "P115.2-4yc",
-      "P115.5-4yc"
+      "P115.5-4yc",
+      "P118.8"
     ],
     "plugins/audit/tests/test__status_facts.py: --fail-on failing-tests refuses a run whose record says the tree was mutated": [
       "P32.7"
@@ -4254,7 +4355,8 @@
       "P71.2-zso",
       "P71.4-zso",
       "P74.3-qq5",
-      "P100.1"
+      "P100.1",
+      "P118.11-v7t"
     ],
     "plugins/audit/tests/test__ui_theme.py": [
       "P20.5",
@@ -4292,7 +4394,8 @@
       "P79.6",
       "P80.9",
       "P81.6",
-      "P81.17-j7p"
+      "P81.17-j7p",
+      "P118.10"
     ],
     "plugins/audit/tests/test_audit_journal.py": [
       "P34.3",
@@ -4332,7 +4435,10 @@
       "P106.3",
       "P118.2",
       "P118.3",
-      "P118.6"
+      "P118.6",
+      "P118.7",
+      "P118.8",
+      "P118.14-v7t"
     ],
     "plugins/audit/tests/test_audit_status.py": [
       "P25.2",
@@ -4455,7 +4561,9 @@
       "P118.3",
       "P118.4",
       "P118.6",
-      "P118.8"
+      "P118.8",
+      "P118.9",
+      "P118.13-v7t"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -4510,7 +4618,9 @@
       "P100.3-zxo",
       "P107.6-gwk",
       "P118.2",
-      "P118.8"
+      "P118.8",
+      "P118.6",
+      "P118.13-v7t"
     ],
     "plugins/audit/tests/test_commit_audit_state.py": [
       "P28.2",
@@ -4523,7 +4633,9 @@
       "P73.4-9h1",
       "P73.5-9h1",
       "P73.6-9h1",
-      "P73.7-9h1"
+      "P73.7-9h1",
+      "P118.8",
+      "P118.14-v7t"
     ],
     "plugins/audit/tests/test_commit_manifest_index.py": [
       "P29.5",
@@ -4547,7 +4659,8 @@
       "P73.1",
       "P73.3-9h1",
       "P74.3-qq5",
-      "P118.2"
+      "P118.2",
+      "P118.3"
     ],
     "plugins/audit/tests/test_detect_plan_skip.py": [
       "P72.1",
@@ -4582,7 +4695,9 @@
       "P94.1",
       "P104.1",
       "P106.2",
-      "P104.2"
+      "P104.2",
+      "P118.4",
+      "P118.6"
     ],
     "plugins/audit/tests/test_guard_bash_writes.py": [
       "P20.1",
@@ -4891,7 +5006,9 @@
       "P102.7",
       "P102.12-ptn",
       "P102.14-ptn",
-      "P118.2"
+      "P118.2",
+      "P118.11-v7t",
+      "P118.7"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
@@ -5018,7 +5135,9 @@
       "P73.4-9h1",
       "P73.5-9h1",
       "P73.6-9h1",
-      "P73.7-9h1"
+      "P73.7-9h1",
+      "P118.2",
+      "P118.8"
     ],
     "tools/check-prohibitions.py": [
       "P32.8",
@@ -5098,7 +5217,11 @@
       "P107.4",
       "P100.3-zxo",
       "P106.2",
-      "P112.2-uce"
+      "P112.2-uce",
+      "P118.6",
+      "P118.7",
+      "P118.8",
+      "P118.9"
     ],
     "tools/redfirst.sh": [
       "P55.13"
@@ -5227,7 +5350,8 @@
       "P75.2-j5h",
       "P75.3-j5h",
       "P75.4-j5h",
-      "P118.2"
+      "P118.2",
+      "P118.8"
     ],
     "plugins/audit/scripts/manifest/_manifest_ado.py": [
       "P75.4-j5h",
@@ -6029,7 +6153,8 @@
       "P104.17-tog"
     ],
     "plugins/audit/tests/test__panel_settings.py": [
-      "P104.18-tog"
+      "P104.18-tog",
+      "P118.6"
     ],
     "tools/demo-gate.tape": [
       "P112.1-uce",
@@ -6067,14 +6192,17 @@
       "P117.1",
       "P117.3-2sz",
       "P118.1",
-      "P118.9"
+      "P118.9",
+      "P118.7",
+      "P118.14-v7t"
     ],
     "tools/stream-cost.py": [
       "P117.1",
       "P117.3-2sz",
       "P117.6-2sz",
       "P118.1",
-      "P118.5"
+      "P118.5",
+      "P118.12-v7t"
     ],
     "docs/research/pipeline-cost-analysis.md": [
       "P117.1",
@@ -6101,16 +6229,47 @@
       "P118.5",
       "P118.6",
       "P118.7",
-      "P118.8"
+      "P118.8",
+      "P118.9",
+      "P118.12-v7t"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
       "P118.6",
       "P118.7",
-      "P118.8"
+      "P118.8",
+      "P118.9",
+      "P118.12-v7t"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6"
+    ],
+    "plugins/audit/scripts/manifest/_filed_returns.py": [
+      "P118.3",
+      "P118.6",
+      "P118.7",
+      "P118.8",
+      "P118.13-v7t"
+    ],
+    "plugins/audit/tests/test__filed_returns.py": [
+      "P118.3",
+      "P118.6",
+      "P118.7",
+      "P118.8",
+      "P118.13-v7t"
+    ],
+    "plugins/audit/agents/guide.md": [
+      "P118.9"
+    ],
+    "plugins/audit/commands/guide.md": [
+      "P118.9"
+    ],
+    "plugins/audit/reference/tracker-sync.md": [
+      "P118.9"
+    ],
+    "plugins/audit/reference/verbs-in-full.md": [
+      "P118.9",
+      "P118.14-v7t"
     ]
   },
   "bugs": [
