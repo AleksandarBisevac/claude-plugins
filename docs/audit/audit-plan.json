@@ -3043,7 +3043,8 @@
       "P103.6",
       "P106.4-b6f",
       "P112.2-uce",
-      "P112.4-uce"
+      "P112.4-uce",
+      "P119.8-g0k"
     ],
     "plugins/audit/scripts/manifest/_manifest_merge.py": [
       "P60.1"
@@ -3235,7 +3236,8 @@
       "P118.23-v7t",
       "P118.24-v7t",
       "P119.2-g0k",
-      "P119.5-g0k"
+      "P119.5-g0k",
+      "P119.8-g0k"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -4125,7 +4127,8 @@
       "P71.3-zso",
       "P106.4-b6f",
       "P112.2-uce",
-      "P112.4-uce"
+      "P112.4-uce",
+      "P119.8-g0k"
     ],
     "plugins/audit/tests/test__manifest_merge.py": [
       "P60.1"
@@ -4647,7 +4650,8 @@
       "P118.23-v7t",
       "P118.24-v7t",
       "P119.2-g0k",
-      "P119.5-g0k"
+      "P119.5-g0k",
+      "P119.8-g0k"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -6751,7 +6755,7 @@
     {
       "id": "BUG-17",
       "title": "audit-task start copies the index-only priority into the phase shard",
-      "status": "open",
+      "status": "in_progress",
       "severity": "low",
       "reportedAt": "2026-10-06T14:42:44Z",
       "reportedBy": null,
@@ -6760,7 +6764,7 @@
       "expected": "the shard stays without priority, and validate-manifest prints no priority warning",
       "actual": "start exits 0; the shard gains priority 1; validate-manifest warns that priority sits in the shard body where nothing reads it. Seen in this repo's P100 shard in commit 2ec163d7, and reproduced on 3.1.0 on 2026-10-06",
       "files": [],
-      "taskId": null,
+      "taskId": "P119.8-g0k",
       "fixedIn": null,
       "notes": null
     },
