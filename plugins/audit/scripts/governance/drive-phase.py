@@ -257,7 +257,8 @@ STEPS = {
         "rule": ()},
     "decide-review-answer": {
         "line": "decide review-answer %(task)s: %(why)s - a human action item",
-        "rule": ()},
+        "rule": ("Ask the human (AskUserQuestion); continue only on their yes, "
+                 "their words verbatim as --reason.",)},
     "decide-stalled": {
         "line": "decide stalled %(phase)s: no task is ready - %(why)s",
         "rule": (UNBLOCK_RULE,)},
@@ -1085,6 +1086,26 @@ def dispatch_phase_review(ctx, state, phase):
         brief=project_relative(ctx, brief)))
 
 
+def filed_at_head(ctx, state, phase):
+    """The phase review mark for a return already filed at HEAD, recorded in
+    the state, or {} when none is filed there.
+
+    A STATE WITH NO MARK DOES NOT MEAN NO REVIEW: the state file can be lost,
+    or the sign-off verb run by hand, after the review filed. `file-return`
+    refuses a second return at the same head, so dispatching again would pay
+    for a review whose return can never be filed, while the triage read the
+    first one anyway."""
+    head = git_head(ctx)
+    if not head or not os.path.isfile(os.path.join(
+            ctx["evidence"], *_fr.phase_return_rel(phase["id"],
+                                                   head).split("/"))):
+        return {}
+    state["phaseReview"] = {"head": head}
+    write_state(ctx, state)
+    ctx["did"].append("phase review filed at %s read" % (head[:7],))
+    return state["phaseReview"]
+
+
 def record_findings(ctx, phase, found):
     """Every finding of the phase review, recorded in ONE `finding` call; None,
     or the stop."""
@@ -1157,7 +1178,8 @@ def triage(ctx, state, manifest, phase):
         due, problem = review_due(ctx, manifest, phase)
         if problem:
             return _stopped(ctx, problem)
-        if due:
+        mark = filed_at_head(ctx, state, phase) if due else {}
+        if due and not mark:
             return dispatch_phase_review(ctx, state, phase)
     review = None
     if mark.get("head"):
@@ -1298,11 +1320,36 @@ def bind_at(state, key, reason, head):
     state[key] = {"reason": reason, "head": head}
 
 
-def signoff_summary(state, head):
+def coverage_held(state, phase, head):
+    """The human's words on a gate banner while the run they were shown is still
+    the run sign-off reads, else None: the same HEAD, the same held run id, and
+    the gate the phase declares now. HEAD alone is not the run - a gate
+    retargeted, a declared file edited or a run recorded by hand at the same
+    head is another run, whose banners nobody was asked about."""
+    held = state.get("coverageAccepted")
+    if not held_at(state, "coverageAccepted", head):
+        return None
+    run = (state.get("phaseGate") or {}).get("runId")
+    if held.get("runId") != run \
+            or held.get("gate") != _mio.gate_entries(phase, None)[0]:
+        return None
+    return held.get("reason")
+
+
+def bind_coverage(state, phase, reason, head):
+    """Bind a gate banner's accept to the run it was given over (`coverage_held`)."""
+    state["coverageAccepted"] = {
+        "reason": reason, "head": head,
+        "runId": (state.get("phaseGate") or {}).get("runId"),
+        "gate": _mio.gate_entries(phase, None)[0]}
+
+
+def signoff_summary(state, phase, head):
     """The summary the sign-off verb records: the one the triage was answered
     with, then every answer a human gave on the way - each kept in their
     words, a `decline` included - with a head-bound answer kept only while it
-    still holds at `head`."""
+    still holds at `head`, and a gate banner's accept only while it answers
+    the run the verdict stands on."""
     parts = [state.get("summary") or ""]
     reasons = (state.get("answersAccepted") or {}).get("reasons") or []
     if reasons:
@@ -1318,7 +1365,8 @@ def signoff_summary(state, head):
     for key, said in (("bootConfirmed", "Runtime boot: %s"),
                       ("coverageAccepted", "Gate banner accepted: %s"),
                       ("breachAccepted", "Invariant breach accepted: %s")):
-        reason = held_at(state, key, head)
+        reason = (coverage_held(state, phase, head) if key == "coverageAccepted"
+                  else held_at(state, key, head))
         if reason:
             parts.append(said % (reason,))
     return " ".join(p for p in parts if p)
@@ -1391,7 +1439,7 @@ def run_signoff(ctx, state, phase):
         return stop
     # The decision names the banners and, once accepted, the summary keeps
     # them; the did-line stays plain, since the final print carries the landing.
-    if banners and not held_at(state, "coverageAccepted", head):
+    if banners and not coverage_held(state, phase, head):
         return decision(ctx, state, "gate-coverage", None, "; ".join(banners))
     if not held_at(state, "breachAccepted", head):
         code, out, err = run_verb(ctx, "verify-invariants.py", [
@@ -1405,7 +1453,7 @@ def run_signoff(ctx, state, phase):
             drop_held_gate(ctx, state)
             return relay_refusal(ctx, "verify-invariants.py", code, out + err)
         ctx["did"].append("invariants clean")
-    summary = signoff_summary(state, head)
+    summary = signoff_summary(state, phase, head)
     args = ["signoff", phase["id"], ctx["manifest"], "--project-dir",
             ctx["project"], "--verdict", "passed", "--summary", summary]
     mark = state.get("phaseReview") or {}
@@ -1534,9 +1582,10 @@ def apply_phase_answer(ctx, state, manifest, phase, pending, answer, reason,
     if answer == "sign-off":
         state["summary"] = reason
         state["unreviewedFixes"] = list(pending.get("fixesAfter") or [])
+    elif answer == "accept" and name == "gate-coverage":
+        bind_coverage(state, phase, reason, git_head(ctx))
     elif answer == "accept":
-        bind_at(state, "coverageAccepted" if name == "gate-coverage"
-                else "breachAccepted", reason, git_head(ctx))
+        bind_at(state, "breachAccepted", reason, git_head(ctx))
     elif answer == "booted":
         bind_at(state, "bootConfirmed", reason, git_head(ctx))
     elif answer == "no-ff":

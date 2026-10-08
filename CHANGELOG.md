@@ -95,21 +95,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   (`accept --reason`), and a parent that moved (`no-ff`, or `leave --reason`, never a rebase).
   The triage, the runtime boot, the gate banner and the invariant breach each also take
   `decline --reason`, which keeps the human's words for the summary and hands back to the work.
-  A boot, and an accept of a gate banner or an invariant breach, is bound to the HEAD it was given
-  at and asked again once a commit moves it; a green phase gate recorded at an unchanged HEAD is
+  A boot, and an accept of an invariant breach, is bound to the HEAD it was given at and asked
+  again once a commit moves it; an accept of a gate banner is bound to the run it was shown, so a
+  gate retargeted or measured again at the same HEAD asks again, and the summary drops the words
+  once the run they answered is not the one the verdict stands on; a green phase gate recorded at an unchanged HEAD is
   reused rather than run again, so an accept there does not pay for a second gate run - but only
   while the sign-off verb would still bind it: the newest phase verdict, measured under the gate
   the phase declares now, over its declared files as they stand. A gate retargeted, a declared
   file edited or a run recorded by hand at the same HEAD measures again, and a refusal after the
   gate drops the held run, so sign-off no longer loops on a run the verb refuses. Under
   `always` and `signals`, a per-task reviewer's `diverges` or `cannot-tell` is `decide
-  review-answer`, whose `continue` now takes `--reason`; the summary keeps it. The sign-off verb's
-  refusal over an unsettled answer says what `drive-phase.py next` will do - a second phase
-  review first when its state marks none - and, for a group member, to answer only `accept`
-  and sign the group off again. `close-phase.py` refuses, under every `review.perTask` value, the
+  review-answer`, whose `continue` now takes `--reason`, and whose print says to ask the human
+  and pass their words verbatim; the summary keeps it. With no phase review marked in its state,
+  the driver reads a phase return already filed at the current head instead of dispatching a
+  second review. The sign-off verb's refusal over an unsettled answer says what `drive-phase.py
+  next` will do and, for a group member, to answer only `accept` and sign the group off again.
+  `audit-task.py file-return <phaseId>` refuses a phase return once a sign-off verdict is
+  recorded, exiting 2 and writing nothing. `close-phase.py` refuses, under every `review.perTask` value, the
   landing of a phase whose filed phase return - on disk, in the worktree holding the branch, or
   at the branch tip - holds an answer only a human settles, or will not parse, while no sign-off
-  verdict is recorded on the tip's copy of the plan (the copy on disk for an unversioned plan). A
+  verdict is recorded on the tip's copy of the plan (the copy on disk for an unversioned plan).
+  Its refusal of a green whose declared files changed since names the declared files holding
+  uncommitted changes, and says to commit or revert them before recording again. A
   high-risk task covered by a `--confirm-high-risk` answer commits without asking again. A
   blocked task's stop names its remedy per task: `audit-task.py start <id>` while it has attempts
   left, `audit-task.py unblock <id> --reason` once they are spent. `tools/stream-cost.py` reads the driver's did-words for a fix task added, the landing

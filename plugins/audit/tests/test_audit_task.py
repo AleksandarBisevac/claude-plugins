@@ -13241,10 +13241,11 @@ def _held_cases(check):
               and "P1.1" in h1[1] and "intent diverges" in h1[1]
               and "red-first not-proved" in h1[1] and "--answer accept" in h1[1])
         check("hd29 ...and with no phase review marked in the driver's state, "
-              "the remedy says the driver dispatches the review again first - "
-              "a second paid review - and ends on signing off again: %r"
-              % (h1[1][-420:],),
-              "second paid review" in h1[1] and "sign off again" in h1[1]
+              "the remedy says the driver reads the review already filed at the "
+              "current head - it pays for no second one - and ends on signing "
+              "off again: %r" % (h1[1][-420:],),
+              "already filed at the current head" in h1[1]
+              and "second paid review" not in h1[1] and "sign off again" in h1[1]
               and "group sign-off" not in h1[1])
         filed_p1 = _fr.phase_returns(os.path.join(proj, "docs", "audit",
                                                   "evidence"), "P1")
@@ -13259,10 +13260,11 @@ def _held_cases(check):
         settle(proj, [], text=json.dumps({"phaseReview": {"head": _HD_HEAD}}))
         marked = signoff(proj, "P1", "skipped")
         check("hd29b THE TWIN: with a phase review marked in the driver's state, "
-              "the same refusal names no second review - the driver reads the "
+              "the same refusal says nothing of finding a review at the head - "
+              "the driver reads the "
               "marked review's return there rather than dispatching one: %r" % ((marked[0], marked[1][-300:]),),
               marked[0] == M.E_USAGE and "intent diverges" in marked[1]
-              and "second paid review" not in marked[1])
+              and "already filed at the current head" not in marked[1])
         settle(proj, [hd_rel + "#P1.1#intent diverges"])
         h2 = signoff(proj, "P1", "skipped")
         check("hd25b ...and settling one of the two still refuses, naming only the "
@@ -13296,8 +13298,8 @@ def _held_cases(check):
             reviewPerTask="always")], "always")
         body = json.loads(_hd_return([]))
         body["intent"] = {"answer": "cannot-tell", "note": "unclear", "missing": []}
-        verb(proj, "file-return", "P1", "--role", "reviewer", "--head", _HD_HEAD,
-             stdin=json.dumps(body))
+        early = verb(proj, "file-return", "P1", "--role", "reviewer", "--head",
+                     _HD_HEAD, stdin=json.dumps(body))
         before = read(mpath)
         h5 = signoff(proj, "P1", "skipped")
         unchanged = read(mpath) == before
@@ -13309,6 +13311,28 @@ def _held_cases(check):
               % ((h5[0], h5[1][-200:], h6[0]),),
               h5[0] == M.E_USAGE and "intent cannot-tell" in h5[1]
               and unchanged and h6[0] == 0)
+        # A recorded verdict is what close-phase reads as the human having
+        # settled every filed answer, so a return arriving after it would land
+        # an answer nobody was asked about.
+        late_body = json.loads(_hd_return([]))
+        late_body["intent"] = {"answer": "diverges", "note": "late: missed it",
+                               "missing": []}
+        before = read(mpath)
+        late = verb(proj, "file-return", "P1", "--role", "reviewer", "--head",
+                    _HD_HEAD2, stdin=json.dumps(late_body))
+        late_path = os.path.join(returns(proj, "P1"),
+                                 "%s.reviewer.json" % (_HD_HEAD2,))
+        check("hd30 a phase return filed once a sign-off verdict is recorded is "
+              "refused, naming the verdict, and writes no file and no plan "
+              "byte: %r" % ((late[0], late[1][-240:]),),
+              late[0] == M.E_USAGE and "signed off" in late[1]
+              and read(late_path) is None and read(mpath) == before)
+        check("hd30b THE TWIN: the same phase's return filed before the verdict "
+              "was taken - a refusal keyed on the phase alone would refuse it "
+              "too: %r" % ((early[0], early[1][-160:]),),
+              early[0] == 0 and read(os.path.join(
+                  returns(proj, "P1"), "%s.reviewer.json" % (_HD_HEAD,)))
+              is not None)
     human_answer_cases()
 
     # ...and so does a fix task moved away from its findings.
@@ -13916,22 +13940,32 @@ def _no_change_layout_cases(check, project, git, write, close, read):
           % ((code, text[:240]),), code == 0)
 
 
-def _selftest():
+STAGES = (("at-block", "_cases"), ("sl-block", "_success_line_cases"),
+          ("fr-block", "_return_cases"), ("fb-block", "_batch_cases"),
+          ("hd-block", "_held_cases"), ("ub-block", "_unblock_cases"),
+          ("ncm-block", "_no_change_moved_cases"))
+
+
+def _selftest(only=()):
+    """Every block, or only the ones `--stage <label>` names - a narrowed run a
+    red-first proof in a throwaway tree can afford."""
+    unknown = [o for o in only if o not in dict(STAGES)]
+
     def body(check):
+        if unknown:
+            check("--stage names a block of this suite: %r" % (unknown,), False)
         # Each block staged, so one that raises still lets the other run.
-        _harness.stage(check, "at-block", _cases)
-        _harness.stage(check, "sl-block", _success_line_cases)
-        _harness.stage(check, "fr-block", _return_cases)
-        _harness.stage(check, "fb-block", _batch_cases)
-        _harness.stage(check, "hd-block", _held_cases)
-        _harness.stage(check, "ub-block", _unblock_cases)
-        _harness.stage(check, "ncm-block", _no_change_moved_cases)
+        for label, fn in STAGES:
+            if not only or label in only:
+                _harness.stage(check, label, globals()[fn])
     return _harness.run(body)
 
 
 if __name__ == "__main__":
     safe_stdio()
     if "--selftest" in sys.argv[1:]:
-        raise SystemExit(_selftest())
-    sys.stderr.write("usage: test_audit_task.py --selftest\n")
+        args = sys.argv[1:]
+        raise SystemExit(_selftest([args[i + 1] for i, a in enumerate(args[:-1])
+                                    if a == "--stage"]))
+    sys.stderr.write("usage: test_audit_task.py --selftest [--stage LABEL ...]\n")
     raise SystemExit(2)

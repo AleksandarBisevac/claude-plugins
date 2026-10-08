@@ -1940,6 +1940,9 @@ def gate_answer(project, manifest_path, manifest, phase, git_root=None,
                           "%s's tip, so whether its newest verdict measured the "
                           "work that would land is not established - %s"
                           % (cid, branch, record)))
+    if answer.get("arm") == _vb.ARM_DIGEST_MOVED and branch and git_root:
+        answer = _uncommitted_remedy(answer, record, uncommitted_declared(
+            git_root, project, phase_tree, files))
     if str((phase or {}).get("id")) != cid and _vb.close_refusal(answer) is None:
         own = _vb.member_red(
             texts if texts is not None else _vb.ledger_texts(project, config),
@@ -1947,6 +1950,54 @@ def gate_answer(project, manifest_path, manifest, phase, git_root=None,
         if own is not None:
             answer = own
     return answer, signed, notes
+
+
+def uncommitted_declared(git_root, project, phase_tree, files):
+    """The declared files (project-relative, sorted) holding changes no commit
+    carries, in the worktree that holds the branch; [] when none do, when no
+    worktree holds it, or when git could not say - the clause this feeds is a
+    remedy, and the refusal it rides on stands either way."""
+    tree = _phase_project(git_root, project, phase_tree)
+    declared = _tree_stamp.declared_scope(files)
+    if not tree or not declared:
+        return []
+    code, out = _git_bytes(tree, ["status", "--porcelain", "-z",
+                                  "--untracked-files=all", "--"] + declared)
+    if code != 0:
+        return []
+    prefix = os.path.relpath(project, git_root).replace(os.sep, "/")
+    prefix = "" if prefix == "." else prefix + "/"
+    found, skip = [], False
+    for entry in out.decode("utf-8", "replace").split("\0"):
+        if skip or len(entry) < 4:
+            skip = False
+            continue
+        # A rename's entry is followed by its source path, which is not one.
+        skip = any(c in "RC" for c in entry[:2])
+        path = entry[3:]
+        found.append(path[len(prefix):] if path.startswith(prefix) else path)
+    return sorted(set(found))
+
+
+def _uncommitted_remedy(answer, record, dirty):
+    """`answer` with its remedy naming the `dirty` declared files, or unchanged
+    when there are none.
+
+    RECORDING AGAIN OVER THE SAME DIRT LOOPS: the recorder hashes the working
+    files and the landing digests the tip's committed ones, so a run recorded
+    while a declared file holds an uncommitted change is refused here however
+    often it is recorded. The change has to reach a commit, or leave the tree,
+    first."""
+    if not dirty:
+        return answer
+    fixed = ("declared file(s) %s hold uncommitted changes in the worktree "
+             "holding the branch, which the recorded run measured and the tip "
+             "does not carry - commit or revert them before recording, then %s"
+             % (", ".join(dirty), record))
+    sentence = answer.get("sentence") or ""
+    return dict(answer, sentence=(sentence.replace(record, fixed)
+                                  if record in sentence
+                                  else "%s; %s" % (sentence, fixed)))
 
 
 def review_answers_refusal(project, manifest_path, phase):
@@ -2003,9 +2054,13 @@ def landed_answers_refusal(project, manifest_path, phase, landed, branch,
 
     UNDER EVERY KEY, A FILED PHASE RETURN HOLDING AN ANSWER ONLY A HUMAN
     SETTLES (`_fr.needs_human`) asks for the same verdict: only the sign-off
-    verb writes one, and it refuses while such an answer is unsettled, so a
-    recorded verdict is the evidence the answer was put to a human. A return
-    that will not parse could hold one, and asks for the verdict too."""
+    verb writes one, and it refuses while such an answer is unsettled, and
+    `audit-task.py file-return` refuses a phase return once a verdict is
+    recorded - so a recorded verdict is the evidence that every return filed
+    through that verb was put to a human. A return written into the evidence
+    directory by any other hand after the verdict is not told apart from one
+    the verdict read. A return that will not parse could hold one, and asks for
+    the verdict too."""
     phase_id = (phase or {}).get("id")
     on_disk = worktree_phase(git_root, project, phase_tree, manifest_path,
                              phase_id)

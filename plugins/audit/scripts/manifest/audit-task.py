@@ -4455,8 +4455,9 @@ def cmd_file_return(args, out):
 
 def _phase_return_refusal(project, config, mpath, phase, role, head, body):
     """`(path, None)` for a phase return that may be filed, or `(None, refusal)`:
-    the reviewer's role, a head, a readable record of the returns already filed,
-    and every entry `_fr.phase_return_problems` asks for."""
+    the reviewer's role, a head, no sign-off verdict recorded on the phase, a
+    readable record of the returns already filed, and every entry
+    `_fr.phase_return_problems` asks for."""
     pid = str(phase.get("id"))
     if role != "reviewer":
         return None, ("[audit-task] %s is a PHASE, and a phase return is the "
@@ -4465,6 +4466,14 @@ def _phase_return_refusal(project, config, mpath, phase, role, head, body):
         return None, ("[audit-task] a phase return for %s needs --head <sha>, the "
                       "head its brief was computed at (audit-lookup.py brief %s "
                       "--role phase names it). Nothing written." % (pid, pid))
+    # A RECORDED VERDICT IS READ AS THE SETTLEMENT OF EVERY FILED ANSWER:
+    # close-phase lands a phase whose filed return holds an answer only a human
+    # settles once a verdict is recorded, because the sign-off verb refuses
+    # while one is unsettled. A return filed after the verdict is one that
+    # refusal never saw, so its answer would land with nobody asked.
+    signed = _signed_off_refusal(phase, "a phase return filed now")
+    if signed:
+        return None, "%s Nothing written." % (signed,)
     proj, cfg = _evidence_io.project_config_for(mpath, project)
     evdir = _evidence_io.evidence_dir(proj, cfg)
     filed = _fr.phase_returns(evdir, pid)
@@ -8254,9 +8263,10 @@ def _human_settlement(proj, cfg, pid, filed, group=False):
     the triage, and a phase signed off here is landed by the next `next`.
 
     THE REMEDY SAYS WHAT THE DRIVER WILL DO. With no phase review marked in
-    its state the driver dispatches the review again before any triage
-    (`_fr.review_marked`), and a member's triage answered `sign-off` signs
-    off and lands that member alone."""
+    its state (`_fr.review_marked`) the driver reads a phase return already
+    filed at the current head, and dispatches the review only where none is,
+    before any triage; a member's triage answered `sign-off` signs off and
+    lands that member alone."""
     hc = _loader.load_hooks_config(modname="audit__config")
     state_dir = str(hc.state_dir(pathlib.Path(proj), cfg or {}))
     keys, reasons, problem = _fr.settled_answers(state_dir, pid)
@@ -8268,10 +8278,10 @@ def _human_settlement(proj, cfg, pid, filed, group=False):
     if waiting:
         state, _problem = _fr.drive_state(state_dir, pid)
         redispatch = ("" if _fr.review_marked(state) else
-                      " - its state marks no phase review, so where a review "
-                      "skill resolves it first dispatches the phase review "
-                      "again, a second paid review, and the triage follows "
-                      "its return -")
+                      " - its state marks no phase review, so it reads the "
+                      "phase return already filed at the current head, or "
+                      "dispatches the phase review where none is filed there, "
+                      "and the triage follows that return -")
         then = ("answer only `accept` there, never `sign-off`, which signs "
                 "off and lands this member alone; then run this group "
                 "sign-off again" if group else "sign off again")

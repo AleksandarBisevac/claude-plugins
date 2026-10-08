@@ -1782,12 +1782,17 @@
       },
       "startedAt": "2026-10-08T09:41:29Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T10:33:37Z.299e0f",
+        "status": "passed",
+        "at": "2026-10-08T10:33:37Z"
+      }
     },
     {
       "id": "P118.19-v7t",
       "title": "the implemented pipeline's cost is measured against the target and published",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Measures the implemented phase against the user's target and publishes docs/research/pipeline-cost-results.md, an addendum to the design. Sources are the probe (probe-C-1 with fresh probe-A-1 and probe-A-2) and the whole-feature after-study (cost-A, cost-B and cost-C, three each, with cost-C-3's protocol follow-up), read with tools/stream-cost.py at the phase's commit, against the before sessions. Every target in design section 7 is reported confirmed, refuted or inconclusive with its reading: the per-task ratio both ways, the whole-feature ratio against A and against B, the phase overhead against its 1.00 budget, and the T2, T3, T4, T8 and T10 rows. Also reported are quality beside the before sessions, the open-choices behaviour across the three arm C sessions (one asked, two did not), deviations including the CLI version and the account change, and limits. The next levers toward the 1.25 ideal are named from the measured decomposition.",
       "files": [
         "docs/research/pipeline-cost-results.md",
@@ -1814,14 +1819,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T09:59:54Z",
       "completedAt": null,
       "verifiedBy": []
     }

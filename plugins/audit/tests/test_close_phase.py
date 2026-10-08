@@ -1599,6 +1599,11 @@ def _landing_cases(check):
               "exit %r, landed %r, %r" % (code, _landed(git), text[:300]),
               code == 1 and not _landed(git) and "cr-1" in text
               and "have changed since it was measured" in text)
+        check("cr19b ...and the refusal names the uncommitted declared file and "
+              "says to commit or revert it before recording - recording again "
+              "over the same dirt measures what the tip still lacks, so the "
+              "bare remedy loops: %r" % (text[-500:],),
+              "src.txt hold uncommitted" in text and "commit or revert" in text)
     run_case("closephase-green-over-dirty",
              lambda: _landing_fixture("closephase-green-over-dirty",
                                       [(0, "passed")], files=("src.txt",)),
@@ -1612,6 +1617,22 @@ def _landing_cases(check):
               "edit after it lands - the dirt does not land, so it does not "
               "decide: exit %r, landed %r, %r" % (code, _landed(git), text[:300]),
               code == 0 and _landed(git) and "gate: bound to run cr-0" in text)
+    def committed_after_green(root, mpath, git):
+        code, text = _close(mpath, root)
+        check("cr19c THE TWIN: a green over files changed since in a COMMIT - "
+              "nothing uncommitted - refuses with the plain remedy and names no "
+              "uncommitted file: a clause written into every moved digest would "
+              "send the operator to commit what is already committed: exit %r, %r"
+              % (code, text[-400:]),
+              code == 1 and not _landed(git)
+              and "have changed since it was measured" in text
+              and "commit or revert" not in text and "uncommitted" not in text)
+    run_case("closephase-committed-after-green",
+             lambda: _landing_fixture("closephase-committed-after-green",
+                                      [(0, "passed")], files=("src.txt",),
+                                      change_after=True),
+             committed_after_green)
+
     run_case("closephase-dirty-after-green",
              lambda: _landing_fixture("closephase-dirty-after-green",
                                       [(0, "passed")], files=("src.txt",)),

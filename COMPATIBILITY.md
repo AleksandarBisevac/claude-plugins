@@ -363,7 +363,12 @@ is still true of a nested key.
   through its copy on disk. Sign-off, by the driver or by hand, also refuses while a
   filed phase return holds a `diverges`, `cannot-tell`, `not-proved` or `flagged` answer
   the driver's `--answer accept --reason` has not settled, and that stop on a phase intent
-  holds under every `review.perTask` value. A task that no longer records its commit, a merge made by hand
+  holds under every `review.perTask` value. So does `close-phase.py`'s: under every
+  `review.perTask` value it refuses to land a phase whose filed phase return - on disk,
+  in the worktree holding the branch, or at the branch tip - holds such an answer, or
+  will not parse, while the tip's copy of the plan records no sign-off verdict (the copy
+  on disk, for a plan git never commits); and `file-return <phaseId>` refuses a phase
+  return once a sign-off verdict is recorded. A task that no longer records its commit, a merge made by hand
   or through a pull request, and who filed the phase return are outside that refusal;
   the plugin README's followed table names each, with the evidence left afterwards. A phase already under way when the plugin is
   upgraded reads the new default too, unless it recorded a `reviewPerTask` value, which
