@@ -330,7 +330,46 @@ def _selftest():
         _harness.stage(check, "fr-block", _cases)
         _harness.stage(check, "pk-block", _held_cases)
         _harness.stage(check, "hn-block", _human_cases)
+        _harness.stage(check, "dm-block", _drive_mark_cases)
     return _harness.run(body)
+
+
+def _drive_mark_cases(check):
+    """The driver's state read whole, for what the sign-off verb's remedy says
+    the driver will do next, and a return's text parsed by the one rule a
+    landing reading the branch tip shares with the read off disk."""
+    root = _harness.fixture_root("filed-returns-mark-")
+    try:
+        none_yet = M.drive_state(root, "P1")
+        path = M.drive_state_path(root, "P1")
+        os.makedirs(os.path.dirname(path))
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({M.REVIEW_MARK_FIELD: {"head": "abc1234"}}, fh)
+        marked = M.drive_state(root, "P1")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({M.REVIEW_MARK_FIELD: {"findings": True}}, fh)
+        headless = M.drive_state(root, "P1")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("{not json")
+        broken = M.drive_state(root, "P1")
+        check("dm1 no state is `{}` and no mark; a mark with a head is marked; "
+              "one with no head is not - the driver re-dispatches there too; and "
+              "a file that will not parse is a problem, never an empty state: %r"
+              % ((none_yet, marked, headless, broken[1][:50]),),
+              none_yet == ({}, "") and not M.review_marked(none_yet[0])
+              and M.review_marked(marked[0]) and marked[1] == ""
+              and not M.review_marked(headless[0])
+              and broken[0] == {} and broken[1])
+    finally:
+        _harness.remove_tree(root)
+    ok, bad, gone = (M.return_body('{"verdict": "clean"}', "x"),
+                     M.return_body("{not json", "tip:x"),
+                     M.return_body(None, "tip:y"))
+    check("dm2 a return's text parses to its body; text that will not parse and "
+          "text that could not be read are each a problem naming the label, "
+          "never an empty body: %r" % ((ok, bad, gone),),
+          ok == ({"verdict": "clean"}, None) and bad[0] is None
+          and "tip:x" in bad[1] and gone[0] is None and "tip:y" in gone[1])
 
 
 def _hn_body(entries, intent="matches"):

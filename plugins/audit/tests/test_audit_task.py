@@ -13240,6 +13240,29 @@ def _held_cases(check):
               h1[0] == M.E_USAGE and read(mpath) == before
               and "P1.1" in h1[1] and "intent diverges" in h1[1]
               and "red-first not-proved" in h1[1] and "--answer accept" in h1[1])
+        check("hd29 ...and with no phase review marked in the driver's state, "
+              "the remedy says the driver dispatches the review again first - "
+              "a second paid review - and ends on signing off again: %r"
+              % (h1[1][-420:],),
+              "second paid review" in h1[1] and "sign off again" in h1[1]
+              and "group sign-off" not in h1[1])
+        filed_p1 = _fr.phase_returns(os.path.join(proj, "docs", "audit",
+                                                  "evidence"), "P1")
+        _lines, as_member = M._human_settlement(proj, {}, "P1", filed_p1,
+                                                group=True)
+        check("hd29g a group member's refusal says to answer its triage only "
+              "`accept`, never `sign-off` (which lands the member alone), and to "
+              "run the group sign-off again: %r" % ((as_member or "")[-420:],),
+              "only `accept`" in (as_member or "")
+              and "lands this member alone" in (as_member or "")
+              and "group sign-off again" in (as_member or ""))
+        settle(proj, [], text=json.dumps({"phaseReview": {"head": _HD_HEAD}}))
+        marked = signoff(proj, "P1", "skipped")
+        check("hd29b THE TWIN: with a phase review marked in the driver's state, "
+              "the same refusal names no second review - the driver reads the "
+              "marked review's return there rather than dispatching one: %r" % ((marked[0], marked[1][-300:]),),
+              marked[0] == M.E_USAGE and "intent diverges" in marked[1]
+              and "second paid review" not in marked[1])
         settle(proj, [hd_rel + "#P1.1#intent diverges"])
         h2 = signoff(proj, "P1", "skipped")
         check("hd25b ...and settling one of the two still refuses, naming only the "

@@ -1623,7 +1623,7 @@
     {
       "id": "P118.17-v7t",
       "title": "a reused phase gate and an unsettled answer cannot loop or land unseen",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes P118 review round 3 findings R43-R47. A reused green phase-gate run is bound to its gate entries and scope digest as well as HEAD, through _verdict_binding, and is dropped whenever a later step refuses, so sign-off cannot loop on a stale run. close-phase refuses a landing under every review key when a filed phase return holds an unsettled answer and no sign-off verdict is recorded. The sign-off verb's refusal text says what the driver will do, including a second review, and how a group signs off. decide review-answer requires --reason on continue and carries it into the summary. Every new case is shown red first.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1659,16 +1659,21 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T08:31:33Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T09:29:40Z.0d47c6",
+        "status": "passed",
+        "at": "2026-10-08T09:29:40Z"
+      }
     }
   ],
   "startedAt": "2026-10-07T21:17:01Z"

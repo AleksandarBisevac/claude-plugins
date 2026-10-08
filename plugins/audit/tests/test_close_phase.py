@@ -1099,6 +1099,91 @@ def _review_answer_parent_cases(check):
     _tipless_tracked_cases(check)
     _unversioned_plan_cases(check)
     _worktree_close_cases(check)
+    _human_answer_landing_cases(check)
+
+
+def _human_answer_fixture(name, intent, signed, raw=None):
+    """`(root, mpath, git, sha)` - P1 on `audit/p1-demo`, its one task closed
+    under `review.perTask: always`, and a phase return filed and committed on
+    the branch whose phase intent answers `intent` (`raw` is the file's bytes
+    instead, for one that will not parse). `signed` keeps the sign-off verdict
+    on the plan; without it the phase records none."""
+    import _filed_returns as _fr
+    root = _harness.fixture_root("closephase-human-%s" % (name,))
+    git = _fixture_git(root)
+    _init_fixture_repo(git)
+    phase = _signed_phase("P1", "audit/p1-demo")
+    if not signed:
+        phase.pop("review")
+    mpath = _write_plan(root, {"developmentBranch": "main"}, [phase])
+    # The config's key too, so the parent's copy - whose task records no key
+    # - reads `always` rather than a default, and only a filed return can ask.
+    os.makedirs(os.path.join(root, ".claude"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json",
+                   "review": {"perTask": "always"}}, fh)
+    git("add", "-A")
+    git("commit", "-q", "-m", "base")
+    git("checkout", "-q", "-b", "audit/p1-demo")
+    with open(os.path.join(root, "work.txt"), "w") as fh:
+        fh.write("work\n")
+    git("add", "work.txt")
+    git("commit", "-q", "-m", "work")
+    sha = git("rev-parse", "HEAD").stdout.decode().strip()
+    _set_review_record(mpath, sha, {"reviewPerTask": "always"})
+    rel = _fr.phase_return_rel("P1", sha)
+    path = os.path.join(root, "docs", "audit", "evidence", *rel.split("/"))
+    os.makedirs(os.path.dirname(path))
+    body = {"findings": [], "verdict": "clean", "tasks": [],
+            "intent": {"answer": intent, "note": "the phase as asked"}}
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(raw if raw is not None else json.dumps(body))
+    git("add", "-A")
+    git("commit", "-q", "-m", "plan and review")
+    return root, mpath, git, sha
+
+
+def _human_answer_landing_cases(check):
+    """Under every review key, a filed phase return holding an answer only a
+    human settles lands only beside a sign-off verdict: the verb that writes
+    one refuses while such an answer is unsettled, so the verdict is the
+    evidence a human was asked. Under `always` nothing else asked for it."""
+    cases = (
+        ("hl1", "diverges", True, False, None, False,
+         "an `always` phase whose filed review answers the phase intent "
+         "`diverges`, with no sign-off verdict, is refused and merges nothing"),
+        ("hl2", "diverges", True, True, None, True,
+         "ALLOW: the same phase, signed off - the verb settled the answer - "
+         "lands"),
+        ("hl3", "matches", True, False, None, True,
+         "ALLOW: an `always` phase whose filed review holds no answer for a "
+         "human lands with no verdict, as before - a landing refusing every "
+         "unsigned `always` phase would fail here"),
+        ("hl4", "cannot-tell", False, False, None, False,
+         "run from the parent's checkout, where the return is committed on the "
+         "branch alone, the tip's return is read and the landing refused"),
+        ("hl5", "matches", True, False, "{not json", False,
+         "a filed return that will not parse could hold such an answer, and "
+         "is refused the same way, never read as none filed"),
+    )
+    for cid, intent, on_branch, signed, raw, lands, label in cases:
+        root = None
+        try:
+            root, mpath, git, sha = _human_answer_fixture(cid, intent, signed,
+                                                          raw)
+            if not on_branch:
+                git("checkout", "-q", "main")
+            code, text = _close(mpath, root)
+            merged = git("merge-base", "--is-ancestor", sha,
+                         "main").returncode == 0
+            ok = (code == 0 and merged) if lands else (
+                code == 1 and not merged and "only a human settles" in text
+                and "sign-off verdict" in text and "review.perTask" not in text
+                and ((intent in text) if raw is None else "cannot be read" in text))
+            check("%s %s: exit %r, %r" % (cid, label, code, text[-360:]), ok)
+        finally:
+            if root:
+                _harness.remove_tree(root)
 
 
 def _tipless_tracked_cases(check):

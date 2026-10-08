@@ -201,9 +201,22 @@ def read_filed_return(path):
     try:
         with open(path, "r", encoding="utf-8", newline="") as fh:
             text = fh.read()
-        return text, json.loads(text), None
     except (OSError, ValueError) as exc:
         return None, None, "%s cannot be read as JSON (%s)" % (path, exc)
+    body, problem = return_body(text, path)
+    return (text if problem is None else None), body, problem
+
+
+def return_body(text, label):
+    """`(body, problem)` - a filed return's text parsed, or why it was not:
+    `text` None is a return that could not be read at all, which is a problem
+    here too, never "not filed". `label` names it in the problem."""
+    if text is None:
+        return None, "%s could not be read" % (label,)
+    try:
+        return json.loads(text), None
+    except ValueError as exc:
+        return None, "%s cannot be read as JSON (%s)" % (label, exc)
 
 
 def claims_from_return(evidence_dir, task):
@@ -466,6 +479,8 @@ HUMAN_INHERITED = ("flagged",)
 # `--answer accept --reason` writes as `{"keys": [...], "reasons": [...]}`.
 DRIVE_DIRNAME = "drive"
 SETTLED_FIELD = "answersAccepted"
+# The driver's mark of a phase review dispatched, `{"head": <sha>, ...}`.
+REVIEW_MARK_FIELD = "phaseReview"
 
 
 def needs_human(returns, settled=()):
@@ -508,20 +523,39 @@ def drive_state_path(state_dir, phase_id):
     return os.path.join(str(state_dir), DRIVE_DIRNAME, "%s.json" % (phase_id,))
 
 
+def drive_state(state_dir, phase_id):
+    """`(body, problem)` - the driver's state for the phase, `{}` when it keeps
+    none, or why it could not be read; a record that will not parse is a
+    problem, never read as an empty one."""
+    path = drive_state_path(state_dir, phase_id)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            body = json.load(fh)
+    except FileNotFoundError:
+        return {}, ""
+    except (OSError, ValueError) as exc:
+        return {}, "the settlement record %s cannot be read (%s)" % (path, exc)
+    return (body if isinstance(body, dict) else {}), ""
+
+
+def review_marked(body):
+    """Whether the driver's state `body` marks a phase review as dispatched at
+    a head. Without the mark, the driver's next sign-off pass dispatches the
+    phase review again wherever a review skill resolves, before any triage."""
+    mark = body.get(REVIEW_MARK_FIELD) if isinstance(body, dict) else None
+    return isinstance(mark, dict) and bool(mark.get("head"))
+
+
 def settled_answers(state_dir, phase_id):
     """`(keys, reasons, problem)` - the answer keys a human settled for the
     phase, the words they were settled with, and why the record could not be
     read. No record is nothing settled; a record that will not parse is a
     problem, never read as nothing settled."""
     path = drive_state_path(state_dir, phase_id)
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            body = json.load(fh)
-    except FileNotFoundError:
-        return set(), [], ""
-    except (OSError, ValueError) as exc:
-        return set(), [], "the settlement record %s cannot be read (%s)" % (path, exc)
-    held = body.get(SETTLED_FIELD) if isinstance(body, dict) else None
+    body, problem = drive_state(state_dir, phase_id)
+    if problem:
+        return set(), [], problem
+    held = body.get(SETTLED_FIELD)
     if held is None:
         return set(), [], ""
     if not isinstance(held, dict):

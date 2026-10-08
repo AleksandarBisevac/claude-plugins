@@ -271,7 +271,7 @@ def sign_off(kind, text):
 
 def drive(M, root, mpath, on_dispatch=None, cap=40, returns=None,
           answer=sign_off, phase_review=True, findings=(), target=PHASE,
-          entry_over=None, phase_intent="matches"):
+          entry_over=None, phase_intent="matches", reviewer_answers=None):
     """Play the main loop until `done`, a stop, or `cap` calls.
 
     -> {"prints": [(code, text)], "steps": [instruction], "nexts", "dispatches"}
@@ -280,7 +280,9 @@ def drive(M, root, mpath, on_dispatch=None, cap=40, returns=None,
     gives the flags that answer a printed decision, None to run a plain `next`
     again, or False to stop there; `answer=None` stops at the first decision.
     With `phase_review` False the drive stops at the phase review's dispatch
-    rather than filing it, and `findings` is what a filed one carries."""
+    rather than filing it, and `findings` is what a filed one carries.
+    `reviewer_answers` maps a task id to the intent its per-task reviewer
+    answers, `matches` where it names none."""
     prints, steps = [], []
     dispatches = 0
     reply = []
@@ -315,7 +317,8 @@ def drive(M, root, mpath, on_dispatch=None, cap=40, returns=None,
                     _file_phase_review(root, mpath, text, findings,
                                        entry_over, phase_intent)
                 else:
-                    _file_reviewer(root, mpath, tid)
+                    _file_reviewer(root, mpath, tid, (reviewer_answers or {})
+                                   .get(tid, "matches"))
                 if on_dispatch is not None:
                     on_dispatch(role, tid)
     return {"prints": prints, "steps": steps, "nexts": len(prints),
@@ -568,6 +571,7 @@ def _decide_cases(check):
           "verb, since no task commit is coming to carry them: %r" % (dirty,),
           blocked == 0 and dirty.strip() == ""
           and "record committed" in "\n".join(said_b))
+    _continue_cases(check)
 
 
 def _attempts(mpath, task_id):
@@ -1250,6 +1254,10 @@ def _review_answer_cases(check):
           and any("phase" in ln and "cannot-tell" in ln for ln in lines)
           and all(len(ln.encode("utf-8")) <= M.TRIAGE_LINE_BYTES
                   for ln in triage.splitlines()))
+    check("sa1m the state the driver wrote on dispatching the phase review is "
+          "one `_filed_returns.review_marked` reads as marked - the reading the "
+          "sign-off verb's remedy rests on: %r" % (sorted(_drive_state(root)),),
+          _fr.review_marked(_drive_state(root)))
     code, text = _next(M, root, mpath, "--answer", "sign-off", "--reason", SUMMARY)
     check("sa2 sign-off is refused while those answers wait on a human, and "
           "nothing is signed off: %r" % ((code, text),),
@@ -1279,6 +1287,37 @@ def _review_answer_cases(check):
           run["steps"][-1] == TRIAGE and _answer_lines(triage) == []
           and "--answer accept" not in triage)
     _decline_answer_cases(check)
+
+
+def _continue_cases(check):
+    """Under `always`, a per-task reviewer's `diverges` is `decide
+    review-answer`, and its `continue` is a human's word on it: it takes
+    `--reason`, and the summary keeps that reason as it keeps the triage's
+    accept."""
+    M, why = _load("drive_phase_continue")
+    if M is None:
+        check("ct1 the driver loads", False, why)
+        return
+    root, mpath = _repo("continue", task_ids=TASKS[:1])
+    run = drive(M, root, mpath, answer=None,
+                reviewer_answers={"P1.1": "diverges"})
+    last = run["prints"][-1][1]
+    bare, bare_text = _next(M, root, mpath, "--answer", "continue")
+    check("ct1 a per-task `diverges` is `decide review-answer`, whose print says "
+          "`continue` needs --reason, and a bare continue is refused: %r"
+          % ((run["steps"][-1], last, bare, bare_text),),
+          run["steps"][-1] == ("decide", "review-answer", None)
+          and "continue needs --reason" in last and bare == M.E_USAGE
+          and len(last.encode("utf-8")) <= BOUND)
+    words = "the human: P1.1 was meant to diverge, the plan was stale"
+    code, text = _next(M, root, mpath, "--answer", "continue", "--reason", words)
+    rest = drive(M, root, mpath)
+    summary = _phase_of(mpath).get("summary") or ""
+    check("ct2 ALLOW: continue with the human's words goes on, the phase signs "
+          "off, and the summary keeps those words beside the triage's: %r"
+          % ((code, rest["steps"][-1], summary),),
+          code == 0 and rest["steps"][-1] == DONE
+          and summary.startswith(SUMMARY) and words in summary)
 
 
 def _redispatch_cases(check):
@@ -1681,10 +1720,14 @@ def _decline_coverage_cases(check):
     added = _add_task(root, mpath, gate=UNRELATED_GATE)
     code, text = _next(M2, root, mpath, "--answer", "accept", "--reason",
                        "the human: a false yes, given before the task ran")
-    check("dc4 an accept at an unchanged head reuses the recorded green phase "
-          "gate rather than running the suite again, and says so: %r"
+    check("dc4 an accept at an unchanged head, gate and tree reuses the recorded "
+          "green phase gate rather than running the suite again, and says so: %r"
           % ((before, seen["runs"], code, text),),
           before == 1 and seen["runs"] == before and "reused" in text)
+    check("dc4b ...and the sign-off verb refusing after it (a task is open) drops "
+          "the run the drive held, so the next sign-off measures again: %r"
+          % ((code, sorted(_drive_state(root))),),
+          code != 0 and "phaseGate" not in _drive_state(root))
     run = drive(M2, root, mpath, answer=_stop_at_other)
     check("dc5 THE TWIN: once the added task closes, the phase gate runs again "
           "at the new head and gate-coverage is asked again - the accept given "
@@ -1693,6 +1736,68 @@ def _decline_coverage_cases(check):
           and ("dispatch", "executor", added) in run["steps"]
           and run["steps"][-1] == ("decide", "gate-coverage", None)
           and not _signed(mpath))
+    _stale_gate_cases(check)
+
+
+RELATED_GATE = "echo src/f1.txt 1 passed"
+
+
+def _stale_gate_cases(check):
+    """A green phase gate held for reuse is reused only while the sign-off verb
+    would still bind it: the same newest run, measured under the gate declared
+    now, over the declared files as they stand. HEAD alone is not that - the
+    gate can be retargeted, a declared file edited or a run recorded by hand
+    with no commit."""
+    def to_coverage(prefix):
+        M, why = _load("drive_phase_stale_%s" % (prefix,))
+        seen = _phase_gate_runs(M)
+        root, mpath = _repo(prefix, task_ids=TASKS[:1], gate=(UNRELATED_GATE,),
+                            per_task="phase", phase_gate=(UNRELATED_GATE,))
+        run = drive(M, root, mpath, answer=_stop_at_other)
+        return M, seen, root, mpath, run
+
+    words = "the human: the suite reaches f1 after all"
+    M, seen, root, mpath, run = to_coverage("stale-retarget")
+    before = seen["runs"]
+    with _Env(root):
+        moved = _verb(root, "audit-task.py", ["retarget", PHASE, mpath,
+                                              "--project-dir", root,
+                                              "--gate-set", RELATED_GATE])
+    code, text = _next(M, root, mpath, "--answer", "accept", "--reason", words)
+    check("gr1 a gate retargeted after gate-coverage, at the same head: the "
+          "accept signs off on ONE fresh run measured under the new gate, not "
+          "the held run the verb would refuse: %r"
+          % ((run["steps"][-1], moved[0], before, seen["runs"], code, text),),
+          run["steps"][-1] == ("decide", "gate-coverage", None) and moved[0] == 0
+          and code == 0 and instruction(text) == DONE and _signed(mpath)
+          and seen["runs"] == before + 1 and "reused" not in text
+          and len(text.encode("utf-8")) <= BOUND)
+
+    M, seen, root, mpath, run = to_coverage("stale-edit")
+    before = seen["runs"]
+    with open(os.path.join(root, "src", "f1.txt"), "w") as fh:
+        fh.write("edited after the gate, never committed\n")
+    code, text = _next(M, root, mpath, "--answer", "accept", "--reason", words)
+    check("gr2 a declared file edited after the gate, uncommitted: the accept "
+          "measures again rather than reusing a run whose scopeDigest moved, and "
+          "the sign-off verb takes the verdict. The landing after it may still "
+          "refuse - the edit is in no commit, and close-phase grades the tip: %r"
+          % ((before, seen["runs"], code, text),),
+          seen["runs"] == before + 1 and "reused" not in text and _signed(mpath)
+          and "audit-task.py refused" not in text)
+
+    M, seen, root, mpath, run = to_coverage("stale-handrun")
+    before = seen["runs"]
+    with _Env(root):
+        hand = _verb(root, "run-test-gate.py", [mpath, PHASE, "--record",
+                                                "--project-dir", root])
+    code, text = _next(M, root, mpath, "--answer", "accept", "--reason", words)
+    check("gr3 a run recorded by hand after the held one, at the same head: the "
+          "verdict would bind the newer run, so the drive measures again rather "
+          "than reading the held run's banners: %r"
+          % ((hand[0], before, seen["runs"], code, text),),
+          hand[0] == 0 and seen["runs"] == before + 1 and "reused" not in text
+          and _signed(mpath))
 
 
 def _decline_boot_cases(check):

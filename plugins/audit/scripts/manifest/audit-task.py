@@ -8243,14 +8243,20 @@ _CARRIED = ("answer", "redFirst", "redFirstBasis", "inheritedTests",
             "inheritedTestsBasis")
 
 
-def _human_settlement(proj, cfg, pid, filed):
+def _human_settlement(proj, cfg, pid, filed, group=False):
     """`(lines, refusal)` - the sign-off's stop on a reviewer answer only a
     human settles (`_fr.needs_human`), read against the settlement the
     driver's triage records, under every review key. `lines` names what a
     human settled and in which words; `refusal` names what waits, or None.
+    `group` is a member asked by a group sign-off, whose remedy differs.
 
     THE VERB HOLDS IT, NOT ONLY THE DRIVER: sign-off run by hand never meets
-    the triage, and a phase signed off here is landed by the next `next`."""
+    the triage, and a phase signed off here is landed by the next `next`.
+
+    THE REMEDY SAYS WHAT THE DRIVER WILL DO. With no phase review marked in
+    its state the driver dispatches the review again before any triage
+    (`_fr.review_marked`), and a member's triage answered `sign-off` signs
+    off and lands that member alone."""
     hc = _loader.load_hooks_config(modname="audit__config")
     state_dir = str(hc.state_dir(pathlib.Path(proj), cfg or {}))
     keys, reasons, problem = _fr.settled_answers(state_dir, pid)
@@ -8260,15 +8266,24 @@ def _human_settlement(proj, cfg, pid, filed):
     asked = _fr.needs_human(filed)
     waiting = [a for a in asked if a["key"] not in keys]
     if waiting:
+        state, _problem = _fr.drive_state(state_dir, pid)
+        redispatch = ("" if _fr.review_marked(state) else
+                      " - its state marks no phase review, so where a review "
+                      "skill resolves it first dispatches the phase review "
+                      "again, a second paid review, and the triage follows "
+                      "its return -")
+        then = ("answer only `accept` there, never `sign-off`, which signs "
+                "off and lands this member alone; then run this group "
+                "sign-off again" if group else "sign off again")
         return [], (
             "REFUSED: phase %s's filed review holds answer(s) only a human "
             "settles, and these are not settled. Nothing written:\n%s\n    "
-            "Put each to a human, then run `drive-phase.py next %s` and answer "
-            "its triage with --answer accept --reason \"<their word on each>\" "
-            "- the settlement this verb reads - and sign off again."
+            "Put each to a human, then run `drive-phase.py next %s`%s and "
+            "answer its triage with --answer accept --reason \"<their word on "
+            "each>\" - the settlement this verb reads - and %s."
             % (pid, "\n".join("  %s: %s%s" % (
                 a["who"], a["what"], " (%s)" % (a["note"],) if a["note"] else "")
-                for a in waiting), pid))
+                for a in waiting), pid, redispatch, then))
     if not asked:
         return [], None
     return (["  settled by a human: %s" % (", ".join(
@@ -8277,12 +8292,12 @@ def _human_settlement(proj, cfg, pid, filed):
             None)
 
 
-def _carry_answers(project, mpath, config, phase, now):
+def _carry_answers(project, mpath, config, phase, now, group=False):
     """`(lines, refusal)` - write each filed phase return's answers onto the task
     whose current commit it names, record the key where none is, then ask the
     landing property. `lines` says what was carried; `refusal` is the whole
-    refusal, or None. Mutates the assembled `phase` only; nothing is written
-    here."""
+    refusal, or None. `group` is `_human_settlement`'s. Mutates the assembled
+    `phase` only; nothing is written here."""
     pid = str(phase.get("id"))
     proj, cfg = _evidence_io.project_config_for(mpath, project)
     filed = _fr.phase_returns(_evidence_io.evidence_dir(proj, cfg), pid)
@@ -8291,7 +8306,7 @@ def _carry_answers(project, mpath, config, phase, now):
         return [], ("REFUSED: a phase return filed for %s cannot be read, so the "
                     "answers it carries are unknown: %s. Nothing written."
                     % (pid, "; ".join(unread)))
-    settled_lines, refusal = _human_settlement(proj, cfg, pid, filed)
+    settled_lines, refusal = _human_settlement(proj, cfg, pid, filed, group)
     if refusal:
         return [], refusal
     tasks = [t for t in phase.get("tasks") or [] if isinstance(t, dict)]
@@ -9597,7 +9612,7 @@ def _locked_group(args, project, config, mpath, ids, summary, out):
     # not at all, so one member owed its answers refuses them all.
     now = _utc_now()
     held = [refusal for refusal in
-            (_carry_answers(project, mpath, config, phase, now)[1]
+            (_carry_answers(project, mpath, config, phase, now, group=True)[1]
              for phase in plan["members"]) if refusal]
     if held:
         out("[audit-task] %s cannot be signed off together - every member is "

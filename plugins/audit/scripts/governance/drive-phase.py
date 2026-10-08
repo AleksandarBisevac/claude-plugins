@@ -173,6 +173,8 @@ import _filed_returns as _fr  # noqa: E402  (where a filed return lives, and its
 import _config_rules  # noqa: E402  (review_per_task_mode: the config's reading now)
 import _areas  # noqa: E402  (resolve_review_skill: whether the phase review has a skill)
 import _status_facts  # noqa: E402  (ready_tasks: the one readiness rule)
+import _verdict_binding as _vb  # noqa: E402  (phase_binding: whether a held phase
+#                                              gate run is still the one sign-off binds)
 
 E_OK, E_STOPPED, E_USAGE = 0, 1, 2
 PREFIX = "[drive-phase]"
@@ -323,7 +325,7 @@ DECISIONS = {
     "no-reviewer-return": (("redispatch", "not-asked"), ("not-asked",)),
     "high-risk": (("confirm", "block"), ("block",)),
     "no-change": (("no-change", "retry"), ("no-change",)),
-    "review-answer": (("continue",), ()),
+    "review-answer": (("continue",), ("continue",)),
     "stalled": ((), ()),
     # `accept` settles the reviewer answers a human decides and `decline` is
     # their no, and `re-review` dispatches the phase review again over fix
@@ -932,6 +934,12 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
         if stop is None:
             ctx["did"].append("%s %s (no change)" % (CLOSED, task["id"]))
         return stop
+    if answer == "continue":
+        # The human's word on a per-task reviewer answer, kept for the summary
+        # as the triage's accept is.
+        state.setdefault("continued", []).append("%s %s: %s" % (
+            pending.get("task"), pending.get("why") or "", reason))
+        write_state(ctx, state)
     return None
 
 
@@ -1301,6 +1309,9 @@ def signoff_summary(state, head):
         parts.append("Reviewer answers accepted: %s" % ("; ".join(reasons),))
     if state.get("declined"):
         parts.append("Declined on the way: %s" % ("; ".join(state["declined"]),))
+    if state.get("continued"):
+        parts.append("Per-task reviewer answers continued over: %s"
+                     % ("; ".join(state["continued"]),))
     if state.get("unreviewedFixes"):
         parts.append("Fix task(s) %s signed off with their diff unreviewed."
                      % (", ".join(state["unreviewedFixes"]),))
@@ -1313,17 +1324,45 @@ def signoff_summary(state, head):
     return " ".join(p for p in parts if p)
 
 
+def held_gate_binds(ctx, phase, held, head):
+    """Whether the green run `held` names may be reused at `head`: recorded at
+    that head, and still the run the sign-off verb would bind - the newest
+    phase verdict, measured under the gate the phase declares now, over its
+    declared files as they stand (`_verdict_binding.phase_binding`, the
+    question the verb asks). HEAD alone is not that: a gate retargeted, a
+    declared file edited or a run recorded by hand leaves HEAD where it was,
+    and a reused run the verb then refuses is a sign-off that loops."""
+    if not (isinstance(held, dict) and held.get("runId")
+            and held.get("head") == head):
+        return False
+    manifest = _mio.load_manifest(ctx["manifest"])
+    bound = _vb.phase_binding(
+        ctx["project"], ctx["manifest"], manifest, phase,
+        _vb.phase_files([phase]), "the drive measures again",
+        "the phase declares no gate")
+    return (bound.get("state") == "bound"
+            and (bound.get("row") or {}).get("runId") == held["runId"])
+
+
+def drop_held_gate(ctx, state):
+    """Forget the held green run, so the next sign-off measures again: a step
+    after the gate refused, and the run it was asked over is not reused."""
+    if state.pop("phaseGate", None) is not None:
+        write_state(ctx, state)
+
+
 def green_phase_gate(ctx, state, phase, head):
     """`(banners, None)` for a green phase gate, or `(None, stop)`. A green run
-    recorded at this same `head` is reused rather than run again, banners and
-    all: the answer a human gave was about that run, and the verdict binds to
-    it. The binding is HEAD alone - a file edited and left uncommitted at the
-    same head does not make a new run. A run that printed no run id is not
-    recorded for reuse, so the next pass measures."""
+    held from an earlier pass is reused, banners and all, while
+    `held_gate_binds` says the verb would still bind it: the answer a human
+    gave was about that run, and the verdict binds to it. Otherwise the gate
+    runs again and its banners are the ones read. A run that printed no run id
+    is not recorded for reuse, so the next pass measures."""
     held = state.get("phaseGate")
-    if isinstance(held, dict) and held.get("runId") and held.get("head") == head:
+    if held_gate_binds(ctx, phase, held, head):
         ctx["did"].append("phase gate green (reused %s)" % (held["runId"],))
         return list(held.get("banners") or []), None
+    drop_held_gate(ctx, state)
     code, out, err = phase_gate(ctx, phase)
     if code == 1:
         return None, red_gate_stop(ctx, phase, out, err)
@@ -1363,6 +1402,7 @@ def run_signoff(ctx, state, phase):
             return decision(ctx, state, "invariant-breach", None,
                             _clip(first[0] if first else "exit 1", 140))
         if code != 0:
+            drop_held_gate(ctx, state)
             return relay_refusal(ctx, "verify-invariants.py", code, out + err)
         ctx["did"].append("invariants clean")
     summary = signoff_summary(state, head)
@@ -1374,6 +1414,7 @@ def run_signoff(ctx, state, phase):
                  % (mark["head"][:12],)]
     _out, stop = _verb_or_stop(ctx, "audit-task.py", args)
     if stop is not None:
+        drop_held_gate(ctx, state)
         return stop
     ctx["did"].append(SIGNED)
     return None

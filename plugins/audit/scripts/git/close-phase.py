@@ -1999,7 +1999,13 @@ def landed_answers_refusal(project, manifest_path, phase, landed, branch,
     A tip whose copy cannot be read is refused under the same condition only
     when the plan is VERSIONED (`plan_versioned`): a plan git never commits is
     in no tip, and its copy on disk is then the record, asked the property and
-    the verdict in the tip's place."""
+    the verdict in the tip's place.
+
+    UNDER EVERY KEY, A FILED PHASE RETURN HOLDING AN ANSWER ONLY A HUMAN
+    SETTLES (`_fr.needs_human`) asks for the same verdict: only the sign-off
+    verb writes one, and it refuses while such an answer is unsettled, so a
+    recorded verdict is the evidence the answer was put to a human. A return
+    that will not parse could hold one, and asks for the verdict too."""
     phase_id = (phase or {}).get("id")
     on_disk = worktree_phase(git_root, project, phase_tree, manifest_path,
                              phase_id)
@@ -2016,32 +2022,100 @@ def landed_answers_refusal(project, manifest_path, phase, landed, branch,
                                           [copy for _w, copy in copies])
     if problem:
         return problem
-    if not applies:
+    filed = filed_phase_returns(project, manifest_path, git_root, branch,
+                                phase_tree, phase_id)
+    human = unsettled_sentence(phase_id, filed)
+    if not applies and human is None:
         return None
+    if applies:
+        subject = "review.perTask reads `phase` for phase %s" % (phase_id,)
+        unknown = "whether its tasks carry their review answers"
+        because = ("a task's close reaches the branch only with the sign-off "
+                   "commit")
+    else:
+        subject, unknown = human, "whether a human settled them"
+        because = ("only the sign-off verb writes the verdict, and it refuses "
+                   "while such an answer is unsettled")
     if landed is not None:
         if _mio.signoff_recorded(landed):
             return None
-        return ("review.perTask reads `phase` for phase %s, and the copy of the "
-                "plan %s would bring in records no sign-off verdict, so whether "
-                "its tasks carry their review answers is not established: a "
-                "task's close reaches the branch only with the sign-off commit. "
-                "Sign the phase off on %s and run this again."
-                % (phase_id, branch, branch))
+        return ("%s, and the copy of the plan %s would bring in records no "
+                "sign-off verdict, so %s is not established: %s. Sign the phase "
+                "off on %s and run this again."
+                % (subject, branch, unknown, because, branch))
     versioned, basis = plan_versioned(git_root, manifest_path, refs)
     if versioned is not False:
-        return ("review.perTask reads `phase` for phase %s, and the copy of the "
-                "plan %s would bring in could not be read (%s), so whether its "
-                "tasks carry their review answers is not established. The "
-                "parent's copy does not stand in for it: it records the phase as "
-                "it stood at the fork. Commit the plan on %s and run this again."
-                % (phase_id, branch, basis, branch))
+        return ("%s, and the copy of the plan %s would bring in could not be "
+                "read (%s), so %s is not established. The parent's copy does not "
+                "stand in for it: it records the phase as it stood at the fork. "
+                "Commit the plan on %s and run this again."
+                % (subject, branch, basis, unknown, branch))
     record = on_disk or phase
     if _mio.signoff_recorded(record):
         return None
-    return ("review.perTask reads `phase` for phase %s, the plan is not versioned "
-            "(%s), so its copy on disk is the record - and it records no "
-            "sign-off verdict. Sign the phase off and run this again."
-            % (phase_id, basis))
+    return ("%s, the plan is not versioned (%s), so its copy on disk is the "
+            "record - and it records no sign-off verdict. Sign the phase off and "
+            "run this again." % (subject, basis))
+
+
+def unsettled_sentence(phase_id, filed):
+    """The clause naming what in `filed` (`filed_phase_returns`' list) waits on
+    a human - an answer `_fr.needs_human` reports, or a return that will not
+    parse and so could hold one - or None when nothing does."""
+    asked = _fr.needs_human(filed)
+    unread = [why for _rel, _body, why in filed if why]
+    if not asked and not unread:
+        return None
+    said = []
+    if asked:
+        said.append("answer(s) only a human settles (%s)" % ("; ".join(
+            "%s %s" % (a["who"], a["what"]) for a in asked),))
+    if unread:
+        said.append("a return that cannot be read, so could hold one only a "
+                    "human settles (%s)" % ("; ".join(unread),))
+    return "phase %s's filed review holds %s" % (phase_id, " and ".join(said))
+
+
+def filed_phase_returns(project, manifest_path, git_root, branch, phase_tree,
+                        phase_id):
+    """`[(rel, body, problem)]` in `_fr.phase_returns`' shape - every phase
+    return filed for `phase_id` that the landing can see: under the project's
+    evidence directory, in the worktree holding the branch, and committed at the
+    branch tip. The first copy of a name is kept; a return is keyed on the head
+    its brief named, and the filing verb refuses a second for one head.
+
+    A TIP GIT WOULD NOT LIST is a problem entry, never no return filed: the
+    landing cannot tell an unread directory from an empty one."""
+    proj, config = _evidence_io.project_config_for(manifest_path, project)
+    evidence = _evidence_io.evidence_dir(proj, config)
+    found = list(_fr.phase_returns(evidence, phase_id))
+    tree = _phase_project(git_root, project, phase_tree) if git_root else None
+    if tree:
+        found += _fr.phase_returns(
+            os.path.join(tree, os.path.relpath(evidence, project)), phase_id)
+    folder = os.path.join(evidence, _fr.RETURNS_DIRNAME, str(phase_id))
+    rel = (os.path.relpath(folder, git_root).replace(os.sep, "/")
+           if git_root else "..")
+    if branch and not rel.startswith(".."):
+        paths = _tip_paths(git_root, branch, rel)
+        if paths is None:
+            found.append(("%s:%s" % (branch, rel), None,
+                          "git would not list %s at %s" % (rel, branch)))
+        for path in sorted(p for p in paths or []
+                           if p.endswith(".reviewer.json")
+                           and posixpath.dirname(p) == rel):
+            code, raw = _git_bytes(git_root, ["cat-file", "blob", "refs/heads/%s:%s"
+                                              % (branch, path)])
+            text = raw.decode("utf-8", "replace") if code == 0 else None
+            body, problem = _fr.return_body(text, "%s:%s" % (branch, path))
+            found.append(("%s/%s/%s" % (_fr.RETURNS_DIRNAME, phase_id,
+                                        posixpath.basename(path)), body, problem))
+    kept, seen = [], set()
+    for entry in found:
+        if entry[0] not in seen:
+            seen.add(entry[0])
+            kept.append(entry)
+    return kept
 
 
 def _phase_key_applies(project, manifest_path, copies):

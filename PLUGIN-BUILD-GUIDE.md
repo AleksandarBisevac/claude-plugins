@@ -402,7 +402,7 @@ L7:
   commit-manifest-index -> _claude_home, _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
   commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
-  drive-phase -> _areas, _claude_home, _config_rules, _evidence_io, _filed_returns, _journal_io, _loader, _manifest_io, _output, _status_facts
+  drive-phase -> _areas, _claude_home, _config_rules, _evidence_io, _filed_returns, _journal_io, _loader, _manifest_io, _output, _status_facts, _verdict_binding
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
@@ -1024,7 +1024,11 @@ Wherever a task's key reads `phase`, a tip whose copy records no sign-off verdic
 task's close reaches the branch only with the sign-off commit - and so is a tip whose copy cannot be
 read when the plan is versioned (`plan_versioned`: inside the git root, not ignored, committed at
 the parent or at `baseRef`); a plan git never commits is asked through its copy on disk, which must
-then record the verdict. `ra10`-`ra15` hold it. A re-run
+then record the verdict. `ra10`-`ra15` hold it. **Under every key**, the same verdict is asked
+for when a filed phase return the landing can see (`filed_phase_returns`: the project's evidence
+directory, the worktree holding the branch, and the branch tip) holds an answer only a human settles
+(`_filed_returns.needs_human`), or will not parse (`unsettled_sentence`): only the sign-off verb
+writes the verdict, and it refuses while such an answer is unsettled. `hl1`-`hl5` hold it. A re-run
 over a landed phase - its branch gone or not - commits a stamp an earlier landing left as an
 edit, and commits nothing when there is none. `lt` in `plugins/audit/tests/test_close_phase.py`
 and `g17`/`g17b` in `tools/check-git-pipeline.py` hold it against real git. Each of the three plan writes here — the stamp, the
@@ -1954,7 +1958,11 @@ answers only a human settles - a task entry's `diverges`/`cannot-tell`, `not-pro
 and a phase intent of `diverges`/`cannot-tell` - shared by the driver's triage and
 `audit-task.py signoff`, which refuses while one is unsettled; `settled_answers` reads the
 settlement the triage's `--answer accept` writes at `drive_state_path` (`<stateDir>/drive/<phase>.json`),
-and a record that will not parse is a problem, never nothing settled. What it cannot hold: the task
+and a record that will not parse is a problem, never nothing settled. `drive_state` reads that file
+whole and `review_marked` says whether it marks a phase review at a head - without one, the
+driver's next sign-off pass dispatches the review again, which the verb's remedy says; `return_body`
+is the one parse of a return's text, shared by the read off disk and `close-phase.py`'s read of
+the branch tip. What it cannot hold: the task
 id and role a caller files under are the caller's word. Cases in `plugins/audit/tests/test__filed_returns.py`.
 
 ### `plugins/audit/scripts/manifest/_task_outputs.py`
@@ -4107,8 +4115,14 @@ it forbidding a rebase). The boot, the banner and the breach also take `decline`
 over is no longer reused, and the drive goes back to any task still open or stops naming how
 to add one. A `booted` and an `accept` of a banner or a breach are bound to the HEAD they were
 given at (`bind_at`, `held_at`), so a commit after them asks again; a green phase gate recorded
-at the same HEAD is reused rather than run again (`green_phase_gate`). Every reason still held
-is kept in the summary (`signoff_summary`). The `sg` cases
+at the same HEAD is reused rather than run again (`green_phase_gate`) only while the sign-off
+verb would still bind it (`held_gate_binds`, which asks `_verdict_binding.phase_binding` and
+reuses only the run that is the newest verdict), and a refusal after the gate drops it
+(`drop_held_gate`), so a gate retargeted, a declared file edited or a run recorded by hand at
+the same HEAD measures again rather than looping; the `gr` cases hold it. A per-task reviewer's
+`diverges` or `cannot-tell` under `always` or `signals` is `decide review-answer`, whose
+`continue` takes `--reason`. Every reason still held, a `continue`'s included, is kept in the
+summary (`signoff_summary`). The `sg` cases
 drive it over the fixture plan: sign-off's model-facing steps are the review's dispatch, the
 triage and the final step, a red phase gate never reaches `signoff`, and several findings are one
 `finding` call - each beside a mutant driver that breaks it.
