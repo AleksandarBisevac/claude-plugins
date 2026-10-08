@@ -1,7 +1,7 @@
 {
   "id": "P118",
   "title": "the plugin pipeline costs at most 2x plain per task",
-  "status": "in_progress",
+  "status": "done",
   "description": "Implements the cost design in docs/research/pipeline-cost-design.md, section 6, on the user's decisions of 2026-10-07: G1 (the per-task intent review, the red-first grade and the inherited-test question move into the phase review, with a deferred close and a sign-off refusal), the phase-overhead budget raised to 1.00, and the main loop's cache TTL documented but not changed. The order is fixed by the user: implement, run each task's micro-test, and only then one single-task paid probe and the full benchmark, both run by the orchestrator. Each task's design section gives its mechanism, targets and micro-test; the task text below names what it owns.",
   "desiredOutcome": "a task run through the plugin pipeline costs at most 2x plain Claude Code doing the same task, measured like for like, with the phase overhead within 1.00 USD-equivalent a phase, each fix confirmed by its offline micro-test before any paid session",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "b0adcd8e03d3f565851a7a24332865453ab33402",
   "branch": "audit/p118-the-plugin-pipeline-costs-at-m",
-  "mergedAt": null,
+  "mergedAt": "2026-10-08T16:33:20Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -2363,5 +2363,6 @@
     "runId": "2026-10-08T16:32:07Z.276113",
     "status": "passed",
     "at": "2026-10-08T16:32:07Z"
-  }
+  },
+  "mergedHead": "3669beb59ea05fd904e32fe14eb7f3af8e44faf7"
 }
