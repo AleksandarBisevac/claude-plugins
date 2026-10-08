@@ -22,7 +22,37 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P119-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/_filed_returns.py gate_reading / complete_phase_return",
+        "issue": "gate_reading reads `whole` for any gate without a test-shaped path or a listed flag. That includes `pytest -m unit`, `go test ./internal/auth/...`, `cargo test auth::login`, `npx jest src/auth` and `python -m unittest pkg.test_auth`, so the computed inherited-tests answer is `not-asked` for gates that select tests. complete_phase_return refuses a typed word that differs, so a reviewer cannot file `flagged`, the answer that puts the question to a human. The return then files clean and the advance sign-off lands. The CHANGELOG and the basis text claim `whole` means the whole project.",
+        "resolution": "Make `whole` a positive judgement: no positional operand after the runner and no flag outside a known no-selection set; anything else is `unknown`. Accept a typed answer that only escalates (a human answer over a computed one). Add cases for each spelling with an allow twin, and make the docs say what the classifier decides."
+      },
+      {
+        "id": "P119-R2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_filed_returns.py helper_red_first with complete_phase_return",
+        "issue": "A reviewer cannot override a computed `proved` red-first with `not-proved`; the disagreement is refused.",
+        "resolution": "Accept a typed answer that only escalates (`not-proved` over a computed `proved`)."
+      },
+      {
+        "id": "P119-R3",
+        "severity": "low",
+        "file": "CHANGELOG.md lever C line",
+        "issue": "The line says the one call signs off, lands and prints done. The sign-off steps can still stop on the gate, invariants, fast-forward or `meta.merge.auto: false`.",
+        "resolution": "Say the call is taken as the triage's sign-off answer, so the sign-off steps run as they would after it."
+      },
+      {
+        "id": "P119-R4",
+        "severity": "low",
+        "file": "plugins/audit/reference/verbs-in-full.md",
+        "issue": "'`-` is stdin throughout this plugin' does not hold: `stamp-verification.py --stamp-file -` opens a file named `-`. An older line repeats the claim.",
+        "resolution": "Narrow both sentences to the verbs that read stdin."
+      }
+    ],
+    "outcome": "[findings: 4 - 0 high, 1 med, 3 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -498,6 +528,50 @@
         "at": "2026-10-08T20:59:58Z",
         "basis": "orchestrator check: the bug's repro is a case, the class has one implementation (three callers), mutation probe re-run 8/8"
       }
+    },
+    {
+      "id": "P119.9-g0k",
+      "title": "a computed review answer can be escalated, and a gate that selects tests is never read as the whole project",
+      "status": "pending",
+      "description": "Fixes the P119 phase review's findings R1-R4.\n1. A computed answer may only ever lower the work, never block an escalation. complete_phase_return accepts a typed answer that escalates over a computed one: `flagged` over a computed `not-asked`, and `not-proved` over a computed `proved`. It keeps the typed word and its basis, and records that the computed one was overridden. Every other disagreement is still refused.\n2. gate_reading's `whole` becomes a positive judgement. A command reads `whole` only when it carries no positional operand after its runner and no flag outside a known no-selection set; everything else reads `unknown`, which leaves the answer to the reviewer. Cases, each red first, cover `pytest -m unit`, `pytest --deselect x`, `go test ./internal/auth/...`, `cargo test auth::login`, `npx jest src/auth`, `npx jest --testPathPattern auth`, `npx vitest run src/auth` and `python -m unittest pkg.test_auth`. The allow twins are `python3 tools/sweep-selftests.py` and a bare `pytest` / `npm test`, which stay `whole`.\n3. The CHANGELOG's lever D line, the classifier's WHAT THIS CANNOT TELL comment and the basis text say what the classifier decides. The lever C line says the call is taken as the triage's sign-off answer, so the sign-off steps run as they would after it.\n4. verbs-in-full.md narrows both \"`-` is stdin\" sentences to the verbs that read stdin.\nDeliver a runnable mutation probe.",
+      "files": [
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "CHANGELOG.md",
+        "plugins/audit/reference/verbs-in-full.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-08T16:35:57Z"
