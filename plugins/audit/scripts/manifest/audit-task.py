@@ -19,7 +19,7 @@ Usage:
                 [--tests-add TEXT ...] [--gate CMD ... | --gate-clear]
                 [--failing-from RUNID] [--fixes finding,finding] [--dry-run]
                 [--project-dir DIR] [--takeover] [--json]
-  audit-task.py add --from-file PATH [manifest] [--project-dir DIR]
+  audit-task.py add --from-file PATH|- [manifest] [--project-dir DIR]
                 [--takeover] [--json]
   audit-task.py add-phase "<title>" [manifest] --outcome "<what success is>|-"
                 [--park] [--id P7] [--description TEXT|-] [--area a,b]
@@ -114,7 +114,8 @@ Usage:
   value is still split on commas, so `--files a --files b,c` is three paths.
   `add --dry-run` builds the task and validates the plan with it in memory,
   and writes nothing. `add --from-file <plan.json>` writes a NEW phase and
-  its tasks from one JSON file {request, openChoices, phase, tasks} under one
+  its tasks from one JSON file {request, openChoices, phase, tasks} (`-`
+  reads that document off stdin, a quoted heredoc, an empty one refused) under one
   lock, in one write, revalidated once; a malformed file, a dependency neither
   the plan nor the file holds, or another `add` flag beside it is refused
   with nothing written (`batch_problems` reads the file's shape). Under --json every refusal is one object,
@@ -6565,9 +6566,11 @@ def _locked_phase_add(args, project, config, mpath, title, out):
 # --- add --from-file: a phase and its tasks, one write ----------------------------
 # Planning a phase was one `add-phase` and then one `add` per task: each its own
 # lock, read, write, revalidation and main-loop request, each typed as a shell
-# line. The batch is one file the main loop writes with its file tool, because a
-# JSON document on a shell heredoc is the shape a host refuses, and one call that
-# reads it under one lock, writes once and revalidates once.
+# line. The batch is one JSON document and one call that reads it under one
+# lock, writes once and revalidates once. `--from-file -` reads it off stdin, a
+# quoted heredoc, so planning writes no file of its own: a scratch file is one
+# more tool call that can be refused, and a shared path two sessions can collide
+# on. A path still works, through the same checks.
 #
 # The file also carries the request as the human typed it and the choices that
 # request left open, on the phase as `request` and `openChoices`: sign-off's
@@ -6703,14 +6706,40 @@ def batch_problems(doc):
     return out
 
 
-def read_batch(path):
-    """`(doc, problems)` for the file at `path`; `problems` non-empty means the
-    file cannot be written, and `doc` is then None."""
+def _batch_from_file(path):
+    """`(doc, None)` off the file at `path`, or `(None, why)`."""
     try:
         with open(path, encoding="utf-8") as fh:
-            doc = json.load(fh)
+            return json.load(fh), None
     except (OSError, ValueError) as exc:
-        return None, ["cannot read it as JSON: %s" % (exc,)]
+        return None, "cannot read it as JSON: %s" % (exc,)
+
+
+def _batch_from_stdin(stream):
+    """`(doc, None)` off stdin (or `stream`), or `(None, why)`."""
+    src = stream if stream is not None else sys.stdin
+    try:
+        text = src.read()
+    except (OSError, ValueError) as exc:
+        return None, "cannot read stdin: %s" % (exc,)
+    if not text.strip():
+        return None, ("stdin was empty - the batch goes on stdin, between the "
+                      "quoted heredoc word and its closing line")
+    try:
+        return json.loads(text), None
+    except ValueError as exc:
+        return None, "cannot read stdin as JSON: %s" % (exc,)
+
+
+def read_batch(path, stream=None):
+    """`(doc, problems)` for the file at `path`, or for stdin when `path` is
+    `-`; `problems` non-empty means the batch cannot be written, and `doc` is
+    then None. An empty stdin is its own refusal: read as `{}` it would be
+    graded as a batch missing every field, which names the wrong fault."""
+    doc, problem = (_batch_from_stdin(stream) if path == "-"
+                    else _batch_from_file(path))
+    if problem:
+        return None, [problem]
     problems = batch_problems(doc)
     return (None, problems) if problems else (doc, [])
 
@@ -6741,7 +6770,8 @@ def _cmd_batch_add(args, out):
     doc, problems = read_batch(args.from_file)
     if problems:
         out("[audit-task] REFUSED: %s is not a planning batch this verb can "
-            "write -- nothing written:" % (args.from_file,))
+            "write -- nothing written:"
+            % ("the batch on stdin" if args.from_file == "-" else args.from_file,))
         for line in problems:
             out("  - " + line)
         return E_USAGE
@@ -11471,8 +11501,9 @@ def build_parser():
     p.add_argument("--from-file", dest="from_file", default=None,
                    metavar="PATH",
                    help="add: a new phase and its tasks from one JSON file "
-                        "{request, openChoices, phase, tasks}, written in one "
-                        "call and revalidated once")
+                        "{request, openChoices, phase, tasks}, or `-` for that "
+                        "document on stdin, written in one call and "
+                        "revalidated once")
     p.add_argument("--failing-from", dest="failing_from", default=None,
                    metavar="RUNID",
                    help="add: point the new task's gate at the suites this "

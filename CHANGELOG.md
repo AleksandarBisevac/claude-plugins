@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 ## [Unreleased]
 
 ### Added
+- **`audit-task.py add --from-file -` reads the planning batch off stdin**, through the same checks and single revalidated write as a file; `/audit:phase add` now passes the plan as a quoted heredoc, so planning writes no scratch file, and an empty stdin is refused rather than read as nothing.
 - **`audit-status.py` and `render-report.py` take the manifest as an optional argument.**
   Given none, they find it themselves through one shared resolver,
   `_manifest_io.resolve_manifest`: the `manifestPath` that `.claude/audit.config.json` names

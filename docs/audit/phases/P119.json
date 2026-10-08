@@ -85,7 +85,7 @@
     {
       "id": "P119.2-g0k",
       "title": "the plan batch is read from stdin, so planning writes no file",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Lever A of docs/research/pipeline-cost-levers.md, section 6. `audit-task.py add --from-file -` reads the batch from stdin through the same read_batch checks and revalidation. The add form in commands/phase.md shows a quoted heredoc instead of a Write to a file, and the request and the open choices are saved on every path. Micro-test as the section lists: stdin and file give byte-identical manifests with request and open choices; a malformed batch on stdin is refused naming the field and leaves the manifest unchanged; `tools/measure-context.py --gate` still holds /audit:phase add under its ceiling; and the write guards' suites, given the heredoc command, refuse nothing. CHANGELOG gets one line under [Unreleased]. Every case is shown red first.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -115,21 +115,26 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T17:50:04Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T18:30:34Z.1829ad",
+        "status": "passed",
+        "at": "2026-10-08T18:30:34Z"
+      }
     },
     {
       "id": "P119.3-g0k",
       "title": "submit prints the hand-back instruction as its last line",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Lever B of docs/research/pipeline-cost-levers.md, section 6. After a filed return, `drive-phase.py submit` prints the filed line and then one more line: hand back the line above as the whole reply. A refused submit says to hand back the refusal verbatim. This covers the executor and the phase reviewer's submit --head. The prompts' closing sentence about the hand-back is removed, since the print carries it. Micro-test as listed: the last line of submit's output is the instruction and the filed line occurs once; the refusal twin; `tools/measure-context.py --gate` holds both agents under their ceilings. Do not add a stop hook (the section prices it as a net cost). No CHANGELOG edit here; the next driver task carries the line. Every case is shown red first.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -158,16 +163,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T17:50:04Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T18:39:45Z.a2f924",
+        "status": "passed",
+        "at": "2026-10-08T18:39:45Z"
+      }
     },
     {
       "id": "P119.4-g0k",
