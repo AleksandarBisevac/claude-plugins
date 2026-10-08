@@ -963,7 +963,8 @@
       "P118.20-v7t",
       "P118.21-v7t",
       "P118.22-v7t",
-      "P118.23-v7t"
+      "P118.23-v7t",
+      "P118.24-v7t"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -2366,7 +2367,8 @@
       "P118.4",
       "P118.6",
       "P118.22-v7t",
-      "P118.23-v7t"
+      "P118.23-v7t",
+      "P118.24-v7t"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -3212,7 +3214,8 @@
       "P118.18-v7t",
       "P118.20-v7t",
       "P118.22-v7t",
-      "P118.23-v7t"
+      "P118.23-v7t",
+      "P118.24-v7t"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -4616,7 +4619,8 @@
       "P118.18-v7t",
       "P118.20-v7t",
       "P118.22-v7t",
-      "P118.23-v7t"
+      "P118.23-v7t",
+      "P118.24-v7t"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
