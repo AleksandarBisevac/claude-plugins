@@ -6757,7 +6757,7 @@
     {
       "id": "BUG-17",
       "title": "audit-task start copies the index-only priority into the phase shard",
-      "status": "in_progress",
+      "status": "fixed",
       "severity": "low",
       "reportedAt": "2026-10-06T14:42:44Z",
       "reportedBy": null,
@@ -6767,7 +6767,7 @@
       "actual": "start exits 0; the shard gains priority 1; validate-manifest warns that priority sits in the shard body where nothing reads it. Seen in this repo's P100 shard in commit 2ec163d7, and reproduced on 3.1.0 on 2026-10-06",
       "files": [],
       "taskId": "P119.8-g0k",
-      "fixedIn": null,
+      "fixedIn": "17f292ab",
       "notes": null
     },
     {
