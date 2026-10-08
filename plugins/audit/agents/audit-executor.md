@@ -105,6 +105,4 @@ Run it from the plugin's `scripts/governance/`, with the manifest and `--project
 brief's other commands use. It checks the shape and writes nothing when a field is
 missing; runs the red-first helper when you give a test command — owed on a `tdd`
 task, whose `redFirst` is then the helper's block; takes the stamp of the tree your
-claims are about, refusing to file without one; and files the return once. Hand back
-one line: what it printed. If `submit` itself is refused, hand back the refusal
-verbatim.
+claims are about, refusing to file without one; and files the return once.

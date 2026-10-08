@@ -98,7 +98,10 @@ and the prompt only names the call:
   * the filing is `audit-task.py file-return`'s, which writes once - a second
     filing for one start, or for one head of a phase review, is refused there
     and the first stays as filed. A reviewer's return, and a phase review's
-    under `--head`, go to the same verb unchanged.
+    under `--head`, go to the same verb unchanged;
+  * the last line printed is the hand-back - the filed line above it, or the
+    refusal above it verbatim, as the agent's whole reply (`handback_lines`).
+    It sits where the agent reads last, and the prompts no longer state it.
 
 A TASK ID IN THE PHASE'S PLACE DRIVES THAT ONE TASK. `next <taskId>` starts
 it, runs the same steps and prints `done <taskId>` once it is closed, leaving
@@ -317,6 +320,16 @@ STEPS = {
         "line": "",
         "rule": ("Relay these words and act on the remedy they name; never edit "
                  "the plan or the journal by hand to get past them.",)},
+    # The agent's, not the main loop's: `submit`'s last line, the last thing the
+    # agent reads before it replies. Its prompt no longer states the hand-back,
+    # so this print is the one place it is said; nothing enforces it, and the
+    # report bytes a session's agents wrote are its reading.
+    "handback-filed": {
+        "line": "hand back the line above as your whole reply",
+        "rule": ()},
+    "handback-refused": {
+        "line": "hand back the refusal above verbatim as your whole reply",
+        "rule": ()},
 }
 
 # Each decision's options, and the ones that need `--reason`. A decision with no
@@ -2124,22 +2137,28 @@ def context(args):
     return ctx
 
 
+def handback_lines(code):
+    """The line `submit` ends on: hand back the filed line, or the refusal."""
+    return step_text("handback-filed" if code == E_OK else "handback-refused")
+
+
 def run_submit(args, cmd, out, stdin):
     if (args.case or args.introduces or args.deps_from) and not cmd:
         sys.stderr.write("drive-phase.py: --case, --introduces and --deps-from are "
                          "the red-first helper's, and need a test command after "
-                         "`--`\n")
+                         "`--`\n%s\n" % ("\n".join(handback_lines(E_USAGE)),))
         return E_USAGE
     try:
         manifest, ctx = project_context(args)
     except Exception as exc:                                   # noqa: BLE001
-        sys.stderr.write("drive-phase.py: %s\n" % (exc,))
+        sys.stderr.write("drive-phase.py: %s\n%s\n" % (
+            exc, "\n".join(handback_lines(E_USAGE))))
         return E_USAGE
     if stdin is None:
         stdin = sys.stdin.read() if not sys.stdin.isatty() else ""
     ctx["phase"] = args.id
     code, said = submit(ctx, manifest, args, cmd, stdin)
-    out(render(ctx, code, said))
+    out("\n".join([render(ctx, code, said)] + handback_lines(code)))
     return code
 
 

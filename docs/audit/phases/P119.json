@@ -85,7 +85,7 @@
     {
       "id": "P119.2-g0k",
       "title": "the plan batch is read from stdin, so planning writes no file",
-      "status": "in_progress",
+      "status": "done",
       "description": "Lever A of docs/research/pipeline-cost-levers.md, section 6. `audit-task.py add --from-file -` reads the batch from stdin through the same read_batch checks and revalidation. The add form in commands/phase.md shows a quoted heredoc instead of a Write to a file, and the request and the open choices are saved on every path. Micro-test as the section lists: stdin and file give byte-identical manifests with request and open choices; a malformed batch on stdin is refused naming the field and leaves the manifest unchanged; `tools/measure-context.py --gate` still holds /audit:phase add under its ceiling; and the write guards' suites, given the heredoc command, refuse nothing. CHANGELOG gets one line under [Unreleased]. Every case is shown red first.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -117,18 +117,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "249e9c73",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Lever A. `audit-task.py add --from-file -` reads the planning batch from stdin.\n\nHow it reads:\n- read_batch(path, stream=None) takes the batch from _batch_from_file or _batch_from_stdin.\n- Either way it is graded by the same batch_problems(), then the same single lock, write, revalidation from disk and rollback.\n- An empty stdin is refused as empty.\n- The refusal header names \"the batch on stdin\".\n\nWhat changed outside the verb:\n- commands/phase.md's add section shows `add --from-file - <<'PLAN'` with the plan as its body, and the Write-tool step is gone. The section measures 3974 -> 3962 bytes by `tools/measure-context.py --gate`, under the run form's 4000 ceiling.\n- reference/verbs-in-full.md shows the heredoc form, says to quote its word, and lists an empty stdin as a refusal.\n- CHANGELOG: one line under [Unreleased].\n\nCases (all in test_audit_task.py):\n- fb10: the add section pins the heredoc.\n- fb13: a file batch and the same batch on stdin give byte-identical plans, with the request and the open choices kept.\n- fb14: a malformed batch and an empty stdin are each refused, and the plan's bytes are unchanged.\n- fb15: phase.md's own heredoc command, run through sh, writes the same plan; the context gate still reports OK.\n- fb16: every hook hooks.json routes Bash to refuses nothing for the heredoc. Its over-fire control is guard-secrets-read denying `cat .env`.\n\nRed-first: proved, on fb10 and fb13-fb16 at HEAD.\n\nMutation probe (scratchpad P119.2-g0k/mut.py), re-run by the orchestrator: exit 0, baseline green, all 7 rows KILLED with exactly their expected cases.\n\nLeft: the `[--from-file PATH]` hints in commands/task.md and README.md, which are still true but do not mention `-`.",
+        "descriptive": "Planning a phase now passes its plan straight into the add command, so no scratch file is written that could be refused or collide, and the request and its open choices are always saved."
       },
       "startedAt": "2026-10-08T17:50:04Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T18:39:57Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-08T18:30:34Z.1829ad",
         "status": "passed",
         "at": "2026-10-08T18:30:34Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "249e9c73",
+        "at": "2026-10-08T18:39:57Z",
+        "basis": "orchestrator check: lever A as designed; mutation probe re-run, seven rows killed with exact cases"
       }
     },
     {

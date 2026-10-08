@@ -29,6 +29,7 @@ import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402  (PLUGIN_ROOT)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402  (script_path, load_script)
 import _manifest_io as _mio                        # noqa: E402  (load_manifest, tasks_by_id)
@@ -830,9 +831,10 @@ def _submit_cases(check):
     code, text = _submit(None, root, mpath, "P1.1", _executor_body("P1.1"))
     filed = json.loads(_read(path).decode("utf-8")) if os.path.exists(path) else {}
     check("ds2 THE ALLOW TWIN: the same return on the same task, git back, is "
-          "filed with the stamp submit took, naming HEAD, in one line: %r"
-          % ((code, text, filed.get("stamp")),),
-          code == 0 and len(text.splitlines()) == 1 and "filed" in text
+          "filed with the stamp submit took, naming HEAD, in one line above the "
+          "hand-back: %r" % ((code, text, filed.get("stamp")),),
+          code == 0 and len(text.splitlines()) == 2
+          and "filed" in text.splitlines()[0]
           and str(filed.get("stamp", "")).startswith("audit-stamp:")
           and _head(root).startswith(_stamp_head(filed.get("stamp")) or "-"))
     first = _read(path) if os.path.exists(path) else None
@@ -942,6 +944,10 @@ def _submit_cases(check):
           code == 0 and "filed" in text and code_2 == 1
           and "already answers P1.1" in text_2)
 
+    # The hand-back line is `submit`'s too, so its cases run in this block,
+    # reading the phase review's two prints above for the reviewer's half.
+    _handback_cases(check, M, ((code, text), (code_2, text_2)))
+
 
 def _submit_mutant_cases(check):
     """Each refusal of `submit`, red against a driver with that refusal taken
@@ -985,6 +991,88 @@ def _submit_mutant_cases(check):
           "stamp before the filing verb refuses, and ds4 catches it: %r"
           % (text_m,),
           code_m == 1 and "stamp taken" in text_m)
+
+
+def _handback_lines(M):
+    """`(filed, refused)` - the two hand-back instructions the driver prints as
+    `submit`'s last line, or None for one the driver does not define."""
+    steps = getattr(M, "STEPS", {}) or {}
+    return tuple((steps.get(name) or {}).get("line")
+                 for name in ("handback-filed", "handback-refused"))
+
+
+def _ends_with(text, line):
+    lines = text.rstrip("\n").splitlines()
+    return bool(line) and bool(lines) and lines[-1] == line
+
+
+def _handback_cases(check, M, phase_prints):
+    """`submit`'s last printed line is what the agent hands back: after a filing,
+    the instruction to hand back the filed line above it as the whole reply;
+    after a refusal, the instruction to hand back the refusal verbatim. The agent
+    reads the print last, so the instruction lives there and not in its prompt.
+    `phase_prints` is a phase review's `(code, text)` filed, then refused."""
+    filed_line, refused_line = _handback_lines(M)
+
+    root, mpath, _t = _started(M, "handback")
+    _edit(root, "P1.1", "changed\n")
+    code, text = _submit(None, root, mpath, "P1.1", _executor_body("P1.1"))
+    lines = text.rstrip("\n").splitlines()
+    check("dh1 a filed executor return prints the filed line, then the hand-back "
+          "instruction as the last line; the filed line occurs once and the "
+          "whole print keeps the bound: %r" % ((code, text, filed_line),),
+          code == 0 and _ends_with(text, filed_line) and len(lines) == 2
+          and "P1.1 executor return filed" in lines[0]
+          and text.count("return filed") == 1
+          and len(text.encode("utf-8")) <= BOUND)
+
+    # The refusal twin, against the same driver: a second filing is refused.
+    code, text = _submit(None, root, mpath, "P1.1", _executor_body("P1.1"))
+    check("dh2 THE REFUSAL TWIN: a refused submit prints the refusal and, as its "
+          "last line, the instruction to hand it back verbatim - never the filed "
+          "line nor the filing's instruction: %r" % ((code, text, refused_line),),
+          code == 1 and _ends_with(text, refused_line) and "already filed" in text
+          and "return filed" not in text
+          and (filed_line or "-") not in text)
+
+    root, mpath, _t = _started(M, "handbackshape")
+    _edit(root, "P1.1", "changed\n")
+    bad = _executor_body("P1.1")
+    del bad["outcome"]
+    code, text = _submit(None, root, mpath, "P1.1", bad)
+    code_n, text_n = _submit(None, root, mpath, "P9.9", _executor_body("P9.9"))
+    check("dh3 every refusal ends on the same instruction - a malformed return, "
+          "and an id the plan does not hold: %r" % ((text, text_n),),
+          code == 1 and _ends_with(text, refused_line) and "`outcome`" in text
+          and code_n == 2 and _ends_with(text_n, refused_line)
+          and "P9.9" in text_n)
+
+    check("dh4 the two instructions differ, and only the refusal's says "
+          "verbatim: %r" % ((filed_line, refused_line),),
+          bool(filed_line) and bool(refused_line) and filed_line != refused_line
+          and "verbatim" in refused_line and "verbatim" not in filed_line)
+
+    # The phase reviewer files through `submit --head` and reads the same print.
+    (code, text), (code_2, text_2) = phase_prints
+    check("dh5 the phase reviewer's submit --head ends on the same instructions: "
+          "the filing's after it files, the refusal's after the second: %r"
+          % ((text, text_2),),
+          code == 0 and _ends_with(text, filed_line)
+          and text.count("return filed") == 1
+          and code_2 == 1 and _ends_with(text_2, refused_line)
+          and "return filed" not in text_2)
+
+    # The prompts no longer carry the sentence the print now carries.
+    agents = os.path.join(_output.PLUGIN_ROOT, "agents")
+    said = {}
+    for name in ("audit-executor.md", "audit-reviewer.md"):
+        with open(os.path.join(agents, name), "r", encoding="utf-8") as fh:
+            said[name] = " ".join(fh.read().split()).lower()
+    left = dict((name, text.count("hand back")) for name, text in said.items())
+    check("dh6 neither agent's prompt states the hand-back itself, since "
+          "submit's last line carries it: %r" % (left,),
+          all(n == 0 for n in left.values())
+          and all("drive-phase.py submit" in t for t in said.values()))
 
 
 # --- sign-off -------------------------------------------------------------------
