@@ -13308,16 +13308,26 @@ def _held_cases(check):
     # The driver's triage stops on them; the sign-off verb, run by hand, must
     # stop on them too, and read the same settlement the triage's accept writes.
     def human_answer_cases():
-        def settle(proj, keys, text=None):
+        def settle(proj, keys, text=None, by_name_only=False):
+            """The driver's settlement record in `proj`, naming `keys` - each
+            bound to the signature of the return in `proj`'s evidence it
+            names, as the triage's accept records it, unless `by_name_only`,
+            the record a driver older than the signatures wrote."""
             hc = _loader.load_hooks_config()
             path = os.path.join(str(hc.state_dir(pathlib.Path(proj), {})),
                                 "drive", "P1.json")
             if not os.path.isdir(os.path.dirname(path)):
                 os.makedirs(os.path.dirname(path))
+            filed = _fr.phase_returns(os.path.join(proj, "docs", "audit",
+                                                   "evidence"), "P1")
+            answers = [a for a in _fr.needs_human(filed) if a["key"] in keys]
+            block = _fr.settlement_after({}, answers, "the owner read it: fine")
+            block["keys"] = list(keys)
+            if by_name_only:
+                block.pop(_fr.SIGNATURES_FIELD, None)
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write(text if text is not None else json.dumps(
-                    {"answersAccepted": {"keys": keys,
-                                         "reasons": ["the owner read it: fine"]}}))
+                    {_fr.SETTLED_FIELD: block}))
 
         hd_rel = _fr.phase_return_rel("P1", _HD_HEAD)
         proj, mpath = two_done("signoff-diverges")
@@ -13395,6 +13405,7 @@ def _held_cases(check):
               and rec_h3[0].get("return") == hd_rel
               and rec_h3[0].get("sha256") == _fr.return_signature(filed_h3[0]))
         read_set_cases()
+        bound_cases(settle, hd_rel)
 
         proj, mpath = two_done("signoff-state-broken")
         file_phase(proj, "P1", _HD_HEAD, [
@@ -13449,6 +13460,130 @@ def _held_cases(check):
               early[0] == 0 and read(os.path.join(
                   returns(proj, "P1"), "%s.reviewer.json" % (_HD_HEAD,)))
               is not None)
+    # ---- a settlement binds to the answer it settled ---------------------------
+    # The read set a sign-off records vouches for content, so the settlement it
+    # honours must be bound to content too: a name is shared by every answer
+    # filed under it.
+    def bound_cases(settle, hd_rel):
+        key = hd_rel + "#P1.1#intent diverges"
+        proj, mpath = two_done("signoff-name-only")
+        file_phase(proj, "P1", _HD_HEAD, [
+            _hd_entry("P1.1", _FR_SHA, answer="diverges", note="note A"),
+            _hd_entry("P1.2", _HD_SHA2)])
+        settle(proj, [key], by_name_only=True)
+        before = read(mpath)
+        named = signoff(proj, "P1", "skipped")
+        check("hs1 a settlement recorded by name alone - no signature binding "
+              "it to the content the human saw - is not honoured, and the "
+              "refusal names how to settle it again so the signature is "
+              "recorded: %r" % ((named[0], named[1][-420:]),),
+              named[0] == M.E_USAGE and read(mpath) == before
+              and "intent diverges" in named[1] and "by name only" in named[1]
+              and "drive-phase.py next P1" in named[1])
+        settle(proj, [key])
+        bound = signoff(proj, "P1", "skipped")
+        check("hs1b THE ALLOW TWIN: the same answer settled with its signature "
+              "signs off: %r" % ((bound[0], bound[1][-200:]),),
+              bound[0] == 0 and answer(mpath, "P1.1") == "diverges")
+
+        proj, mpath = two_done("signoff-other-content")
+        file_phase(proj, "P1", _HD_HEAD, [
+            _hd_entry("P1.1", _FR_SHA, answer="diverges", note="note A"),
+            _hd_entry("P1.2", _HD_SHA2)])
+        settle(proj, [key])
+        path = os.path.join(proj, "docs", "audit", "evidence", *hd_rel.split("/"))
+        with open(path, "r", encoding="utf-8") as fh:
+            settled_body = json.load(fh)
+        swapped = json.loads(json.dumps(settled_body))
+        swapped["tasks"][0]["note"] = "note B: another answer"
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(swapped, fh)
+        before = read(mpath)
+        other = signoff(proj, "P1", "skipped")
+        check("hs2 a settlement bound to one answer's signature does not cover "
+              "another answer under the same name - the return replaced by "
+              "one with another note is refused: %r"
+              % ((other[0], other[1][-300:]),),
+              other[0] == M.E_USAGE and read(mpath) == before
+              and "intent diverges" in other[1])
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(settled_body, fh, indent=2)
+        same = signoff(proj, "P1", "skipped")
+        check("hs2b THE ALLOW TWIN: ...and with the answer the human settled "
+              "back, its bytes laid out anew, the same sign-off passes: %r"
+              % ((same[0], same[1][-200:]),),
+              same[0] == 0)
+
+        for cid, settled in (("hs3", True), ("hs3b", False)):
+            proj, mpath, wt, rel = outside_worktree("signoff-r70-%s" % (cid,))
+            if settled:
+                settle(wt, [rel + "#phase"])
+            before = read(mpath)
+            got = signoff(proj, "P1", "skipped")
+            if settled:
+                check("hs3 A PLAN OUTSIDE THE REPOSITORY, the branch in a linked "
+                      "worktree, a phase return committed at its tip and "
+                      "settled in that worktree's record: the sign-off run "
+                      "from the parent checkout asks the tip's return against "
+                      "the settlement records the landing honours, and signs "
+                      "off: %r" % ((got[0], got[1][-300:]),),
+                      got[0] == 0 and read(mpath) != before)
+            else:
+                check("hs3b THE TWIN: ...and with no record settling it, the "
+                      "same sign-off is refused, writing nothing: %r"
+                      % ((got[0], got[1][-300:]),),
+                      got[0] == M.E_USAGE and read(mpath) == before
+                      and "intent diverges" in got[1])
+
+    def outside_worktree(name):
+        """`(proj, mpath, wt, rel)` - a git checkout `proj` whose plan lies in
+        a directory beside it, P1 on `audit/p1-wt` checked out in the linked
+        worktree `wt`, and a phase return answering `diverges` for the phase
+        committed at that branch's tip from `wt`."""
+        import subprocess
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        mpath = os.path.join(root, name + "-plan", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        _panel_write._atomic_write_json(
+            os.path.join(proj, ".claude", "audit.config.json"),
+            {"manifestPath": mpath, "evidence": {"dir": "docs/audit/evidence"},
+             "review": {"perTask": "always"}})
+        phases = [ph("P1", [done_tk("P1.1", _FR_SHA, key="always", intentCheck={
+            "answer": "matches", "commit": _FR_SHA})],
+            reviewPerTask="always", branch="audit/p1-wt")]
+        index = {}
+        for t in phases[0]["tasks"]:
+            for f in t["files"]:
+                index.setdefault(f, []).append(t["id"])
+        _panel_write._atomic_write_json(mpath, {
+            "meta": {"version": 2, "buildCommands": {"test": "true"}},
+            "phases": phases, "fileIndex": index, "bugs": []})
+        with open(os.path.join(proj, ".gitignore"), "w") as fh:
+            fh.write(".claude/state/\n")
+        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                   GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+
+        def git(where, *a):
+            return subprocess.run(["git", "-C", where] + list(a), env=env,
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        git(proj, "init", "-q", "-b", "main")
+        git(proj, "add", "-A")
+        git(proj, "commit", "-q", "-m", "base")
+        wt = proj + "-wt"
+        git(proj, "worktree", "add", "-q", "-b", "audit/p1-wt", wt)
+        body = json.loads(_hd_return([]))
+        body["intent"] = {"answer": "diverges", "missing": [],
+                          "note": "the phase missed its outcome"}
+        rel = _fr.phase_return_rel("P1", _HD_HEAD)
+        path = os.path.join(wt, "docs", "audit", "evidence", *rel.split("/"))
+        os.makedirs(os.path.dirname(path))
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(body, fh)
+        git(wt, "add", "-A")
+        git(wt, "commit", "-q", "-m", "the phase return")
+        return proj, mpath, wt, rel
+
     human_answer_cases()
 
     # ...and so does a fix task moved away from its findings.

@@ -2082,7 +2082,11 @@ def landed_answers_refusal(project, manifest_path, phase, landed, branch,
     read (`_fr.READ_RETURNS_FIELD`) and refuses while one holds an unsettled
     answer, so a return whose signature is in that set was put to a human. A
     return needing a human whose signature is not in it is refused unless a
-    known checkout's settlement record names it. A copy of a read return
+    known checkout's settlement record settles that answer - bound to the
+    return's signature, never its name alone: another answer under the name
+    is refused (rs9), so is one under a name the verdict read (rs8, twin
+    rs8b), and a key recorded with no signature settles nothing (rs10, twin
+    rs10b). A copy of a read return
     lands wherever it sits (rs2, rs5); one filed after the verdict is refused
     in any checkout - a sibling worktree (rs1), the signing checkout after it
     switched to the target and back (rs3, twin rs4) - and so is one a merge
@@ -2195,20 +2199,21 @@ def _reach_refusal(project, manifest_path, phase_id, places, wide, record,
     read: by its read set when it records one (`read_set_refusal`), by where
     each return sits when it records none - a verdict an older plugin wrote
     (`verdict_reach_refusal`)."""
-    read = _fr.read_set((record or {}).get("review"))
+    review = (record or {}).get("review")
+    read = _fr.read_set(review)
     if read is None:
         return verdict_reach_refusal(project, manifest_path, phase_id, places,
                                      verdict_at, branch)
     return read_set_refusal(project, manifest_path, phase_id, wide, read,
-                            verdict_at, branch)
+                            verdict_at, branch, names=_fr.read_names(review))
 
 
-def unsettled_sentence(phase_id, filed, settled=()):
+def unsettled_sentence(phase_id, filed, settled=(), bound=()):
     """The clause naming what in `filed` (`(rel, body, problem)` entries) waits on
-    a human - an answer `_fr.needs_human` reports and `settled` does not name,
-    or a return that will not parse and so could hold one - or None when
-    nothing does."""
-    asked = _fr.needs_human(filed, settled)
+    a human - an answer `_fr.needs_human` reports and neither `settled` (keys)
+    nor `bound` (`(key, sha256)` pairs) settles, or a return that will not
+    parse and so could hold one - or None when nothing does."""
+    asked = _fr.needs_human(filed, settled, bound)
     unread = [why for _rel, _body, why in filed if why]
     if not asked and not unread:
         return None
@@ -2426,49 +2431,87 @@ def every_filed_return(project, manifest_path, git_root, trees, places,
     groups.append((places["target"], "committed on %s, the branch this lands "
                    "on" % (places["parent"],),
                    "the returns %s commits" % (places["parent"],)))
-    return {"groups": groups,
-            "checkouts": _known_checkouts({"dirs": dirs})}
+    # The sign-off verb asks the same set through the same helper, so what a
+    # verdict was signed over and what its landing honours cannot drift; the
+    # checkouts `places` names join it only where no worktree list was handed
+    # in.
+    checkouts = (_fr.settlement_checkouts(git_root, project, trees)
+                 if git_root else [project])
+    for tree in _known_checkouts({"dirs": dirs}):
+        if not any(_same_path(tree, c) for c in checkouts):
+            checkouts.append(tree)
+    return {"groups": groups, "checkouts": checkouts}
 
 
 def read_set_refusal(project, manifest_path, phase_id, wide, read, verdict_at,
-                     branch):
+                     branch, names=()):
     """The sentence refusing a landing over a verdict that records what it
     read (`_fr.READ_RETURNS_FIELD`), or None - every filed return the landing
     can reach (`every_filed_return`) needing a human whose signature `read`
-    does not hold, and that no known checkout's settlement record names.
+    does not hold, and that no known checkout's settlement record settles.
 
     A return is covered by WHAT it is, not where: the sign-off verb refuses
     over an unsettled answer in everything it read, so a signature in `read`
     was put to a human, and a copy of it is covered in any checkout or ref.
     One filed after the verdict - in any checkout, the signing one included,
-    or brought to the tip by a merge - is in no read set."""
+    or brought to the tip by a merge - is in no read set.
+
+    A SETTLEMENT BINDS TO THE ANSWER IT SETTLED: it counts for a return only
+    where it records that return's signature (`_fr.needs_human`'s `bound`),
+    so another answer filed later under the same name - a name is the phase
+    and the head, and two checkouts filing at one head share it - is not
+    settled by it. A record naming the key alone, written before
+    signatures were kept, settles nothing here, and the refusal says so. A
+    return under a name in `names`, the names the verdict read, holding
+    another answer is refused whatever any record says: the human was asked
+    about the answer the verdict read under that name."""
     _proj, config = _evidence_io.project_config_for(manifest_path, project)
-    settled, problems = set(), []
-    for tree in wide["checkouts"]:
-        keys, problem = _settled_in(tree, config, phase_id)
-        settled |= set(keys)
-        if problem:
-            problems.append(problem)
-    taken = set(read)
+    record = _fr.settlements([_state_in(tree, config)
+                              for tree in wide["checkouts"]], phase_id)
+    taken, names = set(read), set(names or ())
     told = []
     for entries, where, folder in wide["groups"]:
         fresh = [e for e in entries if _fr.return_signature(e) not in taken]
         taken.update(_fr.return_signature(e) for e in fresh)
-        human = unsettled_sentence(phase_id, fresh, settled)
-        if human is not None:
-            told.append((human, where, folder))
+        renamed = [e for e in fresh if e[0] in names]
+        others = [e for e in fresh if e[0] not in names]
+        for group, bound, why in (
+                (renamed, None, " under a name the verdict read, holding another "
+                 "answer than the one read there, which no settlement covers"),
+                (others, record["pairs"], "")):
+            human = unsettled_sentence(phase_id, group, bound=bound or ())
+            if human is None:
+                continue
+            by_name = ([] if bound is None else _fr.settled_by_name_only(
+                _fr.needs_human(group, bound=bound), record))
+            told.append((human, where + why, folder, by_name))
     if not told:
         return None
-    record = (" - and the settlement records of the known checkouts %s"
-              % ("could not all be read (%s)" % ("; ".join(problems),)
-                 if problems else "name no human settling it"))
+    problems = record["problems"]
+    settled = (" - and the settlement records of the known checkouts %s"
+               % ("could not all be read (%s)" % ("; ".join(problems),)
+                  if problems else "settle no answer it holds"))
     said = "; and ".join(
         "%s, and the sign-off verdict %s records could not have read it - it "
         "is not among the returns that sign-off recorded reading: it sits "
-        "%s%s" % (human, _VERDICT_WORDS[verdict_at] % {"branch": branch},
-                  where, record)
-        for human, where, _folder in told)
-    return _reach_remedy(said, " and ".join(f for _h, _w, f in told), branch)
+        "%s%s%s" % (human, _VERDICT_WORDS[verdict_at] % {"branch": branch},
+                    where, settled, _name_only_words(by_name))
+        for human, where, _folder, by_name in told)
+    return _reach_remedy(said, " and ".join(f for _h, _w, f, _b in told),
+                         branch)
+
+
+def _name_only_words(answers):
+    """The clause saying which of `answers` a record settles by name only, and
+    why that binds none of them - empty when none."""
+    if not answers:
+        return ""
+    return (" (%s settled by name only, in a record written before a "
+            "settlement carried the signature of the answer it settled: a name "
+            "is shared by every answer filed under it, so it binds none of "
+            "them - the driver's triage records the signature with its accept, "
+            "before a sign-off)" % (", ".join(
+                "%s %s" % (a["who"], a["what"]) for a in answers),))
 
 
 # How a refusal names the copy of the plan holding the verdict.
@@ -2487,14 +2530,20 @@ def _reach_remedy(said, folders, branch):
             "(/audit:bug add)." % (said, folders, branch))
 
 
+def _state_in(tree, config):
+    """The state directory of the checkout at `tree`, where the driver keeps
+    its settlement record."""
+    hc = _loader.load_hooks_config(modname="audit__config")
+    return str(hc.state_dir(pathlib.Path(tree), config or {}))
+
+
 def _settled_in(tree, config, phase_id):
     """`(keys, problem)` - the answers the driver's settlement record in the
     checkout at `tree` names as settled by a human; nothing when no tree."""
     if not tree:
         return set(), ""
-    hc = _loader.load_hooks_config(modname="audit__config")
-    state = str(hc.state_dir(pathlib.Path(tree), config or {}))
-    keys, _reasons, problem = _fr.settled_answers(state, phase_id)
+    keys, _reasons, problem = _fr.settled_answers(_state_in(tree, config),
+                                                  phase_id)
     return keys, problem
 
 

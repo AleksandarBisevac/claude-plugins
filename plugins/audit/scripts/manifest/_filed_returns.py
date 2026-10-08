@@ -32,7 +32,11 @@ lives here because two entry points ask it, `audit-task.py signoff` and
 `close-phase.py`, and a rule held twice is two rules. Which of a phase return's
 answers only a human settles (`needs_human`) lives here for the same reason:
 `drive-phase.py`'s triage and `audit-task.py signoff` both stop on them, and the
-settlement both read is the driver's state file (`settled_answers`).
+settlement both read is the driver's state file (`settlement_record`). A
+settlement binds the answer it settled - the content signature of the return
+it sits in, written beside its key (`settlement_after`) - and the checkouts
+whose records `audit-task.py signoff` and `close-phase.py` both honour are
+one helper's answer (`settlement_checkouts`), so the two verbs read one set.
 
 WHAT A VERDICT READ is here for the same reason. `audit-task.py signoff`
 records on the phase review the signature of every filed phase return it read
@@ -487,25 +491,37 @@ HUMAN_INHERITED = ("flagged",)
 
 # Where a human's settlement is recorded: the driver's state for the phase,
 # under `<stateDir>/drive/<phase>.json`, whose `answersAccepted` the triage's
-# `--answer accept --reason` writes as `{"keys": [...], "reasons": [...]}`.
+# `--answer accept --reason` writes as `{"keys": [...], "reasons": [...],
+# "signatures": [{"key", "sha256"}, ...]}` (`settlement_after`). A key names
+# the answer's place - the return's name, the task and the word - and two
+# answers filed under one name share it; the signature is the settled return's
+# content (`return_signature`), which is what a settlement binds to wherever a
+# verdict records what it read. `keys` stays for a reader older than the
+# signatures, which reads them alone.
 DRIVE_DIRNAME = "drive"
 SETTLED_FIELD = "answersAccepted"
+SIGNATURES_FIELD = "signatures"
 # The driver's mark of a phase review dispatched, `{"head": <sha>, ...}`.
 REVIEW_MARK_FIELD = "phaseReview"
 
 
-def needs_human(returns, settled=()):
-    """`[{"key", "who", "what", "note"}]` - every answer in `returns`
-    (`phase_returns`' list) that only a human settles and whose key is not in
-    `settled`: a task entry answering `diverges` or `cannot-tell`, grading
+def needs_human(returns, settled=(), bound=()):
+    """`[{"key", "who", "what", "note", "sha256"}]` - every answer in
+    `returns` (`phase_returns`' list) that only a human settles and is not
+    settled: a task entry answering `diverges` or `cannot-tell`, grading
     red-first `not-proved` or inherited tests `flagged`, and a phase intent of
-    `diverges` or `cannot-tell`. Every filed return is read, so a review
-    dispatched again does not drop an answer an earlier one gave; a return that
-    did not parse adds nothing here, because its reader refuses it."""
+    `diverges` or `cannot-tell`. `sha256` is the signature of the return the
+    answer sits in. An answer is settled when its key is in `settled` - a
+    settlement by name, which only the reading of a verdict recording no read
+    set honours - or its `(key, sha256)` pair is in `bound`. Every filed
+    return is read, so a review dispatched again does not drop an answer an
+    earlier one gave; a return that did not parse adds nothing here, because
+    its reader refuses it."""
     found = []
-    for rel, body, _problem in returns:
+    for rel, body, problem in returns:
         if not isinstance(body, dict):
             continue
+        sig = return_signature((rel, body, problem))
         entries = body.get("tasks") if isinstance(body.get("tasks"), list) else []
         for entry in [e for e in entries if isinstance(e, dict)]:
             said = []
@@ -518,15 +534,17 @@ def needs_human(returns, settled=()):
                 said.append(("inherited tests %s" % (entry["inheritedTests"],),
                              entry.get("inheritedTestsBasis")))
             found += [{"key": "%s#%s#%s" % (rel, entry.get("id"), what),
-                       "who": str(entry.get("id")), "what": what, "note": note}
+                       "who": str(entry.get("id")), "what": what, "note": note,
+                       "sha256": sig}
                       for what, note in said]
         intent = body.get("intent") if isinstance(body.get("intent"), dict) else {}
         if intent.get("answer") in HUMAN_ANSWERS:
             found.append({"key": "%s#phase" % (rel,), "who": "phase",
                           "what": "intent %s" % (intent["answer"],),
-                          "note": intent.get("note")})
-    taken = set(settled or ())
-    return [a for a in found if a["key"] not in taken]
+                          "note": intent.get("note"), "sha256": sig})
+    taken, pairs = set(settled or ()), set(bound or ())
+    return [a for a in found if a["key"] not in taken
+            and (a["key"], a["sha256"]) not in pairs]
 
 
 def drive_state_path(state_dir, phase_id):
@@ -557,25 +575,123 @@ def review_marked(body):
     return isinstance(mark, dict) and bool(mark.get("head"))
 
 
-def settled_answers(state_dir, phase_id):
-    """`(keys, reasons, problem)` - the answer keys a human settled for the
-    phase, the words they were settled with, and why the record could not be
-    read. No record is nothing settled; a record that will not parse is a
-    problem, never read as nothing settled."""
-    path = drive_state_path(state_dir, phase_id)
+def settlement_record(state_dir, phase_id):
+    """`{"keys", "pairs", "reasons", "problem"}` - what the driver's record
+    in `state_dir` says a human settled for the phase: the answer keys, the
+    `(key, sha256)` pairs binding a key to the content settled, the words they
+    were settled with, and why the record could not be read. No record is
+    nothing settled; a record that will not parse is a problem, never read as
+    nothing settled. A record written before signatures were kept holds keys
+    and no pairs."""
     body, problem = drive_state(state_dir, phase_id)
     if problem:
-        return set(), [], problem
-    held = body.get(SETTLED_FIELD)
+        return {"keys": set(), "pairs": set(), "reasons": [], "problem": problem}
+    return settlement_block(body.get(SETTLED_FIELD),
+                            drive_state_path(state_dir, phase_id))
+
+
+def settlement_block(held, path):
+    """`settlement_record`'s reading of one `SETTLED_FIELD` block `held`, as
+    the record at `path` holds it - the driver reads the state it already
+    holds through this rather than the file a second time."""
+    nothing = {"keys": set(), "pairs": set(), "reasons": [], "problem": ""}
     if held is None:
-        return set(), [], ""
+        return nothing
     if not isinstance(held, dict):
-        return set(), [], ("the settlement record %s holds `%s` that is not an "
-                           "object" % (path, SETTLED_FIELD))
-    keys = held.get("keys") or []
-    reasons = held.get("reasons") or []
-    return (set(str(k) for k in keys if isinstance(k, str)),
-            [str(r) for r in reasons if isinstance(r, str)], "")
+        return dict(nothing, problem=(
+            "the settlement record %s holds `%s` that is not an object"
+            % (path, SETTLED_FIELD)))
+    signed = held.get(SIGNATURES_FIELD)
+    return {"keys": set(str(k) for k in held.get("keys") or []
+                        if isinstance(k, str)),
+            "pairs": set((s["key"], s["sha256"])
+                         for s in (signed if isinstance(signed, list) else [])
+                         if isinstance(s, dict) and isinstance(s.get("key"), str)
+                         and isinstance(s.get("sha256"), str)),
+            "reasons": [str(r) for r in held.get("reasons") or []
+                        if isinstance(r, str)],
+            "problem": ""}
+
+
+def settled_answers(state_dir, phase_id):
+    """`(keys, reasons, problem)` - `settlement_record`'s keys, words and
+    problem, for the reading that honours a settlement by name."""
+    record = settlement_record(state_dir, phase_id)
+    return record["keys"], record["reasons"], record["problem"]
+
+
+def settlements(state_dirs, phase_id):
+    """`{"keys", "pairs", "reasons", "problems"}` - `settlement_record` read in
+    every directory of `state_dirs`, each once, as one union: a settlement any
+    of them records is a human's word, and a record that could not be read is
+    kept as a problem rather than read as nothing settled there."""
+    union = {"keys": set(), "pairs": set(), "reasons": [], "problems": []}
+    seen = []
+    for state_dir in state_dirs:
+        real = os.path.realpath(str(state_dir))
+        if real in seen:
+            continue
+        seen.append(real)
+        record = settlement_record(state_dir, phase_id)
+        union["keys"] |= record["keys"]
+        union["pairs"] |= record["pairs"]
+        union["reasons"] += record["reasons"]
+        if record["problem"]:
+            union["problems"].append(record["problem"])
+    return union
+
+
+def settlement_after(held, answers, reason):
+    """The `SETTLED_FIELD` block after a human settled `answers`
+    (`needs_human`'s dicts) in the words `reason`, on top of `held`: each
+    answer's key appended for an older reader, and its key with the signature
+    of the content settled, which is what a newer reader honours. An answer
+    carrying no signature - one put to the human before signatures were kept -
+    adds its key alone."""
+    held = held if isinstance(held, dict) else {}
+    return {"keys": list(held.get("keys") or []) + [a["key"] for a in answers],
+            "reasons": list(held.get("reasons") or []) + [reason],
+            SIGNATURES_FIELD: list(held.get(SIGNATURES_FIELD) or []) + [
+                {"key": a["key"], "sha256": a["sha256"]}
+                for a in answers if a.get("sha256")]}
+
+
+def settled_by_name_only(answers, record):
+    """The answers in `answers` that `record` (`settlement_record` or
+    `settlements`) names by key and binds no signature for: settled before
+    signatures were kept, so nothing says which content the human saw."""
+    return [a for a in answers if a["key"] in record["keys"]
+            and (a["key"], a.get("sha256")) not in record["pairs"]]
+
+
+def project_in_tree(git_root, project, tree_path):
+    """The directory `project` - a directory inside the checkout at
+    `git_root` - is in the checkout at `tree_path`, or None when that
+    checkout holds none or `project` lies outside `git_root`."""
+    if not tree_path:
+        return None
+    rel = os.path.relpath(os.path.realpath(str(project)),
+                          os.path.realpath(str(git_root)))
+    if rel == ".." or rel.startswith(".." + os.sep):
+        return None
+    found = os.path.normpath(os.path.join(str(tree_path), rel))
+    return found if os.path.isdir(found) else None
+
+
+def settlement_checkouts(git_root, project, trees):
+    """`project` and the same project in every worktree of `trees` (the
+    worktree list's records) that git does not report prunable, each once:
+    the checkouts whose settlement records a sign-off and a landing both
+    honour, so the two read one set."""
+    found = [str(project)]
+    for tree in trees or []:
+        if not isinstance(tree, dict) or tree.get("prunable"):
+            continue
+        there = project_in_tree(git_root, project, tree.get("path"))
+        if there and not any(os.path.realpath(there) == os.path.realpath(f)
+                             for f in found):
+            found.append(there)
+    return found
 
 
 # --- what a sign-off read ---------------------------------------------------------
@@ -614,6 +730,16 @@ def read_set(review):
         return None
     return set(str(r.get("sha256")) for r in held
                if isinstance(r, dict) and r.get("sha256"))
+
+
+def read_names(review):
+    """The return names a verdict records as read - empty when it records no
+    read set. A later return under one of them with another signature is
+    another answer under a name the verdict read."""
+    held = review.get(READ_RETURNS_FIELD) if isinstance(review, dict) else None
+    return set(str(r.get("return")) for r in (held if isinstance(held, list)
+                                               else [])
+               if isinstance(r, dict) and r.get("return"))
 
 
 def _git(git_root, args):

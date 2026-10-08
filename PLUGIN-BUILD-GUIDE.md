@@ -1036,7 +1036,17 @@ sits** (`read_set_refusal`): `audit-task.py signoff`, single or group, records i
 `review.readReturns` the signature (`_filed_returns.return_signature`) of every filed phase return
 it read - its checkout's evidence and the branch tip's committed returns, the tip's through the
 same human stop - and the landing refuses a return needing a human whose signature is not in that
-set unless a known checkout's driver settlement names it. Where a return sits no longer decides:
+set unless a known checkout's driver settlement settles that answer. **A settlement binds the
+answer it settled, not the return's name**: the driver's accept records each answer's key with the
+signature of the return it sits in (`_filed_returns.settlement_after`, under
+`answersAccepted.signatures`), and on this path a settlement counts only for a return carrying that
+signature (`needs_human`'s `bound`) - another answer filed later under the name is not settled by
+it, one under a name the verdict read (`read_names`) is refused whatever any record says, and a key
+recorded with no signature settles nothing, the refusal naming it (`settled_by_name_only`; `rs8`-`rs10`,
+`hs1`-`hs2b`). The sign-off verb and the landing read one set of records, every worktree git lists
+and does not report prunable (`_filed_returns.settlement_checkouts`, `settlements`), so a sign-off from
+the parent checkout honours a settlement made where the branch is checked out (`hs3`, `hs3b`).
+Where a return sits no longer decides:
 one filed after the verdict is refused in a sibling worktree, in the signing checkout after a
 switch away and back, or brought to the tip by a merge of the target, and a copy of a read return
 lands anywhere - the `rs` cases in `test_close_phase.py`, and `rr1`-`rr3b`, `gsp2` in
@@ -1982,9 +1992,11 @@ directory is handed in rather than resolved — resolving it is `_evidence_io`'s
 so the module reaches nothing but `_output`. `needs_human` is the one reading of which phase-return
 answers only a human settles - a task entry's `diverges`/`cannot-tell`, `not-proved` or `flagged`,
 and a phase intent of `diverges`/`cannot-tell` - shared by the driver's triage and
-`audit-task.py signoff`, which refuses while one is unsettled; `settled_answers` reads the
-settlement the triage's `--answer accept` writes at `drive_state_path` (`<stateDir>/drive/<phase>.json`),
-and a record that will not parse is a problem, never nothing settled. `drive_state` reads that file
+`audit-task.py signoff`, which refuses while one is unsettled; `settlement_record` reads the
+settlement the triage's `--answer accept` writes at `drive_state_path` (`<stateDir>/drive/<phase>.json`)
+through `settlement_after` - each settled answer's key, and beside it the signature of the return
+it sits in, the content the settlement binds - `settled_answers` its keys alone for the reading by
+place, and a record that will not parse is a problem, never nothing settled (`hn4`-`hn12`). `drive_state` reads that file
 whole and `review_marked` says whether it marks a phase review at a head - without one, and where
 a review skill resolves or a task is owed its answers, the driver's next sign-off pass reads a phase
 return already filed at the current head, and dispatches the review only where none is, which the

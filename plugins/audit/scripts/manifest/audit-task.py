@@ -8269,15 +8269,35 @@ def _human_settlement(proj, cfg, pid, filed, group=False):
     a task is owed its answers (`drive-phase.py`'s `review_due`), the driver
     reads a phase return already filed at the current head, and dispatches the
     review only where none is, before any triage; a member's triage answered `sign-off` signs off and
-    lands that member alone."""
+    lands that member alone.
+
+    A SETTLEMENT BINDS TO THE ANSWER IT SETTLED. This verdict records what it
+    read by content (`_fr.read_record`), so the settlement it signs over is
+    honoured only for the content it was given for (`_fr.needs_human`'s
+    `bound`): another answer filed under the same name is not settled by it,
+    and a key a record names with no signature - written before signatures
+    were kept - settles nothing here; the refusal says so, and the driver's
+    triage, which asks it again, records the signature on accept.
+
+    THE SETTLEMENTS ASKED ARE THE ONES THE LANDING HONOURS: the records of
+    this checkout and of the same project in every worktree git lists that it
+    does not report prunable (`_settlement_checkouts`, through
+    `_fr.settlement_checkouts`, the helper `close-phase.py` reads the same
+    set through), so a return the tip commits, settled where the branch is
+    checked out, is settled for a sign-off run from any checkout."""
     hc = _loader.load_hooks_config(modname="audit__config")
     state_dir = str(hc.state_dir(pathlib.Path(proj), cfg or {}))
-    keys, reasons, problem = _fr.settled_answers(state_dir, pid)
-    if problem:
+    checkouts, unlisted = _settlement_checkouts(proj)
+    record = _fr.settlements([str(hc.state_dir(pathlib.Path(c), cfg or {}))
+                              for c in checkouts], pid)
+    reasons = record["reasons"]
+    if record["problems"]:
         return [], ("REFUSED: %s, so which reviewer answers a human settled "
-                    "for %s is unknown. Nothing written." % (problem, pid))
+                    "for %s is unknown. Nothing written."
+                    % ("; ".join(record["problems"]), pid))
     asked = _fr.needs_human(filed)
-    waiting = [a for a in asked if a["key"] not in keys]
+    waiting = _fr.needs_human(filed, bound=record["pairs"])
+    by_name = _fr.settled_by_name_only(waiting, record)
     if waiting:
         state, _problem = _fr.drive_state(state_dir, pid)
         redispatch = ("" if _fr.review_marked(state) else
@@ -8289,21 +8309,46 @@ def _human_settlement(proj, cfg, pid, filed, group=False):
         then = ("answer only `accept` there, never `sign-off`, which signs "
                 "off and lands this member alone; then run this group "
                 "sign-off again" if group else "sign off again")
+        named = ("\n    %s settled by name only in a record written before "
+                 "a settlement carried the signature of the answer it settled, "
+                 "so nothing says which answer a human saw under that name: "
+                 "the triage asks each again, and its accept records the "
+                 "signature." % (", ".join("%s %s" % (a["who"], a["what"])
+                                           for a in by_name),)
+                 if by_name else "")
+        listed = ("\n    The worktree list could not be read (%s), so only "
+                  "this checkout's settlement record was asked." % (unlisted,)
+                  if unlisted else "")
         return [], (
             "REFUSED: phase %s's filed review holds answer(s) only a human "
-            "settles, and these are not settled. Nothing written:\n%s\n    "
+            "settles, and these are not settled. Nothing written:\n%s%s%s\n    "
             "Put each to a human, then run `drive-phase.py next %s`%s and "
             "answer its triage with --answer accept --reason \"<their word on "
             "each>\" - the settlement this verb reads - and %s."
             % (pid, "\n".join("  %s: %s%s" % (
                 a["who"], a["what"], " (%s)" % (a["note"],) if a["note"] else "")
-                for a in waiting), pid, redispatch, then))
+                for a in waiting), named, listed, pid, redispatch, then))
     if not asked:
         return [], None
     return (["  settled by a human: %s" % (", ".join(
         "%s %s" % (a["who"], a["what"]) for a in asked),),
         "    in their words: %s" % ("; ".join(reasons) or "(none recorded)",)],
             None)
+
+
+def _settlement_checkouts(proj):
+    """`(checkouts, unlisted)` - the checkouts whose settlement records a
+    sign-off in `proj` honours (`_fr.settlement_checkouts`), and why the
+    worktree list could not be read, leaving `proj` alone. Where git names no
+    working tree for `proj` - no repository, or no git to ask - there is no
+    worktree list to read, and `proj` stands alone with nothing said."""
+    top = _worktrees.tree_root(proj)["root"]
+    if not top:
+        return [proj], ""
+    listing = _worktrees.list_worktrees(top)
+    if listing["error"]:
+        return [proj], listing["error"]
+    return _fr.settlement_checkouts(top, proj, listing["trees"]), ""
 
 
 def _returns_read(proj, cfg, phase):

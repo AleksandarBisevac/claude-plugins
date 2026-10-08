@@ -2205,7 +2205,7 @@
     {
       "id": "P118.23-v7t",
       "title": "a human's settlement binds to the answer it settled, not to the return's name",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes P118 review round 8 findings R69-R70. A human's settlement binds to the content it settled, not to the return's name. When the driver records a settlement, it records the settled return's content signature. On the read-set path, close-phase honours a settlement only for a return carrying that signature. A return whose name matches a read row but whose signature differs is refused whatever any record says. A name-only settlement, written before this field existed, is not honoured on the read-set path, and the refusal names how to settle it again. The sign-off asks the tip's returns against the same settlement set the landing honours, which is every non-prunable worktree's record, so signing off from the parent no longer refuses a return settled where the branch is checked out. The schema, COMPATIBILITY.md, the guide, manifest-conventions and CHANGELOG say exactly what a settlement binds. Every new case is shown red first with its allow twin.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2243,16 +2243,21 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T14:10:28Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T15:36:33Z.51d8a9",
+        "status": "passed",
+        "at": "2026-10-08T15:36:33Z"
+      }
     }
   ],
   "startedAt": "2026-10-07T21:17:01Z"

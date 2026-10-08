@@ -122,10 +122,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   return it read - its checkout's evidence and the branch tip's committed returns, the tip's
   through the same stop on an unsettled answer - and rewrites the field whole on each sign-off.
   The landing refuses a return holding such an answer whose signature is not in that set unless
-  a known checkout's driver settlement names it, so one filed after the verdict is refused in a
+  a known checkout's driver settlement settles that answer, so one filed after the verdict is refused in a
   sibling worktree, in the parent's checkout, in the signing checkout after it switched away and
   back, or brought to the tip by a merge of the target, and a copy of a return the verdict read
-  lands wherever it sits. A verdict recorded without the field keeps the reading by place: a
+  lands wherever it sits. A human's settlement binds the answer it settled, not the return's
+  name: the driver's `--answer accept` records, beside each settled answer's key, the content
+  signature of the return it sits in (`answersAccepted.signatures`, added beside the `keys`
+  an older reader reads), and the sign-off verb and a landing over a verdict recording what it
+  read honour a settlement only for a return carrying that signature. A different answer filed
+  later under the same name - a name is the phase and the head, so two checkouts filing at one
+  head share it - is not settled by it, and one filed under a name the verdict read is refused
+  whatever any record says. A settlement recorded by key alone, before this release, settles
+  nothing on that path: the sign-off's refusal says so, and the driver's triage puts the answer
+  to the human again, whose accept records the signature. The sign-off verb asks the
+  settlement records of every worktree git lists and does not report prunable - the set the
+  landing honours, through one helper - so a sign-off run from the parent checkout no longer
+  refuses a return the tip commits that was settled where the branch is checked out. A verdict recorded without the field keeps the reading by place: a
   tip's verdict settles the returns the tip commits and those in the worktree holding the
   branch, the target branch's committed tree and the worktree holding it are read from the
   branch's own checkout, an `evidence.dir` several checkouts share is settled by the signing

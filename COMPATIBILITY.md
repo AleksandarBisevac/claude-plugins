@@ -373,7 +373,14 @@ is still true of a nested key.
   returns - in `review.readReturns`, and `close-phase.py` gathers every filed phase return
   it can reach (the evidence of every worktree git lists, the branch tip, the target
   branch's committed tree) and refuses one holding such an answer whose signature is not in
-  that set, unless a known checkout's driver settlement names it. A return filed after the
+  that set, unless a known checkout's driver settlement settles that answer - a settlement
+  binds the answer's content, not the return's name: the driver records the signature of the
+  return it settled beside the answer's key, a return under the same name with another
+  signature is not settled by it, one under a name the verdict read is refused whatever any
+  record says, and a settlement an earlier plugin recorded by key alone settles nothing on
+  this path, the triage asking the answer again so its accept records the signature. The
+  sign-off verb reads the same settlement records the landing does, those of every worktree
+  git lists and does not report prunable. A return filed after the
   verdict - in a sibling worktree, in the parent's checkout, in the signing checkout after it
   switched branches, or brought to the tip by a merge - is refused; a copy of a return the
   verdict read lands wherever it sits. **That guarantee needs a sign-off taken by a plugin that

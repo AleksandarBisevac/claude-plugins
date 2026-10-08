@@ -1266,6 +1266,17 @@ def _review_answer_cases(check):
     words = "the human: P1.1 was asked to edit f2 after all"
     code, text = _next(M, root, mpath, "--answer", "accept", "--reason", words)
     after = _answer_lines(text)
+    held = _drive_state(root).get(_fr.SETTLED_FIELD) or {}
+    filed = _fr.phase_returns(os.path.join(root, "docs", "audit", "evidence"),
+                              PHASE)
+    want = [{"key": a["key"], "sha256": a["sha256"]}
+            for a in _fr.needs_human(filed)]
+    check("sa3s the accept records each settled answer's key beside the "
+          "signature of the return it sits in - the content the human "
+          "settled - and keeps the key list an older reader reads: %r"
+          % (held,),
+          len(want) == 3 and held.get(_fr.SIGNATURES_FIELD) == want
+          and held.get("keys") == [w["key"] for w in want])
     code_s, text_s = _next(M, root, mpath, "--answer", "sign-off", "--reason",
                            SUMMARY)
     summary = _phase_of(mpath).get("summary") or ""
@@ -1286,7 +1297,40 @@ def _review_answer_cases(check):
           "no answer line and no `accept` in the triage: %r" % (triage,),
           run["steps"][-1] == TRIAGE and _answer_lines(triage) == []
           and "--answer accept" not in triage)
+    _name_only_triage_cases(check, M, over)
     _decline_answer_cases(check)
+
+
+def _name_only_triage_cases(check, M, over):
+    """A settlement an older driver recorded by key alone binds no answer, so
+    the triage puts each answer to the human again - its accept is what
+    records the signature the sign-off verb honours."""
+    root, mpath = _repo("answers-legacy", task_ids=TASKS[:2], per_task="phase")
+    drive(M, root, mpath, entry_over=over, phase_intent="cannot-tell",
+          answer=None)
+    filed = _fr.phase_returns(os.path.join(root, "docs", "audit", "evidence"),
+                              PHASE)
+    asked = _fr.needs_human(filed)
+    path = os.path.join(root, ".claude", "state", "drive", "%s.json" % (PHASE,))
+    seen = []
+    for by_name in (True, False):
+        state = _drive_state(root)
+        state.pop("pending", None)
+        block = _fr.settlement_after({}, asked, "an older driver's accept")
+        if by_name:
+            block.pop(_fr.SIGNATURES_FIELD, None)
+        state[_fr.SETTLED_FIELD] = block
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(state, fh)
+        _code, text = _next(M, root, mpath)
+        seen.append(_answer_lines(text))
+    check("sa5 a settlement recorded by key alone - an older driver's record - "
+          "settles nothing in the triage: every answer is put to the human "
+          "again, so the accept records its signature: %r" % (seen[0],),
+          len(asked) == 3 and len(seen[0]) == 3)
+    check("sa5b THE ALLOW TWIN: the same settlement bound to each answer's "
+          "signature settles them all: %r" % (seen[1],),
+          seen[1] == [])
 
 
 def _continue_cases(check):

@@ -179,6 +179,15 @@ devops/security/embedded/data/ml/…) — for grouping/filtering in status/repor
 return needing a human that the verdict never read, wherever it was filed. Absent means a verdict
 written before the field, which the landing reads by where each return sits.
 
+A human's settlement of such a return binds the answer it settled, not the return's name. The
+driver's state (`<stateDir>/drive/<phase>.json`, outside the plan) records it under
+`answersAccepted`: `keys` names each settled answer, and `signatures` holds one `{key, sha256}`
+entry per answer, the sha256 being the signature of the return the answer sits in - the same
+signature a `readReturns` row records. The sign-off verb, which writes `readReturns`, and
+`close-phase.py` over a verdict recording it honour a settlement only for a return carrying the
+signature it records; a key recorded without one settles nothing there, and only the landing of a
+verdict recording no `readReturns` still reads `keys` alone.
+
 ## Phase priority (`phase.priority`)
 
 An optional positive integer saying which phase to reach for first **among the tasks

@@ -469,6 +469,98 @@ def _human_cases(check):
               and state == M.drive_state_path(ev, "P1"))
     finally:
         _harness.remove_tree(ev)
+    _bound_settlement_cases(check, rel, mixed)
+
+
+def _bound_settlement_cases(check, rel, mixed):
+    """A human's settlement binds to the answer it settled - the return's
+    content signature - never to the name alone, which another answer filed
+    later under the same name would share."""
+    first = M.needs_human(mixed)
+    sig = M.return_signature(mixed[0])
+    check("hn6 every answer for a human carries the signature of the return it "
+          "came from - the content a settlement binds to: %r"
+          % (sorted(set(a.get("sha256") for a in first)),),
+          len(first) == 4 and all(a.get("sha256") == sig for a in first))
+    other = [(rel, _hn_body([_hn_entry("P1.1", answer="diverges",
+                                       note="another note")]), "")]
+    pairs = set((a["key"], a["sha256"]) for a in first)
+    same_name = M.needs_human(other, bound=pairs)
+    check("hn7 a settlement bound to one answer's signature does not cover "
+          "another answer filed under the same name: %r"
+          % ([a["key"] for a in same_name],),
+          [a["key"] for a in same_name] == [rel + "#P1.1#intent diverges"])
+    check("hn7b THE ALLOW TWIN: ...and it covers the answer it was given for, "
+          "a byte-identical copy included: %r" % (M.needs_human(
+              json.loads(json.dumps(mixed)), bound=pairs),),
+          M.needs_human([tuple(e) for e in json.loads(json.dumps(mixed))],
+                        bound=pairs) == [])
+
+    held = M.settlement_after({}, first[:2], "the human's word")
+    again = M.settlement_after(held, first[2:3], "a second word")
+    check("hn8 the record a settlement writes keeps the key list older readers "
+          "read and adds one key-and-signature entry per answer, appending "
+          "across settlements: %r" % (again,),
+          again["keys"] == [a["key"] for a in first[:3]]
+          and again["reasons"] == ["the human's word", "a second word"]
+          and again[M.SIGNATURES_FIELD] == [
+              {"key": a["key"], "sha256": sig} for a in first[:3]])
+
+    root = _harness.fixture_root("filed-returns-bound-")
+    other_dir = _harness.fixture_root("filed-returns-bound-other-")
+    try:
+        for where, block in ((root, {"keys": [first[0]["key"]],
+                                     "reasons": ["by name only"]}),
+                             (other_dir, again)):
+            path = M.drive_state_path(where, "P1")
+            os.makedirs(os.path.dirname(path))
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump({M.SETTLED_FIELD: block}, fh)
+        named = M.settlement_record(root, "P1")
+        both = M.settlements([root, other_dir, other_dir], "P1")
+        check("hn9 a record naming keys alone binds no signature; read across "
+              "several checkouts' records, the bound pairs and the keys are "
+              "each one union and a directory named twice is read once: %r"
+              % ((named, both),),
+              named["pairs"] == set() and named["keys"] == set([first[0]["key"]])
+              and both["pairs"] == set((a["key"], sig) for a in first[:3])
+              and both["keys"] == set(a["key"] for a in first[:3])
+              and both["reasons"] == ["by name only", "the human's word",
+                                      "a second word"]
+              and both["problems"] == [])
+        only_named = M.settled_by_name_only(first, named)
+        check("hn10 the answers a record settles by name only - the key there, "
+              "its signature not - are named so a refusal can say how to "
+              "settle them again: %r" % ([a["key"] for a in only_named],),
+              [a["key"] for a in only_named] == [first[0]["key"]]
+              and M.settled_by_name_only(first, both) == [])
+        with open(M.drive_state_path(root, "P1"), "w", encoding="utf-8") as fh:
+            fh.write("{not json")
+        broken = M.settlements([root, other_dir], "P1")
+        check("hn11 a record that will not parse is a problem the union keeps, "
+              "never read as nothing settled there: %r" % (broken["problems"],),
+              len(broken["problems"]) == 1
+              and broken["pairs"] == set((a["key"], sig) for a in first[:3]))
+    finally:
+        _harness.remove_tree(root)
+        _harness.remove_tree(other_dir)
+
+    top = _harness.fixture_root("filed-returns-checkouts-")
+    try:
+        main, linked, gone = (os.path.join(top, n) for n in ("main", "wt", "gone"))
+        for path in (os.path.join(main, "sub"), os.path.join(linked, "sub")):
+            os.makedirs(path)
+        trees = [{"path": main}, {"path": linked},
+                 {"path": gone, "prunable": True}]
+        found = M.settlement_checkouts(main, os.path.join(main, "sub"), trees)
+        check("hn12 the checkouts whose settlement records count are the "
+              "project's and the same project inside every worktree git lists, "
+              "each once, a prunable one skipped: %r" % (found,),
+              [os.path.realpath(p) for p in found]
+              == [os.path.realpath(os.path.join(main, "sub")),
+                  os.path.realpath(os.path.join(linked, "sub"))])
+    finally:
+        _harness.remove_tree(top)
 
 
 def _git_repo(root):
@@ -533,6 +625,12 @@ def _read_set_cases(check):
           absent is None and empty == set() and isinstance(empty, set)
           and held == set([sig(a), sig(other_name)])
           and M.read_set(None) is None)
+    names = M.read_names({"status": "passed", M.READ_RETURNS_FIELD: record})
+    check("rd3n the names a verdict records as read are their own reading - "
+          "what a landing compares a later return's name against - and a "
+          "verdict recording no read set names none: %r" % (names,),
+          names == set([a[0], other_name[0]])
+          and M.read_names({"status": "passed"}) == set())
 
     root = _harness.fixture_root("filed-returns-tip-")
     outside = _harness.fixture_root("filed-returns-tip-outside-")

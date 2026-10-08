@@ -1330,7 +1330,7 @@ def _reach_put(tree, sha, body=None, shared_dir=None):
     return rel
 
 
-def _reach_file(tree, mpath, sha):
+def _reach_file(tree, mpath, sha, body=None):
     """`(exit, text)` of the real filing verb run in `tree` against its own
     copy of the plan, as an operator in that checkout runs it."""
     env = dict((k, v) for k, v in os.environ.items()
@@ -1338,22 +1338,35 @@ def _reach_file(tree, mpath, sha):
     done = subprocess.run(
         [sys.executable, _loader.script_path("audit-task.py"), "file-return",
          "P1", "--role", "reviewer", mpath, "--project-dir", tree, "--head", sha],
-        cwd=tree, env=env, input=json.dumps(_REACH_BODY), stdout=subprocess.PIPE,
+        cwd=tree, env=env, input=json.dumps(body if body is not None
+                                            else _REACH_BODY),
+        stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, universal_newlines=True, encoding="utf-8")
     return done.returncode, done.stdout
 
 
-def _reach_settle(tree, keys):
+def _reach_settle(tree, keys, body=None, by_name_only=False):
     """The driver's settlement record in `tree`'s state directory, naming
-    `keys` as answers a human settled."""
+    `keys` - phase keys - as answers a human settled, each bound to the
+    signature of the return holding `body` (the shared body by default) under
+    its name, as the triage's accept records it; `by_name_only` writes the
+    record of a driver older than the signatures."""
+    import _filed_returns as _fr
     hc = _loader.load_hooks_config()
     import pathlib
     path = os.path.join(str(hc.state_dir(pathlib.Path(tree), {})), "drive",
                         "P1.json")
     os.makedirs(os.path.dirname(path))
+    held = body if body is not None else _REACH_BODY
+    answers = [a for key in keys for a in _fr.needs_human(
+        [(key.rsplit("#", 1)[0], json.loads(json.dumps(held)), "")])
+        if a["key"] == key]
+    block = _fr.settlement_after({}, answers, "the owner: it stands")
+    block["keys"] = list(keys)
+    if by_name_only:
+        block.pop(_fr.SIGNATURES_FIELD, None)
     with open(path, "w", encoding="utf-8") as fh:
-        json.dump({"answersAccepted": {"keys": keys,
-                                       "reasons": ["the owner: it stands"]}}, fh)
+        json.dump({_fr.SETTLED_FIELD: block}, fh)
 
 
 def _reach_settle_parent(root, keys):
@@ -2007,6 +2020,8 @@ def _read_set_reach_cases(check):
               "written: exit %r, %r" % (code, text[-300:]),
               _reach_outcome(git, sha, code, text, True))
 
+        _bound_settlement_cases(check, fixture)
+
         root, wt, mpath, wpath, git, wgit, sha = fixture("merged-target")
         _rs_sign(wpath, wgit, True, [_ev(wt)])
         _reach_put(root, sha)
@@ -2034,6 +2049,85 @@ def _read_set_reach_cases(check):
         for root in made:
             for path in (root, root + "-wt", root + "-ev", root + "-plan",
                          root + "-main", root + "-sib"):
+                if os.path.isdir(path):
+                    _harness.remove_tree(path)
+
+
+# A diverging phase return with another note: another answer under a name.
+_REACH_OTHER = dict(_REACH_BODY, intent={"answer": "diverges", "missing": [],
+                                         "note": "another reading entirely"})
+
+
+def _bound_settlement_cases(check, fixture):
+    """A human's settlement binds to the answer it settled - the return's
+    content - and a name another answer is filed under later inherits none
+    of it; each case beside the twin that lands."""
+    made = []
+    try:
+        for cid, body in (("rs8", _REACH_OTHER), ("rs8b", None)):
+            root, wt, mpath, wpath, git, wgit, sha = fixture("bound-" + cid)
+            rel = _reach_put(wt, sha)
+            _rs_sign(wpath, wgit, False, [_ev(wt)])
+            wgit("add", "-A")
+            wgit("commit", "-q", "-m", "sign-off and return")
+            _reach_settle(wt, [rel + "#phase"])
+            sib = root + "-sib"
+            git("worktree", "add", "-q", "-b", "other", sib, "main")
+            filed = _reach_file(sib, os.path.join(sib, "docs", "audit",
+                                                  "audit-plan.json"), sha,
+                                body=body)
+            code, text = _reach_close(mpath, root)
+            if cid == "rs8":
+                check("rs8 A SIBLING AT THE SAME HEAD files another `diverges` "
+                      "answer under the name of the return the verdict read, "
+                      "whose settlement names that name: refused - the "
+                      "settlement binds the answer the human saw, and a name "
+                      "the verdict read with another answer is refused "
+                      "whatever any record says: file %r, exit %r, %r"
+                      % (filed[0], code, text[-420:]),
+                      filed[0] == 0 and _reach_outcome(git, sha, code, text,
+                                                       False)
+                      and "under a name the verdict read" in text)
+            else:
+                check("rs8b THE TWIN: ...and the sibling filing a byte-identical "
+                      "copy of the settled answer lands: file %r, exit %r, %r"
+                      % (filed[0], code, text[-300:]),
+                      filed[0] == 0 and _reach_outcome(git, sha, code, text,
+                                                       True))
+
+        for cid, how in (("rs9", "other"), ("rs10", "name"), ("rs10b", "bound")):
+            root, git, mpath, sha = _rs_outside_root("bound-" + cid)
+            made.append(root)
+            _rs_sign(mpath, git, False, [_ev(root)])
+            rel = _reach_put(root, sha)
+            git("add", "-A")
+            git("commit", "-q", "-m", "a return after the verdict")
+            git("checkout", "-q", "main")
+            _reach_settle(root, [rel + "#phase"],
+                          body=_REACH_OTHER if how == "other" else None,
+                          by_name_only=how == "name")
+            code, text = _close(mpath, root, "--no-ff")
+            if cid == "rs9":
+                check("rs9 a settlement recorded with one answer's signature "
+                      "does not cover another answer under the same name - "
+                      "the tip's return, never read, is refused: exit %r, %r"
+                      % (code, text[-360:]),
+                      _reach_outcome(git, sha, code, text, False))
+            elif cid == "rs10":
+                check("rs10 a settlement recorded by name alone is not honoured "
+                      "under a verdict recording what it read, and the refusal "
+                      "says the record binds no answer and how a settlement "
+                      "records one: exit %r, %r" % (code, text[-520:]),
+                      _reach_outcome(git, sha, code, text, False)
+                      and "by name only" in text and "signature" in text)
+            else:
+                check("rs10b THE TWIN: ...and the same settlement bound to the "
+                      "answer's signature lands: exit %r, %r"
+                      % (code, text[-300:]),
+                      _reach_outcome(git, sha, code, text, True))
+    finally:
+        for root in made:
+            for path in (root, root + "-plan"):
                 if os.path.isdir(path):
                     _harness.remove_tree(path)
 

@@ -1245,8 +1245,12 @@ def triage(ctx, state, manifest, phase):
             return dispatch_phase_review(ctx, state, phase)
     still = [dict((k, f.get(k)) for k in ("id", "severity", "file", "issue"))
              for f in open_findings(phase)]
-    settled = set((state.get("answersAccepted") or {}).get("keys") or [])
-    answers = [a for a in human_answers(ctx, phase) if a["key"] not in settled]
+    # A settlement counts for the content it was given for: an answer settled
+    # by name alone is put to the human again, so its accept records the
+    # signature the sign-off verb honours.
+    settled = _fr.settlement_block(state.get(_fr.SETTLED_FIELD), state_path(ctx))
+    answers = [a for a in human_answers(ctx, phase)
+               if (a["key"], a["sha256"]) not in settled["pairs"]]
     after = fixes_after(ctx, phase, mark["head"]) if mark.get("head") else []
     said = ("the phase review returned `%s`" % ((review or {}).get("verdict")
                                                  or "no verdict",)
@@ -1603,11 +1607,8 @@ def apply_phase_answer(ctx, state, manifest, phase, pending, answer, reason,
     if answer == "decline":
         return decline_answer(ctx, state, phase, name, reason)
     if name == "triage" and answer == "accept":
-        held = state.get("answersAccepted") or {}
-        state["answersAccepted"] = {
-            "keys": list(held.get("keys") or [])
-            + [a["key"] for a in pending.get("answers") or []],
-            "reasons": list(held.get("reasons") or []) + [reason]}
+        state[_fr.SETTLED_FIELD] = _fr.settlement_after(
+            state.get(_fr.SETTLED_FIELD), pending.get("answers") or [], reason)
         write_state(ctx, state)
         ctx["did"].append("%d reviewer answer(s) accepted"
                           % (len(pending.get("answers") or []),))
