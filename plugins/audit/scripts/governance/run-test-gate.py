@@ -137,7 +137,8 @@ import _manifest_vocab as _vocab  # noqa: E402  (_strip_line_suffix: one reading
 import _manifest_phases as _phases  # noqa: E402  (subject_of/is_suite_path/gate_entry_paths:
 #                                  the one filename bound "is this path a test file" builds
 #                                  on, moved out from under a leading underscore here rather
-#                                  than copied)
+#                                  than copied; own_gate_entries: the entries `--own`
+#                                  runs, which the executor brief asks too)
 import _fmt  # noqa: E402  (human_duration: a recorded durationMs, in the one spelling
 #                           the terminal and the rendered report both print it in)
 import _loader  # noqa: E402  (load_hooks_config: logs_dir/ensure_local_dir, for --own's
@@ -2228,23 +2229,13 @@ def own_gate_of(manifest, phase_id, task_id):
     entries that measure it are pointed at nothing but ITS OWN `tests.add`
     paths".
 
-    A TASK MEASURED BY ITS PHASE'S GATE HAS NOTHING OF ITS OWN, by
-    definition - `_mio.gate_entries` already answers `source == "phase"`
-    for exactly that case, and this asks for no filtering there: the phase's
-    gate is everybody's, an executor's OWN tests are a narrower claim than
-    any of it can make.
-
-    EVERY KEPT ENTRY CLEARS TWO GATES. It must not be a bare
-    `meta.buildCommands` KEY (`entry in build`) - a key resolves to
-    whatever that build step runs today, and "today" is not this task's
-    claim to make either, however the key happens to be spelled
-    (`e2e.spec` reads path-shaped and is not one). And every path
-    `_manifest_phases.gate_entry_paths` finds in it must be one of this
-    task's own declared `tests.add` paths (`tests_add_path` per entry) -
-    an entry naming ITS test AND ANOTHER'S is not this task's alone to
-    claim either, and an entry naming NO path at all (`gate_entry_paths`
-    empty) is not "pointed at" anything and is dropped for the same reason
-    a bare key is.
+    WHICH ENTRIES ARE THE TASK'S OWN is `_manifest_phases.own_gate_entries`'
+    answer, not this function's: the executor brief asks the same function
+    whether to print `--own` at all, so the brief and this runner cannot
+    disagree about whether there is anything to run. Its docstring holds the
+    rule - none for a task measured by its phase's gate, and of the task's
+    own, only entries that are not a bare build key and name nothing but
+    its `tests.add` paths. This function resolves what it keeps.
 
     NONE LEFT IS AN ERROR, not the ordinary empty-gate state `gate_of`
     reports as itself: `--own` asked a narrower question and got no for an
@@ -2265,21 +2256,8 @@ def own_gate_of(manifest, phase_id, task_id):
     if not isinstance(build, dict):
         build = {}
     preamble = (manifest.get("meta") or {}).get("nodePreamble")
-    entries, source = _mio.gate_entries(phases[0], task)
     tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
-    add_paths = set(p for p in
-                    (_phases.tests_add_path(e)
-                     for e in (tests.get("add") or [])
-                     if isinstance(e, str))
-                    if p is not None)
-    kept = []
-    if source == "task":
-        for entry in entries:
-            if entry in build:
-                continue
-            paths = _phases.gate_entry_paths(entry)
-            if paths and all(p in add_paths for p in paths):
-                kept.append(entry)
+    kept = _phases.own_gate_entries(manifest, phases[0], task)
     if kept:
         return _resolved(kept, build, preamble), "task", None
     basis = tests.get("gateBasis")

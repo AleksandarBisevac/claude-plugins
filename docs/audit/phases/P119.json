@@ -364,7 +364,12 @@
       },
       "startedAt": "2026-10-08T19:38:24Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T20:44:50Z.73bb6b",
+        "status": "passed",
+        "at": "2026-10-08T20:44:50Z"
+      }
     },
     {
       "id": "P119.7-g0k",
@@ -406,18 +411,25 @@
       },
       "startedAt": "2026-10-08T19:38:24Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T20:52:16Z.bcb7b2",
+        "status": "passed",
+        "at": "2026-10-08T20:52:16Z"
+      }
     },
     {
       "id": "P119.8-g0k",
       "title": "Fix BUG-17: audit-task start copies the index-only priority into the phase shard",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes BUG-17. On the sharded layout, `audit-task.py start` writes the phase's priority into the phase shard's body when it starts the phase's first task. priority is an index-only field: the index stub carries it, the copy in the shard is ignored, and validate-manifest warns about it on every later run. start must leave the shard without priority. Find every writer that can copy an index-only field into a shard (the same class), not only the priority one, and fix them in one place. Repro and expected are on the bug. Cases, each red first: start on a sharded plan whose stub carries priority leaves the shard without it and validate-manifest prints no priority warning; the twin, a single-file plan, keeps priority where it lives. Add a mutation probe at scratchpad/P119.8/mut.py (monkeypatch only).",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/scripts/manifest/_manifest_io.py",
-        "plugins/audit/tests/test__manifest_io.py"
+        "plugins/audit/tests/test__manifest_io.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/tests/test__panel_write.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -442,17 +454,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T20:10:49Z",
       "completedAt": null,
       "verifiedBy": [],
-      "bugId": "BUG-17"
+      "bugId": "BUG-17",
+      "testEvidence": {
+        "runId": "2026-10-08T20:59:42Z.09a18d",
+        "status": "passed",
+        "at": "2026-10-08T20:59:42Z"
+      }
     }
   ],
   "startedAt": "2026-10-08T16:35:57Z"

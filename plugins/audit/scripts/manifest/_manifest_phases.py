@@ -1117,6 +1117,39 @@ def gate_entry_paths(entry):
     return found
 
 
+def own_gate_entries(manifest, phase, task):
+    """The gate entries that are `task`'s OWN, as declared and unresolved:
+    what `run-test-gate.py --own` runs, and what decides whether the executor
+    brief prints that command at all - one function, so the brief cannot offer
+    a run the runner then answers with "nothing of its own to run".
+
+    A TASK MEASURED BY ITS PHASE'S GATE HAS NONE: the phase's gate is
+    everybody's, and an executor's own tests are a narrower claim than any of
+    it can make. Of the task's own entries, one is kept only when it is not a
+    bare `meta.buildCommands` key - a key runs whatever that build step runs
+    today, however path-shaped its spelling - and when it names at least one
+    path, every one of them a `tests.add` path of this task. An entry naming
+    no path is pointed at nothing; one naming another test beside this one's
+    is not this task's alone to claim.
+    """
+    build = ((manifest.get("meta") or {}).get("buildCommands") or {})
+    build = build if isinstance(build, dict) else {}
+    entries, source = _mio.gate_entries(phase, task)
+    if source != "task":
+        return []
+    tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
+    add_paths = set(p for p in (tests_add_path(e)
+                                for e in (tests.get("add") or [])
+                                if isinstance(e, str))
+                    if p is not None)
+    kept = []
+    for entry in entries:
+        paths = [] if entry in build else gate_entry_paths(entry)
+        if paths and all(p in add_paths for p in paths):
+            kept.append(entry)
+    return kept
+
+
 # One shell word as written: runs of unquoted non-space characters and whole
 # single- or double-quoted spans, so whitespace inside a quote does not end the
 # word. A backslash outside quotes is an ordinary character here -- see

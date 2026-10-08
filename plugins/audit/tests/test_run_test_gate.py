@@ -7273,6 +7273,23 @@ def _own_cases(check):
           "falling back to the phase's gate: %r" % (borrowed_err,),
           borrowed_kept is None and borrowed_source is None
           and "P1.2 declares no gate entry" in (borrowed_err or ""))
+    # own10's borrowed task names no test, so a rule that let the phase's
+    # gate count as the task's own would still keep nothing there. This one
+    # declares the very test file the phase's gate names, which is the shape
+    # that tells "the phase's entry is never the task's own" from a rule that
+    # merely filters it out by path.
+    named_manifest = json.loads(json.dumps(shared_mp_manifest))
+    named_manifest["phases"][0]["testGate"] = ["lint", entry]
+    named_manifest["phases"][0]["tasks"].append(
+        {"id": "P1.3", "title": "named by the phase", "status": "in_progress",
+         "tests": {"add": ["tests/test_a.py: covers a"]}})
+    named_kept, named_source, named_err = M.own_gate_of(
+        named_manifest, "P1", "P1.3")
+    check("own13 a task with no gate of its own is refused even when the "
+          "PHASE's gate names exactly its tests.add file - that entry is the "
+          "phase's, not the task's: %r" % ((named_kept, named_err),),
+          named_kept is None and named_source is None
+          and "P1.3 declares no gate entry" in (named_err or ""))
 
 
 def _reuse_cases(check):

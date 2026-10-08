@@ -77,6 +77,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   have cost at a five-minute TTL.
 
 ### Changed
+- **The phase reviewer no longer types the answers a script can derive.** Filing the phase review fills each owed task's red-first answer from the executor's helper-made block, and its inherited-tests answer as `not-asked` when the gate runs the whole project, refusing a typed answer that disagrees; the phase brief now lists the existing test files the phase's diff modifies, and the intent answer stays the reviewer's.
 - **`/audit:phase` runs a phase's tasks one at a time, in id order.** It used to run a wave's
   tasks in parallel where their files were disjoint. The step driver records each task's gate
   before the next task starts, because a gate run while a sibling executor edits the same tree
@@ -320,6 +321,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   release is therefore a major is the operator's call, and is not decided here.
 
 ### Fixed
+- **The executor brief prints a test command that can run.** Under `executor.runsGate: own-tests` it printed `run-test-gate.py ... --own --quiet` even when no gate entry of the task's own selects its `tests.add` file, a run that can only answer that it has nothing to run; it now prints that command only when the task's own gate selects its tests, else the gate's command naming the test file, else that no entry names it. The briefs also no longer repeat the hand-back instruction `submit` already prints.
 - **A task whose intent reads `deferred` is listed as still owed its phase review.**
   `_status_facts.intent_unanswered` counted `deferred` as an answer, so `/audit:status` and the
   sign-off verb's output dropped such a task from the list of done tasks with no intent answer.

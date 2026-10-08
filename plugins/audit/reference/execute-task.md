@@ -91,8 +91,11 @@ verb writes and refuses, and what the run commands leave behind, is
      pasting in rather than silently skipping the step: it tells the executor the plan has nothing
      to say about its files, not that you forgot to ask. Its last line,
      `executor.runsGate: <word> (<basis>)`, is the reading the executor runs — paste it with the
-     rest; with `own-tests`, also hand it the finished
-     `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/run-test-gate.py" <manifestPath> <phaseId> --task <taskId> --own --quiet`.
+     rest; with `own-tests`, also hand it the command the *What you run* section of
+     `audit-lookup.py brief <taskId> --role executor` prints. That section chooses between
+     `run-test-gate.py ... --own --quiet` and a command that can run when `--own` would find
+     nothing of the task's own; pass on what it printed, and do not write the `--own` line
+     yourself.
      When `brief` exits non-zero and names the config instead, the value is unrecognised or the
      file does not parse: stop and ask the human — `audit-lookup.py` refuses to print a default
      there, and you must not supply one.

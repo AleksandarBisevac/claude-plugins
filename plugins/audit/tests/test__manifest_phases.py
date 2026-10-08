@@ -1193,6 +1193,35 @@ def _cases(check):
           _gf_clean == [] and M._check_phase_gate({"meta": {}}) == []
           and M._check_phase_gate({}) == [])
 
+    # --- which gate entries are a task's OWN -------------------------------
+    # `run-test-gate.py --own` runs these and the executor brief prints that
+    # command only when there are some, so both ask this one function. Each
+    # dropped entry below is dropped for a different clause: a build key
+    # spelled exactly as the task's own test path (so only the build-key
+    # clause can drop it), an entry naming no path, one naming another
+    # task's test beside this one's.
+    _og_add = ["tests/test_mine.py: sums exactly"]
+    _og_gate = ["tests/test_mine.py", "unit:api", "python3 tests/test_mine.py",
+                "python3 tests/test_mine.py tests/test_other.py"]
+    _og_man = {"meta": {"buildCommands": {
+        "tests/test_mine.py": "npx playwright test"}}}
+    _og_own = getattr(M, "own_gate_entries", lambda *a: "missing")(
+        _og_man, _phase(testGate=["python3 tests/test_mine.py"]),
+        _task("P0.1", tests={"mode": "tdd", "add": _og_add, "gate": _og_gate}))
+    check("og1 a task's own gate entries are the ones naming nothing but its "
+          "tests.add paths - a build key spelled as that path, a pathless entry "
+          "and an "
+          "entry naming another test beside its own are all dropped: %r"
+          % (_og_own,),
+          _og_own == ["python3 tests/test_mine.py"])
+    _og_borrowed = getattr(M, "own_gate_entries", lambda *a: "missing")(
+        _og_man, _phase(testGate=["python3 tests/test_mine.py"]),
+        _task("P0.1", tests={"mode": "tdd", "add": _og_add}))
+    check("og2 SECOND DIRECTION: the identical entry on the PHASE's testGate "
+          "is nothing of the task's own - a task measured by its phase's gate "
+          "has no own entries: %r" % (_og_borrowed,),
+          _og_borrowed == [])
+
 
 def _selftest():
     return _harness.run(_cases)
