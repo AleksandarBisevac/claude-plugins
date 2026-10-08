@@ -41,6 +41,17 @@ invariants check, the sign-off verb, the commit, the landing and the lock
 release, and prints `done`. A red phase gate stops that step before the
 sign-off verb: the verdict is never recorded over it.
 
+THE SIGN-OFF CAN BE SENT BEFORE THE TRIAGE IS PRINTED. The phase reviewer's
+dispatch also prints the call to send after the review files, `next <phase>
+--answer sign-off --reason <the summary>`. That call is taken only once every
+task is terminal (`advance_admissible`); it is applied only where the triage
+it answers would offer nothing else - a `clean` review, no finding open, no
+answer waiting on a human, no fix task closed after the review's head
+(`advance_applies`). Anywhere else that triage is printed as before and the
+did-line says the answer was not applied, so a finding or a human's answer
+still stops at the triage, and the main loop can still hold the landing by
+not sending the call.
+
 EVERY STEP IS AN EXISTING VERB, CALLED AS A SUBPROCESS. An entry point may not
 import another entry point, so each verb is resolved by basename through
 `_loader.script_path` and run: `audit-lock.py`, `audit-task.py` (start, block,
@@ -232,6 +243,13 @@ ANSWERS_RULE = ("Each [accept] line is the human's to settle (AskUserQuestion): 
 # and work enters the plan as a task.
 DECLINE_REMEDY = ("Add the task that answers it: audit-task.py add \"<the fix>\" "
                   "--phase %s --files <files>, then next %s")
+# The call the phase reviewer's dispatch prints to send once it files: the
+# triage's `sign-off`, answered before the triage is printed. It is applied only
+# where that triage would admit no other answer (`advance_applies`); anywhere
+# else the triage prints and the did-line says the answer was not applied.
+ADVANCE_ANSWER = "sign-off"
+ADVANCE_LINE = "then: next %(phase)s --answer sign-off --reason <the summary>"
+ADVANCE_NOT_APPLIED = "sign-off answered in advance, not applied: %s"
 STEPS = {
     "dispatch-executor": {
         "line": "dispatch %(agent)s %(task)s model=%(model)s brief=%(brief)s",
@@ -1094,10 +1112,12 @@ def dispatch_phase_review(ctx, state, phase):
                              "this)" % (out,))
     state["phaseReview"] = {"head": head.group(1)}
     write_state(ctx, state)
-    return instruction("dispatch", step_text(
+    lines = step_text(
         "dispatch-phase-review", agent=REVIEWER_AGENT, phase=phase["id"],
         model=(phase.get("review") or {}).get("model") or "unset",
-        brief=project_relative(ctx, brief)))
+        brief=project_relative(ctx, brief))
+    return instruction("dispatch", lines[:1] + [ADVANCE_LINE % {
+        "phase": ctx["phase"]}] + lines[1:])
 
 
 def filed_at_head(ctx, state, phase):
@@ -1268,12 +1288,44 @@ def triage(ctx, state, manifest, phase):
     said = ("the phase review returned `%s`" % ((review or {}).get("verdict")
                                                  or "no verdict",)
             if review is not None else "no phase review is due")
+    extra = {"findings": still, "answers": answers, "fixesAfter": after,
+             "head": (mark.get("head") or "")[:12]}
+    if ctx.get("advance") is not None:
+        reason = ctx.pop("advance")
+        if advance_applies(review, extra):
+            ctx["did"].append("sign-off answered in advance")
+            return apply_phase_answer(ctx, state, manifest, phase, dict(
+                extra, decision="triage", task=None, start=None, why=said),
+                ADVANCE_ANSWER, reason, ())
+        ctx["did"].append(ADVANCE_NOT_APPLIED % (
+            "the triage below has more than one answer",))
     return decision(ctx, state, "triage", None, "%s; %s%s" % (
         said, "%d finding(s) open" % (len(still),) if still
         else "no finding open", "; %d answer(s) for a human" % (len(answers),)
-        if answers else ""), extra={
-            "findings": still, "answers": answers, "fixesAfter": after,
-            "head": (mark.get("head") or "")[:12]})
+        if answers else ""), extra=extra)
+
+
+def advance_applies(review, triage_fields):
+    """Whether a triage holding `triage_fields` admits `sign-off` as its one
+    answer, so a sign-off sent before it was printed can be applied: a filed
+    review whose verdict is `clean`, no finding open, no reviewer answer
+    waiting on a human, and no fix task closed after the review's head. Each
+    of those is what `fix`, `accept`, `decline` or `re-review` would act on
+    (`answer_refusal`, `triage_refusal`); with none of them, those four are
+    refused and only `sign-off` is left."""
+    return (review is not None and review.get("verdict") == "clean"
+            and not triage_fields.get("findings")
+            and not triage_fields.get("answers")
+            and not triage_fields.get("fixesAfter"))
+
+
+def advance_admissible(phase):
+    """Whether a sign-off sent with no decision pending is taken as an answer in
+    advance: every task of the phase is terminal and the phase is not signed
+    off yet, so the next step is the triage it answers. Anywhere else no
+    triage is due, and the call is refused as answering nothing."""
+    return (not signed_off(phase)
+            and all(t.get("status") in _mio.TERMINAL for t in _tasks(phase)))
 
 
 def add_fix_tasks(ctx, phase, fixes):
@@ -1788,6 +1840,16 @@ def drive(ctx, answer=None, reason=None, fixes=()):
         return E_STOPPED, ("%s %s: stopped - this phase's drive waits on a %s "
                            "decision; answer it with next %s first"
                            % (PREFIX, ctx["phase"], pending["decision"], ctx["phase"]))
+    if (answer == ADVANCE_ANSWER and pending is None and not ctx.get("only")
+            and not fixes and advance_admissible(phase)):
+        if not (reason or "").strip():
+            return E_USAGE, "%s %s: --answer %s needs --reason: it is recorded " \
+                            "with the phase" % (PREFIX, ctx["phase"], answer)
+        ctx["advance"] = reason
+        code, said = drive_phase(ctx, state, phase)
+        if ctx.pop("advance", None) is not None:
+            ctx["did"].append(ADVANCE_NOT_APPLIED % ("no triage was reached",))
+        return code, said
     if answer is not None:
         refused = answer_refusal(ctx, pending, answer, reason, fixes)
         if refused:
@@ -1800,6 +1862,12 @@ def drive(ctx, answer=None, reason=None, fixes=()):
         return E_OK, render_decision(ctx, pending)
     if ctx.get("only"):
         return drive_task(ctx, state)
+    return drive_phase(ctx, state, phase)
+
+
+def drive_phase(ctx, state, phase):
+    """The steps of the whole phase, from wherever its tasks stand: start and
+    advance each in turn, then sign-off once every one is terminal."""
     for _ in range(4 * len(_tasks(phase)) + 4):
         manifest, phase = load_phase(ctx)
         task, how = next_task(manifest, phase)

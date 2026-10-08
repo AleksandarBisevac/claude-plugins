@@ -1274,6 +1274,130 @@ def _signoff_cases(check):
           bool(quiet) is True and quiet.get("added") == []
           and not quiet.get("signedOff") and not quiet.get("landed")
           and not quiet.get("released"))
+    _advance_signoff_cases(check)
+
+
+# The call the phase reviewer's dispatch prints to send after it, and what the
+# drive says when that call meets a triage with more than one answer.
+ADVANCE = ["--answer", "sign-off", "--reason", SUMMARY]
+ADVANCE_CALL = "next %s --answer sign-off --reason <the summary>" % (PHASE,)
+NOT_APPLIED = "sign-off answered in advance, not applied"
+
+
+def _at_phase_review(M, prefix):
+    """A one-task phase under `phase`, driven to the phase reviewer's dispatch
+    and no further: `(root, mpath, the dispatch's print)`."""
+    root, mpath = _repo(prefix, task_ids=TASKS[:1], per_task="phase")
+    run = drive(M, root, mpath, phase_review=False)
+    return root, mpath, run["prints"][-1][1]
+
+
+def _advance_over_fix_after(M):
+    """A clean phase review filed at head H, then a finding recorded and a fix
+    task for it added and closed after H, the triage that close printed taken
+    back out of the driver's state - so the advance call meets the triage
+    afresh, with only the fix task's unreviewed diff to tell it apart from a
+    clean one. `(code, text, signoff calls, signed)` of that call."""
+    root, mpath, text = _at_phase_review(M, "advance-fixafter")
+    _file_phase_review(root, mpath, text)
+    _verb(root, "audit-task.py", [
+        "finding", PHASE, mpath, "--project-dir", root, "--findings-file", "-"],
+        stdin=json.dumps(FINDINGS[:1]))
+    _verb(root, "audit-task.py", [
+        "add", "fix P1-R1", mpath, "--project-dir", root, "--phase", PHASE,
+        "--fixes", "P1-R1", "--files", "src/f1.txt", "--description",
+        "say what changed", "--gate", "true", "--json"])
+    drive(M, root, mpath, answer=None)
+    path = os.path.join(root, ".claude", "state", "drive", "%s.json" % (PHASE,))
+    state = _drive_state(root)
+    state.pop("pending", None)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(state, fh)
+    seen = _counting(M)
+    code, out = _next(M, root, mpath, *ADVANCE)
+    return code, out, seen.get(("audit-task.py", "signoff"), 0), _signed(mpath)
+
+
+def _advance_signoff_cases(check):
+    """A clean phase review answered in advance: the dispatch prints the call
+    to send after it, and that one call signs off when the triage it would
+    print has `sign-off` as its only admissible answer. With a finding open or
+    an answer waiting on a human, the same call prints the triage instead."""
+    M, why = _load("drive_phase_advance")
+    if M is None:
+        check("sq1 the driver loads", False, why)
+        return
+    root, mpath = _repo("advance", task_ids=TASKS[:1], per_task="phase")
+    early, early_text = _next(M, root, mpath, *ADVANCE)
+    run = drive(M, root, mpath, phase_review=False)
+    text = run["prints"][-1][1]
+    check("sq0 mid-phase, with no decision pending and a task still open, the "
+          "same call is refused as it always was - an advance answer exists "
+          "only once every task is closed: %r" % ((early, early_text),),
+          early == M.E_USAGE and "no decision is pending" in early_text)
+    calls = [ln for ln in text.splitlines() if ADVANCE_CALL in ln]
+    check("sq1 the phase reviewer's dispatch prints, once, the call to send "
+          "after the reviewer files, inside the print bound: %r" % (text,),
+          run["steps"][-1] == ("dispatch", "reviewer", PHASE)
+          and len(calls) == 1 and len(text.encode("utf-8")) <= BOUND)
+    _file_phase_review(root, mpath, text)
+    seen = _counting(M)
+    code, out = _next(M, root, mpath, *ADVANCE)
+    phase = _phase_of(mpath)
+    did = M.did_events(out)
+    check("sq2 a clean review answered in advance signs off in that one call: "
+          "exit 0, `done`, the sign-off verb ran once, the summary is the one "
+          "given, and its did-line says signed off, landed and released - the "
+          "words stream-cost places the close by: %r"
+          % ((code, out, seen.get(("audit-task.py", "signoff")),
+              phase.get("summary")),),
+          code == 0 and instruction(out) == DONE
+          and seen.get(("audit-task.py", "signoff")) == 1
+          and _signed(mpath) and phase.get("summary") == SUMMARY
+          and did["signedOff"] and did["landed"] and did["released"]
+          and NOT_APPLIED not in out)
+
+    def refused(module, prefix, **filing):
+        root, mpath, text = _at_phase_review(module, prefix)
+        _file_phase_review(root, mpath, text, **filing)
+        seen = _counting(module)
+        code, out = _next(module, root, mpath, *ADVANCE)
+        return code, out, seen.get(("audit-task.py", "signoff"), 0), \
+            _signed(mpath)
+    for label, prefix, filing in (
+            ("sq3 with a finding open", "advance-finding",
+             {"findings": FINDINGS[:1]}),
+            ("sq4 with an answer waiting on a human", "advance-answer",
+             {"entry_over": {"P1.1": {"answer": "diverges",
+                                      "note": "it edits f2, not f1"}}})):
+        code, out, ran, signed = refused(M, prefix, **filing)
+        check("%s, the same call prints the triage, says the answer was not "
+              "applied, and runs no sign-off: %r" % (label, (code, out, ran)),
+              code == 0 and instruction(out) == TRIAGE and NOT_APPLIED in out
+              and ran == 0 and not signed)
+    code, out, ran, signed = _advance_over_fix_after(M)
+    check("sq5 with a clean review whose head precedes a closed fix task - a "
+          "diff no review saw - the same call prints the triage, says the "
+          "answer was not applied, and runs no sign-off: %r" % ((code, out, ran),),
+          code == 0 and instruction(out) == TRIAGE and NOT_APPLIED in out
+          and "re-review" in out and ran == 0 and not signed)
+    mutant, _w = _load("drive_phase_advance_always")
+    if getattr(mutant, "advance_applies", None) is not None:
+        mutant.advance_applies = lambda review, pending: True
+    _c, _o, ran_m, signed_m = refused(mutant, "advance-mut",
+                                      findings=FINDINGS[:1])
+    check("sq3m RED TWIN: a driver that applies the advance answer over an open "
+          "finding signs the phase off, and sq3's count catches it: %r"
+          % ((ran_m, signed_m),),
+          ran_m == 1 and signed_m)
+    if getattr(mutant, "advance_admissible", None) is not None:
+        mutant.advance_admissible = lambda phase: True
+    root_m, mpath_m = _repo("advance-early-mut", task_ids=TASKS[:1],
+                            per_task="phase")
+    early_m, _t = _next(mutant, root_m, mpath_m, *ADVANCE)
+    check("sq0m RED TWIN: a driver that takes the advance answer while a task is "
+          "still open accepts sq0's call rather than refusing it: exit %r"
+          % (early_m,), early_m == 0)
 
 
 # --- what a human decides before the landing ----------------------------------

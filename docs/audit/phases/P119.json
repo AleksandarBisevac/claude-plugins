@@ -142,7 +142,7 @@
     {
       "id": "P119.3-g0k",
       "title": "submit prints the hand-back instruction as its last line",
-      "status": "in_progress",
+      "status": "done",
       "description": "Lever B of docs/research/pipeline-cost-levers.md, section 6. After a filed return, `drive-phase.py submit` prints the filed line and then one more line: hand back the line above as the whole reply. A refused submit says to hand back the refusal verbatim. This covers the executor and the phase reviewer's submit --head. The prompts' closing sentence about the hand-back is removed, since the print carries it. Micro-test as listed: the last line of submit's output is the instruction and the filed line occurs once; the refusal twin; `tools/measure-context.py --gate` holds both agents under their ceilings. Do not add a stop hook (the section prices it as a net cost). No CHANGELOG edit here; the next driver task carries the line. Every case is shown red first.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -173,24 +173,32 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7d6b46e2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Lever B. After `drive-phase.py submit` files a return, its last printed line tells the agent to hand back the line above as its whole reply. When `submit` refuses, the last line says to hand back the refusal verbatim. Both texts are STEPS entries (handback-filed, handback-refused), printed by handback_lines(code) after render() in run_submit. This covers the executor, the per-task reviewer and the phase reviewer's `submit --head`, every refusal submit() returns, and run_submit's two stderr usage refusals. Argparse's own errors are not covered. The hand-back sentence is removed from audit-executor.md and audit-reviewer.md. `tools/measure-context.py --gate` holds the executor at 7030/9000 and the reviewer at 6920/7000. No stop hook was added: the levers document prices one as a net cost.\n\nCases, inside the ds-block stage so the red helper can narrow to them:\n- dh1: the filed line, then the instruction, with \"return filed\" once and the print within its byte bound;\n- dh2, dh3: the refusal twins;\n- dh4: only the refusal says verbatim;\n- dh5: the phase reviewer's --head, filed and refused;\n- dh6: neither prompt says hand back, and both name submit;\n- ds2 now expects the two-line print.\n\nRed-first: proved (ds-block at HEAD 8/15, with ds2 and dh1-dh6 red).\n\nMutation probe (scratchpad P119.3-g0k/mut.py), re-run by the orchestrator: exit 0, baseline green, five rows KILLED (no-line, always-filed, always-refused, not-verbatim, line-first).\n\nLeft for the next task in the brief's file: audit-lookup.py's briefs still say \"hand back one line\", so an agent now reads the instruction twice.\n\nObserved: test_drive_phase.py takes about 225 s on its own, against the sweep's 300 s per-file cap. HEAD's copy takes about 230 s, so this change did not cause it. A loaded machine timed it out once.",
+        "descriptive": "When an agent files its result, the last thing it reads is to hand back that one line, or the refusal word for word, so the long prose report the main session had to read is no longer asked for."
       },
       "startedAt": "2026-10-08T17:50:04Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T18:39:57Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-08T18:39:45Z.a2f924",
         "status": "passed",
         "at": "2026-10-08T18:39:45Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7d6b46e2",
+        "at": "2026-10-08T18:39:57Z",
+        "basis": "orchestrator check: lever B as designed, no stop hook; mutation probe re-run, five rows killed"
       }
     },
     {
       "id": "P119.4-g0k",
       "title": "a clean phase review is signed off in the same call that files it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Lever C of docs/research/pipeline-cost-levers.md, section 6. At the phase reviewer's dispatch, the driver also prints the call to send after it: `next <phase> --answer sign-off --reason <the summary>`. That answer applies only when the triage has sign-off as its single admissible answer: review clean, no finding open, no answer waiting on a human, no fix task after its head. Otherwise the triage prints as today and the answer is reported as not applied. The sign-off verb, gate, invariants, commit, landing and lock release run unchanged. Micro-test as listed: a clean review answered in advance signs off and prints done in one call; with a finding open, or an answer waiting on a human, the same call prints the triage and runs no sign-off; stream-cost's driven-span cases still place the landing in the close. CHANGELOG under [Unreleased] gets one line for lever B (the hand-back print) and one for this. Every case is shown red first.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -220,21 +228,26 @@
       "dependsOn": [
         "P119.3-g0k"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T18:39:58Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T19:28:02Z.29a29a",
+        "status": "passed",
+        "at": "2026-10-08T19:28:02Z"
+      }
     },
     {
       "id": "P119.5-g0k",
       "title": "the phase review's mechanical answers are computed and its brief names the existing tests a phase modified",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Lever D of docs/research/pipeline-cost-levers.md, section 6. The user decided the phase review stays, narrowed. The filing verb fills two of each task's answers into the phase return: the red-first block when it is the helper's, and inherited tests `not-asked` when tests.gate runs the whole project. The reviewer's prompt keeps them only where reading is needed: a red-first the helper did not grade, or a gate selecting named tests. The phase brief gains the computed list of existing test files the phase's diff modifies; new test files are not listed. Micro-test as listed: a phase return filed without the mechanical fields is completed from the executor's filed block and the gate's shape; the two refusal twins; the brief lists an existing test file a fixture phase appends to, and not a new one. The intent answer stays the reviewer's, and the sign-off verb still refuses until every owed task has one. Every case is shown red first.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -268,16 +281,21 @@
       "dependsOn": [
         "P119.2-g0k"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T18:39:58Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T19:38:03Z.f28823",
+        "status": "passed",
+        "at": "2026-10-08T19:38:03Z"
+      }
     },
     {
       "id": "P119.6-g0k",
@@ -311,6 +329,48 @@
       "blockedBy": [],
       "dependsOn": [
         "P119.5-g0k"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P119.7-g0k",
+      "title": "the driver's suite runs well inside the sweep's per-file cap",
+      "status": "pending",
+      "description": "Internal fault, measured twice in this phase. On its own, plugins/audit/tests/test_drive_phase.py --selftest takes about 217-231 s on a quiet machine, and 277 s was observed under load. tools/sweep-selftests.py caps each file at 300 s, so a loaded gate can time the file out and read a sound change as red. Find where the suite's time goes by profiling the stages; the likely shape is a real git fixture repo built per case. Cut the time by sharing fixtures across cases that only read them, or by building a fixture once per stage and copying it, without changing what any case asserts. Every case id keeps its name and its verdict. Report the per-stage time before and after, measured twice with a gap, and the whole-file time. The cap is not raised, and the 1:1 test-file rule (one tests/test_<module>.py per module) is kept, so the suite is not split into new files. A mutation that breaks a shared fixture must still turn the cases that read it red; show one.",
+      "files": [
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P119.4-g0k"
       ],
       "attempts": 0,
       "maxAttempts": 3,

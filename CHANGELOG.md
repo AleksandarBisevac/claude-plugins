@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 ## [Unreleased]
 
 ### Added
+- **`drive-phase.py submit` ends on the hand-back instruction**: its last line tells the agent to hand back the filed line above it, or the refusal above it verbatim, as its whole reply, so the agents' prompts no longer state the hand-back.
+- **A clean phase review's sign-off can be sent with its dispatch.** The phase reviewer's dispatch also prints `next <phase> --answer sign-off --reason <the summary>` to send once the review files; that one call signs off, lands and prints `done` when the triage would offer nothing but `sign-off` - a `clean` review, no finding open, no answer waiting on a human, no fix task after the review's head - and otherwise prints the triage as before and says the answer was not applied.
 - **`audit-task.py add --from-file -` reads the planning batch off stdin**, through the same checks and single revalidated write as a file; `/audit:phase add` now passes the plan as a quoted heredoc, so planning writes no scratch file, and an empty stdin is refused rather than read as nothing.
 - **`audit-status.py` and `render-report.py` take the manifest as an optional argument.**
   Given none, they find it themselves through one shared resolver,
