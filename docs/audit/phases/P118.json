@@ -589,9 +589,44 @@
         "resolution": "fixed in P118.21-v7t (55982b08): Add one no-verdict, parent-only case, or cite vr1/vr3 for what they actually pin.",
         "fixTask": "P118.21-v7t",
         "commit": "55982b08"
+      },
+      {
+        "id": "P118-R64",
+        "severity": "med",
+        "file": "plugins/audit/scripts/git/close-phase.py returns_by_place (checkouts list); COMPATIBILITY.md; docstring",
+        "issue": "Only three checkouts are read: the landing's, the branch's worktree and the target's worktree. A sibling worktree forked from main shows the phase with no verdict, so file-return accepts a diverges return there after a tip verdict, and close-phase lands it with no human asked. This was simulated with the real filing verb. The docstring and COMPATIBILITY claim every checkout's evidence is a candidate.",
+        "resolution": "Read every worktree git lists, or bind the verdict to what it read so that the place stops mattering. Add the sibling-worktree deny case and its allow twin, and make the documents claim only what holds."
+      },
+      {
+        "id": "P118-R65",
+        "severity": "med",
+        "file": "plugins/audit/scripts/git/close-phase.py unseen_returns (signing checkout's evidence counted as read)",
+        "issue": "One checkout signs off at the tip, then switches to main, where the copy shows no verdict. There file-return writes an untracked diverges return. The checkout switches back, and close-phase from the branch's checkout lands, because every return in the signing checkout's evidence counts as read, including one filed after the verdict. This was simulated. No docstring cell names it, and the CHANGELOG and the guide read as covering it.",
+        "resolution": "Let the landing tell a return the verdict read apart from one filed after it, for example by having the sign-off record the returns it read. Add the switch-away, file, switch-back case and its twin."
+      },
+      {
+        "id": "P118-R66",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py tip group settle under VERDICT_AT_EITHER",
+        "issue": "Predates the diff. Take a plan outside the repo with a diverges return committed at the tip and settled in the signing checkout's record. A landing from main after the checkout left the branch is refused, because the tip group settles only through places['tree'], which is None. That over-fires; landing from the branch's checkout goes through.",
+        "resolution": "Settle such a group through every known checkout's record, and add the case."
+      },
+      {
+        "id": "P118-R67",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py docstring, removed-worktree cell",
+        "issue": "'restoring the worktree restores the record' is false with the default stateDir, which lives inside the removed worktree.",
+        "resolution": "Drop the clause, or say the record survives only with a stateDir outside the checkout."
+      },
+      {
+        "id": "P118-R68",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md vr range citation",
+        "issue": "The citation vr1-vr23b implies a vr22 that does not exist.",
+        "resolution": "Renumber the cases or cite them by name."
       }
     ],
-    "outcome": "[findings: 63 - 5 high, 23 med, 35 low; 63 with a recorded fix commit]"
+    "outcome": "[findings: 68 - 5 high, 25 med, 38 low; 63 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2074,6 +2109,58 @@
         "at": "2026-10-08T13:04:37Z",
         "basis": "orchestrator check: one rule (a verdict settles only what its signing checkout read) over every checkout and both refs; executor's mutation probe re-run, each mutation red, unmutated green"
       }
+    },
+    {
+      "id": "P118.22-v7t",
+      "title": "a verdict covers only the returns its sign-off read, wherever a later one is filed",
+      "status": "pending",
+      "description": "Fixes P118 review round 7 findings R64-R68 by binding the verdict to what it read, so the place a return sits stops deciding. When signoff writes a verdict, it also records on the phase review the content signatures of every filed phase return its own refusal read: the returns in its checkout's evidence, and the tip's committed returns where they differ. At the landing, close-phase gathers every filed phase return it can find: every worktree git lists (prunable ones skipped), the branch tip and the target ref. Each one whose signature is not in the verdict's read set and needs a human is refused, unless a settlement record of any known checkout names it. A return filed after the verdict, in any checkout including the signing one, is therefore never covered by that verdict. A verdict written before this field existed falls back to today's per-place reading, and the documents say so. Every new case is shown red first with its allow twin: the sibling-worktree filing, the switch-away/file/switch-back filing, and the plan-outside tip return settled by the signer after the checkout left the branch. The docstring table, COMPATIBILITY.md, the guide and CHANGELOG claim exactly what holds; the removed-worktree clause and the case citation range are corrected.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/reference/manifest-conventions.md",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-07T21:17:01Z"
