@@ -132,9 +132,12 @@ NA = "not-applicable"
 # the others forbid and nothing whatever besides. A reader comparing three
 # commit-shaped rules needs them adjacent; separated, the differences that matter
 # read as omissions.
+#
+# `landing-committed` comes last because it is the last thing a phase does: the
+# landing, and the record of it reaching git.
 CHECK_NAMES = ("commit-scope", "audit-state-scope", "index-scope",
                "evidence-committed", "branch-history", "manifest-revalidated",
-               "high-risk-model", "base-ref")
+               "high-risk-model", "base-ref", "landing-committed")
 
 # A commit whose file list `git show --name-only` will not print. Stated as a
 # constant because the empty output it produces is indistinguishable from "this
@@ -1595,6 +1598,97 @@ def base_ref(manifest, phase, git_root):
     return result("base-ref", basis, breaches, gaps, 1)
 
 
+# --- landing committed --------------------------------------------------------
+# A landing writes the phase's `mergedAt` and its derived `done` into the
+# parent's copy of the plan. Left there as an edit, a clone of the parent reads
+# the phase as still running, and the next commit made in that tree sweeps the
+# stamp into work it has nothing to do with. The one check here that reads the
+# working tree, because its subject is what git has NOT recorded yet.
+LANDING_FIELDS = ("status", "mergedAt")
+
+
+def _phase_records(body, phase_id):
+    """The records of `phase_id` in one plan file: the body itself when the
+    file is a shard, else the matching entries of its `phases`."""
+    if not isinstance(body, dict):
+        return []
+    if str(body.get("id")) == str(phase_id):
+        return [body]
+    return [ph for ph in (body.get("phases") or [])
+            if isinstance(ph, dict) and str(ph.get("id")) == str(phase_id)]
+
+
+def _stamp_of(body, phase_id):
+    """`{field: value}` of the landing's fields on the first record of the
+    phase in `body`, or None when the file holds no record of it."""
+    records = _phase_records(body, phase_id)
+    if not records:
+        return None
+    return dict((f, records[0].get(f)) for f in LANDING_FIELDS
+                if f in records[0])
+
+
+def _head_body(git_root, rel):
+    """`(body, None)` - `rel` as HEAD commits it, parsed - or `(None, why)`."""
+    code, out = _git(git_root, ["show", "HEAD:%s" % (rel,)])
+    if code != 0:
+        return None, "git holds no copy of %s at HEAD" % (rel,)
+    try:
+        return json.loads(out), None
+    except ValueError as exc:
+        return None, "HEAD's copy of %s does not parse (%s)" % (rel, exc)
+
+
+def landing_committed(phase, manifest_path, git_root):
+    """A landed phase whose stamp, as the working tree's plan files hold it,
+    differs from what HEAD commits. It compares the stamp, never the file's
+    dirtiness, so another edit to the plan is not this breach."""
+    name = "landing-committed"
+    pid = str((phase or {}).get("id"))
+    if not (phase or {}).get("mergedAt"):
+        return result(name, "phase.mergedAt is null: the phase has not landed, "
+                      "so there is no landing stamp to be committed", [], [],
+                      examined=False, applies=False)
+    index_abs, phase_abs = manifest_files(manifest_path, phase)
+    files = [phase_abs] + ([index_abs] if index_abs != phase_abs else [])
+    breaches, gaps, compared = [], [], []
+    for absolute in files:
+        rel = _rel(absolute, git_root)
+        if rel is None:
+            gaps.append("%s lies outside the git root, so it cannot be "
+                        "committed at all" % (absolute,))
+            continue
+        try:
+            with open(absolute, "r", encoding="utf-8") as fh:
+                here = _stamp_of(json.load(fh), pid)
+        except (OSError, ValueError) as exc:
+            gaps.append("%s cannot be read here (%s)" % (rel, exc))
+            continue
+        committed, why = _head_body(git_root, rel)
+        if why:
+            gaps.append(why)
+            continue
+        if here is None:
+            continue
+        compared.append(rel)
+        at_head = _stamp_of(committed, pid) or {}
+        moved = [f for f in sorted(here) if here[f] != at_head.get(f)]
+        if moved:
+            breaches.append(found(
+                "%s: phase %s landed at %s, and its %s in the working tree is "
+                "not what HEAD commits (%s) - the landing's stamp is "
+                "uncommitted" % (
+                    rel, pid, phase.get("mergedAt"),
+                    ", ".join("%s %s" % (f, here[f]) for f in moved),
+                    ", ".join("%s %s" % (f, at_head.get(f)) for f in moved)),
+                "%s %s" % (rel, pid), local=True))
+    basis = ("the landing fields (%s) of phase %s in %s, read from the working "
+             "tree and compared with HEAD's commit of the same file"
+             % (", ".join(LANDING_FIELDS), pid,
+                ", ".join(compared) or "no file that could be compared"))
+    return result(name, basis, breaches, gaps, examined=bool(compared))
+
+
 # --- the whole phase ----------------------------------------------------------
 def check_phase(manifest, phase_id, manifest_path, git_root, project,
                 ledger_dir=None):
@@ -1645,6 +1739,7 @@ def check_phase(manifest, phase_id, manifest_path, git_root, project,
                              phase_file_rel, phase_file_abs),
         high_risk_model(phase, ledger_dir),
         base_ref(manifest, phase, git_root),
+        landing_committed(phase, manifest_path, git_root),
     ]
     order = dict((name, i) for i, name in enumerate(CHECK_NAMES))
     checks.sort(key=lambda c: order.get(c["name"], len(order)))

@@ -56,7 +56,7 @@ def _load(modname):
 
 
 # --- the fixture -------------------------------------------------------------
-def _plan(task_ids, gate):
+def _plan(task_ids, gate, phase_gate=None):
     tasks = []
     for n, tid in enumerate(task_ids, 1):
         tasks.append({
@@ -71,17 +71,22 @@ def _plan(task_ids, gate):
                       "expectRedFirst": False}})
     return {"meta": {"version": 2, "developmentBranch": "main",
                      "branchPrefix": "audit"},
+            "fileIndex": dict(("src/f%d.txt" % (n,), [tid])
+                              for n, tid in enumerate(task_ids, 1)),
             "phases": [{"id": PHASE, "title": "one", "status": "pending",
                         "desiredOutcome": "three files changed",
                         "review": {"model": "sonnet"},
-                        "testGate": list(gate), "tasks": tasks}]}
+                        "testGate": list(gate if phase_gate is None
+                                         else phase_gate), "tasks": tasks}]}
 
 
-def _repo(prefix, task_ids=TASKS, gate=("true",), per_task="always"):
+def _repo(prefix, task_ids=TASKS, gate=("true",), per_task="always",
+          phase_gate=None):
     """A committed repository holding the plan, one source file per task, and
     a `.gitignore` for the driver's and the briefs' state directory. `per_task`
     is `review.perTask`: `always` is the reviewer-per-task drive most cases here
-    are about, and the `dk` cases drive the other two readings."""
+    are about, and the `dk` cases drive the other two readings. `phase_gate`
+    is the phase's own `testGate` when it differs from the tasks' gate."""
     root = os.path.realpath(_harness.fixture_root("drive-%s-" % (prefix,)))
     os.makedirs(os.path.join(root, "docs", "audit"))
     os.makedirs(os.path.join(root, ".claude"))
@@ -96,7 +101,7 @@ def _repo(prefix, task_ids=TASKS, gate=("true",), per_task="always"):
             fh.write("v0\n")
     mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
     with open(mpath, "w") as fh:
-        json.dump(_plan(task_ids, gate), fh, indent=2)
+        json.dump(_plan(task_ids, gate, phase_gate), fh, indent=2)
     # The identity is the repository's own, not only this call's: the verbs the
     # driver runs commit in it too, and a sweep pins HOME and refuses a guessed
     # identity, so nothing else would supply one.
@@ -151,8 +156,15 @@ def _verb(root, name, args, stdin=None):
 
 
 def _edit(root, task_id, text):
-    n = TASKS.index(task_id) + 1
-    with open(os.path.join(root, "src", "f%d.txt" % (n,)), "w") as fh:
+    """Write `text` into the task's own file: `src/f<n>.txt` for a fixture task,
+    the first file the plan declares for any other - a fix task added in the
+    drive."""
+    if task_id in TASKS:
+        rel = "src/f%d.txt" % (TASKS.index(task_id) + 1,)
+    else:
+        mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+        rel = (tasks_of(mpath).get(task_id, {}).get("files") or ["src/f1.txt"])[0]
+    with open(os.path.join(root, *rel.split("/")), "w") as fh:
         fh.write(text)
 
 
@@ -185,6 +197,32 @@ def _file_reviewer(root, mpath, task_id, answer="matches"):
                                 "--project-dir", root], stdin=json.dumps(body))
 
 
+_BRIEF = re.compile(r"\bbrief=(\S+)")
+_HEAD_LINE = re.compile(r"^head: ([0-9a-f]{7,40})\s*$", re.M)
+
+
+def _file_phase_review(root, mpath, text, findings=()):
+    """Play the phase reviewer: read the head off the brief the dispatch names,
+    answer every task the plan holds as `deferred` - the tasks owed their
+    answers - and file through `submit --head`. Returns its `(code, text)`."""
+    brief = _BRIEF.search(text)
+    with open(os.path.join(root, *brief.group(1).split("/"))) as fh:
+        head = _HEAD_LINE.search(fh.read()).group(1)
+    entries = [{"id": tid, "commit": t.get("commit"), "answer": "matches",
+                "note": "as asked", "missing": [], "redFirst": "not-attempted",
+                "redFirstBasis": "gate-only: no test is owed",
+                "inheritedTests": "not-asked",
+                "inheritedTestsBasis": "the gate is `true` and selects no test file"}
+               for tid, t in sorted(tasks_of(mpath).items())
+               if (t.get("intentCheck") or {}).get("answer") == "deferred"]
+    review = {"findings": list(findings),
+              "intent": {"answer": "matches", "note": "the phase as asked"},
+              "verdict": "findings" if findings else "clean", "tasks": entries}
+    return _verb(root, DRIVER, ["submit", PHASE, "--role", "reviewer", mpath,
+                                "--project-dir", root, "--head", head],
+                 stdin=json.dumps(review))
+
+
 # --- reading what the driver printed ------------------------------------------
 _DISPATCH = re.compile(r"^dispatch (\S+) (\S+)")
 
@@ -205,30 +243,60 @@ def instruction(text):
     return ("none", None, None)
 
 
-def drive(M, root, mpath, on_dispatch=None, cap=40, returns=None):
+SUMMARY = "three files changed, as the phase asked"
+
+
+def sign_off(kind, text):
+    """The default answer to a decision: the triage signs the phase off with
+    its summary; any other decision is left for the case to read."""
+    if kind[1] == "triage":
+        return ["--answer", "sign-off", "--reason", SUMMARY]
+    return None
+
+
+def drive(M, root, mpath, on_dispatch=None, cap=40, returns=None,
+          answer=sign_off, phase_review=True, findings=()):
     """Play the main loop until `done`, a stop, or `cap` calls.
 
     -> {"prints": [(code, text)], "steps": [instruction], "nexts", "dispatches"}
     `on_dispatch(role, task)` runs after the test filed that agent's return,
-    for a case that changes the tree between two steps."""
+    for a case that changes the tree between two steps. `answer(kind, text)`
+    gives the flags that answer a printed decision, None to run a plain `next`
+    again, or False to stop there; `answer=None` stops at the first decision.
+    With `phase_review` False the drive stops at the phase review's dispatch
+    rather than filing it, and `findings` is what a filed one carries."""
     prints, steps = [], []
     dispatches = 0
+    reply = []
     with _Env(root):
         for _ in range(cap):
             said = []
-            code = M.main(["next", PHASE, mpath, "--project-dir", root],
+            code = M.main(["next", PHASE, mpath, "--project-dir", root] + reply,
                           out=said.append)
+            reply = []
             text = "\n".join(said)
             prints.append((code, text))
             kind = instruction(text)
             steps.append(kind)
             if code != 0 or kind[0] in ("done", "none"):
                 break
+            if kind[0] == "decide":
+                if answer is None:
+                    break
+                reply = answer(kind, text)
+                if reply is False:
+                    break
+                reply = reply or []
+                continue
             if kind[0] == "dispatch":
-                dispatches += 1
                 _, role, tid = kind
+                if tid == PHASE and not phase_review:
+                    break
+                dispatches += 1
                 if role == "executor":
                     _file_executor(root, mpath, tid, (returns or {}).get(tid))
+                elif tid == PHASE:
+                    _file_phase_review(root, mpath, text, findings)
                 else:
                     _file_reviewer(root, mpath, tid)
                 if on_dispatch is not None:
@@ -243,11 +311,17 @@ def model_steps(run):
     return run["nexts"] - 1 + run["dispatches"]
 
 
+TRIAGE = ("decide", "triage", None)
+DONE = ("done", None, None)
+
+
 def expected_sequence(task_ids):
+    """Executor and reviewer for each task, then sign-off: with no review
+    skill and no task owed a phase answer, the triage and the final step."""
     seq = []
     for tid in task_ids:
         seq += [("dispatch", "executor", tid), ("dispatch", "reviewer", tid)]
-    return seq + [("done", None, None)]
+    return seq + [TRIAGE, DONE]
 
 
 def tasks_of(mpath):
@@ -298,8 +372,10 @@ def _drive_cases(check):
           steps == expected_sequence(TASKS))
     check("dp2 the main loop makes four requests a task - dispatch the executor, "
           "next, dispatch the reviewer, next - plus the one next that opened the "
-          "drive: %d requests for %d tasks" % (model_steps(run), len(TASKS)),
-          model_steps(run) == 4 * len(TASKS) and run["nexts"] == 2 * len(TASKS) + 1)
+          "drive and the one that answers the triage: %d requests for %d tasks"
+          % (model_steps(run), len(TASKS)),
+          model_steps(run) == 4 * len(TASKS) + 1
+          and run["nexts"] == 2 * len(TASKS) + 2)
     sizes = [len(text.encode("utf-8")) for code, text in run["prints"]]
     check("dp3 every success print is at most %d bytes: %r" % (BOUND, sizes),
           all(code == 0 for code, _t in run["prints"])
@@ -334,8 +410,8 @@ def _drive_cases(check):
     mutant, _w = _load("drive_phase_stop_after_close")
     real_close = mutant.close_task
 
-    def close_then_stop(ctx, state, phase, task):
-        stopped = real_close(ctx, state, phase, task)
+    def close_then_stop(ctx, state, phase, task, intent_basis=None):
+        stopped = real_close(ctx, state, phase, task, intent_basis=intent_basis)
         if stopped is not None:
             return stopped
         return mutant.instruction("decide", ["decide continue %s: closed"
@@ -348,7 +424,7 @@ def _drive_cases(check):
           "and dp2's count catches it - over a drive that still closed every task, "
           "so the extra requests are the mutation's and not a broken drive's: %d"
           % (model_steps(run_m),),
-          model_steps(run_m) == 5 * len(TASKS)
+          model_steps(run_m) == 5 * len(TASKS) + 1
           and run_m["steps"][-1] == ("done", None, None))
 
     mutant, _w = _load("drive_phase_echo")
@@ -479,15 +555,16 @@ def _key_cases(check):
         check("dk1 the driver loads", False, why)
         return
     root, mpath = _repo("phase", per_task="phase")
-    run = drive(M, root, mpath)
+    run = drive(M, root, mpath, phase_review=False)
     tasks = tasks_of(mpath)
     check("dk1 under `phase` the drive dispatches the executor of each task and "
-          "no reviewer, records each task's gate, and every task it closes "
-          "records `deferred` bound to its commit: %r"
+          "no per-task reviewer - the one reviewer is the phase's, at sign-off - "
+          "records each task's gate, and every task it closes records `deferred` "
+          "bound to its commit: %r"
           % ((run["steps"], [(t, (tasks.get(t, {}).get("intentCheck") or {})
                                 .get("answer")) for t in TASKS]),),
           run["steps"] == [("dispatch", "executor", t) for t in TASKS]
-          + [("done", None, None)]
+          + [("dispatch", "reviewer", PHASE)]
           and all(_ledger_has_green(root, mpath, t) for t in TASKS)
           and all((tasks.get(t, {}).get("intentCheck") or {}).get("answer")
                   == "deferred"
@@ -636,6 +713,7 @@ def _submit_cases(check):
     plan = _plan(TASKS[:1], ("true",))
     task = plan["phases"][0]["tasks"][0]
     task["files"] = ["src/mine.py", "tests/test_mine.py"]
+    plan["fileIndex"] = dict((f, ["P1.1"]) for f in task["files"])
     task["tests"] = {"mode": "tdd", "add": ["tests/test_mine.py: v is two"],
                      "gate": ["true"], "expectRedFirst": True}
     root, mpath = _repo("tdd", task_ids=TASKS[:1])
@@ -693,7 +771,7 @@ def _submit_cases(check):
 
     # The phase review files through the same door, keyed on its head.
     root, mpath = _repo("phasereturn", task_ids=TASKS[:1], per_task="phase")
-    drive(M, root, mpath)
+    drive(M, root, mpath, phase_review=False)
     done = tasks_of(mpath)["P1.1"]
     entry = {"id": "P1.1", "commit": done.get("commit"), "answer": "matches",
              "note": "as asked", "missing": [], "redFirst": "not-attempted",
@@ -756,6 +834,185 @@ def _submit_mutant_cases(check):
           code_m == 1 and "stamp taken" in text_m)
 
 
+# --- sign-off -------------------------------------------------------------------
+FINDINGS = [{"severity": "med", "file": "src/f1.txt:1", "issue": "f1 says too little",
+             "resolution": "say what changed"},
+            {"severity": "low", "file": "src/f2.txt", "issue": "f2 has no newline",
+             "resolution": "end it with one"},
+            {"severity": "low", "file": "src/f3.txt", "issue": "f3 repeats f2",
+             "resolution": "leave it"}]
+
+
+def _phase_of(mpath):
+    return [p for p in _mio.load_manifest(mpath)["phases"] if p["id"] == PHASE][0]
+
+
+def _signoff_steps(run):
+    """The instructions printed after the last task's executor dispatch."""
+    steps = run["steps"]
+    last = max(i for i, s in enumerate(steps) if s[:2] == ("dispatch", "executor"))
+    return steps[last + 1:]
+
+
+def _git_out(root, *args):
+    return subprocess.run(_GIT + list(args), cwd=root, capture_output=True,
+                          text=True).stdout
+
+
+def _counting(module):
+    """Wrap `module.run_verb` so each verb it runs is counted by its words:
+    `{(script, first argument): calls}`."""
+    seen = {}
+    real = module.run_verb
+
+    def counted(ctx, script, args, stdin=None):
+        key = (script, (list(args) or [""])[0])
+        seen[key] = seen.get(key, 0) + 1
+        return real(ctx, script, args, stdin=stdin)
+    module.run_verb = counted
+    return seen
+
+
+def _signoff_cases(check):
+    """Sign-off as one step: the phase review's dispatch, one triage decision,
+    then the gate, the invariants, the sign-off verb, the commit, the landing
+    and the lock release, run by one `next`."""
+    M, why = _load("drive_phase_signoff")
+    if M is None:
+        check("sg1 the driver loads", False, why)
+        return
+    root, mpath = _repo("signoff", per_task="phase")
+    run = drive(M, root, mpath)
+    tail = _signoff_steps(run)
+    phase = _phase_of(mpath)
+    check("sg1 under `phase` the model-facing steps of sign-off are the phase "
+          "review's dispatch, the triage decision and the final step: %r"
+          % (tail,),
+          tail == [("dispatch", "reviewer", PHASE), TRIAGE, DONE])
+    tasks = tasks_of(mpath)
+    plan_dirt = _git_out(root, "status", "--porcelain", "--", "docs").strip()
+    check("sg2 the final step signed the phase off with the triage's summary, "
+          "the phase review's answers reached every task, the sign-off is "
+          "committed with the plan clean in git, and the drive left no lock and "
+          "no state: %r"
+          % (((phase.get("review") or {}).get("status"), phase.get("summary"),
+              [(t, (tasks[t].get("intentCheck") or {}).get("answer"))
+               for t in TASKS], plan_dirt, run["prints"][-1][1]),),
+          (phase.get("review") or {}).get("status") == "passed"
+          and phase.get("summary") == SUMMARY
+          and all((tasks[t].get("intentCheck") or {}).get("answer") == "matches"
+                  for t in TASKS)
+          and plan_dirt == ""
+          and "chore(audit-state): phase P1 - sign-off" in _git_out(
+              root, "log", "--format=%s")
+          and not os.path.exists(os.path.join(root, ".claude", "state", "drive"))
+          and "phase-%s" % (PHASE,) not in _verb(
+              root, "audit-lock.py", ["status", "--project", root])[1])
+
+    # A red phase gate: every task's gate is green, the phase's is not.
+    def red_gate(module, prefix):
+        root, mpath = _repo(prefix, task_ids=TASKS[:1], phase_gate=("false",))
+        seen = _counting(module)
+        return root, mpath, drive(module, root, mpath), seen
+    root, mpath, run, seen = red_gate(M, "redgate")
+    code, text = run["prints"][-1]
+    phase = _phase_of(mpath)
+    check("sg3 a red phase gate stops the step before the sign-off verb: exit 1, "
+          "the stop names the gate, `audit-task.py signoff` never ran, and the "
+          "phase records no verdict and no summary: %r"
+          % ((code, seen.get(("audit-task.py", "signoff")),
+              (phase.get("review") or {}).get("status"), phase.get("summary"),
+              text[:300]),),
+          code == 1 and run["steps"][-1] == ("none", None, None)
+          and "phase gate is red" in text
+          and not seen.get(("audit-task.py", "signoff"))
+          and (phase.get("review") or {}).get("status") not in ("passed",
+                                                                 "skipped")
+          and not phase.get("summary"))
+    with _Env(root):
+        said = []
+        again = M.main(["next", PHASE, mpath, "--project-dir", root],
+                       out=said.append)
+    check("sg3b ...and the next `next` prints the triage again, so the step is "
+          "answered afresh once the gate is fixed: %r" % ("\n".join(said)[:200],),
+          again == 0 and instruction("\n".join(said)) == TRIAGE)
+    mutant, _w = _load("drive_phase_signoff_no_gate")
+    # A driver with no phase gate to replace has no gate step at all, and the
+    # mutant is that driver unchanged - its own call count is still the reading.
+    real_gate = getattr(mutant, "phase_gate", None)
+    if real_gate is not None:
+        mutant.phase_gate = lambda ctx, phase: (0,) + tuple(
+            real_gate(ctx, phase)[1:])
+    _r, mpath_m, run_m, seen_m = red_gate(mutant, "redgate-mut")
+    check("sg3m RED TWIN: a driver that reads the red phase gate as green goes "
+          "on to the sign-off verb, and sg3's count of its calls catches it: %r"
+          % (seen_m.get(("audit-task.py", "signoff")),),
+          seen_m.get(("audit-task.py", "signoff"), 0) >= 1)
+
+    # A phase review with several findings: recorded in one call, triaged once.
+    root, mpath = _repo("findings", per_task="phase")
+    M2, _w = _load("drive_phase_signoff_count")
+    seen = _counting(M2)
+    run = drive(M2, root, mpath, findings=FINDINGS, answer=None)
+    recorded = (_phase_of(mpath).get("review") or {}).get("findings") or []
+    triage = run["prints"][-1][1]
+    calls = seen.get(("audit-task.py", "finding"), 0)
+    check("sg4 a phase review of several findings records all of them in ONE "
+          "`finding` call, before the triage: %d call(s), %r"
+          % (calls, [f.get("id") for f in recorded]),
+          calls == 1 and [f.get("id") for f in recorded]
+          == ["P1-R1", "P1-R2", "P1-R3"]
+          and run["steps"][-1] == TRIAGE)
+    lines = triage.splitlines()
+    bound = getattr(M2, "TRIAGE_LINE_BYTES", 0)
+    check("sg5 the triage lists each finding with its options, and a fix task's "
+          "predicted price with its basis, every line inside %d bytes: %r"
+          % (bound, lines),
+          all(any(fid in ln for ln in lines)
+              for fid in ("P1-R1", "P1-R2", "P1-R3"))
+          and "--fix" in triage and "sign-off" in triage
+          and "predicted" in triage and "design" in triage
+          and all(len(ln.encode("utf-8")) <= bound for ln in lines))
+    mutant, _w = _load("drive_phase_signoff_each")
+    seen_m = _counting(mutant)
+    real_record = getattr(mutant, "record_findings", None)
+    if real_record is not None:
+        mutant.record_findings = lambda ctx, phase, found: [
+            real_record(ctx, phase, [one]) for one in found][-1]
+    root_m, mpath_m = _repo("findings-mut", task_ids=TASKS[:1], per_task="phase")
+    drive(mutant, root_m, mpath_m, findings=FINDINGS, answer=None)
+    check("sg4m RED TWIN: a driver that records each finding with its own call "
+          "makes one call per finding, and sg4's count catches it: %r"
+          % (seen_m.get(("audit-task.py", "finding")),),
+          seen_m.get(("audit-task.py", "finding"), 0) == len(FINDINGS))
+
+    # Fix one finding: a task added with --fixes, driven, then the triage again.
+    answers = iter([["--answer", "fix", "--fix", "P1-R1"],
+                    ["--answer", "sign-off", "--reason", SUMMARY]])
+    with _Env(root):
+        said = []
+        M2.main(["next", PHASE, mpath, "--project-dir", root, "--answer",
+                 "bogus"], out=said.append)
+    run = drive(M2, root, mpath, answer=lambda kind, text: next(answers, None))
+    tasks = tasks_of(mpath)
+    fix = [t for t in tasks.values() if t.get("fixes") == ["P1-R1"]]
+    found = dict((f.get("id"), f) for f in (_phase_of(mpath).get("review") or {})
+                 .get("findings") or [])
+    triages = [t for (_c, t), s in zip(run["prints"], run["steps"]) if s == TRIAGE]
+    check("sg6 a fix task from a finding is added with --fixes, driven like any "
+          "task, and the triage then lists only what is still open before the "
+          "phase signs off: %r"
+          % ((run["steps"], [t.get("id") for t in fix],
+              (found.get("P1-R1") or {}).get("fixTask")),),
+          len(fix) == 1 and fix[0].get("status") == "done"
+          and (found.get("P1-R1") or {}).get("fixTask") == fix[0].get("id")
+          and ("dispatch", "executor", fix[0].get("id")) in run["steps"]
+          and len(triages) == 2 and "P1-R1" in triages[0]
+          and "P1-R1" not in triages[1] and "P1-R2" in triages[1]
+          and run["steps"][-1] == DONE
+          and (_phase_of(mpath).get("review") or {}).get("status") == "passed")
+
+
 _TALLY = "%s: %d/%d cases " + "passed"
 
 
@@ -784,6 +1041,7 @@ def _selftest():
         _harness.stage(check, "dk-block", _key_cases)
         _harness.stage(check, "ds-block", _submit_cases)
         _harness.stage(check, "dsm-block", _submit_mutant_cases)
+        _harness.stage(check, "sg-block", _signoff_cases)
     return _harness.run(body)
 
 

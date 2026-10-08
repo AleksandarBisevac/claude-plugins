@@ -716,9 +716,11 @@ an executor return's optional `claims` text becomes its own paragraph of that co
 message. **What it cannot hold:** the task id and the role are the caller's word — a filing
 under the wrong role, or for a task nobody has filed for yet, is not refused.
 
-**A phase review files too, under `review.perTask: phase`:** `file-return <phaseId> --role
-reviewer --head <sha>`, the head the phase brief (`audit-lookup.py brief <phaseId> --role
-phase`) was computed at and prints. It writes `<evidence dir>/returns/<phaseId>/<head>.reviewer.json`
+**A phase review files too:** `file-return <phaseId> --role reviewer --head <sha>`, the head
+the phase brief (`audit-lookup.py brief <phaseId> --role phase`) was computed at and prints.
+The brief names that filing whatever `review.perTask` reads - with `"tasks": []` when no task
+is owed its answers - because the step driver reads the review's findings from the filed
+return. It writes `<evidence dir>/returns/<phaseId>/<head>.reviewer.json`
 once per head, so a review after fix tasks files beside the earlier one. It refuses, writing
 nothing and naming each entry: a return with no `tasks` entry for a task owed its answers (a
 task with a commit whose key reads `phase`, not a recorded fix task, whose commit no filed

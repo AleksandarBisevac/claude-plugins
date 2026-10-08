@@ -130,8 +130,7 @@ the history guard; the rest rests on you.
 description or the claim, so it is its own key, and `verdict` stays about the CODE.
 
 **Your last act is one call:** `drive-phase.py submit <taskId> --role reviewer` (in
-`mode: phase` with tasks owed, `<phaseId> --role reviewer --head <sha>`, your brief's
-head), the object on stdin, from the plugin's `scripts/governance/` with your brief's
-manifest and `--project-dir`. It refuses a wrong shape writing nothing, and files
-once. Hand back what it printed. In `mode: phase` with no task owed, the object is
-your final message.
+`mode: phase` always `<phaseId> --role reviewer --head <sha>`, your brief's head, with
+`"tasks": []` when no task is owed), the object on stdin, from the plugin's
+`scripts/governance/` with your brief's manifest and `--project-dir`. It refuses a
+wrong shape writing nothing, and files once. Hand back what it printed.

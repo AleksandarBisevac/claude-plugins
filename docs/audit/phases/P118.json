@@ -484,7 +484,7 @@
     {
       "id": "P118.7",
       "title": "agent prompts are trimmed and each agent files its own return through submit",
-      "status": "in_progress",
+      "status": "done",
       "description": "Design section 6, T8. The executor's last act is drive-phase.py submit --role executor <task>, which takes the stamp, runs the red-first helper on a tdd task and files the return. The reviewer uses submit --role reviewer. The prose that explained those steps leaves each prompt. Targets: executor at most 9000 bytes, reviewer at most 7000, by measure-context. submit's cases are shown red first.",
       "files": [
         "PLUGIN-BUILD-GUIDE.md",
@@ -530,33 +530,67 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "709c1959",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Design T8.\n\ndrive-phase.py submit <task|phase> --role executor|reviewer [--head SHA] [-- <test command>] reads the return on stdin and works in this order:\n1. it checks the shape;\n2. it refuses an already-filed return before anything runs;\n3. it runs stamp-verification red when a test command is given, and requires one on a tdd task;\n4. it takes the stamp last;\n5. it files through the write-once file-return. The phase return passes --head through the same path.\n\nExit codes: 0 when filed, 1 when refused with nothing written, 2 on a usage error.\n\nCases:\n- the missing-stamp pair ds1/ds2;\n- the second-filing refusal ds3;\n- the malformed-return pair ds4/ds5;\n- the tdd cases ds6 and ds7;\n- the phase return ds8;\n- the relative-manifest submit ds9;\n- the mutant twins ds1m, ds3m and ds4m.\n\nEvery drive in the suite now plays agents through submit.\n\nBoth agent prompts lose the procedure prose submit replaces, measured by tools/measure-context.py: executor 19591 to 6762 bytes, reviewer 20937 to 6986, against ceilings of 9000 and 7000. AGENT_CEILINGS with ceiling_breaches holds them in the sweep (mc19, with the red twin mc20). Every pinned sentence and the README's tools rows are kept. omitClaudeMd, preloaded skills and the one-hour cacheTtl are not taken, for the reasons C13 gives, recorded beside the ceiling.\n\nThe executor, reviewer and phase briefs print one resolved submit line, with a tdd task's test command after --, and no separate stamp, red or file-return step. bf14 was proved red at HEAD.\n\nThe README, the build guide and prove-gates follow. execute-task.md and task.md still describe the agent filing directly; that is P118.9's rewrite. The reviewer prompt's margin to its ceiling is small by design.",
+        "descriptive": "An agent's last act is now one command that takes its stamp, proves red-first and files its result; the procedure that command replaces left both agent prompts, which shrank to about a third of their size."
       },
       "startedAt": "2026-10-08T01:50:23Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T02:34:42Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "tools/measure-context.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-08T02:34:32Z.aaf51a",
         "status": "passed",
         "at": "2026-10-08T02:34:32Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "709c1959",
+        "at": "2026-10-08T02:34:42Z",
+        "basis": "orchestrator check: submit's refusals each have a red mutant; both prompts under their ceilings with a sweep case holding them; briefs and prompts now agree on submit"
       }
     },
     {
       "id": "P118.8",
       "title": "sign-off is one step that ends with the landing stamp committed",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Design section 6, T10. At sign-off the driver prints the phase reviewer's dispatch, then one decide for the triage, then runs the phase gate, the invariants check, the sign-off verb, the commit, the landing and the lock release as one step. Findings are recorded from one file in one call. The landing commits the status and mergedAt it stamps into the parent tree, and verify-invariants flags a landed phase whose status is uncommitted (internal fault F564). Cases are shown red first.",
       "files": [
-        "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/scripts/manifest/audit-task.py",
-        "plugins/audit/scripts/git/close-phase.py",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/README.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/commands/review.md",
+        "plugins/audit/commands/task.md",
         "plugins/audit/reference/phase-signoff.md",
-        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/governance/commit-audit-state.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/verify-invariants.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test__invariants.py",
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/tests/test_audit_lookup.py",
         "plugins/audit/tests/test_audit_task.py",
-        "plugins/audit/tests/test_close_phase.py"
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_commit_audit_state.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_verify_invariants.py",
+        "tools/check-git-pipeline.py",
+        "tools/prove-gates.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -581,16 +615,21 @@
       "dependsOn": [
         "P118.6"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T02:34:43Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T03:48:36Z.e79c2b",
+        "status": "passed",
+        "at": "2026-10-08T03:48:36Z"
+      }
     },
     {
       "id": "P118.9",

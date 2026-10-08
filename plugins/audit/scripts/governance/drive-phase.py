@@ -12,18 +12,35 @@ exactly one instruction for the model:
     `audit-lookup.py brief` wrote;
   * `decide`   - a named decision with its options, answered with
     `next <phase> --answer <option>`;
-  * `done`     - every task of the phase is closed.
+  * `done`     - the phase is signed off, committed and landed.
 
 The command body is the loop: run `next`, do what it prints, run `next` again.
 A task then costs four requests - dispatch the executor, `next` (the recorded
 gate, the stamp grade, the reviewer's brief), dispatch the reviewer, `next` (the
 findings, the commit, the close, and the next task's start and brief).
 
+SIGN-OFF IS THE SAME LOOP, AND ITS LAST STEP IS ONE STEP. Once every task is
+closed, `next` prints the phase reviewer's dispatch with the brief
+`audit-lookup.py brief --role phase` wrote - when a review skill resolves or a
+task is owed its answers there - and the reviewer files through `submit
+--head`. The `next` after it records the review's findings in one `finding`
+call and prints one `decide triage`: each open finding with its options, and
+what a fix task is predicted to cost, with the basis of that figure. Answered
+`fix`, each named finding becomes a task through `audit-task.py add --fixes`,
+which the drive then runs like any other, and the triage is printed again.
+Answered `sign-off` with the summary, one `next` runs the phase gate, the
+invariants check, the sign-off verb, the commit, the landing and the lock
+release, and prints `done`. A red phase gate stops that step before the
+sign-off verb: the verdict is never recorded over it.
+
 EVERY STEP IS AN EXISTING VERB, CALLED AS A SUBPROCESS. An entry point may not
 import another entry point, so each verb is resolved by basename through
 `_loader.script_path` and run: `audit-lock.py`, `audit-task.py` (start, block,
 finding, done), `audit-lookup.py brief`, `run-test-gate.py --record`,
-`stamp-verification.py compare` and `commit-task-work.py`. Nothing here
+`stamp-verification.py compare` and `commit-task-work.py`; at sign-off
+`derive-phase-gate.py`, `verify-invariants.py`, `audit-task.py signoff` and
+`add --fixes`, `commit-audit-state.py`, `commit-manifest-index.py` and
+`close-phase.py`. Nothing here
 re-decides what a verb decides; the driver reads exit codes and the one line a
 verb prints, and a verb that refuses stops the drive with its own words printed
 whole - the refusal and the remedy it names - and exit 1.
@@ -77,7 +94,8 @@ and the prompt only names the call:
 
 Usage:
   drive-phase.py next <phaseId> [manifest] [--project-dir DIR]
-                 [--answer OPTION] [--reason TEXT] [--verbose]
+                 [--answer OPTION] [--reason TEXT] [--fix FINDING[,FINDING]]
+                 [--verbose]
   drive-phase.py submit <taskId|phaseId> --role executor|reviewer [manifest]
                  [--head SHA] [--project-dir DIR] [--case ID ...]
                  [--introduces SYMBOL ...] [--deps-from DIR] [--verbose]
@@ -138,6 +156,7 @@ import _evidence_io as _evio  # noqa: E402  (project_config_for, evidence_dir)
 import _filed_returns as _fr  # noqa: E402  (where a filed return lives, and its read;
 #                                            the per-task review key a task holds)
 import _config_rules  # noqa: E402  (review_per_task_mode: the config's reading now)
+import _areas  # noqa: E402  (resolve_review_skill: whether the phase review has a skill)
 import _status_facts  # noqa: E402  (ready_tasks: the one readiness rule)
 
 E_OK, E_STOPPED, E_USAGE = 0, 1, 2
@@ -196,8 +215,23 @@ STEPS = {
     "answer": {
         "line": "answer: next %(phase)s --answer %(options)s%(reason)s",
         "rule": ()},
+    "dispatch-phase-review": {
+        "line": "dispatch %(agent)s %(phase)s model=%(model)s brief=%(brief)s",
+        "rule": ()},
+    "decide-no-phase-review-return": {
+        "line": "decide no-phase-review-return %(phase)s: the phase reviewer was "
+                "dispatched for head %(why)s and filed no return",
+        "rule": ()},
+    "decide-invariant-breach": {
+        "line": "decide invariant-breach %(phase)s: %(why)s",
+        "rule": ("verify-invariants.py found a breach; signing off over it is a "
+                 "human's decision, and the reason is kept in the summary",)},
+    "decide-not-fast-forward": {
+        "line": "decide not-fast-forward %(phase)s: the parent moved during the "
+                "phase, so close-phase.py did not merge (%(why)s)",
+        "rule": ()},
     "done": {
-        "line": "done %(phase)s: every task is closed; sign-off is next",
+        "line": "done %(phase)s: %(why)s",
         "rule": ()},
 }
 
@@ -211,7 +245,29 @@ DECISIONS = {
     "no-change": (("no-change", "retry"), ("no-change",)),
     "review-answer": (("continue",), ()),
     "stalled": ((), ()),
+    "triage": (("sign-off", "fix"), ("sign-off",)),
+    "no-phase-review-return": (("redispatch",), ()),
+    "invariant-breach": (("accept",), ("accept",)),
+    "not-fast-forward": (("no-ff",), ()),
 }
+
+# --- sign-off's constants -------------------------------------------------------
+# The triage print holds one line per open finding, so it is bounded per line
+# rather than as a whole: a review with many findings is a longer decision, not a
+# cut one.
+TRIAGE_LINE_BYTES = 160
+# What a fix task is predicted to cost, in USD-equivalent: the range the
+# pipeline-cost design gives for rung 1 (section 5.4: the sign-off with a fix
+# task less the sign-off without, in two benchmark sessions). A prediction for a
+# task of that benchmark's size, never a measurement of this project's.
+FIX_TASK_PREDICTED = (0.1045, 0.1192)
+FIX_TASK_PRICE_BASIS = ("pipeline-cost design 5.4, rung 1, predicted for a "
+                        "benchmark-size task; not measured here")
+# The verdict sign-off records, and the word a phase's review status carries
+# once it is recorded.
+SIGNED_OFF = ("passed", "skipped")
+_BRIEF_HEAD = re.compile(r"^head: ([0-9a-f]{7,40})\s*$", re.M)
+_RUN_ID = re.compile(r"evidence: recorded (\S+)")
 
 
 def step_text(name, **fields):
@@ -391,16 +447,20 @@ def instruction(kind, lines):
     return {"kind": kind, "lines": list(lines)}
 
 
-def decision(ctx, state, name, task, why):
+def decision(ctx, state, name, task, why, extra=None):
     """Record `name` as the decision the drive waits on, and its instruction."""
-    state["pending"] = {"decision": name, "task": task["id"] if task else None,
-                        "start": start_key(task) if task else None, "why": why}
+    state["pending"] = dict({"decision": name,
+                             "task": task["id"] if task else None,
+                             "start": start_key(task) if task else None,
+                             "why": why}, **(extra or {}))
     write_state(ctx, state)
     return render_decision(ctx, state["pending"])
 
 
 def render_decision(ctx, pending):
     name = pending["decision"]
+    if name == "triage":
+        return render_triage(ctx, pending)
     options, needs = DECISIONS[name]
     lines = step_text("decide-%s" % (name,), task=pending.get("task"),
                       phase=ctx["phase"], why=pending.get("why") or "")
@@ -584,11 +644,17 @@ def advance(ctx, state, manifest, phase, task):
         return close_task(ctx, state, phase, task, intent_basis=(
             "review.perTask signals: no signal fired - red-first proved and the "
             "return's gates agree with the recorded green"))
+    if key == _fr.KEY_PHASE and _fr.is_fix_task(task, phase):
+        # A fix task answers to the phase review that raised its findings, and
+        # the landing reads `not-asked` with this basis as its answer.
+        return close_task(ctx, state, phase, task, intent_basis=(
+            "a fix task for %s: the phase review that raised the finding is its "
+            "review" % (", ".join(str(f) for f in task.get("fixes") or []),)))
     return close_task(ctx, state, phase, task)
 
 
 # --- answering a decision ---------------------------------------------------------
-def answer_refusal(ctx, pending, answer, reason):
+def answer_refusal(ctx, pending, answer, reason, fixes=()):
     """A usage refusal for an answer this decision does not take, or None."""
     if pending is None:
         return "no decision is pending for %s, so --answer %s answers nothing" % (
@@ -598,15 +664,31 @@ def answer_refusal(ctx, pending, answer, reason):
         return "decision %s offers %s, not %r" % (
             pending["decision"], "|".join(options) or "no option", answer)
     if answer in needs and not (reason or "").strip():
-        return "--answer %s needs --reason: it is recorded with the task" % (answer,)
+        return "--answer %s needs --reason: it is recorded with the %s" % (
+            answer, "phase" if pending.get("task") is None else "task")
+    if answer == "fix":
+        open_ids = [f.get("id") for f in pending.get("findings") or []]
+        unknown = [f for f in fixes if f not in open_ids]
+        if not fixes or unknown:
+            return ("--answer fix names the findings to fix with --fix, from the "
+                    "open ones: %s%s" % (", ".join(open_ids) or "none",
+                                         "; not open: %s" % (", ".join(unknown),)
+                                         if unknown else ""))
+    elif fixes:
+        return "--fix belongs to --answer fix"
     return None
 
 
-def apply_answer(ctx, state, manifest, phase, pending, answer, reason):
+def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
+                 fixes=()):
     """Act on an answer to the pending decision; None when the drive goes on."""
     task = _mio.tasks_by_id(manifest).get(pending.get("task")) if pending.get("task") else None
     state.pop("pending", None)
     write_state(ctx, state)
+    if pending["decision"] in ("triage", "no-phase-review-return",
+                               "invariant-breach", "not-fast-forward"):
+        return apply_phase_answer(ctx, state, manifest, phase, pending, answer,
+                                  reason, fixes)
     if answer == "block":
         _out, stop = _verb_or_stop(ctx, "audit-task.py", _task_args(
             ctx, "block", task["id"], "--reason", reason))
@@ -658,8 +740,8 @@ def take_lock(ctx, state):
     return stop
 
 
-def finish(ctx, state):
-    """Every task is terminal: give back a lock this drive took, drop the state."""
+def finish(ctx, state, why):
+    """The phase is through: give back a lock this drive took, drop the state."""
     if state.get("lock") == "taken":
         _out, stop = _verb_or_stop(ctx, "audit-lock.py", [
             "release", "phase-%s" % (ctx["phase"],), "--project", ctx["gitRoot"]])
@@ -670,7 +752,344 @@ def finish(ctx, state):
         os.rmdir(os.path.dirname(state_path(ctx)))
     except OSError:
         pass
-    return instruction("done", step_text("done", phase=ctx["phase"]))
+    return instruction("done", step_text("done", phase=ctx["phase"], why=why))
+
+
+# --- sign-off --------------------------------------------------------------------
+def signed_off(phase):
+    return (phase.get("review") or {}).get("status") in SIGNED_OFF
+
+
+def git_head(ctx):
+    """The commit HEAD names in the project's repository, or None."""
+    try:
+        done = subprocess.run(["git", "-C", ctx["gitRoot"], "rev-parse", "HEAD"],
+                              capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout.strip() if done.returncode == 0 else None
+
+
+def review_due(ctx, manifest, phase):
+    """`(due, problem)` - whether sign-off dispatches the phase reviewer: a
+    review skill resolves for the phase, or a task is owed its answers there."""
+    skill, _basis = _areas.resolve_review_skill(manifest, phase)
+    if skill:
+        return True, None
+    live, problem = None, None
+    if any(t.get("commit") and _fr.review_key(t, phase, None)[1] == "config"
+           for t in _tasks(phase)):
+        live, problem = _config_rules.review_per_task_mode(ctx["config"])
+    if problem:
+        return False, problem
+    answered = _fr.answered_entries(_fr.phase_returns(ctx["evidence"],
+                                                      phase["id"]))
+    return any(_fr.owed_answer(t, phase, live, answered)
+               for t in _tasks(phase)), None
+
+
+def dispatch_phase_review(ctx, state, phase):
+    """Write the phase brief through `audit-lookup.py` and hand back the phase
+    reviewer's dispatch, remembering the head the brief names."""
+    out, stop = _verb_or_stop(ctx, "audit-lookup.py", [
+        ctx["manifest"], "brief", phase["id"], "--role", "phase",
+        "--project", ctx["project"]])
+    if stop is not None:
+        return stop
+    found = re.search(r"written: (.+)$", out.strip())
+    brief = found.group(1).strip() if found else ""
+    try:
+        with open(os.path.join(ctx["project"], brief), "r",
+                  encoding="utf-8") as fh:
+            head = _BRIEF_HEAD.search(fh.read())
+    except OSError:
+        head = None
+    if not head:
+        return relay_refusal(ctx, "audit-lookup.py", 0,
+                             "%s\n(the driver found no brief naming a head in "
+                             "this)" % (out,))
+    state["phaseReview"] = {"head": head.group(1)}
+    write_state(ctx, state)
+    return instruction("dispatch", step_text(
+        "dispatch-phase-review", agent=REVIEWER_AGENT, phase=phase["id"],
+        model=(phase.get("review") or {}).get("model") or "unset",
+        brief=project_relative(ctx, brief)))
+
+
+def record_findings(ctx, phase, found):
+    """Every finding of the phase review, recorded in ONE `finding` call; None,
+    or the stop."""
+    _out, stop = _verb_or_stop(ctx, "audit-task.py", [
+        "finding", phase["id"], ctx["manifest"], "--project-dir", ctx["project"],
+        "--findings-file", "-"], stdin=json.dumps(found))
+    return stop
+
+
+def open_findings(phase):
+    """The phase review's findings no fix task names yet, in plan order."""
+    return [f for f in (phase.get("review") or {}).get("findings") or []
+            if isinstance(f, dict) and f.get("id") and not f.get("fixTask")]
+
+
+def _clip(text, width):
+    data = (text or "").encode("utf-8")
+    if len(data) <= width:
+        return text or ""
+    return data[:max(width - 3, 0)].decode("utf-8", "ignore") + "..."
+
+
+def render_triage(ctx, pending):
+    """The triage decision: each open finding with its options, a fix task's
+    predicted price with its basis, and how to answer."""
+    found = pending.get("findings") or []
+    lines = ["decide triage %s: %s" % (ctx["phase"], pending.get("why") or "")]
+    for f in found:
+        lines.append(_clip("  %s %s %s - %s [fix|leave]" % (
+            f.get("id"), f.get("severity"), f.get("file"), f.get("issue")),
+            TRIAGE_LINE_BYTES))
+    if found:
+        lines.append(_clip("  a fix task: %.2f-%.2f USD-eq predicted (%s)" % (
+            FIX_TASK_PREDICTED + (FIX_TASK_PRICE_BASIS,)), TRIAGE_LINE_BYTES))
+        lines.append("answer: next %s --answer fix --fix <id>[,<id>]" % (
+            ctx["phase"],))
+    lines.append("answer: next %s --answer sign-off --reason <the summary>%s" % (
+        ctx["phase"], " (a finding left is kept as recorded)" if found else ""))
+    return instruction("decide", lines)
+
+
+def triage(ctx, state, manifest, phase):
+    """The phase review, its findings and the triage: the dispatch, a decision,
+    or a stop."""
+    mark = state.get("phaseReview") or {}
+    if not mark.get("head"):
+        due, problem = review_due(ctx, manifest, phase)
+        if problem:
+            return _stopped(ctx, problem)
+        if due:
+            return dispatch_phase_review(ctx, state, phase)
+    review = None
+    if mark.get("head"):
+        _text, review, problem = _fr.read_filed_return(os.path.join(
+            ctx["evidence"], *_fr.phase_return_rel(phase["id"],
+                                                   mark["head"]).split("/")))
+        if problem:
+            return _stopped(ctx, problem)
+        if review is None:
+            return decision(ctx, state, "no-phase-review-return", None,
+                            mark["head"][:12])
+        found = review.get("findings") or []
+        if found and not mark.get("findings"):
+            stop = record_findings(ctx, phase, found)
+            if stop is not None:
+                return stop
+            mark["findings"] = True
+            state["phaseReview"] = mark
+            write_state(ctx, state)
+            ctx["did"].append("%d finding(s) of the phase review filed"
+                              % (len(found),))
+            manifest, phase = load_phase(ctx)
+    still = [dict((k, f.get(k)) for k in ("id", "severity", "file", "issue"))
+             for f in open_findings(phase)]
+    said = ("the phase review returned `%s`" % ((review or {}).get("verdict")
+                                                 or "no verdict",)
+            if review is not None else "no phase review is due")
+    return decision(ctx, state, "triage", None, "%s; %s" % (
+        said, "%d finding(s) open" % (len(still),) if still
+        else "no finding open"), extra={"findings": still})
+
+
+def add_fix_tasks(ctx, phase, fixes):
+    """A task for each named finding through `audit-task.py add --fixes`, in one
+    call each; None, or the stop."""
+    by_id = dict((f.get("id"), f) for f in open_findings(phase))
+    for fid in fixes:
+        found = by_id.get(fid) or {}
+        path = str(found.get("file") or "").split(":", 1)[0].strip()
+        args = ["add", _clip("fix %s: %s" % (fid, found.get("issue") or ""), 80),
+                ctx["manifest"], "--project-dir", ctx["project"],
+                "--phase", phase["id"], "--fixes", fid, "--description",
+                "%s\n\nResolution asked: %s" % (found.get("issue") or "",
+                                                found.get("resolution") or ""),
+                "--json"]
+        if path:
+            args += ["--files", path]
+        out, stop = _verb_or_stop(ctx, "audit-task.py", args)
+        if stop is not None:
+            return stop
+        try:
+            added = json.loads(out).get("id")
+        except ValueError:
+            added = None
+        ctx["did"].append("fix task %s added for %s" % (added or "?", fid))
+    return None
+
+
+def phase_gate(ctx, phase):
+    """`(code, stdout, stderr)` of the phase's recorded gate run, derived first
+    when `meta.phaseGate.mode` asks for a derived gate."""
+    manifest = _mio.load_manifest(ctx["manifest"])
+    if ((manifest.get("meta") or {}).get("phaseGate") or {}).get("mode"):
+        code, out, err = run_verb(ctx, "derive-phase-gate.py", [
+            ctx["manifest"], phase["id"]])
+        if code != 0:
+            return code, out, err
+    return run_verb(ctx, "run-test-gate.py", [
+        ctx["manifest"], phase["id"], "--record", "--project-dir", ctx["project"]])
+
+
+def red_gate_stop(ctx, phase, out, err):
+    """The stop for a red phase gate: its own GATE lines, the invariants run
+    beside it, and the remedy. Nothing after the gate has run."""
+    said = [ln for ln in (out + err).splitlines() if "GATE" in ln][:3]
+    run_id = _RUN_ID.search(out + err)
+    code, inv_out, inv_err = run_verb(ctx, "verify-invariants.py", [
+        ctx["manifest"], phase["id"], "--project", ctx["project"]])
+    breaches = [ln.strip() for ln in (inv_out + inv_err).splitlines()
+                if ln.strip().startswith("BREACH")][:3]
+    lines = ["%s %s: stopped - the phase gate is red, so the sign-off verb did not "
+             "run" % (PREFIX, ctx["phase"])] + ["  " + ln.strip() for ln in said]
+    lines.append("  invariants: %s" % (
+        "; ".join(breaches) if breaches else "exit %d, no breach printed" % (code,)))
+    lines.append("  fix it in a new task: audit-task.py add \"<the fix>\" --phase "
+                 "%s --files <files>%s, then next %s" % (
+                     phase["id"], " --failing-from %s" % (run_id.group(1),)
+                     if run_id else "", ctx["phase"]))
+    return E_STOPPED, "\n".join(lines)
+
+
+def run_signoff(ctx, state, phase):
+    """The phase gate, the invariants and the sign-off verb - None when the
+    verdict is recorded, else the decision or the stop."""
+    code, out, err = phase_gate(ctx, phase)
+    if code == 1:
+        return red_gate_stop(ctx, phase, out, err)
+    if code != 0:
+        return relay_refusal(ctx, "run-test-gate.py", code, out + err)
+    ctx["did"].append("phase gate green")
+    if not state.get("breachAccepted"):
+        code, out, err = run_verb(ctx, "verify-invariants.py", [
+            ctx["manifest"], phase["id"], "--project", ctx["project"]])
+        if code == 1:
+            first = [ln.strip() for ln in (out + err).splitlines()
+                     if ln.strip().startswith("BREACH")]
+            return decision(ctx, state, "invariant-breach", None,
+                            _clip(first[0] if first else "exit 1", 140))
+        if code != 0:
+            return relay_refusal(ctx, "verify-invariants.py", code, out + err)
+        ctx["did"].append("invariants clean")
+    summary = state.get("summary") or ""
+    if state.get("breachAccepted"):
+        summary = "%s Invariant breach accepted: %s" % (summary,
+                                                        state["breachAccepted"])
+    args = ["signoff", phase["id"], ctx["manifest"], "--project-dir",
+            ctx["project"], "--verdict", "passed", "--summary", summary]
+    mark = state.get("phaseReview") or {}
+    if mark.get("head"):
+        args += ["--review-outcome", "phase review filed at head %s"
+                 % (mark["head"][:12],)]
+    _out, stop = _verb_or_stop(ctx, "audit-task.py", args)
+    if stop is not None:
+        return stop
+    ctx["did"].append("signed off")
+    return None
+
+
+def commit_signoff(ctx, phase):
+    """The sign-off committed through the audit-state verb, and the index verb
+    after it in a sharded plan; `(sha or None, None)`, or `(None, stop)`."""
+    commits = [("commit-audit-state.py", "sign-off")]
+    try:
+        if _mio.is_sharded(_mio.read_json(ctx["manifest"])):
+            commits.append(("commit-manifest-index.py", "sign-off"))
+    except Exception as exc:                                   # noqa: BLE001
+        return None, _stopped(ctx, "%s cannot be read to tell its layout (%s)"
+                              % (ctx["manifest"], exc))
+    made = None
+    for script, subject in commits:
+        out, stop = _verb_or_stop(ctx, script, [
+            ctx["manifest"], phase["id"], "--project", ctx["project"],
+            "--subject", subject, "--json"])
+        if stop is not None:
+            return None, stop
+        try:
+            made = made or json.loads(out).get("commit")
+        except ValueError:
+            pass
+    return made, None
+
+
+def land(ctx, state, phase):
+    """`(said, None)` - what the landing did, in a clause - or `(None, stop)`."""
+    if not phase.get("branch"):
+        return "no branch recorded, so nothing to land", None
+    args = [ctx["manifest"], phase["id"], "--project", ctx["project"]]
+    if state.get("noFf"):
+        args.append("--no-ff")
+    code, out, err = run_verb(ctx, "close-phase.py", args)
+    if code == 3:
+        return None, decision(ctx, state, "not-fast-forward", None,
+                              "close-phase exit 3")
+    if code != 0:
+        return None, relay_refusal(ctx, "close-phase.py", code, out + err)
+    if "NOT MERGED" in out:
+        return "meta.merge.auto is false, so the merge is handed to a human", None
+    return "landed (%s)" % (_clip((out.strip().splitlines() or [""])[0], 90),), None
+
+
+def finish_signoff(ctx, state, phase):
+    """The commit, the landing and the lock release after a recorded verdict;
+    the `done` instruction, or the decision or stop that held it."""
+    sha, stop = commit_signoff(ctx, phase)
+    if stop is not None:
+        return stop
+    if sha:
+        ctx["did"].append("committed %s" % (sha[:7],))
+    said, stop = land(ctx, state, phase)
+    if stop is not None:
+        return stop
+    return finish(ctx, state, "signed off (%s); %s" % (
+        (phase.get("review") or {}).get("status") or "passed", said))
+
+
+def signoff_step(ctx, state, phase):
+    """The one step a `sign-off` answer runs."""
+    if not signed_off(phase):
+        stop = run_signoff(ctx, state, phase)
+        if stop is not None:
+            return stop
+        _manifest, phase = load_phase(ctx)
+    return finish_signoff(ctx, state, phase)
+
+
+def apply_phase_answer(ctx, state, manifest, phase, pending, answer, reason,
+                       fixes):
+    """Act on an answer to one of sign-off's decisions."""
+    if answer == "fix":
+        return add_fix_tasks(ctx, phase, fixes)
+    if answer == "redispatch":
+        state.pop("phaseReview", None)
+        write_state(ctx, state)
+        return dispatch_phase_review(ctx, state, phase)
+    if answer == "sign-off":
+        state["summary"] = reason
+    elif answer == "accept":
+        state["breachAccepted"] = reason
+    elif answer == "no-ff":
+        state["noFf"] = True
+    write_state(ctx, state)
+    return signoff_step(ctx, state, phase)
+
+
+def sign_off(ctx, state, manifest, phase):
+    """Every task is terminal: the phase review, the triage, or - for a phase
+    already signed off - the rest of the one step."""
+    if signed_off(phase):
+        if phase.get("mergedAt") or not phase.get("branch"):
+            return finish(ctx, state, "already signed off (%s)%s" % (
+                phase["review"]["status"], ", and landed"
+                if phase.get("mergedAt") else ""))
+        return finish_signoff(ctx, state, phase)
+    return triage(ctx, state, manifest, phase)
 
 
 def stalled_why(manifest, phase):
@@ -685,7 +1104,7 @@ def stalled_why(manifest, phase):
     return "; ".join(parts) + (" +%d more" % (more,) if more > 0 else "")
 
 
-def drive(ctx, answer=None, reason=None):
+def drive(ctx, answer=None, reason=None, fixes=()):
     """`(code, instruction_or_text)` for one `next`."""
     state = read_state(ctx)
     stop = take_lock(ctx, state)
@@ -698,10 +1117,11 @@ def drive(ctx, answer=None, reason=None):
         write_state(ctx, state)
         pending = None
     if answer is not None:
-        refused = answer_refusal(ctx, pending, answer, reason)
+        refused = answer_refusal(ctx, pending, answer, reason, fixes)
         if refused:
             return E_USAGE, "%s %s: %s" % (PREFIX, ctx["phase"], refused)
-        said = apply_answer(ctx, state, manifest, phase, pending, answer, reason)
+        said = apply_answer(ctx, state, manifest, phase, pending, answer, reason,
+                            fixes)
         if said is not None:
             return _as_result(said)
     elif pending:
@@ -711,7 +1131,7 @@ def drive(ctx, answer=None, reason=None):
         task, how = next_task(manifest, phase)
         if task is None:
             if all(t.get("status") in _mio.TERMINAL for t in _tasks(phase)):
-                return _as_result(finish(ctx, state))
+                return _as_result(sign_off(ctx, state, manifest, phase))
             return E_OK, instruction("decide", step_text(
                 "decide-stalled", phase=ctx["phase"],
                 why=stalled_why(manifest, phase)))
@@ -921,7 +1341,12 @@ def build_parser():
     nxt.add_argument("--answer", default=None,
                      help="answer the pending decision with one of its options")
     nxt.add_argument("--reason", default=None,
-                     help="the reason an option that records one needs")
+                     help="the reason an option that records one needs; for "
+                          "the triage's sign-off, the phase's summary")
+    nxt.add_argument("--fix", action="append", default=[],
+                     metavar="FINDING[,FINDING]",
+                     help="with --answer fix: the findings to fix, each "
+                          "becoming a task through `add --fixes`")
     nxt.add_argument("--verbose", action="store_true",
                      help="print each verb's run above the instruction")
     sbm = sub.add_parser("submit", help="file an agent's return, read on stdin: "
@@ -1025,7 +1450,10 @@ def main(argv, out=print, stdin=None):
         sys.stderr.write("drive-phase.py: %s\n" % (exc,))
         return E_USAGE
     try:
-        code, said = drive(ctx, answer=args.answer, reason=args.reason)
+        fixes = [f.strip() for given in args.fix for f in given.split(",")
+                 if f.strip()]
+        code, said = drive(ctx, answer=args.answer, reason=args.reason,
+                           fixes=fixes)
     except ValueError as exc:
         code, said = E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], exc)
     out(render(ctx, code, said))

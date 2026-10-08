@@ -365,6 +365,8 @@ are the table in [SECURITY.md](../../SECURITY.md#fail-modes-by-design).
 | *(after)* No forced update and no `git stash` touched the phase branch | same — `branch-history` | exit **1**. A force is caught by **ancestry** (the tip moved where the old tip cannot reach), not by matching reflog words. The two standing limits — one clone only, and a DROPPED stash leaving no reflog — are printed in the check's basis, so a `clean` here says what it rests on |
 | *(after)* A `risk: "high"` task ran on neither a declared nor a metered `haiku` | same — `high-risk-model` | exit **1** from either source: `task.model` in the shard, or the ledger's `model` for that `taskId`. With no ledger the check reports `partial`, never `clean` |
 | *(after)* `phase.baseRef` is on the branch the phase forks from | same — `base-ref` | exit **1** when `baseRef` is not an ancestor of the resolved parent, and when a branch exists with no `baseRef` recorded at all |
+| A landing's stamp - the phase's `mergedAt` and its stored `done` - is committed where it was written | `scripts/git/close-phase.py`, committing it through `commit-audit-state.py` (and `commit-manifest-index.py` when sharded) | the commit lands on the parent, or on the phase branch with the parent fast-forwarded to it when the parent is checked out nowhere; a commit verb's refusal is exit **1**. A stamp in a tree holding any other branch is left and said |
+| *(after)* No landed phase's stamp is left as an edit | `scripts/governance/verify-invariants.py` — `landing-committed` | exit **1** when a landed phase's `status` or `mergedAt` in the working tree differs from what HEAD commits, naming the file and both values. Read from the tree it runs in |
 
 ### Followed from `reference/orchestrator.md`
 

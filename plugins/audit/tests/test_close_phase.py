@@ -1987,6 +1987,126 @@ def _surviving_copy_cases(check):
             _harness.remove_tree(wt)
 
 
+def _head_merged_at(git, rel="docs/audit/audit-plan.json"):
+    """`mergedAt` of P1 as the checkout's HEAD commits the plan, or None."""
+    done = git("show", "HEAD:%s" % (rel,))
+    if done.returncode != 0:
+        return None
+    return [p.get("mergedAt") for p in json.loads(done.stdout.decode())["phases"]
+            if p.get("id") == "P1"][0]
+
+
+def _landing_commit_cases(check):
+    """The landing commits the stamp it writes into the parent's tree: the
+    phase's `mergedAt` and its stored `done` are in the parent's HEAD, not left
+    as edits in its working tree, and a re-run makes no second commit."""
+    root = _harness.fixture_root("closephase-landcommit")
+    wt = None
+    try:
+        mpath, wt, wt_mpath, git = _worktree_fixture(root)
+        lines = []
+        code = M.main([mpath, "P1", "--project", root], out=lines.append)
+        text = "\n".join(lines)
+        dirty = git("status", "--porcelain", "--",
+                    "docs/audit/audit-plan.json").stdout.decode().strip()
+        subject = git("log", "-1", "--format=%s").stdout.decode().strip()
+        check("lt1 the stamp is committed in the parent's tree: main's HEAD holds "
+              "the mergedAt written, the plan is clean there, and the commit is an "
+              "audit-state commit: exit %r, HEAD mergedAt %r, dirty %r, %r, %s"
+              % (code, _head_merged_at(git), dirty, subject, text[-300:]),
+              code == M.E_OK and _merged_at(mpath)
+              and _head_merged_at(git) == _merged_at(mpath) and dirty == ""
+              and subject.startswith("chore(audit-state): phase P1")
+              and "landed on main" in subject)
+        head = git("rev-parse", "HEAD").stdout.decode().strip()
+        lines = []
+        code = M.main([mpath, "P1", "--project", root], out=lines.append)
+        again = git("rev-parse", "HEAD").stdout.decode().strip()
+        check("lt2 a re-run over the committed stamp makes no second commit: "
+              "exit %r, HEAD %s -> %s" % (code, head[:8], again[:8]),
+              code == M.E_OK and head == again)
+        # The state an earlier landing left: the stamp in the tree, the plan
+        # committed without it.
+        with open(mpath) as fh:
+            stamped = fh.read()
+        body = json.loads(stamped)
+        for ph in body["phases"]:
+            ph["mergedAt"], ph["status"] = None, "in_progress"
+        with open(mpath, "w") as fh:
+            json.dump(body, fh)
+        git("commit", "-q", "-am", "the plan without its stamp")
+        with open(mpath, "w") as fh:
+            fh.write(stamped)
+        lines = []
+        code = M.main([mpath, "P1", "--project", root], out=lines.append)
+        dirty = git("status", "--porcelain", "--",
+                    "docs/audit/audit-plan.json").stdout.decode().strip()
+        check("lt4 a re-run over a landing whose stamp was left uncommitted, its "
+              "branch gone, commits it: exit %r, HEAD mergedAt %r, dirty %r, %s"
+              % (code, _head_merged_at(git), dirty, "\n".join(lines)[-200:]),
+              code == M.E_OK and _head_merged_at(git) == _merged_at(mpath)
+              and dirty == "")
+    finally:
+        _harness.remove_tree(root)
+        if wt and os.path.isdir(wt):
+            _harness.remove_tree(wt)
+    root = _harness.fixture_root("closephase-landcommit-main")
+    try:
+        git = _fixture_git(root)
+        _init_fixture_repo(git)
+        mpath = _write_plan(root, {"developmentBranch": "main"},
+                            [_signed_phase("P1", "audit/p1-demo")])
+        git("add", "-A")
+        git("commit", "-q", "-m", "base")
+        git("checkout", "-q", "-b", "audit/p1-demo")
+        with open(os.path.join(root, "work.txt"), "w") as fh:
+            fh.write("work\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "work")
+        tip = git("rev-parse", "audit/p1-demo").stdout.decode().strip()
+        lines = []
+        code = M.main([mpath, "P1", "--project", root], out=lines.append)
+        text = "\n".join(lines)
+        after = git("rev-parse", "audit/p1-demo").stdout.decode().strip()
+        parent = git("rev-parse", "main").stdout.decode().strip()
+        first = git("rev-parse", "%s^" % (after,)).stdout.decode().strip()
+        dirty = git("status", "--porcelain", "--",
+                    "docs/audit/audit-plan.json").stdout.decode().strip()
+        check("lt3 the parent checked out nowhere and the main tree on the phase "
+              "branch: the stamp is committed on that branch, one commit after "
+              "the work, and the parent is fast-forwarded to it, so main's HEAD "
+              "holds the stamp and the tree is clean: exit %r, %s"
+              % (code, text[-300:]),
+              code == M.E_OK and first == tip and parent == after
+              and _head_merged_at(git) == _merged_at(mpath) and dirty == "")
+    finally:
+        _harness.remove_tree(root)
+    root = _harness.fixture_root("closephase-landcommit-other")
+    try:
+        git = _fixture_git(root)
+        _init_fixture_repo(git)
+        mpath = _write_plan(root, {"developmentBranch": "main"},
+                            [_signed_phase("P1", "audit/p1-demo")])
+        git("add", "-A")
+        git("commit", "-q", "-m", "base")
+        git("branch", "audit/p1-demo")
+        git("checkout", "-q", "-b", "other")
+        tip = git("rev-parse", "other").stdout.decode().strip()
+        lines = []
+        code = M.main([mpath, "P1", "--project", root], out=lines.append)
+        text = "\n".join(lines)
+        after = git("rev-parse", "other").stdout.decode().strip()
+        check("lt5 THE OTHER DIRECTION: a stamp written into a tree that holds "
+              "neither the parent nor the branch that landed is not committed "
+              "there - that branch does not move - and the output says the stamp "
+              "is left uncommitted and why: exit %r, moved %r, %s"
+              % (code, tip != after, text[-300:]),
+              code == M.E_OK and tip == after and bool(_merged_at(mpath))
+              and "not committed here" in text and "other" in text)
+    finally:
+        _harness.remove_tree(root)
+
+
 def _no_survivor_cases(check):
     """The parent checked out in NO worktree, and the manifest inside the phase's own
     worktree: the landing has no surviving copy to stamp, so close-phase stops
@@ -2133,6 +2253,16 @@ def _merged_head(path):
                 if p.get("id") == "P1"][0]
 
 
+def _landed_head(git):
+    """The parent's head right after the merge: `main` itself, or its first
+    parent when the newest commit there is the landing's own stamp commit,
+    which comes after the merge and is never the merged head."""
+    subject = git("log", "-1", "--format=%s", "refs/heads/main").stdout.decode()
+    ref = ("refs/heads/main^" if subject.startswith(
+        "chore(audit-state): phase P1 - landed on") else "refs/heads/main")
+    return git("rev-parse", ref).stdout.decode().strip()
+
+
 def _merged_head_cases(check):
     """`phase.mergedHead` is the PARENT's commit right after the merge, stamped in
     the same write as `mergedAt` - never a second write, the branch tip only for a
@@ -2145,7 +2275,7 @@ def _merged_head_cases(check):
         mpath, wt, wt_mpath, git = _worktree_fixture(root)
         lines = []
         code = M.main([wt_mpath, "P1", "--project", root], out=lines.append)
-        head = git("rev-parse", "refs/heads/main").stdout.decode().strip()
+        head = _landed_head(git)
         merged_head = _merged_head(mpath)
         check("mh1 a phase closed into its parent carries mergedAt and its derived "
               "status but ALSO mergedHead, equal to the parent's HEAD right after "
@@ -2169,7 +2299,7 @@ def _merged_head_cases(check):
         lines = []
         code = M.main([wt_mpath, "P1", "--project", root, "--no-ff",
                        "--keep-branch"], out=lines.append)
-        head = git("rev-parse", "refs/heads/main").stdout.decode().strip()
+        head = _landed_head(git)
         merged_head = _merged_head(mpath)
         check("mh2 --no-ff: mergedHead is the parent's post-merge commit, not the "
               "branch's own tip - a merge commit has a parent the branch tip is not: "
@@ -3308,6 +3438,7 @@ def _selftest():
         _backfill_cases(check)
         _backfill_direction_cases(check)
         _recovery_cases(check)
+        _harness.stage(check, "lt-block", _landing_commit_cases)
         _harness.stage(check, "sl-block", _success_line_cases)
     return _harness.run(body)
 

@@ -142,6 +142,7 @@ import _evidence_io  # noqa: E402  (where the ledger lives, and its one strict d
 import _config_rules  # noqa: E402  (review_per_task_mode: the live key, refused not defaulted)
 import _filed_returns as _fr  # noqa: E402  (landing_refusals: sign-off's own property)
 import _journal_io                                                 # noqa: E402
+import _loader  # noqa: E402  (script_path: the commit verbs run as subprocesses, never imported)
 import _manifest_io as _mio                                          # noqa: E402
 import _manifest_rules as _rules  # noqa: E402  (revalidate what the stamp writes)
 import _panel_write  # noqa: E402  (the index lock the stub mirror is written under)
@@ -1371,6 +1372,114 @@ def _parked_after_merge(manifest_path, branch):
         return []
 
 
+# --- committing the stamp ----------------------------------------------------------
+# A landing that writes `mergedAt` and the stored `done` into the parent's copy
+# and leaves them there is half a landing: a clone of the parent reads the phase
+# as running, and the next commit made in that tree sweeps the stamp into work
+# that has nothing to do with it. So the stamp is committed where it was
+# written - by the audit-state commit verb, and in a sharded plan the index
+# verb after it, run as subprocesses because an entry point may not import
+# another, and because their staging discipline (the allow-list, the index read
+# back, the row inside the commit) is theirs to hold, not a second copy here.
+LANDING_SUBJECT = "landed on %s"
+
+
+def _commit_verb(script, manifest_path, phase_id, project, subject):
+    """`(answer, None)` - the verb's `--json` answer - or `(None, why)`."""
+    argv = [sys.executable, _loader.script_path(script), manifest_path, phase_id,
+            "--project", project, "--subject", subject, "--json"]
+    try:
+        done = subprocess.run(argv, cwd=project, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, timeout=300)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, "%s could not be run (%s)" % (script, exc)
+    text = done.stdout.decode("utf-8", "replace")
+    try:
+        answer = json.loads(text)
+    except ValueError:
+        return None, "%s exited %d with no answer it could read: %s" % (
+            script, done.returncode,
+            (done.stderr.decode("utf-8", "replace") or text).strip()[:200])
+    if done.returncode != 0 or answer.get("refused"):
+        return None, "%s refused: %s" % (script, answer.get("refused")
+                                         or "exit %d" % (done.returncode,))
+    return answer, None
+
+
+def commit_landing(target, phase_id, project, git_root, parent, branch=None,
+                   run=None):
+    """`{"landingCommits", "landingCommitWhy" | "landingCommitSkipped"}` -
+    the stamp in `target` committed where it reaches `parent`; or why a commit
+    verb or the follow-on fast-forward refused (`landingCommitWhy`, a failure
+    of the landing); or why no commit was owed in that tree
+    (`landingCommitSkipped`, said and not a failure).
+
+    TWO TREES CAN HOLD THE STAMP. The parent's checkout, where the commit is
+    the parent's next commit. Or - the parent checked out nowhere, so the merge
+    was a ref-only fast-forward - the tree holding the phase branch itself:
+    the commit goes on the branch, and the parent is fast-forwarded to it once
+    more, so the record of the landing is on the parent and the branch is
+    still contained in it. A stamp in a tree holding any other branch is left
+    for that tree: a commit there would put the landing on a branch that is
+    neither of the two."""
+    listing = _wt.list_worktrees(git_root, run=run)
+    if listing["error"]:
+        return {"landingCommits": [], "landingCommitWhy": (
+            "git would not list the worktrees (%s), so the tree the stamp sits "
+            "in cannot be named" % (listing["error"],))}
+    holder = _wt.holder_of(listing["trees"], parent)["tree"]
+    here = _tree_holding(listing["trees"], target) or {}
+    on_branch = (holder is None and branch and here.get("branch") == branch)
+    if not on_branch and (not holder
+                          or not _wt.within_tree(holder.get("path"), target)):
+        return {"landingCommits": [], "landingCommitSkipped": (
+            "%s sits in a tree holding %s, which is neither %s nor the branch "
+            "that landed in it, so a commit there would not reach %s - commit "
+            "it with that tree's own work" % (
+                target, here.get("branch") or "no branch", parent, parent))}
+    made = _commit_stamp(target, phase_id, project, parent)
+    if made.get("landingCommitWhy") or not on_branch:
+        made["landingCommitIn"] = (holder or here).get("path")
+        return made
+    made["landingCommitIn"] = here.get("path")
+    if not made["landingCommits"]:
+        return made
+    # The parent follows the stamp commit by the same ref-only fast-forward
+    # the merge was, and the ancestry is read back rather than trusted.
+    fn = _wt._runner(run)
+    argv = ["fetch", ".", "%s:refs/heads/%s" % (branch, parent)]
+    code, _out, err = fn(git_root, argv)
+    if code != 0 or _wt.merged_into(git_root, branch, parent,
+                                    run=run)["answer"] != _wt.CONTAINED:
+        made["landingCommitWhy"] = (
+            "the stamp is committed on %s, and `git %s` did not carry %s to it "
+            "(exit %s: %s) - run it once %s can fast-forward"
+            % (branch, " ".join(argv), parent, code,
+               (err or "").strip()[:160], parent))
+    return made
+
+
+def _commit_stamp(target, phase_id, project, parent):
+    """The stamp committed by the audit-state verb, and the index verb after it
+    in a sharded plan, run in `project`."""
+    subject = LANDING_SUBJECT % (parent,)
+    scripts = ["commit-audit-state.py"]
+    try:
+        if _mio.is_sharded(_mio.read_json(target)):
+            scripts.append("commit-manifest-index.py")
+    except Exception as exc:
+        return {"landingCommits": [], "landingCommitWhy": (
+            "%s cannot be read to tell its layout (%s)" % (target, exc))}
+    made = []
+    for script in scripts:
+        answer, why = _commit_verb(script, target, phase_id, project, subject)
+        if why:
+            return {"landingCommits": made, "landingCommitWhy": why}
+        if answer.get("commit"):
+            made.append(answer["commit"])
+    return {"landingCommits": made, "landingCommitWhy": ""}
+
+
 # --- the verdict at the head it would merge ---------------------------------------
 # WHICH TREE `--project` NAMES IS NOT THE QUESTION. A landing is often run from the
 # parent's tree, which holds none of the phase's ledger rows and none of its
@@ -1893,6 +2002,18 @@ def render(answer, out=print):
                 % (answer["stubMirrored"],))
         elif answer.get("stubWhy"):
             out("  index stub NOT re-mirrored: %s" % (answer["stubWhy"],))
+        if answer.get("landingCommitWhy"):
+            out("  the stamp is NOT committed: %s" % (answer["landingCommitWhy"],))
+        elif answer.get("landingCommitSkipped"):
+            out("  the stamp is not committed here: %s"
+                % (answer["landingCommitSkipped"],))
+        elif answer.get("landingCommits"):
+            out("  the stamp committed in %s as %s"
+                % (answer.get("landingCommitIn"),
+                   ", ".join(c[:12] for c in answer["landingCommits"])))
+        elif "landingCommits" in answer:
+            out("  the stamp was already committed in %s"
+                % (answer.get("landingCommitIn"),))
     elif answer.get("stampWhy"):
         out("  %s NOT written: %s" % (MERGED_FIELD, answer["stampWhy"]))
     if answer.get("finishFrom"):
@@ -1926,7 +2047,7 @@ def render(answer, out=print):
 # override of the verdict, a lock taken while it ran, work parked to materialize.
 _OWED = ("REFUSED", "NOT MERGED", "WARNING", "would run", "would write",
          "cleanup is not finished", "after the merge", "parked on", " NOT ",
-         "OVER ITS VERDICT")
+         "OVER ITS VERDICT", "not committed here")
 
 
 def _short_record(line):
@@ -2063,13 +2184,25 @@ def main(argv, out=print):
             lambda recorded: contained_task_commits(git_root, recorded,
                                                     names["parent"]),
             after_the_fact=True, dry_run=args.dry_run)
+        # A STAMP LEFT UNCOMMITTED by an earlier landing is committed by the
+        # re-run, so the repair of that state is the command that made it.
+        kept = ({} if args.dry_run or filled.get("planUnrestored")
+                else commit_landing(args.manifest, args.phase, project, git_root,
+                                    names["parent"], branch=names["branch"]))
         out("[close-phase] phase %s landed at %s and %s is gone - %s"
             % (args.phase, phase[MERGED_FIELD], names["branch"],
-               "nothing left to merge or clean up" if filled
-               else "nothing left to do"))
+               "nothing left to merge or clean up" if filled or kept.get(
+                   "landingCommits") else "nothing left to do"))
         _render_told(filled, out=out)
         _render_backfill(filled, out=out)
-        return E_FAIL if filled.get("planUnrestored") else E_OK
+        if kept.get("landingCommitWhy"):
+            out("  the stamp is NOT committed: %s" % (kept["landingCommitWhy"],))
+        elif kept.get("landingCommits"):
+            out("  the stamp committed in %s as %s"
+                % (kept.get("landingCommitIn"),
+                   ", ".join(c[:12] for c in kept["landingCommits"])))
+        return E_FAIL if (filled.get("planUnrestored")
+                          or kept.get("landingCommitWhy")) else E_OK
     # ...AND A COMPOSED NAME NOTHING HOLDS IS NOT AN ANCESTRY QUESTION. Asked of git,
     # it came back as "could not be established", which names the wrong gap: the
     # plan recorded no branch, and the one predicted from the template is not in
@@ -2185,7 +2318,8 @@ def main(argv, out=print):
             # A re-run records the merge that happened; it does not move it. A
             # recorded mergedHead is kept too; only a merge recorded WITHOUT one -
             # a plan older than the field - has the recovered commit added, once.
-            kept = {"stamped": target, "stampedAt": earlier, "stampKept": True,
+            kept = {"stamped": target, "stampManifest": target,
+                    "stampedAt": earlier, "stampKept": True,
                     "stampedElsewhere": (os.path.abspath(target)
                                          != os.path.abspath(args.manifest)),
                     "parkedOnBranch": _parked_after_merge(target, names["branch"])}
@@ -2218,7 +2352,8 @@ def main(argv, out=print):
         record_row(project_for_row, args.phase, names["branch"], names["parent"])
         mirrored, mirror_why, mirror_notes = mirror_stub(target, args.phase,
                                                          project_for_row)
-        stamped = {"stamped": path, "stampedAt": stamp_at,
+        stamped = {"stamped": path, "stampManifest": target,
+                   "stampedAt": stamp_at,
                    "mergedHead": merged_head, "mergedHeadWhy": merged_head_why,
                    "stubMirrored": mirrored,
                    "stubWhy": "" if mirror_notes["unrestored"] else mirror_why,
@@ -2233,6 +2368,14 @@ def main(argv, out=print):
                          settled_now=settlement(landed or phase, merged=True),
                          stamp=_stamp)
     answer["settledBasis"] = landed_basis
+    if answer.get("stamped") and not answer.get("dryRun"):
+        answer.update(commit_landing(
+            answer.get("stampManifest") or answer["stamped"], args.phase,
+            surviving_copy(args.manifest, project, git_root, observation,
+                           the_plan, phase_id=args.phase)[1],
+            git_root, names["parent"], branch=names["branch"]))
+        if answer.get("landingCommitWhy") and code == E_OK:
+            code = E_FAIL
     # A PREVIEW OWES THE BACKFILL TOO. `close()` never calls the stamp on a dry run,
     # so a re-run over a merge recorded without a head would preview in silence
     # what the real run then writes. Asked of the copy the real run would write.

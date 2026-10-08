@@ -46,12 +46,28 @@ the **normal** outcome of a re-run, not a sign that something went wrong.
 
 **Re-running the landing step is safe and says so.** `close-phase.py` asks the ancestry before it
 writes anything, so a phase whose branch is already contained in its parent reports
-`already-contained`, makes no git write at all, and exits 0 - keeping the `mergedAt` it recorded
+`already-contained`, makes no merge write, and exits 0 - keeping the `mergedAt` it recorded
 rather than moving it. A phase that landed and whose branch is already gone reports that and exits
 0 too. The sign-off it judges the cleanup by is the phase as the BRANCH holds it, so a phase
 signed off in its worktree lands and is cleaned up in one run from the parent's tree. What a re-run WILL still do is the
 cleanup the first run could not — a worktree that was dirty then and is clean now, or one the
 first run was standing inside. Its `--dry-run` shows exactly that before you commit to it.
+
+**The landing commits the stamp it writes.** `mergedAt` and the stored `done` go into the
+parent's copy of the plan, and `close-phase.py` commits them there through
+`commit-audit-state.py` (and `commit-manifest-index.py` in a sharded plan), subject `landed on
+<parent>`. With the parent checked out nowhere and the main tree on the phase branch, the commit
+goes on that branch and the parent is fast-forwarded to it once more. A re-run commits a stamp an
+earlier landing left uncommitted, and makes no commit when there is none.
+The `landing-committed` invariant - in `verify-invariants.py` and `/audit:status --gate` alike -
+reports a landed phase whose stamp is still
+an edit in the tree it runs in.
+
+**Under the step driver, sign-off is one step.** `drive-phase.py next <phaseId>` prints the phase
+reviewer's dispatch once every task is closed, records the filed review's findings in one
+`finding` call, and prints one `decide triage`; answered `sign-off` with the summary, it runs the
+phase gate, the invariants check, the sign-off verb, the commit, the landing and the lock release,
+and stops before the sign-off verb when the phase gate is red.
 
 The reviewer is **`phase.reviewSkill ?? meta.areas[tag].reviewSkill ?? meta.reviewSkill`** — the
 first level that is **present** answers, an explicit `null` **is** an answer (skip review; tests are

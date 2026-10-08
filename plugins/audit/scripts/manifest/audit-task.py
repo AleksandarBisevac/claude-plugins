@@ -8185,7 +8185,8 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
                                                                 effective))
     if unanswered:
         out("  no intent answer recorded for %d done task(s): %s -- `intentCheck` "
-            "is absent, which reads as no answer and never as agreement"
+            "is absent or reads `deferred` (still owed its phase review), which "
+            "reads as no answer and never as agreement"
             % (len(unanswered), ", ".join(unanswered)))
     if carried:
         out("  the phase review's answers, written onto each task's intentCheck:")

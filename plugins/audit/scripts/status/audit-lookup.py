@@ -802,14 +802,23 @@ def compose_phase_brief(manifest, phase, ctx):
             "Which tasks are owed their answers could not be read: %s. Sign-off "
             "and its filing refuse until it can." % (owed_why,)])
         return lines
-    if not owed:
-        lines += _section("Review answers owed per task", [
-            "None: no task here is owed its three answers by this review, so "
-            "return the object as your final message, as `mode: phase` always "
-            "has."])
-        return lines
     file_cmd = submit_command(ctx, pid, "reviewer",
                               " --head %s" % (head or "<head>",)).strip()
+    if not owed:
+        # FILED EVEN WHEN NOTHING IS OWED: the step driver reads the phase
+        # review's findings from the filed return, so a return handed back
+        # only as a final message would be a review it never sees.
+        lines += _section("Review answers owed per task", [
+            "None: no task here is owed its three answers by this review."])
+        lines += _section("Your return", [
+            "Write the return object agents/audit-reviewer.md declares with "
+            "`\"tasks\": []`, then file it - the verb writes it once for this "
+            "head:",
+            "    %s" % (file_cmd,) if head else
+            "The head could not be read (%s), so there is no head to file "
+            "under: run this brief again where git answers." % (head_why,),
+            "Then hand back one line: what that command printed."])
+        return lines
     lines += _section("Review answers owed per task", [
         "review.perTask reads `phase`, so no reviewer answered these tasks one "
         "by one: you do, by the rules `mode: task` applies to one task. Each "

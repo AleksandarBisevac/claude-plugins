@@ -156,7 +156,7 @@ claude-plugins/                           # this repo (personal, public)
           record-risk-confirmation.py     # the high-risk gate answered BEFORE the run, bounded to named task ids and written to the trail
           record-outside-run.py           # a suite that ran where this plugin could not see it, so a gate run in the same window is not credited with its effects
           import-evidence.py              # a CI build's own evidence ledger file, brought in whole after its chain verifies - never rewrites a row, never re-chains; prints (never runs) the full-gate.py --learn-from command for each red full row it brought in
-          drive-phase.py                  # the step driver: `next <phase>` runs every due step that needs no judgement through the existing verbs, as subprocesses, and prints one instruction - dispatch, decide or done; a refused verb stops it with the verb's own words. `submit` is an agent's last act: the stamp, the red-first helper and the filing in one call
+          drive-phase.py                  # the step driver: `next <phase>` runs every due step that needs no judgement through the existing verbs, as subprocesses, and prints one instruction - dispatch, decide or done; a refused verb stops it with the verb's own words. Sign-off is the phase review's dispatch, one triage decision, then gate, invariants, sign-off verb, commit, landing and lock release as one step. `submit` is an agent's last act: the stamp, the red-first helper and the filing in one call
           full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, then a coupling and a bug per named selection miss of a red run (the red still blocks), or the sentence and exit 0 when no meta.fullGate is declared; --learn-from <runId> runs nothing and learns from an imported row through the same function
           _runner_output.py               # every reading of what a test runner printed: its summary line (how many checks ran) and the lines naming a failing check
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs; the one POSIX sh (and its PATH) every plan command runs under, or a refusal - never cmd.exe
@@ -333,7 +333,7 @@ L2:
   _panel_ui -> _output, _ui_theme
   _report_html -> _areas, _fmt, _manifest_io, _manifest_vocab, _output, _priority, _ui_theme
   _report_ui -> _output, _ui_theme
-  _status_facts -> _areas, _manifest_io, _manifest_vocab, _output, _priority, _usage_core
+  _status_facts -> _areas, _filed_returns, _manifest_io, _manifest_vocab, _output, _priority, _usage_core
   _tree_stamp -> _journal_io, _manifest_vocab, _output
   _usage_coverage -> _manifest_io, _output, _usage_core
   _usage_economics -> _manifest_io, _output, _usage_core
@@ -397,12 +397,12 @@ L7:
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
-  close-phase -> _branch, _claude_home, _config_rules, _evidence_io, _filed_returns, _journal_io, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _tree_stamp, _verdict_binding, _worktrees
+  close-phase -> _branch, _claude_home, _config_rules, _evidence_io, _filed_returns, _journal_io, _loader, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _tree_stamp, _verdict_binding, _worktrees
   commit-audit-state -> _claude_home, _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
   commit-manifest-index -> _claude_home, _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
   commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
-  drive-phase -> _claude_home, _config_rules, _evidence_io, _filed_returns, _loader, _manifest_io, _output, _status_facts
+  drive-phase -> _areas, _claude_home, _config_rules, _evidence_io, _filed_returns, _loader, _manifest_io, _output, _status_facts
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
@@ -1006,7 +1006,16 @@ Sign-off steps 5c–5e as one command. It merges the phase branch into its resol
 before the first write, and each result read back by asking a *different* question than the write
 answered. The merge is an input of the phase's derived status, so the stamp stores that status in
 the same write (`done`, for a signed-off phase with every task terminal) and `mirror_stub`
-re-mirrors the index stub from the shard. Each of the three plan writes here — the stamp, the
+re-mirrors the index stub from the shard. **The stamp is then committed where it was written**
+(`commit_landing`): in the parent's checkout through `commit-audit-state.py`, and
+`commit-manifest-index.py` after it in a sharded plan, run as subprocesses with the subject
+`landed on <parent>`; or, with the parent checked out nowhere and the stamp in the tree holding
+the phase branch, on that branch, with the parent fast-forwarded to it once more and the
+ancestry read back. A stamp in a tree holding any other branch is left there and said
+(`landingCommitSkipped`, not a failure); a commit verb that refuses makes the run exit 1. A re-run
+over a landed phase - its branch gone or not - commits a stamp an earlier landing left as an
+edit, and commits nothing when there is none. `lt` in `plugins/audit/tests/test_close_phase.py`
+and `g17`/`g17b` in `tools/check-git-pipeline.py` hold it against real git. Each of the three plan writes here — the stamp, the
 `mergedHead` backfill (`record_merged_head`) and the mirror — reads the plan and writes it while
 holding the index lock every other plan writer takes (`under_index_lock`, through
 `_panel_write.acquire_index_lock`). On the single-file layout, two closes or a close and a panel
@@ -3376,6 +3385,17 @@ and exits 1 only on a new one. Everything about the baseline itself — its keys
 the in-flight refusal, the lock — is `_invariants`', which is what lets the gate give the same
 verdict.
 
+**`landing-committed`** is `_invariants.landing_committed`, the last of `CHECK_NAMES`, so this
+CLI and `/audit:status --gate` read one answer. For a phase with `mergedAt` set it reads
+`status` and `mergedAt` off the phase's record in each plan file (the shard, and the index when
+it is a different file) as the working tree holds it and as HEAD commits it, and a field that
+differs is a breach naming the file and both values - the landing's stamp left as an edit. It
+compares the stamp, never the file's dirtiness, so other edits to the plan are not this breach;
+a phase that has not landed is `not-applicable`. It is the one check that reads the working
+tree, so its answer is about the tree it runs in. The `ln` cases in
+`plugins/audit/tests/test__invariants.py` hold it at the library, and `lc` in
+`test_verify_invariants.py` through the CLI.
+
 ### `plugins/audit/scripts/governance/_scoped_commit.py`
 Everything the three **commit-a-narrow-allow-list** commands (`commit-audit-state.py`,
 `commit-manifest-index.py`, `commit-task-work.py`) share, so that none holds a second copy of it:
@@ -3977,7 +3997,7 @@ writer to name.
 
 ### `plugins/audit/scripts/governance/drive-phase.py`
 `drive-phase.py next <phaseId> [manifest] [--project-dir DIR] [--answer OPTION] [--reason TEXT]
-[--verbose]` — **the step driver.** One `next` reads the plan and the filed returns, performs
+[--fix FINDING[,FINDING]] [--verbose]` — **the step driver.** One `next` reads the plan and the filed returns, performs
 every step of the phase's run that is due and needs no judgement, and prints exactly one
 instruction: `dispatch` (an agent type, the task, its model and the brief file `audit-lookup.py
 brief` wrote), `decide` (a named decision with its options), or `done`. The command body is the
@@ -4011,7 +4031,34 @@ silent second dispatch), whether it took the phase lock, the findings it already
 decision it waits on. A decision is printed again on every `next` until `--answer` gives one of
 its options; an option it does not offer, or one that records a reason given none, is exit 2.
 `DECISIONS` lists them: a red recorded gate, an agent that filed no return, a high-risk commit, a
-commit with nothing in it, a reviewer answer only a human settles, and a phase with no ready task.
+commit with nothing in it, a reviewer answer only a human settles, a phase with no ready task,
+and the decisions sign-off adds, below.
+
+**Sign-off is the same loop.** When every task is terminal, `sign_off` takes over from `finish`.
+The phase reviewer is dispatched (`dispatch_phase_review`, with the brief `audit-lookup.py brief
+--role phase` wrote and the head that brief names kept in the state) when a review skill
+resolves for the phase or a task is owed its answers there (`review_due`); the reviewer files
+through `submit <phaseId> --head`. The `next` after it reads that filed return, records every
+finding in one `audit-task.py finding --findings-file -` call (`record_findings`), and prints one
+`decide triage`: each finding no fix task names yet, with its options, and what a fix task is
+predicted to cost - `FIX_TASK_PREDICTED`, with `FIX_TASK_PRICE_BASIS` printed beside it, the
+range the pipeline-cost design gives for rung 1 and never a measurement of the project. Each line
+of that print stays inside `TRIAGE_LINE_BYTES`. `--answer fix --fix <id>` adds a task per finding
+through `audit-task.py add --fixes` (`add_fix_tasks`), which the drive runs like any other - under
+`review.perTask: phase` closed `not-asked` with the finding as its basis, the answer the landing
+takes from a recorded fix task - and the triage is printed again. `--answer sign-off --reason
+<summary>` runs the rest as one step (`signoff_step`): the phase gate (`derive-phase-gate.py`
+first when `meta.phaseGate.mode` is set, then `run-test-gate.py --record`), `verify-invariants.py`,
+`audit-task.py signoff --verdict passed`, the commit (`commit-audit-state.py`, and
+`commit-manifest-index.py` in a sharded plan), the landing (`close-phase.py`, skipped for a phase
+that records no branch), and the lock release. **A red phase gate stops before the sign-off verb**
+(`red_gate_stop`): the invariants still run and are printed beside it, with the fix-task command
+carrying the run's id for `--failing-from`, and the next `next` prints the triage again. Sign-off's other
+decisions are a phase reviewer that filed nothing (`redispatch`), an invariant breach
+(`accept`, whose reason is kept in the summary) and a parent that moved (`no-ff`). The `sg` cases
+drive it over the fixture plan: sign-off's model-facing steps are the review's dispatch, the
+triage and the final step, a red phase gate never reaches `signoff`, and several findings are one
+`finding` call - each beside a mutant driver that breaks it.
 
 **Where the text and the seams are.** Every line the model is shown is rendered from `STEPS`,
 one entry per step, whose `rule` lines print under its instruction when it has any. `reviewer_due` is the one place the
@@ -4673,7 +4720,9 @@ it was examined at (`_examined_head`; null, and said, when git cannot name one),
 `_commit_trail.no_change_close` answers from for the doctor's no-SHA warning as well. `--intent
 not-asked --intent-basis TEXT` records an intent question deliberately not put; `_done_flags_refusal`
 refuses the word without its basis and every combination of the two closes' flags that names both or
-neither, and `_status_facts.intent_unanswered` is what sign-off and `/audit:status` list.
+neither, and `_status_facts.intent_unanswered` is what sign-off and `/audit:status` list: a done
+task whose `intentCheck` is absent or reads `deferred` - still owed its phase review - and never
+one carrying an answer, `not-asked` with its basis included.
 
 `move <taskId> --to <phaseId>`, `block <taskId> --reason TEXT` and `note <taskId> --text TEXT` are
 the hand edits operators kept making. `move` allocates with `_allocate_id` - what `next-id task`

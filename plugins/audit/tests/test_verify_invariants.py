@@ -294,8 +294,84 @@ def _cases(check):
         _baseline_cases(check, tmp)
         _harness.stage(check, "sl-block",
                        lambda c: _success_line_cases(c, tmp))
+        _harness.stage(check, "lc-block",
+                       lambda c: _landing_committed_cases(c, tmp))
     finally:
         _harness.remove_tree(tmp)
+
+
+def _landed_repo(tmp, name):
+    """`(manifest path, root)` - the phase branch landed on `main` by a
+    fast-forward, with `main` checked out and the plan as committed there."""
+    root = os.path.join(tmp, name)
+    os.makedirs(root)
+    path = repo(root)
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "chore(audit-state): phase P1 - close")
+    _git(root, "checkout", "-q", "main")
+    _git(root, "merge", "-q", "--ff-only", BRANCH)
+    return path, root
+
+
+def _stamp(path, when="2026-01-02T00:00:00Z"):
+    """What a landing writes into the parent's copy: `mergedAt`, and the
+    derived `done` stored beside it."""
+    body = _load(path)
+    body["phases"][0]["mergedAt"] = when
+    body["phases"][0]["status"] = "done"
+    _write_json(path, body)
+
+
+def _landing_check(argv):
+    """`(exit code, the landing-committed check's answer or None, stdout)`."""
+    code, out, _err = _run(argv + ["--json"])
+    try:
+        checks = json.loads(out)["checks"]
+    except (ValueError, KeyError):
+        return code, None, out
+    named = [c for c in checks if c.get("name") == "landing-committed"]
+    return code, (named[0] if named else None), out
+
+
+def _landing_committed_cases(check, tmp):
+    """A landed phase whose stamp - `status` done and `mergedAt` - sits in the
+    parent's working tree and not in its HEAD is a landing nobody committed."""
+    path, root = _landed_repo(tmp, "lc-dirty")
+    _stamp(path)
+    code, answer, out = _landing_check([path, "P1", "--project", root])
+    said = " ".join((answer or {}).get("breaches") or [])
+    check("lc1 a landed phase whose status and mergedAt are uncommitted in the "
+          "parent's tree is a landing-committed BREACH naming the file and the "
+          "stamp, and exits 1: %r" % ((code, answer),),
+          code == 1 and (answer or {}).get("verdict") == "breach"
+          and "docs/audit/audit-plan.json" in said and "mergedAt" in said
+          and "2026-01-02T00:00:00Z" in said)
+    _git(root, "add", "docs/audit/audit-plan.json")
+    _git(root, "commit", "-q", "-m", "chore(audit-state): phase P1 - landed")
+    code, answer, out = _landing_check([path, "P1", "--project", root])
+    check("lc2 THE ALLOW TWIN: the same stamp committed is clean, with its basis "
+          "naming what was compared: %r" % ((answer,),),
+          (answer or {}).get("verdict") == "clean"
+          and not (answer or {}).get("breaches")
+          and "HEAD" in str((answer or {}).get("basis")))
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write("\n")
+    code, answer, out = _landing_check([path, "P1", "--project", root])
+    check("lc3 a file that is dirty for some other reason, its stamp committed, "
+          "is not this breach - the check compares the stamp, never the file's "
+          "dirtiness: %r" % ((answer,),),
+          (answer or {}).get("verdict") == "clean")
+    path, root = _landed_repo(tmp, "lc-open")
+    code, answer, out = _landing_check([path, "P1", "--project", root])
+    check("lc4 a phase that has not landed (mergedAt null) gives the check no "
+          "subject: %r" % ((answer,),),
+          (answer or {}).get("verdict") == "not-applicable")
+    path, root = _landed_repo(tmp, "lc-all")
+    _stamp(path)
+    code, out, _err = _run([path, "--all", "--project", root])
+    check("lc5 --all carries the check too, and its breach reaches the verdict "
+          "list: %r" % (out[-300:],),
+          code == 1 and "P1 landing-committed: " in out)
 
 
 def _load(path):

@@ -889,6 +889,30 @@ def _brief_cases(check):
           and "inherited" in ptext6.lower() and "red-first" in ptext6.lower()
           and "answered by returns/P1/" in ptext6)
 
+    unowed = _bf_signed_phase()
+    for task in unowed["phases"][0]["tasks"]:
+        task["reviewPerTask"] = "always"
+    proj7, mpath7 = project("bf-phase-unowed", unowed)
+    for argv in (["init", "-q"], ["config", "user.email", "t@t"],
+                 ["config", "user.name", "t"], ["add", "-A"],
+                 ["commit", "-qm", "fixture"]):
+        subprocess.run(["git", "-C", proj7] + argv, capture_output=True,
+                       timeout=60)
+    head7 = subprocess.run(["git", "-C", proj7, "rev-parse", "HEAD"],
+                           capture_output=True, timeout=60).stdout.decode().strip()
+    code8, _said8 = brief(proj7, mpath7, "P1", "phase")
+    ptext7 = read(brief_file(proj7, "P1", "phase.md")) or ""
+    check("bf20 a phase brief owing no task its answers still names the filing "
+          "command keyed on its head, with an empty `tasks` list - the step "
+          "driver reads the review from the filed return, never from a final "
+          "message: %r" % ([ln for ln in ptext7.splitlines()
+                            if "submit" in ln or "tasks" in ln][:4],),
+          code8 == M.E_OK and len(head7) == 40
+          and "submit P1 --role reviewer" in ptext7
+          and "--head %s" % (head7,) in ptext7
+          and "`\"tasks\": []`" in ptext7
+          and not [ln for ln in ptext7.splitlines() if ln.startswith("owed:")])
+
     code6, said6 = brief(proj, mpath, "P1", "executor")
     check("bf11 a phase id asked for a task's role, or a task id for the "
           "phase's, is a miss rather than a brief about the wrong thing: %r"

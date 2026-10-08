@@ -33,8 +33,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `openChoices`, the head it was computed at, the tasks owed their answers and the filing
   command. `_refs.phase_return_key_drift()` holds the entry's keys in
   `agents/audit-reviewer.md` equal to the ones the filing verb reads.
+- **The step driver signs a phase off.** Once every task is closed, `drive-phase.py next`
+  prints the phase reviewer's dispatch, records the filed review's findings in one `finding`
+  call, and prints one `decide triage` listing each open finding with its options and the
+  predicted price of a fix task, with the basis of that figure. `--answer fix --fix <id>` adds a
+  task per finding through `audit-task.py add --fixes` and drives it; `--answer sign-off --reason
+  <summary>` runs the phase gate, `verify-invariants.py`, the sign-off verb, the commit, the
+  landing and the lock release as one step. A red phase gate stops that step before the sign-off
+  verb, and the next `next` prints the triage again.
+- **The invariants report a landing whose stamp is uncommitted.** A new `landing-committed`
+  check compares a landed phase's `status` and `mergedAt`, as the working tree holds them, with
+  what HEAD commits, and names the file and both values when they differ. `verify-invariants.py`
+  and `/audit:status --gate --fail-on invariant-breach` both run it.
 
 ### Changed
+- **`close-phase.py` commits the stamp it writes.** The phase's `mergedAt` and stored `done`
+  used to stay as uncommitted edits in the parent's tree after a landing. They are now committed
+  there through `commit-audit-state.py` (and `commit-manifest-index.py` in a sharded plan), with
+  the subject `landed on <parent>`. When the parent is checked out nowhere and the main tree holds
+  the phase branch, the commit goes on that branch and the parent is fast-forwarded to it. A stamp
+  in a tree holding any other branch is left uncommitted, and the output says so. A re-run commits
+  a stamp an earlier landing left uncommitted. If a commit verb refuses, the run exits 1.
+- **The phase reviewer's brief names the filing command even when no task is owed its
+  answers**, with an empty `tasks` list, so the step driver can read the review from the filed
+  return.
 - **Without a `review.perTask` key, no reviewer runs per task any more.** The default is `phase`.
   `audit-task.py done --commit <sha>` records the task's intent as `deferred` and refuses every
   `--intent` word, writing nothing - `not-asked` included, except on a task `add --fixes`
@@ -143,6 +165,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   release is therefore a major is the operator's call, and is not decided here.
 
 ### Fixed
+- **A task whose intent reads `deferred` is listed as still owed its phase review.**
+  `_status_facts.intent_unanswered` counted `deferred` as an answer, so `/audit:status` and the
+  sign-off verb's output dropped such a task from the list of done tasks with no intent answer.
 - **The meter's outlier advisory no longer counts a kept ledger row from outside the task
   it is warning about.** It used to sum `ledger["kept"]` over every row the ledger holds, so a
   row that kept its stored figure on some unrelated task inflated the "N ledger row(s) keep the

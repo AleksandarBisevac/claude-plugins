@@ -1339,8 +1339,27 @@ def check_close_phase_lands_worktree_signoff_sharded(fx):
     return _land_worktree_signoff(fx, sharded=True)
 
 
+def _landing_commit_only(fx, before):
+    """`(ok, said)` - whether the commits `FIXTURE_BRANCH` gained since `before`
+    are exactly the landing's one stamp commit, an audit-state commit whose
+    parent is `before`: the record of the landing, and no merge."""
+    _, log = git(fx, "log", "--format=%P %s", "%s..%s" % (before, FIXTURE_BRANCH))
+    rows = [ln for ln in (log or "").splitlines() if ln.strip()]
+    ok = (len(rows) == 1 and rows[0].split(" ", 1)[0] == before
+          and "chore(audit-state): phase P9 - landed on " in rows[0])
+    return ok, "; ".join(r[:90] for r in rows) or "no commit"
+
+
+def _unland(fx, before):
+    """Take `FIXTURE_BRANCH` back to `before` and keep the files as they stand:
+    the stamp commit is undone, never the work, so the checks after this one
+    meet the tree this one met."""
+    git(fx, "reset", "-q", "--mixed", before)
+
+
 def check_close_phase_already_contained(fx):
-    """A phase that already landed makes NO git write and exits 0.
+    """A phase that already landed makes NO merge write and exits 0 - its one
+    git write is the commit of the stamp it records in the parent's tree.
 
     The two write paths disagree here and that is why it is asked first: measured,
     `git merge --ff-only` calls this state `Already up to date.` exit 0 while
@@ -1355,20 +1374,21 @@ def check_close_phase_already_contained(fx):
     code, out = _wt_add(fx, wt, branch)
     if code != 0:
         return False, "could not create the worktree: %s" % (out or "").strip()
+    _, before = git(fx, "rev-parse", FIXTURE_BRANCH)
+    before = before.strip()
     try:
         write_manifest(fx, _wt_manifest(branch=branch))
-        _, before = git(fx, "rev-parse", FIXTURE_BRANCH)
         code, out = script(fx, "close-phase.py", MANIFEST_REL, "P9",
                            "--project", ".", "--keep-worktree", "--keep-branch")
-        _, after = git(fx, "rev-parse", FIXTURE_BRANCH)
+        only, said = _landing_commit_only(fx, before)
         return (code == 0 and "non-fast-forward" not in (out or "")
-                and "already-contained" in (out or "")
-                and before.strip() == after.strip()), (
-            "exit %r; %s unchanged=%r; output: %s"
-            % (code, FIXTURE_BRANCH, before.strip() == after.strip(),
+                and "already-contained" in (out or "") and only), (
+            "exit %r; %s gained only the stamp commit=%r (%s); output: %s"
+            % (code, FIXTURE_BRANCH, only, said,
                (out or "").strip().split("\n")[0][:80]))
     finally:
         _wt_drop(fx, wt, branch)
+        _unland(fx, before)
         write_manifest(fx, manifest_body())
 
 
@@ -1448,6 +1468,8 @@ def check_close_phase_stamps_already_contained(fx):
     code, out = _wt_add(fx, wt, branch)
     if code != 0:
         return False, "could not create the worktree: %s" % (out or "").strip()
+    _, head = git(fx, "rev-parse", FIXTURE_BRANCH)
+    head = head.strip()
     try:
         write_manifest(fx, _wt_manifest(branch=branch))
         before = [p for p in read_manifest(fx)["phases"] if p["id"] == "P9"]
@@ -1455,13 +1477,24 @@ def check_close_phase_stamps_already_contained(fx):
                            "--project", ".", "--keep-worktree", "--keep-branch")
         after = [p for p in read_manifest(fx)["phases"] if p["id"] == "P9"]
         stamped = after and after[0].get("mergedAt")
+        # ...AND COMMITTED where it was written: HEAD's own copy of the plan
+        # carries the stamp, so the parent's tree holds no edit of the landing.
+        _, shown = git(fx, "show", "%s:%s" % (FIXTURE_BRANCH, MANIFEST_REL))
+        try:
+            committed = [p for p in json.loads(shown)["phases"]
+                         if p["id"] == "P9"][0].get("mergedAt")
+        except (ValueError, KeyError, IndexError):
+            committed = None
+        only, said = _landing_commit_only(fx, head)
         return (code == 0 and before and not before[0].get("mergedAt")
-                and bool(stamped)), (
-            "exit %r; mergedAt before=%r after=%r; output: %s"
+                and bool(stamped) and committed == stamped and only), (
+            "exit %r; mergedAt before=%r after=%r committed=%r; %s; output: %s"
             % (code, before[0].get("mergedAt") if before else "<no phase>",
-               stamped, (out or "").strip().split("\n")[0][:70]))
+               stamped, committed, said,
+               (out or "").strip().split("\n")[0][:70]))
     finally:
         _wt_drop(fx, wt, branch)
+        _unland(fx, head)
         write_manifest(fx, manifest_body())
 
 
@@ -1974,10 +2007,12 @@ CHECKS = (
      "and keeps its mergedAt", check_close_phase_lands_worktree_signoff_from_parent),
     ("g16d ...and the same on the SHARDED layout, where the verdict lives in the "
      "phase's shard", check_close_phase_lands_worktree_signoff_sharded),
-    ("g17 an already-landed phase makes no git write, and is not reported as a "
-     "conflict", check_close_phase_already_contained),
+    ("g17 an already-landed phase makes no merge write - its one commit is the "
+     "stamp's - and is not reported as a conflict",
+     check_close_phase_already_contained),
     ("g17b ...and it is STAMPED, so a phase merged by hand is not left unsettled "
-     "with its worktree already gone", check_close_phase_stamps_already_contained),
+     "with its worktree already gone - and the stamp is COMMITTED in the parent's "
+     "tree, never left there as an edit", check_close_phase_stamps_already_contained),
     ("g17c a merge into a parent checked out NOWHERE still deletes the branch - "
      "`git branch -d` grades from HEAD and refuses this one",
      check_close_phase_deletes_after_no_checkout_merge),
