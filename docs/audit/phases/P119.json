@@ -318,7 +318,7 @@
     {
       "id": "P119.6-g0k",
       "title": "the executor brief prints a test command that can run",
-      "status": "in_progress",
+      "status": "done",
       "description": "Internal fault, measured by the levers analysis. The executor brief prints `run-test-gate.py ... --own --quiet` while the same brief says no gate entry names the task's tests.add file, so the executors' own-tests runs printed 'no gate entry' or rc=2 three times in each arm C session: wasted requests in the cycle. Print the own-tests command only when a gate entry selects the task's tests; otherwise print the suite command the brief already names for the task's test file. Cases: a brief whose gate selects the task's tests prints the own-tests command; its twin, whose gate does not, prints the runnable suite command and no own-tests line. CHANGELOG under [Unreleased] gets one line for lever D and one for this. Every case is shown red first.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -357,18 +357,28 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8aefbd46",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes the internal fault that the executor brief printed an own-tests command that could not run. The rule for which gate entries are a task's own now lives in one function, _manifest_phases.own_gate_entries. run-test-gate's own_gate_of and audit-lookup's own_tests_line both call it, and neither keeps a copy.\n\nThe brief's \"What you run\" line prints:\n- `--own --quiet` only when the task has its own entries;\n- otherwise, the gate command that names the task's tests.add file;\n- when no entry names that file, says so and points to the command in the filing block;\n- when the task adds no test, says it has nothing of its own to run.\n\n\"Then hand back one line\" is removed from all four briefs, because submit's last line carries it now.\n\nexecute-task.md and audit-executor.md say to run the command the brief prints, without restating the rule. The executor prompt is 7104/9000 bytes by `tools/measure-context.py --gate`.\n\nPLUGIN-BUILD-GUIDE's module-map row for audit-lookup gains _manifest_phases.\n\nCases:\n- og1, og2: the rule and its phase-gate twin.\n- own13: a phase gate naming the task's file is not its own.\n- bf26: no brief carries the hand-back sentence.\n- bf27: each brief names submit once.\n- bf28-bf30: own line; suite fallback; no entry.\n- bf31: both callers follow the shared function.\n\nRed-first: proved on og1/og2 and bf26/bf29/bf30/bf31. own13 passes at HEAD; it locks behaviour that is already correct.\n\nMutation probe (scratchpad P119.6-g0k/mut.py), re-run by the orchestrator: exit 0, all 12 checks KILLED, including three that break the shared function and turn every caller's suite red.",
+        "descriptive": "The executor is now told to run a test command that actually runs its tests, the rule for that lives in one place both the gate and the brief use, and no brief repeats the hand-back instruction."
       },
       "startedAt": "2026-10-08T19:38:24Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T20:59:57Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "plugins/audit/tests/test_run_test_gate.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-08T20:44:50Z.73bb6b",
         "status": "passed",
         "at": "2026-10-08T20:44:50Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8aefbd46",
+        "at": "2026-10-08T20:59:57Z",
+        "basis": "orchestrator check: one shared own-gate rule, both callers delegate; mutation probe re-run, twelve checks killed"
       }
     },
     {
