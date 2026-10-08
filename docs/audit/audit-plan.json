@@ -2527,7 +2527,8 @@
       "P106.2",
       "P104.2",
       "P118.4",
-      "P118.6"
+      "P118.6",
+      "P118.22-v7t"
     ],
     "plugins/audit/scripts/demo/gen-demo-usage.py": [
       "P10.3",
