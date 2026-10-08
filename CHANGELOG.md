@@ -79,19 +79,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   before the next task starts, because a gate run while a sibling executor edits the same tree
   measures that sibling's unfinished work. The cost is wall clock: a wide phase now takes time
   in proportion to its task count. The README's `/audit:phase` row says so.
-- **Under `review.perTask: phase`, the step driver puts the phase review's answers in front of a
-  human before the landing.** The triage lists each task the review answered `diverges` or
-  `cannot-tell`, each red-first `not-proved` and each inherited-test `flagged`, and a phase intent
-  of `diverges` or `cannot-tell`, and refuses `sign-off` until `--answer accept --reason` settles
-  them; the reason goes into the summary. A task added after the review's head gets a fresh phase
+- **The phase review's answers that only a human settles stop the sign-off, in the step driver
+  and in the sign-off verb.** The driver's triage lists each task the review answered `diverges`
+  or `cannot-tell`, each red-first `not-proved` and each inherited-test `flagged`, and a phase
+  intent of `diverges` or `cannot-tell` - under every `review.perTask` value, not only `phase` -
+  and refuses `sign-off` until `--answer accept --reason` settles them; the reason goes into the
+  summary. `audit-task.py signoff` (`/audit:phase signoff`) reads the same answers and the same
+  settlement, and exits 2 writing nothing while one is unsettled, so the verb run by hand does
+  not sign off what the triage would have stopped. A task added after the review's head gets a fresh phase
   review, and a fix task closed after it is listed as unreviewed, with `--answer re-review`
   beside `sign-off` (whose summary then names it). Sign-off also asks again what it had stopped
   asking: a `meta.runtimeBoot` boot when the phase touched its app root (`booted` or
   `not-reachable`, each with a reason), a phase gate that printed `NO OVERLAP` or `TREE CHANGED`
-  (`accept --reason`; a task gate's did-line now carries the banner too), and a parent that moved
-  (`no-ff`, or `leave --reason`, never a rebase). A high-risk task covered by a `--confirm-high-risk`
-  answer commits without asking again. A blocked task's stop names `audit-task.py unblock <id>
-  --reason`. `tools/stream-cost.py` reads the driver's did-words for a fix task added, the landing
+  (`accept --reason`; a task gate's did-line now carries the banner too), an invariant breach
+  (`accept --reason`), and a parent that moved (`no-ff`, or `leave --reason`, never a rebase).
+  The triage, the runtime boot, the gate banner and the invariant breach each also take
+  `decline --reason`, which keeps the human's words for the summary and hands back to the work.
+  A boot, and an accept of a gate banner or an invariant breach, is bound to the HEAD it was given
+  at and asked again once a commit moves it; a green phase gate recorded at an unchanged HEAD is
+  reused rather than run again, so an accept there does not pay for a second gate run. A
+  high-risk task covered by a `--confirm-high-risk` answer commits without asking again. A
+  blocked task's stop names its remedy per task: `audit-task.py start <id>` while it has attempts
+  left, `audit-task.py unblock <id> --reason` once they are spent. `tools/stream-cost.py` reads the driver's did-words for a fix task added, the landing
   and the lock release, so a driven sign-off with a fix task is no longer counted as task cycle.
 - **No pipeline command makes the main loop read reference prose first.** `/audit:run`,
   `/audit:next`, `/audit:resume`, `/audit:phase`, `/audit:review` and `/audit:task` are cut to
@@ -122,8 +131,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   sign-off; `/audit:phase signoff` writes those answers onto each task's `intentCheck` and
   **refuses, under `--verdict skipped` as under `passed`, while a task that records a commit
   lacks them**, and `close-phase.py` refuses its own merge on the same reading - of the plan it
-  is handed and of the copy the branch tip brings in, refusing when the tip's cannot be read.
-  It does not ask a task that no longer records its commit, a merge made by hand or through a
+  is handed, of the copy on disk in the worktree holding the branch, and of the copy the branch
+  tip brings in. Where a task's key reads `phase`, it also refuses a tip whose copy records no
+  sign-off verdict, since a task's close reaches the branch only with the sign-off commit, and
+  a tip whose copy cannot be read when the plan is versioned (inside the git root, not
+  ignored, and committed at the parent or at the phase's `baseRef`); a plan git never commits
+  is asked through its copy on disk instead. It does not ask a task that no longer records its commit, a merge made by hand or through a
   pull request, or who filed the phase return; the plugin README's followed table names each.
   A phase already under way when you upgrade reads the new default too. **To keep a reviewer
   per task, set `"review": {"perTask": "always"}`** in `.claude/audit.config.json` - before
@@ -144,8 +157,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   write** - a filed return, a recorded gate. This loosens `stamp-verification.py compare`:
   a change to those paths between a stamp and its comparison is not reported.
 - **`done --no-change` is refused when one of the task's declared files changed since its
-  start**: a commit since `startedAt` touching one, or an uncommitted change to one. A task with
-  no commit is never asked for review answers, so the claim is checked against git instead.
+  start**: a commit since the HEAD its `task.start` row records touching one, or an uncommitted
+  change to one. Without that row the span starts at the phase's `baseRef`, cut by `startedAt`,
+  and leaves out a commit another task records as its own. Each declared file is read relative
+  to the git root, as the task commit stages it, so a repository in a subdirectory of the
+  project (`gitRoot`) is asked the same question; a declared file outside the git root is named
+  as not asked. A task with no commit is never asked for review answers, so the claim is
+  checked against git instead.
 - **`close-phase.py` leaves the stamp uncommitted when the tree holds other pending changes**
   to the plan file, the journal or the evidence that this landing did not write, and says so.
   The audit-state commit stages each of those whole, so committing there would carry another

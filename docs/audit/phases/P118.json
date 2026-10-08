@@ -1426,7 +1426,7 @@
     {
       "id": "P118.15-v7t",
       "title": "the human-settled answers and the landing property hold at the verbs, not only in the driver",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes P118 review round 2 findings R27, R28, R29, R30, R34 and R40, plus the phase-intent wording of R31, in the guarantee core. close-phase refuses to land a phase whose tip records no sign-off verdict when any task's key reads phase. The settlement of a reviewer's diverges, cannot-tell, not-proved or flagged answer moves into the signoff verb, through one predicate in _filed_returns shared with the driver's human_answers. An unreadable tip is refused only when the plan is versioned. --no-change maps task files to the git root as commit-task-work does, and bounds its span by the start's HEAD rather than by date. The unblock journal action is documented. CHANGELOG, COMPATIBILITY and the README say exactly where each stop applies. Every new case is shown red first, with its allow half.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -1464,21 +1464,26 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T07:10:12Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T08:06:31Z.c765d2",
+        "status": "passed",
+        "at": "2026-10-08T08:06:31Z"
+      }
     },
     {
       "id": "P118.16-v7t",
       "title": "every driver decision a human can answer no to hands back to the work",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes P118 review round 2 findings R36, R31 (the fix-task half), R32, R33, R35, R37, R38, R39, R41 and R42, in the step driver and its prose. gate-coverage, runtime-boot and the triage answers gain a decline that hands back to the work. An accept at an unchanged head reuses the recorded green phase-gate run. Accepted coverage and boot are reset when a task closes after them. A risk confirmation counts only after the task's last reopen. The blocked remedy names unblock or start per task, from its attempts. fixes_after lists only fix tasks closed not-asked under the phase key. A skipped landing commit is named on the did-line. phase.md's description says one task at a time, and verbs-in-full.md names unblock. Every new case is shown red first.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1508,16 +1513,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T07:10:13Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T08:14:42Z.d5c7e7",
+        "status": "passed",
+        "at": "2026-10-08T08:14:42Z"
+      }
     }
   ],
   "startedAt": "2026-10-07T21:17:01Z"

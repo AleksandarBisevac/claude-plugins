@@ -393,7 +393,7 @@ L7:
   audit-logs -> _claude_home, _gate_feed, _output
   audit-lookup -> _areas, _claude_home, _config_rules, _evidence_io, _filed_returns, _journal_io, _loader, _manifest_io, _manifest_vocab, _output
   audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _locks, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
+  audit-task -> _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _loader, _locks, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
@@ -1017,10 +1017,14 @@ the files the audit-state commit stages whole - a plan file differing from HEAD 
 stamp fields, a journal row about anything else, any evidence change (`pending_beyond_stamp`), so
 another session's work never rides into the landing's commit. A commit verb that refuses makes the
 run exit 1. Under `review.perTask: phase` the merge is refused while a task recording a commit
-lacks its answers, asked of the handed plan AND of the branch tip's copy (`landed_answers_refusal`):
-from the parent's checkout the handed copy is the plan as it stood at the fork, where no task
-records a commit yet, so it alone asks nothing; a tip whose copy cannot be read is refused wherever
-the property could apply. A re-run
+lacks its answers, asked of the handed plan, of the worktree's copy on disk (`worktree_phase`) AND
+of the branch tip's copy (`landed_answers_refusal`): from the parent's checkout the handed copy is
+the plan as it stood at the fork, where no task records a commit yet, so it alone asks nothing.
+Wherever a task's key reads `phase`, a tip whose copy records no sign-off verdict is refused - a
+task's close reaches the branch only with the sign-off commit - and so is a tip whose copy cannot be
+read when the plan is versioned (`plan_versioned`: inside the git root, not ignored, committed at
+the parent or at `baseRef`); a plan git never commits is asked through its copy on disk, which must
+then record the verdict. `ra10`-`ra15` hold it. A re-run
 over a landed phase - its branch gone or not - commits a stamp an earlier landing left as an
 edit, and commits nothing when there is none. `lt` in `plugins/audit/tests/test_close_phase.py`
 and `g17`/`g17b` in `tools/check-git-pipeline.py` hold it against real git. Each of the three plan writes here — the stamp, the
@@ -1945,8 +1949,13 @@ executor's red-first words are `RED_FIRST_WORDS`, held equal to the schema enum 
 byte-identical; `read_filed_return` reports a file that will not parse as a problem, never as
 an absence; `claims_from_return` hands the commit path the `claims` text verbatim. The evidence
 directory is handed in rather than resolved — resolving it is `_evidence_io`'s, one layer up —
-so the module reaches nothing but `_output`. What it cannot hold: the task id and role a
-caller files under are the caller's word. Cases in `plugins/audit/tests/test__filed_returns.py`.
+so the module reaches nothing but `_output`. `needs_human` is the one reading of which phase-return
+answers only a human settles - a task entry's `diverges`/`cannot-tell`, `not-proved` or `flagged`,
+and a phase intent of `diverges`/`cannot-tell` - shared by the driver's triage and
+`audit-task.py signoff`, which refuses while one is unsettled; `settled_answers` reads the
+settlement the triage's `--answer accept` writes at `drive_state_path` (`<stateDir>/drive/<phase>.json`),
+and a record that will not parse is a problem, never nothing settled. What it cannot hold: the task
+id and role a caller files under are the caller's word. Cases in `plugins/audit/tests/test__filed_returns.py`.
 
 ### `plugins/audit/scripts/manifest/_task_outputs.py`
 What a task's **`outputs`** pattern may be, and what an honoured one reaches (layer 1).
@@ -4069,10 +4078,12 @@ finding in one `audit-task.py finding --findings-file -` call (`record_findings`
 predicted to cost - `FIX_TASK_PREDICTED`, with `FIX_TASK_PRICE_BASIS` printed beside it, which
 says it is a benchmark prediction and never a measurement of the project. Each line of that print
 stays inside `TRIAGE_LINE_BYTES`. **The review's answers reach a human there too**
-(`human_answers`): every task entry of a filed phase return answering `diverges` or `cannot-tell`,
+(`human_answers`, which is `_filed_returns.needs_human` - the predicate `audit-task.py signoff`
+refuses over as well, so the verb run by hand stops where the triage does): every task entry of a filed phase return answering `diverges` or `cannot-tell`,
 grading red-first `not-proved` or inherited tests `flagged`, and a phase intent of `diverges` or
 `cannot-tell`, is an `[accept]` line, and `sign-off` is refused (`triage_refusal`) until `--answer
-accept --reason` settles them - the reason is kept in the summary. A review filed at the marked
+accept --reason` settles them - the reason is kept in the summary - or `--answer decline --reason`
+hands the phase back to the work (`decline_answer`). A review filed at the marked
 head while a task added since is owed its answers is dispatched again (`owed_tasks`), and a
 recorded fix task closed at a commit the head does not hold (`fixes_after`) is listed as
 unreviewed, with `--answer re-review` beside a `sign-off` whose summary then names it. `--answer fix --fix <id>` adds a task per finding
@@ -4091,7 +4102,13 @@ decisions are a phase reviewer that filed nothing (`redispatch`), a runtime boot
 or `not-reachable`, each with a reason, asked before the gate runs), a green phase gate that
 printed `NO OVERLAP` or `TREE CHANGED` (`gate_banners`; `accept`), an invariant breach
 (`accept`), and a parent that moved (`no-ff`, or `leave` with a reason, the rule printed under
-it forbidding a rebase). Every reason is kept in the summary (`signoff_summary`). The `sg` cases
+it forbidding a rebase). The boot, the banner and the breach also take `decline` with a reason
+(`decline_answer`): the words are kept, the decision is dropped, the green gate it was asked
+over is no longer reused, and the drive goes back to any task still open or stops naming how
+to add one. A `booted` and an `accept` of a banner or a breach are bound to the HEAD they were
+given at (`bind_at`, `held_at`), so a commit after them asks again; a green phase gate recorded
+at the same HEAD is reused rather than run again (`green_phase_gate`). Every reason still held
+is kept in the summary (`signoff_summary`). The `sg` cases
 drive it over the fixture plan: sign-off's model-facing steps are the review's dispatch, the
 triage and the final step, a red phase gate never reaches `signoff`, and several findings are one
 `finding` call - each beside a mutant driver that breaks it.
@@ -4107,7 +4124,8 @@ with a rule. A red gate offers `rerun` beside `retry` and `block`: `rerun` measu
 re-starting the task, so a gate that could not run spends no attempt; `block` runs
 `commit-audit-state.py` after the block verb (`keep_record`), since a blocked task gets no task
 commit to carry the rows its gate wrote, and a blocked task's stop and a stalled phase both print
-the remedy, `audit-task.py unblock <id> --reason`. A task gate's banners ride its did-line
+each blocked task's own remedy (`blocked_remedy`): `start <id>` while it has attempts left,
+`unblock <id> --reason` once they are spent (`attempts_spent`). A task gate's banners ride its did-line
 (`gate P1.1 green (NO OVERLAP)`), and a high-risk task a `risk.confirmed` journal row of this
 phase names (`confirmed_in_advance`) commits without the decision, its did-line saying so. A print whose call closed, blocked or signed off an item
 carrying an `ado` link, on a plan whose board takes the echo, adds `ado echo owed: <ids>`
@@ -4770,8 +4788,10 @@ stored `done` over an open task is a finding every later verb refuses on.
 
 `done --no-change --reason TEXT` is the one close without a SHA, for a task whose answer was that
 nothing needed to change, and it is refused when the task's declared files changed since its start
-(`_no_change_moves`: a commit since `startedAt`, bounded below by `baseRef`, touching one, or an
-uncommitted change to one): `commit` stays null and `outcome.noChange` records the reason and the HEAD
+(`_no_change_moves`: a commit since the HEAD the task's `task.start` row records (`_start_head`),
+touching one, or an uncommitted change to one; without that row, a commit since `startedAt` bounded
+below by `baseRef` that no other task records as its own. Each entry is mapped to the git root as
+`commit-task-work.stage_targets` maps it, and one outside the root is named as not asked): `commit` stays null and `outcome.noChange` records the reason and the HEAD
 it was examined at (`_examined_head`; null, and said, when git cannot name one), which is the block
 `_commit_trail.no_change_close` answers from for the doctor's no-SHA warning as well. `--intent
 not-asked --intent-basis TEXT` records an intent question deliberately not put; `_done_flags_refusal`

@@ -30,9 +30,12 @@ what a fix task is predicted to cost, with the basis of that figure. Answered
 which the drive then runs like any other, and the triage is printed again.
 The triage also puts to a human what the review answered that only a human
 settles - a task that diverges, a red-first not proved - and refuses
-`sign-off` until `accept` gives their reason; it lists a fix task closed after
-the review's head with `re-review` beside it, and dispatches the review again
-when a task added since is owed its answers.
+`sign-off` until `accept` gives their reason. Every decision a human can say
+no to - those answers, the runtime boot, the gate's banners, an invariant
+breach - takes `decline`, which keeps their words and hands back to the work;
+an accept or a boot holds only at the HEAD it was given at. The triage lists
+a fix task closed after the review's head with `re-review` beside it, and
+dispatches the review again when a task added since is owed its answers.
 Answered `sign-off` with the summary, one `next` runs the phase gate, the
 invariants check, the sign-off verb, the commit, the landing and the lock
 release, and prints `done`. A red phase gate stops that step before the
@@ -165,7 +168,8 @@ import _manifest_io as _mio  # noqa: E402  (loader, phase resolver, TERMINAL)
 import _evidence_io as _evio  # noqa: E402  (project_config_for, evidence_dir)
 import _journal_io  # noqa: E402  (read_all: a high-risk answer given before the run)
 import _filed_returns as _fr  # noqa: E402  (where a filed return lives, and its read;
-#                                            the per-task review key a task holds)
+#                                            the per-task review key a task holds;
+#                                            the driver's state path, needs_human)
 import _config_rules  # noqa: E402  (review_per_task_mode: the config's reading now)
 import _areas  # noqa: E402  (resolve_review_skill: whether the phase review has a skill)
 import _status_facts  # noqa: E402  (ready_tasks: the one readiness rule)
@@ -179,7 +183,6 @@ INSTRUCTION_BYTES = 300
 
 EXECUTOR_AGENT = "audit:audit-executor"
 REVIEWER_AGENT = "audit:audit-reviewer"
-DRIVE_DIRNAME = "drive"
 
 # The words the did-line uses for a task the driver started or closed. They are
 # what `did_tasks` reads back, and what `tools/stream-cost.py` reads a driver
@@ -210,12 +213,19 @@ RELEASED = "lock released"
 # is here with a rule that is not empty. A rule printed on a success step costs
 # bytes inside `INSTRUCTION_BYTES` on every task, so each is one short line.
 DISPATCH_RULE = "Description starts with the id; dispatch nothing alongside."
-UNBLOCK_RULE = ("A blocked task moves only on a human's yes: audit-task.py unblock "
-                "<id> --reason \"<their words>\", then next again.")
+UNBLOCK_RULE = ("A blocked task moves only on a human's yes, then next again; "
+                "each task's remedy is named above.")
+# The remedy line under a blocked stop, one entry per blocked task, rendered by
+# `blocked_remedy` from the task's attempts.
+REMEDY_HEAD = "remedy (audit-task.py): "
 # The triage's rule when a reviewer's answer waits on a human; printed only then,
 # so a clean review's triage carries no line it does not need.
-ANSWERS_RULE = ("Each [accept] line is the human's to settle (AskUserQuestion); "
-                "accept only on their word, with their reason.")
+ANSWERS_RULE = ("Each [accept] line is the human's to settle (AskUserQuestion): "
+                "accept on their yes, decline on their no, with their words.")
+# What a `decline` hands back when no task is open to run: the remedy is work,
+# and work enters the plan as a task.
+DECLINE_REMEDY = ("Add the task that answers it: audit-task.py add \"<the fix>\" "
+                  "--phase %s --files <files>, then next %s")
 STEPS = {
     "dispatch-executor": {
         "line": "dispatch %(agent)s %(task)s model=%(model)s brief=%(brief)s",
@@ -315,14 +325,18 @@ DECISIONS = {
     "no-change": (("no-change", "retry"), ("no-change",)),
     "review-answer": (("continue",), ()),
     "stalled": ((), ()),
-    # `accept` settles the reviewer answers a human decides, and `re-review`
-    # dispatches the phase review again over fix tasks it never saw; the triage
-    # refuses each where it has nothing to act on (`answer_refusal`).
-    "triage": (("sign-off", "fix", "accept", "re-review"), ("sign-off", "accept")),
+    # `accept` settles the reviewer answers a human decides and `decline` is
+    # their no, and `re-review` dispatches the phase review again over fix
+    # tasks it never saw; the triage refuses each where it has nothing to act
+    # on (`answer_refusal`). Every decision a human can say no to takes
+    # `decline`, which hands back to the work (`decline_answer`).
+    "triage": (("sign-off", "fix", "accept", "decline", "re-review"),
+               ("sign-off", "accept", "decline")),
     "no-phase-review-return": (("redispatch",), ()),
-    "invariant-breach": (("accept",), ("accept",)),
-    "gate-coverage": (("accept",), ("accept",)),
-    "runtime-boot": (("booted", "not-reachable"), ("booted", "not-reachable")),
+    "invariant-breach": (("accept", "decline"), ("accept", "decline")),
+    "gate-coverage": (("accept", "decline"), ("accept", "decline")),
+    "runtime-boot": (("booted", "not-reachable", "decline"),
+                     ("booted", "not-reachable", "decline")),
     "not-fast-forward": (("no-ff", "leave"), ("leave",)),
 }
 # The decisions sign-off owns, answered by `apply_phase_answer`.
@@ -342,11 +356,6 @@ TRIAGE_LINE_BYTES = 160
 FIX_TASK_PREDICTED = (0.1045, 0.1192)
 FIX_TASK_PRICE_BASIS = ("a benchmark prediction for a small task, not this "
                         "project's measurement")
-# The reviewer answers only a human settles, read off a filed review: an intent
-# answer, and a red-first grade or an inherited-test answer.
-HUMAN_ANSWERS = ("diverges", "cannot-tell")
-HUMAN_RED_FIRST = ("not-proved",)
-HUMAN_INHERITED = ("flagged",)
 # The gate's banners a green exit still prints, and the clause each becomes.
 GATE_BANNERS = (("NO OVERLAP WITH THIS WORK", "NO OVERLAP"),
                 ("TREE CHANGED OUTSIDE THIS WORK", "TREE CHANGED"))
@@ -356,12 +365,18 @@ GATE_BANNERS = (("NO OVERLAP WITH THIS WORK", "NO OVERLAP"),
 # goes red if either drifts.
 RISK_CONFIRMED = "risk.confirmed"
 RISK_COVERED = "%s: high-risk commits confirmed in advance for "
+# The journal row `audit-task.py reopen` writes; `hr3` drives the real verb.
+TASK_REOPEN = "task.reopen"
 TRUNCATED = " [truncated]"
 # The verdict sign-off records, and the word a phase's review status carries
 # once it is recorded.
 SIGNED_OFF = ("passed", "skipped")
 _BRIEF_HEAD = re.compile(r"^head: ([0-9a-f]{7,40})\s*$", re.M)
 _RUN_ID = re.compile(r"evidence: recorded (\S+)")
+# close-phase's lines for a landing whose `mergedAt` stamp it did not commit:
+# skipped, opening with the path the stamp sits in, or a commit that failed.
+_STAMP_LEFT = re.compile(r"the stamp is not committed here: (\S+)")
+_STAMP_FAILED = re.compile(r"the stamp is NOT committed: (.+)")
 
 
 def step_text(name, **fields):
@@ -445,7 +460,7 @@ def _task_args(ctx, verb, task_id, *extra):
 
 # --- the driver's own state -----------------------------------------------------
 def state_path(ctx):
-    return os.path.join(ctx["stateDir"], DRIVE_DIRNAME, "%s.json" % (ctx["phase"],))
+    return _fr.drive_state_path(ctx["stateDir"], ctx["phase"])
 
 
 def read_state(ctx):
@@ -791,7 +806,9 @@ def confirmed_in_advance(ctx, phase_id):
     the high-risk gate given before the run, for exactly the tasks it covered.
     A clipped summary's last id may be cut, so it is not read as covered, and a
     journal that cannot be read covers nothing: the gate then asks, as it would
-    with no answer given."""
+    with no answer given. The answer covers open work as it stood when it was
+    given, so a `task.reopen` row after it takes the task back out: its next
+    run is a commit nobody confirmed. The rows are read oldest first."""
     try:
         rows = _journal_io.read_all(ctx["project"])
     except Exception:                                          # noqa: BLE001
@@ -800,6 +817,9 @@ def confirmed_in_advance(ctx, phase_id):
     covered = set()
     for row in rows:
         summary = str(row.get("summary") or "")
+        if row.get("action") == TASK_REOPEN:
+            covered.discard(str((row.get("details") or {}).get("taskId")))
+            continue
         if row.get("action") != RISK_CONFIRMED or str(row.get("target")) != phase_id \
                 or not summary.startswith(head):
             continue
@@ -847,8 +867,9 @@ def triage_refusal(pending, answer):
     if answer == "sign-off" and answers:
         return ("sign-off waits on %d reviewer answer(s) a human settles: answer "
                 "accept --reason <their word on each> first" % (len(answers),))
-    if answer == "accept" and not answers:
-        return "no reviewer answer waits on a human here, so accept settles nothing"
+    if answer in ("accept", "decline") and not answers:
+        return ("no reviewer answer waits on a human here, so %s settles nothing"
+                % (answer,))
     if answer == "re-review" and not pending.get("fixesAfter"):
         return "no fix task closed after the review's head, so there is no " \
                "unreviewed diff to re-review"
@@ -996,37 +1017,12 @@ def review_due(ctx, manifest, phase):
 
 def human_answers(ctx, phase):
     """`[{"key", "who", "what", "note"}]` - every reviewer answer in a filed
-    phase return that only a human settles: a task entry answering `diverges`
-    or `cannot-tell`, grading red-first `not-proved` or inherited tests
-    `flagged`, and a phase intent of `diverges` or `cannot-tell`. Under
+    phase return that only a human settles, by `_fr.needs_human`: the one
+    predicate the sign-off verb refuses over too, so the triage and the verb
+    run by hand cannot disagree about which answers wait on a human. Under
     `always` the per-task reviewer's `review_items` raise the same answers at
-    each close; under `phase` this is where they meet a human, before the
-    landing. Every filed return of the phase is read, so a review dispatched
-    again does not drop an answer an earlier one gave."""
-    found = []
-    for rel, body, _problem in _fr.phase_returns(ctx["evidence"], phase["id"]):
-        if not isinstance(body, dict):
-            continue
-        entries = body.get("tasks") if isinstance(body.get("tasks"), list) else []
-        for entry in [e for e in entries if isinstance(e, dict)]:
-            said = []
-            if entry.get("answer") in HUMAN_ANSWERS:
-                said.append(("intent %s" % (entry["answer"],), entry.get("note")))
-            if entry.get("redFirst") in HUMAN_RED_FIRST:
-                said.append(("red-first %s" % (entry["redFirst"],),
-                             entry.get("redFirstBasis")))
-            if entry.get("inheritedTests") in HUMAN_INHERITED:
-                said.append(("inherited tests %s" % (entry["inheritedTests"],),
-                             entry.get("inheritedTestsBasis")))
-            found += [{"key": "%s#%s#%s" % (rel, entry.get("id"), what),
-                       "who": str(entry.get("id")), "what": what, "note": note}
-                      for what, note in said]
-        intent = body.get("intent") if isinstance(body.get("intent"), dict) else {}
-        if intent.get("answer") in HUMAN_ANSWERS:
-            found.append({"key": "%s#phase" % (rel,), "who": "phase",
-                          "what": "intent %s" % (intent["answer"],),
-                          "note": intent.get("note")})
-    return found
+    each close; the triage is where every key meets them before the landing."""
+    return _fr.needs_human(_fr.phase_returns(ctx["evidence"], phase["id"]))
 
 
 def is_ancestor(ctx, commit, head):
@@ -1042,11 +1038,14 @@ def is_ancestor(ctx, commit, head):
 
 
 def fixes_after(ctx, phase, head):
-    """The recorded fix tasks closed at a commit the phase review's `head` does
-    not hold - diffs no review saw. One git could not place is listed too: an
-    unknown is not a reviewed diff."""
+    """The recorded fix tasks closed `not-asked` under the phase key at a
+    commit the phase review's `head` does not hold - diffs no review saw. A fix
+    task its own per-task reviewer answered was reviewed, so it is not listed.
+    One git could not place is listed: an unknown is not a reviewed diff."""
     return [t["id"] for t in _tasks(phase)
             if t.get("commit") and _fr.is_fix_task(t, phase)
+            and (t.get("intentCheck") or {}).get("answer") == "not-asked"
+            and review_key(ctx, phase, t)[0] == _fr.KEY_PHASE
             and is_ancestor(ctx, t["commit"], head) is not True]
 
 
@@ -1131,8 +1130,8 @@ def render_triage(ctx, pending):
     if after:
         lines.append("answer: next %s --answer re-review" % (ctx["phase"],))
     if answers:
-        lines.append("answer: next %s --answer accept --reason <the human's word "
-                     "on each>" % (ctx["phase"],))
+        lines.append("answer: next %s --answer accept|decline --reason <the "
+                     "human's word on each>" % (ctx["phase"],))
     else:
         lines.append("answer: next %s --answer sign-off --reason <the summary>%s" % (
             ctx["phase"], " (a finding left is kept as recorded)" if found else ""))
@@ -1275,44 +1274,87 @@ def _posix_rel(path):
     return text[2:] if text.startswith("./") else text
 
 
-def signoff_summary(state):
+def held_at(state, key, head):
+    """The human's words a head-bound answer (`bootConfirmed`,
+    `coverageAccepted`, `breachAccepted`) holds while HEAD is still the commit
+    it was given at, else None. A task closed after it is a commit, so the
+    boot, the gate's banners and the breach it answered were of a tree that is
+    gone, and the question is asked again."""
+    held = state.get(key)
+    if not isinstance(held, dict) or held.get("head") != head:
+        return None
+    return held.get("reason")
+
+
+def bind_at(state, key, reason, head):
+    state[key] = {"reason": reason, "head": head}
+
+
+def signoff_summary(state, head):
     """The summary the sign-off verb records: the one the triage was answered
-    with, then every answer a human gave on the way - each kept in their words."""
+    with, then every answer a human gave on the way - each kept in their
+    words, a `decline` included - with a head-bound answer kept only while it
+    still holds at `head`."""
     parts = [state.get("summary") or ""]
     reasons = (state.get("answersAccepted") or {}).get("reasons") or []
     if reasons:
         parts.append("Reviewer answers accepted: %s" % ("; ".join(reasons),))
+    if state.get("declined"):
+        parts.append("Declined on the way: %s" % ("; ".join(state["declined"]),))
     if state.get("unreviewedFixes"):
         parts.append("Fix task(s) %s signed off with their diff unreviewed."
                      % (", ".join(state["unreviewedFixes"]),))
-    if state.get("bootConfirmed"):
-        parts.append("Runtime boot: %s" % (state["bootConfirmed"],))
-    if state.get("coverageAccepted"):
-        parts.append("Gate banner accepted: %s" % (state["coverageAccepted"],))
-    if state.get("breachAccepted"):
-        parts.append("Invariant breach accepted: %s" % (state["breachAccepted"],))
+    for key, said in (("bootConfirmed", "Runtime boot: %s"),
+                      ("coverageAccepted", "Gate banner accepted: %s"),
+                      ("breachAccepted", "Invariant breach accepted: %s")):
+        reason = held_at(state, key, head)
+        if reason:
+            parts.append(said % (reason,))
     return " ".join(p for p in parts if p)
+
+
+def green_phase_gate(ctx, state, phase, head):
+    """`(banners, None)` for a green phase gate, or `(None, stop)`. A green run
+    recorded at this same `head` is reused rather than run again, banners and
+    all: the answer a human gave was about that run, and the verdict binds to
+    it. The binding is HEAD alone - a file edited and left uncommitted at the
+    same head does not make a new run. A run that printed no run id is not
+    recorded for reuse, so the next pass measures."""
+    held = state.get("phaseGate")
+    if isinstance(held, dict) and held.get("runId") and held.get("head") == head:
+        ctx["did"].append("phase gate green (reused %s)" % (held["runId"],))
+        return list(held.get("banners") or []), None
+    code, out, err = phase_gate(ctx, phase)
+    if code == 1:
+        return None, red_gate_stop(ctx, phase, out, err)
+    if code != 0:
+        return None, relay_refusal(ctx, "run-test-gate.py", code, out + err)
+    banners = gate_banners(out + err)
+    run_id = _RUN_ID.search(out + err)
+    if run_id and head:
+        state["phaseGate"] = {"head": head, "runId": run_id.group(1),
+                              "banners": banners}
+        write_state(ctx, state)
+    ctx["did"].append("phase gate green")
+    return banners, None
 
 
 def run_signoff(ctx, state, phase):
     """The runtime boot's answer, the phase gate, the invariants and the
     sign-off verb - None when the verdict is recorded, else the decision or the
     stop."""
+    head = git_head(ctx)
     due, root = runtime_boot_root(_mio.load_manifest(ctx["manifest"]), phase)
-    if due and not state.get("bootConfirmed"):
+    if due and not held_at(state, "bootConfirmed", head):
         return decision(ctx, state, "runtime-boot", None, _clip(root, 60))
-    code, out, err = phase_gate(ctx, phase)
-    if code == 1:
-        return red_gate_stop(ctx, phase, out, err)
-    if code != 0:
-        return relay_refusal(ctx, "run-test-gate.py", code, out + err)
+    banners, stop = green_phase_gate(ctx, state, phase, head)
+    if stop is not None:
+        return stop
     # The decision names the banners and, once accepted, the summary keeps
     # them; the did-line stays plain, since the final print carries the landing.
-    banners = [] if state.get("coverageAccepted") else gate_banners(out + err)
-    ctx["did"].append("phase gate green")
-    if banners:
+    if banners and not held_at(state, "coverageAccepted", head):
         return decision(ctx, state, "gate-coverage", None, "; ".join(banners))
-    if not state.get("breachAccepted"):
+    if not held_at(state, "breachAccepted", head):
         code, out, err = run_verb(ctx, "verify-invariants.py", [
             ctx["manifest"], phase["id"], "--project", ctx["project"]])
         if code == 1:
@@ -1323,7 +1365,7 @@ def run_signoff(ctx, state, phase):
         if code != 0:
             return relay_refusal(ctx, "verify-invariants.py", code, out + err)
         ctx["did"].append("invariants clean")
-    summary = signoff_summary(state)
+    summary = signoff_summary(state, head)
     args = ["signoff", phase["id"], ctx["manifest"], "--project-dir",
             ctx["project"], "--verdict", "passed", "--summary", summary]
     mark = state.get("phaseReview") or {}
@@ -1381,7 +1423,14 @@ def land(ctx, state, phase):
     first = (out.strip().splitlines() or [""])[0]
     if first.startswith("[close-phase] "):
         first = first[len("[close-phase] "):]
-    return "%s (%s)" % (LANDED, _clip(first, 60)), None
+    said = "%s (%s)" % (LANDED, _clip(first, 60))
+    left, failed = _STAMP_LEFT.search(out), _STAMP_FAILED.search(out)
+    if left:
+        said += ("; stamp left uncommitted in %s - re-run close-phase there once "
+                 "it is clean" % (_clip(left.group(1), 60),))
+    elif failed:
+        said += "; stamp left uncommitted: %s" % (_clip(failed.group(1), 80),)
+    return said, None
 
 
 def finish_signoff(ctx, state, phase):
@@ -1427,7 +1476,10 @@ def apply_phase_answer(ctx, state, manifest, phase, pending, answer, reason,
         write_state(ctx, state)
         return _stopped(ctx, "the runtime boot was not confirmed (%s), so the "
                         "phase is not signed off; answer booted once a human "
-                        "has booted it" % (_clip(reason, 120),))
+                        "has booted it, or decline with what failed"
+                        % (_clip(reason, 120),))
+    if answer == "decline":
+        return decline_answer(ctx, state, phase, name, reason)
     if name == "triage" and answer == "accept":
         held = state.get("answersAccepted") or {}
         state["answersAccepted"] = {
@@ -1442,16 +1494,32 @@ def apply_phase_answer(ctx, state, manifest, phase, pending, answer, reason,
         state["summary"] = reason
         state["unreviewedFixes"] = list(pending.get("fixesAfter") or [])
     elif answer == "accept":
-        state["coverageAccepted" if name == "gate-coverage"
-              else "breachAccepted"] = reason
+        bind_at(state, "coverageAccepted" if name == "gate-coverage"
+                else "breachAccepted", reason, git_head(ctx))
     elif answer == "booted":
-        state["bootConfirmed"] = reason
+        bind_at(state, "bootConfirmed", reason, git_head(ctx))
     elif answer == "no-ff":
         state["noFf"] = True
     elif answer == "leave":
         state["leave"] = reason
     write_state(ctx, state)
     return signoff_step(ctx, state, phase)
+
+
+def decline_answer(ctx, state, phase, name, reason):
+    """A human's no to one of sign-off's decisions: their words are kept for
+    the summary, the decision is dropped, and the green gate it was asked over
+    is no longer reused. The drive goes on to any task still open - the remedy
+    a human added - and with none, stops naming how to add one."""
+    state.setdefault("declined", []).append("%s: %s" % (name, reason))
+    state.pop("phaseGate", None)
+    write_state(ctx, state)
+    ctx["did"].append("%s declined" % (name,))
+    if any(t.get("status") not in _mio.TERMINAL for t in _tasks(phase)):
+        return None
+    return _stopped(ctx, "the human declined %s; their words are kept for the "
+                    "summary. %s" % (name, DECLINE_REMEDY % (phase["id"],
+                                                             phase["id"])))
 
 
 def sign_off(ctx, state, manifest, phase):
@@ -1476,6 +1544,41 @@ def stalled_why(manifest, phase):
                                   (" on " + ",".join(waits[:2])) if waits else ""))
     more = len(open_tasks) - 3
     return "; ".join(parts) + (" +%d more" % (more,) if more > 0 else "")
+
+
+# The ceiling a task records nothing usable for: the new-task template's.
+# `audit-task.py`'s `_attempt_ceiling` is the rule `start` and `unblock` refuse
+# by, and an entry point may not import another, so it is mirrored here; the
+# `bk` cases run each printed remedy through the real verb, which is what goes
+# red if the two disagree.
+DEFAULT_MAX_ATTEMPTS = 3
+
+
+def attempts_spent(task):
+    """Whether `task` has spent the attempts it may take - the line between
+    `unblock`, which refuses a task with attempts left, and `start`, which
+    refuses one without."""
+    ceiling = task.get("maxAttempts")
+    if isinstance(ceiling, bool) or not isinstance(ceiling, int) or ceiling < 1:
+        ceiling = DEFAULT_MAX_ATTEMPTS
+    return (_mio.recorded_attempt(task) or 0) >= ceiling
+
+
+def blocked_remedy(tasks):
+    """The remedy line for each blocked task among the first three of `tasks`
+    (the ones a stalled print names): `unblock` with the human's words once
+    its attempts are spent, else `start`. Empty when none is blocked."""
+    said = [('unblock %s --reason "<their words>"' if attempts_spent(t)
+             else "start %s") % (t["id"],)
+            for t in tasks[:3] if t.get("status") == "blocked"]
+    return [REMEDY_HEAD + "; ".join(said)] if said else []
+
+
+def blocked_stop(name, tasks, **fields):
+    """A blocked print's lines: its line, each blocked task's remedy, then the
+    rule under it."""
+    lines = step_text(name, **fields)
+    return lines[:1] + blocked_remedy(tasks) + lines[1:]
 
 
 def finish_task(ctx, state, task):
@@ -1516,8 +1619,8 @@ def drive_task(ctx, state):
         if task.get("status") in _mio.TERMINAL:
             return _as_result(finish_task(ctx, state, task))
         if task.get("status") == "blocked":
-            return E_STOPPED, "\n".join(step_text(
-                "stop-blocked", phase=ctx["phase"], task=task["id"],
+            return E_STOPPED, "\n".join(blocked_stop(
+                "stop-blocked", [task], phase=ctx["phase"], task=task["id"],
                 why=_clip(str(task.get("blockedReason") or "no reason recorded"), 120)))
         if task.get("status") != "in_progress":
             stop = start_task(ctx, task)
@@ -1566,9 +1669,10 @@ def drive(ctx, answer=None, reason=None, fixes=()):
         if task is None:
             if all(t.get("status") in _mio.TERMINAL for t in _tasks(phase)):
                 return _as_result(sign_off(ctx, state, manifest, phase))
-            return E_OK, instruction("decide", step_text(
-                "decide-stalled", phase=ctx["phase"],
-                why=stalled_why(manifest, phase)))
+            return E_OK, instruction("decide", blocked_stop(
+                "decide-stalled", [t for t in _tasks(phase)
+                                   if t.get("status") not in _mio.TERMINAL],
+                phase=ctx["phase"], why=stalled_why(manifest, phase)))
         if how == "ready":
             stop = start_task(ctx, task)
             if stop is not None:

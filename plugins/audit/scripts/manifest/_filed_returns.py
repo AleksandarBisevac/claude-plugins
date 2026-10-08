@@ -29,7 +29,10 @@ A PHASE-MODE REVIEW FILES TOO, under the phase id, keyed on the head its brief
 was computed at (`phase_return_rel`), and it carries one `tasks` entry per task
 owed an answer. The property a landing asks of the record (`landing_refusals`)
 lives here because two entry points ask it, `audit-task.py signoff` and
-`close-phase.py`, and a rule held twice is two rules.
+`close-phase.py`, and a rule held twice is two rules. Which of a phase return's
+answers only a human settles (`needs_human`) lives here for the same reason:
+`drive-phase.py`'s triage and `audit-task.py signoff` both stop on them, and the
+settlement both read is the driver's state file (`settled_answers`).
 
 WHAT NOTHING HERE CHECKS: the task id, the role and the head are the caller's
 word.
@@ -446,3 +449,85 @@ def phase_return_problems(body, phase, live, answered):
                  "at commit %s" % (tid, str(tasks[tid].get("commit"))[:12])
                  for tid in owed if tid not in seen]
     return problems
+
+
+# --- the answers only a human settles ---------------------------------------------
+# A reviewer's `diverges` or `cannot-tell`, a red-first grade of `not-proved` and
+# an inherited test `flagged` are the answers no agent settles. The driver's
+# triage stops on them and the sign-off verb refuses over them, through this one
+# predicate, so the documented verb run by hand cannot sign off what the driver
+# would have stopped. A phase intent counts under every review key.
+HUMAN_ANSWERS = ("diverges", "cannot-tell")
+HUMAN_RED_FIRST = ("not-proved",)
+HUMAN_INHERITED = ("flagged",)
+
+# Where a human's settlement is recorded: the driver's state for the phase,
+# under `<stateDir>/drive/<phase>.json`, whose `answersAccepted` the triage's
+# `--answer accept --reason` writes as `{"keys": [...], "reasons": [...]}`.
+DRIVE_DIRNAME = "drive"
+SETTLED_FIELD = "answersAccepted"
+
+
+def needs_human(returns, settled=()):
+    """`[{"key", "who", "what", "note"}]` - every answer in `returns`
+    (`phase_returns`' list) that only a human settles and whose key is not in
+    `settled`: a task entry answering `diverges` or `cannot-tell`, grading
+    red-first `not-proved` or inherited tests `flagged`, and a phase intent of
+    `diverges` or `cannot-tell`. Every filed return is read, so a review
+    dispatched again does not drop an answer an earlier one gave; a return that
+    did not parse adds nothing here, because its reader refuses it."""
+    found = []
+    for rel, body, _problem in returns:
+        if not isinstance(body, dict):
+            continue
+        entries = body.get("tasks") if isinstance(body.get("tasks"), list) else []
+        for entry in [e for e in entries if isinstance(e, dict)]:
+            said = []
+            if entry.get("answer") in HUMAN_ANSWERS:
+                said.append(("intent %s" % (entry["answer"],), entry.get("note")))
+            if entry.get("redFirst") in HUMAN_RED_FIRST:
+                said.append(("red-first %s" % (entry["redFirst"],),
+                             entry.get("redFirstBasis")))
+            if entry.get("inheritedTests") in HUMAN_INHERITED:
+                said.append(("inherited tests %s" % (entry["inheritedTests"],),
+                             entry.get("inheritedTestsBasis")))
+            found += [{"key": "%s#%s#%s" % (rel, entry.get("id"), what),
+                       "who": str(entry.get("id")), "what": what, "note": note}
+                      for what, note in said]
+        intent = body.get("intent") if isinstance(body.get("intent"), dict) else {}
+        if intent.get("answer") in HUMAN_ANSWERS:
+            found.append({"key": "%s#phase" % (rel,), "who": "phase",
+                          "what": "intent %s" % (intent["answer"],),
+                          "note": intent.get("note")})
+    taken = set(settled or ())
+    return [a for a in found if a["key"] not in taken]
+
+
+def drive_state_path(state_dir, phase_id):
+    """The driver's state file for `phase_id` under `state_dir`."""
+    return os.path.join(str(state_dir), DRIVE_DIRNAME, "%s.json" % (phase_id,))
+
+
+def settled_answers(state_dir, phase_id):
+    """`(keys, reasons, problem)` - the answer keys a human settled for the
+    phase, the words they were settled with, and why the record could not be
+    read. No record is nothing settled; a record that will not parse is a
+    problem, never read as nothing settled."""
+    path = drive_state_path(state_dir, phase_id)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            body = json.load(fh)
+    except FileNotFoundError:
+        return set(), [], ""
+    except (OSError, ValueError) as exc:
+        return set(), [], "the settlement record %s cannot be read (%s)" % (path, exc)
+    held = body.get(SETTLED_FIELD) if isinstance(body, dict) else None
+    if held is None:
+        return set(), [], ""
+    if not isinstance(held, dict):
+        return set(), [], ("the settlement record %s holds `%s` that is not an "
+                           "object" % (path, SETTLED_FIELD))
+    keys = held.get("keys") or []
+    reasons = held.get("reasons") or []
+    return (set(str(k) for k in keys if isinstance(k, str)),
+            [str(r) for r in reasons if isinstance(r, str)], "")

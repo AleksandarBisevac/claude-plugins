@@ -1096,13 +1096,20 @@ def _review_answer_parent_cases(check):
         finally:
             if root:
                 _harness.remove_tree(root)
-    # The tip's copy cannot be read when the plan is not committed at all - an
-    # excluded plan directory - and the parent's copy then cannot stand in for
-    # the copy the merge brings in.
+    _tipless_tracked_cases(check)
+    _unversioned_plan_cases(check)
+    _worktree_close_cases(check)
+
+
+def _tipless_tracked_cases(check):
+    """A plan git versions - committed at the parent - whose copy at the branch
+    tip cannot be read: the parent's copy records the phase as it stood at the
+    fork, so it never stands in for the copy the merge brings in."""
     for cid, key, lands, label in (
             ("ra10", "phase", False,
-             "a branch whose tip holds no copy of the plan is refused where the "
-             "property could apply - the parent's copy never stands in for it"),
+             "a branch whose tip holds no copy of a plan the parent tracks is "
+             "refused where the property could apply - the parent's copy never "
+             "stands in for it"),
             ("ra11", "always", True,
              "ALLOW: the same unreadable tip merges when the task's key reads "
              "`always`, where the property asks nothing")):
@@ -1111,22 +1118,19 @@ def _review_answer_parent_cases(check):
             root = _harness.fixture_root("closephase-tipless-%s" % (cid,))
             git = _fixture_git(root)
             _init_fixture_repo(git)
-            with open(os.path.join(root, "seed.txt"), "w") as fh:
-                fh.write("seed\n")
-            git("add", "seed.txt")
-            git("commit", "-q", "-m", "base")
-            with open(os.path.join(root, ".git", "info", "exclude"), "a") as fh:
-                fh.write("docs/\n")
             phase = _signed_phase("P1", "audit/p1-demo")
             phase["tasks"][0]["reviewPerTask"] = key
             mpath = _write_plan(root, {"developmentBranch": "main"}, [phase])
+            git("add", "-A")
+            git("commit", "-q", "-m", "base")
             git("checkout", "-q", "-b", "audit/p1-demo")
+            git("rm", "-q", "--cached", "-r", "docs")
             with open(os.path.join(root, "work.txt"), "w") as fh:
                 fh.write("work\n")
             git("add", "work.txt")
             git("commit", "-q", "-m", "work")
             sha = git("rev-parse", "HEAD").stdout.decode().strip()
-            git("checkout", "-q", "main")
+            git("checkout", "-q", "-f", "main")
             code, text = _close(mpath, root)
             merged = git("merge-base", "--is-ancestor", sha, "main").returncode == 0
             ok = merged if lands else (
@@ -1136,6 +1140,138 @@ def _review_answer_parent_cases(check):
         finally:
             if root:
                 _harness.remove_tree(root)
+
+
+def _unversioned_plan_cases(check):
+    """A plan git never versions - here an excluded plan directory - is in no
+    commit, so its copy on disk is the record and the tip holds none to read.
+    The property is asked of that record, and the tip's absence is not itself a
+    refusal: otherwise such a project could land no phase under `phase`."""
+    answered = dict(_RA_ANSWERED, commit="{sha}")
+    for cid, fields, review, lands, label in (
+            ("ra13", {"reviewPerTask": "phase", "intentCheck": answered},
+             {"status": "passed"}, True,
+             "ALLOW: an excluded plan whose task's answers are bound to its "
+             "commit lands from the same checkout - the tip holding no copy is "
+             "not a refusal when the plan is never committed"),
+            ("ra14", {"reviewPerTask": "phase",
+                      "intentCheck": {"answer": "deferred", "commit": "{sha}"}},
+             {"status": "passed"}, False,
+             "...and the same excluded plan with the task still `deferred` is "
+             "refused, read off the copy on disk"),
+            ("ra15", {"reviewPerTask": "phase", "intentCheck": answered},
+             None, False,
+             "...and so is one whose copy on disk records no sign-off verdict")):
+        root = None
+        try:
+            root = _harness.fixture_root("closephase-unversioned-%s" % (cid,))
+            git = _fixture_git(root)
+            _init_fixture_repo(git)
+            with open(os.path.join(root, "seed.txt"), "w") as fh:
+                fh.write("seed\n")
+            git("add", "seed.txt")
+            git("commit", "-q", "-m", "base")
+            with open(os.path.join(root, ".git", "info", "exclude"), "a") as fh:
+                fh.write("docs/\n")
+            phase = _signed_phase("P1", "audit/p1-demo")
+            if review is None:
+                phase.pop("review")
+            mpath = _write_plan(root, {"developmentBranch": "main"}, [phase])
+            git("checkout", "-q", "-b", "audit/p1-demo")
+            with open(os.path.join(root, "work.txt"), "w") as fh:
+                fh.write("work\n")
+            git("add", "work.txt")
+            git("commit", "-q", "-m", "work")
+            sha = git("rev-parse", "HEAD").stdout.decode().strip()
+            _set_review_record(mpath, sha, fields)
+            git("checkout", "-q", "main")
+            code, text = _close(mpath, root)
+            merged = git("merge-base", "--is-ancestor", sha, "main").returncode == 0
+            ok = (code == 0 and merged) if lands else (
+                code == 1 and not merged and "review.perTask" in text)
+            check("%s %s: exit %r, %r" % (cid, label, code, text[-300:]), ok)
+        finally:
+            if root:
+                _harness.remove_tree(root)
+
+
+def _worktree_close_cases(check):
+    """THE DRIVER'S OWN SHAPE: the phase branch checked out in a linked worktree,
+    the last task closed `deferred` there with the plan change still uncommitted
+    - the task commit staged the plan before the close wrote it - and the merge
+    run from the parent's checkout. The parent's copy shows the task pending and
+    the tip's shows it with no commit, so neither has a task to ask about. The
+    landing is refused off the worktree's copy while it stands, off the tip's
+    missing sign-off verdict once it is gone, and lands once the sign-off is
+    committed on the branch."""
+    root = None
+    try:
+        root = _harness.fixture_root("closephase-wt-signoff")
+        git = _fixture_git(root)
+        _init_fixture_repo(git)
+        phase = _signed_phase("P1", "audit/p1-demo")
+        phase.pop("review")
+        phase["tasks"][0]["status"] = "pending"
+        phase["testGate"] = ["test"]
+        mpath = _write_plan(root, {"developmentBranch": "main"}, [phase])
+        git("add", "-A")
+        git("commit", "-q", "-m", "base")
+        wt = root + "-wt"
+        git("worktree", "add", "-q", "-b", "audit/p1-demo", wt)
+        wgit = _fixture_git(wt)
+        wpath = os.path.join(wt, "docs", "audit", "audit-plan.json")
+        with open(wpath, "r", encoding="utf-8") as fh:
+            plan = json.load(fh)
+        plan["phases"][0]["tasks"][0]["status"] = "in_progress"
+        with open(wpath, "w", encoding="utf-8") as fh:
+            json.dump(plan, fh)
+        with open(os.path.join(wt, "work.txt"), "w") as fh:
+            fh.write("work\n")
+        wgit("add", "-A")
+        wgit("commit", "-q", "-m", "work")
+        sha = wgit("rev-parse", "HEAD").stdout.decode().strip()
+        _set_review_record(wpath, sha, {
+            "reviewPerTask": "phase", "status": "done",
+            "intentCheck": {"answer": "deferred", "commit": "{sha}"}})
+        # A green phase-gate row recorded in the worktree and not committed: the
+        # gate reading unions it in, so the gate is not what stops this landing.
+        _write_rows(wt, ["passed"])
+        code, text = _close(mpath, root)
+        merged = git("merge-base", "--is-ancestor", sha, "main").returncode == 0
+        check("ra12 a phase whose last task was closed `deferred` in its worktree, "
+              "the plan change uncommitted, is refused at the merge run from the "
+              "parent's checkout, and the work commit stays out of main: "
+              "exit %r, %r" % (code, text[-300:]),
+              code == 1 and not merged and "review.perTask" in text
+              and "in the worktree holding audit/p1-demo" in text)
+        # The worktree removed, its uncommitted close with it: the tip's copy
+        # is all that is left, and it is what the refusal now rests on.
+        git("worktree", "remove", "--force", wt)
+        code, text = _close(mpath, root)
+        merged = git("merge-base", "--is-ancestor", sha, "main").returncode == 0
+        check("ra12c ...and with that worktree removed, the tip's copy - the task "
+              "showing no commit - is refused because it records no sign-off "
+              "verdict: exit %r, %r" % (code, text[-300:]),
+              code == 1 and not merged and "no sign-off verdict" in text
+              and "audit/p1-demo" in text)
+        git("worktree", "add", "-q", wt, "audit/p1-demo")
+        _set_review_record(wpath, sha, {
+            "reviewPerTask": "phase", "status": "done",
+            "intentCheck": dict(_RA_ANSWERED, commit="{sha}"),
+            "phaseReview": {"status": "passed"}})
+        wgit("add", "-A")
+        wgit("commit", "-q", "-m", "sign-off")
+        code, text = _close(mpath, root)
+        merged = git("merge-base", "--is-ancestor", sha, "main").returncode == 0
+        check("ra12b ALLOW: the same phase once its sign-off is committed on the "
+              "branch lands from the parent's checkout - a refusal of every "
+              "worktree landing would fail here: exit %r, %r"
+              % (code, text[-300:]),
+              code == 0 and merged)
+    finally:
+        if root:
+            _harness.remove_tree(root)
+            _harness.remove_tree(root + "-wt")
 
 
 # The trail's action name for a close made over its verdict's refusal, spelled

@@ -1977,39 +1977,132 @@ def review_answers_refusal(project, manifest_path, phase):
                             "; ".join("%s: %s" % (tid, why) for tid, why in held)))
 
 
-def landed_answers_refusal(project, manifest_path, phase, landed, branch):
+def landed_answers_refusal(project, manifest_path, phase, landed, branch,
+                           git_root=None, phase_tree=None, refs=()):
     """The sentence refusing a landing under `review.perTask: phase`, asked of
-    BOTH copies of the phase, or None.
+    EVERY copy of the phase the landing can see, or None.
 
     The copy handed in is the parent's when the merge is run from the parent's
     checkout, and there it still shows the phase as it stood at the fork: no
     task records a commit, so the property finds nothing to ask. The copy the
-    merge brings in is the branch tip's (`landed`), so it is asked too. A tip
-    whose copy cannot be read is refused wherever the property could apply - a
-    task of the handed copy whose key, or the config's, reads `phase` - rather
-    than answered from the handed copy, which is the copy that cannot see it."""
-    held = review_answers_refusal(project, manifest_path, phase)
-    if held:
-        return held
+    merge brings in is the branch tip's (`landed`), and the copy on disk in the
+    worktree holding the branch is the newest record of all, so both are asked
+    too.
+
+    A TIP COPY WITH NO SIGN-OFF VERDICT IS REFUSED wherever the property could
+    apply. A task closed `deferred` reaches the tip only with the sign-off
+    commit - the task's own commit staged the plan before its close was
+    written - so a tip recording no verdict can hold a closed task its copy does
+    not show, and the question is asked of the tip rather than of whichever
+    worktree still stands.
+
+    A tip whose copy cannot be read is refused under the same condition only
+    when the plan is VERSIONED (`plan_versioned`): a plan git never commits is
+    in no tip, and its copy on disk is then the record, asked the property and
+    the verdict in the tip's place."""
+    phase_id = (phase or {}).get("id")
+    on_disk = worktree_phase(git_root, project, phase_tree, manifest_path,
+                             phase_id)
+    copies = [("", phase)]
+    if on_disk:
+        copies.append(("in the worktree holding %s: " % (branch,), on_disk))
     if landed is not None:
-        held = review_answers_refusal(project, manifest_path, landed)
-        return ("on %s: %s" % (branch, held)) if held else None
-    tasks = [t for t in (phase or {}).get("tasks") or [] if isinstance(t, dict)]
+        copies.append(("on %s: " % (branch,), landed))
+    for where, copy in copies:
+        held = review_answers_refusal(project, manifest_path, copy)
+        if held:
+            return where + held
+    applies, problem = _phase_key_applies(project, manifest_path,
+                                          [copy for _w, copy in copies])
+    if problem:
+        return problem
+    if not applies:
+        return None
+    if landed is not None:
+        if _mio.signoff_recorded(landed):
+            return None
+        return ("review.perTask reads `phase` for phase %s, and the copy of the "
+                "plan %s would bring in records no sign-off verdict, so whether "
+                "its tasks carry their review answers is not established: a "
+                "task's close reaches the branch only with the sign-off commit. "
+                "Sign the phase off on %s and run this again."
+                % (phase_id, branch, branch))
+    versioned, basis = plan_versioned(git_root, manifest_path, refs)
+    if versioned is not False:
+        return ("review.perTask reads `phase` for phase %s, and the copy of the "
+                "plan %s would bring in could not be read (%s), so whether its "
+                "tasks carry their review answers is not established. The "
+                "parent's copy does not stand in for it: it records the phase as "
+                "it stood at the fork. Commit the plan on %s and run this again."
+                % (phase_id, branch, basis, branch))
+    record = on_disk or phase
+    if _mio.signoff_recorded(record):
+        return None
+    return ("review.perTask reads `phase` for phase %s, the plan is not versioned "
+            "(%s), so its copy on disk is the record - and it records no "
+            "sign-off verdict. Sign the phase off and run this again."
+            % (phase_id, basis))
+
+
+def _phase_key_applies(project, manifest_path, copies):
+    """`(applies, problem)` - whether any task of any copy reads the key
+    `phase`, its unrecorded key read off the config; `problem` is a config
+    value outside the vocabulary, refused rather than read as `always`."""
+    pairs = [(t, copy) for copy in copies
+             for t in (copy or {}).get("tasks") or [] if isinstance(t, dict)]
     live = None
-    if any(_fr.review_key(t, phase, None)[1] == "config" for t in tasks):
+    if any(_fr.review_key(t, copy, None)[1] == "config" for t, copy in pairs):
         _proj, config = _evidence_io.project_config_for(manifest_path, project)
         live, problem = _config_rules.review_per_task_mode(config)
         if problem:
-            return "%s." % (problem,)
-    if not any(_fr.review_key(t, phase, live)[0] == _fr.KEY_PHASE
-               for t in tasks):
+            return False, "%s." % (problem,)
+    return any(_fr.review_key(t, copy, live)[0] == _fr.KEY_PHASE
+               for t, copy in pairs), ""
+
+
+def worktree_phase(git_root, project, phase_tree, manifest_path, phase_id):
+    """The phase as the plan on disk in the worktree holding the branch records
+    it, or None - none when no worktree holds it, the plan sits outside the
+    project, or the copy there is the one handed in."""
+    if not git_root:
         return None
-    return ("review.perTask reads `phase` for phase %s, and the copy of the plan "
-            "%s would bring in could not be read, so whether its tasks carry "
-            "their review answers is not established. The parent's copy does "
-            "not stand in for it: it records the phase as it stood at the fork. "
-            "Commit the plan on %s and run this again."
-            % ((phase or {}).get("id"), branch, branch))
+    tree = _phase_project(git_root, project, phase_tree)
+    if not tree:
+        return None
+    rel = os.path.relpath(os.path.abspath(manifest_path), os.path.abspath(project))
+    if rel == ".." or rel.startswith(".." + os.sep):
+        return None
+    there = os.path.join(tree, rel)
+    if os.path.realpath(there) == os.path.realpath(manifest_path) \
+            or not os.path.isfile(there):
+        return None
+    return _recorded_phase(there, phase_id) or None
+
+
+def plan_versioned(git_root, manifest_path, refs):
+    """`(answer, basis)` - True when git versions the plan: inside the tree
+    that holds it, not ignored there, and present at one of `refs` (the
+    parent, the phase's `baseRef`). False when one of those fails; None when
+    git could not say, which the caller refuses as it would True."""
+    if not git_root:
+        return None, "no git root to ask"
+    holder = _wt.tree_root(os.path.dirname(os.path.abspath(manifest_path)))["root"]
+    rel = _tree_rel(holder or git_root, manifest_path)
+    if rel is None:
+        return False, "%s lies outside the git root" % (manifest_path,)
+    code, _out = _git_bytes(holder or git_root, ["check-ignore", "-q", "--", rel])
+    if code == 0:
+        return False, "git ignores %s" % (rel,)
+    if code != 1:
+        return None, "git check-ignore could not answer for %s" % (rel,)
+    asked = [r for r in refs if r]
+    for ref in asked:
+        code, _out = _git_bytes(git_root, ["cat-file", "-e", "%s:%s" % (ref, rel)])
+        if code == 0:
+            return True, "%s holds %s" % (ref, rel)
+    if not asked:
+        return None, "no parent or base to ask whether %s is committed" % (rel,)
+    return False, "%s is committed at none of %s" % (rel, ", ".join(asked))
 
 
 def override_row(project, phase_id, answer, reason, config=None):
@@ -2436,8 +2529,10 @@ def main(argv, out=print):
         out("           or pass %s \"<why this lands over it>\", which is "
             "journaled as %s" % (_vb.OVERRIDE_FLAG, _vb.ACTION_CLOSE_OVERRIDDEN))
         return E_FAIL
-    held = landed_answers_refusal(project, args.manifest, phase, landed,
-                                  names["branch"]) if landing_due else None
+    held = landed_answers_refusal(
+        project, args.manifest, phase, landed, names["branch"],
+        git_root=git_root, phase_tree=observation.get("phaseTree"),
+        refs=(names["parent"], phase.get("baseRef"))) if landing_due else None
     if held:
         out("[close-phase] REFUSED: %s Nothing was merged or written." % (held,))
         return E_FAIL

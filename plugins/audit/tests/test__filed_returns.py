@@ -329,7 +329,106 @@ def _selftest():
     def body(check):
         _harness.stage(check, "fr-block", _cases)
         _harness.stage(check, "pk-block", _held_cases)
+        _harness.stage(check, "hn-block", _human_cases)
     return _harness.run(body)
+
+
+def _hn_body(entries, intent="matches"):
+    return {"findings": [], "preExisting": [], "verdict": "clean",
+            "intent": {"answer": intent, "note": "phase note", "missing": []},
+            "tasks": entries}
+
+
+def _hn_entry(tid, **over):
+    entry = {"id": tid, "commit": _SHA, "answer": "matches", "note": "n",
+             "missing": [], "redFirst": "proved", "redFirstBasis": "rb",
+             "inheritedTests": "not-asked", "inheritedTestsBasis": "ib"}
+    entry.update(over)
+    return entry
+
+
+def _human_cases(check):
+    """The answers only a human settles - one predicate the sign-off verb and
+    the driver's triage both read - and the settlement record they are read
+    against."""
+    rel = "returns/P1/abc1234.reviewer.json"
+    mixed = [(rel, _hn_body([
+        _hn_entry("P1.1", answer="diverges", note="does the other thing"),
+        _hn_entry("P1.2", redFirst="not-proved", redFirstBasis="no red seen"),
+        _hn_entry("P1.3", inheritedTests="flagged", inheritedTestsBasis="t.py"),
+        _hn_entry("P1.4")], intent="cannot-tell"), "")]
+    got = M.needs_human(mixed)
+    check("hn1 a `diverges` intent, a `not-proved` red-first grade, a `flagged` "
+          "inherited test and a phase intent of `cannot-tell` are each one "
+          "answer for a human, keyed by return, task and word, with the "
+          "reviewer's note - and the `matches` entry beside them is none: %r"
+          % (got,),
+          [(a["key"], a["who"], a["what"], a["note"]) for a in got] == [
+              (rel + "#P1.1#intent diverges", "P1.1", "intent diverges",
+               "does the other thing"),
+              (rel + "#P1.2#red-first not-proved", "P1.2",
+               "red-first not-proved", "no red seen"),
+              (rel + "#P1.3#inherited tests flagged", "P1.3",
+               "inherited tests flagged", "t.py"),
+              (rel + "#phase", "phase", "intent cannot-tell", "phase note")])
+    # The second direction: a predicate firing on every answer fails here.
+    clean = [(rel, _hn_body([_hn_entry("P1.1"), _hn_entry("P1.2")]), "")]
+    check("hn2 ALLOW: a return answering `matches`, `proved` and `not-asked` "
+          "throughout holds nothing for a human, and an unreadable return "
+          "(its body None) adds nothing here - it is the filing reader's "
+          "refusal: %r" % (M.needs_human(clean + [(rel, None, "bad json")]),),
+          M.needs_human(clean + [(rel, None, "bad json")]) == [])
+    keys = [a["key"] for a in got]
+    left = M.needs_human(mixed, settled=keys[:2])
+    check("hn3 a settled key is not asked again and an unsettled one still is: "
+          "%r" % ([a["key"] for a in left],),
+          [a["key"] for a in left] == keys[2:]
+          and M.needs_human(mixed, settled=keys) == [])
+
+    root = _harness.fixture_root("filed-returns-settle-")
+    try:
+        path = M.drive_state_path(root, "P1")
+        none_yet = M.settled_answers(root, "P1")
+        os.makedirs(os.path.dirname(path))
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({M.SETTLED_FIELD: {"keys": keys[:1],
+                                         "reasons": ["the human's words"]}}, fh)
+        recorded = M.settled_answers(root, "P1")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("{not json")
+        broken = M.settled_answers(root, "P1")
+        check("hn4 the settlement is read off the driver's state for the phase: "
+              "no file is nothing settled, a recorded accept is its keys and "
+              "reasons, and a file that will not parse is a problem, never "
+              "nothing settled: %r" % ((none_yet, recorded, broken[2][:60]),),
+              path == os.path.join(root, "drive", "P1.json")
+              and none_yet == (set(), [], "")
+              and recorded == (set(keys[:1]), ["the human's words"], "")
+              and broken[0] == set() and broken[2])
+    finally:
+        _harness.remove_tree(root)
+
+    import _loader                                 # noqa: E402  (load_script)
+    drive = _loader.load_script("drive-phase.py")
+    ev = _harness.fixture_root("filed-returns-drive-")
+    try:
+        folder = os.path.join(ev, M.RETURNS_DIRNAME, "P1")
+        os.makedirs(folder)
+        with open(os.path.join(folder, "abc1234.reviewer.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump(mixed[0][1], fh)
+        theirs = drive.human_answers({"evidence": ev}, {"id": "P1"})
+        ours = M.needs_human(M.phase_returns(ev, "P1"))
+        state = drive.state_path({"stateDir": ev, "phase": "P1"})
+        check("hn5 the driver's triage reads the same answers the sign-off verb "
+              "does, and keeps its state at the path the verb reads the "
+              "settlement from - two readings here would let one route sign "
+              "off what the other stops: %r"
+              % ((len(theirs), len(ours), state),),
+              theirs == ours and len(ours) == 4
+              and state == M.drive_state_path(ev, "P1"))
+    finally:
+        _harness.remove_tree(ev)
 
 
 if __name__ == "__main__":

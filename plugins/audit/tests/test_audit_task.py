@@ -27,6 +27,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import json
 import os
+import pathlib
 import sys
 import tempfile
 
@@ -13209,6 +13210,84 @@ def _held_cases(check):
           refused_relinked and f8[0] == 0
           and g10[0] == 0)
 
+    # ---- the answers only a human settles, at the verb ------------------------
+    # The driver's triage stops on them; the sign-off verb, run by hand, must
+    # stop on them too, and read the same settlement the triage's accept writes.
+    def human_answer_cases():
+        def settle(proj, keys, text=None):
+            hc = _loader.load_hooks_config()
+            path = os.path.join(str(hc.state_dir(pathlib.Path(proj), {})),
+                                "drive", "P1.json")
+            if not os.path.isdir(os.path.dirname(path)):
+                os.makedirs(os.path.dirname(path))
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(text if text is not None else json.dumps(
+                    {"answersAccepted": {"keys": keys,
+                                         "reasons": ["the owner read it: fine"]}}))
+
+        hd_rel = _fr.phase_return_rel("P1", _HD_HEAD)
+        proj, mpath = two_done("signoff-diverges")
+        file_phase(proj, "P1", _HD_HEAD, [
+            _hd_entry("P1.1", _FR_SHA, answer="diverges", note="does another thing"),
+            _hd_entry("P1.2", _HD_SHA2, redFirst="not-proved",
+                      redFirstBasis="no red seen")])
+        before = read(mpath)
+        h1 = signoff(proj, "P1", "skipped")
+        check("hd25 a filed phase return answering `diverges` for one task and "
+              "`not-proved` for another refuses sign-off by hand, writing nothing, "
+              "naming both answers and the driver's accept that settles them: %r"
+              % ((h1[0], h1[1][-300:]),),
+              h1[0] == M.E_USAGE and read(mpath) == before
+              and "P1.1" in h1[1] and "intent diverges" in h1[1]
+              and "red-first not-proved" in h1[1] and "--answer accept" in h1[1])
+        settle(proj, [hd_rel + "#P1.1#intent diverges"])
+        h2 = signoff(proj, "P1", "skipped")
+        check("hd25b ...and settling one of the two still refuses, naming only the "
+              "one left: %r" % ((h2[0], h2[1][-300:]),),
+              h2[0] == M.E_USAGE and read(mpath) == before
+              and "red-first not-proved" in h2[1] and "intent diverges" not in h2[1])
+        settle(proj, [hd_rel + "#P1.1#intent diverges",
+                      hd_rel + "#P1.2#red-first not-proved"])
+        h3 = signoff(proj, "P1", "skipped")
+        check("hd26 ALLOW: once the settlement records both, the same sign-off "
+              "passes and carries the answers onto the tasks - without this half a "
+              "verb refusing every `diverges` would pass: %r" % ((h3[0], h3[1][-200:]),),
+              h3[0] == 0 and answer(mpath, "P1.1") == "diverges"
+              and "the owner read it: fine" in h3[1])
+
+        proj, mpath = two_done("signoff-state-broken")
+        file_phase(proj, "P1", _HD_HEAD, [
+            _hd_entry("P1.1", _FR_SHA, answer="diverges"),
+            _hd_entry("P1.2", _HD_SHA2)])
+        settle(proj, [], text="{not json")
+        before = read(mpath)
+        h4 = signoff(proj, "P1", "skipped")
+        check("hd27 a settlement record that will not parse refuses, never reads as "
+              "nothing settled or as everything settled: %r" % ((h4[0], h4[1][-200:]),),
+              h4[0] == M.E_USAGE and read(mpath) == before
+              and "cannot be read" in h4[1])
+
+        proj, mpath = project("signoff-intent-always", [ph("P1", [
+            done_tk("P1.1", _FR_SHA, key="always",
+                    intentCheck={"answer": "matches", "commit": _FR_SHA})],
+            reviewPerTask="always")], "always")
+        body = json.loads(_hd_return([]))
+        body["intent"] = {"answer": "cannot-tell", "note": "unclear", "missing": []}
+        verb(proj, "file-return", "P1", "--role", "reviewer", "--head", _HD_HEAD,
+             stdin=json.dumps(body))
+        before = read(mpath)
+        h5 = signoff(proj, "P1", "skipped")
+        unchanged = read(mpath) == before
+        settle(proj, [hd_rel + "#phase"])
+        h6 = signoff(proj, "P1", "skipped")
+        check("hd28 a phase intent of `cannot-tell` refuses sign-off under `always` "
+              "too - the phase intent stop is not the `phase` key's - and the same "
+              "sign-off passes once it is settled: %r"
+              % ((h5[0], h5[1][-200:], h6[0]),),
+              h5[0] == M.E_USAGE and "intent cannot-tell" in h5[1]
+              and unchanged and h6[0] == 0)
+    human_answer_cases()
+
     # ...and so does a fix task moved away from its findings.
     p1 = ph("P1", [tk("P1.1")], review={"findings": [finding("P1-R1")]})
     p2 = ph("P2", [tk("P2.1", status="pending", started=None)],
@@ -13693,8 +13772,125 @@ def _no_change_moved_cases(check):
               "a check reading all of history, or every file, would refuse "
               "this: %r" % ((code, text[:200]),),
               code == 0)
+        _no_change_layout_cases(check, project, git, write, close, read)
     finally:
         _harness.remove_tree(root)
+
+
+def _no_change_layout_cases(check, project, git, write, close, read):
+    """The two ways the check used to miss or over-reach: a git repository in a
+    subdirectory of the project, whose task files are project-relative, and a
+    sibling's commit dated at or after this task's start but made before it."""
+    def replan(mpath, edit):
+        plan = _mio.load_manifest(mpath)
+        edit(plan)
+        _panel_write._atomic_write_json(mpath, plan)
+
+    def sub_root(proj, mpath):
+        """Move the fixture's repository into `app/`, the config's gitRoot,
+        with the task's file declared project-relative."""
+        import shutil
+        app = os.path.join(proj, "app")
+        os.makedirs(app)
+        shutil.move(os.path.join(proj, ".git"), os.path.join(app, ".git"))
+        shutil.move(os.path.join(proj, "src"), os.path.join(app, "src"))
+        _panel_write._atomic_write_json(
+            os.path.join(proj, ".claude", "audit.config.json"),
+            {"manifestPath": "docs/audit/audit-plan.json", "gitRoot": "app",
+             "review": {"perTask": "always"}})
+        git(app, "add", "-A")
+        git(app, "commit", "-q", "-m", "moved", date="2025-06-02T00:00:00Z")
+
+        def files(plan):
+            plan["phases"][0]["tasks"][0]["files"] = ["app/src/a.ts"]
+            plan["fileIndex"] = {"app/src/a.ts": ["P1.1"]}
+        replan(mpath, files)
+        return app
+
+    proj, mpath = project("subroot-moved")
+    app = sub_root(proj, mpath)
+    write(app, "src/a.ts", "changed\n")
+    git(app, "commit", "-q", "-am", "work", date="2026-02-01T00:00:00Z")
+    before = read(mpath)
+    code, text = close(proj)
+    check("ncm4 with the repository in a subdirectory (`gitRoot`), a commit "
+          "since the start touching the task's project-relative file refuses "
+          "`--no-change` - each entry is read relative to the git root, as the "
+          "task commit stages it: %r" % ((code, text[:240]),),
+          code == M.E_USAGE and "src/a.ts" in text and read(mpath) == before)
+    proj, mpath = project("subroot-other")
+    app = sub_root(proj, mpath)
+    write(app, "src/b.ts", "another task's\n")
+    git(app, "commit", "-q", "-am", "other", date="2026-02-01T00:00:00Z")
+    code, text = close(proj)
+    check("ncm4b ALLOW: the same layout with a commit touching another file "
+          "only closes no-change: %r" % ((code, text[:200]),), code == 0)
+
+    def unstarted(plan):
+        """The task not yet started, in a phase that started earlier: its
+        `baseRef` is the fixture's base commit, so the phase's own bound does
+        not stand in for the task's."""
+        task = plan["phases"][0]["tasks"][0]
+        task.update(status="pending", attempts=0)
+        task.pop("startedAt", None)
+        plan["phases"][0]["baseRef"] = base_of[0]
+
+    def start(proj):
+        lines = []
+        code = M.main(["start", "P1.1", "--project-dir", proj],
+                      out=lines.append)
+        return code, "\n".join(str(x) for x in lines)
+
+    base_of = [None]
+    proj, mpath = project("start-head")
+    base_of[0] = git(proj, "rev-parse", "HEAD").stdout.decode().strip()
+    replan(mpath, unstarted)
+    # A sibling's commit made BEFORE this start, dated after it: the date a
+    # commit carries is not when it entered this branch.
+    write(proj, "src/a.ts", "the sibling's\n")
+    git(proj, "commit", "-q", "-am", "sibling", date="2099-01-01T00:00:00Z")
+    s1 = start(proj)
+    code, text = close(proj)
+    check("ncm5 a commit already in HEAD when the task started does not refuse "
+          "its `--no-change`, whatever date it carries - the span starts at "
+          "the head the start recorded: start %r, close %r"
+          % (s1[0], (code, text[:240])),
+          s1[0] == 0 and code == 0)
+    proj, mpath = project("start-head-after")
+    base_of[0] = git(proj, "rev-parse", "HEAD").stdout.decode().strip()
+    replan(mpath, unstarted)
+    s2 = start(proj)
+    write(proj, "src/a.ts", "this task's\n")
+    git(proj, "commit", "-q", "-am", "work", date="2020-01-01T00:00:00Z")
+    before = read(mpath)
+    code, text = close(proj)
+    check("ncm5b ...and a commit made after the start refuses it, even dated "
+          "before the start - a span still cut by committer date would pass "
+          "it: start %r, close %r" % (s2[0], (code, text[:240])),
+          s2[0] == 0 and code == M.E_USAGE and "src/a.ts" in text
+          and read(mpath) == before)
+
+    proj, mpath = project("sibling-commit")
+    write(proj, "src/a.ts", "the sibling's\n")
+    git(proj, "commit", "-q", "-am", "sibling", date="2026-02-01T00:00:00Z")
+    sib = git(proj, "rev-parse", "HEAD").stdout.decode().strip()
+
+    def sibling(plan):
+        plan["phases"][0]["tasks"].append(
+            {"id": "P1.2", "title": "s", "status": "done", "description": "d",
+             "files": ["src/a.ts"], "commit": sib,
+             "completedAt": "2026-02-01T00:00:00Z",
+             "tests": {"mode": "gate-only", "add": [],
+                       "expectRedFirst": False, "gate": ["test"]},
+             "attempts": 1, "maxAttempts": 3,
+             "startedAt": "2026-01-01T00:00:00Z"})
+        plan["fileIndex"]["src/a.ts"] = ["P1.1", "P1.2"]
+    replan(mpath, sibling)
+    code, text = close(proj)
+    check("ncm6 with no start head recorded, a commit another task records as "
+          "its own is that task's work and does not refuse this one's "
+          "`--no-change` (ncm1 is the refusal beside it): %r"
+          % ((code, text[:240]),), code == 0)
 
 
 def _selftest():

@@ -316,6 +316,7 @@ Stdlib only, Python 3.8 compatible.
 import argparse
 import json
 import os
+import pathlib
 import re
 import subprocess
 import sys
@@ -385,6 +386,8 @@ import _id_shape              # noqa: E402  (the one answer to which id comes ne
                               # branch suffix that keeps two branches from minting it twice)
 import _evidence_io           # noqa: E402  (read_rows: the runs a move leaves keyed
                               # to the old id, which `move` reports)
+import _loader                # noqa: E402  (load_hooks_config: where the driver's state,
+                              # and so a human's settlement of an answer, lives)
 import _filed_returns as _fr  # noqa: E402  (a filed return's path, shape and
                               # write-once create, shared with the brief and the commit;
                               # and the landing property, shared with close-phase.py)
@@ -3798,7 +3801,8 @@ def _claim_line(plan, phase_id):
     return None
 
 
-def _start_details(task_id, phase_id, was, task, forced=None, claim_rows=None):
+def _start_details(task_id, phase_id, was, task, forced=None, claim_rows=None,
+                   head=None):
     """The `details` block for a `task.start` row, built where a case can read it.
 
     SEPARATE FROM THE APPEND ON PURPOSE. `_journal_io` drops a key that is not on
@@ -3828,6 +3832,10 @@ def _start_details(task_id, phase_id, was, task, forced=None, claim_rows=None):
         details["mode"] = "forced"
         details["reason"] = forced["reason"]
         details["basis"] = "; ".join(_forced_past(forced))
+    # The HEAD this start was taken at: where a later `done --no-change` starts
+    # the span it asks git about (`_start_head`). Absent outside git.
+    if head:
+        details["commit"] = head
     return details
 
 
@@ -3846,7 +3854,8 @@ def _forced_past(forced):
 
 
 def _journal_start(project, config, mpath, task_id, phase_id, was, task,
-                   healed=None, entry=None, forced=None, claim_rows=None):
+                   healed=None, entry=None, forced=None, claim_rows=None,
+                   head=None):
     """The `task.start` row: what the promotion moved, and which attempt it is.
 
     `changes` AND `attempt`, both already on `_journal_io.DETAILS_KEYS` --
@@ -3895,7 +3904,8 @@ def _journal_start(project, config, mpath, task_id, phase_id, was, task,
         # phase" is looking for.
         summary += "; taken over from session %s (%s)" % (
             takeover[0]["from"], takeover[0]["to"])
-    details = _start_details(task_id, phase_id, was, task, forced, claim_rows)
+    details = _start_details(task_id, phase_id, was, task, forced, claim_rows,
+                             head)
     if (entry or {}).get("state") in ("cut", "adopt"):
         summary += "; branch %s %s" % (entry["branch"], "cut from %s" % entry["parent"]
                                        if entry["state"] == "cut" else "recorded")
@@ -4266,7 +4276,8 @@ def _locked_start(args, project, config, mpath, tid, out):
         raise
 
     jres = _journal_start(project, config, mpath, tid, phase_id, was, node,
-                          healed, entry, forced, claim_rows)
+                          healed, entry, forced, claim_rows,
+                          _examined_head(git_root))
     entry_warnings = (_entry_warnings(phase)
                       if healed or entry["state"] in ("cut", "adopt") else [])
     index_note = _index_dirty_note(written, mpath, project, phase_id)
@@ -4644,41 +4655,86 @@ def _examined_head(git_root):
     return head if code == 0 and _SHA_SHAPE.match(head or "") else None
 
 
-def _no_change_moves(git_root, phase, task):
-    """`[sentence, ...]` - each way `task`'s declared files changed since it
-    started: a commit since its `startedAt` (bounded below by the phase's
-    `baseRef` where one is recorded) touching one, or an uncommitted change to
-    one. Empty when nothing moved, and when git cannot be asked - a project
+def _start_head(project, config, task):
+    """The HEAD the task's current start recorded on its `task.start` row, or
+    None when no row of this attempt names one - a journal off, a start older
+    than the record, or a project outside git."""
+    if not _journal_io.enabled(config):
+        return None
+    try:
+        rows = _journal_io.read_all(project, config=config)
+    except Exception:
+        return None
+    head = None
+    for row in rows:
+        details = (row or {}).get("details") if isinstance(row, dict) else None
+        if (row.get("action") == "task.start" and isinstance(details, dict)
+                and details.get("taskId") == task.get("id")
+                and details.get("attempt") == task.get("attempts")):
+            head = details.get("commit") or None
+    return head if _SHA_SHAPE.match(head or "") else None
+
+
+def _no_change_moves(project, git_root, phase, task, plan=None, start_head=None):
+    """`([sentence, ...], [note, ...])` - each way `task`'s declared files
+    changed since it started, and each declared entry git cannot be asked
+    about. A move is a commit in the span touching one, or an uncommitted
+    change to one. Both empty when git cannot be asked at all - a project
     outside git closes no-change with `examinedAt` null, which the close says.
 
-    THE START IS READ BY COMMITTER DATE, so a commit made before the start and
-    carrying a later date is counted - a refusal the caller can answer with
-    `--commit`, never a pass over work."""
-    files = sorted(set(_vocab._strip_line_suffix(f).strip()
-                       for f in (task.get("files") or [])
-                       if isinstance(f, str) and f.strip()))
+    EACH ENTRY IS READ RELATIVE TO THE GIT ROOT, the way the task commit
+    stages it: `files` are project-relative, and a repository in a
+    subdirectory of the project would otherwise be handed paths that match
+    nothing. An entry outside the git root is named in the notes, never
+    dropped in silence.
+
+    THE SPAN STARTS AT THE HEAD THE START RECORDED (`start_head`), so a
+    commit already in the branch when the task started is never this task's,
+    whatever date it carries. Without one it starts at the phase's `baseRef`
+    and is cut by the start's committer date - which counts a commit made
+    before the start and dated after it - and a commit another task of the
+    plan records as its own is then left out: it is that task's work."""
+    notes, files = [], []
+    for entry in sorted(set(_vocab._strip_line_suffix(f).strip()
+                            for f in (task.get("files") or [])
+                            if isinstance(f, str) and f.strip())):
+        rel = _invariants._rel(os.path.join(project, entry), git_root)
+        if rel is None:
+            notes.append("  %s lies outside the git root %s, so whether it "
+                         "changed is NOT ASKED" % (entry, git_root))
+        else:
+            files.append(rel)
     if not files:
-        return []
+        return [], notes
     code, _top = _git_answer(git_root, "rev-parse", "--show-toplevel")
     if code != 0:
-        return []
+        return [], notes
     moved = []
-    base = phase.get("baseRef")
-    span = "%s..HEAD" % (base,) if base and _git_answer(
-        git_root, "rev-parse", "--verify", "-q", "%s^{commit}" % (base,))[0] == 0 \
-        else "HEAD"
-    since = ["--since=%s" % (task["startedAt"],)] if task.get("startedAt") else []
+    since, others = [], set()
+    if start_head and _git_answer(git_root, "rev-parse", "--verify", "-q",
+                                  "%s^{commit}" % (start_head,))[0] == 0:
+        span = "%s..HEAD" % (start_head,)
+    else:
+        base = phase.get("baseRef")
+        span = "%s..HEAD" % (base,) if base and _git_answer(
+            git_root, "rev-parse", "--verify", "-q",
+            "%s^{commit}" % (base,))[0] == 0 else "HEAD"
+        since = ["--since=%s" % (task["startedAt"],)] if task.get("startedAt") else []
+        others = set(str(t.get("commit")) for t in _mio.tasks_by_id(
+            plan or {"phases": [phase]}).values()
+            if isinstance(t, dict) and t.get("commit")
+            and t.get("id") != task.get("id"))
     # A declared directory lists the files under it, so a commit line is told
     # apart by its own marker rather than by not being a declared path.
-    code, log = _git_answer(git_root, *(["log", "--format=@%h", "--name-only"]
+    code, log = _git_answer(git_root, *(["log", "--format=@%H", "--name-only"]
                                         + since + [span, "--"] + files))
     if code == 0:
         commit = None
         for line in [ln.strip() for ln in log.splitlines() if ln.strip()]:
             if line.startswith("@"):
                 commit = line[1:]
-            elif commit:
-                moved.append("%s changed in commit %s" % (line, commit))
+            elif commit and commit not in others:
+                moved.append("%s changed in commit %s" % (line, commit[:7]))
     code, status = _git_answer(git_root, "status", "--porcelain",
                                "--untracked-files=all", "--", *files)
     if code == 0:
@@ -4687,7 +4743,7 @@ def _no_change_moves(git_root, phase, task):
         moved += ["%s has an uncommitted change"
                   % (re.sub(r"^\s*\S{1,2} ", "", line).strip(),)
                   for line in status.splitlines() if line.strip()]
-    return moved
+    return moved, notes
 
 
 def _done_task(task, now, commit, descriptive, technical, verified, intent,
@@ -5154,7 +5210,7 @@ def _locked_done(args, project, config, mpath, tid, out):
     # two verdicts would then disagree about one manifest.
     git_root = os.path.abspath(os.path.join(project,
                                             (config or {}).get("gitRoot") or "."))
-    no_change, unverified = None, None
+    no_change, unverified, unasked = None, None, []
     if args.no_change:
         # A BUG IS NEVER FIXED WITHOUT A FIX COMMIT. A done fix task derives its
         # bug `fixed` whatever its commit, so a no-change close would store the bug
@@ -5175,7 +5231,9 @@ def _locked_done(args, project, config, mpath, tid, out):
                 "...), then record the verdict on the bug: /audit:bug close %s "
                 "not_a_bug|wontfix" % (tid, ", ".join(bugs), tid, bugs[0]))
             return E_USAGE
-        moved = _no_change_moves(git_root, phase, node)
+        moved, unasked = _no_change_moves(
+            project, git_root, phase, node, plan=assembled,
+            start_head=_start_head(project, config, node))
         if moved:
             out("[audit-task] REFUSED: %s closes --no-change, and its declared "
                 "files did change: %s. A close with no commit is never asked "
@@ -5300,6 +5358,9 @@ def _locked_done(args, project, config, mpath, tid, out):
                   "commitVerified": (None if no_change is not None
                                      else unverified is None),
                   "noChange": no_change,
+                  # Declared entries outside the git root, which no-change
+                  # could not ask git about - named, never dropped.
+                  "noChangeUnasked": [n.strip() for n in unasked],
                   "was": was["status"],
                   "outcome": {"descriptive": outcome.get("descriptive"),
                               "technical": outcome.get("technical")},
@@ -5334,6 +5395,8 @@ def _locked_done(args, project, config, mpath, tid, out):
                                   "NOT RECORDED -- git could not name HEAD here, "
                                   "so the claim names no commit it was measured "
                                   "against",))
+        for line in unasked:
+            out(line)
     else:
         out("  commit %s" % (node.get("commit"),))
     if unverified:
@@ -8180,6 +8243,40 @@ _CARRIED = ("answer", "redFirst", "redFirstBasis", "inheritedTests",
             "inheritedTestsBasis")
 
 
+def _human_settlement(proj, cfg, pid, filed):
+    """`(lines, refusal)` - the sign-off's stop on a reviewer answer only a
+    human settles (`_fr.needs_human`), read against the settlement the
+    driver's triage records, under every review key. `lines` names what a
+    human settled and in which words; `refusal` names what waits, or None.
+
+    THE VERB HOLDS IT, NOT ONLY THE DRIVER: sign-off run by hand never meets
+    the triage, and a phase signed off here is landed by the next `next`."""
+    hc = _loader.load_hooks_config(modname="audit__config")
+    state_dir = str(hc.state_dir(pathlib.Path(proj), cfg or {}))
+    keys, reasons, problem = _fr.settled_answers(state_dir, pid)
+    if problem:
+        return [], ("REFUSED: %s, so which reviewer answers a human settled "
+                    "for %s is unknown. Nothing written." % (problem, pid))
+    asked = _fr.needs_human(filed)
+    waiting = [a for a in asked if a["key"] not in keys]
+    if waiting:
+        return [], (
+            "REFUSED: phase %s's filed review holds answer(s) only a human "
+            "settles, and these are not settled. Nothing written:\n%s\n    "
+            "Put each to a human, then run `drive-phase.py next %s` and answer "
+            "its triage with --answer accept --reason \"<their word on each>\" "
+            "- the settlement this verb reads - and sign off again."
+            % (pid, "\n".join("  %s: %s%s" % (
+                a["who"], a["what"], " (%s)" % (a["note"],) if a["note"] else "")
+                for a in waiting), pid))
+    if not asked:
+        return [], None
+    return (["  settled by a human: %s" % (", ".join(
+        "%s %s" % (a["who"], a["what"]) for a in asked),),
+        "    in their words: %s" % ("; ".join(reasons) or "(none recorded)",)],
+            None)
+
+
 def _carry_answers(project, mpath, config, phase, now):
     """`(lines, refusal)` - write each filed phase return's answers onto the task
     whose current commit it names, record the key where none is, then ask the
@@ -8194,6 +8291,9 @@ def _carry_answers(project, mpath, config, phase, now):
         return [], ("REFUSED: a phase return filed for %s cannot be read, so the "
                     "answers it carries are unknown: %s. Nothing written."
                     % (pid, "; ".join(unread)))
+    settled_lines, refusal = _human_settlement(proj, cfg, pid, filed)
+    if refusal:
+        return [], refusal
     tasks = [t for t in phase.get("tasks") or [] if isinstance(t, dict)]
     live, problem = None, None
     if any(_fr.review_key(t, phase, None)[1] == "config" for t in tasks):
@@ -8217,6 +8317,7 @@ def _carry_answers(project, mpath, config, phase, now):
         lines.append("  %s: %s, red-first %s, inherited tests %s (from %s)"
                      % (task.get("id"), entry.get("answer"),
                         entry.get("redFirst"), entry.get("inheritedTests"), rel))
+    lines += settled_lines
     held = _fr.landing_refusals(phase, live)
     if not held:
         return lines, None

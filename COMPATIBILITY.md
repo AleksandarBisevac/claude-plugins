@@ -356,8 +356,14 @@ is still true of a nested key.
   --role reviewer --head <sha>`; and `/audit:phase signoff` — under `--verdict skipped`
   as under `passed` — and `close-phase.py` at its own merge refuse while a task that
   records a commit lacks its three answers bound to that commit. `close-phase.py` asks
-  both the plan it is handed and the copy the branch tip carries in, and refuses when it
-  cannot read the tip's. A task that no longer records its commit, a merge made by hand
+  the plan it is handed, the copy on disk in the worktree holding the branch and the copy
+  the branch tip carries in; it refuses a tip whose copy records no sign-off verdict, and
+  one whose copy it cannot read when the plan is versioned (inside the git root, not
+  ignored, committed at the parent or at `baseRef`) - a plan git never commits is asked
+  through its copy on disk. Sign-off, by the driver or by hand, also refuses while a
+  filed phase return holds a `diverges`, `cannot-tell`, `not-proved` or `flagged` answer
+  the driver's `--answer accept --reason` has not settled, and that stop on a phase intent
+  holds under every `review.perTask` value. A task that no longer records its commit, a merge made by hand
   or through a pull request, and who filed the phase return are outside that refusal;
   the plugin README's followed table names each, with the evidence left afterwards. A phase already under way when the plugin is
   upgraded reads the new default too, unless it recorded a `reviewPerTask` value, which

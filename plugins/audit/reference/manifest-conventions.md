@@ -410,6 +410,12 @@ The journal's **completion-record actions**:
 - `task.block` — `audit-task.py block` set a task blocked with its reason (details: taskId,
   phaseId, reason, changes). It is the verb's own row, the way `task.done` sits beside
   `task.complete`: the hook derives `task.blocked` from a status an edit tool moved
+- `task.unblock` — `audit-task.py unblock` gave a task whose attempts are spent a fresh
+  budget: `attempts` back to 0 and, for a blocked task, `status` back to pending with its
+  `blockedReason` cleared (details: taskId, phaseId, reason, changes)
+- `task.start` — `audit-task.py start` promoted a task to in_progress (details: taskId,
+  phaseId, attempt, changes; `commit` is the HEAD the start was taken at, absent outside git,
+  and is where a later `done --no-change` starts the span of commits it asks about)
 - `task.note` — `audit-task.py note` appended one `{at, text}` entry to a task's `notes[]`
   (details: taskId, phaseId, changes)
 - `review.finding` — `audit-task.py finding` appended one finding to a phase's
@@ -516,7 +522,7 @@ derived, and an old, unrelated completion of the same task is a different record
 by design:** a sign-off of a branchless phase (`mergedAt` is null, which cannot tell one sign-off
 from another), and a completion that was never recorded anywhere. Both cost a repeated row, never
 a lost one.
-`task.move`, `task.block`, `task.note`, `coupling.learned`, `coupling.dropped`, `coupling.caught`,
+`task.start`, `task.move`, `task.block`, `task.unblock`, `task.note`, `coupling.learned`, `coupling.dropped`, `coupling.caught`,
 `bug.add`, `test.muted` and `test.unmuted` are written **in process** by `audit-task.py`, the same way its `task.done`, `task.reopen` and `plan.settle` rows
 are. `phase.gateDerived` is written **in process** by `derive-phase-gate.py`, its own entry point,
 for the identical reason. `phase.merged` and `phase.mergedHead.recorded` are written **in process** by
