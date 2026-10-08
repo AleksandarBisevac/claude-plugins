@@ -55,16 +55,43 @@ WHERE THE PER-TASK REVIEWER IS DECIDED: `reviewer_due`, alone, from the task's
 until it has), `signals` only where `signals_fired` names a signal. Under every
 key the recorded gate runs before the reviewer or the close.
 
+AN AGENT'S LAST ACT IS `submit`, AND IT IS THE SAME KIND OF STEP. Filing a
+return used to be three procedures the agent's prompt explained and the agent
+ran by hand: take the stamp, prove the red in a throwaway tree, hand the object
+to the filing verb. Each is a verb already, so `submit` runs them in that order
+and the prompt only names the call:
+
+  * the return arrives on stdin and its shape is checked first, with the fields
+    `submit` fills set aside, so a malformed one costs no red run and writes
+    nothing;
+  * an executor's red-first block is `stamp-verification.py red`'s, run with
+    the test command given after `--` - owed on a `tdd` task, and refused
+    there without one;
+  * an executor's `stamp` is `stamp-verification.py take`'s, taken after the
+    red run, the last claim; a take that names no tree (no `audit-stamp:`
+    line, or a stamp git could put no HEAD in) is refused as a missing stamp;
+  * the filing is `audit-task.py file-return`'s, which writes once - a second
+    filing for one start, or for one head of a phase review, is refused there
+    and the first stays as filed. A reviewer's return, and a phase review's
+    under `--head`, go to the same verb unchanged.
+
 Usage:
   drive-phase.py next <phaseId> [manifest] [--project-dir DIR]
                  [--answer OPTION] [--reason TEXT] [--verbose]
+  drive-phase.py submit <taskId|phaseId> --role executor|reviewer [manifest]
+                 [--head SHA] [--project-dir DIR] [--case ID ...]
+                 [--introduces SYMBOL ...] [--deps-from DIR] [--verbose]
+                 [-- <test command>]  < return.json
 
 Exit codes:
-  0  an instruction was printed - dispatch, decide or done
+  0  an instruction was printed - dispatch, decide or done; or, for `submit`,
+     the return was filed
   1  a verb refused, or a filed return will not read: the drive stopped and the
-     words that stopped it are printed
+     words that stopped it are printed; for `submit`, the return was refused and
+     nothing was written
   2  usage error - no manifest, no such phase, an answer no pending decision
-     offers, or an option that needs --reason given none
+     offers, or an option that needs --reason given none; for `submit`, no such
+     task or phase, or red-first options with no test command
 
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test_drive_phase.py`.
@@ -706,6 +733,155 @@ def _as_result(said):
     return said if isinstance(said, tuple) else (E_OK, said)
 
 
+# --- submit: the agent's own last act ----------------------------------------
+STAMP_TOKEN = "audit-stamp:"
+# What a placeholder stands in for while the shape is checked before the fields
+# `submit` fills exist: the check is about what the AGENT sent.
+_FILLED_LATER = {"stamp": "filled by submit",
+                 "redFirst": {"status": "proved", "basis": "filled by submit"}}
+
+
+def _stopped(ctx, why):
+    return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], why)
+
+
+def submit_target(manifest, target):
+    """`(task, phase)` the id names - a task with its phase, or `(None, phase)`
+    for a phase id - or `(None, None)` when it names neither."""
+    for phase in manifest.get("phases") or []:
+        if not isinstance(phase, dict):
+            continue
+        if phase.get("id") == target:
+            return None, phase
+        for task in _tasks(phase):
+            if task["id"] == target:
+                return task, phase
+    return None, None
+
+
+def submitted_shape(role, body, fills):
+    """The ways `body` falls short of `role`'s shape, judged with each field in
+    `fills` set aside: those are `submit`'s to supply, not the agent's."""
+    if not isinstance(body, dict):
+        return _fr.return_problems(role, body)
+    held = dict(body)
+    held.update((name, _FILLED_LATER[name]) for name in fills)
+    return _fr.return_problems(role, held)
+
+
+def already_filed(ctx, task):
+    """The project-relative path of `task`'s executor return for its current
+    start when one is filed, else None. The filing verb refuses a second
+    filing on its own; asking first is what keeps a refused one from costing a
+    red run and a stamp."""
+    path = _fr.return_path(ctx["evidence"], task, "executor")
+    return project_relative(ctx, path) if path and os.path.exists(path) else None
+
+
+def red_block(ctx, task, args, cmd):
+    """`(block, None)` - the helper's `redFirst` block for `task` - or
+    `(None, stop)`. A test that passed without the fix gets no block from the
+    helper, and so no filing: the work is to fix the test."""
+    extra = []
+    for flag, values in (("--case", args.case), ("--introduces", args.introduces)):
+        for value in values:
+            extra += [flag, value]
+    if args.deps_from:
+        extra += ["--deps-from", args.deps_from]
+    code, out, err = run_verb(ctx, "stamp-verification.py", [
+        "red", "--project", ctx["gitRoot"], "--manifest", ctx["manifest"],
+        "--task", task["id"], "--json"] + extra + ["--"] + list(cmd))
+    try:
+        payload = json.loads(out)
+    except ValueError:
+        return None, relay_refusal(ctx, "stamp-verification.py", code, out + err)
+    block = payload.get("redFirst") if isinstance(payload, dict) else None
+    if not isinstance(block, dict):
+        return None, _stopped(ctx, "the red-first helper gave no block (exit %d): "
+                              "%s Nothing filed." % (code, payload.get("note")
+                                                     or "no note"))
+    return block, None
+
+
+def take_stamp(ctx, task):
+    """`(line, None)` - the `audit-stamp:` line for the tree now, over the task's
+    declared files - or `(None, stop)` when the take names no tree."""
+    code, out, err = run_verb(ctx, "stamp-verification.py", [
+        "take", "--project", ctx["gitRoot"], "--manifest", ctx["manifest"],
+        "--task", task["id"], "--json"])
+    try:
+        taken = json.loads(out)
+    except ValueError:
+        taken = {}
+    line = taken.get("line") if isinstance(taken, dict) else None
+    head = ((taken.get("stamp") or {}) if isinstance(taken, dict) else {}).get("head")
+    if code != 0 or not isinstance(line, str) or not line.startswith(STAMP_TOKEN):
+        return None, _stopped(ctx, "the stamp is missing - `stamp-verification.py "
+                              "take` exited %d with no %s line: %s Nothing filed."
+                              % (code, STAMP_TOKEN, (err or out).strip()[:200]))
+    if not head:
+        return None, _stopped(ctx, "the stamp is missing - git named no HEAD for "
+                              "%s, so the stamp binds the claims to no tree. "
+                              "Nothing filed." % (ctx["gitRoot"],))
+    return line, None
+
+
+def submit(ctx, manifest, args, cmd, text):
+    """`(code, instruction_or_text)` for one `submit`."""
+    task, phase = submit_target(manifest, args.id)
+    if phase is None:
+        return E_USAGE, "%s submit: no task or phase %r in %s" % (
+            PREFIX, args.id, ctx["manifest"])
+    ctx["phase"] = phase["id"]
+    try:
+        body = json.loads(text)
+    except ValueError as exc:
+        return _stopped(ctx, "the return on stdin does not parse as JSON (%s). "
+                        "Nothing filed." % (exc,))
+    tdd = task is not None and (task.get("tests") or {}).get("mode") == "tdd"
+    executor = task is not None and args.role == "executor"
+    if executor and tdd and not cmd:
+        return _stopped(ctx, "%s is a tdd task, so its red-first block is the "
+                        "helper's: name the test command after `--`. Nothing "
+                        "filed." % (task["id"],))
+    fills = (["stamp"] + (["redFirst"] if cmd else [])) if executor else []
+    problems = submitted_shape(args.role, body, fills) if task is not None else []
+    if problems:
+        return _stopped(ctx, "the %s return for %s does not have the shape its "
+                        "role declares. Nothing filed:\n%s" % (
+                            args.role, args.id,
+                            "\n".join("  " + p for p in problems)))
+    if executor:
+        held = already_filed(ctx, task)
+        if held:
+            return _stopped(ctx, "the executor return for %s is already filed for "
+                            "this start (%s) and stays as filed. Nothing run."
+                            % (task["id"], held))
+        if cmd:
+            block, stop = red_block(ctx, task, args, cmd)
+            if stop is not None:
+                return stop
+            body["redFirst"] = block
+            ctx["did"].append("red-first %s" % (block.get("status"),))
+        line, stop = take_stamp(ctx, task)
+        if stop is not None:
+            return stop
+        body["stamp"] = line
+        ctx["did"].append("stamp taken")
+        text = json.dumps(body, indent=2) + "\n"
+    extra = ["--head", args.head] if args.head else []
+    out, stop = _verb_or_stop(ctx, "audit-task.py", [
+        "file-return", args.id, "--role", args.role, ctx["manifest"],
+        "--project-dir", ctx["project"]] + extra, stdin=text)
+    if stop is not None:
+        return stop
+    written = re.search(r"written: (.+)$", out.strip())
+    ctx["did"].insert(0, "%s %s return filed%s" % (
+        args.id, args.role, (" at %s" % (written.group(1).strip(),))
+        if written else ""))
+    return E_OK, instruction("filed", [])
+
+
 def echo_steps(ctx):
     """Whether each verb's run is printed above the instruction."""
     return ctx["verbose"]
@@ -748,39 +924,101 @@ def build_parser():
                      help="the reason an option that records one needs")
     nxt.add_argument("--verbose", action="store_true",
                      help="print each verb's run above the instruction")
+    sbm = sub.add_parser("submit", help="file an agent's return, read on stdin: "
+                         "the stamp taken, the red-first helper run, then filed once")
+    sbm.add_argument("id", help="the task id, or the phase id of a phase review")
+    sbm.add_argument("manifest", nargs="?", default=None,
+                     help="the manifest (default: the project's configured one)")
+    sbm.add_argument("--role", required=True, choices=_fr.RETURN_ROLES)
+    sbm.add_argument("--head", default=None, metavar="SHA",
+                     help="a phase review's head, as its brief names it")
+    sbm.add_argument("--project-dir", dest="project_dir", default=None)
+    sbm.add_argument("--case", action="append", default=[],
+                     help="passed to the red-first helper; needs a test command")
+    sbm.add_argument("--introduces", action="append", default=[],
+                     help="passed to the red-first helper; needs a test command")
+    sbm.add_argument("--deps-from", dest="deps_from", default=None,
+                     help="passed to the red-first helper; needs a test command")
+    sbm.add_argument("--verbose", action="store_true",
+                     help="print each verb's run above the result")
     return _claude_home.attach_usage_hint(parser)
 
 
-def context(args):
-    """Everything one `next` resolves once, or raises ValueError naming why not."""
+def project_context(args):
+    """`(manifest, ctx)` - what every action resolves once - or raises
+    ValueError naming why not."""
     project = os.path.abspath(args.project_dir or os.environ.get("CLAUDE_PROJECT_DIR")
                               or os.getcwd())
-    found = _mio.resolve_manifest(project, args.manifest)
+    named = args.manifest
+    # A brief prints the manifest relative to the project, and an agent's shell
+    # may stand anywhere; a relative path that is not there from here is read
+    # from the project it names.
+    if named and not os.path.isabs(named) and not os.path.exists(named):
+        named = os.path.join(project, named)
+    found = _mio.resolve_manifest(project, named)
     if not found.get("path"):
         raise ValueError(found.get("problem") or "no manifest at %s" % (
             ", ".join(p for p, _w in found.get("looked") or []),))
     manifest_path = os.path.abspath(found["path"])
     manifest = _mio.load_manifest(manifest_path)
+    project, config = _evio.project_config_for(manifest_path, project)
+    return manifest, {
+        "project": project, "manifest": manifest_path, "phase": None,
+        "config": config,
+        "gitRoot": os.path.abspath(os.path.join(
+            project, (config or {}).get("gitRoot") or ".")),
+        "evidence": _evio.evidence_dir(project, config),
+        "verbose": bool(args.verbose), "log": [], "did": []}
+
+
+def context(args):
+    """Everything one `next` resolves once, or raises ValueError naming why not."""
+    manifest, ctx = project_context(args)
     phase_id, problem = _mio.resolve_phase_id(manifest, args.phase)
     if problem:
         raise ValueError(problem)
-    project, config = _evio.project_config_for(manifest_path, project)
     hc = _loader.load_hooks_config(modname="audit__config")
-    return {"project": project, "manifest": manifest_path, "phase": phase_id,
-            "config": config,
-            "gitRoot": os.path.abspath(os.path.join(
-                project, (config or {}).get("gitRoot") or ".")),
-            "evidence": _evio.evidence_dir(project, config),
-            "stateDir": str(hc.state_dir(pathlib.Path(project), config or {})),
-            "verbose": bool(args.verbose), "log": [], "did": []}
+    ctx.update(phase=phase_id, stateDir=str(
+        hc.state_dir(pathlib.Path(ctx["project"]), ctx["config"] or {})))
+    return ctx
 
 
-def main(argv, out=print):
+def run_submit(args, cmd, out, stdin):
+    if (args.case or args.introduces or args.deps_from) and not cmd:
+        sys.stderr.write("drive-phase.py: --case, --introduces and --deps-from are "
+                         "the red-first helper's, and need a test command after "
+                         "`--`\n")
+        return E_USAGE
+    try:
+        manifest, ctx = project_context(args)
+    except Exception as exc:                                   # noqa: BLE001
+        sys.stderr.write("drive-phase.py: %s\n" % (exc,))
+        return E_USAGE
+    if stdin is None:
+        stdin = sys.stdin.read() if not sys.stdin.isatty() else ""
+    ctx["phase"] = args.id
+    code, said = submit(ctx, manifest, args, cmd, stdin)
+    out(render(ctx, code, said))
+    return code
+
+
+def main(argv, out=print, stdin=None):
+    argv = list(argv)
+    # Everything after the first `--` is the red-first run's test command, kept
+    # from the parser so that command's own flags are never read as these.
+    cmd = argv[argv.index("--") + 1:] if "--" in argv else None
+    argv = argv[:argv.index("--")] if "--" in argv else argv
     parser = build_parser()
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return E_USAGE if exc.code else E_OK
+    if args.action == "submit":
+        return run_submit(args, cmd, out, stdin)
+    if cmd is not None:
+        sys.stderr.write("drive-phase.py: only `submit` takes a command after "
+                         "`--`\n")
+        return E_USAGE
     try:
         ctx = context(args)
     except Exception as exc:                                   # noqa: BLE001

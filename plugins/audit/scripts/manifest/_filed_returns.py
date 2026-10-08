@@ -5,7 +5,9 @@ and the one property a phase's landing asks of the plan under `review.perTask`.
 
 An agent's return used to be prose the main loop read and retyped, so nothing
 checked its shape and a close carried whatever the retyping kept. A return is now
-FILED: `audit-task.py file-return` writes it, `audit-task.py done` and
+FILED: `audit-task.py file-return` writes it - an agent reaches it through
+`drive-phase.py submit`, which first takes an executor's stamp and, given a test
+command, its red-first block - `audit-task.py done` and
 `audit-lookup.py brief` read it, and `commit-task-work.py` reads its `claims`.
 Those are entry points at one layer, which may not import each other, so the
 three facts they share live here, once:
@@ -162,10 +164,12 @@ def _reviewer_problems(body):
 
 
 def return_problems(role, body):
-    """Every way `body` falls short of the shape `role` declares, as sentences
-    naming the field - read off `agents/audit-executor.md`'s and
-    `agents/audit-reviewer.md`'s return blocks. Empty is the one answer that
-    files; a role this module does not know is a problem too, never a pass."""
+    """Every way `body` falls short of the shape `role` files with, as sentences
+    naming the field - `agents/audit-executor.md`'s and
+    `agents/audit-reviewer.md`'s return blocks, plus the executor's `stamp`,
+    which `drive-phase.py submit` takes rather than the agent. Empty is the one
+    answer that files; a role this module does not know is a problem too,
+    never a pass."""
     if role not in RETURN_ROLES:
         return ["the role %r is not one of %s" % (role, ", ".join(RETURN_ROLES))]
     if not isinstance(body, dict):

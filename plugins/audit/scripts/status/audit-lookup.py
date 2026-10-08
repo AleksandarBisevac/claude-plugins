@@ -124,7 +124,7 @@ import _journal_io  # noqa: E402  (layer 1: the trail this cross-checks against)
 import _evidence_io as _evio  # noqa: E402  (layer 2: project/config resolution)
 import _loader  # noqa: E402  (the one way scripts/ loads hooks/_config as a library)
 import _areas  # noqa: E402  (resolve_skills: area skills first, then the task's)
-import _filed_returns as _fr  # noqa: E402  (where `file-return` put a return, and
+import _filed_returns as _fr  # noqa: E402  (where `submit` filed a return, and
 #                                            which tasks a phase review owes)
 import _config_rules  # noqa: E402  (review_per_task_mode: the config's reading now)
 
@@ -526,14 +526,6 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
     lines += _section("What you run", [
         "executor.runsGate: %s (%s)" % (reading, gate["basis"]),
         runs.get(reading, "The reading %r has no command here." % (reading,))])
-    stamp = _script(ctx, "governance/stamp-verification.py")
-    lines += _section("Commands, resolved", [
-        "Stamp the tree your claims are about, after the last of them:",
-        "    %s take --project %s --manifest %s --task %s"
-        % (stamp, ctx["gitRoot"], ctx["manifest"], tid),
-        "A red proved after the fix is in, in a throwaway tree:",
-        "    %s red --project %s --manifest %s --task %s -- <test command>"
-        % (stamp, ctx["gitRoot"], ctx["manifest"], tid)])
     if attempts > 1:
         outcome = task.get("outcome") or {}
         evidence = task.get("testEvidence") or {}
@@ -548,14 +540,58 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
             "redFirst: %s" % (json.dumps(task.get("redFirst"), sort_keys=True)
                               if task.get("redFirst") else "none recorded"),
             "The working tree is the last attempt; this is what it answered."])
-    lines += _section("Your return", [
-        "Write the return object agents/audit-executor.md declares to a file, "
-        "then file it - the verb reads it on stdin, checks its shape and "
-        "writes it once:",
-        "    %s file-return %s --role executor --project-dir %s < <your return "
-        "file>" % (_script(ctx, "manifest/audit-task.py"), tid, ctx["project"]),
-        "Then hand back one line: what that command printed."])
+    lines += _section("Your return", executor_return_lines(
+        manifest, phase, task, ctx))
     return lines
+
+
+def red_command(manifest, phase, task):
+    """The resolved gate command that names one of the task's `tests.add`
+    files, or None: the command `submit` hands the red-first helper. Only a
+    command naming the file is taken; a whole-project gate is a red the helper
+    would grade against every test HEAD carries."""
+    added = [str(a).split(":", 1)[0].strip()
+             for a in ((task.get("tests") or {}).get("add") or [])
+             if isinstance(a, str) and a.strip()]
+    entries, _whose = _task_gate(manifest, phase, task)
+    for _entry, cmd in _evio.resolved_commands(manifest, entries):
+        if isinstance(cmd, str) and any(f and f in cmd for f in added):
+            return cmd
+    return None
+
+
+def submit_command(ctx, node_id, role, tail=""):
+    """The resolved `drive-phase.py submit` line an agent's last act runs."""
+    return "    %s submit %s --role %s %s --project-dir %s%s < <your return file>" % (
+        _script(ctx, "governance/drive-phase.py"), node_id, role,
+        ctx["manifest"], ctx["project"], tail)
+
+
+def executor_return_lines(manifest, phase, task, ctx):
+    """The executor's filing: one `submit`, which checks the shape, runs the
+    red-first helper when a test command follows `--`, takes the stamp and
+    files the return once. A tdd task owes the command; it is printed resolved
+    when a gate entry names a `tests.add` file, and asked for when none does."""
+    tid = str(task.get("id"))
+    tdd = (task.get("tests") or {}).get("mode") == "tdd"
+    cmd = red_command(manifest, phase, task) if tdd else None
+    if cmd:
+        tail, note = " -- %s" % (cmd,), [
+            "The command after `--` is the gate entry that names your tests.add "
+            "file; narrow it to your cases if HEAD's own tests are red under it."]
+    elif tdd:
+        tail, note = " -- <the command that runs your new test>", [
+            "This tdd task owes a test command after `--`, and no gate entry "
+            "names its tests.add file, so name the one that runs your new test."]
+    else:
+        tail, note = "", [
+            "Add `-- <test command>` to prove a regression test red in a "
+            "throwaway tree; without it the `redFirst` you wrote is filed."]
+    return (["Write the return object agents/audit-executor.md declares to a "
+             "file, then make this your last act - it checks the shape, runs the "
+             "red-first helper on the command after `--`, takes the stamp and "
+             "files the return once:", submit_command(ctx, tid, "executor", tail)]
+            + note + ["Then hand back one line: what that command printed."])
 
 
 def _diff_lines(ctx, files):
@@ -616,8 +652,7 @@ def compose_reviewer_brief(manifest, phase, task, ctx, filed):
     lines += _section("Your return", [
         "Write the return object agents/audit-reviewer.md declares to a file, "
         "then file it - your one write:",
-        "    %s file-return %s --role reviewer --project-dir %s < <your return "
-        "file>" % (_script(ctx, "manifest/audit-task.py"), tid, ctx["project"]),
+        submit_command(ctx, tid, "reviewer"),
         "Then hand back one line: what that command printed."])
     return lines
 
@@ -773,9 +808,8 @@ def compose_phase_brief(manifest, phase, ctx):
             "return the object as your final message, as `mode: phase` always "
             "has."])
         return lines
-    file_cmd = ("%s file-return %s --role reviewer --head %s --project-dir %s "
-                "< <your return file>" % (_script(ctx, "manifest/audit-task.py"),
-                                          pid, head or "<head>", ctx["project"]))
+    file_cmd = submit_command(ctx, pid, "reviewer",
+                              " --head %s" % (head or "<head>",)).strip()
     lines += _section("Review answers owed per task", [
         "review.perTask reads `phase`, so no reviewer answered these tasks one "
         "by one: you do, by the rules `mode: task` applies to one task. Each "
@@ -843,7 +877,7 @@ def write_brief(manifest, manifest_path, project_arg, node_id, role):
             return E_REFUSED, (
                 "REFUSED: the reviewer's brief carries the executor's return as "
                 "filed, and none is filed for %s's current start (%s). File it "
-                "first: audit-task.py file-return %s --role executor. No brief "
+                "first: drive-phase.py submit %s --role executor. No brief "
                 "written." % (node_id, filed[0], node_id))
         lines = compose_reviewer_brief(manifest, phase, task, ctx, filed)
     else:

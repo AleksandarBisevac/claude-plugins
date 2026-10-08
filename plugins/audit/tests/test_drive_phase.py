@@ -10,9 +10,11 @@ EVERY DRIVE HERE IS REAL. The fixture is a committed git repository with a
 three-task, one-wave plan, and the driver calls the real verbs as subprocesses:
 `audit-task.py`, `audit-lookup.py`, `run-test-gate.py`, `stamp-verification.py`,
 `commit-task-work.py` and `audit-lock.py`. The test plays the main loop: it
-calls `next`, and when told to dispatch an agent it plays that agent by filing
-the agent's return through `audit-task.py file-return`, the one door a real
-agent files through.
+calls `next`, and when told to dispatch an agent it plays that agent by making
+the agent's last act, `drive-phase.py submit`, as a command - which takes the
+stamp and files through `audit-task.py file-return`, the one door a return is
+written through. The `ds` cases hold `submit` itself: each refusal writes
+nothing, and each has the twin that files.
 
 EACH PROPERTY IS SHOWN RED AGAINST A MUTATED DRIVER, inside this suite: a fresh
 copy of the module is loaded, one function is replaced with the defect the
@@ -31,6 +33,7 @@ from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402  (script_path, load_script)
 import _manifest_io as _mio                        # noqa: E402  (load_manifest, tasks_by_id)
 import _evidence_io as _evio                       # noqa: E402  (read_rows, project_config_for)
+import _filed_returns as _fr                       # noqa: E402  (return_path)
 
 DRIVER = "drive-phase.py"
 PHASE = "P1"
@@ -153,34 +156,33 @@ def _edit(root, task_id, text):
         fh.write(text)
 
 
-def _file_executor(root, mpath, task_id, over=None):
-    """Play the executor: change the task's file, stamp the tree, file the
-    return, with `over` laid over its body. Returns the filing verb's
-    `(code, text)`."""
-    _edit(root, task_id, "changed by %s\n" % (task_id,))
-    code, stamp = _verb(root, "stamp-verification.py",
-                        ["take", "--project", root, "--manifest", mpath,
-                         "--task", task_id])
+def _executor_body(task_id, over=None):
+    """An executor's return as the agent sends it: no `stamp`, which is
+    `submit`'s to take."""
     body = {"gates": {}, "outcome": {"technical": "edited the file",
                                      "descriptive": "%s changed" % (task_id,)},
             "testsAdded": [],
             "redFirst": {"status": "not-attempted",
-                         "basis": "gate-only: no test is owed"},
-            "stamp": stamp.strip()}
+                         "basis": "gate-only: no test is owed"}}
     body.update(over or {})
-    if code != 0:
-        return code, stamp
-    return _verb(root, "audit-task.py",
-                 ["file-return", task_id, "--role", "executor", mpath,
-                  "--project-dir", root], stdin=json.dumps(body))
+    return body
+
+
+def _file_executor(root, mpath, task_id, over=None):
+    """Play the executor: change the task's file and make its last act, the
+    driver's `submit`, as a command the way an agent runs it. Returns its
+    `(code, text)`."""
+    _edit(root, task_id, "changed by %s\n" % (task_id,))
+    return _verb(root, DRIVER, ["submit", task_id, "--role", "executor", mpath,
+                                "--project-dir", root],
+                 stdin=json.dumps(_executor_body(task_id, over)))
 
 
 def _file_reviewer(root, mpath, task_id, answer="matches"):
     body = {"findings": [], "intent": {"answer": answer, "note": "as asked"},
             "verdict": "clean"}
-    return _verb(root, "audit-task.py",
-                 ["file-return", task_id, "--role", "reviewer", mpath,
-                  "--project-dir", root], stdin=json.dumps(body))
+    return _verb(root, DRIVER, ["submit", task_id, "--role", "reviewer", mpath,
+                                "--project-dir", root], stdin=json.dumps(body))
 
 
 # --- reading what the driver printed ------------------------------------------
@@ -522,12 +524,266 @@ def _key_cases(check):
           and all(tasks.get(t, {}).get("status") == "done" for t in TASKS))
 
 
+def _filed_path(mpath, task_id, role="executor"):
+    """Where `task_id`'s `role` return for its current start is filed, or None."""
+    root = os.path.dirname(os.path.dirname(os.path.dirname(mpath)))
+    project, config = _evio.project_config_for(mpath, root)
+    return _fr.return_path(_evio.evidence_dir(project, config),
+                           tasks_of(mpath).get(task_id), role)
+
+
+def _started(M, prefix):
+    """A one-task repository whose task the driver has started and dispatched."""
+    root, mpath = _repo(prefix, task_ids=TASKS[:1])
+    with _Env(root):
+        said = []
+        M.main(["next", PHASE, mpath, "--project-dir", root], out=said.append)
+    return root, mpath, "\n".join(said)
+
+
+def _submit(M, root, mpath, task_id, body, role="executor", tail=()):
+    """`(code, text)` of one `submit` with `body` on stdin. With `M` None it is
+    the command an agent runs, printed through its terse door; a mutant is
+    driven in-process, the one way a replaced function is reached."""
+    stdin = body if isinstance(body, str) else json.dumps(body)
+    argv = ["submit", task_id, "--role", role, mpath, "--project-dir",
+            root] + list(tail)
+    with _Env(root):
+        if M is None:
+            return _verb(root, DRIVER, argv, stdin=stdin)
+        said = []
+        code = M.main(argv, out=said.append, stdin=stdin)
+    return code, "\n".join(said)
+
+
+def _head(root):
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True,
+                          capture_output=True, text=True).stdout.strip()
+
+
+def _stamp_head(line):
+    """The HEAD a stamp line names, or None."""
+    try:
+        return json.loads(str(line).split(":", 1)[1]).get("head")
+    except (IndexError, ValueError, AttributeError):
+        return None
+
+
+def _read(path):
+    with open(path, "rb") as fh:
+        return fh.read()
+
+
+def _submit_cases(check):
+    """`submit`: the executor's and the reviewer's last act. It takes the stamp,
+    runs the red-first helper on a tdd task, and files through the write-once
+    verb; each refusal below writes nothing, and its allow twin files."""
+    M, why = _load("drive_phase_submit")
+    if M is None:
+        check("ds1 the driver loads", False, why)
+        return
+
+    # A missing stamp: git cannot name the tree, so `take` puts no HEAD in it.
+    root, mpath, _t = _started(M, "nostamp")
+    _edit(root, "P1.1", "changed\n")
+    away = os.path.join(root, ".git-away")
+    os.rename(os.path.join(root, ".git"), away)
+    try:
+        code, text = _submit(None, root, mpath, "P1.1", _executor_body("P1.1"))
+    finally:
+        os.rename(away, os.path.join(root, ".git"))
+    path = _filed_path(mpath, "P1.1")
+    check("ds1 a missing stamp is refused: with no tree git can name, submit "
+          "exits 1 naming the missing stamp and files nothing: %r" % (text,),
+          code == 1 and "stamp is missing" in text
+          and path is not None and not os.path.exists(path))
+    code, text = _submit(None, root, mpath, "P1.1", _executor_body("P1.1"))
+    filed = json.loads(_read(path).decode("utf-8")) if os.path.exists(path) else {}
+    check("ds2 THE ALLOW TWIN: the same return on the same task, git back, is "
+          "filed with the stamp submit took, naming HEAD, in one line: %r"
+          % ((code, text, filed.get("stamp")),),
+          code == 0 and len(text.splitlines()) == 1 and "filed" in text
+          and str(filed.get("stamp", "")).startswith("audit-stamp:")
+          and _head(root).startswith(_stamp_head(filed.get("stamp")) or "-"))
+    first = _read(path) if os.path.exists(path) else None
+    code, text = _submit(None, root, mpath, "P1.1", _executor_body(
+        "P1.1", {"outcome": {"technical": "a second claim",
+                             "descriptive": "again"}}))
+    check("ds3 a second filing is refused before anything runs, and the first "
+          "stays byte-identical: %r" % (text,),
+          code == 1 and "already filed" in text and "stamp taken" not in text
+          and first is not None and _read(path) == first)
+
+    # A malformed return: the shape is checked before anything runs.
+    root, mpath, _t = _started(M, "malformed")
+    _edit(root, "P1.1", "changed\n")
+    bad = _executor_body("P1.1")
+    del bad["outcome"]
+    code, text = _submit(None, root, mpath, "P1.1", bad)
+    code_j, text_j = _submit(None, root, mpath, "P1.1", "{not json")
+    path = _filed_path(mpath, "P1.1")
+    check("ds4 a malformed return writes nothing: a missing field is named and "
+          "refused before the stamp is taken, and text that is not JSON is "
+          "refused too: %r" % ((text, text_j),),
+          code == 1 and "`outcome`" in text and "stamp taken" not in text
+          and code_j == 1 and "does not parse" in text_j
+          and not os.path.exists(path))
+    code, text = _submit(None, root, mpath, "P1.1", _executor_body("P1.1"))
+    check("ds5 THE ALLOW TWIN: the same task takes the whole return, and files "
+          "it: %r" % (text,), code == 0 and os.path.exists(path))
+
+    # A tdd task: the red-first block is the helper's.
+    plan = _plan(TASKS[:1], ("true",))
+    task = plan["phases"][0]["tasks"][0]
+    task["files"] = ["src/mine.py", "tests/test_mine.py"]
+    task["tests"] = {"mode": "tdd", "add": ["tests/test_mine.py: v is two"],
+                     "gate": ["true"], "expectRedFirst": True}
+    root, mpath = _repo("tdd", task_ids=TASKS[:1])
+    os.makedirs(os.path.join(root, "tests"))
+    for rel, text in (("src/mine.py", "v = 1\n"),
+                      ("tests/test_mine.py", _house_suite([("old1", "mine.v >= 1")]))):
+        with open(os.path.join(root, *rel.split("/")), "w") as fh:
+            fh.write(text)
+    with open(mpath, "w") as fh:
+        json.dump(plan, fh, indent=2)
+    subprocess.run(_GIT + ["add", "-A"], cwd=root, check=True, capture_output=True)
+    subprocess.run(_GIT + ["commit", "-qm", "tdd"], cwd=root, check=True,
+                   capture_output=True)
+    with _Env(root):
+        M.main(["next", PHASE, mpath, "--project-dir", root], out=[].append)
+    with open(os.path.join(root, "src", "mine.py"), "w") as fh:
+        fh.write("v = 2\n")
+    with open(os.path.join(root, "tests", "test_mine.py"), "w") as fh:
+        fh.write(_house_suite([("old1", "mine.v >= 1"), ("new1", "mine.v == 2")]))
+    body = _executor_body("P1.1", {"testsAdded": ["tests/test_mine.py: new1"]})
+    del body["redFirst"]
+    code, text = _submit(None, root, mpath, "P1.1", body)
+    path = _filed_path(mpath, "P1.1")
+    check("ds6 a tdd task's submit with no test command is refused, naming the "
+          "command it needs, and files nothing: %r" % (text,),
+          code == 1 and "after `--`" in text and not os.path.exists(path))
+    code, text = _submit(None, root, mpath, "P1.1", body,
+                         tail=["--", sys.executable, "tests/test_mine.py"])
+    filed = json.loads(_read(path).decode("utf-8")) if os.path.exists(path) else {}
+    red = filed.get("redFirst") or {}
+    check("ds7 THE ALLOW TWIN: with the command, submit runs the red-first helper "
+          "and files its block - `proved`, with the time the helper printed: %r"
+          % ((code, text, red),),
+          code == 0 and red.get("status") == "proved" and red.get("at")
+          and "red-first proved" in text)
+
+    # The brief prints the manifest relative to the project; the agent's shell
+    # may stand elsewhere.
+    root, mpath, _t = _started(M, "relative")
+    _edit(root, "P1.1", "changed\n")
+    elsewhere = os.path.dirname(root)
+    with _Env(root):
+        done_r = subprocess.run(
+            _script(DRIVER) + ["submit", "P1.1", "--role", "executor",
+                               os.path.relpath(mpath, root), "--project-dir", root],
+            cwd=elsewhere, input=json.dumps(_executor_body("P1.1")),
+            capture_output=True, text=True, timeout=120)
+    path = _filed_path(mpath, "P1.1")
+    check("ds9 the manifest a brief prints relative to the project is read from "
+          "that project, whatever directory the agent's shell stands in: %r"
+          % ((done_r.returncode, done_r.stdout + done_r.stderr),),
+          done_r.returncode == 0 and os.path.exists(path)
+          and not os.path.exists(os.path.join(elsewhere, "docs", "audit",
+                                              "audit-plan.json")))
+
+    # The phase review files through the same door, keyed on its head.
+    root, mpath = _repo("phasereturn", task_ids=TASKS[:1], per_task="phase")
+    drive(M, root, mpath)
+    done = tasks_of(mpath)["P1.1"]
+    entry = {"id": "P1.1", "commit": done.get("commit"), "answer": "matches",
+             "note": "as asked", "missing": [], "redFirst": "not-attempted",
+             "redFirstBasis": "gate-only", "inheritedTests": "not-asked",
+             "inheritedTestsBasis": "the gate is `true` and selects no test file"}
+    review = {"findings": [], "intent": {"answer": "matches", "note": "done"},
+              "verdict": "clean", "tasks": [entry]}
+    head = _head(root)
+    code, text = _submit(None, root, mpath, PHASE, review, role="reviewer",
+                         tail=["--head", head])
+    code_2, text_2 = _submit(None, root, mpath, PHASE, review, role="reviewer",
+                             tail=["--head", head])
+    check("ds8 a phase review files through submit under --head, and a second "
+          "filing for that head is the verb's refusal: %r" % ((text, text_2),),
+          code == 0 and "filed" in text and code_2 == 1
+          and "already answers P1.1" in text_2)
+
+
+def _submit_mutant_cases(check):
+    """Each refusal of `submit`, red against a driver with that refusal taken
+    out. In-process, the one way a replaced function is reached, and after the
+    real cases, so a driver that cannot be driven in-process stops only these."""
+    mutant, _w = _load("drive_phase_submit_any_stamp")
+    mutant.take_stamp = lambda ctx, task: ("audit-stamp: {}", None)
+    root_m, mpath_m, _t = _started(mutant, "anystamp")
+    os.rename(os.path.join(root_m, ".git"), os.path.join(root_m, ".git-away"))
+    try:
+        code_m, text_m = _submit(mutant, root_m, mpath_m, "P1.1",
+                                 _executor_body("P1.1"))
+    finally:
+        os.rename(os.path.join(root_m, ".git-away"), os.path.join(root_m, ".git"))
+    path_m = _filed_path(mpath_m, "P1.1")
+    check("ds1m RED TWIN: a submit that files whatever the take printed files a "
+          "claim bound to no tree, and ds1 catches it: %r" % ((code_m, text_m),),
+          code_m == 0 and os.path.exists(path_m))
+
+    mutant, _w = _load("drive_phase_submit_no_early")
+    mutant.already_filed = lambda ctx, task: None
+    root, mpath, _t = _started(mutant, "noearly")
+    _submit(None, root, mpath, "P1.1", _executor_body("P1.1"))
+    path = _filed_path(mpath, "P1.1")
+    first = _read(path) if os.path.exists(path) else None
+    code_m, text_m = _submit(mutant, root, mpath, "P1.1", _executor_body("P1.1"))
+    check("ds3m RED TWIN: a submit that does not look for the filed return first "
+          "takes a stamp before the filing verb refuses, and ds3 catches it - the "
+          "first still stays as filed, so the refusal itself is the verb's: %r"
+          % (text_m,),
+          code_m == 1 and "stamp taken" in text_m and first is not None
+          and _read(path) == first)
+
+    mutant, _w = _load("drive_phase_submit_no_shape")
+    mutant.submitted_shape = lambda role, body, fills: []
+    root_m, mpath_m, _t = _started(mutant, "noshape")
+    bad = _executor_body("P1.1")
+    del bad["outcome"]
+    code_m, text_m = _submit(mutant, root_m, mpath_m, "P1.1", bad)
+    check("ds4m RED TWIN: a submit that does not check the shape first takes the "
+          "stamp before the filing verb refuses, and ds4 catches it: %r"
+          % (text_m,),
+          code_m == 1 and "stamp taken" in text_m)
+
+
+_TALLY = "%s: %d/%d cases " + "passed"
+
+
+def _house_suite(cases):
+    """A house-style suite over `src/mine.py`: one line per `(label, cond)` and
+    the tally, which is BUILT because a spelled one reads as a suite of its own."""
+    body = ["import os, sys",
+            "sys.path.insert(0, os.path.join(os.path.dirname("
+            "os.path.abspath(__file__)), '..', 'src'))",
+            "import mine", "results = []"]
+    for label, cond in cases:
+        body += ["ok = bool(%s)" % (cond,), "results.append(ok)",
+                 "print('%%s %s' %% ('PASS' if ok else 'FAIL'))" % (label,)]
+    body += ["n = sum(results)",
+             "print(%r %% ('ALL PASS' if n == len(results) else 'SELFTEST FAILED',"
+             " n, len(results)))" % (_TALLY,),
+             "sys.exit(0 if n == len(results) else 1)"]
+    return "\n".join(body) + "\n"
+
+
 def _selftest():
     def body(check):
         _harness.stage(check, "dp-block", _drive_cases)
         _harness.stage(check, "dr-block", _refusal_cases)
         _harness.stage(check, "dd-block", _decide_cases)
         _harness.stage(check, "dk-block", _key_cases)
+        _harness.stage(check, "ds-block", _submit_cases)
+        _harness.stage(check, "dsm-block", _submit_mutant_cases)
     return _harness.run(body)
 
 

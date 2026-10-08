@@ -85,6 +85,18 @@ PIPELINE = (
     ("executor", "agent", "agents/audit-executor.md"),
     ("reviewer", "agent", "agents/audit-reviewer.md"),
 )
+# The most bytes each agent's start may load. An agent's start is written once and read
+# by every request that agent makes, so a sentence added there is paid per request; the
+# ceiling is the design document's target for the trimmed prompts, whose procedure
+# moved into `drive-phase.py submit`. `mc19` in this file's selftest holds the shipped
+# tree under it, so a prompt that grows past one fails the sweep rather than a review.
+# The prompt is the one lever on an agent's start taken. Leaving out the project's
+# CLAUDE.md saves cents and drops the rules the benchmark found separate a run that
+# breaks things from one that does not; preloading skills writes the same content the
+# first request's Skill call does and saves no request, and a plugin agent cannot know a
+# project's skills; a longer agent cache bridges nothing between requests seconds apart
+# and raises every agent write's rate (docs/research/pipeline-cost-design.md prices each).
+AGENT_CEILINGS = {"executor": 9000, "reviewer": 7000}
 # The entries that run work, each of which reads the orchestrator's prose first today.
 RUN_ENTRIES = ("/audit:run", "/audit:next", "/audit:phase",
                "/audit:phase run form, before sign-off", "/audit:phase run form, at sign-off",
@@ -332,6 +344,20 @@ def measure(source, claude_md=None):
                         "missing": [r["path"] for r in rows if r["bytes"] is None]})
     return {"label": source["label"], "entries": entries, "listing": listing(source),
             "claudeMd": claude_md}
+
+
+def ceiling_breaches(measured):
+    """`[(entry, bytes, ceiling), ...]` - every agent whose start loads more than
+    `AGENT_CEILINGS` allows, or loads a file that is missing. Empty is the one
+    answer that holds; an agent the measurement lacks is a breach, never a pass."""
+    found = dict((e["entry"], e) for e in measured["entries"])
+    out = []
+    for name in sorted(AGENT_CEILINGS):
+        entry = found.get(name)
+        if entry is None or entry["missing"] or entry["bytes"] > AGENT_CEILINGS[name]:
+            out.append((name, None if entry is None else entry["bytes"],
+                        AGENT_CEILINGS[name]))
+    return out
 
 
 def file_sections(rel, data):
@@ -808,6 +834,32 @@ def _cases(check):
               "document's, with nothing unclassified: %r" % (sums,),
               sums == {"keep": 77811, "conditional": 27767, "elsewhere": 25037,
                        "maintainer": 23089, "unclassified": 0})
+
+    shipped = measure(tree_source(os.path.join(REPO, PLUGIN_REL)))
+    check("mc19 the agents' starts in this tree stay within their ceilings, measured: %r"
+          % ([(e["entry"], e["bytes"]) for e in shipped["entries"]
+              if e["entry"] in AGENT_CEILINGS],),
+          ceiling_breaches(shipped) == [])
+    scratch = tempfile.mkdtemp(prefix="measure-context-ceiling-")
+    try:
+        _fx_plugin(scratch, executor_skills=False)
+        within = ceiling_breaches(measure(tree_source(scratch)))
+        _fx_write(scratch, "agents/audit-reviewer.md",
+                  "---\nname: audit-reviewer\ndescription: Reviews.\n---\n"
+                  + "R" * (AGENT_CEILINGS["reviewer"] + 1))
+        over = ceiling_breaches(measure(tree_source(scratch)))
+        os.remove(os.path.join(scratch, "agents", "audit-executor.md"))
+        gone = ceiling_breaches(measure(tree_source(scratch)))
+    finally:
+        remove_tree(scratch)
+    check("mc20 THE RED TWIN: a reviewer one byte past its ceiling is named with its size, "
+          "the executor within its own is not, and an agent whose prompt is missing is a "
+          "breach rather than a zero; the small fixture breaches nothing: %r"
+          % ((within, over, gone),),
+          within == []
+          and over == [("reviewer", AGENT_CEILINGS["reviewer"] + 1,
+                        AGENT_CEILINGS["reviewer"])]
+          and [b[0] for b in gone] == ["executor", "reviewer"])
 
     head, problem = git_source("HEAD")
     if problem:

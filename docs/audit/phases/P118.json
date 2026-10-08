@@ -390,7 +390,7 @@
     {
       "id": "P118.6",
       "title": "under review.perTask phase the per-task review moves into the phase review and sign-off refuses an unanswered task",
-      "status": "in_progress",
+      "status": "done",
       "description": "Design section 6, T6, as G1. review.perTask takes always (today), phase (G1) or signals (G2). Under phase, the driver dispatches no per-task reviewer, and done --from-return writes the deferred state and refuses an --intent flag on a task with a diff. The phase reviewer's brief asks each task's three answers, and the sign-off verb refuses while any deferred task lacks one. Whether phase becomes the default is a release decision for the user, because COMPATIBILITY.md makes a changed default a major release. Every case the design lists is shown red first. The panel control and the doctor line follow if the schema lint requires them.",
       "files": [
         "CHANGELOG.md",
@@ -451,32 +451,59 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9372104d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Design T6 as G1, with the user's decision that review.perTask defaults to phase, released as a minor.\n\nConfiguration and recorded fields:\n- review.perTask accepts always, phase (the default) or signals, through the config schema, hooks/_config DEFAULTS, _config_rules, the panel settings group and the README. A value outside these three words is refused.\n- The plan schema gains phase.reviewPerTask, task.reviewPerTask and task.fixes.\n- intentCheck gains the deferred answer and the red-first and inherited-test grades.\n\n_filed_returns now owns:\n- review_key, which reads the task's key, then the phase's, then the live config, and never defaults to always;\n- is_fix_task;\n- the landing property, landing_problem and landing_refusals;\n- the phase return's keys, path and shape check.\n\naudit-task:\n- start records the key.\n- Under phase, every --commit close records deferred and refuses any --intent word, except a recorded fix task's not-asked with its basis.\n- add --fixes links the task and its findings in one write.\n- file-return files the phase review's tasks array, keyed on --head.\n- signoff, single and group, writes the answers whose commit matches each task's current commit, then asks the property under passed and skipped alike.\n\nclose-phase asks the same property before merging. drive-phase's reviewer_due dispatches no per-task reviewer under phase. The audit-lookup phase brief prints openChoices, its head, what each task owes and the three questions. The reviewer definition gains its phase-mode tasks array, held equal to the filing verb's keys by _refs.phase_return_key_drift, which has red and allow rows in prove-gates.\n\nThe section 10 verb command was re-run at HEAD. Every verb has its refused case or its named followed reason: hd1-hd23, gsp1, ra1-ra7 and dk1-dk2. Mutations M1-M9 each went red in a scratch copy, and every case group was proved red at HEAD.\n\nCHANGELOG states the behaviour change and how to keep it (set always). COMPATIBILITY.md records the named exception, shipped in a minor by the maintainer's decision, and the new signoff --verdict skipped refusal. The build guide's module map follows the new imports.\n\nOwed elsewhere:\n- the reference prose still tells the orchestrator to close with not-asked and to review per task (P118.8 and P118.9);\n- _status_facts counts deferred as answered (P118.8).",
+        "descriptive": "By default the plugin no longer runs a reviewer after every task: the phase review answers for each task, bound to its commit, and sign-off and the merge refuse while any changed task lacks its answers. Setting review.perTask to always keeps the old behaviour."
       },
       "startedAt": "2026-10-08T00:36:44Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T01:50:22Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test__config_rules.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/tests/test__panel_settings.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/tests/test__refs.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-08T01:50:07Z.0c195f",
         "status": "passed",
         "at": "2026-10-08T01:50:07Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9372104d",
+        "at": "2026-10-08T01:50:22Z",
+        "basis": "orchestrator check: one property asked at both landing points, every writing verb answered, mutations red, the user's default and minor-release decision recorded in CHANGELOG and COMPATIBILITY"
       }
     },
     {
       "id": "P118.7",
       "title": "agent prompts are trimmed and each agent files its own return through submit",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Design section 6, T8. The executor's last act is drive-phase.py submit --role executor <task>, which takes the stamp, runs the red-first helper on a tdd task and files the return. The reviewer uses submit --role reviewer. The prose that explained those steps leaves each prompt. Targets: executor at most 9000 bytes, reviewer at most 7000, by measure-context. submit's cases are shown red first.",
       "files": [
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/README.md",
         "plugins/audit/agents/audit-executor.md",
         "plugins/audit/agents/audit-reviewer.md",
-        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/reference/execute-task.md",
         "plugins/audit/scripts/_refs.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test__refs.py",
         "plugins/audit/tests/test_drive_phase.py",
-        "plugins/audit/tests/test__refs.py"
+        "plugins/audit/tests/test_stamp_verification.py",
+        "tools/measure-context.py",
+        "tools/prove-gates.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -501,16 +528,21 @@
       "dependsOn": [
         "P118.5"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T01:50:23Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T02:34:32Z.aaf51a",
+        "status": "passed",
+        "at": "2026-10-08T02:34:32Z"
+      }
     },
     {
       "id": "P118.8",

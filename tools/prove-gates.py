@@ -652,8 +652,7 @@ TABLE = (
  # answer to the diff it was given: every reviewer following the format files
  # an entry the verb refuses, and sign-off can never write the answers.
  ("phase_return_key_drift", "plugins/audit/agents/audit-reviewer.md", "replace",
-  '            "commit": "<the commit SHA the brief handed for this task>",\n',
-  "", REF, "prk1"),
+  ' "commit": "<the SHA the brief handed>",', "", REF, "prk1"),
  # THE BRIEF GROWS A FIELD AND THE REFERENCE DOES NOT FOLLOW; renaming a key
  # is that event with a shorter diff. `testsAdded` is what fills `task.verifiedBy`,
  # so this is the shipped defect with the name changed - the field was declared,

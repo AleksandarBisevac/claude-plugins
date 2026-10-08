@@ -156,7 +156,7 @@ claude-plugins/                           # this repo (personal, public)
           record-risk-confirmation.py     # the high-risk gate answered BEFORE the run, bounded to named task ids and written to the trail
           record-outside-run.py           # a suite that ran where this plugin could not see it, so a gate run in the same window is not credited with its effects
           import-evidence.py              # a CI build's own evidence ledger file, brought in whole after its chain verifies - never rewrites a row, never re-chains; prints (never runs) the full-gate.py --learn-from command for each red full row it brought in
-          drive-phase.py                  # the step driver: `next <phase>` runs every due step that needs no judgement through the existing verbs, as subprocesses, and prints one instruction - dispatch, decide or done; a refused verb stops it with the verb's own words
+          drive-phase.py                  # the step driver: `next <phase>` runs every due step that needs no judgement through the existing verbs, as subprocesses, and prints one instruction - dispatch, decide or done; a refused verb stops it with the verb's own words. `submit` is an agent's last act: the stamp, the red-first helper and the filing in one call
           full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, then a coupling and a bug per named selection miss of a red run (the red still blocks), or the sentence and exit 0 when no meta.fullGate is declared; --learn-from <runId> runs nothing and learns from an imported row through the same function
           _runner_output.py               # every reading of what a test runner printed: its summary line (how many checks ran) and the lines naming a failing check
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs; the one POSIX sh (and its PATH) every plan command runs under, or a refusal - never cmd.exe
@@ -2982,8 +2982,11 @@ the WHOLE spawn brief to a file under `stateDir` (`briefs/<id>/<start>.<role>.md
 never passes through the main loop. The executor's carries the resolved skills (area first),
 the description verbatim, the files with their last declarer, the docs, the desired outcome,
 the gate resolved through `meta.buildCommands`, the `executor.runsGate` reading with its
-command, the stamp and red-first helpers resolved against this plugin copy, the filing
-command, and — only when `attempts > 1` — what the last attempt left on the record. The
+command, the filing command — one `drive-phase.py submit`, resolved against this plugin copy,
+carrying on a `tdd` task the gate command that names its `tests.add` file after `--`
+(`red_command`), since `submit` takes the stamp and runs the red-first helper itself — and,
+only when `attempts > 1`, what the last attempt left on the record. Both reviewer briefs file
+through `submit` too, the phase review's with `--head`. The
 reviewer's carries the executor's return as filed for the task's current start
 (byte-identical), the diff, the recorded run and the gate commands, and is refused with exit 4
 (`E_REFUSED`), writing nothing, until that return is filed. The phase reviewer's carries the
@@ -4021,6 +4024,22 @@ it over the fixture drive, and `--verbose` adds each verb's run above the instru
 path is printed from the project root when it lies inside it (`project_relative`), so the size of
 a print does not grow with where the project sits on disk.
 
+**`submit` is an agent's last act.** `drive-phase.py submit <taskId|phaseId> --role
+executor|reviewer [--head SHA] [--case ...] [--introduces ...] [--deps-from DIR]
+[-- <test command>]` reads the return on stdin and runs, in order, what the agent prompts used
+to explain step by step: the shape check (`submitted_shape`, with the fields `submit` fills set
+aside, so a malformed return costs no red run and writes nothing); for an executor whose return
+is already filed for this start, a refusal before anything runs (`already_filed`); with a test
+command, `stamp-verification.py red --json`, whose `redFirst` block replaces the agent's - owed
+on a `tdd` task, which is refused without one, and a test that passes without the fix gets no
+block and no filing (`red_block`); then `stamp-verification.py take --json`, after the red run
+because the stamp is taken after the last claim, refused as a missing stamp when it prints no
+`audit-stamp:` line or git put no HEAD in it (`take_stamp`); and last `audit-task.py
+file-return`, the write-once door, which a reviewer's return and a phase review's (`--head`)
+reach unchanged. Exit 0 filed, 1 refused with nothing written, 2 a usage error. The `ds` cases
+in `plugins/audit/tests/test_drive_phase.py` hold each refusal beside the twin that files, and
+the drive's own cases play every agent through `submit`.
+
 ### `plugins/audit/scripts/governance/propose-gates.py`
 A plan proposal that reads what previous runs in THIS repository actually ran and what they
 caught, instead of the tree alone — the waste `/audit:init`'s recon step pays everywhere except
@@ -4578,7 +4597,7 @@ a `--no-change` close keeps the rule it had. `done --from-return` also takes the
 executor's filed return, and refuses when that return is not filed for the current start.
 
 **`file-return <taskId> --role executor|reviewer` is the one write a returning agent
-makes.** The return arrives as JSON on stdin; the verb checks the shape the role's agent
+makes**, reached through `drive-phase.py submit`. The return arrives as JSON on stdin; the verb checks the shape the role's agent
 definition declares (`_filed_returns.return_problems`), takes no path argument and
 refuses one that reads as a path, and writes the text verbatim to
 `<evidence dir>/returns/<taskId>/<start>.<role>.json`, where `<start>` is the task's current

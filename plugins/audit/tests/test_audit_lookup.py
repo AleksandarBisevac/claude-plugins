@@ -739,8 +739,17 @@ def _brief_cases(check):
           and "refunds add up to the order total" in text
           and "writing-python" in text
           and "executor.runsGate: own-tests" in text
-          and "file-return P1.1 --role executor" in text
-          and "--own --quiet" in text and "stamp-verification.py\" take" in text)
+          and "submit P1.1 --role executor" in text
+          and "--own --quiet" in text)
+    _bf_bare = [ln.strip() for ln in text.splitlines()
+                if "file-return" in ln or "stamp-verification.py" in ln]
+    check("bf14 the executor's filing line is ONE call, the driver's `submit`, "
+          "with this tdd task's test command after `--` - the gate entry naming "
+          "its tests.add file - and the brief names no bare file-return, take or "
+          "red step for the agent to run by hand: %r" % (_bf_bare,),
+          "drive-phase.py\" submit P1.1 --role executor" in text
+          and "-- python3 tests/test_refund.py" in text
+          and _bf_bare == [])
     check("bf2 a first attempt's brief carries no retry section: %r"
           % (text[-200:],), "Retry" not in text)
     retry = _bf_manifest(attempts=2)
@@ -769,7 +778,7 @@ def _brief_cases(check):
           "filed under an earlier start does not count: %r"
           % ((code1, said1[:160], code2),),
           code1 == refused and code2 == refused
-          and "executor" in said1 and "file-return" in said1
+          and "executor" in said1 and "submit P1.1 --role executor" in said1
           and not os.path.exists(rpath))
     file_exec(proj)
     code3, said3 = brief(proj, mpath, "P1.1", "reviewer")
@@ -781,7 +790,7 @@ def _brief_cases(check):
           code3 == M.E_OK and _BF_EXEC in rtext
           and task["description"] in rtext
           and "python3 -m pytest tests" in rtext
-          and "file-return P1.1 --role reviewer" in rtext
+          and "submit P1.1 --role reviewer" in rtext and "file-return" not in rtext
           and "mode: task" in rtext)
 
     # ---- the phase reviewer's brief ----------------------------------------
@@ -875,7 +884,8 @@ def _brief_cases(check):
           % ((code7, owed, head),),
           code7 == M.E_OK and len(head) == 40 and ("head: %s" % (head,)) in ptext6
           and owed == ["owed: P1.1"]
-          and "file-return P1 --role reviewer --head %s" % (head,) in ptext6
+          and "submit P1 --role reviewer" in ptext6
+          and "--head %s" % (head,) in ptext6 and "file-return" not in ptext6
           and "inherited" in ptext6.lower() and "red-first" in ptext6.lower()
           and "answered by returns/P1/" in ptext6)
 
