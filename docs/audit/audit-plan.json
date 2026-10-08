@@ -4386,7 +4386,8 @@
       "P63.6",
       "P71.2-zso",
       "P80.7",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P120.1"
     ],
     "plugins/audit/tests/test__report_md.py": [
       "P63.6",
