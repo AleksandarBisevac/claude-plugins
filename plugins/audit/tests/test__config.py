@@ -2242,6 +2242,15 @@ def _cases(check):
     check("eg6 RUNS_GATE_MODES carries the default, so the default is never a "
           "fourth, unreachable spelling of the vocabulary",
           M.DEFAULTS["executor"]["runsGate"] in M.RUNS_GATE_MODES)
+    # review.perTask: the shipped reading is `phase`, a word of its own
+    # vocabulary, and the key reference a reader of this module meets says so.
+    check("rk1 review.perTask ships `phase`, one of REVIEW_PER_TASK_MODES, and "
+          "the module's key reference names the key and all three words",
+          M.DEFAULTS.get("review") == {"perTask": "phase"}
+          and M.DEFAULTS["review"]["perTask"] in M.REVIEW_PER_TASK_MODES
+          and "review.perTask" in (M.__doc__ or "")
+          and all('"%s"' % (w,) in (M.__doc__ or "")
+                  for w in M.REVIEW_PER_TASK_MODES))
 
     # --- executor.maxHours (P56.4) -----------------------------------------------
     # The bound on CONTINUING an agent across tasks, never on a single task's own

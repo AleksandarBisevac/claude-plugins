@@ -67,6 +67,7 @@ import _manifest_vocab  # noqa: E402  (the FULL_STATUS words - the third place's
 import _areas  # noqa: E402  (meta.areas registry + the resolution every surface shares)
 import _priority  # noqa: E402  (the ONE expression of execution order, and the skip note)
 import _usage_core  # noqa: E402  (parse_ts — the tree's one ISO reader, at layer 1)
+import _filed_returns as _fr  # noqa: E402  (INTENT_DEFERRED: the word a close writes for an answer still owed)
 
 # --- vocabulary -----------------------------------------------------------------
 CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
@@ -737,16 +738,23 @@ def intent_unanswered(phase):
     block as "no answer recorded", never as agreement, and until something read
     it that absence was invisible on every surface a phase is judged from. A
     deliberate `not-asked` IS an answer - it carries its basis - so it is not
-    listed; a cancelled task never reached the question. One home for the
-    predicate because sign-off and `/audit:status` both print it, and two
-    readings of "no answer" would be two answers about the same task.
+    listed; a cancelled task never reached the question. `deferred` is NOT an
+    answer: it is the word a close writes for a task whose answers the phase
+    review still owes, so such a task is listed until that review answers it.
+    One home for the predicate because sign-off and `/audit:status` both print
+    it, and two readings of "no answer" would be two answers about the same task.
     """
     if not isinstance(phase, dict):
         return []
     return [str(t.get("id")) for t in (phase.get("tasks") or [])
             if isinstance(t, dict) and t.get("status") == "done"
-            and not (isinstance(t.get("intentCheck"), dict)
-                     and t["intentCheck"].get("answer"))]
+            and _intent_word(t) in (None, _fr.INTENT_DEFERRED)]
+
+
+def _intent_word(task):
+    """The answer `task`'s `intentCheck` records, or None for none."""
+    block = task.get("intentCheck")
+    return (block.get("answer") or None) if isinstance(block, dict) else None
 
 
 # --- the evidence boundary --------------------------------------------------------

@@ -38,6 +38,20 @@ half came out from under `audit-journal.py` for exactly that reason, and the
 gate-pattern check reads the same evidence tally `propose-gates.py` folds into a
 plan proposal rather than re-deriving it a second time.
 
+`check_ttl_trade` is the ledger's neighbour for the same reason `check_ledger`
+is here: it runtime-loads `usage_ledger` too, for `parse_ts` (one ISO-8601
+reading, so the gap and the ledger's own hour buckets never disagree about
+when a request landed) and `price` (so a token count is turned into a dollar
+figure by the one table every other usage surface already prices through,
+never a second copy of it). The ledger's OWN rows cannot answer this
+check's question - they are summed per HOUR BUCKET on purpose (see
+`usage_ledger.py`'s module docstring on why a summed row cannot answer "how
+big was any one turn"), so the one place a per-request gap survives is the
+transcript JSONL a session already writes. This check reads that file
+directly, by a path its caller names - documentation only, decision 5 of the
+cost design: it recommends nothing the gaps do not support, and the setting
+stays the user's.
+
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__doctor_trail.py` - see
 `plugins/audit/tests/_harness.py`.
@@ -163,6 +177,172 @@ def check_ledger(rep, project, cfg, manifest_rel):
         return
     rep.ok("usage ledger", "%d ledger file(s) in %s" % (len(files), ledger_dir))
 
+
+# --- checks: the main-loop TTL trade, documentation only ------------------------
+FIVE_MIN_S = 300
+
+
+def _nonneg_int(value):
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def main_loop_requests(transcript_path, ul):
+    """One entry per unique main-loop request in `transcript_path`'s own
+    lines, in file order -> `[{"ts", "model", "cacheW1h", "cacheW5m"}, ...]`,
+    or None when the file cannot be read.
+
+    `ul` is the loaded `usage_ledger` module - its `parse_ts` is what reads
+    the timestamp, so this check's gap and the ledger's own hour buckets never
+    disagree about when a request landed.
+
+    Reads ONLY the file named - never a subagent transcript in a sibling
+    `subagents/` directory, which is `usage_ledger.scan_transcripts`' job and
+    not this one: the TTL trade is about the gaps a human main loop leaves
+    between its own requests, and an agent's transcript answers a different
+    question. An entry marked `isSidechain` is an agent's request written into
+    the same file, so it is skipped too: read as the main loop's, it splits
+    the main loop's own gap and adds writes the main loop never made. A
+    message id repeated across entries (the streaming-partial
+    trap `usage_ledger.py` documents at length) is folded into its LAST
+    occurrence - the final entry carries the complete counts, and this check
+    never meters spend, so it owes the ledger's own provisional-id
+    bookkeeping nothing."""
+    order = []
+    by_id = {}
+    try:
+        with open(transcript_path, "r", encoding="utf-8", errors="replace") as fh:
+            lines = fh.readlines()
+    except OSError:
+        return None
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue                     # a malformed line must never abort the read
+        if not isinstance(entry, dict) or entry.get("type") != "assistant":
+            continue
+        if entry.get("isSidechain") is True:
+            continue
+        message = entry.get("message")
+        if not isinstance(message, dict):
+            continue
+        usage = message.get("usage")
+        mid = message.get("id")
+        if not isinstance(usage, dict) or not mid:
+            continue
+        ts = ul.parse_ts(entry.get("timestamp"))
+        if ts is None:
+            continue
+        detail = usage.get("cache_creation")
+        w5m = w1h = 0
+        if isinstance(detail, dict):
+            w5m = _nonneg_int(detail.get("ephemeral_5m_input_tokens"))
+            w1h = _nonneg_int(detail.get("ephemeral_1h_input_tokens"))
+        if mid not in by_id:
+            order.append(mid)
+        by_id[mid] = {"ts": ts, "model": message.get("model") or "",
+                     "cacheW5m": w5m, "cacheW1h": w1h}
+    return [by_id[mid] for mid in order]
+
+
+def ttl_trade(entries, ul, pricing=None):
+    """The three things the doctor prints from `main_loop_requests`' return:
+    the longest gap between requests, the one-hour cache writes, and their
+    price at today's TTL versus a five-minute one - computed on the SAME
+    tokens, never re-modelling how often they would have been written under a
+    shorter TTL, which is the design's own simplification.
+
+    Prices through `ul.price`, the one function every usage surface already
+    prices a bag of tokens through - never a second rate table. `pricing` is
+    `usage_ledger`'s own table shape (model -> rates); an unknown model falls
+    back to `_default` exactly as every other priced surface here does.
+    `atOneHourUSD`/`atFiveMinUSD` stay None when no pricing table was given or
+    no one-hour write occurred - never a guessed figure standing in for a
+    missing one."""
+    entries = entries or []
+    gaps = [b["ts"] - a["ts"] for a, b in zip(entries, entries[1:])]
+    total_w1h = sum(e["cacheW1h"] for e in entries)
+    at_1h = at_5m = None
+    if pricing is not None and total_w1h > 0:
+        at_1h = sum(ul.price({"cacheW1h": e["cacheW1h"]}, e["model"], pricing)
+                   for e in entries)
+        at_5m = sum(ul.price({"cacheW5m": e["cacheW1h"]}, e["model"], pricing)
+                   for e in entries)
+    return {"requestCount": len(entries),
+           "longestGapS": max(gaps) if gaps else None,
+           "cacheW1hTokens": total_w1h,
+           "atOneHourUSD": at_1h, "atFiveMinUSD": at_5m}
+
+
+def check_ttl_trade(rep, transcript_path, pricing=None):
+    """Prints the main-loop cache TTL trade from one recorded session - never
+    a recommendation, because the setting stays the user's (decision 5 of the
+    cost design). A caller with no transcript to name, or one this host
+    cannot read, gets that said plainly rather than a guessed figure in its
+    place."""
+    if not transcript_path:
+        rep.ok("ttl trade",
+               "no recorded session was named, so there is nothing to "
+               "measure - pass --transcript <path to a session's own "
+               "transcript .jsonl>; this is documentation only and prints no "
+               "figure until one is named")
+        return
+    ul = _load("usage_ledger", "usage_ledger.py")
+    entries = main_loop_requests(transcript_path, ul)
+    if entries is None:
+        rep.warn("ttl trade", "%s could not be read" % (transcript_path,),
+                 "name a session's own transcript .jsonl file")
+        return
+    if len(entries) < 2:
+        rep.ok("ttl trade", "%s carries fewer than two main-loop requests, so "
+                            "no gap can be measured" % (transcript_path,))
+        return
+    trade = ttl_trade(entries, ul, pricing)
+    gap = trade["longestGapS"]
+    if trade["cacheW1hTokens"] <= 0:
+        rep.ok("ttl trade",
+               "longest main-loop gap %.0fs over %d request(s); no one-hour "
+               "cache writes in this session, so there is no TTL trade to "
+               "show" % (gap, trade["requestCount"]))
+        return
+    if trade["atOneHourUSD"] is None:
+        rep.warn("ttl trade",
+                 "longest main-loop gap %.0fs over %d request(s); %d "
+                 "one-hour cache-write token(s), but no pricing table was "
+                 "given so their price at either TTL cannot be shown"
+                 % (gap, trade["requestCount"], trade["cacheW1hTokens"]),
+                 "pass a resolved pricing table to price this session's writes")
+        return
+    # A five-minute entry has expired once five minutes have passed, so a gap
+    # of exactly FIVE_MIN_S is on the expiring side, and both sentences say so.
+    if gap < FIVE_MIN_S:
+        five_min, floor = "$%.4f" % (trade["atFiveMinUSD"],), ""
+        implication = ("every gap in this session stayed under five minutes, "
+                       "so a five-minute TTL would not have forced an extra "
+                       "cache write here")
+    else:
+        # The five-minute price is of the SAME tokens, so here it is a floor:
+        # the re-writes the gap forces are not in it, and printed bare it reads
+        # cheaper exactly when it would not be.
+        five_min = "at least $%.4f" % (trade["atFiveMinUSD"],)
+        floor = (" (a floor: it prices these same tokens and leaves out the "
+                 "re-writes)")
+        implication = ("the longest gap reaches five minutes, so a "
+                       "five-minute TTL would have missed the cache at "
+                       "least once here, re-writing context the one-hour "
+                       "TTL kept warm")
+    rep.ok("ttl trade",
+           "longest main-loop gap %.0fs over %d request(s); %d one-hour "
+           "cache-write token(s) cost $%.4f here and would cost %s at a "
+           "five-minute TTL%s - %s. The setting stays yours"
+           % (gap, trade["requestCount"], trade["cacheW1hTokens"],
+              trade["atOneHourUSD"], five_min, floor, implication))
 
 
 # --- checks: which copy of the plugin ran them ----------------------------------

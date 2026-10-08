@@ -6,34 +6,29 @@ allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 
 # /audit:next — execute the next ready task
 
-Read `${CLAUDE_PLUGIN_ROOT}/reference/orchestrator.md`,
-`${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` and
-`${CLAUDE_PLUGIN_ROOT}/reference/execute-task.md` first — this command runs a task, so it
-needs the section that does; it never signs a phase off, so it does not read
-`reference/phase-signoff.md`.
+Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" --short`. Its first entry
+under READY NOW is the task this command runs; do not re-derive the readiness rule. Show that
+list verbatim in your own reply, as a short fenced block, since a tool result is collapsed behind
+the call.
 
-**If `$ARGUMENTS` contains `--dry-run`:** follow the orchestrator's **Dry-run / preview** section —
-show the next ready task and what would run, and STOP without mutating.
+**`--dry-run`** (in `$ARGUMENTS`): say which task would run and stop, changing nothing. **No
+ready task:** relay the `waiting on` column it printed per task, and stop.
 
-Otherwise run the full preflight (steps 1–5, including acquiring the lock) and emit **Progress output**.
+Otherwise run that one task through the step driver, exactly as `/audit:run` does - `next
+<taskId>` drives that task alone, and the two commands differ only in how the task is chosen:
 
-0. **Print the entry view first, verbatim — in your own reply, inside a fenced block.** A tool
-   result is collapsed behind the tool call, so running it is not showing it:
-   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py"` — it names
-   every ready task, in order, with what the rest are waiting on. Do not re-tabulate it and
-   do not re-derive the readiness rule by hand; the first entry under READY NOW is the task
-   this command runs.
-1. Take that first READY NOW entry; `audit-task.py start` refuses an unready one, naming why.
-2. If none is ready: the entry view's `waiting on` column already says why, per task —
-   relay it rather than restating it. Release the lock and stop.
-3. Otherwise run **Execute the task** (orchestrator), then follow **Reporting** — outcome +
-   what is ready next. Release the lock.
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" next <taskId>
+```
 
-**Before that release, if the task did not reach `done`: the record of its gate has nothing
-to ride out on.** This command commits on success and only on success, so a run ending
-`blocked` — or stopping on the infrastructure path — leaves the rows the gate just wrote
-sitting in the working tree with nothing coming behind them to carry them.
-`${CLAUDE_PLUGIN_ROOT}/commands/run.md` → *What one run leaves behind* states it in full:
-which invocation becomes evidence, why a refused pointer is not a failure, and what
-`commit-audit-state.py` may and may not stage. It applies here unchanged — the two commands
-differ in how the task is chosen and in nothing else.
+Do exactly what each print says and run it again:
+
+- `dispatch <agent> <id> model=<m> brief=<path>` → one Agent call with that `subagent_type`
+  and `model`, the prompt `Read your brief at <path> and follow it.`, and the rule printed under
+  it. Wait for its one-line hand-back.
+- `decide <name> ...` → answer with one printed option:
+  `next <taskId> --answer <option> [--reason "<words>"]`. A decision the printed rule gives to a
+  human goes to the human first (AskUserQuestion). **The operator's words go in VERBATIM**: a
+  `--reason` is theirs, unparaphrased, and reaches the hash-chained journal.
+- `done <taskId>: ...` → report the outcome and what is ready next, and stop.
+- a `stopped` print → relay it to the human as printed, with the rule under it.

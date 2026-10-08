@@ -488,6 +488,28 @@ def commit_state(manifest, phase, manifest_path, project, git_root, subject=None
                          journalled=done["journalled"], done=done)
 
 
+def success_line(lines):
+    """A success's one line: the SHA committed and how many paths it carries,
+    or that nothing was uncommitted.
+
+    None - the long form - whenever anything else was said: a `degraded:`
+    record, a row outside the commit or never written. Those are what the
+    caller still has to act on, and they print before the answer, so any line
+    the two shapes below do not account for keeps every line.
+    """
+    head = lines[0].strip() if lines else ""
+    if head == "%s %s" % (PREFIX, NOTHING_UNCOMMITTED) and len(lines) == 1:
+        return "%s nothing uncommitted - no commit was made" % (PREFIX,)
+    if not head.startswith("%s committed " % (PREFIX,)):
+        return None
+    carried = _scoped_commit.ROW_CARRIED.split("%")[0]
+    paths = [ln for ln in lines[1:] if ln.startswith("    ") and ln.strip()]
+    rest = [ln.strip() for ln in lines[1:] if ln.strip() and ln not in paths]
+    if any(not ln.startswith(carried) for ln in rest) or len(rest) != 1:
+        return None
+    return "%s (%d path(s), its journal row inside it)" % (head, len(paths))
+
+
 def main(argv, out=print):
     parser = build_parser()
     try:
@@ -541,4 +563,6 @@ if __name__ == "__main__":
               "plugins/audit/tests/test_commit_audit_state.py - run that file "
               "instead.")
         sys.exit(0)
-    sys.exit(main(sys.argv[1:]))
+    # One line on success: `/audit:resume` runs this on every resume, and the
+    # main loop pays for each byte it prints on every later request.
+    sys.exit(_output.terse_cli(main, sys.argv[1:], success_line))

@@ -257,6 +257,53 @@ def _cases(check):
               detail(rep_led, "usage ledger"))
         sh.rmtree(os.path.join(tmp, ".claude", "usage"))
 
+        # --- the ttl-trade row: wired beside the ledger it cannot read this from
+        names_led = [r["check"] for r in rep_led.rows]
+        check("the ttl-trade row is wired into diagnose() and sits directly "
+              "after the usage-ledger row it is priced through: %r"
+              % (names_led[max(0, names_led.index("usage ledger")):][:2],),
+              "ttl trade" in names_led
+              and names_led.index("ttl trade")
+                  == names_led.index("usage ledger") + 1)
+        check("with no --transcript, the row names the flag and prints no "
+              "figure",
+              levels(rep_led, "ttl trade") == ["OK"]
+              and "--transcript" in detail(rep_led, "ttl trade")
+              and "$" not in detail(rep_led, "ttl trade"),
+              detail(rep_led, "ttl trade"))
+
+        def _ttl_line(mid, epoch, cache_w1h):
+            return json.dumps({
+                "type": "assistant",
+                "timestamp": time.strftime(
+                    "%Y-%m-%dT%H:%M:%S", time.gmtime(epoch)) + ".000Z",
+                "message": {
+                    "id": mid, "model": "claude-sonnet-5",
+                    "stop_reason": "end_turn",
+                    "usage": {
+                        "input_tokens": 10, "output_tokens": 5,
+                        "cache_creation_input_tokens": cache_w1h,
+                        "cache_creation": {"ephemeral_5m_input_tokens": 0,
+                                          "ephemeral_1h_input_tokens": cache_w1h},
+                        "cache_read_input_tokens": 0}}})
+
+        transcript = os.path.join(tmp, "session.jsonl")
+        base_ts = 1760000000
+        with open(transcript, "w", encoding="utf-8") as fh:
+            fh.write(_ttl_line("m1", base_ts, 1000) + "\n")
+            fh.write(_ttl_line("m2", base_ts + 60, 1000) + "\n")
+        rep_ttl = M.diagnose(tmp, transcript_path=transcript)
+        check("--transcript resolves a pricing table through the same "
+              "project_pricing every other usage surface reads, and PRICES "
+              "the row - no pricing table named means no guessed figure, so "
+              "this is the case that proves one was actually resolved: %r"
+              % (detail(rep_ttl, "ttl trade"),),
+              levels(rep_ttl, "ttl trade") == ["OK"]
+              and "60s" in detail(rep_ttl, "ttl trade")
+              and "$" in detail(rep_ttl, "ttl trade")
+              and "The setting stays yours" in detail(rep_ttl, "ttl trade"))
+        os.remove(transcript)
+
         # --- connector v2: the ADO card's operational half -------------------
         # check_ado is exercised directly, with shutil.which stubbed so the
         # verdicts do not depend on whether THIS machine has az installed.
@@ -1490,12 +1537,17 @@ def _cases(check):
     # ...and the extraction changed nothing a caller can see. Asserted by PARSING,
     # because a `build_parser()` that main() does not use would satisfy the case
     # above and leave the command running on a parser nobody checked.
-    _ns = _p.parse_args(["--json", "--deep", "--color", "never"])
+    _ns = _p.parse_args(["--json", "--deep", "--color", "never",
+                        "--transcript", "/tmp/session.jsonl"])
     check("...and it is the parser the command actually runs on: every flag "
           "main() reads is on it, with the same destinations. parsed=%r"
           % (sorted(vars(_ns)),),
           _ns.as_json is True and _ns.deep is True and _ns.color == "never"
+          and _ns.transcript == "/tmp/session.jsonl"
           and hasattr(_ns, "project"))
+    check("--transcript defaults to None, so a run with none named passes "
+          "none to diagnose() rather than an empty string",
+          _p.parse_args(["--json"]).transcript is None)
 
     # THE COUPLING CHECK AGES OVER GREEN MEASURED FULL RUNS, and the two
     # comments that introduce it say so: the one above its call here and the

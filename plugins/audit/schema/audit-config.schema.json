@@ -455,6 +455,22 @@
           "description": "How many hours a single spawned executor may be CONTINUED onto further tasks (never re-spawned) before the orchestrator stops preferring that and hands it back instead, with a summary, for a fresh executor to pick up from. Default 3 - the point measured in this project's own runs where a continued agent's per-turn cost roughly triples, almost entirely in material it had already read once. Not enforced by any hook; resolved by the orchestrator at the same moment it decides whether to hand a running agent its next task (reference/execute-task.md's continuation rule) or hand it back instead. A value that is not a positive number is refused rather than read as the default - see hooks/_config.py's executor_context_bound_hours, which returns null for it rather than 3."
         }
       }
+    },
+    "review": {
+      "type": "object",
+      "description": "Where a task's three review answers - does the diff do what the task asked, was its new test ever seen red, would an inherited test pass with the behaviour deleted - are given.",
+      "additionalProperties": true,
+      "properties": {
+        "perTask": {
+          "type": "string",
+          "enum": [
+            "always",
+            "phase",
+            "signals"
+          ],
+          "description": "'phase' (the default) - no reviewer runs per task: `audit-task.py done` records the task's intent as `deferred` and refuses every `--intent` word on a close with a commit, except `not-asked` with its basis on a task `add --fixes` recorded as a fix task; the phase review answers each task in a `tasks` array, and sign-off and close-phase.py refuse while a task with a commit lacks its three answers bound to that commit. 'always' - a reviewer per task before its close, the behaviour before this key existed. 'signals' - a reviewer per task only where its red-first proof did not come back `proved` or its filed return disagrees with the recorded gate; a task not reviewed closes `not-asked` with the reason. Recorded on the phase at its first start and on each task at its own, so the live value is read only while a phase records none. A value outside the enum is refused rather than read as the default."
+        }
+      }
     }
   }
 }

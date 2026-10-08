@@ -1,7 +1,7 @@
 {
   "id": "P118",
   "title": "the plugin pipeline costs at most 2x plain per task",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Implements the cost design in docs/research/pipeline-cost-design.md, section 6, on the user's decisions of 2026-10-07: G1 (the per-task intent review, the red-first grade and the inherited-test question move into the phase review, with a deferred close and a sign-off refusal), the phase-overhead budget raised to 1.00, and the main loop's cache TTL documented but not changed. The order is fixed by the user: implement, run each task's micro-test, and only then one single-task paid probe and the full benchmark, both run by the orchestrator. Each task's design section gives its mechanism, targets and micro-test; the task text below names what it owns.",
   "desiredOutcome": "a task run through the plugin pipeline costs at most 2x plain Claude Code doing the same task, measured like for like, with the phase overhead within 1.00 USD-equivalent a phase, each fix confirmed by its offline micro-test before any paid session",
   "testGate": [
@@ -15,21 +15,680 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "b0adcd8e03d3f565851a7a24332865453ab33402",
+  "branch": "audit/p118-the-plugin-pipeline-costs-at-m",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P118-R1",
+        "severity": "high",
+        "file": "plugins/audit/scripts/git/close-phase.py:2275-2276 (review_answers_refusal at :1826-1851; phase_as_landed at :659-673)",
+        "issue": "close-phase checks the landing property against the plan copy it was handed (`phase` loaded from `args.manifest`). It does not check the copy the merge brings in. Sign-off and task closes are committed on the phase branch. The parent's copy still shows the phase as it was at the fork: tasks pending, no `commit`. `phase_as_landed` already says this, and `gate_answer` already reads the branch tip for that reason. Against the parent's copy, `landing_refusals` finds no task with a commit and returns nothing. Concrete sequence under the default `phase`: 1) tasks are closed `deferred` on `audit/pN`; 2) `drive-phase next PN --answer sign-off` records the phase gate green, and then signoff refuses because tasks are owed answers; 3) from the parent checkout, run `close-phase.py docs/audit/audit-plan.json PN --project .`, adding `--branch audit/pN` if the composed name does not resolve. The gate is read at the tip and is green; `--override-verdict` also works, and it overrides only the gate. The review property is read from the parent's copy, so it is empty, and the branch merges with every task's answers missing. This repo is in that state now: `git show main:docs/audit/phases/P118.json` shows P118's tasks `pending` with commit null. Every `ra*` case in test_close_phase.py (:965-1062) runs close-phase with the branch checked out, so this path is never tested. The README row at :690 and COMPATIBILITY.md ('close-phase.py asks the same of the plan's record') both claim this refusal.",
+        "resolution": "fixed in P118.13-v7t (685875a9): In `main`, when `landing_due` is true, run `review_answers_refusal` against the branch tip's copy (`landed` from `phase_as_landed`) as well as the handed copy, and refuse if either fails. When the tip's copy cannot be read, refuse rather than fall back to the handed copy. Add an `ra8` case: main checked out holding the pre-merge plan (task pending, no commit), the branch tip carrying a `deferred` task. `close-phase <main's manifest> P1 --project <main tree>` must exit 1 and must not merge.",
+        "fixTask": "P118.13-v7t",
+        "commit": "685875a9"
+      },
+      {
+        "id": "P118-R2",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:926-964 and :906-923 (compare :639-641, :596-604); plugins/audit/scripts/manifest/audit-task.py:8017-8064",
+        "issue": "Under `phase` (now the default), a phase reviewer's per-task `diverges`, `cannot-tell` or red-first `not-proved` never reaches a decision before the merge. Under `always`, `close_task` stops on these through `review_items`, as a `decide review-answer` human action item. Under `phase`: `triage()` reads only the filed return's `findings` and `verdict`; `render_triage` prints only open findings; `_carry_answers` writes any non-`deferred` word onto `intentCheck`, and `landing_problem` accepts it. The reviewer prompt says intent is not a finding and must not be filed as one, and `clean` beside `diverges` is a legitimate return. So the triage prints 'the phase review returned `clean`; no finding open'. `--answer sign-off` then runs the gate, sign-off, the commit and the merge in one step. The signoff output listing the carried answers is discarded on success (`run_signoff`). A task the reviewer said does not do what it asked lands without anyone deciding. The phase-level `intent.answer` against `desiredOutcome` is not shown either. The design (5.2: 'a `diverges` or a `not-proved` reaches a human at sign-off'; 5.4: 'acted on before the merge … the triage decision') and COMPATIBILITY's 'every answer … is still given; what moves is when' both rest on this.",
+        "resolution": "fixed in P118.12-v7t (cdded1b5): In `triage`, read the filed phase return's `tasks` entries and its `intent`. List each `diverges` or `cannot-tell` answer, and each `not-proved` on a tdd task, as a triage line beside the findings. Do not offer `sign-off` until each line is answered, with a reason that goes into the summary. That is the same set `review_items` raises under `always`. Pin it with a drive case: a phase return whose `tasks` entry answers `diverges` with `findings: []` must stop at a decision naming that task, plus an allow twin where every entry answers `matches`.",
+        "fixTask": "P118.12-v7t",
+        "commit": "cdded1b5"
+      },
+      {
+        "id": "P118-R3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:4953-4954; plugins/audit/scripts/manifest/_filed_returns.py:285, :312-320, :441-444",
+        "issue": "A recorded fix task (`add --fixes`) closed with plain `done <fix> --commit <sha>` and no `--intent` records `deferred`, as the design and CHANGELOG allow ('with no `--intent` it records `deferred` like any task'). From there the phase cannot sign off: `landing_problem` refuses it because `deferred` is not an answer and the fix-task exception applies only to `not-asked`. `owed_answer` excludes fix tasks, so the phase brief does not list it and `review_due` does not dispatch for it. `phase_return_problems` refuses any entry for it ('owed no answer … or it is a recorded fix task'). Both the `done` line ('the phase review answers it, and sign-off refuses until it does') and the sign-off refusal ('Brief the phase reviewer … file its return') point to a remedy the filing verb refuses. The only way out is reopen → start → `done --intent not-asked`. The driver avoids this by always passing not-asked, so only the documented manual close reaches it.",
+        "resolution": "fixed in P118.13-v7t (685875a9): Pick one rule and pin it with a case. Either `done` refuses a recorded fix task's close under `phase` without `--intent not-asked --intent-basis`, naming that remedy. Or `owed_answer` (and with it the brief, the filing check and `review_due`) treats a fix task whose `intentCheck` reads `deferred` as owed, like any task.",
+        "fixTask": "P118.13-v7t",
+        "commit": "685875a9"
+      },
+      {
+        "id": "P118-R4",
+        "severity": "med",
+        "file": "plugins/audit/README.md:690; COMPATIBILITY.md:354-366; CHANGELOG.md:76-91; plugins/audit/reference/verbs-in-full.md:819-820",
+        "issue": "The shipped docs claim the landing property is wider than it is, and the 'followed, not enforced' half from design 5.2 reaches no shipped surface. The README row says 'sign-off and `close-phase.py` refuse while one lacks its answers'. The code asks this only of tasks that currently record a commit, and only when close-phase is the merge. Ways past it that are named only in docs/research: (a) work a task committed and then stopped recording. Example: `done P1.1 --commit C` (`deferred`) → `reopen P1.1 --reason x` → `cancel P1.1 --reason y` (or `move`, or restart and `done --no-change`) → `signoff P1 --verdict skipped` passes and close-phase merges C. The driver offers the same through its own `decide no-change` → `--answer no-change` when the executor has already committed. `repair-commits --apply` is another route. (b) Any caller can file the phase return: `--role` and `--head` are the caller's word. (c) A filed return can be rewritten: `docs/audit/**` is exempt from the plan gate (require-plan.py:851-853), guard-edits keeps only the journal append-only, and a changed answer (diverges→matches) passes sign-off; hd19 covers only a removed field. (d) After a hand or PR merge, close-phase stamps `mergedAt` without asking, because `landing_due` is false. The README's followed table has no row for any of these, and verbs-in-full's 'What it cannot hold' names only the task id and the role.",
+        "resolution": "fixed in P118.13-v7t (685875a9): Narrow the README row (and COMPATIBILITY's wording) to 'each task that records a commit, at close-phase's own merge'. Add a followed row listing (a)-(d), each with its post-hoc evidence. For (a), the evidence is the commits past `baseRef` that no task records, which group sign-off's accounting already computes (audit-task.py `group_plan`). Name (c) in verbs-in-full, or extend guard-edits' append-only rule to `<evidence>/returns/**`.",
+        "fixTask": "P118.13-v7t",
+        "commit": "685875a9"
+      },
+      {
+        "id": "P118-R5",
+        "severity": "med",
+        "file": "COMPATIBILITY.md:365-366; CHANGELOG.md:90-91; CHANGELOG.md [Unreleased]",
+        "issue": "'Set `\"always\"` to restore the previous behaviour exactly' (COMPATIBILITY) and 'To keep today's behaviour, set … always' (CHANGELOG) are both false against the last release. Under `always`, every `done --commit` with neither a filed reviewer return for the current start nor `--intent not-asked --intent-basis` now exits 2 (audit-task.py:4975-4999, P118.3). That includes a typed `--intent matches` and a close with no `--intent`, both of which the previous release accepted. `start`, `done` and `signoff` also now refuse an out-of-vocabulary `review.perTask`. COMPATIBILITY names the done refusal in a separate entry, which contradicts 'exactly'. The CHANGELOG [Unreleased] section names it nowhere. CHANGELOG also leaves out three other changes in this phase. Every verb's default stdout is now one success line, with `--verbose` for the old text; this repo's own tools/check-git-pipeline.py g15 had to add `--verbose`. Stamp `compare` no longer goes stale when only recorders wrote (P118.11), which loosens a check. `file-return`, `done --from-return`, `brief`, `add --from-file` and `doctor --transcript` are new.",
+        "resolution": "fixed in P118.13-v7t (685875a9): Change both sentences to say that `always` restores a reviewer per task, and that closes stay held to the filed-return rule (cite the COMPATIBILITY entry). Add CHANGELOG 'Changed' entries for the `done --commit` refusal, the one-line success output with `--verbose`, and the stamp's recorder exclusion. Add 'Added' entries for the new verbs.",
+        "fixTask": "P118.13-v7t",
+        "commit": "685875a9"
+      },
+      {
+        "id": "P118-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:929-935",
+        "issue": "Once `state.phaseReview.head` is set, `triage` never asks `review_due` again. A non-fix task added after that closes `deferred`, and the next `--answer sign-off` is refused by the signoff verb with no redispatch offered. Such tasks include the one the red-gate stop's own remedy creates (`audit-task.py add … --failing-from`, which has no `--fixes`). The model then has to brief and dispatch the phase reviewer outside the driver. The guarantee holds; only the driver's path to completing sign-off breaks.",
+        "resolution": "fixed in P118.12-v7t (cdded1b5): In `triage`, when a head is marked but `review_due()` still names a task owed its answers, drop the mark and dispatch a fresh phase review at the current head. Add a drive case: red phase gate → added task → sign-off reaches a new phase-review dispatch.",
+        "fixTask": "P118.12-v7t",
+        "commit": "cdded1b5"
+      },
+      {
+        "id": "P118-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py:1462-1480",
+        "issue": "`_commit_stamp` runs `commit-audit-state.py` in the parent's checkout. It stages the phase's manifest file (in single-file layout, the whole plan), the journal directory and the evidence directory as they stand. Another session's uncommitted plan or journal changes in a shared parent checkout therefore go into a commit titled 'landed on <parent>'. This is the reverse of the sweep P118.8 set out to remove.",
+        "resolution": "fixed in P118.13-v7t (685875a9): Before committing, have `commit_landing` compare the parent tree's plan and journal changes with the stamp fields and this run's own row. When anything else is pending there, report it as `landingCommitSkipped` and leave it for that tree's own work, rather than committing it.",
+        "fixTask": "P118.13-v7t",
+        "commit": "685875a9"
+      },
+      {
+        "id": "P118-R8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:5097-5119",
+        "issue": "`done --no-change` records only the HEAD it examined. It never checks that the task's declared files are unchanged since its start, so a close with no commit is the caller's word. Under G1 the landing property now depends on this: a task with no commit is never asked.",
+        "resolution": "fixed in P118.13-v7t (685875a9): Refuse `--no-change` when `git diff <phase.baseRef or the start's HEAD>..HEAD -- <task files>` is non-empty, or when the tree has uncommitted changes to those files. Otherwise record the diff stat beside `examinedAt`.",
+        "fixTask": "P118.13-v7t",
+        "commit": "685875a9"
+      },
+      {
+        "id": "P118-R9",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:906-964 (render_triage, triage); :596-604 (review_items)",
+        "issue": "Under the new default review.perTask=phase, the phase review's per-task answers are recorded but never shown to anyone. This covers `diverges`, `cannot-tell`, red-first `not-proved`, and a phase-level intent `diverges`. The triage reads only `verdict` and the open findings. review_items, which raises the `decide review-answer` human action item, runs only on a per-task reviewer's return. Reproduced on a scratch fixture: the phase review filed P1.2 with answer=diverges and redFirst=not-proved. The triage printed `the phase review returned clean; no finding open`, then sign-off and the merge ran with no human prompt. landing_problem (_filed_returns.py:263-296) accepts `diverges` as an answer. The design (pipeline-cost-design.md:1631 and the table at :2345) says these answers reach a human at sign-off and are acted on before the merge. Under `always` the same answers stop the drive.",
+        "resolution": "fixed in P118.12-v7t (cdded1b5): In triage(), read the filed phase return's `tasks` entries and the phase `intent`. List each diverges, cannot-tell, not-proved or flagged entry as a triage line. Make sign-off over them a human decision that needs --reason, the same way invariant-breach is handled. Add a drive case where a diverges entry blocks a silent sign-off, shown red against today's triage.",
+        "fixTask": "P118.12-v7t",
+        "commit": "cdded1b5"
+      },
+      {
+        "id": "P118-R10",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:683-684; plugins/audit/commands/phase.md:21-24",
+        "issue": "`/audit:phase <id> --confirm-high-risk` still records a risk.confirmed row, and phase.md says only tasks not on the covered list stop and ask. The driver never reads that row. Reproduced: with P1.1 covered by the row, the drive still printed `decide high-risk P1.1 ... Ask the human (AskUserQuestion)`. The unattended run the flag exists for now stalls at the first high-risk commit. At base this was supported (execute-task.md:458-476).",
+        "resolution": "fixed in P118.12-v7t (cdded1b5): Before deciding high-risk, ask record-risk-confirmation's covered set (or the journal's risk.confirmed rows for this phase). Mark covered tasks confirmed and print `high-risk confirmed in advance` in the did-line. Add a drive case for a covered task and one for a task that is not covered.",
+        "fixTask": "P118.12-v7t",
+        "commit": "cdded1b5"
+      },
+      {
+        "id": "P118-R11",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:1026-1060 (run_signoff); plugins/audit/commands/review.md:2; plugins/audit/README.md:431",
+        "issue": "The `meta.runtimeBoot` sign-off step is gone. At base it was phase-signoff.md step 4: cold-boot the app, and stop with a human action item when the runtime is unreachable. The driver runs gate, invariants, signoff, commit and land with no boot check. No command body reads phase-signoff.md any more, and nothing in STEPS states the rule. review.md's description and the README row still promise an `optional runtime boot`. T2 required every rule to be re-homed and none dropped.",
+        "resolution": "fixed in P118.12-v7t (cdded1b5): When meta.runtimeBoot is set and the phase touched appRootPath, add a step before the verdict that prints a `decide runtime-boot` (a human answer: booted / not-reachable + reason). Or drop the claim from review.md, the README and CHANGELOG as a recorded decision.",
+        "fixTask": "P118.12-v7t",
+        "commit": "cdded1b5"
+      },
+      {
+        "id": "P118-R12",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:669-680 (task gate), :1029-1034 (phase gate)",
+        "issue": "The driver reads only the gate's exit code. run-test-gate prints `NO OVERLAP WITH THIS WORK ... Decide whether this gate can grade this work before signing it off.` and `TREE CHANGED OUTSIDE THIS WORK` on a green exit. The driver turns both into `gate P1.1 green` and goes on to commit, close and sign off. Reproduced with a gate that prints only tests/unrelated_test.py: the banner appeared under --verbose, and the default print said `gate P1.1 green; ... closed P1.1`. That decision, which the base orchestrator was told to make, is now skipped with no record.",
+        "resolution": "fixed in P118.12-v7t (cdded1b5): Capture those banner lines from the gate's output and carry a bounded clause into the did-line, for example `gate P1.1 green (NO OVERLAP)`. For the phase gate, turn it into a decision before the verdict. Carry the clause into the phase reviewer's per-task brief entry too.",
+        "fixTask": "P118.12-v7t",
+        "commit": "cdded1b5"
+      },
+      {
+        "id": "P118-R13",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:249-252, :291 (not-fast-forward)",
+        "issue": "When close-phase exits 3 (the parent moved), the driver offers one option, `no-ff`, and prints an empty rule. The model therefore answers alone and lands a merge commit. Base phase-signoff made this a human's call (AskUserQuestion: --no-ff recommended, or stop and leave it unmerged; never rebase). The `leave unmerged` option and the never-rebase rule are both gone.",
+        "resolution": "fixed in P118.12-v7t (cdded1b5): Give not-fast-forward the options (`no-ff`, `leave`), with `leave` needing --reason. Add the rule line `ask the human; never rebase - it rewrites the task commit SHAs`. Add a drive case.",
+        "fixTask": "P118.12-v7t",
+        "commit": "cdded1b5"
+      },
+      {
+        "id": "P118-R14",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:264-267 (stop-blocked), :228-230 and :287 (decide stalled)",
+        "issue": "There is no way past a blocked task. stop-blocked tells the model to run `audit-task.py start <id>`. For the usual block (attempts exhausted, the path decide gate-red prescribes), start refuses, and `start --force --reason` refuses too. Both reproduced: exit 2, `would spend one past the ceiling`. The `stopped` rule forbids a hand edit, and base /audit:run offered a confirmed reset of attempts. In a phase drive, a blocked task gives `decide stalled P1: no task is ready - P1.1 blocked; P1.2 pending on P1.1` with no answer line and no rule. The command bodies say to answer with a printed option, and none is printed.",
+        "resolution": "fixed in P118.12-v7t (cdded1b5): Add a verb that resets attempts after a human confirms (for example `audit-task.py unblock <id> --reason`, journaled), and name it in stop-blocked's rule. Give decide stalled a rule that names the blocked task's remedy, or turn it into a `stopped` print with that remedy.",
+        "fixTask": "P118.12-v7t",
+        "commit": "cdded1b5"
+      },
+      {
+        "id": "P118-R15",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:926-964 (triage), :689-694 (fix-task close basis)",
+        "issue": "A fix task's diff is never reviewed. Base sign-off looped until clean. Reproduced: a finding led to `--answer fix`, the fix task closed, and the triage was re-printed from the old head's return as `no finding open`. The phase then signed off. The fix task is closed `not-asked` with the basis `the phase review that raised the finding is its review`, but that review predates the fix. /audit:review cannot ask for a re-review either: once the drive state holds a head, `redispatch` exists only for no-phase-review-return.",
+        "resolution": "fixed in P118.12-v7t (cdded1b5): When fix tasks closed after the recorded head, print a decision offering `re-review` (dispatch the phase review at the new head, scoped to the fix commits) or `sign-off` with --reason. Reword the fix-task basis to say the fix itself was not reviewed.",
+        "fixTask": "P118.12-v7t",
+        "commit": "cdded1b5"
+      },
+      {
+        "id": "P118-R16",
+        "severity": "med",
+        "file": "tools/stream-cost.py:1086-1188 (request_marks, find_spans)",
+        "issue": "In a driver session, step 3 of the benchmark is misread. A fix task added by `--answer fix` runs inside the driver's subprocess, so no main-loop planning verb is seen. Landing and lock release also happen inside the driver, so `lands`/`releases` never fire. Reproduced with stream-cost's own _fx_driven over the driver's real prints: with a fix task, requests 1-10 (the phase review's dispatch, the triage, the fix task) were all `cycle`, P1.3 counted as a cycle task, and sign-off was the last request only. There were no `fix task` or `close` spans. The per-task ratio (cycle cost / 0.459507) is inflated and the phase overhead deflated whenever a fix task runs. The single-task probe (step 2) is readable: its cycle is 3 requests.",
+        "resolution": "fixed in P118.12-v7t (cdded1b5): Have the driver print stable did-words, as constants beside STARTED/CLOSED, for `fix task <id> added`, `signed off`, `landed` and the lock release. Have request_marks read them as adds/lands/releases. Add an sp case over a driven sign-off with a fix task, red against today's find_spans.",
+        "fixTask": "P118.12-v7t",
+        "commit": "cdded1b5"
+      },
+      {
+        "id": "P118-R17",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:11254-11266 (success_line); plugins/audit/commands/task.md:20",
+        "issue": "The one-line success output also drops what the write itself decided. Reproduced: `add --from-file` printed `phase P2 added with P2.1 -- two`. Its --verbose form says `gate: none (the manifest declares no meta.buildCommands)`, an EMPTY gate that base phase.md required printing because sign-off then rests on review alone. A single add also hides the derived-gate basis and the `ready now -- /audit:run <id>` line. task.md still says the output names the journal row and the next command.",
+        "resolution": "fixed in P118.13-v7t (685875a9): Keep the `gate:` basis line, and any WARNING naming an id this write touched, in the success line or beside it. Drop only the re-printed warnings that predate the write. Fix task.md's sentence.",
+        "fixTask": "P118.13-v7t",
+        "commit": "685875a9"
+      },
+      {
+        "id": "P118-R18",
+        "severity": "med",
+        "file": "plugins/audit/commands/phase.md:3, :38-48 (add)",
+        "issue": "The documented batch shape for `/audit:phase add` is phase {title, desiredOutcome, description}. The argument-hint still advertises --gate, --gate-clear, --blocked-by, --area, --review-skill and --id. A model writing the documented shape drops them silently, although BATCH_PHASE_KEYS accepts testGate, blockedBy, area, reviewSkill and id. `--park` is routed only for a phase branch. The batch refuses an empty `tasks`, so adding an empty phase to fill later, which add-phase allowed, is no longer reachable from this body.",
+        "resolution": "fixed in P118.14-v7t (7b5be34e): List the optional phase keys in the shape and map each hint flag to its key, with `--gate-clear` written as testGate []. Route `--park`, and a phase with no tasks yet, to `add-phase` explicitly.",
+        "fixTask": "P118.14-v7t",
+        "commit": "7b5be34e"
+      },
+      {
+        "id": "P118-R19",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:53-56, :426-436; plugins/audit/commands/phase.md:2; plugins/audit/README.md:431",
+        "issue": "`/audit:phase` no longer runs a wave in parallel. next_task drives one task at a time. The command description (`parallel where safe`) and the README row (`parallel where files are disjoint`) still promise parallel runs, and CHANGELOG does not mention the change. A wide phase's wall clock now grows with its task count, and nothing tells the user.",
+        "resolution": "fixed in P118.12-v7t (cdded1b5): Record the serial choice and its reason in CHANGELOG and correct the description and README row. Alternatively, dispatch a wave's executors together and run the gates serially once all have filed.",
+        "fixTask": "P118.12-v7t",
+        "commit": "cdded1b5"
+      },
+      {
+        "id": "P118-R20",
+        "severity": "med",
+        "file": "plugins/audit/commands/phase.md:19-20",
+        "issue": "The `--dry-run` preview now runs only close-phase --dry-run and resolve-branch. It no longer lists the ready tasks the run would execute, which the base preview printed. For a phase not yet started, close-phase --dry-run exits 1 (`no branch is recorded ... Pass --branch`), reproduced on a fixture. The common preview therefore shows a refusal and a branch line.",
+        "resolution": "fixed in P118.14-v7t (7b5be34e): Add `audit-status.py --short --phase <id>` (or the driver's read-only `next --dry-run`) to step 0. Treat close-phase's no-branch exit as `not started yet` instead of relaying it.",
+        "fixTask": "P118.14-v7t",
+        "commit": "7b5be34e"
+      },
+      {
+        "id": "P118-R21",
+        "severity": "low",
+        "file": "plugins/audit/commands/{run,next,resume,review,task,phase}.md (see reference/manifest-conventions.md pointers); plugins/audit/scripts/governance/drive-phase.py:262-263; tools/measure-context.py:280-290",
+        "issue": "Every pipeline body still says `see reference/manifest-conventions.md` (36 KB), review.md ends with a phase-signoff.md pointer, and the ADO echo step says `as reference/tracker-sync.md says` (19 KB). first_reads only matches a `Read ... first` paragraph, so the ceiling gate cannot see these reference reads. The rule they point at is already stated inline.",
+        "resolution": "fixed in P118.14-v7t (7b5be34e): Drop the `see reference/...` clauses where the rule is inline. Put the echo's few hard rules into the ado-echo step text. Widen the gate to flag a `reference/` path in a pipeline body or a STEPS rule.",
+        "fixTask": "P118.14-v7t",
+        "commit": "7b5be34e"
+      },
+      {
+        "id": "P118-R22",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/_doctor_trail.py:192-252 (main_loop_requests, ttl_trade), :318-331",
+        "issue": "The TTL row has three defects. (a) It counts `isSidechain: true` entries as main-loop requests. On a synthetic transcript, two sidechain entries cut the real 690 s main-loop gap to a reported 300 s and added their writes. (b) The `would cost $X at a five-minute TTL` figure prices the same tokens without the re-writes the gap implies, so it reads cheaper exactly when it would not be. (c) A gap of exactly 300 s is called one that `exceeds five minutes`. The row is reachable through doctor.md's $ARGUMENTS and is not loaded by the pipeline.",
+        "resolution": "fixed in P118.14-v7t (7b5be34e): Skip isSidechain entries. Say the five-minute figure excludes the re-writes, or omit it when a gap is at least 300 s. Use `reaches` or `>` wording consistently.",
+        "fixTask": "P118.14-v7t",
+        "commit": "7b5be34e"
+      },
+      {
+        "id": "P118-R23",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/audit-lookup.py (executor and phase brief `Your return`); plugins/audit/agents/audit-reviewer.md:117-121",
+        "issue": "Both briefs say to write the return `to a file` and pipe `< <your return file>`, with no location given. The reviewer has no Write tool and its prompt forbids anything that writes. The plan gate refuses an executor's in-project write outside its task files. Each wrong guess costs agent requests.",
+        "resolution": "fixed in P118.14-v7t (7b5be34e): Print a heredoc form of the submit command, or name an exempt path under stateDir beside the brief.",
+        "fixTask": "P118.14-v7t",
+        "commit": "7b5be34e"
+      },
+      {
+        "id": "P118-R24",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/commit-audit-state.py (called by commands/resume.md:15)",
+        "issue": "The one verb the main loop runs on every /audit:resume is not wired to the success line. It printed 434 bytes over six lines on a fixture.",
+        "resolution": "fixed in P118.14-v7t (7b5be34e): Route its __main__ through _output.terse_cli with a summarizer that keeps the commit SHA and any `degraded:` line.",
+        "fixTask": "P118.14-v7t",
+        "commit": "7b5be34e"
+      },
+      {
+        "id": "P118-R25",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:303-305, :917-918; plugins/audit/reference/verbs-in-full.md:20-66, :1355-1358",
+        "issue": "Two stale or unreadable texts reach users. The triage prices a fix task on `pipeline-cost design 5.4`, a document a plugin install does not ship. verbs-in-full.md, which the guide reads, keeps procedures the driver no longer follows: `Offer a confirmed reset of attempts to 0`, `Proceed only if the human explicitly confirms re-execution`, and dry-run `parallel groups`.",
+        "resolution": "fixed in P118.14-v7t (7b5be34e): Name a basis the user can open, or say `a benchmark prediction, not this project`. Mark or rewrite the stale guard and dry-run paragraphs to match what the driver does.",
+        "fixTask": "P118.14-v7t",
+        "commit": "7b5be34e"
+      },
+      {
+        "id": "P118-R26",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py (start)",
+        "issue": "No verb resets `attempts` on an exhausted task. Base /audit:run told the orchestrator to reset it, which could only be a hand edit.",
+        "resolution": "fixed in P118.13-v7t (685875a9): This is the verb finding 6 asks for.",
+        "fixTask": "P118.13-v7t",
+        "commit": "685875a9"
+      },
+      {
+        "id": "P118-R27",
+        "severity": "high",
+        "file": "plugins/audit/scripts/git/close-phase.py:1980-2012 (landed_answers_refusal), :659-678 (phase_as_landed), :2439-2440; plugins/audit/scripts/governance/drive-phase.py:699-714 (close_task), :1340-1361 (commit_signoff)",
+        "issue": "The R1 fix is incomplete: the last task's close is never at the branch tip. `close_task` runs commit-task-work first. That commit stages the shard as it stands, with the task still in_progress and `commit` null. Only after that does `done` write the close (`deferred`, commit C). Nothing commits the plan again until `commit_signoff`. So the phase-review and triage window has a gap, and so does any refused or red sign-off. In that window the tip copy shows the last task with no commit, and the parent's copy shows it pending. Bypass in a worktree layout under the default key: from the parent's checkout, run `close-phase.py <parent manifest> PN --project . [--branch audit/pN]`. Neither copy has a task to ask about, so C merges with no answers. For a one-task phase, that is the whole phase. The gate check does not stop this. `gate_answer` reads the ledger through `branch_texts` (:1666-1686), which also reads the worktree's uncommitted evidence. So a phase gate recorded in the worktree reads green without `--override-verdict`, and `--override-verdict` covers the remaining case. ra8 and ra9 commit the deferred close on the branch, which the driver never does for the last task. README:691 and COMPATIBILITY.md:355-360 say close-phase refuses while 'a task that records a commit' lacks its answers. Here the only copy that records the commit is the one close-phase does not read.",
+        "resolution": "fixed in P118.15-v7t (487cedd3): 1) When any task's key reads `phase`, refuse a landing whose tip copy records no sign-off verdict (`_mio.signoff_recorded(landed)`). Only `commit_signoff` puts the last close at the tip, and this rule still holds after the worktree is removed. 2) Also ask the property of the worktree's on-disk plan when the branch is checked out there (`_phase_project(git_root, project, observation['phaseTree'])`), the same way `branch_texts` reads the ledger. 3) Add case ra12: a worktree holds audit/p1 and its only task is closed `deferred` at C, with the plan change uncommitted as the driver leaves it, and a green phase-gate row sits in the worktree. close-phase run from main must exit 1, and C must not be in main. Add an allow twin after the sign-off is committed. 4) Bring the README:691 and COMPATIBILITY wording into line.",
+        "fixTask": "P118.15-v7t",
+        "commit": "487cedd3"
+      },
+      {
+        "id": "P118-R28",
+        "severity": "high",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:8183-8231 (_carry_answers); plugins/audit/scripts/governance/drive-phase.py:1457-1466 (sign_off), :842-855 (triage_refusal); plugins/audit/commands/phase.md (Subcommand: signoff)",
+        "issue": "The rule that a human settles a reviewer's `diverges`, `cannot-tell`, `not-proved` or `flagged` (R2/R9) is enforced only inside the driver's triage. The documented `/audit:phase signoff <id> --verdict passed --summary x` runs `audit-task.py signoff`. `_carry_answers` copies those answers onto `intentCheck` and signs off, because `landing_problem` accepts any answer except `deferred`. The next `drive-phase.py next <id>` sees `signed_off(phase)` and goes straight to `finish_signoff`, then close-phase. The triage is never built, and close-phase accepts the same answers. So, through one documented verb, a task the phase reviewer said does not do what it asked lands with no human asked. The same route also skips the new runtime-boot and gate-coverage decisions. No followed-table row names this route: row 397 covers order only and row 402 covers whether answers exist. CHANGELOG:82 says the answers reach a human 'before the landing'.",
+        "resolution": "fixed in P118.15-v7t (487cedd3): Enforce it in the verb. Move the human-answer predicate (`human_answers`' words) into `_filed_returns`, so the driver and the verb share one definition. In `_carry_answers`, under a `phase` key, refuse while a filed phase return holds such an answer, unless `--accept-answers \"<the human's words>\"` is passed. Record those words in the summary and in the `phase.verdict` row. Have the driver pass its accepted reasons through that flag. Pin it: sign-off over a `diverges` entry exits 2, and the same with `--accept-answers` signs off. If the verb is meant to stay 'followed' only, add a README followed row that names this route and the evidence it leaves: a filed `diverges` beside a signed-off phase.",
+        "fixTask": "P118.15-v7t",
+        "commit": "487cedd3"
+      },
+      {
+        "id": "P118-R29",
+        "severity": "med",
+        "file": "plugins/audit/scripts/git/close-phase.py:1994-2012, :659-678; plugins/audit/tests/test_close_phase.py (ra10)",
+        "issue": "When the tip holds no copy of the plan, `landed_answers_refusal` refuses every landing that has a task keyed `phase`, and prints 'Commit the plan on <branch>'. A lost tip is not the only reason a tip has no copy. The plan may sit outside the git root, which README:1744-1747 supports ('Prefer keeping the manifest inside'), or be ignored or excluded. Such a plan is never in any commit, and the copy close-phase is handed is not a snapshot from the fork: it is the live record shared across branches. Under the default key, such a project can land no phase through close-phase or the driver, even with every answer bound, and the remedy it prints cannot be applied. ra10 pins this refusal on an excluded plan as if it were intended.",
+        "resolution": "fixed in P118.15-v7t (487cedd3): Refuse on an unreadable tip only when the plan is versioned: inside the git root, not ignored, and tracked at the parent or at `baseRef`. Otherwise the handed copy (plus the worktree copy from finding 1, where one exists) is the record, and `review_answers_refusal` on it is the whole check. Add an allow case: an excluded plan whose task has a commit with answers bound, landed from the same checkout. Keep a refusal case for a tracked plan whose tip copy cannot be read.",
+        "fixTask": "P118.15-v7t",
+        "commit": "487cedd3"
+      },
+      {
+        "id": "P118-R30",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:4647-4690 (_no_change_moves), :5155-5156, :5178",
+        "issue": "Task `files` entries are relative to the project directory (README:1744: 'Task files stay project-dir-relative (e.g. test/src/foo.ts)'). `_no_change_moves` passes them unchanged as pathspecs to `git -C <project>/<gitRoot> log` and `status`. In the documented 'Git repo in a subdirectory' layout (gitRoot set), every pathspec then points at <gitRoot>/<gitRoot>/... and matches nothing. The refusal never fires, so a `--no-change` close over committed work passes, which is the route past the landing property that R8 meant to close. `commit-task-work.stage_targets` (:289-301) maps the same entries through `os.path.join(project, name)` and `_invariants._rel(abs, git_root)` for exactly this reason. The CHANGELOG and README claim this refusal without saying it depends on the layout.",
+        "resolution": "fixed in P118.15-v7t (487cedd3): Map each entry the way `stage_targets` does: join it to the project, then make it relative to the git root, and name an entry that falls outside the root rather than dropping it. Do this before both git calls. Add an ncm case with gitRoot pointing at a subdirectory; it fails against the current code.",
+        "fixTask": "P118.15-v7t",
+        "commit": "487cedd3"
+      },
+      {
+        "id": "P118-R31",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:1044-1050 (fixes_after), :1121-1125, :1285-1287 (signoff_summary); CHANGELOG.md:82",
+        "issue": "`fixes_after` lists every recorded fix task closed after the review head, whatever its key. Under `always` (and under `signals` where a signal fired), that fix task had its own per-task reviewer. Even so, the triage says 'their diff unreviewed', and sign-off writes 'Fix task(s) ... signed off with their diff unreviewed.' into the recorded summary, which is false. Separately, `human_answers` reads the phase-level intent under every key. So an `always` phase with a review skill now stops on a phase intent of `diverges` or `cannot-tell`, while CHANGELOG:82 says this happens 'Under review.perTask: phase' only.",
+        "resolution": "fixed in P118.16-v7t (5b425cc2): Limit `fixes_after` to fix tasks whose `intentCheck` is the `not-asked` close the phase key writes. Make CHANGELOG/COMPATIBILITY say that the phase-intent stop applies under every key.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
+      },
+      {
+        "id": "P118-R32",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:1364-1384 (land); plugins/audit/scripts/git/close-phase.py:1445-1453",
+        "issue": "close-phase now prints R7's new `landingCommitSkipped` on a later line ('the stamp is not committed here: ...'). `land()` keeps only the first line, so the drive prints `landed (...)` and `done`. Meanwhile the parent's checkout holds an uncommitted `mergedAt` stamp, and nobody is told.",
+        "resolution": "fixed in P118.16-v7t (5b425cc2): When close-phase's output contains 'not committed here', add a clause to the did-line, for example 'stamp left uncommitted in <tree>; re-run close-phase there once it is clean'.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
+      },
+      {
+        "id": "P118-R33",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:1441-1454 (apply_phase_answer), :1297-1314 (run_signoff)",
+        "issue": "Answering `accept` on gate-coverage goes back through `signoff_step` and `run_signoff`, which runs and records the whole phase gate a second time, because the first green run is not marked. Because `coverageAccepted` is set, the second run's banners are not read at all, so a banner that only the second run prints is accepted without the human seeing it. `coverageAccepted` and `bootConfirmed` also survive a later red gate followed by a fix task, so a fix that touches the app root is not boot-checked again.",
+        "resolution": "fixed in P118.16-v7t (5b425cc2): Record the green phase-gate run (runId and head) in the drive state, and skip re-running the gate on `accept` while HEAD is unchanged. Clear `coverageAccepted` and `bootConfirmed` when a task closes after they were given.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
+      },
+      {
+        "id": "P118-R34",
+        "severity": "low",
+        "file": "plugins/audit/reference/manifest-conventions.md:394-421, :519-520",
+        "issue": "`unblock` writes a new journal action from inside the verb, `task.unblock`. The journal action list and the 'written in process by `audit-task.py`' list both name `task.block` but not `task.unblock`.",
+        "resolution": "fixed in P118.15-v7t (487cedd3): Add a `task.unblock` bullet (details: taskId, phaseId, reason, changes) and add the action to the in-process list.",
+        "fixTask": "P118.15-v7t",
+        "commit": "487cedd3"
+      },
+      {
+        "id": "P118-R35",
+        "severity": "low",
+        "file": "plugins/audit/commands/phase.md:2 (and :26 'a finished wave')",
+        "issue": "The command description, which is the text the command picker shows, still says '(every ready task, parallel where safe, then sign-off)'. The driver runs one task at a time. The README and CHANGELOG were corrected, and R19's resolution explicitly named the description.",
+        "resolution": "fixed in P118.16-v7t (5b425cc2): Change it to 'every ready task, one at a time in id order, then sign-off', and drop 'wave' from step 2.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
+      },
+      {
+        "id": "P118-R36",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:324-325 (DECISIONS gate-coverage, runtime-boot), :1423-1452 (apply_phase_answer), :917-926 (pending_still_applies), :1547-1560 (drive), :1301-1314 (run_signoff)",
+        "issue": "Two of the new sign-off decisions only let a human say yes. `gate-coverage` offers only `accept`. `runtime-boot` offers `booted` or `not-reachable`, and `not-reachable` keeps the same decision pending. When the human says no (the gate grades nothing of this work, or the app boots and crashes), there is no way back to the work. A pending decision with no task is replayed on every `next`, whatever the plan now holds (`pending_still_applies` returns True). `/audit:run` of a task added as the remedy is also refused: 'this phase's drive waits on a gate-coverage decision'. Reproduced on fixtures: after `audit-task.py add` and `retarget --gate-set`, `next P1` re-printed `decide gate-coverage`, and `--answer decline` was refused. After `not-reachable` with a crash reason and an added fix task, `next P1` re-asked runtime-boot and `next P1.2-xic` was refused. The only way forward is a false `accept`/`booted`. That answer stays in the drive state (`coverageAccepted`/`bootConfirmed`) and switches off the same check on the tree after the fix. Reproduced: added P1.2-xic, then `accept --reason \"the human: no - added P1.2-xic\"`. The phase gate re-ran, signoff refused because the task was open, and the drive ran P1.2-xic. The final phase gate printed NO OVERLAP again and no decision fired. The recorded summary reads 'Gate banner accepted: the human: no - ...'. The triage's `[accept]` lines are the same class: a human who wants a diverging task fixed has only `accept`.",
+        "resolution": "fixed in P118.16-v7t (5b425cc2): Give each of these decisions an answer that hands back to the work. For example, `decline --reason` on gate-coverage and runtime-boot, and on the triage's answers: it records the human's words, drops the pending decision and lets the drive run tasks added since. Clear `coverageAccepted`, `bootConfirmed` and `answersAccepted` when a task closes after they were given, or bind each to the HEAD it was given at, so the gate and boot after a fix are asked again. Apply the same to `breachAccepted` (invariant-breach, from P118.8, has the same shape). Add a drive case: banner, then decline, then a task added and driven, then the final gate asks gate-coverage again. Its twin is a plain accept that signs off.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
+      },
+      {
+        "id": "P118-R37",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:1444-1454 -> :1304 (run_signoff)",
+        "issue": "`--answer accept` on gate-coverage goes back through `signoff_step` -> `run_signoff`, which runs the whole phase gate (and `derive-phase-gate.py`) a second time. That is a second evidence row and a second full suite's wall clock, for an answer about the first run. The fixture's did-line printed `phase gate green` again after the accept.",
+        "resolution": "fixed in P118.16-v7t (5b425cc2): Keep the green run's runId and HEAD in the drive state. On an accept at an unchanged HEAD, go straight to the invariants and the verdict; the newest ledger row is still the run the verdict binds to.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
+      },
+      {
+        "id": "P118-R38",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:789-811 (confirmed_in_advance)",
+        "issue": "Any `risk.confirmed` row ever written for the phase that names the task counts as confirmation, with no bound in time. A high-risk task that is reopened and re-run commits unattended on an answer given for an earlier commit. record-risk-confirmation.py's own contract says the list covers open work as it stood at the moment of the answer.",
+        "resolution": "fixed in P118.16-v7t (5b425cc2): Only count a row written after the task's most recent `task.reopen` row (or after its last `completedAt` was cleared). Add an hr case: confirm, run, reopen, run again, and it must stop at `decide high-risk`.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
+      },
+      {
+        "id": "P118-R39",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:213-214, :249-251, :295-297 (UNBLOCK_RULE); plugins/audit/scripts/manifest/audit-task.py:5847 (_unblock_refusal)",
+        "issue": "`decide stalled` and `stop-blocked` name `audit-task.py unblock` for every blocked task. `unblock` refuses a task blocked with attempts left, which is the usual result of `--answer block` at the first red gate, at high-risk or at no-executor-return; it points to `start` instead. On the fixture, the stalled print listed 'P1.1 blocked; P1.2 blocked' (P1.2 at 1 of 3 attempts) under a single unblock rule, so each such task costs a refused call first.",
+        "resolution": "fixed in P118.16-v7t (5b425cc2): Render the remedy per blocked task from attempts against maxAttempts: `unblock` when they are spent, `start` otherwise. Add a bk case for a task blocked at 1 of 3.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
+      },
+      {
+        "id": "P118-R40",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:4670 (_no_change_moves --since), :5183",
+        "issue": "`git log --since=<startedAt>` includes a commit made in the same second. The driver starts the next task right after committing the previous one. On a fixture where P1.1 and P1.2 share src/f1.txt, a later `done P1.2 --no-change` was refused in 3 of 4 trials, blaming P1.1's commit made in the second P1.2 started. The remedy printed ('close it --commit <sha> naming the work, or put the files back') would bind the sibling's commit to the task or revert the sibling's work. Under the driver it is rarely reached, because a no-work task closes on a record-only commit.",
+        "resolution": "fixed in P118.15-v7t (487cedd3): Bound the span below by the HEAD at the task's start (record it on start, or read it from the `task.start` row) rather than by committer date. Failing that, exclude commits a closed sibling records as its own `commit`. Add an ncm case where the sibling commits in the same second.",
+        "fixTask": "P118.15-v7t",
+        "commit": "487cedd3"
+      },
+      {
+        "id": "P118-R41",
+        "severity": "low",
+        "file": "plugins/audit/commands/phase.md:2",
+        "issue": "The description, which is also what the skill listing shows, still says 'run it end to end (every ready task, parallel where safe, then sign-off)'. R19 named this sentence. Only the README row and CHANGELOG were corrected; the driver runs one task at a time.",
+        "resolution": "fixed in P118.16-v7t (5b425cc2): Change it to 'every ready task one at a time, then sign-off'. measure-context's phase entry stands at 3976/4000, so keep the edit byte-neutral or shorter.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
+      },
+      {
+        "id": "P118-R42",
+        "severity": "low",
+        "file": "plugins/audit/reference/verbs-in-full.md:55-60",
+        "issue": "The blocked-task paragraph, written by P118.14 alongside P118.13's new verb, says 'The driver offers no reset of `attempts`: a remedy that restarts the task goes through `audit-task.py start`'. `start` refuses a task whose attempts are spent; the remedy the driver prints is `audit-task.py unblock`. The guide reads this file, so a user asking how to unblock is sent to the verb that refuses.",
+        "resolution": "fixed in P118.16-v7t (5b425cc2): Name `unblock <id> --reason` for a task whose attempts are spent and `start` for one blocked with attempts left, matching the stop's rule once finding 4 is fixed.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
+      },
+      {
+        "id": "P118-R43",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:1316-1339 (green_phase_gate), :1352-1368 (run_signoff), :1496-1498 (accept → bind_at → signoff_step)",
+        "issue": "Rule (c): a path that signed off at round 2 now loops. The green phase-gate run is reused whenever HEAD has not moved. But the sign-off verb also checks that the run was measured under the gate the phase declares now and over its files as they stand. Changing either without a commit makes the reused run stale. The verb then refuses every `sign-off` answer, and nothing in the driver clears `phaseGate`; only `decline` does, and the gate-coverage decision is not asked again because `coverageAccepted` holds at the same HEAD. Reproduced on a scratch fixture (per_task=phase, phase gate `echo tests/unrelated_test.py 1 passed`): drive to `decide gate-coverage`, run `audit-task.py retarget P1 --gate-set \"echo src/f1.txt 1 passed\"`, then `next P1 --answer accept --reason ...`. Result: exit 1, `phase gate green (reused 2026-10-08T08:26:54Z.90404a)`, and the verb refused with '...measured under the gate [echo tests/unrelated_test.py 1 passed] ... and the phase declares [echo src/f1.txt 1 passed] now'. Three more rounds of triage then `--answer sign-off` gave the same refusal, and the state still named the old run. An uncommitted edit to src/f1.txt between the gate and the accept gives the same loop ('scopeDigest was ... and is ... now'). At round 2, run_signoff ran the gate again and both sequences signed off. The way out is the printed `run-test-gate.py ... --record` run by hand. After it, sign-off passes but still reuses the OLD run's banner list ('reused ...29bd18'), while the verdict binds to the new run (...45ea38). So nobody saw the banners of the run the verdict stands on, and the summary's 'Gate banner accepted' describes the other run. This breaks the premise R36's resolution relied on ('the newest ledger row is still the run the verdict binds to') whenever the gate or the files move without a commit; the docstring admits the uncommitted-edit case but not that it loops.",
+        "resolution": "fixed in P118.17-v7t (1dd702f2): Store the run's gate entries and scopeDigest in `phaseGate` alongside `head`. Reuse it only while all three still match, for example by asking `_verdict_binding.phase_binding` before reusing. Also pop `phaseGate` whenever anything after the gate refuses, the sign-off verb included, so the next sign-off measures again. Add a drive case: gate-coverage → `retarget --gate-set` → accept signs off on one fresh run whose banners were read. Its twin is dc4: accept at an unchanged gate and tree reuses the run.",
+        "fixTask": "P118.17-v7t",
+        "commit": "1dd702f2"
+      },
+      {
+        "id": "P118-R44",
+        "severity": "med",
+        "file": "plugins/audit/scripts/git/close-phase.py:2013-2018 (landed_answers_refusal: `_phase_key_applies` → `return None`); README.md:691; COMPATIBILITY.md:363-366",
+        "issue": "Rule (a). Under `always` or `signals`, close-phase lands a phase that has no sign-off verdict, so an unsettled answer in a filed phase return lands with no human asked. Reproduced on a scratch fixture (per_task=always, meta.reviewSkill set): the phase review was filed with intent `diverges`, and the triage printed `phase intent diverges - ... [accept]`. Then `close-phase.py <plan> P1 --project <root>` exited 0 with `audit/p1-one -> main (no-checkout)`, `mergedAt` stamped and `review.status` None. The same sequence under `phase` exits 1. This diff widens the human stop to 'every review.perTask value' (README:691 'Under every value, sign-off ... refuses while a filed phase return holds a diverges, cannot-tell ...'; COMPATIBILITY: 'that stop on a phase intent holds under every review.perTask value'). The landing only asks for a verdict where a task's key reads `phase`. The gap predates this round: round 2 lands the same way. It is listed here because it sits in the function this diff rewrote and on the property this diff extended.",
+        "resolution": "fixed in P118.17-v7t (1dd702f2): In `landed_answers_refusal`, under every key: when a landing is due and `_fr.needs_human(_fr.phase_returns(...))` holds an answer, refuse unless the tip copy (or, for an unversioned plan, the on-disk copy) records a sign-off verdict. Only the verb writes that verdict, and the verb has already checked the settlement. Add a case: the sim above exits 1 and merges nothing. Its twin: the same phase lands once it is signed off with the answer settled, and an `always` phase whose returns hold no such answer lands as before. If this is out of scope, add a followed-table row naming the route and the evidence it leaves: a filed `diverges` beside `mergedAt` with no `review.status`.",
+        "fixTask": "P118.17-v7t",
+        "commit": "1dd702f2"
+      },
+      {
+        "id": "P118-R45",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:8263-8268 (_human_settlement remedy); plugins/audit/scripts/governance/drive-phase.py:1147-1153 (triage)",
+        "issue": "The verb's refusal sends a hand-run sign-off to `drive-phase.py next <pid>`. When a review skill resolves and no drive state exists, the driver first dispatches a new phase review. Sim: after the refusal 'phase: intent cannot-tell ... run `drive-phase.py next P1` and answer its triage', `next P1` printed `dispatch audit:audit-reviewer P1`. That is a second paid review just to record one accept, and the old answer stays in the triage either way. Under the group door the remedy is printed per member. Answering that member's triage `sign-off` would sign off and land the member alone.",
+        "resolution": "fixed in P118.17-v7t (1dd702f2): Let the triage read an existing filed phase return when no drive mark exists and no task is owed, rather than dispatching again. Or say in the refusal text that a review is dispatched, and, for a group, to answer only `accept` and sign the group off again.",
+        "fixTask": "P118.17-v7t",
+        "commit": "1dd702f2"
+      },
+      {
+        "id": "P118-R46",
+        "severity": "low",
+        "file": "commits 487cedd3 (P118.15) / 5b425cc2 (P118.16); plugins/audit/scripts/governance/drive-phase.py",
+        "issue": "P118.16's implementation is in P118.15's commit: `decline_answer`, `held_at`/`bind_at`, `green_phase_gate`, `blocked_remedy`, and the DECISIONS `decline` options (drive-phase.py, 282 lines in 487cedd3). 5b425cc2 holds only test_drive_phase.py, phase.md and verbs-in-full.md. Any per-task answer bound to P118.16's commit is about a commit that contains none of the code its description asked for.",
+        "resolution": "fixed in P118.16-v7t (5b425cc2): Nothing to rewrite. Add a note on P118.16 (`audit-task.py note`) that its code landed in 487cedd3, so a reader binding its answers knows which commit holds it.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
+      },
+      {
+        "id": "P118-R47",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:326 (DECISIONS review-answer)",
+        "issue": "Under `always`/`signals`, a per-task reviewer's `diverges` / `cannot-tell` / `not-proved` becomes `decide review-answer`. It takes only `continue`, with no `--reason`, so the human's words are kept nowhere. The triage's `accept` now requires them. This diff did not change it.",
+        "resolution": "fixed in P118.17-v7t (1dd702f2): Require `--reason` on `continue` and carry it into the summary, the same way as the triage's accept.",
+        "fixTask": "P118.17-v7t",
+        "commit": "1dd702f2"
+      },
+      {
+        "id": "P118-R48",
+        "severity": "med",
+        "file": "plugins/audit/scripts/git/close-phase.py landed_answers_refusal; PLUGIN-BUILD-GUIDE.md close-phase section",
+        "issue": "Any recorded sign-off verdict is taken as proof that the filed returns' human answers were settled, but file-return still accepts a phase return after the verdict. A diverges filed after sign-off and before landing merges with no human asked (reproduced under always). The guide and the docstring claim more than holds.",
+        "resolution": "fixed in P118.18-v7t (2e1e3376): Have file-return refuse a phase return once a sign-off verdict is recorded, as the other post-verdict writes are guarded, with a case and its twin. Narrow the guide and docstring if anything still differs.",
+        "fixTask": "P118.18-v7t",
+        "commit": "2e1e3376"
+      },
+      {
+        "id": "P118-R49",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py coverageAccepted",
+        "issue": "The human's gate-coverage accept is bound to HEAD only. After a retarget at the same head, a different gate's banners are never shown, and the summary keeps words about the old gate.",
+        "resolution": "fixed in P118.18-v7t (2e1e3376): Bind the accept to the run (runId, or gate entries plus scopeDigest) and ask again when the run changes, with a gr4 case.",
+        "fixTask": "P118.18-v7t",
+        "commit": "2e1e3376"
+      },
+      {
+        "id": "P118-R50",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py _human_settlement text; drive-phase.py sign-off pass",
+        "issue": "The redispatch remedy pays for a second phase review whose return is refused at an unchanged head, while the triage reads the first.",
+        "resolution": "fixed in P118.18-v7t (2e1e3376): Have the driver reuse a phase return already filed at the current head when no drive mark exists, and drop the second-review clause.",
+        "fixTask": "P118.18-v7t",
+        "commit": "2e1e3376"
+      },
+      {
+        "id": "P118-R51",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py decide-review-answer rule",
+        "issue": "continue requires --reason, but the printed rule does not tell the model to ask the human, so the model can write the reason itself.",
+        "resolution": "fixed in P118.18-v7t (2e1e3376): Give the decision the triage accept's rule (ask the human, pass their words verbatim) and pin it in ct1.",
+        "fixTask": "P118.18-v7t",
+        "commit": "2e1e3376"
+      },
+      {
+        "id": "P118-R52",
+        "severity": "low",
+        "file": "COMPATIBILITY.md human stop paragraph",
+        "issue": "The contract names sign-off's stop under every key but not close-phase's landing refusal under every key.",
+        "resolution": "fixed in P118.18-v7t (2e1e3376): Add the clause.",
+        "fixTask": "P118.18-v7t",
+        "commit": "2e1e3376"
+      },
+      {
+        "id": "P118-R53",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py verdict-binding refusal text",
+        "issue": "With an uncommitted declared file present, the printed remedy (record again, then land) loops.",
+        "resolution": "fixed in P118.18-v7t (2e1e3376): Name the uncommitted declared files and say to commit or revert them before recording.",
+        "fixTask": "P118.18-v7t",
+        "commit": "2e1e3376"
+      },
+      {
+        "id": "P118-R54",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py file-return; plugins/audit/scripts/git/close-phase.py landed_answers_refusal",
+        "issue": "file-return refuses after a verdict only in the plan copy it reads. From the parent checkout, whose copy shows the phase as at the fork, a diverges phase return is accepted after the phase signed off on its branch. close-phase then finds it in the parent's evidence directory, sees a verdict at the tip and lands with no human asked. COMPATIBILITY promises more than holds.",
+        "resolution": "fixed in P118.20-v7t (5c421240): close-phase treats a verdict as settling only the returns it could have seen at the tip or in the branch's worktree, and refuses a needs_human return found only in the parent's evidence once the tip records a verdict; add the parent-checkout case and its twin, and make COMPATIBILITY and the guide say exactly that.",
+        "fixTask": "P118.20-v7t",
+        "commit": "5c421240"
+      },
+      {
+        "id": "P118-R55",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py filed_at_head",
+        "issue": "The reused return's findings are recorded again, because the mark is set without findings: True and finding does not deduplicate.",
+        "resolution": "fixed in P118.20-v7t (5c421240): Set findings: True only when review.findings already holds the return's findings; add a case and its twin.",
+        "fixTask": "P118.20-v7t",
+        "commit": "5c421240"
+      },
+      {
+        "id": "P118-R56",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py _human_settlement text",
+        "issue": "The remedy dropped the qualifier that the driver reads or dispatches a review only where a review skill resolves or a task is owed.",
+        "resolution": "fixed in P118.20-v7t (5c421240): Restore the qualifier.",
+        "fixTask": "P118.20-v7t",
+        "commit": "5c421240"
+      },
+      {
+        "id": "P118-R57",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py review_answers_refusal remedy",
+        "issue": "After a verdict the remedy says to file and sign off again, but both steps now refuse.",
+        "resolution": "fixed in P118.20-v7t (5c421240): When the copy carries a verdict, name the way out that exists.",
+        "fixTask": "P118.20-v7t",
+        "commit": "5c421240"
+      },
+      {
+        "id": "P118-R58",
+        "severity": "med",
+        "file": "plugins/audit/scripts/git/close-phase.py worktree_phase / unseen_returns",
+        "issue": "Suppose a plan is stored outside the git root and its evidence.dir is inside the repository. Then worktree_phase returns None and plan_versioned is False, so the verdict is attributed to the parent even when the sign-off ran in the worktree. unseen_returns then counts the parent's evidence as seen and the worktree's evidence as candidates, the reverse of what the sign-off read. A diverges return filed from the parent before the verdict then lands with no human asked.",
+        "resolution": "fixed in P118.21-v7t (55982b08): When the plan lies outside the project, the on-disk copy cannot say which checkout signed. Treat both evidence directories as candidates and settle them through the signing checkout's settlement record, or refuse. Add the case and its allow twin, and name the cell in the docstring table, COMPATIBILITY.md and the guide.",
+        "fixTask": "P118.21-v7t",
+        "commit": "55982b08"
+      },
+      {
+        "id": "P118-R59",
+        "severity": "med",
+        "file": "plugins/audit/scripts/git/close-phase.py returns_by_place / unseen_returns ('same' checkout)",
+        "issue": "When the landing runs from the branch's own checkout ('same'), no place it reads holds a return filed from a checkout of the target branch. That covers main checked out in a linked worktree, and a return committed on main before the checkout switched to the branch. The phase lands with an unsettled human answer on the target, while running from main's worktree refuses the same state.",
+        "resolution": "fixed in P118.21-v7t (55982b08): Also read the target branch's evidence: the parent ref's committed tree, plus the worktree holding the parent when one exists. Count those returns as candidates under a tip verdict. Add the 'same'-checkout case with a return committed on the parent ref, plus its twin, and correct the hl2 row.",
+        "fixTask": "P118.21-v7t",
+        "commit": "55982b08"
+      },
+      {
+        "id": "P118-R60",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py landed_answers_refusal docstring",
+        "issue": "Unnamed cell: an unversioned plan, a verdict on the worktree's own copy, and a return committed at the tip. The filing verb cannot reach it, yet the table claims to list every placement.",
+        "resolution": "fixed in P118.21-v7t (55982b08): Add the cell to the 'Unreachable, and why' paragraph with that reason.",
+        "fixTask": "P118.21-v7t",
+        "commit": "55982b08"
+      },
+      {
+        "id": "P118-R61",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py landed_answers_refusal docstring",
+        "issue": "The verdict axis does not name a versioned plan whose verdict sits only on the parent's copy. It is refused safely, but no case pins it.",
+        "resolution": "fixed in P118.21-v7t (55982b08): Name the row with its remedy, and pin it with one case.",
+        "fixTask": "P118.21-v7t",
+        "commit": "55982b08"
+      },
+      {
+        "id": "P118-R62",
+        "severity": "low",
+        "file": "COMPATIBILITY.md; PLUGIN-BUILD-GUIDE.md; close-phase.py verdict_reach_refusal",
+        "issue": "Both documents state the shared-evidence.dir settlement rule without its condition. Three cells are unpinned: shared with an unversioned worktree verdict, shared with a parent verdict, and shared with a tip verdict after the worktree is removed. The last one refuses a settled return.",
+        "resolution": "fixed in P118.21-v7t (55982b08): Limit the documents to verdicts signed in the worktree. Name the parent-verdict and removed-worktree cells in the table, and pin them.",
+        "fixTask": "P118.21-v7t",
+        "commit": "55982b08"
+      },
+      {
+        "id": "P118-R63",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py docstring row 'no verdict anywhere'",
+        "issue": "No case covers 'no verdict' with the return only in the parent's evidence and a separate worktree, so the row claims more pinning than its cited cases give.",
+        "resolution": "fixed in P118.21-v7t (55982b08): Add one no-verdict, parent-only case, or cite vr1/vr3 for what they actually pin.",
+        "fixTask": "P118.21-v7t",
+        "commit": "55982b08"
+      },
+      {
+        "id": "P118-R64",
+        "severity": "med",
+        "file": "plugins/audit/scripts/git/close-phase.py returns_by_place (checkouts list); COMPATIBILITY.md; docstring",
+        "issue": "Only three checkouts are read: the landing's, the branch's worktree and the target's worktree. A sibling worktree forked from main shows the phase with no verdict, so file-return accepts a diverges return there after a tip verdict, and close-phase lands it with no human asked. This was simulated with the real filing verb. The docstring and COMPATIBILITY claim every checkout's evidence is a candidate.",
+        "resolution": "fixed in P118.22-v7t (9d254e78): Read every worktree git lists, or bind the verdict to what it read so that the place stops mattering. Add the sibling-worktree deny case and its allow twin, and make the documents claim only what holds.",
+        "fixTask": "P118.22-v7t",
+        "commit": "9d254e78"
+      },
+      {
+        "id": "P118-R65",
+        "severity": "med",
+        "file": "plugins/audit/scripts/git/close-phase.py unseen_returns (signing checkout's evidence counted as read)",
+        "issue": "One checkout signs off at the tip, then switches to main, where the copy shows no verdict. There file-return writes an untracked diverges return. The checkout switches back, and close-phase from the branch's checkout lands, because every return in the signing checkout's evidence counts as read, including one filed after the verdict. This was simulated. No docstring cell names it, and the CHANGELOG and the guide read as covering it.",
+        "resolution": "fixed in P118.22-v7t (9d254e78): Let the landing tell a return the verdict read apart from one filed after it, for example by having the sign-off record the returns it read. Add the switch-away, file, switch-back case and its twin.",
+        "fixTask": "P118.22-v7t",
+        "commit": "9d254e78"
+      },
+      {
+        "id": "P118-R66",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py tip group settle under VERDICT_AT_EITHER",
+        "issue": "Predates the diff. Take a plan outside the repo with a diverges return committed at the tip and settled in the signing checkout's record. A landing from main after the checkout left the branch is refused, because the tip group settles only through places['tree'], which is None. That over-fires; landing from the branch's checkout goes through.",
+        "resolution": "fixed in P118.22-v7t (9d254e78): Settle such a group through every known checkout's record, and add the case.",
+        "fixTask": "P118.22-v7t",
+        "commit": "9d254e78"
+      },
+      {
+        "id": "P118-R67",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py docstring, removed-worktree cell",
+        "issue": "'restoring the worktree restores the record' is false with the default stateDir, which lives inside the removed worktree.",
+        "resolution": "fixed in P118.22-v7t (9d254e78): Drop the clause, or say the record survives only with a stateDir outside the checkout.",
+        "fixTask": "P118.22-v7t",
+        "commit": "9d254e78"
+      },
+      {
+        "id": "P118-R68",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md vr range citation",
+        "issue": "The citation vr1-vr23b implies a vr22 that does not exist.",
+        "resolution": "fixed in P118.22-v7t (9d254e78): Renumber the cases or cite them by name.",
+        "fixTask": "P118.22-v7t",
+        "commit": "9d254e78"
+      },
+      {
+        "id": "P118-R69",
+        "severity": "med",
+        "file": "plugins/audit/scripts/git/close-phase.py read_set_refusal; plugins/audit/scripts/manifest/_filed_returns.py needs_human keys",
+        "issue": "A settlement is keyed by a return's name, not its content. Under a read-set verdict, a settlement given for a return the verdict read also covers a different, unread answer filed later under the same name. A sibling worktree filing at the same head collides, the different diverges return lands, and no human sees it. This was simulated with the real filing verb. The per-place reading refused this layout (vr7). The schema, COMPATIBILITY, CHANGELOG and the guide all say a settlement names the return.",
+        "resolution": "fixed in P118.23-v7t (8174c66d): Bind the settlement to content. The driver records the signature it settled. On the read-set path, a settlement counts only for a return with that signature, and a return whose name matches a read row with a different signature is refused. Pin the deny case and its byte-identical allow twin, and reword the documents.",
+        "fixTask": "P118.23-v7t",
+        "commit": "8174c66d"
+      },
+      {
+        "id": "P118-R70",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py _returns_read / _human_settlement at sign-off",
+        "issue": "This is a regression. Take a plan outside the repo with the branch in a linked worktree, a return committed at the tip, and a human settlement in the worktree's record. Signing off from the parent now refuses, because the tip's returns are asked only against the signing checkout's record, while the landing settles through every known checkout. The remedy sends the user to a fresh review.",
+        "resolution": "fixed in P118.23-v7t (8174c66d): At sign-off, ask the tip's returns against the same settlement set the landing honours. Add the case and its unsettled twin.",
+        "fixTask": "P118.23-v7t",
+        "commit": "8174c66d"
+      },
+      {
+        "id": "P118-R71",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py _human_settlement",
+        "issue": "The sign-off refuses whenever any worktree's settlement record cannot be parsed, before asking whether anything needs a human. An unreadable record in a sibling worktree now blocks the sign-off of a phase with no human-only answer. This is a regression; it was reproduced by a direct probe.",
+        "resolution": "fixed in P118.24-v7t (ec59ec31): Compute what is waiting first, and refuse over unreadable records only when an answer is left unsettled, naming them in that refusal, as close-phase does. Pin the deny case and its allow twin.",
+        "fixTask": "P118.24-v7t",
+        "commit": "ec59ec31"
+      },
+      {
+        "id": "P118-R72",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py _human_settlement remedy; drive-phase.py human_answers",
+        "issue": "When a sign-off run from the parent refuses over a return only the tip commits, its remedy sends the user to the driver's triage in the parent. That triage reads only its own checkout's evidence and never lists the answer.",
+        "resolution": "fixed in P118.24-v7t (ec59ec31): Name the checkout whose triage lists it (the worktree holding the branch, or `git worktree add` it), or let the triage read the same tip returns.",
+        "fixTask": "P118.24-v7t",
+        "commit": "ec59ec31"
+      },
+      {
+        "id": "P118-R73",
+        "severity": "low",
+        "file": "plugins/audit/schema/audit-plan.schema.json readReturns description",
+        "issue": "A space is missing after the full stop in 'settles nothing.Absent'.",
+        "resolution": "fixed in P118.24-v7t (ec59ec31): Insert the space.",
+        "fixTask": "P118.24-v7t",
+        "commit": "ec59ec31"
+      }
+    ],
+    "outcome": "[findings: 73 - 5 high, 28 med, 40 low; 73 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "The plugin pipeline's cost per task now sits under the user's 2x ceiling against plain Claude Code doing the same task, measured on the benchmark. A step driver runs every step that needs no judgement. Agents get computed briefs and file their results once through submit. Planning is one batch call, and sign-off is one step. The per-task review moves into the phase review (review.perTask defaults to phase, recorded as a named minor-release exception). No pipeline command makes the main loop read reference prose, and a CI ceiling holds the command bodies there.\n\nMeasured (docs/research/pipeline-cost-results.md, with every figure beside its tools/stream-cost.py command):\n- **Per task, like for like:** 1.29-1.44 times plain, against 4.70-5.64 before. The 2.0 ceiling is confirmed. The 1.25 ideal is met only against whole plain sessions (1.08-1.21).\n- **Whole feature:** 2.6-3.6 times arm A and 1.9-2.7 times arm B, against 9.3-10.3 and 6.0-6.7 before.\n- **Single-task probe:** 0.505 against 1.748.\n- **Phase overhead:** 0.60 and 0.75 against the 1.00 budget, and 1.15 in the session that stopped to ask the human. The design rule reads that as inconclusive.\n- **Quality:** unchanged, at 13/14 in every arm.\n\nThe next measured lever is the executor's prose hand-back (F567).\n\nThe guarantees were reviewed in ten rounds against the default phase key. The holds sit in the verbs:\n- signoff refuses an unsettled human answer;\n- close-phase refuses a landing whose copies lack the bound answers or the verdict, or that carries a human-only return the verdict did not read;\n- file-return refuses after a verdict.\n\nSeventy-three review findings were resolved by fix tasks P118.12-P118.24. Two of them replaced the place-based landing check with a read set: the sign-off records the returns it read, and close-phase refuses any human-only return outside that set wherever it sits; a human's settlement binds to the answer's content, not its name. Faults found along the way are in the internal plan (F560, F561, F563-F571), and harness faults are in the execution findings.",
   "tasks": [
     {
       "id": "P118.1",
       "title": "the cost instruments read spans, injected command bodies and background agents as the design predicts",
-      "status": "pending",
+      "status": "done",
       "description": "Design section 6, T1. measure-context gains --sections and entries for /audit:phase add, /audit:task add and the phase run form before and at sign-off. stream-cost gains: the task cycle as its own section, read off the verb and its operand; the planning row; sign-off, its fix task and the close as three parts; the longest gap per context; each dispatch's start read and written by agent type; injected command bodies sized as their own source; and no phantom final for a background-launched agent (internal fault F563). Targets are T1's, on feature-C-1, whole-C-1, whole-C-2, whole-C-3 and the twin fixtures. whole-C-2-r's remaining unattributed amount is investigated and named before any target is set for it. Every new case is shown red first.",
       "files": [
         "tools/measure-context.py",
@@ -56,21 +715,49 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d783beef",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Design T1. tools/stream-cost.py prints priced spans:\n- planning, before the cycle, the task cycle, sign-off, fix task, close and unattributed, with the bounds read off parsed shell words and the Skill input;\n- the task cycle on its own;\n- injected command bodies sized as their own source;\n- reference reads by span;\n- one line per dispatch with its start read and written;\n- the longest gap per context.\n\nA background-launched dispatch gets no rebuilt final. tools/measure-context.py gains --sections, using the design's classification table, plus entries for /audit:phase add, /audit:task add, and the run form before and at sign-off.\n\nTargets met on feature-C-1, whole-C-2, whole-C-3, whole-C-1 and whole-C-2-r:\n- class sums 77811/27767/25037/23089;\n- cycle 6-13 with 8 requests, 21857 tokens, task 0.704895, file 0.212897, output 11374;\n- whole-C-2 planning 1 and no cycle;\n- whole-C-3 planning 1-12 and cycle 15-36 holding P1.1-P1.3;\n- command bodies of 15808 and 16035 tokens;\n- the unattributed row gone on C-3 and C-1 with totals unchanged;\n- whole-C-2-r at -5043, named as a hidden mid-agent request, with a rule proposed and not implemented;\n- background and foreground twins priced equal.\n\nCycle and fix-task costs move at the fourth decimal because the phantom finals no longer absorb Sonnet's residual write. Command bodies are classed run.\n\nSelftests: 40/40 and 18/18; ruff, vermin and the prose lint are clean. 23 scratch-clone mutations each turned their case red. The red-first helper refused, because the task declares no test file.",
+        "descriptive": "The cost tools now show where a plugin session spends by phase of work - planning, each task, sign-off and close - and no longer double-count background agents."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-07T21:17:01Z",
+      "completedAt": "2026-10-07T22:38:35Z",
+      "verifiedBy": [
+        "sp1",
+        "sp2",
+        "sp3",
+        "sp4",
+        "sp5",
+        "sp6",
+        "sp7",
+        "sp8",
+        "sp9",
+        "sp10",
+        "sp11",
+        "mc14",
+        "mc15",
+        "mc16",
+        "mc17",
+        "mc18"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T22:31:30Z.0f0087",
+        "status": "passed",
+        "at": "2026-10-07T22:31:30Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d783beef",
+        "at": "2026-10-07T22:38:35Z",
+        "basis": "orchestrator check: every T1 target has its printed reading; mutations each red; the one unexplained residual is named with its cause"
+      }
     },
     {
       "id": "P118.2",
       "title": "plugin verbs print one success line by default and the long form on --verbose",
-      "status": "pending",
+      "status": "done",
       "description": "Design section 6, T7. One shared helper in _output.py prints the success line. Each verb the driver or the main loop calls prints, on success, one line of at most 200 bytes naming what was done and the record it wrote. --verbose prints today's text unchanged, and a refusal always prints in full. Micro-test: each verb's success path on its selftest fixture, shown red against a verb that still prints the long form.",
       "files": [
         "plugins/audit/scripts/_output.py",
@@ -94,7 +781,8 @@
         "plugins/audit/tests/test_close_phase.py",
         "plugins/audit/tests/test_validate_manifest.py",
         "plugins/audit/tests/test_audit_lookup.py",
-        "plugins/audit/tests/test_audit_status.py"
+        "plugins/audit/tests/test_audit_status.py",
+        "tools/check-git-pipeline.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -117,21 +805,44 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fd4a6cd0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Design T7. One success-line helper in _output.py (success_line, terse_choice and terse_cli, marked \"the success line\") decides what a verb prints. A non-zero exit prints everything unchanged. --verbose prints today's text byte-identical. --json and --help keep the long form. A verb whose output is a payload prints it whole.\n\nEach verb the driver or the main loop calls is wired through it from its __main__, so in-process callers see today's text. The verbs are audit-task, run-test-gate, stamp-verification, commit-task-work, audit-lock, verify-invariants, close-phase, validate-manifest, audit-lookup and audit-status. Success lines measured on the fixtures are 48 to 197 bytes. stamp take and red keep their parsed payloads whole. audit-lookup answers and audit-status's entry view print whole, because callers fold or paste them. run-test-gate prints in full when its machine line is not exclusive.\n\ncheck-git-pipeline g15 passes --verbose to read the long form.\n\nThe suites are green, and so are the sweep (312/312 files), ruff and vermin. New sl cases in each suite were seen red against the long-form verbs or the cut. test_stamp_verification's red-first helper reports could-not-prove, because HEAD's suite is already red in a throwaway tree.\n\nStill owed to T2: the prose that says to print the entry view verbatim.",
+        "descriptive": "The plugin's commands now print one short line when they succeed, so the main loop stops carrying their long success text on every later request; refusals, and answers a caller reads, still print in full."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-07T21:17:01Z",
+      "completedAt": "2026-10-07T22:38:36Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/tests/test_audit_lock.py",
+        "plugins/audit/tests/test_verify_invariants.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_validate_manifest.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/tests/test_audit_status.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T22:38:21Z.654369",
+        "status": "passed",
+        "at": "2026-10-07T22:38:21Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "fd4a6cd0",
+        "at": "2026-10-07T22:38:36Z",
+        "basis": "orchestrator check: one shared helper, every listed verb wired, payload verbs kept whole after review, cross-file pin in check-git-pipeline fixed, sweep green"
+      }
     },
     {
       "id": "P118.3",
       "title": "agent briefs are computed by a script and agent returns are filed write-once",
-      "status": "pending",
+      "status": "done",
       "description": "Design section 6, T3. brief writes the whole brief to a file. A write-once filing verb takes the task id and the role, and no path; it derives the one file it writes, refuses a second filing in one start, and leaves the first byte-identical, with allow halves. The reviewer's brief refuses while the executor's return for the current start is unfiled. done --from-return closes from the filed returns and carries the red-first block onto task.redFirst (internal fault F561). The phase reviewer's computed brief carries the saved request text and, for each task, its SHA, files, filed return, recorded run and tests.gate. Every case the design lists is shown red first.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -143,7 +854,18 @@
         "PLUGIN-BUILD-GUIDE.md",
         "plugins/audit/tests/test_audit_lookup.py",
         "plugins/audit/tests/test_audit_task.py",
-        "plugins/audit/tests/test__refs.py"
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/README.md",
+        "COMPATIBILITY.md",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "plugins/audit/tests/test__output.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -168,27 +890,50 @@
       "dependsOn": [
         "P118.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ae1e47d7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Design T3.\n\nNew verbs and rules:\n- audit-task file-return <task> --role executor|reviewer reads a return as JSON on stdin and checks its shape for the role. It writes the return once, to the committed evidence directory under returns/<task>/<startedAt>.<role>.json, and refuses a second filing in one start, leaving the first byte-identical. It takes no path and refuses a path-like task id or role.\n- Every done that passes --commit, inside _locked_done, needs the reviewer's filed return for the current start or --intent not-asked with its basis. A filed answer is what gets recorded, and a typed word that differs from it is refused. --no-change is unchanged. _close_intent is the seam T6 reads.\n- done --from-return takes the outcome, verifiedBy and redFirst from the executor's filed return, writes task.redFirst (internal fault F561), and refuses beside typed outcome flags.\n- audit-lookup brief --role executor|reviewer|phase writes the whole brief to stateDir/briefs and prints its path.\n  - The reviewer brief refuses, with exit 4, until the executor's return is filed, then carries it byte-identical.\n  - The phase brief carries phase.request (or says none is saved), plus each task's SHA, files, filed return, recorded run and tests.gate.\n\nSupporting changes:\n- A new layer-1 module, manifest/_filed_returns.py, owns the return vocabulary, the path derivation, the shape check, the write-once create and the claims reader. audit-task, audit-lookup and commit-task-work all use it, so there is no duplicate.\n- commit-task-work appends a filed return's claims text as its own paragraph before the trailers. _scoped_commit keeps the Audit-Row trailer in a trailer-only paragraph.\n- Docs and lints are updated: the /audit:task hint, the README row, task.md, COMPATIBILITY.md (\"Outside this document entirely\"), both agent prompts, execute-task.md, the build guide and the module map, and the test__output lists.\n\nTests: fr1-fr5, fc1-fc9, bf1-bf9, bf11, rp1-rp10 (with fr6 and fr7 moved), cl1-cl3 and sc25b, each shown red first. The sweep is green (314/314 files). The phase reviewer's own filed return is T6's.",
+        "descriptive": "Agents now get their brief as a file a script writes and file their result once through a checked command; closing a task reads those filed results instead of words the main loop types, and an executor's red-first proof lands in its own field."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-07T22:38:44Z",
+      "completedAt": "2026-10-07T23:51:50Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/tests/test__scoped_commit.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T23:44:46Z.b0d3f1",
+        "status": "passed",
+        "at": "2026-10-07T23:44:46Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ae1e47d7",
+        "at": "2026-10-07T23:51:50Z",
+        "basis": "orchestrator check: every design case has its test, each shown red first; the shared path module removes the duplicate; the wider done refusal is in COMPATIBILITY.md; sweep green"
+      }
     },
     {
       "id": "P118.4",
       "title": "planning is one batch call that saves the request and its open choices",
-      "status": "pending",
+      "status": "done",
       "description": "Design section 6, T9. audit-task add --from-file adds a phase and its tasks in one call, revalidates once, and refuses a malformed file or a missing dependency while writing nothing. The file carries the request's text verbatim and a list of its open choices. The add section of phase.md is verb-scoped. Cases are shown red first.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/commands/phase.md",
         "plugins/audit/schema/audit-plan.schema.json",
-        "plugins/audit/tests/test_audit_task.py"
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/README.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -213,32 +958,44 @@
       "dependsOn": [
         "P118.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6d776e64",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Design T9. audit-task add --from-file PATH adds a phase and its tasks in one call. The file is {request, openChoices, phase, tasks}, where tasks refer to each other by an optional key.\n\nbatch_problems reports every fault at once: unknown keys, missing fields, bad paths, and a dependency it cannot resolve, named before any write. Under one lock the batch allocates the ids, builds the tasks through the existing _build_task, writes once, re-reads, validates once, and rolls back on any finding. It journals one phase.add row and one task.add row per task, and prints one success line. Any other add flag beside --from-file is refused. openChoices is required and may be empty, so \"nothing was left open\" stays distinct from \"nobody asked\".\n\nThe schema's phase gains request and openChoices, which are written verbatim. The sign-off reviewer's brief from P118.3 reads phase.request. KNOWN_PHASE, the demo generator's SCHEMA_EXEMPTIONS, task.md's add hint, the usage block and the README row follow.\n\nphase.md's add section is rewritten around one Write of the file and one call, never a heredoc, and stays at 5712 bytes. Write is now an allowed tool.\n\nCases fb1-fb10 were proved red at HEAD, and the allow halves were shown red under over-fire mutations in a scratch copy.\n\nThe /audit:phase add total moves only from 244758 to 242335 bytes, because the entry still counts all of phase.md plus the four reference reads. Its 8000 target belongs to P118.9.",
+        "descriptive": "Planning a phase is now one file the model writes and one command that adds the phase and all its tasks at once, saving the original request and the choices it left open for the phase review to check."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-07T23:51:51Z",
+      "completedAt": "2026-10-08T00:36:28Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T00:29:15Z.bddcc2",
+        "status": "passed",
+        "at": "2026-10-08T00:29:15Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6d776e64",
+        "at": "2026-10-08T00:36:28Z",
+        "basis": "orchestrator check: batch verb with all-or-nothing writes and named refusals; request and open choices saved verbatim; followers updated; the byte ceiling is honestly deferred to its owner P118.9"
+      }
     },
     {
       "id": "P118.5",
       "title": "a step driver runs every step that needs no judgement, in four main-loop requests a task",
-      "status": "pending",
+      "status": "done",
       "description": "Design section 6, T4. drive-phase.py next <phase> reads the plan and the filed returns, performs every due step that needs no judgement by calling the existing verbs, and prints one instruction: dispatch, decide or done. A refusal prints the verb's own refusal and stops. The recorded gate stays before the reviewer. The new entry point owes everything CLAUDE.md names for a new .py. stream-cost's cycle rule reads the driver's start and done in the same change. Micro-test: a drive over a three-task fixture plan, with four model-facing steps a task, success prints of at most 300 bytes, a stale stamp naming the moved field, and a refused verb stopping the drive, each shown red against a mutated driver.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
         "plugins/audit/tests/test_drive_phase.py",
         "plugins/audit/scripts/_deps.py",
         "PLUGIN-BUILD-GUIDE.md",
-        "plugins/audit/commands/phase.md",
-        "plugins/audit/commands/run.md",
-        "plugins/audit/commands/next.md",
-        "plugins/audit/commands/resume.md",
-        "tools/stream-cost.py"
+        "tools/stream-cost.py",
+        "plugins/audit/tests/test__output.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -264,32 +1021,68 @@
         "P118.3",
         "P118.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "86f1a086",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Design T4. New entry point governance/drive-phase.py with `next <phase>`. It runs every step that needs no judgement as the existing verb in a subprocess: audit-lock, audit-task start/block/finding/done --from-return, audit-lookup brief, run-test-gate --record, stamp-verification compare and commit-task-work. It prints exactly one instruction:\n- dispatch, with the brief path;\n- decide, from DECISIONS, answered through --answer;\n- done.\n\nA refused verb stops the drive and relays the verb's own words. The recorded gate and the stamp grading run before the reviewer's brief. A stale stamp names the fields that moved. Drive state lives in stateDir/drive/<phase>.json.\n\nSeams are left for the next tasks: reviewer_due (T6), STEPS as the single source of printed lines (T2), subcommands for submit (T8), and finish() for sign-off (T10).\n\ntools/stream-cost.py reads a driver session's task cycle from the driver's own started/closed words (sp12, with the over-fire twin sp13).\n\nThe fixture micro-test drives a three-task wave with real verbs and filed returns:\n- 12 model-facing requests for three tasks, plus the opening next;\n- every print at or under 300 bytes;\n- the gate recorded before each reviewer dispatch;\n- a stale stamp naming the moved fields;\n- a refused verb stopping in its own words.\n\nEach property is shown red by an in-suite mutant (dp2m, dp3m, dp4m, dp5m, dr2m), and red-first is proved at HEAD. The new file owes all five CLAUDE.md items, and they are present.\n\nReported, not fixed: every task's stamp comes out stale on dirtyDigest, because filing the return and recording the gate dirty the evidence directory. That is recorded as its own task.",
+        "descriptive": "One command now runs a phase's mechanical steps through the existing verbs, leaving the model four requests a task: dispatch the executor, ask what is next, dispatch the reviewer, ask what is next."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-07T23:51:52Z",
+      "completedAt": "2026-10-08T00:36:28Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py",
+        "tools/stream-cost.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T00:36:12Z.aa8b75",
+        "status": "passed",
+        "at": "2026-10-08T00:36:12Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "86f1a086",
+        "at": "2026-10-08T00:36:28Z",
+        "basis": "orchestrator check: every step calls an existing verb, refusals are relayed verbatim, the fixture drive meets four steps a task and the byte bound, each property has a red mutant, seams left for T6/T8/T10/T2"
+      }
     },
     {
       "id": "P118.6",
       "title": "under review.perTask phase the per-task review moves into the phase review and sign-off refuses an unanswered task",
-      "status": "pending",
+      "status": "done",
       "description": "Design section 6, T6, as G1. review.perTask takes always (today), phase (G1) or signals (G2). Under phase, the driver dispatches no per-task reviewer, and done --from-return writes the deferred state and refuses an --intent flag on a task with a diff. The phase reviewer's brief asks each task's three answers, and the sign-off verb refuses while any deferred task lacks one. Whether phase becomes the default is a release decision for the user, because COMPATIBILITY.md makes a changed default a major release. Every case the design lists is shown red first. The panel control and the doctor line follow if the schema lint requires them.",
       "files": [
+        "CHANGELOG.md",
+        "COMPATIBILITY.md",
+        "plugins/audit/README.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/commands/task.md",
         "plugins/audit/schema/audit-config.schema.json",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/_refs.py",
         "plugins/audit/scripts/config/_config_rules.py",
-        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/scripts/git/close-phase.py",
         "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/panel/_panel_settings.py",
         "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test__config.py",
         "plugins/audit/tests/test__config_rules.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/tests/test__panel_settings.py",
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/tests/test_audit_lookup.py",
         "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_close_phase.py",
         "plugins/audit/tests/test_drive_phase.py",
-        "plugins/audit/tests/test_audit_lookup.py"
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        "tools/prove-gates.py",
+        "plugins/audit/hooks/_config.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -315,29 +1108,61 @@
         "P118.5",
         "P118.4"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9372104d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Design T6 as G1, with the user's decision that review.perTask defaults to phase, released as a minor.\n\nConfiguration and recorded fields:\n- review.perTask accepts always, phase (the default) or signals, through the config schema, hooks/_config DEFAULTS, _config_rules, the panel settings group and the README. A value outside these three words is refused.\n- The plan schema gains phase.reviewPerTask, task.reviewPerTask and task.fixes.\n- intentCheck gains the deferred answer and the red-first and inherited-test grades.\n\n_filed_returns now owns:\n- review_key, which reads the task's key, then the phase's, then the live config, and never defaults to always;\n- is_fix_task;\n- the landing property, landing_problem and landing_refusals;\n- the phase return's keys, path and shape check.\n\naudit-task:\n- start records the key.\n- Under phase, every --commit close records deferred and refuses any --intent word, except a recorded fix task's not-asked with its basis.\n- add --fixes links the task and its findings in one write.\n- file-return files the phase review's tasks array, keyed on --head.\n- signoff, single and group, writes the answers whose commit matches each task's current commit, then asks the property under passed and skipped alike.\n\nclose-phase asks the same property before merging. drive-phase's reviewer_due dispatches no per-task reviewer under phase. The audit-lookup phase brief prints openChoices, its head, what each task owes and the three questions. The reviewer definition gains its phase-mode tasks array, held equal to the filing verb's keys by _refs.phase_return_key_drift, which has red and allow rows in prove-gates.\n\nThe section 10 verb command was re-run at HEAD. Every verb has its refused case or its named followed reason: hd1-hd23, gsp1, ra1-ra7 and dk1-dk2. Mutations M1-M9 each went red in a scratch copy, and every case group was proved red at HEAD.\n\nCHANGELOG states the behaviour change and how to keep it (set always). COMPATIBILITY.md records the named exception, shipped in a minor by the maintainer's decision, and the new signoff --verdict skipped refusal. The build guide's module map follows the new imports.\n\nOwed elsewhere:\n- the reference prose still tells the orchestrator to close with not-asked and to review per task (P118.8 and P118.9);\n- _status_facts counts deferred as answered (P118.8).",
+        "descriptive": "By default the plugin no longer runs a reviewer after every task: the phase review answers for each task, bound to its commit, and sign-off and the merge refuse while any changed task lacks its answers. Setting review.perTask to always keeps the old behaviour."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-08T00:36:44Z",
+      "completedAt": "2026-10-08T01:50:22Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test__config_rules.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/tests/test__panel_settings.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/tests/test__refs.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T01:50:07Z.0c195f",
+        "status": "passed",
+        "at": "2026-10-08T01:50:07Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9372104d",
+        "at": "2026-10-08T01:50:22Z",
+        "basis": "orchestrator check: one property asked at both landing points, every writing verb answered, mutations red, the user's default and minor-release decision recorded in CHANGELOG and COMPATIBILITY"
+      }
     },
     {
       "id": "P118.7",
       "title": "agent prompts are trimmed and each agent files its own return through submit",
-      "status": "pending",
+      "status": "done",
       "description": "Design section 6, T8. The executor's last act is drive-phase.py submit --role executor <task>, which takes the stamp, runs the red-first helper on a tdd task and files the return. The reviewer uses submit --role reviewer. The prose that explained those steps leaves each prompt. Targets: executor at most 9000 bytes, reviewer at most 7000, by measure-context. submit's cases are shown red first.",
       "files": [
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/README.md",
         "plugins/audit/agents/audit-executor.md",
         "plugins/audit/agents/audit-reviewer.md",
-        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/reference/execute-task.md",
         "plugins/audit/scripts/_refs.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test__refs.py",
         "plugins/audit/tests/test_drive_phase.py",
-        "plugins/audit/tests/test__refs.py"
+        "plugins/audit/tests/test_stamp_verification.py",
+        "tools/measure-context.py",
+        "tools/prove-gates.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -362,30 +1187,69 @@
       "dependsOn": [
         "P118.5"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "709c1959",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Design T8.\n\ndrive-phase.py submit <task|phase> --role executor|reviewer [--head SHA] [-- <test command>] reads the return on stdin and works in this order:\n1. it checks the shape;\n2. it refuses an already-filed return before anything runs;\n3. it runs stamp-verification red when a test command is given, and requires one on a tdd task;\n4. it takes the stamp last;\n5. it files through the write-once file-return. The phase return passes --head through the same path.\n\nExit codes: 0 when filed, 1 when refused with nothing written, 2 on a usage error.\n\nCases:\n- the missing-stamp pair ds1/ds2;\n- the second-filing refusal ds3;\n- the malformed-return pair ds4/ds5;\n- the tdd cases ds6 and ds7;\n- the phase return ds8;\n- the relative-manifest submit ds9;\n- the mutant twins ds1m, ds3m and ds4m.\n\nEvery drive in the suite now plays agents through submit.\n\nBoth agent prompts lose the procedure prose submit replaces, measured by tools/measure-context.py: executor 19591 to 6762 bytes, reviewer 20937 to 6986, against ceilings of 9000 and 7000. AGENT_CEILINGS with ceiling_breaches holds them in the sweep (mc19, with the red twin mc20). Every pinned sentence and the README's tools rows are kept. omitClaudeMd, preloaded skills and the one-hour cacheTtl are not taken, for the reasons C13 gives, recorded beside the ceiling.\n\nThe executor, reviewer and phase briefs print one resolved submit line, with a tdd task's test command after --, and no separate stamp, red or file-return step. bf14 was proved red at HEAD.\n\nThe README, the build guide and prove-gates follow. execute-task.md and task.md still describe the agent filing directly; that is P118.9's rewrite. The reviewer prompt's margin to its ceiling is small by design.",
+        "descriptive": "An agent's last act is now one command that takes its stamp, proves red-first and files its result; the procedure that command replaces left both agent prompts, which shrank to about a third of their size."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-08T01:50:23Z",
+      "completedAt": "2026-10-08T02:34:42Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "tools/measure-context.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T02:34:32Z.aaf51a",
+        "status": "passed",
+        "at": "2026-10-08T02:34:32Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "709c1959",
+        "at": "2026-10-08T02:34:42Z",
+        "basis": "orchestrator check: submit's refusals each have a red mutant; both prompts under their ceilings with a sweep case holding them; briefs and prompts now agree on submit"
+      }
     },
     {
       "id": "P118.8",
       "title": "sign-off is one step that ends with the landing stamp committed",
-      "status": "pending",
+      "status": "done",
       "description": "Design section 6, T10. At sign-off the driver prints the phase reviewer's dispatch, then one decide for the triage, then runs the phase gate, the invariants check, the sign-off verb, the commit, the landing and the lock release as one step. Findings are recorded from one file in one call. The landing commits the status and mergedAt it stamps into the parent tree, and verify-invariants flags a landed phase whose status is uncommitted (internal fault F564). Cases are shown red first.",
       "files": [
-        "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/scripts/manifest/audit-task.py",
-        "plugins/audit/scripts/git/close-phase.py",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/README.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/commands/review.md",
+        "plugins/audit/commands/task.md",
         "plugins/audit/reference/phase-signoff.md",
-        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/governance/commit-audit-state.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/verify-invariants.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test__invariants.py",
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/tests/test_audit_lookup.py",
         "plugins/audit/tests/test_audit_task.py",
-        "plugins/audit/tests/test_close_phase.py"
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_commit_audit_state.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_verify_invariants.py",
+        "tools/check-git-pipeline.py",
+        "tools/prove-gates.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -410,42 +1274,92 @@
       "dependsOn": [
         "P118.6"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ce8d5d29",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Design T10, plus faults F564 and the deferred count.\n\nSign-off in drive-phase.py, once every task is terminal:\n1. It dispatches the phase reviewer with the phase brief and keeps the head. The reviewer files through submit --head.\n2. It records every finding in one finding --findings-file call.\n3. It prints one decide triage, listing each open finding with its options and a fix task's predicted price. The price is printed with its design basis and marked not measured.\n4. --answer fix creates the fix tasks through add --fixes and drives them.\n5. --answer sign-off runs one step: the phase gate, verify-invariants, signoff, the commit, close-phase and the lock release.\n\nA red phase gate stops before the sign-off verb. The new decisions are no-phase-review-return, invariant-breach and not-fast-forward. Without a fix, the model faces three steps: the review's dispatch, the triage and the final step.\n\nF564: close-phase's commit_landing commits the mergedAt and done stamp it writes into the parent tree, or on the phase branch and then fast-forwards the parent. It says so when the stamp sits in a third tree, and a re-run commits a stamp left earlier. _invariants.landing_committed, the last entry of CHECK_NAMES, compares the stamp in the working tree against HEAD. It is read by verify-invariants and by /audit:status --gate.\n\n_status_facts.intent_unanswered lists a deferred task as still owed its phase review.\n\nThe phase brief and audit-reviewer.md file the phase return through submit --head even with no task owed, and the reviewer prompt stays under its ceiling.\n\nThe CHANGELOG, build guide, README rows, review.md and task.md follow. check-git-pipeline g17 and g17b assert the stamp commit.\n\nCases: sg1-sg6, sg3b, sg3m, sg4m, lt1-lt5, lc1-lc5, ln1-ln5, iu1-iu2 and bf20, proved red at HEAD in six suites. check-git-pipeline passes 40 checks against real git, and the sweep is green.",
+        "descriptive": "A phase now signs off in three model-facing steps - dispatch the phase review, decide the findings, sign off - and its landing commits its own status, so a merged phase never reads as unfinished in the committed plan."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-08T02:34:43Z",
+      "completedAt": "2026-10-08T03:48:52Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_verify_invariants.py",
+        "plugins/audit/tests/test__invariants.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "tools/check-git-pipeline.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T03:48:36Z.e79c2b",
+        "status": "passed",
+        "at": "2026-10-08T03:48:36Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ce8d5d29",
+        "at": "2026-10-08T03:48:52Z",
+        "basis": "orchestrator check: one-step sign-off with red-gate stop and mutants; the landing commit and its invariant in the shared check set; deferred counted as owed; reviewer prompt consistent with the brief"
+      }
     },
     {
       "id": "P118.9",
       "title": "no pipeline command makes the main loop read reference prose, and a ceiling gate holds it there",
-      "status": "pending",
+      "status": "done",
       "description": "Design section 6, T2. Each rule is re-homed to the step text the driver prints, the agent prompt that acts on it, or, for prose that explains what a script enforces, the build guide and the script's docstring. A new lint checks that every followed row's Stated-in resolves to a printed step text or an agent prompt section. measure-context.py --gate holds the T2 ceilings in CI and verify.sh. Both are shown red first.",
       "files": [
-        "plugins/audit/reference/orchestrator.md",
-        "plugins/audit/reference/execute-task.md",
-        "plugins/audit/reference/manifest-conventions.md",
-        "plugins/audit/reference/phase-signoff.md",
-        "plugins/audit/commands/phase.md",
-        "plugins/audit/commands/run.md",
+        ".github/workflows/ci.yml",
+        "CHANGELOG.md",
+        "CLAUDE.md",
+        "CONTRIBUTING.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "README.md",
+        "plugins/audit/README.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/agents/guide.md",
+        "plugins/audit/commands/bug.md",
+        "plugins/audit/commands/doctor.md",
+        "plugins/audit/commands/guide.md",
+        "plugins/audit/commands/init.md",
+        "plugins/audit/commands/layout.md",
+        "plugins/audit/commands/logs.md",
+        "plugins/audit/commands/migrate.md",
         "plugins/audit/commands/next.md",
+        "plugins/audit/commands/panel.md",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/commands/propose.md",
+        "plugins/audit/commands/report.md",
         "plugins/audit/commands/resume.md",
         "plugins/audit/commands/review.md",
+        "plugins/audit/commands/run.md",
+        "plugins/audit/commands/status.md",
+        "plugins/audit/commands/sync.md",
         "plugins/audit/commands/task.md",
+        "plugins/audit/commands/usage.md",
+        "plugins/audit/commands/version.md",
+        "plugins/audit/commands/worktree.md",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/reference/tracker-sync.md",
+        "plugins/audit/reference/verbs-in-full.md",
         "plugins/audit/scripts/_refs.py",
+        "plugins/audit/scripts/config/_help.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/manifest/_areas.py",
+        "plugins/audit/tests/test__areas.py",
+        "plugins/audit/tests/test__help.py",
         "plugins/audit/tests/test__refs.py",
-        "plugins/audit/README.md",
-        "PLUGIN-BUILD-GUIDE.md",
-        "CHANGELOG.md",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "tools/gate-parity.py",
         "tools/measure-context.py",
-        "tools/verify.sh",
-        ".github/workflows/ci.yml",
-        "tools/gate-parity.py"
+        "tools/prove-gates.py",
+        "tools/verify.sh"
       ],
       "tests": {
         "mode": "tdd",
@@ -473,25 +1387,47 @@
         "P118.7",
         "P118.8"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9fc53f64",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Design T2. No pipeline command makes the main loop read a reference file first. The command bodies of run, next, resume, review, phase and task are cut to the driver's loop and each verb's own command line.\n\nTotals by tools/measure-context.py --gate, before and after:\n\n| Entry | Before (bytes) | After (bytes) |\n|---|---|---|\n| /audit:phase run form and add | 242335 | 3880 |\n| /audit:task add | 114821 | 5477 |\n| /audit:run | 162164 | 2135 |\n| /audit:next | 158557 | 1650 |\n| /audit:resume | 97618 | 2181 |\n| sign-off | 150285 | 3299 |\n\nThe executor and reviewer prompts stay under 9000 and 7000 bytes.\n\nWhere the rules went:\n- Rules the main loop needs are in drive-phase.py's STEPS texts: dispatch, high-risk, red gate with a new rerun answer, triage, done, a held lock, stops, blocked, and the ADO echo.\n- drive-phase next <taskId> drives one task for /audit:run and /audit:next.\n- The verb prose (about 126 KB) moved to a new shipped reference, reference/verbs-in-full.md. No command reads it first. The guide agent points to it, and _areas registers its sections per file (ANCHOR_DOCS, UNANCHORED_IN, oa38 and oa39).\n- The reference files stay as documentation that says what the code does now: review.perTask settings, filing through submit, one task at a time.\n- The README's followed table re-anchors every row to a driver step or an agent prompt section, held by the new _refs.followed_anchor_drift lint (fa1-fa6, with prove-gates rows).\n\nThe ceiling gate measure-context.py --gate (mc21-mc24) is wired into verify.sh, ci.yml, CONTRIBUTING.md and CLAUDE.md, and gate-parity is clean. The root README now describes the step driver. The lint and the gate were shown red first, each with an over-fire allow case. Drive cases dd3, dd3m, dd4, dt1-dt6 and dl1 were proved at HEAD.",
+        "descriptive": "The pipeline commands now hand the model a few kilobytes instead of a hundred and fifty or more: each rule is printed by the driver at the step it applies to, the full verb documentation still ships for the guide and for users, and a CI gate keeps the commands from growing back."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-08T03:48:52Z",
+      "completedAt": "2026-10-08T04:57:17Z",
+      "verifiedBy": [
+        "tools/measure-context.py",
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test__areas.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T04:57:06Z.42d859",
+        "status": "passed",
+        "at": "2026-10-08T04:57:06Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9fc53f64",
+        "at": "2026-10-08T04:57:17Z",
+        "basis": "orchestrator check: every entry under its ceiling with no reference read first; rules re-homed, none dropped; the shipped reference keeps the prose available; lint and gate red first"
+      }
     },
     {
       "id": "P118.10",
       "title": "the doctor prints the main loop's cache TTL trade from the user's own sessions",
-      "status": "pending",
+      "status": "done",
       "description": "Design section 6, T12, the documentation-only decision on the TTL. From a recorded session the doctor prints the longest main-loop gap, the one-hour writes and their price at each TTL. It recommends nothing the gaps do not support, and the setting stays the user's. First establish whether the usage ledger holds per-request times; if it does not, name where the doctor reads them from. Twin synthetic sessions are shown red first.",
       "files": [
         "plugins/audit/scripts/status/_doctor_hygiene.py",
-        "plugins/audit/tests/test__doctor_hygiene.py"
+        "plugins/audit/tests/test__doctor_hygiene.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/scripts/status/audit-doctor.py",
+        "plugins/audit/tests/test_audit_doctor.py",
+        "plugins/audit/commands/doctor.md",
+        "plugins/audit/README.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -516,16 +1452,916 @@
       "dependsOn": [
         "P118.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d5b6c67b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Design T12, documentation only. The usage ledger keeps no per-request times, so the check reads the named session's transcript.\n\ncheck_ttl_trade, main_loop_requests and ttl_trade live in _doctor_trail.py, layer 4, beside check_ledger. They parse timestamps through usage_ledger.parse_ts and price through usage_ledger.price, so the local duplicates are gone and _doctor_hygiene.py is back to its pre-task bytes.\n\naudit-doctor gains --transcript <path>. Pricing is resolved through usage_ledger.project_pricing. With no transcript named, the row says the trade needs one and prints no figure. With one named, the row prints the longest main-loop gap, the one-hour writes and their price at each TTL, recommends nothing, and says the setting stays the user's.\n\ndoctor.md's argument-hint and the README row name the flag, and command_flag_drift is clean. Cases dt55-dt63 cover no transcript, an unreadable transcript, too few requests, no one-hour writes, no pricing table, the under/over-five-minute twin and dedup by message id. test_audit_doctor adds the wiring, no-figure, priced end-to-end and parser cases. Red-first is proved for both suites.\n\nThe README row is committed with whichever task in this phase commits README first, because P118.3 also edits that file.",
+        "descriptive": "/audit:doctor --transcript <session> now shows how long the main loop sat idle and what its one-hour cache writes cost against five-minute ones, without recommending a setting - that stays the user's."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-07T23:07:40Z",
+      "completedAt": "2026-10-07T23:51:51Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/tests/test_audit_doctor.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T23:51:36Z.0cb183",
+        "status": "passed",
+        "at": "2026-10-07T23:51:36Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d5b6c67b",
+        "at": "2026-10-07T23:51:51Z",
+        "basis": "orchestrator check: documentation-only as the user decided; no figure without a named session; pricing through the shared usage functions with the duplicates removed"
+      }
+    },
+    {
+      "id": "P118.11-v7t",
+      "title": "a stamp stays fresh when only the plugin's own recorders wrote",
+      "status": "done",
+      "description": "A stamp taken before the recorded gate comes back stale on dirtyDigest after every task. Filing a return and recording a gate both dirty the evidence directory and the journal, which the stamp's dirty set includes, while content already excludes the recorder's own paths. The P118.5 driver fixture saw this on every task, and P117's analysis saw it in feature-C-1 as a re-check request. So stale is the normal state rather than a signal, and each task pays a needless main-loop request. dirtyDigest leaves out exactly the paths the plugin's own recorders write (evidence, journal, filed returns, the plan index and shards the close stamps), by the same exclusion content uses, with a case showing a real edit outside those paths still reads stale. A filed return or recorded gate alone leaves the stamp fresh. Shown red first both ways.",
+      "files": [
+        "plugins/audit/scripts/governance/_tree_stamp.py",
+        "plugins/audit/tests/test__tree_stamp.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "c1a3ac91",
+      "outcome": {
+        "technical": "_tree_stamp.dirty_digest(before, excluded) drops a porcelain line only when every path on it, a rename's two paths included, is under excluded. It uses _outside, the same segment-boundary predicate content uses, so there is no second list. tested_state passes dirty_excluded only from take; compare goes through take, so both sides agree. The excluded set is _evidence_io.recorded_paths, which already covers the evidence directory and filed returns under evidence/returns, the journal, the plan index and the shards. _evidence_io.py and stamp-verification.py needed no change.\n\nrun-test-gate's recorded dirtyDigest is deliberately unchanged, so rows already recorded still grade to the same bytes (tsd6). A stamp taken by an older version while recorder paths were dirty reads stale once, which is the safe direction.\n\nCases tsd1-tsd6 and sv18-sv21 cover these:\n- a filed return alone stays fresh;\n- a recorded gate alone stays fresh;\n- a source edit still reads stale;\n- a lookalike of the evidence path outside the directory still reads stale.\n\nThey were red at HEAD, with over-fire and segment mutations shown red in a scratch copy. On the driver fixture the per-task stamp now reads current, except for the task whose file really moved.",
+        "descriptive": "An executor's proof that the tree is unchanged no longer goes stale just because the plugin itself recorded a gate or filed a result, so stale means a real edit again and the extra re-check request goes away."
+      },
+      "startedAt": "2026-10-08T00:36:44Z",
+      "completedAt": "2026-10-08T01:50:21Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__tree_stamp.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T01:42:58Z.464ef7",
+        "status": "passed",
+        "at": "2026-10-08T01:42:58Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c1a3ac91",
+        "at": "2026-10-08T01:50:21Z",
+        "basis": "orchestrator check: one shared exclusion, real edits and lookalike paths still stale, recorded rows untouched, driver fixture now reads current"
+      }
+    },
+    {
+      "id": "P118.12-v7t",
+      "title": "the driver puts every phase-review answer, banner and stop in front of a human before landing",
+      "status": "done",
+      "description": "Fixes P118 review findings R2, R9, R6, R10, R11, R12, R13, R14, R15, R16, R19 and the driver half of R21 and R25, in the step driver and its instruments. The triage reads every per-task answer and the phase intent from the filed phase return, and diverges, cannot-tell and a tdd not-proved become lines a human answers before sign-off. A task added after the review's head re-dispatches the phase review. Fix tasks closed after the head get a re-review or a reasoned sign-off. Pre-given high-risk confirmations are honoured. meta.runtimeBoot gets its decide. The gate's NO OVERLAP and TREE CHANGED banners are carried into the did-line and decided at the phase gate. not-fast-forward offers no-ff or leave with the never-rebase rule. A blocked task's stop names audit-task.py unblock <id> --reason, which the sibling task builds, and decide stalled carries a rule. The driver prints stable did-words for a fix task added, signed off, landed and the lock released, and stream-cost reads them as spans. The serial one-task-at-a-time choice is recorded honestly in CHANGELOG and the README row. The ADO echo's hard rules go into its step text, and the fix-task price names a basis the user can open. Every new case is shown red first.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "tools/stream-cost.py",
+        "plugins/audit/README.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "cdded1b5",
+      "outcome": {
+        "technical": "Fixes P118-R2, R9, R6, R10, R11, R12, R13, R14, R15, R16 and R19, and the driver half of R21 and R25, in drive-phase.py and stream-cost.py.\n\n- **R2 and R9.** human_answers reads every filed phase return. A diverges or cannot-tell answer, a red-first not-proved, a flagged inherited test, and a phase intent of diverges or cannot-tell each become an [accept] triage line. triage_refusal refuses sign-off until --answer accept --reason (sa1-sa4).\n- **R6.** A task added after the review's head re-dispatches the phase review (sr1).\n- **R15.** Fix tasks closed after the head offer re-review, or a reasoned sign-off that names them. Their close basis says the diff is unreviewed (sf1-sf4).\n- **R10.** Pre-given risk.confirmed rows are honoured. A clipped or unreadable row counts as not covered (hr1, hr2).\n- **R11.** meta.runtimeBoot gets decide runtime-boot before the gate (rb1-rb4).\n- **R12.** NO OVERLAP and TREE CHANGED banners are carried into the task did-line and decided at the phase gate (gb1-gb3).\n- **R13.** not-fast-forward offers no-ff or leave, with the never-rebase rule (nf1, nf2).\n- **R14.** The stop for a blocked task and decide stalled name audit-task.py unblock (bk1, bk2).\n- **R16.** Stable did-words record fix added, signed off, landed and released. stream-cost reads them as spans (dw1, dw2, sp14).\n- **R19.** The serial choice is recorded in the README row and CHANGELOG.\n- **R21 and R25, driver half.** The ADO echo states its hard rules inline, and the fix price basis says it is a benchmark prediction, not this project's measurement (tx1, tx2).\n\nPrints stay within their bounds. The cases were proved red at HEAD through the helper, using --stage narrowing; sp14 on a scratch HEAD copy. Each over-fire twin was shown red under a mutant.",
+        "descriptive": "Under the default phase review, a reviewer's doubt about a task, an unreviewed fix, a gate that measured nothing of the work, an unreachable app or a moved parent branch now stops the drive for a human decision before anything merges."
+      },
+      "startedAt": "2026-10-08T05:18:14Z",
+      "completedAt": "2026-10-08T06:45:16Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py",
+        "tools/stream-cost.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T06:30:01Z.299231",
+        "status": "passed",
+        "at": "2026-10-08T06:30:01Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "cdded1b5",
+        "at": "2026-10-08T06:45:16Z",
+        "basis": "orchestrator check: every finding maps to a change and a red case with an over-fire twin; byte bounds hold; the measurement reads driven sessions correctly"
+      }
+    },
+    {
+      "id": "P118.13-v7t",
+      "title": "the landing property reads the merged copy and every close form keeps its rule",
+      "status": "done",
+      "description": "Fixes P118 review findings R1, R3, R4, R5, R7, R8, R17, R26 and the verb half of R14, in the guarantee core. close-phase asks the landing property of the branch tip's copy as well as the handed copy, and refuses when the tip cannot be read. A recorded fix task's close under phase has one pinned rule. audit-task.py unblock <id> --reason resets an exhausted task's attempts after a human's reason, and is journaled. done --no-change refuses when the task's files changed since its start. commit_landing skips and reports when the parent tree holds other pending plan or journal changes. Success lines keep the gate basis and any warning naming an id the write touched. The README, COMPATIBILITY and CHANGELOG wording matches what the code enforces, with a followed row for what it does not. Every new case is shown red first.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/README.md",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md",
+        "plugins/audit/commands/task.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/tests/test__refs.py",
+        "tools/check-git-pipeline.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "685875a9",
+      "outcome": {
+        "technical": "Fixes P118-R1, R3, R4, R5, R7, R8, R17 and R26, and the verb half of R14.\n\n- **R1.** close-phase's landed_answers_refusal checks the handed copy and the branch tip's copy (phase_as_landed). If the tip cannot be read, it refuses wherever the property applies. phase_as_landed now resolves the tip path against the manifest's own tree root with real paths, which the /var to /private/var form and a worktree manifest broke. Cases: ra8-ra11.\n- **R14 and R26.** audit-task.py unblock <task> --reason resets a spent task's attempts. A blocked task goes back to pending, and a task.unblock row is journaled. It refuses without a reason, with attempts left, on a terminal task, or on a phase id. It is listed in the usage block, VERB_FLAGS, task.md, the README and the guide. Cases: ub1-ub4.\n- **R3.** Under phase, a recorded fix task closed with no --intent is refused, and the refusal names --intent not-asked --intent-basis (hd24).\n- **R8.** done --no-change is refused when a commit since the start, or an uncommitted change, touches a declared file (ncm1-ncm3).\n- **R7.** commit_landing's pending_beyond_stamp skips the landing commit, and reports landingCommitSkipped, when the parent tree holds foreign plan, journal or evidence changes. Cases: lt6-lt8. check-git-pipeline's g17 and g17b fixtures now commit the plan as a real landing would, and the new g17d asserts the foreign edit is left untouched. g17d was shown red against a sweeping close-phase.\n- **R17.** Success lines keep the gate basis, the ready line and warnings naming ids the write touched (sl6). task.md's sentence is fixed.\n- **R4 and R5.** README and COMPATIBILITY narrow the landing claim to tasks that record a commit, at close-phase's merge, checked against both copies. A followed row names the post-hoc-only paths. \"always restores today's behaviour\" is corrected. CHANGELOG lists every changed refusal and every new verb.\n\ntask.md's reference pointer is replaced inline. The fb11 and fb12 pins were added for phase.md.\n\nGates: test_close_phase was proved red at HEAD. The test_audit_task helper reports could-not-prove only because the throwaway tree holds HEAD's phase.md; the shared tree passes 848/848. check-git-pipeline and the sweep are green.",
+        "descriptive": "The merge now checks the copy of the plan it actually brings in, a task whose attempts ran out can be unblocked with a recorded reason, every way of closing a task has one rule, and the docs claim only what the code enforces."
+      },
+      "startedAt": "2026-10-08T05:18:14Z",
+      "completedAt": "2026-10-08T06:45:17Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "tools/check-git-pipeline.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T06:37:35Z.eb12f4",
+        "status": "passed",
+        "at": "2026-10-08T06:37:35Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "685875a9",
+        "at": "2026-10-08T06:45:17Z",
+        "basis": "orchestrator check: the high finding has deny and allow cases at both copies; each finding maps to a change and a case; the shared-tree landing is pinned against real git"
+      }
+    },
+    {
+      "id": "P118.14-v7t",
+      "title": "command bodies route every hint, preview what will run, and point at no reference prose",
+      "status": "done",
+      "description": "Fixes P118 review findings R18, R20, R22, R23, R24 and the command half of R21 and R25, in the command bodies and small verbs. phase.md's add section lists every optional phase key, maps each hint flag, and routes --park and a phase with no tasks to add-phase. The dry-run preview shows the ready tasks and reads a not-started phase as such. Pipeline bodies drop their reference pointers where the rule is inline, and measure-context's gate flags a reference path in a pipeline body. The briefs name where an agent writes its return. commit-audit-state prints one success line. The doctor's TTL row skips sidechain entries, states what its five-minute figure leaves out, and words the boundary consistently. verbs-in-full.md's stale guard and dry-run paragraphs match the driver. Every new case is shown red first.",
+      "files": [
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/commands/run.md",
+        "plugins/audit/commands/next.md",
+        "plugins/audit/commands/resume.md",
+        "plugins/audit/commands/review.md",
+        "tools/measure-context.py",
+        "plugins/audit/scripts/governance/commit-audit-state.py",
+        "plugins/audit/tests/test_commit_audit_state.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/commands/doctor.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "7b5be34e",
+      "outcome": {
+        "technical": "Fixes P118-R18, R20, R22, R23 and R24, and the command half of R21 and R25.\n\n- **R18.** phase.md's add section maps each hint flag to its phase key and routes --park, and a phase with no tasks yet, to add-phase. Each was checked on a scratch fixture.\n- **R20.** The dry-run preview runs audit-status --phase and reads close-phase's \"no branch recorded\" as \"not started yet\".\n- **R21.**\n  - The pipeline bodies (run, next, resume, review, phase) drop their reference pointers and keep the rules inline. task.md's pointer is replaced by the sibling task.\n  - measure-context's gate flags any reference/ path in a pipeline body: mc25 deny, mc26 allow (bug.md and a bare word), mc27 matcher check.\n- **R22.** The doctor's TTL row skips sidechain entries, says \"reaches\" at exactly 300 s, and prints the five-minute price as a floor once a gap expires (dt61, dt62, dt64, dt65).\n- **R23.** Every brief prints submit with a quoted stdin heredoc, so no file is written (bf21). The executor prompt matches, at 7130 of 9000 bytes.\n- **R24.** commit-audit-state prints one success line through terse_cli and keeps degraded output and --json whole (cas50-cas53).\n- **R25.** verbs-in-full.md's blocked, in-progress and dry-run paragraphs match the driver. orchestrator.md's dry-run section no longer lists parallel groups. doctor.md states the floor.\n\nThe phase body is at 3977 of its 4000 bytes, and every pinned sentence is kept. Red-first is proved for audit-lookup, commit-audit-state and doctor-trail, and measure-context's cases were seen red before implementation.",
+        "descriptive": "The trimmed commands now cover every flag they advertise, the dry run shows what would run, agents hand back their result without writing a file, and nothing in a pipeline command sends the model off to read long reference prose."
+      },
+      "startedAt": "2026-10-08T05:18:14Z",
+      "completedAt": "2026-10-08T06:53:30Z",
+      "verifiedBy": [
+        "tools/measure-context.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/tests/test_commit_audit_state.py",
+        "plugins/audit/tests/test__doctor_trail.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T06:53:24Z.0b16ca",
+        "status": "passed",
+        "at": "2026-10-08T06:53:24Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7b5be34e",
+        "at": "2026-10-08T06:53:30Z",
+        "basis": "orchestrator check: each finding maps to a change and a red case; the widened gate has its allow case; ceilings hold"
+      }
+    },
+    {
+      "id": "P118.15-v7t",
+      "title": "the human-settled answers and the landing property hold at the verbs, not only in the driver",
+      "status": "done",
+      "description": "Fixes P118 review round 2 findings R27, R28, R29, R30, R34 and R40, plus the phase-intent wording of R31, in the guarantee core. close-phase refuses to land a phase whose tip records no sign-off verdict when any task's key reads phase. The settlement of a reviewer's diverges, cannot-tell, not-proved or flagged answer moves into the signoff verb, through one predicate in _filed_returns shared with the driver's human_answers. An unreadable tip is refused only when the plan is versioned. --no-change maps task files to the git root as commit-task-work does, and bounds its span by the start's HEAD rather than by date. The unblock journal action is documented. CHANGELOG, COMPATIBILITY and the README say exactly where each stop applies. Every new case is shown red first, with its allow half.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/README.md",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/check-git-pipeline.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "487cedd3",
+      "outcome": {
+        "technical": "Fixes P118-R27, R28, R29, R30, R34, R40 and the phase-intent wording half of R31. Both guarantees now hold at the verbs.\n\n- **R27.** close-phase's landed_answers_refusal asks three copies: the handed plan, the worktree's copy on disk, and the branch tip's copy. Where any task's key reads phase, it refuses a tip with no sign-off verdict.\n- **R28.** _filed_returns.needs_human(returns, settled) is the one predicate the driver's human_answers and audit-task signoff share. Single and group sign-off refuse while an answer only a human settles is unsettled. Settlement is read from the driver state's answersAccepted, which --answer accept --reason writes, and an unparseable record is refused.\n- **R29.** An unreadable tip is refused only when the plan is versioned (plan_versioned). Otherwise the copy on disk must record a sign-off verdict.\n- **R30.** --no-change maps task files to the git root as stage_targets does, and names an entry outside the root.\n- **R40.** start records its HEAD on the task.start row, and --no-change spans from it. With no row, it falls back to baseRef and the date, excluding sibling commits.\n- **R34.** manifest-conventions documents task.unblock and task.start.\n- **R31.** The docs say the phase-intent stop applies under every key.\n\nThe CHANGELOG and build guide also describe the driver's decline, its head binding, the gate reuse and the per-task remedy.\n\nCases: ra12-ra15 (ra10 rebuilt), hd25-hd28, ncm4-ncm6 and hn1-hn5. All were proved red at HEAD, and every guard was mutated both ways in a scratch copy. check-git-pipeline and the sweep are green.",
+        "descriptive": "The review guarantees now hold even when someone runs the plugin's commands by hand: sign-off refuses while a reviewer's doubt is unsettled, and a phase cannot merge unless its branch records the sign-off."
+      },
+      "startedAt": "2026-10-08T07:10:12Z",
+      "completedAt": "2026-10-08T08:14:54Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__filed_returns.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T08:06:31Z.c765d2",
+        "status": "passed",
+        "at": "2026-10-08T08:06:31Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "487cedd3",
+        "at": "2026-10-08T08:14:54Z",
+        "basis": "orchestrator check: both highs enforced in the verbs with deny and allow cases and two-way mutations; one shared predicate; docs match"
+      }
+    },
+    {
+      "id": "P118.16-v7t",
+      "title": "every driver decision a human can answer no to hands back to the work",
+      "status": "done",
+      "description": "Fixes P118 review round 2 findings R36, R31 (the fix-task half), R32, R33, R35, R37, R38, R39, R41 and R42, in the step driver and its prose. gate-coverage, runtime-boot and the triage answers gain a decline that hands back to the work. An accept at an unchanged head reuses the recorded green phase-gate run. Accepted coverage and boot are reset when a task closes after them. A risk confirmation counts only after the task's last reopen. The blocked remedy names unblock or start per task, from its attempts. fixes_after lists only fix tasks closed not-asked under the phase key. A skipped landing commit is named on the did-line. phase.md's description says one task at a time, and verbs-in-full.md names unblock. Every new case is shown red first.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "tools/stream-cost.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "5b425cc2",
+      "outcome": {
+        "technical": "Fixes P118-R36, R31 (the fix-task half), R32, R33, R35, R37, R38, R39, R41 and R42.\n\n- **R36.** gate-coverage, runtime-boot, invariant-breach and the triage gain decline --reason, offered on the triage only while an answer waits on a human. decline_answer keeps the human's words, which signoff_summary records, drops the pending decision and the recorded phase gate, and goes on to an open task. With no open task it stops with DECLINE_REMEDY.\n- **R33 and R37.** bootConfirmed, coverageAccepted and breachAccepted are bound to the HEAD they were given at, so a task close resets them. A green phase gate is stored and reused at the same HEAD.\n- **R38.** A risk confirmation ends at the task's later task.reopen row.\n- **R39.** The stalled print and the blocked stop name start or unblock per task, from its attempts against maxAttempts. The real verbs pin the mirrored default.\n- **R31.** fixes_after lists only fix tasks closed not-asked under the phase key.\n- **R32.** land names a stamp left uncommitted.\n- **R35 and R41.** phase.md says \"one at a time\" and \"a closed task\", at 3974 of 4000 bytes.\n- **R42.** verbs-in-full.md names start or unblock correctly.\n\nCases: dc1-dc5, db1-db4, da1-da3, di1-di2, hr3, bk1-bk3, fa1 and lw1, with over-fire twins. The tdd red was seen with only the test file changed, at 3/22. The helper reports could-not-prove only because human_answers already calls the sibling's unlanded _filed_returns.needs_human. The sweep is green.",
+        "descriptive": "When a human says no at sign-off - the gate did not measure the work, the app does not boot, a reviewer's doubt stands - the drive now records their words and goes back to the work instead of stalling, and a blocked task is shown the right way out."
+      },
+      "startedAt": "2026-10-08T07:10:13Z",
+      "completedAt": "2026-10-08T08:14:55Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T08:14:42Z.d5c7e7",
+        "status": "passed",
+        "at": "2026-10-08T08:14:42Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "5b425cc2",
+        "at": "2026-10-08T08:14:55Z",
+        "basis": "orchestrator check: every finding maps to a change and a red case; accepts bound to HEAD; ceilings hold; sweep green"
+      },
+      "notes": [
+        {
+          "at": "2026-10-08T08:31:32Z",
+          "text": "P118.16's drive-phase.py implementation (decline_answer, held_at/bind_at, green_phase_gate, blocked_remedy, DECISIONS decline options) was committed in 487cedd3 with P118.15's commit, because both tasks declared drive-phase.py; 5b425cc2 holds its tests, phase.md and verbs-in-full.md."
+        }
+      ]
+    },
+    {
+      "id": "P118.17-v7t",
+      "title": "a reused phase gate and an unsettled answer cannot loop or land unseen",
+      "status": "done",
+      "description": "Fixes P118 review round 3 findings R43-R47. A reused green phase-gate run is bound to its gate entries and scope digest as well as HEAD, through _verdict_binding, and is dropped whenever a later step refuses, so sign-off cannot loop on a stale run. close-phase refuses a landing under every review key when a filed phase return holds an unsettled answer and no sign-off verdict is recorded. The sign-off verb's refusal text says what the driver will do, including a second review, and how a group signs off. decide review-answer requires --reason on continue and carries it into the summary. Every new case is shown red first.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "1dd702f2",
+      "outcome": {
+        "technical": "Fixes P118-R43, R44, R45 and R47.\n\n- **R43.** drive-phase reuses a held green phase-gate run only at the same HEAD, and only while _verdict_binding.phase_binding, the sign-off verb's own check covering the gate entries and the scopeDigest, binds that run. drop_held_gate forgets the run when it stops binding, when verify-invariants refuses, and when the sign-off verb refuses. Cases: gr1-gr3 and dc4b, with dc4 as the allow case.\n- **R44.** close-phase reads the filed phase returns from the evidence directory, the worktree and the branch tip. Under every review key, it refuses a landing when one of them holds an answer _filed_returns.needs_human reports unsettled, or a return that will not parse, and no sign-off verdict is recorded on the tip (on disk for an unversioned plan). Cases: hl1, hl4 and hl5, with hl2 and hl3 as allow cases.\n- **R45.** The sign-off verb's refusal says when the driver will dispatch a second review, and tells a group member to answer only accept (hd29, hd29g, hd29b).\n- **R47.** continue on review-answer requires --reason, which goes into the summary (ct1, ct2).\n\n_filed_returns gains drive_state, review_marked and return_body, the one return parser (dm1, dm2, sa1m). The CHANGELOG, README row and build guide follow, and the module map was regenerated.\n\nRed-first was proved at HEAD for every block. The mutation probes each turned the expected case red. check-git-pipeline and the sweep are green.",
+        "descriptive": "Sign-off no longer loops on a reused gate run that stopped matching the phase, and a reviewer's doubt that only a human can settle can no longer be merged unseen under any review setting."
+      },
+      "startedAt": "2026-10-08T08:31:33Z",
+      "completedAt": "2026-10-08T09:29:41Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__filed_returns.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T09:29:40Z.0d47c6",
+        "status": "passed",
+        "at": "2026-10-08T09:29:40Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "1dd702f2",
+        "at": "2026-10-08T09:29:41Z",
+        "basis": "orchestrator check: both meds reproduced as red cases with allow twins; one binding rule reused from the verb; mutations both ways"
+      }
+    },
+    {
+      "id": "P118.18-v7t",
+      "title": "a late return, a re-targeted gate and a re-run review cannot slip past a human",
+      "status": "done",
+      "description": "Fixes P118 review round 4 findings R48-R53. file-return refuses a phase return once a sign-off verdict is recorded, so a late return cannot land a human answer unseen. The gate-coverage accept is bound to the run, not only HEAD. The driver reuses a phase return already filed at the current head instead of paying for a second review. decide-review-answer tells the model to ask the human. COMPATIBILITY names close-phase's landing refusal under every key. The verdict-binding refusal names uncommitted declared files. Every new case is shown red first.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "2e1e3376",
+      "outcome": {
+        "technical": "Fixes P118-R48 to R53.\n\n- **R48.** file-return refuses a phase return once a sign-off verdict is recorded (exit 2, nothing written), through _signed_off_refusal. close-phase's docstring and the guide say a verdict covers the returns filed through the verb before it. Cases: hd30 and lr1, with hd30b and lr2 as allow cases.\n- **R49.** The gate-coverage accept is bound to HEAD, the held run's runId and the gate declared now (bind_coverage, coverage_held). The summary drops words about a run the verdict no longer stands on. Cases: gr4, gr4b and gr4c; gr2 was updated.\n- **R50.** With no drive mark, the driver reads a phase return already filed at the current HEAD instead of dispatching a second review (filed_at_head). The verb's refusal text matches. Cases: rr1, rr2, and hd29 repinned.\n- **R51.** decide-review-answer tells the model to ask the human and pass their words verbatim (ct1r).\n- **R52.** COMPATIBILITY names close-phase's landing refusal under every key and the post-verdict file-return refusal.\n- **R53.** A digest-moved refusal names the uncommitted declared files and says to commit or revert them (cr19b, cr19c).\n\ntest_audit_task gains --stage selection. Every case was proved red at HEAD, and the over-fire mutations each turned their allow case red. The sweep and check-git-pipeline are green.\n\nA related gap is recorded as an internal fault: a hand-run reused verdict carries no banner.",
+        "descriptive": "A reviewer's result can no longer be slipped in after sign-off, a human's acceptance of a gate warning no longer carries over to a different gate run, and a lost drive state no longer pays for a second phase review."
+      },
+      "startedAt": "2026-10-08T09:41:29Z",
+      "completedAt": "2026-10-08T10:33:50Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_close_phase.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T10:33:37Z.299e0f",
+        "status": "passed",
+        "at": "2026-10-08T10:33:37Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "2e1e3376",
+        "at": "2026-10-08T10:33:50Z",
+        "basis": "orchestrator check: the med reproduced and refused with its twin; each low maps to a change and a case; mutations both ways"
+      }
+    },
+    {
+      "id": "P118.19-v7t",
+      "title": "the implemented pipeline's cost is measured against the target and published",
+      "status": "done",
+      "description": "Measures the implemented phase against the user's target and publishes docs/research/pipeline-cost-results.md, an addendum to the design. Sources are the probe (probe-C-1 with fresh probe-A-1 and probe-A-2) and the whole-feature after-study (cost-A, cost-B and cost-C, three each, with cost-C-3's protocol follow-up), read with tools/stream-cost.py at the phase's commit, against the before sessions. Every target in design section 7 is reported confirmed, refuted or inconclusive with its reading: the per-task ratio both ways, the whole-feature ratio against A and against B, the phase overhead against its 1.00 budget, and the T2, T3, T4, T8 and T10 rows. Also reported are quality beside the before sessions, the open-choices behaviour across the three arm C sessions (one asked, two did not), deviations including the CLI version and the account change, and limits. The next levers toward the 1.25 ideal are named from the measured decomposition.",
+      "files": [
+        "docs/research/pipeline-cost-results.md",
+        "docs/README.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "6af645f3",
+      "outcome": {
+        "technical": "docs/research/pipeline-cost-results.md measures the implemented pipeline against the user's target. It reads every session with tools/stream-cost.py at the phase's commit, and repeats each reading from a clean export with byte-identical output.\n\nSessions read:\n- the probe: probe-C-1, with fresh probe-A-1 and probe-A-2;\n- the whole-feature after-study: cost-A, cost-B and cost-C, three each, with cost-C-3's follow-up joined;\n- the before sessions.\n\nResults against the targets:\n- **Per-task ratio, like for like** (the cycle against same-CLI arm A less its open and close): 1.34, 1.44 and 1.29, against 4.70-5.64 before. The 2.0 ceiling is confirmed; the 1.25 ideal is refuted.\n- **Per-task ratio against whole A:** 1.12, 1.21 and 1.08, which confirms the ideal on that reading.\n- **Whole feature:** 2.58-3.61 times arm A and 1.92-2.69 times arm B, against 9.27-10.29 and 6.01-6.67 before. Every session was at or under the prediction.\n- **Phase overhead:** 0.60, 0.75 and 1.15 against the 1.00 budget, so inconclusive. cost-C-3's planning ran in two stretches around a human question and two refused writes.\n- **Quality:** hidden tests 13/14 everywhere, with the same output before and after. The protected assertion changed only in cost-C-3, which asked first and was approved by the scripted reply.\n\nThe open-choices behaviour is analysed per session. The next measured lever is the executor's prose hand-back, at 0.05-0.06 per cycle.\n\nThe document also lists the deviations: the CLI version, the account change, the added allow rules and the probe's window gate. Prose, link and PII lints are clean. docs/README.md's research row already covers the document. The harness and plugin faults found are recorded in the internal plan.",
+        "descriptive": "Measured on the benchmark, a task now costs about 1.3 to 1.4 times plain Claude Code doing the same task, down from about 5 times, which meets the 2x ceiling; the 1.25 ideal is met against whole plain sessions but not like for like, and the measurements name the next lever."
+      },
+      "startedAt": "2026-10-08T09:59:54Z",
+      "completedAt": "2026-10-08T10:42:59Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T10:42:58Z.b3ac51",
+        "status": "passed",
+        "at": "2026-10-08T10:42:58Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6af645f3",
+        "at": "2026-10-08T10:42:59Z",
+        "basis": "orchestrator check: every section 7 target reported with its reading and command; readings repeated byte-identical from a clean export; deviations and limits stated"
+      }
+    },
+    {
+      "id": "P118.20-v7t",
+      "title": "a return filed from the parent checkout after sign-off cannot land unseen",
+      "status": "done",
+      "description": "Fixes P118 review round 5 findings R54-R57. close-phase treats a recorded verdict as settling only the phase returns it could have seen at the branch tip or in the branch's worktree. A return that needs a human and is found only in the parent checkout's evidence is refused once the tip records a verdict. A case covers the parent-checkout filing, with its twin. COMPATIBILITY and the guide say exactly what holds. The driver's reuse of a filed return records its findings once. The verb's remedy restores its qualifier. close-phase's post-verdict remedy names a way out that exists. Every new case is shown red first.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "5c421240",
+      "outcome": {
+        "technical": "Fixes P118-R54 to R57.\n\n**R54.** close-phase keeps each filed phase return together with where it sits (returns_by_place): the parent's evidence, the branch worktree's, or the tip. A recorded verdict settles only the returns its own checkout's sign-off could have read (unseen_returns, verdict_reach_refusal):\n- a tip verdict settles the tip's returns and the worktree's;\n- a verdict on the worktree's own copy (unversioned plan) settles the worktree's;\n- a verdict on the parent's own copy settles the parent's.\n\nA return counts as seen only when an identical copy sits in a seen place. With a shared evidence.dir, only the worktree driver's recorded settlement counts.\n\nEvery combination of return place and verdict place is pinned by a case or named as unreachable in the docstring, in the table there. Cases: vr1-vr14, vr6b, vr8b, vr8c and ra16-ra17, red at HEAD. Over-fire mutations m1-m11 turned each allow case red.\n\n**R55.** filed_at_head marks findings recorded only when review.findings already holds them (rr3, rr4).\n\n**R56.** The remedy's qualifier is restored (hd29q, hd29r).\n\n**R57.** Post-verdict remedies name a way out that exists.\n\nCOMPATIBILITY.md, the guide (with its regenerated module map) and the CHANGELOG say exactly what holds. The sweep, check-git-pipeline and measure-context --gate are green.",
+        "descriptive": "A reviewer's result filed from the main checkout after the branch signed off can no longer merge unseen, and every place a result or a sign-off can sit is now covered by a test."
+      },
+      "startedAt": "2026-10-08T10:54:08Z",
+      "completedAt": "2026-10-08T12:24:19Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T12:24:11Z.92e9f7",
+        "status": "passed",
+        "at": "2026-10-08T12:24:11Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "5c421240",
+        "at": "2026-10-08T12:24:19Z",
+        "basis": "orchestrator check: the class is closed by a full combination table, each cell a case or a stated unreachable; mutations both ways"
+      }
+    },
+    {
+      "id": "P118.21-v7t",
+      "title": "the landing check reads a plan outside the repo and a landing from the branch's own checkout",
+      "status": "done",
+      "description": "Fixes P118 review round 6 findings R58-R63 in close-phase's landing check. The check is read in two layouts it missed. First, a plan stored outside the git root with its evidence inside the repository: there, the on-disk copy cannot say which checkout signed off, so the verdict's own checkout is never assumed. Second, a landing run from the branch's own checkout: there, the target branch's evidence is also read, both its committed tree and the worktree holding it. In both layouts, a return the verdict could not have read is refused. The docstring table names every remaining cell, pinned or unreachable with its reason. COMPATIBILITY.md and the guide state the shared-evidence rule with its condition. Every new case is shown red first, each with its allow twin.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "55982b08",
+      "outcome": {
+        "technical": "Fixes P118-R58 to R63 with one rule. A recorded verdict settles only the evidence its signing checkout read; every other place a filed phase return can sit is a candidate, and a candidate needing a human refuses unless a settlement record covers it.\n\nreturns_by_place now enumerates each distinct evidence directory together with every checkout that resolves to it. The checkouts are the one close-phase runs from, the one holding the branch and the one holding the target branch. It also reads the branch tip's committed returns and the target ref's (`target`). The old `same`/`shared`/`there` keys are gone, and a shared directory is detected for any pair of checkouts.\n\nNew helpers:\n- `_ref_returns` reads a ref's committed returns, for both refs.\n- `_ref_known` handles a target git says does not exist; one git cannot answer about is a problem entry.\n- `_signing_checkout` names the checkout whose sign-off read the evidence.\n- `_plan_outside` is shared with worktree_phase.\n\nunseen_returns returns one group per place. Each group carries its entries, its clause, its folder, and which checkouts' settlement records can settle it. Copies are deduplicated by content across groups. verdict_reach_refusal reads each group's settlement records and names every unsettled place.\n\nR58: a plan outside the project uses VERDICT_AT_EITHER. No checkout's evidence is assumed read, and each return is settled by the record of the checkout holding it (vr15 refuse, vr16 and vr16b allow).\n\nR59: a landing run from the branch's own checkout now reads the target ref and the target's worktree (vr17, vr17b, vr19).\n\nR62: a shared directory under a parent verdict is settled through the parent's record (vr23, vr23b).\n\nR61 and R63 pin existing behaviour (vr20, vr21). R60's cell is named unreachable with its reason. The docstring table names every cell as pinned, unreachable or explicitly unpinned.\n\nCOMPATIBILITY.md, PLUGIN-BUILD-GUIDE.md and CHANGELOG.md state the shared-evidence rule with its condition, the reading of the target branch and the plan-outside rule.\n\nRed-first: stamp-verification red proved, 2026-10-08T12:52:54Z; six of the new cases failed at HEAD.\n\nMutation probe (monkeypatch in a separate process, no tree edit), re-run by the orchestrator:\n- `_plan_outside` False: vr15 and vr16 red.\n- Settlement never read: vr10 and vr16 red, among others.\n- `_ref_known` False: one case red.\n- Parent tree dropped: one case red.\n- Content dedupe off: vr6 and vr18 red, among others.\n- Unmutated: 28 of 28 pass.\n\nObservation left open: a target merged into the branch after the verdict brings its returns to the tip, where they count as read; the docstring names this as not told apart.",
+        "descriptive": "A landing now refuses an unsettled human answer wherever it sits, including a plan stored outside the repo, the target branch, or the target's worktree, and it no longer refuses one that was legitimately settled."
+      },
+      "startedAt": "2026-10-08T12:31:36Z",
+      "completedAt": "2026-10-08T13:04:37Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_close_phase.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T13:04:26Z.ea0978",
+        "status": "passed",
+        "at": "2026-10-08T13:04:26Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "55982b08",
+        "at": "2026-10-08T13:04:37Z",
+        "basis": "orchestrator check: one rule (a verdict settles only what its signing checkout read) over every checkout and both refs; executor's mutation probe re-run, each mutation red, unmutated green"
+      }
+    },
+    {
+      "id": "P118.22-v7t",
+      "title": "a verdict covers only the returns its sign-off read, wherever a later one is filed",
+      "status": "done",
+      "description": "Fixes P118 review round 7 findings R64-R68 by binding the verdict to what it read, so the place a return sits stops deciding. When signoff writes a verdict, it also records on the phase review the content signatures of every filed phase return its own refusal read: the returns in its checkout's evidence, and the tip's committed returns where they differ. At the landing, close-phase gathers every filed phase return it can find: every worktree git lists (prunable ones skipped), the branch tip and the target ref. Each one whose signature is not in the verdict's read set and needs a human is refused, unless a settlement record of any known checkout names it. A return filed after the verdict, in any checkout including the signing one, is therefore never covered by that verdict. A verdict written before this field existed falls back to today's per-place reading, and the documents say so. Every new case is shown red first with its allow twin: the sibling-worktree filing, the switch-away/file/switch-back filing, and the plan-outside tip return settled by the signer after the checkout left the branch. The docstring table, COMPATIBILITY.md, the guide and CHANGELOG claim exactly what holds; the removed-worktree clause and the case citation range are corrected.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/reference/manifest-conventions.md",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "9d254e78",
+      "outcome": {
+        "technical": "Fixes P118-R64 to R68 by binding the verdict to what it read, so the place a return sits stops deciding.\n\n_filed_returns.py holds one definition of each piece both verbs use:\n- READ_RETURNS_FIELD (`readReturns`).\n- return_signature: sha256 over the return's relative name, body and problem. The place is not part of it.\n- read_record and read_set: absent means fall back; an empty list means \"read none\".\n- ref_known and ref_phase_returns, moved here from close-phase.\n- tip_phase_returns.\n\naudit-task.py:\n- signoff computes `_returns_read`: the checkout's evidence returns, plus the tip's committed returns that differ.\n- It runs the unreadable check and the human-settlement stop over that whole set, so a tip-only `diverges` is refused at sign-off rather than recorded as read.\n- It writes review.readReturns, replacing any earlier value. A group sign-off writes each member's own set.\n\nclose-phase.py:\n- every_filed_return gathers returns from every non-prunable worktree git lists, the tip and the target ref.\n- read_set_refusal refuses any reachable return that needs a human and whose signature is not in the read set, unless any known checkout's settlement record names it.\n- A verdict without a read set keeps the per-place reading (verdict_reach_refusal). On that fallback path, a plan outside the repo now settles its tip and target groups through every known checkout (R66).\n- landed_answers_refusal's docstring is rewritten around the rule, with every case cited by name. The removed-worktree clause is corrected (R67), and merge-after-verdict is closed.\n- The schema gains the optional review.readReturns. gen-demo-manifest records why the demo carries no value for it.\n- COMPATIBILITY.md says the guarantee needs a sign-off by a version that writes the field, and that older verdicts keep the per-place reading.\n- manifest-conventions, the build guide (case range replaced by names, R68) and CHANGELOG are updated to match.\n\nCases added:\n- rd1-rd4: signatures.\n- rr1-rr3b, gsp2: the sign-off writes, rewrites and refuses.\n- rs1/rs2: sibling worktree and its byte-identical twin.\n- rs3/rs4: switch-away, file, switch-back, and its twin.\n- rs5/rs5b: a read copy lands after the worktree is removed; the fallback still refuses.\n- rs6/rs6b/rs6c: R66 under the read set and on the fallback.\n- rs7/rs7b: merge-after-verdict.\n\nRed-first: stamp-verification red proved for all three suites (introduced-symbol). Before the implementation, assertion failures were also seen in the shared tree: rr1-rr3b, gsp2, rs1, rs3, rs5, rs6, rs7.\n\nMutation probe (scratchpad v7t2/mut.py, monkeypatch, no tree edit), re-run by the orchestrator, exit 0. All eight rows were KILLED, each with exactly its expected cases red, including the over-fire row that turns the allow twins red.\n\nDecision: the no-verdict gather is also widened to every worktree, which is stricter, and no new case pins it.",
+        "descriptive": "A sign-off now records which filed results it read, and a later result that needs a human is refused at the merge wherever it sits, while copies of results the sign-off read still go through."
+      },
+      "startedAt": "2026-10-08T13:14:17Z",
+      "completedAt": "2026-10-08T14:00:21Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__filed_returns.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T14:00:07Z.f48b15",
+        "status": "passed",
+        "at": "2026-10-08T14:00:07Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9d254e78",
+        "at": "2026-10-08T14:00:21Z",
+        "basis": "orchestrator check: the place-based class (eight instances over seven rounds) is replaced by a read set written at sign-off; mutation probe re-run, eight rows killed with exact cases"
+      }
+    },
+    {
+      "id": "P118.23-v7t",
+      "title": "a human's settlement binds to the answer it settled, not to the return's name",
+      "status": "done",
+      "description": "Fixes P118 review round 8 findings R69-R70. A human's settlement binds to the content it settled, not to the return's name. When the driver records a settlement, it records the settled return's content signature. On the read-set path, close-phase honours a settlement only for a return carrying that signature. A return whose name matches a read row but whose signature differs is refused whatever any record says. A name-only settlement, written before this field existed, is not honoured on the read-set path, and the refusal names how to settle it again. The sign-off asks the tip's returns against the same settlement set the landing honours, which is every non-prunable worktree's record, so signing off from the parent no longer refuses a return settled where the branch is checked out. The schema, COMPATIBILITY.md, the guide, manifest-conventions and CHANGELOG say exactly what a settlement binds. Every new case is shown red first with its allow twin.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/reference/manifest-conventions.md",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "8174c66d",
+      "outcome": {
+        "technical": "Fixes P118-R69 and R70. A human's settlement binds to the content it settled, and the sign-off and the landing read one settlement set.\n\nSettlement record (_filed_returns.py): answersAccepted keeps `keys` and adds `signatures`, a list of {key, sha256}. This is additive, so older readers keep working, and a list lets one key hold several settled contents. needs_human takes `bound` pairs. New pieces:\n- settlement_record / settlement_block, settlements(state_dirs) (a union, with an unreadable record kept as a problem), and settlement_after (the one writer).\n- settled_by_name_only and read_names.\n- project_in_tree and settlement_checkouts(git_root, project, trees), the shared checkout set: the project plus the same project in every non-prunable worktree.\n\ndrive-phase.py: accept writes through settlement_after. The triage matches (key, sha256). An answer settled by key alone is asked again, so the re-settle remedy is reachable.\n\naudit-task.py: the sign-off's human stop reads every record from the shared checkout set and honours only bound pairs. That fixes R70: a sign-off from the parent honours a settlement made in the branch's worktree. It names any answer settled by key alone with the way to settle it again, and says so when the worktree list cannot be read.\n\nclose-phase.py:\n- every_filed_return takes its checkouts from the same helper.\n- read_set_refusal honours only bound pairs.\n- read_set_refusal refuses a later return that needs a human and is filed under a name the verdict read but holds a different answer, whatever any record says (R69, vr7's rule kept on the read-set path).\n- The fallback path is unchanged.\n\nThe schema description, COMPATIBILITY.md, the guide, manifest-conventions, CHANGELOG and both module docstrings now say a settlement binds the answer's content.\n\nCases:\n- hn6-hn12 and rd3n: the record and its readers.\n- sa3s, sa5 and sa5b: the driver.\n- hs1-hs3b: the sign-off, each with its twin.\n- rs8, rs8b, rs9, rs10 and rs10b: the landing.\n\nRed-first: stamp-verification red proved for test__filed_returns (an assertion proof) and, as introduced-symbol proofs, for test_close_phase and test_audit_task. test_drive_phase was could-not-prove: the throwaway run timed out after 147 s.\n\nMutation probe (scratchpad v7t3/mut.py, monkeypatch only), re-run by the orchestrator: exit 0, all six rows KILLED, each with exactly its expected reds, including over-fire twins.",
+        "descriptive": "A person's approval of a reviewer's result now covers that exact result, so a different result filed later under the same name is refused at the merge. A sign-off from the main checkout reads the same approvals the merge does."
+      },
+      "startedAt": "2026-10-08T14:10:28Z",
+      "completedAt": "2026-10-08T15:36:42Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_close_phase.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T15:36:33Z.51d8a9",
+        "status": "passed",
+        "at": "2026-10-08T15:36:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8174c66d",
+        "at": "2026-10-08T15:36:42Z",
+        "basis": "orchestrator check: settlement record binds (key, sha256) and one checkout set is shared by sign-off and landing; mutation probe re-run, six rows killed with exact cases"
+      }
+    },
+    {
+      "id": "P118.24-v7t",
+      "title": "the sign-off refuses over an unreadable settlement record only when an answer waits",
+      "status": "done",
+      "description": "Fixes P118 review round 9 findings R71-R73. The sign-off's human stop first computes which answers are left unsettled, and only then refuses over a settlement record it cannot read, naming that record in the refusal. An unreadable record in another worktree therefore no longer blocks a sign-off with nothing to settle. When a waiting answer comes from the tip and not from this checkout's evidence, the refusal names the checkout whose triage lists it: the worktree holding the branch, or the `git worktree add` that creates one. The schema description's missing space is restored. Every new case is shown red first with its allow twin.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "ec59ec31",
+      "outcome": {
+        "technical": "Fixes P118-R71 to R73.\n\nR71: `_human_settlement` (audit-task.py) now computes which answers still wait (`_fr.needs_human` with the records' bound pairs) before it judges the records. Unreadable records are added to the waiting refusal, one line naming each path. When nothing waits, a broken record in any checkout no longer refuses, the signing checkout's own included. The old worktree read is split into `_worktree_listing` ({top, trees, error}) and `_settlement_checkouts(proj, listing)`, so the settlement set and the holder lookup share one read.\n\nR72: `_tip_only_remedy` handles a waiting answer whose signature is not among this checkout's filed returns. Its remedy names the worktree holding the branch (`_branch_holder`, via `_fr.project_in_tree`), or `git worktree add <dir> <branch>` when none holds it. When the holder is the signing checkout itself, it says to restore the return from the tip into the evidence first. drive-phase.py is untouched.\n\nR73: the schema description's missing space is restored.\n\nCHANGELOG: one sentence in the [Unreleased] settlement paragraph.\n\nCases: hs4, hs4b and hs4c (unreadable records with and without a waiting answer); hs5, hs5b and hs5c (the tip-only remedy and its over-fire twin).\n\nRed-first: stamp-verification red proved; five of the new cases failed at HEAD and pass with the fix. hs5c passes at HEAD by design.\n\nMutation probe (scratchpad v7t4/mut.py, monkeypatch only), re-run by the orchestrator: exit 0, all five rows KILLED, each with exactly its expected reds.",
+        "descriptive": "A sign-off with nothing for a human to settle is no longer blocked by a broken record in another worktree, and a waiting answer committed only at the branch tip now says which checkout lists it."
+      },
+      "startedAt": "2026-10-08T15:49:49Z",
+      "completedAt": "2026-10-08T16:19:22Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T16:19:13Z.87a4f0",
+        "status": "passed",
+        "at": "2026-10-08T16:19:13Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ec59ec31",
+        "at": "2026-10-08T16:19:22Z",
+        "basis": "orchestrator check: waiting computed before record problems; mutation probe re-run, five rows killed with exact cases"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-10-07T21:17:01Z",
+  "testEvidence": {
+    "runId": "2026-10-08T16:32:07Z.276113",
+    "status": "passed",
+    "at": "2026-10-08T16:32:07Z"
+  }
 }

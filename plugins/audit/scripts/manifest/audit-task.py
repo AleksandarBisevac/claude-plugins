@@ -17,7 +17,9 @@ Usage:
                 [--risk low|med|high] [--blocked-by id,id] [--depends-on id,id]
                 [--description TEXT|-] [--tests-mode tdd|regression|gate-only]
                 [--tests-add TEXT ...] [--gate CMD ... | --gate-clear]
-                [--failing-from RUNID] [--dry-run] [--project-dir DIR]
+                [--failing-from RUNID] [--fixes finding,finding] [--dry-run]
+                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py add --from-file PATH [manifest] [--project-dir DIR]
                 [--takeover] [--json]
   audit-task.py add-phase "<title>" [manifest] --outcome "<what success is>|-"
                 [--park] [--id P7] [--description TEXT|-] [--area a,b]
@@ -40,10 +42,17 @@ Usage:
                 [--verified-by t1,t2]
                 [--intent matches|diverges|cannot-tell|not-asked]
                 [--intent-basis TEXT|-] [--override-verdict TEXT|-]
+                [--from-return]
                 [--project-dir DIR] [--takeover] [--json]
+  audit-task.py file-return <taskId> --role executor|reviewer [manifest]
+                [--project-dir DIR] [--takeover] [--json]  < return.json
+  audit-task.py file-return <phaseId> --role reviewer --head <sha> [manifest]
+                [--project-dir DIR] [--takeover] [--json]  < return.json
   audit-task.py move <taskId> --to <phaseId> [manifest]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py block <taskId> --reason "<why>|-" [manifest]
+                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py unblock <taskId> --reason "<the human's why>|-" [manifest]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py note <taskId> --text "<what>|-" [manifest]
                 [--project-dir DIR] [--takeover] [--json]
@@ -104,7 +113,11 @@ Usage:
   --files, --blocked-by, --depends-on and --verified-by repeat too, and each
   value is still split on commas, so `--files a --files b,c` is three paths.
   `add --dry-run` builds the task and validates the plan with it in memory,
-  and writes nothing. Under --json every refusal is one object,
+  and writes nothing. `add --from-file <plan.json>` writes a NEW phase and
+  its tasks from one JSON file {request, openChoices, phase, tasks} under one
+  lock, in one write, revalidated once; a malformed file, a dependency neither
+  the plan nor the file holds, or another `add` flag beside it is refused
+  with nothing written (`batch_problems` reads the file's shape). Under --json every refusal is one object,
   {ok: false, exit, refused, findings}, never prose on stdout.
   A --tests-add value reaches `files` through the PATH it names, written as
   "<path>: <what it asserts>"; the field is free prose, so an entry
@@ -303,6 +316,7 @@ Stdlib only, Python 3.8 compatible.
 import argparse
 import json
 import os
+import pathlib
 import re
 import subprocess
 import sys
@@ -372,6 +386,13 @@ import _id_shape              # noqa: E402  (the one answer to which id comes ne
                               # branch suffix that keeps two branches from minting it twice)
 import _evidence_io           # noqa: E402  (read_rows: the runs a move leaves keyed
                               # to the old id, which `move` reports)
+import _loader                # noqa: E402  (load_hooks_config: where the driver's state,
+                              # and so a human's settlement of an answer, lives)
+import _filed_returns as _fr  # noqa: E402  (a filed return's path, shape and
+                              # write-once create, shared with the brief and the commit;
+                              # and the landing property, shared with close-phase.py)
+import _config_rules          # noqa: E402  (review_per_task_mode: the one reading of
+                              # `review.perTask`, refused rather than defaulted)
 import _gate_derive           # noqa: E402  (is_shared_key, path_scoped_sibling,
                               # repointed: a TASK's own gate and a PHASE's derived
                               # one ask the same three questions, so both entry
@@ -2731,6 +2752,37 @@ def _build_task(task_id, title, args, phase, assembled, failing_row=None,
     return task, unnamed, gate_basis
 
 
+def _fixes_targets(assembled, phase, fixes):
+    """`(findings, None)` - the review findings `--fixes` names, each of the new
+    task's own phase and naming no task yet - or `(None, refusal)` naming every
+    one that is not. A finding of another phase would key an exception the task's
+    landing is never asked about, and one already naming a task belongs to it."""
+    if not fixes:
+        return [], None
+    own = dict((str(f.get("id")), f) for f in
+               ((phase.get("review") or {}).get("findings") or [])
+               if isinstance(f, dict))
+    found, bad = [], []
+    for fid in fixes:
+        entry = own.get(fid)
+        if entry is None:
+            elsewhere = [str(ph.get("id")) for ph, _i in _finding_hits(assembled, fid)]
+            bad.append("%s is %s" % (fid, "a finding of %s, not of %s"
+                                     % (", ".join(elsewhere), phase.get("id"))
+                                     if elsewhere else "no finding of %s"
+                                     % (phase.get("id"),)))
+        elif entry.get("fixTask"):
+            bad.append("%s already names %s as its fix task" % (fid,
+                                                                entry["fixTask"]))
+        else:
+            found.append(entry)
+    if bad:
+        return None, ("[audit-task] --fixes names only findings of the task's own "
+                      "phase that name no fix task yet: %s. Nothing written."
+                      % ("; ".join(bad),))
+    return found, None
+
+
 def _locked_add(args, project, config, mpath, title, out):
     """Everything between acquire and release: read, allocate, mutate, write,
     validate-from-disk, roll back on findings, journal, report."""
@@ -2790,11 +2842,23 @@ def _locked_add(args, project, config, mpath, title, out):
         if refusal:
             out(refusal)
             return E_USAGE
+    fixes = _split_csv(args.fixes)
+    targets, refusal = _fixes_targets(assembled, phase, fixes)
+    if refusal:
+        out(refusal)
+        return E_USAGE
 
     task_id = _allocate_id(assembled, phase_id, _mint_suffix(mpath, assembled))
     task, unnamed_add, gate_basis = _build_task(task_id, title, args, phase,
                                                 assembled, failing_row,
                                                 project)
+    if fixes:
+        # ONE WRITE, BOTH HALVES: the task's `fixes` and each finding's
+        # `fixTask`, which is what lets the task close `not-asked` under
+        # `review.perTask: phase` - and a link either half lacked would end it.
+        task["fixes"] = list(fixes)
+        for entry in targets:
+            entry["fixTask"] = task_id
     # THE STAT IS OF THE FILE THE SUFFIX POINTS AT, NOT OF THE ENTRY'S OWN
     # SPELLING. A schema-legal `a/b.py:12-34` is a real, existing `a/b.py`, and
     # `os.path.exists` asked of the raw string can only ever say no -- reporting
@@ -3737,7 +3801,8 @@ def _claim_line(plan, phase_id):
     return None
 
 
-def _start_details(task_id, phase_id, was, task, forced=None, claim_rows=None):
+def _start_details(task_id, phase_id, was, task, forced=None, claim_rows=None,
+                   head=None):
     """The `details` block for a `task.start` row, built where a case can read it.
 
     SEPARATE FROM THE APPEND ON PURPOSE. `_journal_io` drops a key that is not on
@@ -3767,6 +3832,10 @@ def _start_details(task_id, phase_id, was, task, forced=None, claim_rows=None):
         details["mode"] = "forced"
         details["reason"] = forced["reason"]
         details["basis"] = "; ".join(_forced_past(forced))
+    # The HEAD this start was taken at: where a later `done --no-change` starts
+    # the span it asks git about (`_start_head`). Absent outside git.
+    if head:
+        details["commit"] = head
     return details
 
 
@@ -3785,7 +3854,8 @@ def _forced_past(forced):
 
 
 def _journal_start(project, config, mpath, task_id, phase_id, was, task,
-                   healed=None, entry=None, forced=None, claim_rows=None):
+                   healed=None, entry=None, forced=None, claim_rows=None,
+                   head=None):
     """The `task.start` row: what the promotion moved, and which attempt it is.
 
     `changes` AND `attempt`, both already on `_journal_io.DETAILS_KEYS` --
@@ -3834,7 +3904,8 @@ def _journal_start(project, config, mpath, task_id, phase_id, was, task,
         # phase" is looking for.
         summary += "; taken over from session %s (%s)" % (
             takeover[0]["from"], takeover[0]["to"])
-    details = _start_details(task_id, phase_id, was, task, forced, claim_rows)
+    details = _start_details(task_id, phase_id, was, task, forced, claim_rows,
+                             head)
     if (entry or {}).get("state") in ("cut", "adopt"):
         summary += "; branch %s %s" % (entry["branch"], "cut from %s" % entry["parent"]
                                        if entry["state"] == "cut" else "recorded")
@@ -4037,7 +4108,9 @@ def _locked_start(args, project, config, mpath, tid, out):
             "(reference/orchestrator.md, Execute the task, step 2) - "
             "`audit-task.py block %s --reason \"<attempts exhausted: the last red "
             "gate's reason>\"` - which this verb will not do on its own because "
-            "that transition also owes an ADO echo." % (tid, attempts, ceiling, tid))
+            "that transition also owes an ADO echo. Once the human says try "
+            "again, `audit-task.py unblock %s --reason \"<their words>\"` resets "
+            "the count." % (tid, attempts, ceiling, tid, tid))
         return E_USAGE
     # READINESS IS REFUSED HERE, and read from `_status_facts.unmet_refs` through
     # `_waiting_on` rather than restated: a second copy of the rule is what let
@@ -4053,6 +4126,13 @@ def _locked_start(args, project, config, mpath, tid, out):
             "(/audit:status lists what is ready now), or start it anyway "
             "with --force --reason \"<why>\", which the task.start row "
             "records." % (tid, ", ".join(waiting)))
+        return E_USAGE
+
+    # The PHASE's key, never the task's: a task moved in with its own keeps it,
+    # and the phase it joined still records what the config read at its start.
+    start_key, _source, refusal = _review_key_for(config, None, phase)
+    if refusal:
+        out(refusal)
         return E_USAGE
 
     git_root = os.path.abspath(os.path.join(project,
@@ -4118,6 +4198,12 @@ def _locked_start(args, project, config, mpath, tid, out):
                       "kept": _claim_kept(claim) if contested else None}
 
         was = _start_task(node, now)
+        # `review.perTask`, ONCE PER PHASE AND KEPT BY THE TASK: the phase's first
+        # start records the live value, each task copies its phase's at its own
+        # first start, and a later start keeps what is there - so a key switched
+        # mid-phase, or a task moved to a phase that reads otherwise, keeps the
+        # reading its work began under.
+        _record_key(node, phase, start_key)
         if entry["state"] in ("cut", "adopt"):
             phase["branch"] = entry["branch"]
             if not phase.get("baseRef"):
@@ -4190,7 +4276,8 @@ def _locked_start(args, project, config, mpath, tid, out):
         raise
 
     jres = _journal_start(project, config, mpath, tid, phase_id, was, node,
-                          healed, entry, forced, claim_rows)
+                          healed, entry, forced, claim_rows,
+                          _examined_head(git_root))
     entry_warnings = (_entry_warnings(phase)
                       if healed or entry["state"] in ("cut", "adopt") else [])
     index_note = _index_dirty_note(written, mpath, project, phase_id)
@@ -4277,6 +4364,203 @@ def _locked_start(args, project, config, mpath, tid, out):
         out(entry_line)
     if index_note:
         out(index_note)
+    return 0
+
+
+# --- file-return: the one write a returning agent makes ---------------------------
+# AN AGENT'S RETURN USED TO BE PROSE THE MAIN LOOP READ AND RETYPED, so nothing
+# checked its shape and the close carried whatever the retyping kept. A return is
+# now FILED: the agent hands its JSON to this verb on stdin, the verb checks the
+# shape its role declares, and writes it once to a path it derives itself. `done`
+# and the reviewer's computed brief read the file, never a transcription.
+#
+# NO PATH ARGUMENT, AND THAT IS THE GUARANTEE. The reviewer may make exactly this
+# one write, so the verb decides where it lands: `_filed_returns.return_path`
+# under the evidence directory, which travels in the close commit so a clone
+# receives the claim beside the gate row it can be compared with. The path, the
+# shape each role owes and the exclusive create are `_filed_returns`'s, shared
+# with `audit-lookup.py brief` and `commit-task-work.py`, which read the file.
+# WHAT NOTHING CHECKS: the task id and the role are the caller's word. A filing
+# under the wrong role, or for a task nobody has filed for yet, is not refused.
+
+# What reads as a path rather than an id: a separator, a parent step, a leading
+# dot, or a drive colon.
+_PATHLIKE = re.compile(r"[/\\:]|\.\.|^\.")
+
+
+def return_path(project, mpath, task, role):
+    """Absolute path of `task`'s `role` return for its current start, under THIS
+    manifest's evidence directory (`_evidence_io.project_config_for`, the
+    resolution every ledger reader makes), or None with no start recorded."""
+    proj, cfg = _evidence_io.project_config_for(mpath, project)
+    return _fr.return_path(_evidence_io.evidence_dir(proj, cfg), task, role)
+
+
+def _file_return_refusal(tid, role):
+    """The door's refusal for an argument that names a path, or None."""
+    for label, value in (("task id", tid), ("role", role)):
+        if _PATHLIKE.search(value or "") or os.path.isabs(value or ""):
+            return ("[audit-task] file-return takes no path: the %s %r reads as "
+                    "one. The verb derives the one file it writes from the task "
+                    "id, the role and the task's current start - pass the id "
+                    "and --role %s."
+                    % (label, value, "|".join(_fr.RETURN_ROLES)))
+    if role not in _fr.RETURN_ROLES:
+        return ("[audit-task] file-return needs --role %s, got %r"
+                % ("|".join(_fr.RETURN_ROLES), role))
+    return None
+
+
+def cmd_file_return(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    tid = (args.title or "").strip()
+    if not tid:
+        out("[audit-task] file-return needs a task id")
+        return E_USAGE
+    role = (args.role or "").strip()
+    head = (args.head or "").strip() or None
+    refusal = _file_return_refusal(tid, role)
+    if refusal is None and head is not None:
+        refusal = (_file_return_refusal(head, role)
+                   or ("[audit-task] REFUSED: %s. Nothing written."
+                       % (_fr.head_problem(head),) if _fr.head_problem(head)
+                       else None))
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    text = sys.stdin.read() if not sys.stdin.isatty() else ""
+    try:
+        body = json.loads(text)
+    except ValueError as exc:
+        out("[audit-task] file-return reads the return as JSON on stdin, and "
+            "what arrived does not parse (%s) -- nothing written" % (exc,))
+        return E_USAGE
+    # A PHASE return's shape is judged under the lock, against the phase it
+    # names: whether an entry is owed depends on the plan as it stands.
+    problems = [] if head is not None else _fr.return_problems(role, body)
+    if problems:
+        out("[audit-task] REFUSED: the %s return for %s does not have the shape "
+            "its role declares -- nothing written:" % (role, tid))
+        for line in problems:
+            out("  " + line)
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_file_return(
+                           args, project, mpath, tid, role, text, out,
+                           config=config, head=head, body=body))
+
+
+def _phase_return_refusal(project, config, mpath, phase, role, head, body):
+    """`(path, None)` for a phase return that may be filed, or `(None, refusal)`:
+    the reviewer's role, a head, no sign-off verdict recorded on the phase, a
+    readable record of the returns already filed, and every entry
+    `_fr.phase_return_problems` asks for."""
+    pid = str(phase.get("id"))
+    if role != "reviewer":
+        return None, ("[audit-task] %s is a PHASE, and a phase return is the "
+                      "phase reviewer's: --role reviewer. Nothing written." % (pid,))
+    if head is None:
+        return None, ("[audit-task] a phase return for %s needs --head <sha>, the "
+                      "head its brief was computed at (audit-lookup.py brief %s "
+                      "--role phase names it). Nothing written." % (pid, pid))
+    # A RECORDED VERDICT SETTLES WHAT ITS SIGN-OFF READ: close-phase lands an
+    # answer only a human settles once a verdict is recorded where that
+    # sign-off could have read it, because the verb refuses while one is
+    # unsettled. A return filed after the verdict in that checkout is one that
+    # refusal never saw. Only this checkout's copy is asked here; a copy at the
+    # fork - the parent's - lets the filing through, and close-phase refuses
+    # what lands there (`unseen_returns`).
+    signed = _signed_off_refusal(phase, "a phase return filed now")
+    if signed:
+        return None, "%s Nothing written." % (signed,)
+    proj, cfg = _evidence_io.project_config_for(mpath, project)
+    evdir = _evidence_io.evidence_dir(proj, cfg)
+    filed = _fr.phase_returns(evdir, pid)
+    unread = [why for _rel, _body, why in filed if why]
+    if unread:
+        return None, ("[audit-task] REFUSED: a phase return already filed for %s "
+                      "cannot be read, so which commits it answers is unknown: %s. "
+                      "Nothing written." % (pid, "; ".join(unread)))
+    live, problem = _config_rules.review_per_task_mode(config)
+    if problem and any(_fr.review_key(t, phase, None)[1] == "config"
+                       for t in phase.get("tasks") or [] if isinstance(t, dict)):
+        return None, "[audit-task] REFUSED: %s. Nothing written." % (problem,)
+    problems = _fr.phase_return_problems(body, phase, live,
+                                         _fr.answered_entries(filed))
+    if problems:
+        return None, ("[audit-task] REFUSED: the phase return for %s does not "
+                      "answer what it owes -- nothing written:\n%s"
+                      % (pid, "\n".join("  " + p for p in problems)))
+    return os.path.join(evdir, *_fr.phase_return_rel(pid, head).split("/")), None
+
+
+def _locked_file_return(args, project, mpath, tid, role, text, out, config=None,
+                        head=None, body=None):
+    """Write one return, once. The manifest is read for the task's current start,
+    or for a phase return the tasks it owes, and never written."""
+    try:
+        assembled = _mio.load_manifest(mpath)
+    except Exception as exc:
+        out("[audit-task] cannot read/assemble manifest: %s" % exc)
+        return E_USAGE
+    kind, node, _phase = _find_target(assembled, tid)
+    if kind == "phase":
+        path, refusal = _phase_return_refusal(project, config, mpath, node, role,
+                                              head, body)
+        if refusal:
+            out(refusal)
+            return E_USAGE
+        return _file_once_report(args, project, path, tid, role, text, out,
+                                 {"head": head})
+    if kind != "task":
+        out("[audit-task] no task with id %r in %s" % (tid, mpath))
+        return E_USAGE
+    if head is not None:
+        out("[audit-task] --head keys a PHASE return, and %s is a task: its "
+            "return is keyed on its current start. Nothing written." % (tid,))
+        return E_USAGE
+    if node.get("status") in _mio.TERMINAL:
+        out("[audit-task] %s is already %s -- a return filed after the close is "
+            "one the close never read" % (tid, node.get("status")))
+        return E_USAGE
+    path = return_path(project, mpath, node, role)
+    if path is None:
+        out("[audit-task] %s records no start (`startedAt`), so there is no "
+            "current start to file a return under -- /audit:task start %s "
+            "first" % (tid, tid))
+        return E_USAGE
+    return _file_once_report(args, project, path, tid, role, text, out,
+                             {"startedAt": node.get("startedAt")})
+
+
+def _file_once_report(args, project, path, tid, role, text, out, keyed):
+    """The exclusive create and its report, for a task's return and a phase's
+    alike; `keyed` is what the path was keyed on, for `--json`."""
+    rel = _output.posix_rel(path, project)
+    try:
+        _fr.file_once(path, text)
+    except FileExistsError:
+        out("[audit-task] REFUSED: the %s return for %s is already filed for this "
+            "%s (%s) -- it stays as filed. A re-spawn files after "
+            "/audit:task start re-stamps the start, and a phase review after "
+            "fix tasks files under the new head." % (
+                role, tid, "head" if "head" in keyed else "start", rel))
+        return E_USAGE
+    except OSError as exc:
+        out("[audit-task] the return could not be written (%s) -- nothing "
+            "filed" % (exc,))
+        return E_INVALID
+    if args.as_json:
+        result = {"ok": True, "id": tid, "role": role, "written": [rel]}
+        result.update(keyed)
+        result.update(project_basis_key(args))
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    out("[audit-task] %s %s return filed" % (tid, role))
+    out("  written: %s" % (rel,))
     return 0
 
 
@@ -4382,8 +4666,100 @@ def _examined_head(git_root):
     return head if code == 0 and _SHA_SHAPE.match(head or "") else None
 
 
+def _start_head(project, config, task):
+    """The HEAD the task's current start recorded on its `task.start` row, or
+    None when no row of this attempt names one - a journal off, a start older
+    than the record, or a project outside git."""
+    if not _journal_io.enabled(config):
+        return None
+    try:
+        rows = _journal_io.read_all(project, config=config)
+    except Exception:
+        return None
+    head = None
+    for row in rows:
+        details = (row or {}).get("details") if isinstance(row, dict) else None
+        if (row.get("action") == "task.start" and isinstance(details, dict)
+                and details.get("taskId") == task.get("id")
+                and details.get("attempt") == task.get("attempts")):
+            head = details.get("commit") or None
+    return head if _SHA_SHAPE.match(head or "") else None
+
+
+def _no_change_moves(project, git_root, phase, task, plan=None, start_head=None):
+    """`([sentence, ...], [note, ...])` - each way `task`'s declared files
+    changed since it started, and each declared entry git cannot be asked
+    about. A move is a commit in the span touching one, or an uncommitted
+    change to one. Both empty when git cannot be asked at all - a project
+    outside git closes no-change with `examinedAt` null, which the close says.
+
+    EACH ENTRY IS READ RELATIVE TO THE GIT ROOT, the way the task commit
+    stages it: `files` are project-relative, and a repository in a
+    subdirectory of the project would otherwise be handed paths that match
+    nothing. An entry outside the git root is named in the notes, never
+    dropped in silence.
+
+    THE SPAN STARTS AT THE HEAD THE START RECORDED (`start_head`), so a
+    commit already in the branch when the task started is never this task's,
+    whatever date it carries. Without one it starts at the phase's `baseRef`
+    and is cut by the start's committer date - which counts a commit made
+    before the start and dated after it - and a commit another task of the
+    plan records as its own is then left out: it is that task's work."""
+    notes, files = [], []
+    for entry in sorted(set(_vocab._strip_line_suffix(f).strip()
+                            for f in (task.get("files") or [])
+                            if isinstance(f, str) and f.strip())):
+        rel = _invariants._rel(os.path.join(project, entry), git_root)
+        if rel is None:
+            notes.append("  %s lies outside the git root %s, so whether it "
+                         "changed is NOT ASKED" % (entry, git_root))
+        else:
+            files.append(rel)
+    if not files:
+        return [], notes
+    code, _top = _git_answer(git_root, "rev-parse", "--show-toplevel")
+    if code != 0:
+        return [], notes
+    moved = []
+    since, others = [], set()
+    if start_head and _git_answer(git_root, "rev-parse", "--verify", "-q",
+                                  "%s^{commit}" % (start_head,))[0] == 0:
+        span = "%s..HEAD" % (start_head,)
+    else:
+        base = phase.get("baseRef")
+        span = "%s..HEAD" % (base,) if base and _git_answer(
+            git_root, "rev-parse", "--verify", "-q",
+            "%s^{commit}" % (base,))[0] == 0 else "HEAD"
+        since = ["--since=%s" % (task["startedAt"],)] if task.get("startedAt") else []
+        others = set(str(t.get("commit")) for t in _mio.tasks_by_id(
+            plan or {"phases": [phase]}).values()
+            if isinstance(t, dict) and t.get("commit")
+            and t.get("id") != task.get("id"))
+    # A declared directory lists the files under it, so a commit line is told
+    # apart by its own marker rather than by not being a declared path.
+    code, log = _git_answer(git_root, *(["log", "--format=@%H", "--name-only"]
+                                        + since + [span, "--"] + files))
+    if code == 0:
+        commit = None
+        for line in [ln.strip() for ln in log.splitlines() if ln.strip()]:
+            if line.startswith("@"):
+                commit = line[1:]
+            elif commit and commit not in others:
+                moved.append("%s changed in commit %s" % (line, commit[:7]))
+    code, status = _git_answer(git_root, "status", "--porcelain",
+                               "--untracked-files=all", "--", *files)
+    if code == 0:
+        # `_git_answer` strips the output, so the first line may have lost the
+        # blank its status code opens with: the code is cut by shape, not width.
+        moved += ["%s has an uncommitted change"
+                  % (re.sub(r"^\s*\S{1,2} ", "", line).strip(),)
+                  for line in status.splitlines() if line.strip()]
+    return moved, notes
+
+
 def _done_task(task, now, commit, descriptive, technical, verified, intent,
-               intent_basis=None, no_change=None):
+               intent_basis=None, no_change=None, red_first=None,
+               intent_return=None):
     """Close one task; returns the values it held before.
 
     THE FIELDS ARE `reference/orchestrator.md`'s STEP 4 VERBATIM -- 4b's *Set
@@ -4418,6 +4794,11 @@ def _done_task(task, now, commit, descriptive, technical, verified, intent,
     by the door and written beside it: a skip with no reason on the record reads
     exactly like a reviewer call that never came back.
 
+    `red_first` IS THE EXECUTOR'S FILED BLOCK, copied onto `task.redFirst` when
+    the close reads the filed returns; None leaves the field as it was. And
+    `intent_return` names the filed reviewer return an answer was read from, so
+    the record says the word came off a file and not off a flag.
+
     `no_change` IS THE CLOSE WITH NO COMMIT, `{reason, examinedAt}` into
     `outcome.noChange`: `commit` stays None because nothing was committed, and
     the HEAD that was examined is what the claim "nothing needed to change" was
@@ -4435,6 +4816,7 @@ def _done_task(task, now, commit, descriptive, technical, verified, intent,
            "technical": prior.get("technical"),
            "noChange": prior.get("noChange"),
            "verifiedBy": task.get("verifiedBy"),
+           "redFirst": task.get("redFirst"),
            "intentCheck": task.get("intentCheck")
            if isinstance(task.get("intentCheck"), dict) else None}
     task["status"] = "done"
@@ -4457,6 +4839,10 @@ def _done_task(task, now, commit, descriptive, technical, verified, intent,
         task["intentCheck"] = {"answer": intent, "commit": commit, "at": now}
         if intent_basis is not None:
             task["intentCheck"]["basis"] = intent_basis
+        if intent_return is not None:
+            task["intentCheck"]["return"] = intent_return
+    if red_first is not None:
+        task["redFirst"] = dict(red_first)
     return was
 
 
@@ -4493,6 +4879,9 @@ def _done_changes(tid, was, task):
     if task.get("intentCheck") != was["intentCheck"]:
         rows.append({"id": tid, "field": "intentCheck",
                      "from": was["intentCheck"], "to": task.get("intentCheck")})
+    if task.get("redFirst") != was.get("redFirst"):
+        rows.append({"id": tid, "field": "redFirst",
+                     "from": was.get("redFirst"), "to": task.get("redFirst")})
     return rows
 
 
@@ -4599,6 +4988,146 @@ def _gate_key(gate, refusal, override):
             "overrideReason": override if refusal else None}
 
 
+def _close_returns(project, mpath, node, from_return):
+    """`(filed, refusal)` - the returns a close reads, for the task's CURRENT
+    start only, keyed by role as `(rel, body)`; a return from an earlier start is
+    at another path and is never read.
+
+    The executor's is read only under `--from-return`, which is the one form that
+    takes anything from it; a filed file that will not parse refuses the close
+    rather than reading as absent."""
+    filed = {}
+    roles = ("executor", "reviewer") if from_return else ("reviewer",)
+    for role in roles:
+        path = return_path(project, mpath, node, role)
+        _text, body, problem = _fr.read_filed_return(path)
+        if problem:
+            return None, ("[audit-task] REFUSED: the filed %s return %s -- "
+                          "nothing written" % (role, problem))
+        if body is not None:
+            filed[role] = (_output.posix_rel(path, project), body)
+    return filed, None
+
+
+# Where a task's `review.perTask` value was read, in the words a refusal says it.
+_KEY_SOURCES = {"task": "recorded on the task", "phase": "recorded on its phase",
+                "config": "the config's value, which no start recorded yet"}
+
+
+def _review_key_for(config, task, phase):
+    """`(key, source, refusal)` - `_fr.review_key` with the live config read only
+    where neither the task nor its phase records a key, and a config value
+    outside the vocabulary refused rather than read as the default."""
+    key, source = _fr.review_key(task, phase, None)
+    if source != "config":
+        return key, source, None
+    live, problem = _config_rules.review_per_task_mode(config)
+    if problem:
+        return None, source, ("[audit-task] REFUSED: %s. Nothing written."
+                              % (problem,))
+    return live, source, None
+
+
+def _record_key(task, phase, key):
+    """Write `key` onto `task` and onto `phase` where either records none; the
+    `changes` rows for what moved."""
+    rows = []
+    for node, kind in ((phase, "phase"), (task, "task")):
+        if not node.get(_fr.REVIEW_KEY_FIELD):
+            node[_fr.REVIEW_KEY_FIELD] = key
+            rows.append({"id": node.get("id"), "field": _fr.REVIEW_KEY_FIELD,
+                         "from": None, "to": key})
+    return rows
+
+
+def _close_intent(args, tid, filed, no_change, held, fix_task):
+    """`(intent, basis, intent_return, refusal)` - the intent answer a close
+    records, and the rule every close that passes `--commit` is held to.
+
+    THE RULE SITS HERE, ON EVERY FORM, AND NOT ON `--from-return` ALONE: a plain
+    `done --commit --intent matches` closed with no review behind it, and a plain
+    `done --commit` closed recording no answer at all, so a rule on one form
+    would leave the other two as the way past it.
+
+      * a reviewer return filed for the current start IS the answer, and a typed
+        `--intent` word that differs from it is refused, `not-asked` included -
+        a typed word cannot replace an answer a reviewer filed;
+      * with none filed, only `--intent not-asked` with its basis closes;
+      * a `--no-change` close has no diff to bind and keeps the rule it had.
+
+    UNDER `review.perTask: phase` THE CLOSE WRITES ITS OWN WORD, `deferred`, and
+    refuses every `--intent` word, `not-asked` included: the three answers are
+    the phase review's, and a word typed here would be one sign-off counts as
+    answered. The one exception is a fix task the plan records as one
+    (`_fr.is_fix_task`), which closes `not-asked` with its basis and in no other
+    form: the phase review owes it no answer (`_fr.owed_answer`), so a
+    `deferred` it recorded would hold sign-off with nothing that could answer
+    it. A filed per-task reviewer return is not read under this key either.
+    `held` is `(key, where it was read)`.
+    """
+    if no_change:
+        return args.intent, args.intent_basis, None, None
+    key, source = held
+    if key == _fr.KEY_PHASE:
+        if args.intent == "not-asked" and fix_task:
+            return args.intent, args.intent_basis, None, None
+        if args.intent is None and fix_task:
+            return None, None, None, (
+                "[audit-task] REFUSED: %s is a fix task `add --fixes` recorded, "
+                "and review.perTask reads `phase` (%s): the phase review owes a "
+                "fix task no answer, so a `deferred` close could never be "
+                "answered and sign-off would refuse it for good. Close it "
+                "--intent not-asked --intent-basis \"<why>\" - the next review "
+                "round reads its findings. Nothing written."
+                % (tid, _KEY_SOURCES[source]))
+        if args.intent is None:
+            return _fr.INTENT_DEFERRED, None, None, None
+        return None, None, None, (
+            "[audit-task] REFUSED: %s's review.perTask reads `phase` (%s), so "
+            "its three review answers are the phase review's and --intent %s is "
+            "not this close's to give. Close it with no --intent, which records "
+            "`deferred`; sign-off writes the phase review's answers. Only a fix "
+            "task `add --fixes` recorded may close --intent not-asked with its "
+            "basis. Nothing written." % (tid, _KEY_SOURCES[source], args.intent))
+    reviewer = filed.get("reviewer")
+    if reviewer is not None:
+        rel, body = reviewer
+        answer = (body.get("intent") or {}).get("answer")
+        if args.intent is not None and args.intent != answer:
+            return None, None, None, (
+                "[audit-task] REFUSED: %s's reviewer return (%s) answers %r, and "
+                "--intent %s differs from it -- a typed word does not replace "
+                "an answer a reviewer filed. Nothing written; drop --intent to "
+                "record the filed answer." % (tid, rel, answer, args.intent))
+        return answer, None, rel, None
+    if args.intent == "not-asked":
+        return args.intent, args.intent_basis, None, None
+    return None, None, None, (
+        "[audit-task] REFUSED: %s closes against a commit with no reviewer "
+        "return filed for its current start, so nothing on the record answers "
+        "whether the diff does what the task asked. File the reviewer's return "
+        "(audit-task.py file-return %s --role reviewer), or say the question was "
+        "deliberately not put: --intent not-asked --intent-basis \"<why>\". "
+        "Nothing written." % (tid, tid))
+
+
+def _from_return_values(filed, tid):
+    """`(values, refusal)` - what `--from-return` takes off the executor's filed
+    return: the outcome halves, `verifiedBy` from `testsAdded`, and `redFirst`."""
+    executor = filed.get("executor")
+    if executor is None:
+        return None, ("[audit-task] REFUSED: --from-return closes from the "
+                      "executor's filed return, and none is filed for %s's "
+                      "current start (audit-task.py file-return %s --role "
+                      "executor). Nothing written." % (tid, tid))
+    body = executor[1]
+    outcome = body.get("outcome") or {}
+    return {"descriptive": outcome.get("descriptive"),
+            "technical": outcome.get("technical"),
+            "verified": list(body.get("testsAdded") or []),
+            "redFirst": body.get("redFirst")}, None
+
+
 def _still_open(phase):
     """The ids in `phase` that are not finished -- `_mio.TERMINAL` is the word.
 
@@ -4692,7 +5221,7 @@ def _locked_done(args, project, config, mpath, tid, out):
     # two verdicts would then disagree about one manifest.
     git_root = os.path.abspath(os.path.join(project,
                                             (config or {}).get("gitRoot") or "."))
-    no_change, unverified = None, None
+    no_change, unverified, unasked = None, None, []
     if args.no_change:
         # A BUG IS NEVER FIXED WITHOUT A FIX COMMIT. A done fix task derives its
         # bug `fixed` whatever its commit, so a no-change close would store the bug
@@ -4713,6 +5242,16 @@ def _locked_done(args, project, config, mpath, tid, out):
                 "...), then record the verdict on the bug: /audit:bug close %s "
                 "not_a_bug|wontfix" % (tid, ", ".join(bugs), tid, bugs[0]))
             return E_USAGE
+        moved, unasked = _no_change_moves(
+            project, git_root, phase, node, plan=assembled,
+            start_head=_start_head(project, config, node))
+        if moved:
+            out("[audit-task] REFUSED: %s closes --no-change, and its declared "
+                "files did change: %s. A close with no commit is never asked "
+                "for review answers, so it is held to having none to give - "
+                "close it --commit <sha> naming the work, or put the files back. "
+                "Nothing written." % (tid, "; ".join(moved)))
+            return E_USAGE
         sha = None
         no_change = {"reason": args.reason.strip(),
                      "examinedAt": _examined_head(git_root)}
@@ -4726,6 +5265,20 @@ def _locked_done(args, project, config, mpath, tid, out):
         if refusal:
             out(refusal)
             return E_USAGE
+    key, key_source, refusal = _review_key_for(config, node, phase)
+    filed = {}
+    if refusal is None:
+        filed, refusal = _close_returns(project, mpath, node, args.from_return)
+    if refusal is None:
+        intent, intent_basis, intent_return, refusal = _close_intent(
+            args, tid, filed, no_change is not None, (key, key_source),
+            _fr.is_fix_task(node, phase))
+    from_values = None
+    if refusal is None and args.from_return:
+        from_values, refusal = _from_return_values(filed, tid)
+    if refusal:
+        out(refusal)
+        return E_USAGE
     gate = _close_gate(project, mpath, assembled, phase, node)
     override = (args.override_verdict or "").strip() or None
     refused = _vb.close_refusal(gate)
@@ -4747,9 +5300,18 @@ def _locked_done(args, project, config, mpath, tid, out):
 
     now = _utc_now()
     verified = None if args.verified_by is None else _split_csv(args.verified_by)
-    was = _done_task(node, now, sha, args.descriptive, args.technical, verified,
-                     args.intent, intent_basis=args.intent_basis,
-                     no_change=no_change)
+    descriptive, technical, red_first = args.descriptive, args.technical, None
+    if from_values is not None:
+        descriptive, technical = (from_values["descriptive"],
+                                  from_values["technical"])
+        verified, red_first = from_values["verified"], from_values["redFirst"]
+    was = _done_task(node, now, sha, descriptive, technical, verified,
+                     intent, intent_basis=intent_basis,
+                     no_change=no_change, red_first=red_first,
+                     intent_return=intent_return)
+    # The key this close was held to, kept where nothing recorded one: a task
+    # blocked from `pending` reaches here with no `start` having written it.
+    _record_key(node, phase, key)
     phase_id = phase.get("id")
     # A bug this task fixes derives `fixed` (and its `fixedIn`) from this close, so
     # both are stored on the bug - in the index, which is where `bugs[]` lives.
@@ -4807,6 +5369,9 @@ def _locked_done(args, project, config, mpath, tid, out):
                   "commitVerified": (None if no_change is not None
                                      else unverified is None),
                   "noChange": no_change,
+                  # Declared entries outside the git root, which no-change
+                  # could not ask git about - named, never dropped.
+                  "noChangeUnasked": [n.strip() for n in unasked],
                   "was": was["status"],
                   "outcome": {"descriptive": outcome.get("descriptive"),
                               "technical": outcome.get("technical")},
@@ -4815,6 +5380,7 @@ def _locked_done(args, project, config, mpath, tid, out):
                   # word `intentCheck.answer` can hold - a close with no such
                   # answer must not render as one that agrees.
                   "intentCheck": node.get("intentCheck"),
+                  "redFirst": node.get("redFirst"),
                   "changes": _done_changes(tid, was, node),
                   "phaseOpenTasks": open_left,
                   "phaseComplete": not open_left,
@@ -4840,6 +5406,8 @@ def _locked_done(args, project, config, mpath, tid, out):
                                   "NOT RECORDED -- git could not name HEAD here, "
                                   "so the claim names no commit it was measured "
                                   "against",))
+        for line in unasked:
+            out(line)
     else:
         out("  commit %s" % (node.get("commit"),))
     if unverified:
@@ -4869,10 +5437,16 @@ def _locked_done(args, project, config, mpath, tid, out):
         out("  intentCheck: %s (commit %s)%s"
             % (intent_check["answer"], intent_check.get("commit") or "none",
                " -- basis: %s" % intent_check["basis"]
-               if intent_check.get("basis") else ""))
+               if intent_check.get("basis") else
+               " -- review.perTask reads phase: the phase review answers it, "
+               "and sign-off refuses until it does"
+               if intent_check["answer"] == _fr.INTENT_DEFERRED else ""))
     else:
         out("  intentCheck: NO ANSWER RECORDED -- pass --intent %s"
             % ("|".join(INTENT_ANSWERS),))
+    if red_first is not None:
+        out("  redFirst: %s, from the executor's filed return"
+            % ((node.get("redFirst") or {}).get("status"),))
     if open_left:
         out("  %s still has open work: %s" % (phase_id, ", ".join(open_left)))
     else:
@@ -5318,6 +5892,103 @@ def _locked_block(args, project, config, mpath, tid, reason, out):
     return 0
 
 
+# `unblock`: the way past a task whose attempts are spent. `start` refuses one past
+# `maxAttempts`, `--force` included, because the ceiling is what makes a human look
+# at a task that keeps failing; and the reset that followed the human's look was a
+# hand edit of `attempts`. So the reset is this verb: it takes the human's reason,
+# records it on a row, and touches the count and the block, nothing else.
+def cmd_unblock(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    tid = (args.title or "").strip()          # positional: the id to unblock
+    if not tid:
+        out("[audit-task] unblock needs a task id")
+        return E_USAGE
+    reason = (args.reason or "").strip()
+    if not reason:
+        out("[audit-task] unblock needs --reason \"<the human's words>\" -- the "
+            "attempt ceiling exists so a human looks at a task that keeps "
+            "failing, and a reset with no recorded why is the hand edit this "
+            "verb replaces")
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_unblock(
+                           args, project, config, mpath, tid, reason, out))
+
+
+def _unblock_refusal(node, tid):
+    """Why `node` has nothing to unblock, or None: it is terminal, or attempts
+    are left. A task blocked with attempts left is not this verb's - `start`
+    runs it and clears the block - so the count of a task blocked for another
+    reason is never reset by it."""
+    status = node.get("status")
+    if status in _mio.TERMINAL:
+        return ("%s is already %s -- terminal work is not unblocked; the "
+                "follow-up is a new task (/audit:task add)" % (tid, status))
+    attempts = _mio.recorded_attempt(node) or 0
+    if attempts < _attempt_ceiling(node):
+        return ("%s is %s with %s of %s attempt(s) spent -- `start %s` still "
+                "runs it%s, so there is no spent count to reset"
+                % (tid, status, attempts, _attempt_ceiling(node), tid,
+                   " and clears its block" if status == "blocked" else ""))
+    return None
+
+
+def _locked_unblock(args, project, config, mpath, tid, reason, out):
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    node, phase, refusal = _task_target(assembled, tid, "unblock")
+    if refusal is None:
+        refusal = _unblock_refusal(node, tid)
+    if refusal:
+        out("[audit-task] " + refusal)
+        return E_USAGE
+    status = node.get("status")
+    phase_id = phase.get("id")
+    changes = [{"id": tid, "field": "attempts", "from": node.get("attempts"),
+                "to": 0}]
+    node["attempts"] = 0
+    if status == "blocked":
+        changes += [{"id": tid, "field": "status", "from": status,
+                     "to": "pending"},
+                    {"id": tid, "field": "blockedReason",
+                     "from": node.get("blockedReason"), "to": None}]
+        node["status"] = "pending"
+        node.pop("blockedReason", None)
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [phase_id],
+                        "the unblock", out)
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    jres = _journal_row(project, config, mpath, "task.unblock",
+                        "%s unblocked in %s, was %s: %s"
+                        % (tid, phase_id, status, reason),
+                        {"taskId": tid, "phaseId": phase_id, "reason": reason,
+                         "changes": changes})
+    index_note = _index_dirty_note(written, mpath, project, phase_id)
+    linked = bool(((assembled.get("meta") or {}).get("ado") or {}))
+    if args.as_json:
+        out(_json_tail({"ok": True, "id": tid, "phase": phase_id,
+                        "status": node.get("status"), "was": status,
+                        "attempts": 0, "reason": reason, "changes": changes,
+                        "adoEchoOwed": linked and status == "blocked",
+                        "written": written},
+                       args, jres, warnings, written_manifest, index_note))
+        return 0
+    out("[audit-task] %s unblocked in %s -- %s, attempts reset to 0: %s"
+        % (tid, phase_id, node.get("status"), reason))
+    if linked and status == "blocked":
+        out("  ADO: this plan links a board, and a task leaving blocked owes the "
+            "ADO echo - this verb does not send it")
+    _report_tail(out, jres, "task.unblock", warnings, written_manifest, written,
+                 index_note)
+    return 0
+
+
 # `note`: append-only, which is what lets it reach a STARTED task. `scope
 # --description` refuses one because its brief is what its attempts were judged
 # against, and a finding that arrived since belongs beside the brief, dated,
@@ -5657,6 +6328,12 @@ def _phase_gate(args, assembled):
         return [], "from --gate-clear"
     if args.gate:
         return list(args.gate), "from --gate"
+    return _default_phase_gate(assembled)
+
+
+def _default_phase_gate(assembled):
+    """`(testGate, basis)` for a phase that names no gate of its own: the
+    plan's default, and the sentence saying which part of it answered."""
     meta = assembled.get("meta")
     build = (meta or {}).get("buildCommands") if isinstance(meta, dict) else None
     if not isinstance(build, dict):
@@ -5698,7 +6375,19 @@ def _phase_gate(args, assembled):
            _output.some_of(excluded, render=repr)))
 
 
-def _build_phase(pid, title, args, gate):
+def _phase_fields(args):
+    """The flags `add-phase` writes into the phase, as the values
+    `_build_phase` takes. Read here and not inside the builder, so a caller
+    whose values come from somewhere other than flags builds the same phase
+    without reading a flag it does not accept."""
+    return {"description": args.description or "",
+            "outcome": args.outcome or "",
+            "blocked_by": _split_csv(args.blocked_by),
+            "area": _split_csv(args.area),
+            "review_skill": args.review_skill}
+
+
+def _build_phase(pid, title, fields, gate):
     """The new phase, fully template-initialized -- every field from the
     conventions' New phase template, exactly once, in _PHASE_TEMPLATE_KEYS
     order.
@@ -5710,10 +6399,10 @@ def _build_phase(pid, title, args, gate):
         "id": pid,
         "title": title,
         "status": "pending",
-        "description": args.description or "",
-        "desiredOutcome": (args.outcome or "").strip(),
+        "description": fields["description"],
+        "desiredOutcome": fields["outcome"].strip(),
         "testGate": gate,
-        "blockedBy": _split_csv(args.blocked_by),
+        "blockedBy": list(fields["blocked_by"]),
         "baseRef": None,
         "branch": None,
         "mergedAt": None,
@@ -5722,15 +6411,15 @@ def _build_phase(pid, title, args, gate):
         "summary": None,
         "tasks": [],
     }
-    areas = _split_csv(args.area)
+    areas = list(fields["area"])
     if areas:
         # A LIST only when there is more than one. The conventions spell a single
         # tag as a bare string and `_areas` reads both, so writing a one-element
         # list would make this command's phases the odd ones out in every diff
         # and every hand comparison against a phase /audit:init wrote.
         phase["area"] = areas[0] if len(areas) == 1 else areas
-    if args.review_skill:
-        phase["reviewSkill"] = args.review_skill
+    if fields["review_skill"]:
+        phase["reviewSkill"] = fields["review_skill"]
     return phase
 
 
@@ -5784,7 +6473,7 @@ def _locked_phase_add(args, project, config, mpath, title, out):
         return E_USAGE
 
     gate, gate_basis = _phase_gate(args, assembled)
-    phase = _build_phase(pid, title, args, gate)
+    phase = _build_phase(pid, title, _phase_fields(args), gate)
     side = _side_branch(mpath, assembled)
     if args.park:
         return _park_phase(args, project, config, mpath, raw_index, assembled,
@@ -5870,6 +6559,380 @@ def _locked_phase_add(args, project, config, mpath, title, out):
         for line in _side_branch_warning(pid, side):
             out(line)
     out("  next: /audit:task add \"<the first task>\" --phase %s" % pid)
+    return 0
+
+
+# --- add --from-file: a phase and its tasks, one write ----------------------------
+# Planning a phase was one `add-phase` and then one `add` per task: each its own
+# lock, read, write, revalidation and main-loop request, each typed as a shell
+# line. The batch is one file the main loop writes with its file tool, because a
+# JSON document on a shell heredoc is the shape a host refuses, and one call that
+# reads it under one lock, writes once and revalidates once.
+#
+# The file also carries the request as the human typed it and the choices that
+# request left open, on the phase as `request` and `openChoices`: sign-off's
+# reviewer is asked where a task chose what the request left open, and a request
+# not saved cannot be asked about.
+
+BATCH_KEYS = ("request", "openChoices", "phase", "tasks")
+BATCH_PHASE_KEYS = ("id", "title", "desiredOutcome", "description", "testGate",
+                    "blockedBy", "area", "reviewSkill")
+BATCH_TASK_KEYS = ("key", "title", "description", "files", "outputs", "risk",
+                   "model", "skills", "tests", "dependsOn", "blockedBy")
+BATCH_TESTS_KEYS = ("mode", "add", "gate")
+_RISKS = ("low", "med", "high")
+_TEST_MODES = ("tdd", "regression", "gate-only")
+
+
+def _is_text(value):
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _is_text_list(value):
+    return isinstance(value, list) and all(_is_text(v) for v in value)
+
+
+def _unknown_keys(obj, allowed, where):
+    """A key the batch does not read is a refusal, not a skip: a misspelt
+    `dependOn` dropped in silence is a dependency the caller believes was
+    written."""
+    extra = sorted(k for k in obj if k not in allowed)
+    if not extra:
+        return []
+    return ["%s carries %s, which the batch does not read (it reads %s)"
+            % (where, ", ".join(repr(k) for k in extra), ", ".join(allowed))]
+
+
+def _batch_phase_problems(phase):
+    if not isinstance(phase, dict):
+        return ["`phase` must be an object"]
+    out = _unknown_keys(phase, BATCH_PHASE_KEYS, "`phase`")
+    for key in ("title", "desiredOutcome"):
+        if not _is_text(phase.get(key)):
+            out.append("`phase.%s` must be a non-empty string" % (key,))
+    for key in ("id", "reviewSkill"):
+        if key in phase and not _is_text(phase[key]):
+            out.append("`phase.%s`, when present, must be a non-empty string"
+                       % (key,))
+    if "description" in phase and not isinstance(phase["description"], str):
+        out.append("`phase.description` must be a string")
+    for key in ("testGate", "blockedBy"):
+        if key in phase and not _is_text_list(phase[key]):
+            out.append("`phase.%s` must be a list of non-empty strings" % (key,))
+    area = phase.get("area")
+    if "area" in phase and not (_is_text(area)
+                                or (_is_text_list(area) and area)):
+        out.append("`phase.area` must be a tag or a non-empty list of tags")
+    return out
+
+
+def _batch_tests_problems(tests, where):
+    if not isinstance(tests, dict):
+        return ["%s.tests must be an object" % (where,)]
+    out = _unknown_keys(tests, BATCH_TESTS_KEYS, "%s.tests" % (where,))
+    if "mode" in tests and tests["mode"] not in _TEST_MODES:
+        out.append("%s.tests.mode must be one of %s"
+                   % (where, ", ".join(_TEST_MODES)))
+    for key in ("add", "gate"):
+        if key in tests and not _is_text_list(tests[key]):
+            out.append("%s.tests.%s must be a list of non-empty strings"
+                       % (where, key))
+    return out
+
+
+def _batch_task_problems(task, where):
+    if not isinstance(task, dict):
+        return ["%s must be an object" % (where,)]
+    out = _unknown_keys(task, BATCH_TASK_KEYS, where)
+    if not _is_text(task.get("title")):
+        out.append("%s.title must be a non-empty string" % (where,))
+    for key in ("key", "model"):
+        if key in task and not _is_text(task[key]):
+            out.append("%s.%s, when present, must be a non-empty string"
+                       % (where, key))
+    if "description" in task and not isinstance(task["description"], str):
+        out.append("%s.description must be a string" % (where,))
+    for key in ("files", "outputs", "dependsOn", "blockedBy"):
+        if key in task and not _is_text_list(task[key]):
+            out.append("%s.%s must be a list of non-empty strings" % (where, key))
+    if "skills" in task and not (task["skills"] is None
+                                 or _is_text_list(task["skills"])):
+        out.append("%s.skills must be a list of skill names, or null for the "
+                   "explicit opt-out" % (where,))
+    if "risk" in task and task["risk"] not in _RISKS:
+        out.append("%s.risk must be one of %s" % (where, ", ".join(_RISKS)))
+    if "tests" in task:
+        out.extend(_batch_tests_problems(task["tests"], where))
+    # The two path rules `--files` and `--outputs` are graded by, asked of the
+    # same helpers, so a path the flag refuses the file refuses too.
+    if _is_text_list(task.get("files", [])):
+        out.extend("%s.files %s" % (where, bad)
+                   for bad in _path_problems(task.get("files")))
+    if _is_text_list(task.get("outputs", [])):
+        out.extend("%s.outputs %r: %s" % (where, entry, why) for entry, why
+                   in _touts.output_problems(task.get("outputs")))
+    return out
+
+
+def batch_problems(doc):
+    """Every reason `doc` is not a planning batch this verb can write, or [].
+
+    ALL OF THEM AT ONCE, because the file is the caller's to fix and one round
+    trip per fault is the cost the batch exists to remove."""
+    if not isinstance(doc, dict):
+        return ["the file must hold one JSON object"]
+    out = _unknown_keys(doc, BATCH_KEYS, "the file")
+    if not _is_text(doc.get("request")):
+        out.append("`request` must be the request's text as the human typed "
+                   "it, non-empty")
+    choices = doc.get("openChoices")
+    if not isinstance(choices, list) or not all(_is_text(c) for c in choices):
+        out.append("`openChoices` must be a list of the choices the request "
+                   "left open, each a non-empty string - [] when it left none")
+    out.extend(_batch_phase_problems(doc.get("phase")))
+    tasks = doc.get("tasks")
+    if not isinstance(tasks, list) or not tasks:
+        out.append("`tasks` must be a non-empty list")
+        return out
+    for i, task in enumerate(tasks):
+        out.extend(_batch_task_problems(task, "tasks[%d]" % (i,)))
+    keys = [t.get("key") for t in tasks if isinstance(t, dict) and "key" in t]
+    dups = sorted(set(k for k in keys if keys.count(k) > 1 and isinstance(k, str)))
+    if dups:
+        out.append("task keys must be unique; repeated: %s" % (", ".join(dups),))
+    return out
+
+
+def read_batch(path):
+    """`(doc, problems)` for the file at `path`; `problems` non-empty means the
+    file cannot be written, and `doc` is then None."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as exc:
+        return None, ["cannot read it as JSON: %s" % (exc,)]
+    problems = batch_problems(doc)
+    return (None, problems) if problems else (doc, [])
+
+
+def _batch_stray_flags(args):
+    """The `add` flags passed beside `--from-file`, as the caller spelled them.
+    The file carries every field, so a flag beside it has no task to land on."""
+    parser = build_parser()
+    flags = option_dests(parser)
+    default = dict((a.dest, a.default)
+                   for a in getattr(parser, "_actions", ()))
+    return [flags.get(d, d) for d in VERB_FLAGS["add"]
+            if d != "from_file" and getattr(args, d, None) != default.get(d)]
+
+
+def _cmd_batch_add(args, out):
+    _manifest_from_positional(args)
+    stray = _batch_stray_flags(args) + (["a title"] if args.title else [])
+    if stray:
+        out("[audit-task] add --from-file reads the phase and every task from "
+            "the file, so it takes nothing beside it -- put %s in the file; "
+            "nothing written" % (", ".join(stray),))
+        return E_USAGE
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    doc, problems = read_batch(args.from_file)
+    if problems:
+        out("[audit-task] REFUSED: %s is not a planning batch this verb can "
+            "write -- nothing written:" % (args.from_file,))
+        for line in problems:
+            out("  - " + line)
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_batch_add(
+                           args, project, config, mpath, doc, out))
+
+
+def _batch_phase_gate(spec, assembled):
+    """`(testGate, basis)` for the batch's phase: the file's own list when it
+    names one, the empty gate when it names `[]`, the plan's default otherwise."""
+    if "testGate" not in spec:
+        return _default_phase_gate(assembled)
+    if not spec["testGate"]:
+        return [], "the batch file's phase.testGate is empty"
+    return list(spec["testGate"]), "from the batch file's phase.testGate"
+
+
+def _batch_missing_refs(doc, ids, keys, assembled, pid):
+    """The `(where, field, ref)` triples naming nothing this plan or this file
+    holds, over the universes the validator grades: `dependsOn` names a task,
+    `blockedBy` a task, a phase or a decision."""
+    task_ids = set(t.get("id") for _p, t in _mio.iter_tasks(assembled))
+    known = (task_ids | set(p.get("id") for p in assembled.get("phases") or []
+                            if isinstance(p, dict))
+             | set(d.get("id") for d in assembled.get("decisions") or []
+                   if isinstance(d, dict)))
+    missing = [("phase %s" % (pid,), "blockedBy", r)
+               for r in doc["phase"].get("blockedBy") or [] if r not in known]
+    for task, tid in zip(doc["tasks"], ids):
+        for field, universe in (("dependsOn", task_ids), ("blockedBy", known)):
+            missing.extend((tid, field, r) for r in task.get(field) or []
+                           if keys.get(r, r) not in universe)
+    return missing
+
+
+def _batch_task_args(task, keys):
+    """The values `_build_task` reads, off one task of the file, with every
+    key the file named resolved to the id it was given. A namespace rather
+    than a second task builder: the template, the `tests.add` union and the
+    gate derivation stay the ones `add` uses."""
+    tests = task.get("tests") or {}
+    gate = tests.get("gate")
+    skills = task.get("skills", [])
+    return argparse.Namespace(
+        risk=task.get("risk"), model=task.get("model"),
+        tests_mode=tests.get("mode"), tests_add=list(tests.get("add") or []),
+        files=list(task.get("files") or []),
+        outputs=list(task.get("outputs") or []),
+        skills="null" if skills is None else ",".join(skills),
+        blocked_by=[keys.get(r, r) for r in task.get("blockedBy") or []],
+        depends_on=[keys.get(r, r) for r in task.get("dependsOn") or []],
+        description=task.get("description") or "",
+        gate=list(gate) if gate else None, gate_clear=gate == [],
+        failing_from=None)
+
+
+def _locked_batch_add(args, project, config, mpath, doc, out):
+    """Everything between acquire and release for `add --from-file`: read,
+    allocate the phase and every task, refuse before the first write, write
+    once, validate once from disk, roll back on findings, journal, report."""
+    try:
+        raw_index = _mio.read_json(mpath)
+        assembled = _mio.load_manifest(mpath)
+    except Exception as exc:
+        out("[audit-task] cannot read/assemble manifest: %s" % exc)
+        return E_USAGE
+    if not isinstance(assembled, dict) or not isinstance(raw_index, dict):
+        out("[audit-task] manifest root is not an object")
+        return E_USAGE
+    vm = _validator()
+    pre_findings, _pre_w = vm.validate(assembled)
+    if pre_findings:
+        out("[audit-task] the manifest is already invalid -- nothing "
+            "written; fix these first:")
+        for line in pre_findings:
+            out("FINDING: " + line)
+        return E_INVALID
+
+    spec = doc["phase"]
+    pid = spec["id"].strip() if "id" in spec else _allocate_phase_id(assembled)
+    refusal = _phase_id_refusal(assembled, raw_index, pid)
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    gate, gate_basis = _batch_phase_gate(spec, assembled)
+    area = spec.get("area")
+    phase = _build_phase(pid, spec["title"].strip(), {
+        "description": spec.get("description") or "",
+        "outcome": spec["desiredOutcome"],
+        "blocked_by": spec.get("blockedBy") or [],
+        "area": [area] if isinstance(area, str) else (area or []),
+        "review_skill": spec.get("reviewSkill")}, gate)
+    phase["request"] = doc["request"]
+    phase["openChoices"] = list(doc["openChoices"])
+    side = _side_branch(mpath, assembled)
+    warn_side = side["suffix"] is not None and not _side_branch_warned(
+        project, config, mpath, side["branch"])
+    assembled.setdefault("phases", []).append(phase)
+    suffix = _mint_suffix(mpath, assembled)
+    ids = []
+    for _task in doc["tasks"]:
+        # A placeholder per task, so the next allocation counts the one before.
+        ids.append(_allocate_id(assembled, pid, suffix))
+        phase["tasks"].append({"id": ids[-1]})
+    keys = dict((t["key"], tid) for t, tid in zip(doc["tasks"], ids) if "key" in t)
+    # A key spelled like an id - one the plan holds or one just allocated -
+    # would make a reference to it mean either.
+    held = set(t.get("id") for _p, t in _mio.iter_tasks(assembled)) | set(
+        p.get("id") for p in assembled.get("phases") or [] if isinstance(p, dict))
+    clash = sorted(k for k in keys if k in held)
+    if clash:
+        out("[audit-task] REFUSED: task key %s is also an id in this plan, so "
+            "a reference to it could mean either -- nothing written"
+            % (", ".join(clash),))
+        return E_USAGE
+    missing = _batch_missing_refs(doc, ids, keys, assembled, pid)
+    if missing:
+        out("[audit-task] REFUSED: the batch names a dependency neither this "
+            "plan nor the file holds -- nothing written:")
+        for where, field, ref in missing:
+            out("  - %s %s %r" % (where, field, ref))
+        return E_USAGE
+
+    fidx = assembled.setdefault("fileIndex", {})
+    for i, (spec_task, tid) in enumerate(zip(doc["tasks"], ids)):
+        task, _unnamed, _basis = _build_task(
+            tid, spec_task["title"].strip(), _batch_task_args(spec_task, keys),
+            phase, assembled, None, project)
+        phase["tasks"][i] = task
+        for fpath in task["files"]:
+            entry = fidx.setdefault(_vocab._strip_line_suffix(fpath), [])
+            if tid not in entry:
+                entry.append(tid)
+
+    snap = _snapshot(_write_paths(project, mpath, raw_index, pid,
+                                  new_phase=phase))
+    try:
+        written = _write_add(project, mpath, raw_index, assembled, pid, True)
+    except Exception as exc:
+        _restore(snap)
+        out("[audit-task] write failed -- manifest restored: %s" % exc)
+        return E_INVALID
+    written_manifest = {}
+    try:
+        written_manifest = _mio.load_manifest(mpath)
+        findings, warnings = vm.validate(written_manifest)
+    except Exception as exc:
+        findings, warnings = ["cannot re-read the written manifest: %s"
+                              % exc], []
+    if findings:
+        _restore(snap)
+        out("[audit-task] REFUSED: the batch would leave the manifest invalid "
+            "-- every written file rolled back, nothing kept:")
+        for line in findings:
+            out("FINDING: " + line)
+        return E_INVALID
+
+    jrows = [_journal_phase_add(project, config, mpath, pid, phase["title"],
+                                phase["desiredOutcome"],
+                                side["branch"] if side["suffix"] else None)]
+    jrows.extend(_journal_add(project, config, mpath, task["id"], pid,
+                              task["title"], []) for task in phase["tasks"])
+    unjournaled = [r for r in jrows if not r.get("journaled")
+                   and r.get("journaledWhy") == "failed"]
+    index_note = _index_dirty_note(written, mpath, project, pid)
+    if args.as_json:
+        result = {"ok": True, "id": pid, "phase": phase, "tasks": ids,
+                  "written": written, "testGateBasis": gate_basis,
+                  "warnings": _wg.collapse_machine(warnings, written_manifest),
+                  "journaled": not unjournaled}
+        result.update(project_basis_key(args))
+        result.update(_index_dirty_key(index_note))
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    out("[audit-task] phase %s added with %s -- %s"
+        % (pid, ", ".join(ids), phase["title"]))
+    out("  outcome: %s" % phase["desiredOutcome"])
+    out("  gate: %s (%s)" % (", ".join(gate) if gate else "none", gate_basis))
+    out("  request: saved verbatim as phase.request; open choices: %s"
+        % ("; ".join(phase["openChoices"]) or "none, as the file says",))
+    for line in _wg.collapse(warnings, written_manifest):
+        out("WARNING: " + line)
+    if unjournaled:
+        out(_not_journaled_line(unjournaled[0], "a phase.add or task.add row"))
+    out("  written: %s" % ", ".join(written))
+    if index_note:
+        out(index_note)
+    if warn_side:
+        for line in _side_branch_warning(pid, side):
+            out(line)
     return 0
 
 
@@ -7057,6 +8120,14 @@ def _done_flags_refusal(args):
                 "question was not put>\" -- it is the one answer no reviewer "
                 "gave, and without its reason it reads exactly like a reviewer "
                 "call that never came back")
+    typed = [flag for flag, value in (("--descriptive", args.descriptive),
+                                      ("--technical", args.technical),
+                                      ("--verified-by", args.verified_by))
+             if value is not None]
+    if args.from_return and typed:
+        return ("[audit-task] --from-return takes the outcome and verifiedBy off "
+                "the executor's filed return, so %s beside it would be a second "
+                "account of one close -- pass one or the other" % (", ".join(typed),))
     return None
 
 
@@ -7082,6 +8153,8 @@ def cmd_cancel(args, out):
 
 
 def cmd_add(args, out):
+    if args.from_file is not None:
+        return _cmd_batch_add(args, out)
     project = _resolve_project(args)
     if not os.path.isdir(project):
         out("[audit-task] not a directory: %s" % project)
@@ -7170,6 +8243,255 @@ def phase_binding(project, mpath, manifest, phase, files, record):
         "phase %s declares no gate, so its sign-off rests on review alone" % (pid,))
 
 
+# --- the per-task answers a phase review carries -----------------------------------
+# Under `review.perTask: phase` no reviewer runs per task, so sign-off is where each
+# task's three answers reach its record: read off every phase return filed for the
+# phase, counted only where an entry names the commit its task records NOW, and
+# written onto `intentCheck` with that commit. Then the one property is asked of the
+# plan about to be written (`_fr.landing_refusals`), under either verdict - so a
+# `skipped` cannot sign off a phase over a task owed its answers.
+_CARRIED = ("answer", "redFirst", "redFirstBasis", "inheritedTests",
+            "inheritedTestsBasis")
+
+
+def _human_settlement(proj, cfg, pid, filed, group=False, local=None,
+                      branch=None):
+    """`(lines, refusal)` - the sign-off's stop on a reviewer answer only a
+    human settles (`_fr.needs_human`), read against the settlement the
+    driver's triage records, under every review key. `lines` names what a
+    human settled and in which words; `refusal` names what waits, or None.
+    `group` is a member asked by a group sign-off, whose remedy differs.
+    `local` is the returns of `filed` this checkout's evidence holds, and
+    `branch` the phase branch whose tip committed the rest
+    (`_tip_only_remedy`).
+
+    WHAT WAITS IS ASKED BEFORE ANY RECORD IS JUDGED: a settlement record
+    that cannot be read refuses only a sign-off with an answer still waiting,
+    and is named in that refusal; with nothing waiting no settlement is
+    needed, so a broken record in any checkout asked does not hold it.
+
+    THE VERB HOLDS IT, NOT ONLY THE DRIVER: sign-off run by hand never meets
+    the triage, and a phase signed off here is landed by the next `next`.
+
+    THE REMEDY SAYS WHAT THE DRIVER WILL DO. With no phase review marked in
+    its state (`_fr.review_marked`), and only where a review skill resolves or
+    a task is owed its answers (`drive-phase.py`'s `review_due`), the driver
+    reads a phase return already filed at the current head, and dispatches the
+    review only where none is, before any triage; a member's triage answered `sign-off` signs off and
+    lands that member alone.
+
+    A SETTLEMENT BINDS TO THE ANSWER IT SETTLED. This verdict records what it
+    read by content (`_fr.read_record`), so the settlement it signs over is
+    honoured only for the content it was given for (`_fr.needs_human`'s
+    `bound`): another answer filed under the same name is not settled by it,
+    and a key a record names with no signature - written before signatures
+    were kept - settles nothing here; the refusal says so, and the driver's
+    triage, which asks it again, records the signature on accept.
+
+    THE SETTLEMENTS ASKED ARE THE ONES THE LANDING HONOURS: the records of
+    this checkout and of the same project in every worktree git lists that it
+    does not report prunable (`_settlement_checkouts`, through
+    `_fr.settlement_checkouts`, the helper `close-phase.py` reads the same
+    set through), so a return the tip commits, settled where the branch is
+    checked out, is settled for a sign-off run from any checkout."""
+    hc = _loader.load_hooks_config(modname="audit__config")
+    state_dir = str(hc.state_dir(pathlib.Path(proj), cfg or {}))
+    listing = _worktree_listing(proj)
+    record = _fr.settlements([str(hc.state_dir(pathlib.Path(c), cfg or {}))
+                              for c in _settlement_checkouts(proj, listing)],
+                             pid)
+    reasons = record["reasons"]
+    asked = _fr.needs_human(filed)
+    waiting = _fr.needs_human(filed, bound=record["pairs"])
+    by_name = _fr.settled_by_name_only(waiting, record)
+    if waiting:
+        state, _problem = _fr.drive_state(state_dir, pid)
+        redispatch = ("" if _fr.review_marked(state) else
+                      " - its state marks no phase review, so where a review "
+                      "skill resolves or a task is owed its answers it reads "
+                      "the phase return already filed at the current head, or "
+                      "dispatches the phase review where none is filed there, "
+                      "and the triage follows that return -")
+        then = ("answer only `accept` there, never `sign-off`, which signs "
+                "off and lands this member alone; then run this group "
+                "sign-off again" if group else "sign off again")
+        named = ("\n    %s settled by name only in a record written before "
+                 "a settlement carried the signature of the answer it settled, "
+                 "so nothing says which answer a human saw under that name: "
+                 "the triage asks each again, and its accept records the "
+                 "signature." % (", ".join("%s %s" % (a["who"], a["what"])
+                                           for a in by_name),)
+                 if by_name else "")
+        listed = ("\n    The worktree list could not be read (%s), so only "
+                  "this checkout's settlement record was asked."
+                  % (listing["error"],) if listing["error"] else "")
+        broken = ("\n    A settlement record that cannot be read is not "
+                  "honoured, so a settlement it holds counts for nothing here: "
+                  "%s." % ("; ".join(record["problems"]),)
+                  if record["problems"] else "")
+        return [], (
+            "REFUSED: phase %s's filed review holds answer(s) only a human "
+            "settles, and these are not settled. Nothing written:\n%s%s%s%s%s"
+            "\n    Put each to a human, then run `drive-phase.py next %s`%s and "
+            "answer its triage with --answer accept --reason \"<their word on "
+            "each>\" - the settlement this verb reads - and %s."
+            % (pid, "\n".join("  %s: %s%s" % (
+                a["who"], a["what"], " (%s)" % (a["note"],) if a["note"] else "")
+                for a in waiting), named, listed, broken,
+               _tip_only_remedy(proj, listing, waiting, local, branch),
+               pid, redispatch, then))
+    if not asked:
+        return [], None
+    return (["  settled by a human: %s" % (", ".join(
+        "%s %s" % (a["who"], a["what"]) for a in asked),),
+        "    in their words: %s" % ("; ".join(reasons) or "(none recorded)",)],
+            None)
+
+
+def _worktree_listing(proj):
+    """`{"top", "trees", "error"}` - the working tree `proj` stands in, the
+    worktrees git lists for it, and why that list could not be read. Where
+    git names no working tree for `proj` - no repository, or no git to ask -
+    there is no list to read: `top` is None and nothing is said."""
+    top = _worktrees.tree_root(proj)["root"]
+    if not top:
+        return {"top": None, "trees": [], "error": ""}
+    listing = _worktrees.list_worktrees(top)
+    return {"top": top, "trees": [] if listing["error"] else listing["trees"],
+            "error": listing["error"] or ""}
+
+
+def _settlement_checkouts(proj, listing):
+    """The checkouts whose settlement records a sign-off in `proj` honours
+    (`_fr.settlement_checkouts`) over `_worktree_listing`'s `listing`; `proj`
+    alone where there is no list."""
+    if not listing["top"] or listing["error"]:
+        return [proj]
+    return _fr.settlement_checkouts(listing["top"], proj, listing["trees"])
+
+
+def _tip_only_remedy(proj, listing, waiting, local, branch):
+    """The refusal's line naming where the driver's triage lists the answers
+    of `waiting` that the tip of `branch` commits and this checkout's
+    evidence (`local`, its filed returns) does not hold, or "".
+
+    THE TRIAGE READS ITS OWN CHECKOUT'S EVIDENCE: the driver lists the
+    returns filed on disk where it runs, so an answer only the tip commits is
+    listed in the checkout holding the branch, never in this one. Where that
+    checkout is this one, the return left this evidence and the triage lists
+    it once restored from the tip; where no worktree holds the branch, the
+    remedy names the command that checks it out into one."""
+    if local is None or not branch:
+        return ""
+    held = set(_fr.return_signature(e) for e in local)
+    tipped = [a for a in waiting if a["sha256"] not in held]
+    if not tipped:
+        return ""
+    names = ", ".join("%s %s" % (a["who"], a["what"]) for a in tipped)
+    holder = _branch_holder(proj, listing, branch)
+    if holder and os.path.realpath(holder) == os.path.realpath(str(proj)):
+        where = ("restore that return from the tip into this checkout's "
+                 "evidence first, so the triage here lists it")
+    elif holder:
+        where = ("run the driver in %s, the worktree holding %s, whose "
+                 "triage lists it" % (holder, branch))
+    else:
+        where = ("no worktree holds %s, so check it out into one first - "
+                 "`git worktree add <dir> %s` - and run the driver there, "
+                 "whose triage lists it" % (branch, branch))
+    return ("\n    %s: the tip of %s commits it and this checkout's evidence "
+            "does not hold it, and the driver's triage lists only the "
+            "returns in its own checkout's evidence - %s."
+            % (names, branch, where))
+
+
+def _branch_holder(proj, listing, branch):
+    """The project directory in the worktree git lists, not prunable, with
+    `branch` checked out, or None when none does."""
+    for tree in listing["trees"]:
+        if not isinstance(tree, dict) or tree.get("prunable") \
+                or tree.get("branch") != branch:
+            continue
+        found = _fr.project_in_tree(listing["top"], proj, tree.get("path"))
+        if found:
+            return found
+    return None
+
+
+def _returns_read(proj, cfg, phase):
+    """`(filed, read)` - the phase returns this sign-off reads: `filed`, the
+    ones in this checkout's evidence, whose answers are carried; `read`, those
+    plus every return the phase branch's tip commits that differs from them,
+    each of which the human stop is asked of and the verdict records reading
+    (`_fr.READ_RETURNS_FIELD`). A tip git cannot read adds nothing here, and
+    the landing then refuses whatever it holds needing a human, unread."""
+    pid = str(phase.get("id"))
+    evidence = _evidence_io.evidence_dir(proj, cfg)
+    filed = _fr.phase_returns(evidence, pid)
+    tip = []
+    if phase.get("branch"):
+        tip, _why = _fr.tip_phase_returns(proj, evidence, phase["branch"], pid)
+    seen = set(_fr.return_signature(e) for e in filed)
+    return filed, filed + [e for e in tip if _fr.return_signature(e) not in seen]
+
+
+def _carry_answers(project, mpath, config, phase, now, group=False):
+    """`(lines, refusal, read)` - write each filed phase return's answers onto
+    the task whose current commit it names, record the key where none is, then
+    ask the landing property. `lines` says what was carried; `refusal` is the
+    whole refusal, or None; `read` is the read set the verdict records
+    (`_fr.read_record`). `group` is `_human_settlement`'s. Mutates the
+    assembled `phase` only; nothing is written here."""
+    pid = str(phase.get("id"))
+    proj, cfg = _evidence_io.project_config_for(mpath, project)
+    filed, read = _returns_read(proj, cfg, phase)
+    unread = [why for _rel, _body, why in read if why]
+    if unread:
+        return [], ("REFUSED: a phase return filed for %s cannot be read, so the "
+                    "answers it carries are unknown: %s. Nothing written."
+                    % (pid, "; ".join(unread))), None
+    settled_lines, refusal = _human_settlement(proj, cfg, pid, read, group,
+                                               filed, phase.get("branch"))
+    if refusal:
+        return [], refusal, None
+    tasks = [t for t in phase.get("tasks") or [] if isinstance(t, dict)]
+    live, problem = None, None
+    if any(_fr.review_key(t, phase, None)[1] == "config" for t in tasks):
+        live, problem = _config_rules.review_per_task_mode(config)
+    if problem:
+        return [], "REFUSED: %s. Nothing written." % (problem,), None
+    answered = _fr.answered_entries(filed)
+    lines = []
+    for task in tasks:
+        if not task.get("commit"):
+            continue
+        key, _source = _fr.review_key(task, phase, live)
+        _record_key(task, phase, key)
+        hit = answered.get((str(task.get("id")), task.get("commit")))
+        if key != _fr.KEY_PHASE or hit is None:
+            continue
+        rel, entry = hit
+        block = {"commit": task["commit"], "at": now, "return": rel}
+        block.update((k, entry[k]) for k in _CARRIED if k in entry)
+        task["intentCheck"] = block
+        lines.append("  %s: %s, red-first %s, inherited tests %s (from %s)"
+                     % (task.get("id"), entry.get("answer"),
+                        entry.get("redFirst"), entry.get("inheritedTests"), rel))
+    lines += settled_lines
+    held = _fr.landing_refusals(phase, live)
+    if not held:
+        return lines, None, _fr.read_record(read)
+    return lines, (
+        "REFUSED: review.perTask reads `phase` for task(s) of %s still owed their "
+        "review answers, so the phase does not sign off - under --verdict passed "
+        "or skipped alike. Nothing written:\n%s\n    Brief the phase reviewer "
+        "(audit-lookup.py <manifest> brief %s --role phase) and file its return "
+        "(audit-task.py file-return %s --role reviewer --head <the head its brief "
+        "names>), then sign off again."
+        % (pid, "\n".join("  %s: %s" % (tid, why) for tid, why in held), pid,
+           pid)), None
+
+
 def _locked_signoff(args, project, config, mpath, pid, summary, out):
     try:
         raw_index = _mio.read_json(mpath)
@@ -7186,6 +8508,11 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
         out("[audit-task] no phase %r in %s" % (pid, mpath))
         return E_USAGE
     refusal = _signoff_refusal(phase, pid)
+    if refusal:
+        out("[audit-task] " + refusal)
+        return E_USAGE
+    carried, refusal, read = _carry_answers(project, mpath, config, phase,
+                                            _utc_now())
     if refusal:
         out("[audit-task] " + refusal)
         return E_USAGE
@@ -7214,6 +8541,9 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
         review["noEvidenceReason"] = reason
     else:
         review.pop("noEvidenceReason", None)
+    # WHAT THIS VERDICT READ, never an earlier sign-off's: `close-phase.py`
+    # refuses any return needing a human whose signature is not here.
+    review[_fr.READ_RETURNS_FIELD] = read
     phase["review"] = review
     phase["summary"] = summary
     phase.pop("claim", None)
@@ -7268,6 +8598,7 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
         result = {"ok": True, "id": pid, "verdict": args.verdict, "summary": summary,
                   "effectiveStatus": effective, "awaiting": awaiting, "branch": branch,
                   "intentUnanswered": unanswered,
+                  "answersCarried": [line.strip() for line in carried],
                   "stored": settled, "written": written,
                   "warnings": _wg.collapse_machine(warnings, written_manifest)}
         result.update(jres)
@@ -7285,8 +8616,13 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
                                                                 effective))
     if unanswered:
         out("  no intent answer recorded for %d done task(s): %s -- `intentCheck` "
-            "is absent, which reads as no answer and never as agreement"
+            "is absent or reads `deferred` (still owed its phase review), which "
+            "reads as no answer and never as agreement"
             % (len(unanswered), ", ".join(unanswered)))
+    if carried:
+        out("  the phase review's answers, written onto each task's intentCheck:")
+        for line in carried:
+            out(line)
     for line in _settled_lines(settled):
         out(line)
     for line in _wg.collapse(warnings, written_manifest):
@@ -8421,6 +9757,19 @@ def _locked_group(args, project, config, mpath, ids, summary, out):
             % (", ".join(unbound), "is" if len(unbound) == 1 else "are",
                args.branch, ",".join(ids), args.branch))
         return E_USAGE
+    # EVERY MEMBER IS ASKED, before any is written: a group signs off whole or
+    # not at all, so one member owed its answers refuses them all.
+    now = _utc_now()
+    asked = [(phase, _carry_answers(project, mpath, config, phase, now,
+                                    group=True)) for phase in plan["members"]]
+    held = [answer[1] for _phase, answer in asked if answer[1]]
+    reads = dict((str(phase.get("id")), answer[2]) for phase, answer in asked)
+    if held:
+        out("[audit-task] %s cannot be signed off together - every member is "
+            "asked:" % (", ".join(ids),))
+        for refusal in held:
+            out(refusal)
+        return E_USAGE
     reason = (args.no_evidence_reason or "").strip()
     carrier = [ph for ph in plan["members"] if ph.get("id") == plan["gate"]][0]
     pointer = None
@@ -8448,6 +9797,7 @@ def _locked_group(args, project, config, mpath, ids, summary, out):
         if plan["accepted"]:
             review["acceptedCommits"] = [{"commit": sha, "reason": args.reason.strip()}
                                          for sha in plan["accepted"]]
+        review[_fr.READ_RETURNS_FIELD] = reads[str(phase.get("id"))]
         phase["review"] = review
         phase["summary"] = summary
         phase.pop("claim", None)
@@ -9649,13 +10999,13 @@ def _seed_phase(pid, title, gate):
     """The new phase's dict, template fields only (conventions -> New phase
     template).
 
-    NOT `_build_phase`. That function reads `args.description`, `.outcome`,
-    `.blocked_by`, `.area` and `.review_skill` off the caller's namespace, none
-    of which `seed` exposes as a flag -- there is nothing yet to describe,
-    block on or tag. Calling it anyway would put every one of those reads in
-    `seed`'s own derived flag set the way the suite's `vf6` computes it, which
-    would make a verb that accepts none of those flags LOOK like it reads all
-    of them. The one piece of real judgement -- deriving an honest gate -- is
+    NOT `_build_phase`, which was written to read `args.description`,
+    `.outcome`, `.blocked_by`, `.area` and `.review_skill` off the caller's
+    namespace, none of which `seed` exposes as a flag -- there is nothing yet
+    to describe, block on or tag. Calling it that way would have put every one
+    of those reads in `seed`'s own derived flag set the way the suite's `vf6`
+    computes it. It now takes those values as arguments (`_phase_fields`), so
+    the reason is gone and this copy of the template is debt kept as it was. The one piece of real judgement -- deriving an honest gate -- is
     still shared, through `_phase_gate`; this is the fixed shape the
     conventions document, applied to fixed values.
     """
@@ -9841,7 +11191,8 @@ VERB_FLAGS = {
     # afterwards is its own verb and its own refusals.
     "add": ("phase", "skills", "model", "files", "outputs", "risk",
             "blocked_by", "depends_on", "description", "tests_mode",
-            "tests_add", "gate", "gate_clear", "dry_run", "failing_from"),
+            "tests_add", "gate", "gate_clear", "dry_run", "failing_from",
+            "from_file", "fixes"),
     "add-phase": ("phase_id", "outcome", "description", "area", "review_skill",
                   "blocked_by", "gate", "gate_clear", "park"),
     "cancel": ("reason",),
@@ -9855,7 +11206,12 @@ VERB_FLAGS = {
     # without it, which is a different check from this one: this table says which
     # flags the verb READS, and the door says which of them it requires.
     "done": ("commit", "descriptive", "technical", "verified_by", "intent",
-             "intent_basis", "no_change", "reason", "override_verdict"),
+             "intent_basis", "no_change", "reason", "override_verdict",
+             "from_return"),
+    # `file-return` takes the role and nothing that could name a path; the
+    # return itself arrives on stdin. A phase return adds the head its brief
+    # was computed at, which keys the file.
+    "file-return": ("role", "head"),
     "scope": ("files", "tests_mode", "tests_add", "gate", "gate_clear",
               "description", "risk", "blocked_by", "depends_on"),
     "retarget": ("gate", "gate_clear", "gate_drop", "gate_set", "area",
@@ -9887,6 +11243,8 @@ VERB_FLAGS = {
     "move": ("to",),
     # `block` records why, so its one flag is `cancel`'s too.
     "block": ("reason",),
+    # `unblock` resets a spent attempt count on a human's word, and records it.
+    "unblock": ("reason",),
     # `note` appends one entry, and its text is its one flag.
     "note": ("text",),
     # `couple` writes `meta.coupling`: the test, what it is coupled to, and
@@ -9949,9 +11307,9 @@ def build_parser():
                    choices=["add", "add-phase", "cancel", "scope",
                             "retarget", "start", "done", "seed", "next-id",
                             "signoff", "settle", "reopen", "move", "block",
-                            "note", "couple", "uncouple", "finding",
+                            "unblock", "note", "couple", "uncouple", "finding",
                             "resolve-finding", "correct", "bug-add", "mute",
-                            "unmute"])
+                            "unmute", "file-return"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -10082,6 +11440,18 @@ def build_parser():
     # with it, and refused without it.
     p.add_argument("--override-verdict", dest="override_verdict", default=None,
                    metavar="TEXT", help=_PROSE_HELP)
+    # `done` only. Close from the filed returns of the task's current start:
+    # the outcome, verifiedBy and redFirst off the executor's, the intent
+    # answer off the reviewer's.
+    p.add_argument("--from-return", dest="from_return", action="store_true",
+                   default=False,
+                   help="done: take the outcome, verifiedBy, redFirst and the "
+                        "intent answer from the returns filed for this start")
+    # `file-return` only. Whose return arrives on stdin; no value names a path.
+    # No `choices`: argparse would refuse on stderr before `main` buffers
+    # anything, so the door grades the word and says it takes no path.
+    p.add_argument("--role", default=None,
+                   help="file-return: %s" % ("|".join(_fr.RETURN_ROLES),))
     # `move` only. The phase the task moves into - `--phase` stays `add`'s, where
     # it names the phase a new task is born in.
     p.add_argument("--to", default=None, metavar="PHASE")
@@ -10096,6 +11466,13 @@ def build_parser():
     # the ordinary tests.add/files/phase-wide chain. The runId is opaque and
     # looked up through `_evidence_io.row_by_run`, never parsed -- see
     # `_failing_from_lookup`'s docstring for the three things the row must be.
+    # `add` only. A phase and its tasks from one JSON file, in one write; the
+    # file carries every field, so no other `add` flag is read beside it.
+    p.add_argument("--from-file", dest="from_file", default=None,
+                   metavar="PATH",
+                   help="add: a new phase and its tasks from one JSON file "
+                        "{request, openChoices, phase, tasks}, written in one "
+                        "call and revalidated once")
     p.add_argument("--failing-from", dest="failing_from", default=None,
                    metavar="RUNID",
                    help="add: point the new task's gate at the suites this "
@@ -10143,6 +11520,16 @@ def build_parser():
     # `resolve-finding` only. The task whose commit settles the finding.
     p.add_argument("--fix-task", dest="fix_task", default=None, metavar="TASK",
                    help="resolve-finding: the task whose commit settles it")
+    # `add` only. The findings of the new task's own phase it is added to fix,
+    # written as `task.fixes` and each finding's `fixTask` in the same write.
+    p.add_argument("--fixes", action="append", default=None, metavar="FINDING",
+                   help="add: " + _list_help("review finding ids of the task's "
+                                             "own phase", "--fixes P3-R1,P3-R2",
+                                             empties=False))
+    # `file-return` only, for a PHASE return: the head the reviewer's brief was
+    # computed at, which keys the file.
+    p.add_argument("--head", default=None, metavar="SHA",
+                   help="file-return: a phase return's head, as its brief names it")
     # `bug-add` only. The three sentences of a bug report beside its
     # `--description`, one flag per field and spelled as the field. The title
     # stays the POSITIONAL, for `--rename`'s reason above: a `--title` flag
@@ -10299,6 +11686,59 @@ def json_refusal(code, lines):
                       indent=2, sort_keys=True)
 
 
+# An id as the plan spells one: a phase, a task under it, a bug or a proposal.
+_HEADLINE_ID = re.compile(r"(?<![\w.-])(?:P\d+(?:\.\d+[A-Za-z0-9-]*)?|BUG-\d+|"
+                          r"PROP-[A-Za-z0-9-]+)(?![\w-]|\.\w)")
+# Where a headline turns from what was written to what holds it: "P1.3 added TO
+# P1", "P1.1 done IN P1". The ids after it are the container's, not the write's.
+_HEADLINE_CONTAINER = re.compile(r" (?:in|to) ")
+
+
+def _written_ids(headline):
+    """The ids a headline names as the subject of its write."""
+    subject = _HEADLINE_CONTAINER.split(headline.split(" -- ")[0], 1)[0]
+    return set(_HEADLINE_ID.findall(subject))
+
+
+def _decided_lines(body, ids):
+    """The lines a write decided and the short form keeps: its gate basis, the
+    command that runs what it wrote, and every warning naming an id it wrote.
+    A warning naming no such id was true before the write and is re-printed by
+    every write; that is what the short form drops."""
+    kept = []
+    for line in body:
+        text = line.strip()
+        if text.startswith("gate:") or text.startswith("ready now -- "):
+            kept.append(text)
+        elif text.startswith("WARNING:") and ids & set(_HEADLINE_ID.findall(
+                text.split(" - ")[0])):
+            kept.append(text)
+    return kept
+
+
+def success_line(lines):
+    """A write's short form: the verb's own headline, which names what was done
+    to which id, and every file its `written:` lines name - then, a line each,
+    what the write itself decided (`_decided_lines`). The validator warnings
+    about other ids, re-printed after each write, are what this drops, and
+    `--verbose` keeps."""
+    body = [ln for ln in lines if ln.strip()]
+    heads = [ln for ln in body if ln.startswith("[audit-task]")] or body
+    written = [ln.strip()[len("written:"):].strip() for ln in body
+               if ln.strip().startswith("written:")]
+    # The headline carries the caller's own text on some verbs (a note, a
+    # title), so it is the part cut when the line will not fit - the file
+    # written is the record, and is kept whole.
+    line = _output.success_line(
+        heads[0], "; written: %s" % (", ".join(written),) if written else "")
+    decided = _decided_lines(body, _written_ids(heads[0]))
+    if not decided:
+        return line
+    # A `(text, payload)` answer is printed whole: the decided lines are the
+    # write's own account and are never cut.
+    return line, "\n" + "\n".join(decided)
+
+
 def main(argv, out=print):
     p = build_parser()
     # INTERMIXED, BECAUSE THE DOCUMENTED ORDER PUTS THE MANIFEST LAST. On some
@@ -10375,10 +11815,12 @@ def _dispatch(args, argv, out):
              "done": cmd_done, "seed": cmd_seed, "next-id": cmd_next_id,
              "signoff": cmd_signoff, "settle": cmd_settle,
              "reopen": cmd_reopen, "move": cmd_move, "block": cmd_block,
+             "unblock": cmd_unblock,
              "note": cmd_note, "couple": cmd_couple, "uncouple": cmd_uncouple,
              "finding": cmd_finding, "resolve-finding": cmd_resolve_finding,
              "correct": cmd_correct, "bug-add": cmd_bug_add,
-             "mute": cmd_mute, "unmute": cmd_unmute}
+             "mute": cmd_mute, "unmute": cmd_unmute,
+             "file-return": cmd_file_return}
     try:
         return doors[args.command](args, out)
     except Exception as exc:                    # never leave a caller guessing
@@ -10397,4 +11839,4 @@ if __name__ == "__main__":
         print("audit-task.py has no inline --selftest; its cases moved to "
               "plugins/audit/tests/test_audit_task.py - run that file instead.")
         sys.exit(0)
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(_output.terse_cli(main, sys.argv[1:], success_line))

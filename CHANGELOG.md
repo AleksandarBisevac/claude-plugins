@@ -14,8 +14,214 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `docs/audit/audit-plan.json` there. An absolute `manifestPath` is used as given, the way the
   hooks already read it. `audit-usage.py` asks the same resolver, so the three scripts behind the
   first-contact commands agree on which plan is the project's.
+- **`review.perTask` in `.claude/audit.config.json`: `always`, `phase` or `signals`.** It says
+  where a task's three review answers - does the diff do what the task asked, was its new test
+  seen red, would an inherited test pass with the behaviour deleted - are given: by a reviewer
+  per task (`always`), by the phase review at sign-off (`phase`), or per task only where the
+  red-first proof did not come back `proved` or the filed return disagrees with the recorded
+  gate (`signals`). `audit-task.py start` records the value on the phase at its first start and
+  on each task, so a key switched mid-phase changes nothing for a phase already under way. The
+  panel's Settings tab has a control for it. **Its default is `phase`, which changes behaviour
+  for a config that does not set the key** - see *Changed*.
+- **`audit-task.py add --fixes <findingId>[,<findingId>]`** writes `task.fixes` and each
+  finding's `fixTask` in the write that adds the task, refusing a finding of another phase or
+  one already naming a task. Under `phase` such a task closes only `--intent not-asked` with
+  its basis: a close with no `--intent` is refused, because the phase review owes a fix task no
+  answer and the `deferred` it would record could never be answered.
+- **A phase review files its return:** `audit-task.py file-return <phaseId> --role reviewer
+  --head <sha>`, with a `tasks` array holding one entry per task owed its answers. The phase
+  reviewer's brief (`audit-lookup.py brief <phaseId> --role phase`) now prints the phase's
+  `openChoices`, the head it was computed at, the tasks owed their answers and the filing
+  command. `_refs.phase_return_key_drift()` holds the entry's keys in
+  `agents/audit-reviewer.md` equal to the ones the filing verb reads.
+- **The step driver signs a phase off.** Once every task is closed, `drive-phase.py next`
+  prints the phase reviewer's dispatch, records the filed review's findings in one `finding`
+  call, and prints one `decide triage` listing each open finding with its options and the
+  predicted price of a fix task, with the basis of that figure. `--answer fix --fix <id>` adds a
+  task per finding through `audit-task.py add --fixes` and drives it; `--answer sign-off --reason
+  <summary>` runs the phase gate, `verify-invariants.py`, the sign-off verb, the commit, the
+  landing and the lock release as one step. A red phase gate stops that step before the sign-off
+  verb, and the next `next` prints the triage again.
+- **The invariants report a landing whose stamp is uncommitted.** A new `landing-committed`
+  check compares a landed phase's `status` and `mergedAt`, as the working tree holds them, with
+  what HEAD commits, and names the file and both values when they differ. `verify-invariants.py`
+  and `/audit:status --gate --fail-on invariant-breach` both run it.
+- **`drive-phase.py next <taskId>` drives one task.** It starts the task, runs the same steps a
+  phase drive does and prints `done <taskId>` once the task is closed, leaving its siblings and
+  sign-off alone; a task already closed is reported at once, and a blocked one stops the drive
+  with its recorded reason. `/audit:run` and `/audit:next` run through it.
+- **A red recorded gate offers `rerun`** beside `retry` and `block`: it measures again without
+  re-starting the task, so a gate that could not run spends no attempt. Answering `block` now
+  commits the failed run's record through `commit-audit-state.py`.
+- **`tools/measure-context.py --gate`** holds what each pipeline entry makes the main loop read
+  before any work under the pipeline-cost design's ceilings, and refuses a pipeline command
+  that reads a reference file first. CI and `tools/verify.sh` run it.
+- **`_refs.followed_anchor_drift()`** holds every row of the README's followed table to a step
+  text the driver prints or a bullet of an agent prompt.
+- **`audit-task.py unblock <taskId> --reason "<the human's words>"`** resets the attempts of a
+  task that has spent them, after a human says try again: a blocked task goes back to
+  `pending`, and the reason goes on a `task.unblock` journal row. A task with attempts left is
+  refused, since `start` still runs it. The step driver's stop on a blocked task names it.
+- **An agent's return is filed, and a close can read it.** `audit-task.py file-return <taskId>
+  --role executor|reviewer` files the return from stdin, once per task, role and start;
+  `done --from-return` takes the outcome, `verifiedBy` and `redFirst` from the executor's filed
+  return. `audit-lookup.py <manifest> brief <id> --role executor|reviewer|phase` writes an
+  agent's whole spawn brief to a file and prints its path.
+- **`audit-task.py add --from-file <path>`** adds a phase and its tasks from one planning file
+  in one write, saving the request as typed and its open choices on the phase.
+- **`/audit:doctor --transcript <path>`** reports one session's main-loop cache TTL trade: its
+  longest gap between main-loop requests, its one-hour cache writes, and what those writes would
+  have cost at a five-minute TTL.
 
 ### Changed
+- **`/audit:phase` runs a phase's tasks one at a time, in id order.** It used to run a wave's
+  tasks in parallel where their files were disjoint. The step driver records each task's gate
+  before the next task starts, because a gate run while a sibling executor edits the same tree
+  measures that sibling's unfinished work. The cost is wall clock: a wide phase now takes time
+  in proportion to its task count. The README's `/audit:phase` row says so.
+- **The phase review's answers that only a human settles stop the sign-off, in the step driver
+  and in the sign-off verb.** The driver's triage lists each task the review answered `diverges`
+  or `cannot-tell`, each red-first `not-proved` and each inherited-test `flagged`, and a phase
+  intent of `diverges` or `cannot-tell` - under every `review.perTask` value, not only `phase` -
+  and refuses `sign-off` until `--answer accept --reason` settles them; the reason goes into the
+  summary. `audit-task.py signoff` (`/audit:phase signoff`) reads the same answers and the same
+  settlement, and exits 2 writing nothing while one is unsettled, so the verb run by hand does
+  not sign off what the triage would have stopped. A task added after the review's head gets a fresh phase
+  review, and a fix task closed after it is listed as unreviewed, with `--answer re-review`
+  beside `sign-off` (whose summary then names it). Sign-off also asks again what it had stopped
+  asking: a `meta.runtimeBoot` boot when the phase touched its app root (`booted` or
+  `not-reachable`, each with a reason), a phase gate that printed `NO OVERLAP` or `TREE CHANGED`
+  (`accept --reason`; a task gate's did-line now carries the banner too), an invariant breach
+  (`accept --reason`), and a parent that moved (`no-ff`, or `leave --reason`, never a rebase).
+  The triage, the runtime boot, the gate banner and the invariant breach each also take
+  `decline --reason`, which keeps the human's words for the summary and hands back to the work.
+  A boot, and an accept of an invariant breach, is bound to the HEAD it was given at and asked
+  again once a commit moves it; an accept of a gate banner is bound to the run it was shown, so a
+  gate retargeted or measured again at the same HEAD asks again, and the summary drops the words
+  once the run they answered is not the one the verdict stands on; a green phase gate recorded at an unchanged HEAD is
+  reused rather than run again, so an accept there does not pay for a second gate run - but only
+  while the sign-off verb would still bind it: the newest phase verdict, measured under the gate
+  the phase declares now, over its declared files as they stand. A gate retargeted, a declared
+  file edited or a run recorded by hand at the same HEAD measures again, and a refusal after the
+  gate drops the held run, so sign-off no longer loops on a run the verb refuses. Under
+  `always` and `signals`, a per-task reviewer's `diverges` or `cannot-tell` is `decide
+  review-answer`, whose `continue` now takes `--reason`, and whose print says to ask the human
+  and pass their words verbatim; the summary keeps it. With no phase review marked in its state,
+  the driver reads a phase return already filed at the current head instead of dispatching a
+  second review, and records its findings only where the plan's review does not already hold
+  them. The sign-off verb's refusal over an unsettled answer says what `drive-phase.py
+  next` will do - where a review skill resolves or a task is owed its answers - and, for a group
+  member, to answer only `accept` and sign the group off again.
+  `audit-task.py file-return <phaseId>` refuses a phase return where the copy of the plan it
+  reads records a sign-off verdict, exiting 2 and writing nothing. `close-phase.py` refuses, under every `review.perTask` value, the
+  landing of a phase whose filed phase return - in the evidence of any worktree git lists, at the
+  branch tip or on the target branch - holds an answer only a human settles, or will not parse,
+  while no sign-off verdict is recorded on the tip's copy of the plan (the copy on disk for an
+  unversioned plan). A verdict now covers what its sign-off read, wherever that sits: sign-off,
+  single or group, records in `review.readReturns` the content signature of every filed phase
+  return it read - its checkout's evidence and the branch tip's committed returns, the tip's
+  through the same stop on an unsettled answer - and rewrites the field whole on each sign-off.
+  The landing refuses a return holding such an answer whose signature is not in that set unless
+  a known checkout's driver settlement settles that answer, so one filed after the verdict is refused in a
+  sibling worktree, in the parent's checkout, in the signing checkout after it switched away and
+  back, or brought to the tip by a merge of the target, and a copy of a return the verdict read
+  lands wherever it sits. A human's settlement binds the answer it settled, not the return's
+  name: the driver's `--answer accept` records, beside each settled answer's key, the content
+  signature of the return it sits in (`answersAccepted.signatures`, added beside the `keys`
+  an older reader reads), and the sign-off verb and a landing over a verdict recording what it
+  read honour a settlement only for a return carrying that signature. A different answer filed
+  later under the same name - a name is the phase and the head, so two checkouts filing at one
+  head share it - is not settled by it, and one filed under a name the verdict read is refused
+  whatever any record says. A settlement recorded by key alone, before this release, settles
+  nothing on that path: the sign-off's refusal says so, and the driver's triage puts the answer
+  to the human again, whose accept records the signature. The sign-off verb asks the
+  settlement records of every worktree git lists and does not report prunable - the set the
+  landing honours, through one helper - so a sign-off run from the parent checkout no longer
+  refuses a return the tip commits that was settled where the branch is checked out. A
+  settlement record that cannot be read refuses only a sign-off with an answer still waiting,
+  named in that refusal, and a waiting answer only the tip commits names the checkout whose
+  triage lists it: the worktree holding the branch, or the `git worktree add` that makes one. A verdict recorded without the field keeps the reading by place: a
+  tip's verdict settles the returns the tip commits and those in the worktree holding the
+  branch, the target branch's committed tree and the worktree holding it are read from the
+  branch's own checkout, an `evidence.dir` several checkouts share is settled by the signing
+  checkout's driver settlement, and under a plan stored outside the project each return is
+  settled by the settlement of the checkout holding it - a return the tip or the target commits
+  by any known checkout's.
+  A verdict on the worktree's copy that the tip
+  lacks is refused with the remedy of committing it, and a refusal over a recorded verdict names
+  restoring the record or reporting it rather than filing and signing off again, which both refuse.
+  Its refusal of a green whose declared files changed since names the declared files holding
+  uncommitted changes, and says to commit or revert them before recording again. A
+  high-risk task covered by a `--confirm-high-risk` answer commits without asking again. A
+  blocked task's stop names its remedy per task: `audit-task.py start <id>` while it has attempts
+  left, `audit-task.py unblock <id> --reason` once they are spent. `tools/stream-cost.py` reads the driver's did-words for a fix task added, the landing
+  and the lock release, so a driven sign-off with a fix task is no longer counted as task cycle.
+- **No pipeline command makes the main loop read reference prose first.** `/audit:run`,
+  `/audit:next`, `/audit:resume`, `/audit:phase`, `/audit:review` and `/audit:task` are cut to
+  the step driver's loop and each verb's own command line. The rule a step needs is printed by
+  `drive-phase.py` at that step - the dispatch's description, the high-risk confirmation, which
+  answer to a red gate spends an attempt, the sign-off order and its reason, a held lock, any
+  other stop, and an ADO echo a linked item is owed - and the agents carry theirs in their
+  prompts. The README's followed table names each rule's step or prompt. What each verb writes
+  and refuses, and why, moved from the command bodies into `reference/verbs-in-full.md`, a
+  reference the plugin ships and no command reads first. The reference files stay as documentation, and now say that the
+  driver performs their steps. `python3 tools/measure-context.py --gate` prints each entry's
+  size against its ceiling.
+- **`close-phase.py` commits the stamp it writes.** The phase's `mergedAt` and stored `done`
+  used to stay as uncommitted edits in the parent's tree after a landing. They are now committed
+  there through `commit-audit-state.py` (and `commit-manifest-index.py` in a sharded plan), with
+  the subject `landed on <parent>`. When the parent is checked out nowhere and the main tree holds
+  the phase branch, the commit goes on that branch and the parent is fast-forwarded to it. A stamp
+  in a tree holding any other branch is left uncommitted, and the output says so. A re-run commits
+  a stamp an earlier landing left uncommitted. If a commit verb refuses, the run exits 1.
+- **The phase reviewer's brief names the filing command even when no task is owed its
+  answers**, with an empty `tasks` list, so the step driver can read the review from the filed
+  return.
+- **Without a `review.perTask` key, no reviewer runs per task any more.** The default is `phase`.
+  `audit-task.py done --commit <sha>` records the task's intent as `deferred` and refuses every
+  `--intent` word, writing nothing - `not-asked` included, except on a task `add --fixes`
+  recorded as a fix task. The step driver (`drive-phase.py`) dispatches no per-task reviewer
+  and still records each task's gate before its close. The phase review answers each task at
+  sign-off; `/audit:phase signoff` writes those answers onto each task's `intentCheck` and
+  **refuses, under `--verdict skipped` as under `passed`, while a task that records a commit
+  lacks them**, and `close-phase.py` refuses its own merge on the same reading - of the plan it
+  is handed, of the copy on disk in the worktree holding the branch, and of the copy the branch
+  tip brings in. Where a task's key reads `phase`, it also refuses a tip whose copy records no
+  sign-off verdict, since a task's close reaches the branch only with the sign-off commit, and
+  a tip whose copy cannot be read when the plan is versioned (inside the git root, not
+  ignored, and committed at the parent or at the phase's `baseRef`); a plan git never commits
+  is asked through its copy on disk instead. It does not ask a task that no longer records its commit, a merge made by hand or through a
+  pull request, or who filed the phase return; the plugin README's followed table names each.
+  A phase already under way when you upgrade reads the new default too. **To keep a reviewer
+  per task, set `"review": {"perTask": "always"}`** in `.claude/audit.config.json` - before
+  upgrading if a phase is in flight. That is not the last release's behaviour: a close with a
+  commit is still held to the filed-return rule in the next entry. This ships in a minor release by the maintainer's decision;
+  `COMPATIBILITY.md` records it as a named exception to the promise that a new key never
+  changes behaviour for a config that does not set it.
+- **A close with a commit needs the review behind it, under every `review.perTask` value.**
+  `audit-task.py done --commit <sha>` used to accept a typed `--intent matches`, or no `--intent`
+  at all. Under `always` and `signals` it now exits 2, writing nothing, unless the reviewer's
+  return is filed for the task's current start, or the close says `--intent not-asked
+  --intent-basis "<why>"`. `COMPATIBILITY.md` records the change.
+- **The plugin's verbs print one success line by default**, naming what was done and the record
+  written; `audit-task.py` follows it with any gate basis, `ready now` command and warning about
+  the id it wrote. `--verbose` prints the text each printed before, and a script that read the
+  old lines passes it.
+- **A stamp no longer goes stale when the only paths that moved are ones this plugin's recorders
+  write** - a filed return, a recorded gate. This loosens `stamp-verification.py compare`:
+  a change to those paths between a stamp and its comparison is not reported.
+- **`done --no-change` is refused when one of the task's declared files changed since its
+  start**: a commit since the HEAD its `task.start` row records touching one, or an uncommitted
+  change to one. Without that row the span starts at the phase's `baseRef`, cut by `startedAt`,
+  and leaves out a commit another task records as its own. Each declared file is read relative
+  to the git root, as the task commit stages it, so a repository in a subdirectory of the
+  project (`gitRoot`) is asked the same question; a declared file outside the git root is named
+  as not asked. A task with no commit is never asked for review answers, so the claim is
+  checked against git instead.
+- **`close-phase.py` leaves the stamp uncommitted when the tree holds other pending changes**
+  to the plan file, the journal or the evidence that this landing did not write, and says so.
+  The audit-state commit stages each of those whole, so committing there would carry another
+  session's work under a subject saying the phase landed.
 - **`/audit:status`, `/audit:report` and `/audit:usage` refuse when the config names a manifest
   they cannot use.** A `.claude/audit.config.json` that does not parse, or whose `manifestPath`
   names a file that does not exist, makes each of them exit 2 and print the same refusal
@@ -111,6 +317,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   release is therefore a major is the operator's call, and is not decided here.
 
 ### Fixed
+- **A task whose intent reads `deferred` is listed as still owed its phase review.**
+  `_status_facts.intent_unanswered` counted `deferred` as an answer, so `/audit:status` and the
+  sign-off verb's output dropped such a task from the list of done tasks with no intent answer.
 - **The meter's outlier advisory no longer counts a kept ledger row from outside the task
   it is warning about.** It used to sum `ledger["kept"]` over every row the ledger holds, so a
   row that kept its stored figure on some unrelated task inflated the "N ledger row(s) keep the

@@ -2323,7 +2323,6 @@ AUDITED_EXEMPTIONS = {
     "BASELINE": ("live", "dead_baseline"),
     "KNOWN_CONFIG_MIRRORS": ("reason", "config_read_violations"),
     "PANEL_ROUTE_READERS": ("reason", "panel_route_violations"),
-    "MANIFEST_PLACEHOLDER_PENDING": ("live", "manifest_placeholder_drift"),
     "PANEL_ROUTE_UNREACHED": ("reason", "panel_route_violations"),
     "TOOL_FIXTURE_BASENAMES": ("live", "tool_basename_drift"),
     # The hook scopes that read the project's plan on purpose. The lint that

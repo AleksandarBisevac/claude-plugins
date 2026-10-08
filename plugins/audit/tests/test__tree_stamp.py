@@ -656,6 +656,82 @@ def _cases(check):
     _harness.stage(check, "tsc-identity", _identity_cases)
     _harness.stage(check, "tsr", _render_cases)
     _harness.stage(check, "tss", _scope_cases)
+    _harness.stage(check, "tsd", _recorder_dirty_cases)
+
+
+def _recorder_dirty_cases(check):
+    """The dirty digest a STAMP carries leaves the caller's recorder out, by the
+    same `excluded` the content field takes - so the orchestrator's own writes
+    between a stamp and its comparison do not read as a moved tree, and every
+    other write still does."""
+    repo = _seeded_repo("tree-stamp-dirty-recorder-")
+    os.makedirs(os.path.join(repo, "records"))
+    _write(os.path.join(repo, "records", "runs.jsonl"), "one row\n")
+    _git(repo, "add", "records/runs.jsonl")
+    _git(repo, "commit", "-q", "-m", "ledger")
+    owns, excluded = ["src/mine.py"], ["records"]
+
+    stamp, _state = M.take(repo, owns, excluded=excluded)
+    _write(os.path.join(repo, "records", "runs.jsonl"), "one row\ntwo\n")
+    os.makedirs(os.path.join(repo, "records", "returns", "P1.1"))
+    _write(os.path.join(repo, "records", "returns", "P1.1", "x.executor.json"),
+           "{}\n")
+    quiet = M.compare(stamp, repo, excluded=excluded)
+    check("tsd1 THE RECORDER'S OWN WRITES ALONE LEAVE THE STAMP CURRENT: a row "
+          "appended to a tracked ledger and a new file filed under it, both "
+          "inside the excluded prefix, move no field. Left in, every stamp taken "
+          "before a recorded gate came back stale on dirtyDigest, which made "
+          "stale the normal state rather than a signal: %r / %r"
+          % (quiet["verdict"], _states(quiet)),
+          quiet["verdict"] == M.CURRENT
+          and _states(quiet)["dirtyDigest"] == M.AGREES)
+
+    stamp2, state2 = M.take(repo, owns, excluded=excluded)
+    check("tsd2 ...and the dirty basis SAYS what it left out, so a digest "
+          "narrowed by the recorder cannot pass for one over the whole status: "
+          "%r" % (state2.get("dirtyBasis"),),
+          "0 dirty path(s); 2 more the caller's recorder writes were left "
+          "out" in (state2.get("dirtyBasis") or ""))
+
+    # The second direction: an exclusion that swallowed every dirty line would
+    # pass tsd1 and must fail here.
+    _write(os.path.join(repo, "src", "theirs.py"), "w = 2  # a real edit\n")
+    edited = M.compare(stamp2, repo, excluded=excluded)
+    check("tsd3 A REAL EDIT OUTSIDE THE RECORDER'S PATHS STILL READS STALE, on "
+          "the dirty digest itself and not only on the content field: %r / %r"
+          % (edited["verdict"], _states(edited)),
+          edited["verdict"] == M.STALE
+          and _states(edited)["dirtyDigest"] == M.MOVED)
+
+    stamp3, _s3 = M.take(repo, owns, excluded=excluded)
+    os.makedirs(os.path.join(repo, "records-archive"))
+    _write(os.path.join(repo, "records-archive", "runs.jsonl"), "lookalike\n")
+    twin = M.compare(stamp3, repo, excluded=excluded)
+    check("tsd4 THE OVER-FIRE TWIN: a file merely NAMED like the recorder's "
+          "directory - `records-archive` beside `records` - is outside it and "
+          "moves the dirty digest. A prefix match without the segment boundary "
+          "would read it as the recorder's and keep the stamp current: %r / %r"
+          % (twin["verdict"], _states(twin)),
+          twin["verdict"] == M.STALE
+          and _states(twin)["dirtyDigest"] == M.MOVED)
+
+    check("tsd5 a RENAME line is the recorder's only when BOTH of its sides are, "
+          "and a quoted path is read without its quotes",
+          M.dirty_digest(set(["R  records/a -> src/a"]), excluded=excluded)[0]
+          != M.dirty_digest(set(), excluded=excluded)[0]
+          and M.dirty_digest(set(['R  records/a -> records/b',
+                                  ' M "records/a b"']),
+                             excluded=excluded)[0]
+          == M.dirty_digest(set(), excluded=excluded)[0])
+
+    gate_row = M.tested_state(repo, owns, set(["?? records/new.json"]),
+                              excluded=excluded)
+    bare = M.tested_state(repo, owns, set(), excluded=excluded)
+    check("tsd6 THE GATE ROW'S DIRTY DIGEST IS UNCHANGED: `tested_state` leaves "
+          "the recorder in unless its caller asks, because a row already "
+          "recorded was digested over the whole status and a committer grading "
+          "it must reach the same bytes",
+          gate_row["dirtyDigest"] != bare["dirtyDigest"])
 
 
 def _scope_cases(check):

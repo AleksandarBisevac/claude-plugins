@@ -278,6 +278,49 @@ def _cases(check):
           "behind it: %r" % ((f, w),),
           not f and any("executor" in x for x in w))
 
+    # --- review.perTask ---------------------------------------------------------
+    # Where a task's three review answers are given. `executor.runsGate`'s shape
+    # for the same reason: a FINDING refuses the panel's save, and a typo stored
+    # anyway would be read back as neither word.
+    for _per in M.REVIEW_PER_TASK_MODES:
+        f, w = M.validate_config({"review": {"perTask": _per}})
+        check("rv1 %r validates clean" % (_per,), not f and not w)
+    f, w = M.validate_config({"review": {"perTask": "sometimes"}})
+    check("rv2 a review.perTask outside the vocabulary is a FINDING: %r" % (f,),
+          any("review.perTask" in x for x in f))
+    f, w = M.validate_config({"review": "phase"})
+    check("rv3 a non-object review -> finding",
+          any("review must be" in x for x in f))
+    f, w = M.validate_config({"review": {"perTsk": "phase"}})
+    check("rv4 a misspelled review key -> warning only: %r" % ((f, w),),
+          not f and any("review" in x for x in w))
+    check("rv5 the modes mirror hooks/_config.py's, and the default the hooks "
+          "ship is `phase`: %r" % ((M.REVIEW_PER_TASK_MODES,
+                                    _hcfg.REVIEW_PER_TASK_MODES,
+                                    _hcfg.DEFAULTS.get("review")),),
+          tuple(M.REVIEW_PER_TASK_MODES) == tuple(_hcfg.REVIEW_PER_TASK_MODES)
+          and _hcfg.DEFAULTS.get("review") == {"perTask": "phase"})
+    _defs = {"review": {"perTask": "phase"}}
+    check("rv6 the reading: the key when set, the shipped default when absent, "
+          "and a value outside the vocabulary refused with a problem rather "
+          "than read as the default",
+          M.review_per_task_mode({"review": {"perTask": "always"}}, _defs)
+          == ("always", None)
+          and M.review_per_task_mode({}, _defs) == ("phase", None)
+          and M.review_per_task_mode(None, _defs) == ("phase", None)
+          and M.review_per_task_mode({"review": {"perTask": "x"}}, _defs)[0]
+          is None
+          and "review.perTask" in (M.review_per_task_mode(
+              {"review": {"perTask": "x"}}, _defs)[1] or ""))
+    with open(os.path.join(os.path.dirname(_harness.SCRIPTS_DIR), "schema",
+                           "audit-plan.schema.json"), "r", encoding="utf-8") as fh:
+        _pdefs = json.load(fh)["$defs"]
+    check("rv7 the value a phase and a task record is the config's vocabulary, "
+          "in the plan schema's own enums",
+          [(_pdefs[k]["properties"].get("reviewPerTask") or {}).get("enum")
+           for k in ("phase", "task")]
+          == [list(M.REVIEW_PER_TASK_MODES)] * 2)
+
     # --- executor.maxHours -------------------------------------------------------
     # The same shape as runsGate above, for the bound on CONTINUING an agent
     # across tasks: a positive number validates clean, and anything outside

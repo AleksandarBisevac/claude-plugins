@@ -157,6 +157,7 @@ _output.install_path()
 
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _evidence_io  # noqa: E402  (where the evidence ledger lives)
+import _filed_returns  # noqa: E402  (the executor's filed return, for its `claims`)
 import _invariants  # noqa: E402  (the git root, the manifest file pair, the under-test)
 import _journal_io  # noqa: E402  (where the trail lives, and the append)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR shards)
@@ -491,8 +492,19 @@ def override_row(project, task_id, phase_id, nonce, verdict, reason,
 
 
 # --- the commit ---------------------------------------------------------------
-def commit_message(task_id, subject, manifest):
-    """The message paragraphs: a conventional subject, and the co-author trailer.
+def commit_message(task_id, subject, manifest, claims=None):
+    """The message paragraphs: a conventional subject, the executor's filed
+    `claims` when it carried one, and the co-author trailer.
+
+    THE CLAIMS ARE A PARAGRAPH OF THEIR OWN, byte-identical, after the subject
+    and before the trailers. The plugin commits through its own `git commit`
+    subprocess, so a repository hook that asks a Bash command for a `claims:`
+    block never sees this commit; the block the executor filed is what reaches
+    the message instead. A return without one gives the message it always did -
+    the plugin has no ground to require a block a project may not ask for.
+    `_scoped_commit.with_row_trailer` keeps the row trailer in a paragraph of
+    trailers, its own when there is no co-author line, so the claims paragraph
+    never becomes the one git reads trailers from.
 
     A LIST RATHER THAN ONE STRING, because that is how it reaches git: one `-m`
     per paragraph, so the trailer is a trailer and not a second sentence of the
@@ -512,10 +524,26 @@ def commit_message(task_id, subject, manifest):
         else DEFAULT_COMMIT_TYPE
     paragraphs = ["%s(%s): %s - %s" % (ctype.strip(), task_id, SUBJECT_LEAD,
                                        subject or DEFAULT_SUBJECT)]
+    if isinstance(claims, str) and claims.strip():
+        paragraphs.append(claims)
     coauthor = block.get("coauthor")
     if isinstance(coauthor, str) and coauthor.strip():
         paragraphs.append(coauthor)
     return paragraphs
+
+
+def claims_from_return(manifest_path, project, task):
+    """`(claims, refusal)` - the `claims` text of the executor's return filed for
+    `task`'s current start, under THIS manifest's evidence directory, or None.
+    A filed return that will not parse is a refusal, never an absence."""
+    proj, cfg = _evidence_io.project_config_for(manifest_path, project)
+    claims, problem = _filed_returns.claims_from_return(
+        _evidence_io.evidence_dir(proj, cfg), task)
+    if problem:
+        return None, ("the executor's filed return %s - nothing was committed, "
+                      "because a commit that dropped its claims would read as "
+                      "one whose return carried none" % (problem,))
+    return claims, None
 
 
 def record_row(project, task_id, phase_id, nonce, config=None):
@@ -652,6 +680,12 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
         return E_FAIL, answer
     if verdict["state"] == "no-gate":
         skipped = skipped + [verdict["sentence"]]
+    # The executor's filed return for the task's current start, for its
+    # `claims`. Still before staging: a return that is there and will not parse
+    # refuses with nothing to undo, rather than committing as if none was filed.
+    claims, why = claims_from_return(manifest_path, project, task)
+    if why:
+        return E_FAIL, _scoped_commit.answer(skipped, refused=why)
 
     def rows(nonce):
         """The rows naming this commit, written before it: the anchor, and the
@@ -673,7 +707,7 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
 
     done = _scoped_commit.commit_with_rows(
         git_root, allowed, targets["kinds"],
-        commit_message(task_id, subject, manifest),
+        commit_message(task_id, subject, manifest, claims=claims),
         lambda paths: foreign_refusal(paths, targets), rows,
         lambda nonce, why: _scoped_commit.withdraw(
             project, config, nonce, "commit-task-work",
@@ -712,6 +746,27 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
     answer["verdict"] = verdict
     answer["overridden"] = overriding
     return E_OK, answer
+
+
+def success_line(lines):
+    """A commit's one line: the SHA it wrote, how many paths it carries, and
+    the verdict it rests on.
+
+    None - the long form - for a run that committed with anything beside those
+    to say: a degraded step, a journal row outside the commit or never written.
+    """
+    head = lines[0].strip() if lines else ""
+    if not head.startswith("%s committed " % (PREFIX,)):
+        return None
+    carried = _scoped_commit.ROW_CARRIED.split("%")[0]
+    paths = [ln for ln in lines[1:] if ln.startswith("    ") and ln.strip()]
+    rest = [ln.strip() for ln in lines[1:] if ln.strip() and ln not in paths]
+    verdict = [ln for ln in rest if ln.startswith("verdict: ")]
+    if any(not ln.startswith((carried, "verdict: ")) for ln in rest):
+        return None
+    return "%s (%d path(s), its journal row inside it)%s" % (
+        head, len(paths),
+        "; %s" % (verdict[0].split(" - ")[0],) if verdict else "")
 
 
 def main(argv, out=print):
@@ -785,4 +840,4 @@ if __name__ == "__main__":
               "plugins/audit/tests/test_commit_task_work.py - run that file "
               "instead.")
         sys.exit(0)
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(_output.terse_cli(main, sys.argv[1:], success_line))

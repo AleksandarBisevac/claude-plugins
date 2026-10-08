@@ -2727,6 +2727,32 @@ def run_compare(args, out, stdin=None):
     return EXIT_FOR[result["verdict"]]
 
 
+def success_line(lines):
+    """Each action's success in one line, from the lines it printed.
+
+    `take`: the stamp token alone - it is the record, and a caller parses it
+    back, so it is handed over whole as a payload (`_output.terse_choice`).
+    `red`: the verdict line, then the `redFirst:` block, whole for the same
+    reason. `compare`: the verdict line. Anything else, the long form.
+    """
+    said = [ln.strip() for ln in lines if ln.strip()]
+    token = [ln for ln in said if ln.startswith(_tree_stamp.STAMP_TOKEN)]
+    if token:
+        return ("", token[-1])
+    block = [ln for ln in said if ln.startswith("redFirst: ")]
+    # A run that kept or left anything behind says so on a line of its own,
+    # which the caller must still read: only the lines every run prints may
+    # stand beside the verdict and the block.
+    usual = ("red-first: ", "redFirst: ", "at HEAD: ", "from the working tree: ",
+             "environment: ", "dependencies:")
+    if block and said[0].startswith("red-first: "):
+        return (said[0], block[-1]) if all(ln.startswith(usual)
+                                          for ln in said) else None
+    if said and said[0].startswith("VERDICT: "):
+        return "[stamp-verification] %s" % (said[0],)
+    return None
+
+
 def main(argv, out=print, stdin=None):
     argv = list(argv)
     # Everything after the first `--` is the red run's command, kept away from the
@@ -2763,4 +2789,4 @@ if __name__ == "__main__":
               "plugins/audit/tests/test_stamp_verification.py - run that file "
               "instead.")
         sys.exit(0)
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(_output.terse_cli(main, sys.argv[1:], success_line))

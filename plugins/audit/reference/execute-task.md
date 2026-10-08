@@ -1,10 +1,15 @@
 # Execute the task — orchestrator reference
 
-Read `reference/orchestrator.md` and `reference/manifest-conventions.md` first. This is the
-one section every execution command that actually runs a task defers to — split out of
-`orchestrator.md` so a command that never runs a task does not have to read it: `next`,
-`phase` and `run` read this file too; `status`, `report`, `resume`, `worktree` and `layout` do
-not need to.
+**No pipeline command reads this file first, and the main loop does not perform these steps
+by hand any more.** The step driver, `scripts/governance/drive-phase.py`, performs every step
+below that needs no judgement - the start, the computed brief, the recorded gate, the stamp
+grade, the commit and the close - as the existing verbs, in this order, and prints the rule a
+step needs at that step; the agents file their returns through `drive-phase.py submit`.
+`tools/measure-context.py --gate` holds that no pipeline command reads a reference file first.
+This file is the reference for what each step does and why, for the guide agent and for a
+reader who asks: where it says "you", read the step the driver runs. What each `/audit:task`
+verb writes and refuses, and what the run commands leave behind, is
+`reference/verbs-in-full.md`.
 
 ## Execute the task
 
@@ -53,6 +58,18 @@ not need to.
    declaration of both the rules and the return shape, and restating it is how this path came
    to ask for no `testsAdded` — the field `task.verifiedBy` is filled from — while every rule
    beside it was faithfully copied. In the spawn prompt:
+   - **The brief is computed, and the executor is handed its path.**
+     ```
+     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-lookup.py" <manifestPath> brief <taskId> --role executor
+     ```
+     writes the whole brief to a file under `stateDir` and prints one line naming it; the spawn
+     prompt is that path and the task id. The bullets below are what the script puts in it —
+     read them as its specification, not as text to compose: the resolved skills, the
+     description verbatim, the files with their last declarer, the docs, the desired outcome,
+     the gate resolved, the `executor.runsGate` reading with its command, the stamp and red-first
+     helpers resolved against this plugin copy, the filing command, and the retry context when
+     `attempts > 1`. A brief typed by hand instead is checked by nothing; the computed one is
+     held by `audit-lookup.py`'s cases in `plugins/audit/tests/test_audit_lookup.py`.
    - Tell it to **first invoke each resolved skill** via the `Skill` tool (load conventions before coding).
      Resolve them as **each tag's `meta.areas[tag].skills` first, then `task.skills`, deduped, area
      first** — house conventions before task specifics, because a subagent that reads the specifics
@@ -165,9 +182,12 @@ not need to.
      reviewer-only `not-proved` — `red_first_vocabulary_drift()` in
      `plugins/audit/scripts/_refs.py` fails the build otherwise, and `red_first_drift()`
      beside it holds that every document naming a red-first proof offers the third word.
-     **Nothing checks that a returned outcome carries the block**: the `redFirst` enum
-     refuses a fourth spelling only once one is written down and only under the `ajv` step
-     CI and `tools/verify.sh` run. So asking for the block is yours, and one that did not
+     **A FILED return carries the block, and the filing verb is what checks it**:
+     `audit-task.py file-return` refuses an executor return whose `redFirst` is missing, has
+     no basis, or holds a word outside the schema enum, writing nothing. A return the
+     executor handed back without filing is checked by nothing — the `redFirst` enum refuses
+     a fourth spelling only once one is written down and only under the `ajv` step CI and
+     `tools/verify.sh` run — so asking for the filing is yours, and a block that did not
      come back is recorded as absent rather than filled in.
    - **A reported verification carries the tree it was taken on.** Evidence names a command and
      an exit code; it does not say *which tree*, and a claim about a tree that has since moved
@@ -193,13 +213,20 @@ not need to.
      itself), only its own added test(s) on `own-tests`, or nothing on `never` — and return **the
      shape `agents/audit-executor.md` declares** — `gates` per gate command it actually ran (`{}`
      on `never`), `outcome` = `{ technical, descriptive }`, `testsAdded` (the test names that
-     become `task.verifiedBy`), `redFirst` (above) and `stamp` (the tree its claims are about). The
+     become `task.verifiedBy`), `redFirst` (above), `stamp` (the tree its claims are about) and,
+     when a skill asked for one, `claims`. The
      brief holds the wording of each, including
      the pass/fail/could-not-run distinction the arms in step 4 turn on;
      `return_shape_drift()` in `plugins/audit/scripts/_refs.py` fails the build when this list
-     falls behind the brief's, which is the only part of the return anything can check —
-     **the return itself is prose, and nothing parses it**, so a field that did not come back
-     is recorded as absent and never filled in.
+     falls behind the brief's. **The executor files that object through `drive-phase.py
+     submit <taskId> --role executor`** (the object on stdin, the test command after `--` on a
+     `tdd` task): `submit` checks the shape and writes nothing when a field is missing, runs
+     the red-first helper, takes the stamp after it, and hands the object to `audit-task.py
+     file-return`. `file-return` checks the shape again - it exits 2 naming a missing field and
+     writes nothing - and writes a well-formed return once, to a path it derives from the task
+     and its current start. The agent hands back the one line `submit` printed.
+     **A return handed back without filing is prose, and nothing parses it**, so a field
+     that did not come back is recorded as absent and never filled in.
    - **After the subagent returns, YOU run the task's gate through the script and record it:**
 
      ```
@@ -246,12 +273,13 @@ not need to.
      out of `content`, so your manifest and journal writes between take and compare do not stale
      a stamp. A version-1 stamp carries no `content` field: it is graded on the other three and
      the comparison says that a rewrite of an undeclared dirty file was not compared. Every field
-     prints its own limit (`says:`) beside it. **Nothing enforces that
-     a return carries a stamp at all.** `return_shape_drift()` in
+     prints its own limit (`says:`) beside it. **A filed return carries a stamp, because
+     `file-return` refuses one without it**; a return handed back without filing is checked
+     by nothing. `return_shape_drift()` in
      `plugins/audit/scripts/_refs.py` holds only that this document asks for every field
-     `agents/audit-executor.md` declares — it cannot see whether an executor filled one in, and
-     the return is prose nothing parses. The command makes a stamp checkable once it is there;
-     asking for it, and re-asking when it is absent, is yours.
+     `agents/audit-executor.md` declares — it cannot see whether an executor filled one in. The
+     command makes a stamp checkable once it is there; asking for the filing, and re-asking when
+     it is absent, is yours.
 
      **When the return and the row disagree, that is a DISCREPANCY and not a correction.**
      A return calling every gate green, against a row whose `status` is anything but
@@ -301,12 +329,28 @@ not need to.
      with `scripts/status/audit-lookup.py <manifestPath> run <runId>` (the id off that line) or
      `run latest --task <taskId>` when the id was not kept, exactly as
      `reference/orchestrator.md`'s **Answering one question about the trail** describes.
-   - **Then ask the reviewer the intent question — one call per task, and only when the gate
-     you just ran came back green.** A red gate already has its answer and the task goes back
-     through step 2; there is nothing to bind a claim to yet. Spawn
+   - **Which task gets a reviewer of its own is `review.perTask`'s answer, read by the driver's
+     `reviewer_due` and nowhere else.** Under `phase` - the shipped default - no per-task
+     reviewer runs at all: the close records `intentCheck.answer = "deferred"` itself, refuses
+     every `--intent` word (a recorded fix task's `not-asked` excepted), and the phase review
+     answers each task at sign-off, which refuses until it has. Under `signals` a reviewer runs
+     only where a computed signal fires - a red-first proof that is not `proved`, or a return
+     whose gates disagree with the recorded green - and a task with neither closes `not-asked`
+     with the signals as its basis. Under `always`, every task gets the call below.
+   - **Where it is due, ask the reviewer the intent question — one call per task, and only when
+     the gate you just ran came back green.** A red gate already has its answer and the task goes
+     back through step 2; there is nothing to bind a claim to yet. Spawn
      `subagent_type: "audit:audit-reviewer"`, `model = phase.review.model`, `description`
-     starting with the task id, and **`mode: task`** in the prompt. Pass each of these, naming
-     it, so the reviewer can report which input it did NOT get instead of assuming one:
+     starting with the task id, and **`mode: task`** in the prompt. **Its brief is computed
+     too** —
+     ```
+     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-lookup.py" <manifestPath> brief <taskId> --role reviewer
+     ```
+     — and the reviewer is handed its path. It carries the executor's return byte-identical
+     as filed, so it is REFUSED (exit 4, no brief written) while that return is not filed for
+     the task's current start: a reviewer cannot be briefed before the claim it checks exists.
+     The brief holds each of these, naming it, so the reviewer can report which input it did
+     NOT get instead of assuming one:
      - the diff you are about to commit (`git diff -- <task.files>`), and `task.description`
        **verbatim** — what the task asked for, not your paraphrase of it;
      - the phase's `desiredOutcome`;
@@ -360,21 +404,26 @@ not need to.
        gate naming no test files earns, and a gap the record shows is worth more than a clean
        sheet the record invented.
 
-     **`intent.answer` itself is carried forward to the close, whichever of the three words it
-     was.** The call happens here, against the uncommitted diff; the close happens in step 4c,
-     once the SHA exists — so pass the word straight through on the SAME `/audit:task done` call
-     that already carries `--commit`, `--descriptive`, `--technical` and `--verified-by`:
-     `--intent matches`, `--intent diverges` or `--intent cannot-tell`. That single write is what
-     makes the answer NAME the diff it was given — `task.intentCheck.commit` becomes the same SHA
-     `task.commit` carries, because both are written in the one call. **If the reviewer call
-     produced nothing usable — it died, timed out, or returned no parseable `intent` — do not
-     guess: omit `--intent` entirely.** An omitted flag and a recorded `diverges` are opposite
-     facts, and a guessed `matches` filling the gap is exactly the failure this call exists to
-     close. **When you deliberately did not ask** — a change too small to review, or a close
-     with no diff at all (`done --no-change`) — say so rather than omitting the flag:
-     `--intent not-asked --intent-basis "<why the question was not put>"`. The verb refuses
-     that word without its basis, and sign-off lists every done task with NO answer, which a
-     deliberate `not-asked` is not.
+     **`intent.answer` itself reaches the close through the reviewer's FILED return, whichever
+     of the three words it was.** The reviewer files its return with `drive-phase.py submit
+     <taskId> --role reviewer`, which hands it to `audit-task.py file-return` — its one write —
+     and the close in
+     step 4c reads it: `/audit:task done <taskId> --commit <sha> --from-return` takes the
+     outcome, `verifiedBy` and the red-first block from the executor's filed return and the
+     intent answer from the reviewer's, in one write. That single write is what makes the
+     answer NAME the diff it was given — `task.intentCheck.commit` becomes the same SHA
+     `task.commit` carries. **Under `always` and `signals`, `done` enforces this on every form
+     that passes `--commit`**, in `_locked_done`: with no reviewer return filed for the task's
+     current start it refuses,
+     writing nothing, unless the close says the question was deliberately not put —
+     `--intent not-asked --intent-basis "<why>"`; and a typed `--intent` word that differs from
+     the filed answer is refused, `not-asked` included. **If the reviewer call produced nothing
+     usable — it died, timed out, or filed nothing — do not guess and do not type its word:**
+     a guessed `matches` filling the gap is exactly the failure this call exists to close, so
+     re-spawn the reviewer, or close `not-asked` with the basis that it did not answer. A
+     `--no-change` close has no diff to bind and keeps its rule: `--intent` is optional there,
+     and `not-asked` still needs its basis. Sign-off lists every done task with NO answer, which
+     a deliberate `not-asked` is not.
 
      None of this blocks the commit and that is deliberate: `run-test-gate.py` is the one
      measurement that decides whether a task is done, and a cheap per-task reviewer that could
@@ -442,9 +491,12 @@ not need to.
      nothing, so those edits are in the working tree the retry inherits: the tree is the
      attempt, and the brief is the record of what the attempt ANSWERED.
 
-     **Nothing checks that a re-spawn carried any of this** — `attempts` is incremented in
-     step 2 and no gate reads a prompt — so it is yours, and a retry briefed with nothing
-     looks afterwards exactly like one briefed well.
+     **The computed brief carries this when `attempts > 1`**: `audit-lookup.py brief
+     --role executor` puts `outcome.technical` verbatim, `testEvidence` and `redFirst` in a
+     retry section, and `bf3` in `plugins/audit/tests/test_audit_lookup.py` holds it. The
+     gate's own output and the `raw log:` path are this session's, not the record's, so adding
+     them to the prompt beside the path is still yours; and a retry briefed by hand instead of
+     by the script is checked by nothing — no gate reads a prompt.
    - The subagent does **not** commit — the orchestrator commits (step 4).
    - **The subagent must NEVER run `git stash`** (a stash in a shared working tree destroys sibling tasks' work).
      To read a baseline it should use `git diff`/`git show HEAD:<file>` to stdout instead, never redirected
@@ -651,7 +703,8 @@ not need to.
           else; what it ships is the template, which is why the guidance sits here. If the
           project's own rules are stricter than a short subject and a wrapped body, they win.
         - Take the SHA the script printed and write it into `task.commit` (`/audit:task done
-          <taskId> --commit <sha>`, which writes it with the rest of the close in one write). The
+          <taskId> --commit <sha> --from-return`, which writes it with the rest of the close,
+          read off the filed returns, in one write). The
           script deliberately does not: the SHA is only knowable after the commit it makes and the
           shard is inside that commit, so writing it there would need a second commit or the amend
           this document forbids. It leaves an `audit.task.committed` journal row in the meantime,
@@ -672,10 +725,10 @@ not need to.
         (`reference/orchestrator.md` → **ADO echo**; an `onComplete` comment carries this
         `task.commit`).
    - **a proof that could not be made** (the returned `redFirst.status` is
-     `could-not-prove`) → **record it and carry on.** Copy the block onto `task.redFirst`
-     before the commit in step 4c — the refusal in `basis` verbatim, the classifier's own
-     words rather than your summary of them — so it lands with the work instead of in a
-     session note. Then take whichever arm the gates ask for; this arm changes none of them.
+     `could-not-prove`) → **record it and carry on.** `done --from-return` copies the filed
+     block onto `task.redFirst` in the close's own write — the refusal in `basis` verbatim, the
+     classifier's own words rather than your summary of them — so it lands with the work
+     instead of in a session note. Then take whichever arm the gates ask for; this arm changes none of them.
 
      **It neither blocks nor retries, and both halves are decisions rather than
      omissions.** A retry spends an attempt on a re-spawn that meets the same classifier

@@ -640,13 +640,19 @@ TABLE = (
  # every document still points at it, every document still passes, and the record
  # has nowhere to put what the documents just promised.
  ("red_first_drift", "plugins/audit/schema/audit-plan.schema.json", "replace",
-  '            "could-not-prove",\n', "", REF, "rf2"),
+  '            "could-not-prove",\n            "not-attempted"\n',
+  '            "not-attempted"\n', REF, "rf2"),
  # The reviewer's return grading with a word the schema rejects and nothing
  # declares reviewer-only - the shipped state, `not-applicable` standing where
  # the executor's `not-attempted` belongs, which read as consistent on its own.
  ("red_first_vocabulary_drift", "plugins/audit/agents/audit-reviewer.md", "replace",
   '"redFirst": "proved|not-proved|could-not-prove|not-attempted"',
   '"redFirst": "proved|not-proved|could-not-prove|not-applicable"', REF, "rv1"),
+ # The phase review's per-task entry loses `commit`, the key that binds each
+ # answer to the diff it was given: every reviewer following the format files
+ # an entry the verb refuses, and sign-off can never write the answers.
+ ("phase_return_key_drift", "plugins/audit/agents/audit-reviewer.md", "replace",
+  ' "commit": "<the SHA the brief handed>",', "", REF, "prk1"),
  # THE BRIEF GROWS A FIELD AND THE REFERENCE DOES NOT FOLLOW; renaming a key
  # is that event with a shorter diff. `testsAdded` is what fills `task.verifiedBy`,
  # so this is the shipped defect with the name changed - the field was declared,
@@ -681,8 +687,19 @@ TABLE = (
  # that reads ONE key the whole rollup, which is the saving `--section`
  # exists to take.
  ("discovery_projection_drift", "plugins/audit/commands/task.md", "replace",
-  "         --discovery --section discovery",
-  "         --discovery", REF, "dp1"),
+  "--json --discovery --section discovery",
+  "--json --discovery", REF, "dp1"),
+ # A followed row goes back to citing reference prose - the state every row was in
+ # before the pipeline stopped reading it - so the rule names a section its reader
+ # never opens and is followed by nobody.
+ ("followed_anchor_drift", "plugins/audit/README.md", "replace",
+  "| step `decide-high-risk` |", "| § Non-negotiable guardrails |", REF, "fa1"),
+ # ...and the step a row names stops printing its rule: the anchor still resolves
+ # to a step, and the model at that step is told nothing.
+ ("followed_anchor_drift", S + "governance/drive-phase.py", "replace",
+  '"rule": ("Ask the human (AskUserQuestion); confirm only on their yes, "\n'
+  '                 "else block with their reason.",)},',
+  '"rule": ()},', REF, "fa1"),
  # A first-contact command goes back to handing a script that finds the
  # manifest itself a placeholder for the model to fill in - the guess the
  # model then narrates to the user.
@@ -1839,6 +1856,12 @@ ALLOW = (
  ("red_first_vocabulary_drift", S + "_refs.py", "replace",
   "    allowed = set(schema) | set(RED_FIRST_REVIEWER_ONLY)\n",
   "    allowed = set(schema)\n", REF, "rv3"),
+ # The comparison made unconditional: every key the verb reads is reported as
+ # omitted whether the format names it or not, so a format and a verb that
+ # agree are convicted - the over-fire that gets a check deleted.
+ ("phase_return_key_drift", S + "_refs.py", "replace",
+  "                        for k in verb if k not in brief)\n",
+  "                        for k in verb)\n", REF, "prk3"),
  # The TOP-LEVEL restriction dropped, so every nested key of the declared
  # shape is demanded as a standalone backticked word of its own: a reference that
  # writes `outcome` = `{ technical, descriptive }` is convicted for naming both
@@ -1853,6 +1876,11 @@ ALLOW = (
  # that follow it. The full stop is the narrowing that keeps the list the list.
  ("runner_list_drift", S + "_refs.py", "replace",
   '    stop = text.find(".", start)\n', "    stop = -1\n", REF, "rl3"),
+ # The empty-rule test made unconditional: every step a row names is reported as
+ # printing no rule, so a table whose every anchor resolves is convicted - the
+ # over-fire that gets a check deleted rather than believed.
+ ("followed_anchor_drift", S + "_refs.py", "replace",
+  "            elif not steps[name]:\n", "            elif True:\n", REF, "fa2"),
  # The fence narrowed to nothing: ANY backtick span now counts as "the pipeline
  # runs this", not only a triple-backtick block. `layout`, `migrate`, `sync` and
  # `worktree` are each named in single backticks in ordinary prose across

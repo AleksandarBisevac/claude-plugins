@@ -345,6 +345,67 @@ is still true of a nested key.
   as green there and the cost is paid by whoever clones. Set `"warn"` to keep the
   diagnosis and lose the refusal, or `"off"` to restore the previous behaviour
   exactly.
+
+  **`review.perTask` breaks this promise a second time, and ships in a minor release
+  by the maintainer's decision** — a recorded exception to the rule that a changed
+  default is a major. It ships as `"phase"`, which means a repository that has never
+  written the key no longer has a reviewer run per task: `audit-task.py done --commit`
+  records the task's intent as `deferred` and refuses every `--intent` word (a fix task
+  `add --fixes` recorded closes only `not-asked` with its basis); the phase review
+  answers each task at sign-off, in a `tasks` array it files with `file-return <phaseId>
+  --role reviewer --head <sha>`; and `/audit:phase signoff` — under `--verdict skipped`
+  as under `passed` — and `close-phase.py` at its own merge refuse while a task that
+  records a commit lacks its three answers bound to that commit. `close-phase.py` asks
+  the plan it is handed, the copy on disk in the worktree holding the branch and the copy
+  the branch tip carries in; it refuses a tip whose copy records no sign-off verdict, and
+  one whose copy it cannot read when the plan is versioned (inside the git root, not
+  ignored, committed at the parent or at `baseRef`) - a plan git never commits is asked
+  through its copy on disk. Sign-off, by the driver or by hand, also refuses while a
+  filed phase return holds a `diverges`, `cannot-tell`, `not-proved` or `flagged` answer
+  the driver's `--answer accept --reason` has not settled, and that stop on a phase intent
+  holds under every `review.perTask` value. So does `close-phase.py`'s: under every
+  `review.perTask` value it refuses to land a phase whose filed phase return - in the
+  evidence of any worktree git lists, at the branch tip or on the target branch - holds such an answer, or
+  will not parse, while the tip's copy of the plan records no sign-off verdict (the copy
+  on disk, for a plan git never commits). A verdict covers what its sign-off read, wherever
+  that sits: the sign-off verb records on the phase review the content signature of every
+  filed phase return it read - its checkout's evidence and the branch tip's committed
+  returns - in `review.readReturns`, and `close-phase.py` gathers every filed phase return
+  it can reach (the evidence of every worktree git lists, the branch tip, the target
+  branch's committed tree) and refuses one holding such an answer whose signature is not in
+  that set, unless a known checkout's driver settlement settles that answer - a settlement
+  binds the answer's content, not the return's name: the driver records the signature of the
+  return it settled beside the answer's key, a return under the same name with another
+  signature is not settled by it, one under a name the verdict read is refused whatever any
+  record says, and a settlement an earlier plugin recorded by key alone settles nothing on
+  this path, the triage asking the answer again so its accept records the signature. The
+  sign-off verb reads the same settlement records the landing does, those of every worktree
+  git lists and does not report prunable. A return filed after the
+  verdict - in a sibling worktree, in the parent's checkout, in the signing checkout after it
+  switched branches, or brought to the tip by a merge - is refused; a copy of a return the
+  verdict read lands wherever it sits. **That guarantee needs a sign-off taken by a plugin that
+  writes `review.readReturns`.** A verdict recorded without it - by an earlier plugin - is
+  read the earlier way, by where each return sits: a tip's verdict settles the returns the
+  tip commits and the ones in the checkout holding the branch, a verdict on a copy on disk
+  that checkout's own, and a return in a checkout that reading does not name, or filed in
+  the signing checkout after a switch away and back, is not seen. The field is optional:
+  a plan without it validates and lands as before. `file-return <phaseId>`
+  refuses a phase return only where the copy of the plan it reads records a sign-off
+  verdict. A task that no longer records its commit, a merge made by hand
+  or through a pull request, and who filed the phase return are outside that refusal;
+  the plugin README's followed table names each, with the evidence left afterwards. A phase already under way when the plugin is
+  upgraded reads the new default too, unless it recorded a `reviewPerTask` value, which
+  no older copy wrote — so its tasks closed by a per-task reviewer are owed the phase
+  review's answers before it lands. It was shipped as the default because a reviewer per
+  task is a cost paid on every task that a plain session does not pay
+  (`docs/research/pipeline-cost-design.md`, C14), and every answer the per-task review
+  gave is still given, bound to the same commit; what moves is when, before the merge
+  instead of before the commit. Set
+  `"always"`, before upgrading if a phase is in flight, to restore a reviewer per task. It
+  does not restore the previous behaviour exactly: a close under `always` is still held to
+  the filed-return rule in *closing against a commit with no review behind it* below, and
+  `start`, `done` and `signoff` refuse a `review.perTask` value outside the vocabulary
+  wherever neither the task nor its phase records a key.
 - **When two keys can express the same thing, which one wins is written down.**
   `planGate` beats `enforce`, and that precedence does not change without a major
   release. A superseded key is kept and documented, never silently reinterpreted.
@@ -463,6 +524,29 @@ depending on an implementation:
   `noEvidenceReason` (the same additive key named above) rather than letting it outlive the
   sign-off that recorded it. A pipeline that closed over a red gate is a pipeline that now stops,
   and the repair is a green run or the override,
+- **closing against a commit with no review behind it — and it changed.** `audit-task.py done
+  --commit <sha>` used to close whether or not a reviewer had answered: with `--intent matches`
+  typed by the caller, or with no `--intent` at all, recording no answer. Every close that
+  passes `--commit` — with or without `--from-return` — now **exits 2**, writing nothing,
+  unless the reviewer's return is filed for the task's current start (`audit-task.py
+  file-return <taskId> --role reviewer`), whose answer is then the one recorded; a typed
+  `--intent` that differs from that filed answer is refused too, `not-asked` included. A
+  close typed by hand with no review behind it now has to say so: `--intent not-asked
+  --intent-basis "<why>"`. A `--no-change` close is unchanged. The filed return, its
+  directory under the evidence directory and its shape are a new record outside the contract;
+  `--from-return` and `file-return` are additive. A pipeline that closed with a typed or a
+  missing intent is a pipeline that now stops, and the repair is the filed review or the
+  stated `not-asked`,
+- **signing off a phase as `skipped`, under `review.perTask: phase` — and it changed.**
+  `audit-task.py signoff --verdict skipped` used to sign off with neither a gate run nor a
+  reason. Under `review.perTask: phase` (the shipped default, above) it now **exits 2**,
+  writing nothing and naming each task, while a task of the phase with a commit lacks the
+  phase review's three answers bound to that commit, exactly as `--verdict passed` does; the
+  group form asks every member before writing any. `close-phase.py` asks the same of the
+  plan's record and **exits 1** before it merges or hands over the merge command. A phase
+  with no task whose key reads `phase` signs off and lands as before. The `tasks` array a
+  phase return carries, `intentCheck`'s `deferred`, `redFirst` and `inheritedTests` fields,
+  and the `reviewPerTask` and `fixes` fields are additive,
 - **the id `/audit:phase add` allocates when you do not pass `--id`.** It was the lowest free
   `P<n>` and is the **highest in use plus one**. The taken set is unchanged — live phases and
   every id a parked proposal reserves — and `--id` still overrides it. The old rule re-minted

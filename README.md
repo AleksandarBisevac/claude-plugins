@@ -6,8 +6,9 @@
 
 A [Claude Code](https://code.claude.com) plugin marketplace with one theme:
 **enforced** engineering discipline — plan gates, test gates, sign-off gates,
-secret guards. The guards are deterministic hooks; the pipeline they govern is an
-orchestrator prompt — [which is which, row by row](#what-is-enforced-and-what-is-followed).
+secret guards. The guards are deterministic hooks; the pipeline they govern is a step
+driver that prints the model one instruction at a time — [which is which, row by
+row](#what-is-enforced-and-what-is-followed).
 
 **It keeps Claude Code inside the plan you approved**, with test-gate evidence
 committed beside that plan so `git` — not the chat transcript — is what you check
@@ -78,8 +79,9 @@ A live, interactive audit report (search, filter, collapsible phases, Save-as-PD
 
 Two halves, and they hold in different ways. The **guards are hooks**: a `PreToolUse`
 handler returns a decision and the tool call does not happen. The **pipeline is a
-prompt**: `plugins/audit/reference/orchestrator.md` is the execution core, read by the
-model on every `/audit:*` call, and its invariants are instructions rather than
+prompt**: the step driver, `plugins/audit/scripts/governance/drive-phase.py`, runs every
+step that needs no judgement and prints each rule the model follows at the step it applies
+to, and each agent reads its own rules in its prompt - instructions rather than
 guarantees. Both columns below are the real thing; only the left one holds when the
 model does not comply.
 
@@ -91,19 +93,19 @@ sign-off and `/audit:status --gate --fail-on invariant-breach` both run. A rule 
 can refuse in advance is still enforced if a breach cannot pass a gate; a rule nothing
 checks at all is policy, and that is what the right column is.
 
-| Enforced by a hook (before) or a script (after) | Followed from `orchestrator.md` |
+| Enforced by a hook (before) or a script (after) | Followed from the driver's steps and the agent prompts |
 |---|---|
 | A call naming a secret file beside a read verb the guard lists is refused; a read that never names the file, and an unlisted verb naming it, stay open ([SECURITY.md](SECURITY.md#known-bypass-classes-accepted-documented)) | Human confirmation before a `reset` / `rebase` / `clean` |
 | Env values and token variables — never dumped | `risk: "high"` waits for a human before committing |
-| Shell writes into source files no task covers | Revalidate the manifest after **every** write |
+| Shell writes into source files no task covers | The plan written only through its verbs, never by hand |
 | Commits the manifest records — never orphaned | `attempts >= maxAttempts` sets `blocked` |
-| Skills, subagents and MCP tools — the project's `policy` | An infrastructure failure burns no retry |
+| Skills, subagents and MCP tools — the project's `policy` | A gate that could not run is re-run, not retried |
 | Auth tokens — never logged | Red-first TDD where `tests.mode` asks for it |
 | The project's own banned patterns, per path | The executor never commits; the orchestrator does |
-| The plugin's own files — not editable by the model | Run only what the readiness rule allows |
-| The plan-first bypass — armed from human prompts only | Parallel only on disjoint file sets |
+| The plugin's own files — not editable by the model | A live run's phase lock is never taken over |
+| The plan-first bypass — armed from human prompts only | One task at a time; nothing dispatched alongside |
 | The audit trail — append-only, no hand edits | Take the narrowest lock, and stop on exit 3 |
-| Non-trivial edits — planned, or explicitly opted out | Sign-off in strict order: review → gates → boot |
+| Non-trivial edits — planned, or explicitly opted out | Sign-off in strict order: review → fix tasks → gates |
 | Manifest writes against another live session's lock | `--ff-only` into the resolved parent, never a rebase |
 | Every plan and config write — journalled, hash-chained | `git -C <gitRoot>`; gate commands from the project dir |
 | Token spend — attributed to a phase and a task | Spawn the executor with the task id in its description |

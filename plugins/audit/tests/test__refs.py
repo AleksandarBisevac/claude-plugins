@@ -2784,11 +2784,11 @@ def _cases(check):
           and "no retry spent" in _cv_orch)
 
     # --- (rs) P42: the return shape, and the path that stopped asking for it ----
-    # The executor's return is prose an agent writes: nothing parses it, nothing
-    # rejects it, and its only reader is the orchestrator - the one actor that
-    # could fill a missing field in without noticing. So the boundary cannot be
-    # validated and these cases do not pretend otherwise; what they hold is the
-    # pair of DOCUMENTS. The brief declares the shape; the reference tells an
+    # A return the executor files is parsed by `audit-task.py file-return` (its
+    # cases are `fr` in test_audit_task.py); one handed back without filing is
+    # prose nothing parses, and its only reader is the orchestrator - the one
+    # actor that could fill a missing field in without noticing. What these cases
+    # hold is the pair of DOCUMENTS. The brief declares the shape; the reference tells an
     # orchestrator what to ask for and carries the fallback path that restates the
     # rules inline when the agent type is unavailable - and that path named no
     # `testsAdded`, which is the field `task.verifiedBy` is filled from. Every rule
@@ -2809,13 +2809,17 @@ def _cases(check):
           and all(('"%s"' % (k,)) in _rs_brief for k in _rs["keys"]))
     _rs_orch = _product_doc("reference/execute-task.md")
     check("rs3 the reference names what enforces the shape IN THE RULE'S OWN "
-          "SENTENCE, says in the same breath that the return itself is prose and "
-          "unparsed, sends the fallback path to PASTE the brief instead of "
-          "restating it, briefs a retry with what the last attempt proved, and "
-          "calls a return that disagrees with the recorded row a discrepancy "
-          "rather than a thing its own measurement quietly corrects",
+          "SENTENCE - the drift lint for the documents and the filing verb for a "
+          "filed return - says in the same breath that a return handed back "
+          "without filing is prose and unparsed, sends the fallback path to PASTE "
+          "the brief instead of restating it, briefs a retry with what the last "
+          "attempt proved, and calls a return that disagrees with the recorded "
+          "row a discrepancy rather than a thing its own measurement quietly "
+          "corrects",
           "`return_shape_drift()` in" in _rs_orch
-          and "the return itself is prose, and nothing parses it" in _rs_orch
+          and "`file-return` checks the shape" in _rs_orch
+          and "A return handed back without filing is prose, and nothing "
+              "parses it" in _rs_orch
           and "paste `agents/audit-executor.md` into" in _rs_orch
           and "A retry is not a fresh start" in _rs_orch
           and "the failing gate ENTRY, never the failing test" in _rs_orch
@@ -3199,7 +3203,7 @@ def _cases(check):
           % ((_tk_shared, sorted(_tk_flags)),),
           _tk_shared == ["add", "add-phase", "block", "cancel", "couple", "done",
                          "move", "mute", "note", "reopen", "scope", "start",
-                         "uncouple", "unmute"]
+                         "unblock", "uncouple", "unmute"]
           and "move" in _tk_flags and "move" in _at_usage)
     # `_tk_all`, not `_tk_flags`: the latter has no row for a verb that came from
     # the other document, and indexing it here raised `KeyError` the first time
@@ -3380,7 +3384,7 @@ def _cases(check):
           _pf_checked != [] and "--gate-clear" in _pf_checked
           and _pf_verbs == ["add", "add-phase", "block", "cancel", "couple",
                             "done", "move", "mute", "note", "reopen", "scope",
-                            "start", "uncouple", "unmute"]
+                            "start", "unblock", "uncouple", "unmute"]
           and _pf_same != "" and _pf_same == _at_src
           and _at_dest.get("--gate-clear") == "gate_clear"
           and _at_dest.get("--blocked-by") == "blocked_by")
@@ -3468,8 +3472,10 @@ def _cases(check):
           "`findings` and not a field inside one. A discrepancy filed as a finding "
           "becomes a fix run editing code to match a description nobody checked; "
           "one left out of the return is simply lost - so the shape is what keeps "
-          "the two classes apart: %r" % (_iq_keys,),
-          _iq_keys == ["findings", "preExisting", "intent", "verdict"])
+          "the two classes apart - and `tasks`, the phase review's per-task "
+          "entries, is a top-level key of its own after them, never folded "
+          "into `intent`: %r" % (_iq_keys,),
+          _iq_keys == ["findings", "preExisting", "intent", "verdict", "tasks"])
     check("iq6b ...and the brief SAYS that, where the reviewer reads it - a key "
           "order nobody explains is a key order the next author collapses",
           "`intent` is not a finding" in _squash(_REV))
@@ -3593,16 +3599,16 @@ def _cases(check):
     _ih_nested = _return_nested_keys(_REV, "intent")
     check("ih6 ...reported as a sibling of `redFirst` INSIDE `intent`, with a "
           "basis beside the word and no new top-level key: `intent` is where this "
-          "brief already keeps an answer that is not a finding, and a fifth "
-          "top-level key is how the return shape gets collapsed by the next "
-          "author. BOTH SENTENCES, the prose and the TEMPLATE the reviewer "
+          "brief already keeps an answer that is not a finding, and a top-level "
+          "key beyond the phase review's `tasks` is how the return shape gets "
+          "collapsed by the next author. BOTH SENTENCES, the prose and the TEMPLATE the reviewer "
           "copies - pinning the prose alone left the template free to rename the "
           "field under it, which is how this case was first written and how it "
           "survived its own mutation: %r"
           % ((_ih_words, _return_top_keys(_REV), _ih_nested),),
           all(_ih_words.values())
           and _return_top_keys(_REV) == ["findings", "preExisting", "intent",
-                                         "verdict"]
+                                         "verdict", "tasks"]
           and "redFirst" in _ih_nested
           and "inheritedTests" in _ih_nested
           and "inheritedTestsBasis" in _ih_nested)
@@ -3614,7 +3620,7 @@ def _cases(check):
           % (("`inheritedTests`" in _iq_exec, "inheritedTests" in _iq_signoff),),
           "`inheritedTests`" in _iq_exec and "`findings`" in _iq_exec
           and "inheritedTests" not in _iq_signoff)
-    _ih_handed = ("| `tests.gate` | task |" in _REV,
+    _ih_handed = ("| `tests.gate` | task, and phase per owed task |" in _REV,
                   "`tests.gate` **commands themselves**" in _iq_exec)
     check("ih8 ...and the input the bound is made of is actually HANDED OVER: the "
           "brief lists `tests.gate` among what it is given and the spawn passes "
@@ -4222,8 +4228,169 @@ def _lock_recipe_cases(check):
         _harness.remove_tree(tmp)
 
 
+_PK_ENTRY = ('"tasks": [{"id": "<task id>",\n'
+             '           "commit": "<sha>",\n'
+             '           "answer": "<word>", "note": "n",\n'
+             '           "missing": ["<input>", ...],\n'
+             '           "redFirst": "<word>", "redFirstBasis": "b",\n'
+             '           "inheritedTests": "<word>",\n'
+             '           "inheritedTestsBasis": "b"}, ...]')
+_PK_VERB = ('PHASE_ENTRY_KEYS = ("id", "commit", "answer", "note", "missing",\n'
+            '                    "redFirst", "redFirstBasis", "inheritedTests",\n'
+            '                    "inheritedTestsBasis")\n')
+
+
+def _phase_key_cases(check):
+    """The keys of a phase review's `tasks` entry are one tuple: the filing
+    verb's `PHASE_ENTRY_KEYS`, and the return format the reviewer reads."""
+    live = M.phase_return_key_drift()
+    check("prk1 the reviewer's return format declares exactly the keys the "
+          "filing verb reads off a `tasks` entry, `commit` among them: %r"
+          % (live,),
+          live["problems"] == [] and "commit" in live["brief"]
+          and sorted(live["brief"]) == sorted(live["verb"]))
+    check("prk2 `red_first_vocabulary_drift` stays green over the reviewer "
+          "definition that carries the `tasks` entry - its `redFirst` names a "
+          "list rather than restating one: %r"
+          % (M.red_first_vocabulary_drift()["problems"],),
+          M.red_first_vocabulary_drift()["problems"] == [])
+
+    def tree(brief, verb):
+        tmp = tempfile.mkdtemp(prefix="qg-prk-")
+        _write(tmp, M.PLUGIN_REL + "/" + M.RED_FIRST_REVIEWER_BRIEF,
+               "## Return format\n\n{\"findings\": [],\n " + brief + "}\n")
+        _write(tmp, M.PLUGIN_REL + "/" + M.PHASE_RETURN_VERB, verb)
+        return tmp
+
+    out = {}
+    for name, brief, verb in (
+            ("allow", _PK_ENTRY, _PK_VERB),
+            ("brief-drops-commit", _PK_ENTRY.replace('"commit": "<sha>",', ""),
+             _PK_VERB),
+            ("verb-gains", _PK_ENTRY, _PK_VERB.replace(
+                '"inheritedTestsBasis")', '"inheritedTestsBasis", "extra")')),
+            ("no-entry", '"verdict": "clean"', _PK_VERB),
+            ("no-tuple", _PK_ENTRY, "KEYS = ()\n")):
+        tmp = tree(brief, verb)
+        try:
+            out[name] = M.phase_return_key_drift(tmp)["problems"]
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    # THE ALLOW CASE: the one a check widened into refusing every entry fails.
+    check("prk3 THE ALLOW CASE: a brief and a verb naming the same keys are "
+          "quiet: %r" % (out["allow"],), out["allow"] == [])
+    check("prk4 the reviewer's return format dropping `commit` from the entry is "
+          "reported by name: %r" % (out["brief-drops-commit"],),
+          len(out["brief-drops-commit"]) == 1
+          and "'commit'" in out["brief-drops-commit"][0])
+    check("prk5 the filing verb's tuple gaining a key the format lacks is "
+          "reported by name: %r" % (out["verb-gains"],),
+          len(out["verb-gains"]) == 1 and "'extra'" in out["verb-gains"][0])
+    check("prk6 a format with no `tasks` entry, and a verb with no tuple, are "
+          "each a problem and never a clean comparison against nothing: %r"
+          % ((out["no-entry"], out["no-tuple"]),),
+          len(out["no-entry"]) == 1 and len(out["no-tuple"]) == 1)
+
+
+# --- (fa) a followed rule names where the model meets it ------------------------
+_FA_STEPS = ('STEPS = {\n'
+             '    "decide-high-risk": {"line": "decide high-risk %(task)s",\n'
+             '                         "rule": ("ask the human first",)},\n'
+             '    "done": {"line": "done %(phase)s", "rule": ()},\n'
+             '}\n')
+_FA_AGENT = ("---\nname: audit-executor\n---\nHard rules:\n\n"
+             "- **Test discipline** exactly as ordered.\n"
+             "Prose naming **Mid sentence** in passing.\n")
+_FA_HEAD = ("# x\n\n### Followed from the driver's steps and the agent prompts\n\n"
+            "Intro.\n\n| Invariant | Stated in | What makes it checkable |\n"
+            "|---|---|---|\n")
+_FA_TAIL = "\n**How a row moves left.** Later prose.\n"
+_FA_ROWS = ("| A high-risk task waits for a human | step `decide-high-risk` | nothing |\n"
+            "| Tests follow the mode, `a \\| b` | `audit-executor.md` → **Test "
+            "discipline** | partly |\n")
+
+
+def _followed_anchor_cases(check):
+    """`followed_anchor_drift`: every followed row's "Stated in" names a step the
+    driver prints with its rule, or a section of an agent prompt - the two places
+    the model meets a followed rule once no command makes it read reference
+    prose."""
+    lint = getattr(M, "followed_anchor_drift", None)
+    if lint is None:
+        for label in ("fa1", "fa2", "fa3", "fa4", "fa5", "fa6"):
+            check("%s followed_anchor_drift exists" % (label,), False)
+        return
+    live = lint()
+    check("fa1 every row of the README's followed table names a step text the "
+          "driver prints or an agent prompt section, and every anchor resolves: %r"
+          % (live,), live["problems"] == [] and live["rows"] > 0
+          and live["anchors"] >= live["rows"])
+
+    def tree(rows, steps=_FA_STEPS, agent=_FA_AGENT, readme=None):
+        tmp = tempfile.mkdtemp(prefix="qg-fa-")
+        _write(tmp, M.PLUGIN_REL + "/README.md",
+               readme if readme is not None else _FA_HEAD + rows + _FA_TAIL)
+        _write(tmp, M.PLUGIN_REL + "/" + M.FOLLOWED_STEP_SOURCE, steps)
+        _write(tmp, M.PLUGIN_REL + "/agents/audit-executor.md", agent)
+        return tmp
+
+    out = {}
+    for name, rows, extra in (
+            ("allow", _FA_ROWS, {}),
+            ("section", _FA_ROWS + "| Git confirmations | § Non-negotiable "
+             "guardrails | nothing |\n", {}),
+            ("empty-rule", "| Report it | step `done` | nothing |\n", {}),
+            ("no-step", "| Report it | step `decide-nowhere` | nothing |\n", {}),
+            ("no-lead", "| X | `audit-executor.md` → **Never here** | nothing |\n",
+             {}),
+            ("mid-lead", "| X | `audit-executor.md` → **Mid sentence** | nothing |\n",
+             {}),
+            ("no-table", "", {"readme": "# x\n\nNo table here.\n"}),
+            ("no-rows", "", {})):
+        tmp = tree(rows, **extra)
+        try:
+            out[name] = lint(tmp)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    # THE ALLOW CASE - the one a check widened into refusing every anchor fails,
+    # including the escaped pipe inside a cell, which a split on every `|` reads
+    # as a fourth column.
+    check("fa2 THE ALLOW CASE: a table whose rows name a step that prints its rule "
+          "and a bullet of an agent prompt is quiet, an escaped pipe in a cell "
+          "included: %r" % (out["allow"],),
+          out["allow"]["problems"] == [] and out["allow"]["rows"] == 2
+          and out["allow"]["anchors"] == 2)
+    check("fa3 a row still citing a reference section is reported by its row - no "
+          "pipeline command reads that prose: %r" % (out["section"]["problems"],),
+          len(out["section"]["problems"]) == 1
+          and "Git confirmations" in out["section"]["problems"][0]
+          and "§" in out["section"]["problems"][0])
+    check("fa4 a step whose rule is empty, and a step the driver does not have, "
+          "are each reported - a step that prints no rule states nothing: %r"
+          % ((out["empty-rule"]["problems"], out["no-step"]["problems"]),),
+          len(out["empty-rule"]["problems"]) == 1
+          and "done" in out["empty-rule"]["problems"][0]
+          and len(out["no-step"]["problems"]) == 1
+          and "decide-nowhere" in out["no-step"]["problems"][0])
+    check("fa5 an agent anchor whose lead no bullet of the prompt opens with is "
+          "reported, a bold mention mid-prose included: %r"
+          % ((out["no-lead"]["problems"], out["mid-lead"]["problems"]),),
+          len(out["no-lead"]["problems"]) == 1
+          and "Never here" in out["no-lead"]["problems"][0]
+          and len(out["mid-lead"]["problems"]) == 1)
+    check("fa6 a README with no followed table, or a table with no row, is a "
+          "problem and never a clean answer about nothing: %r"
+          % ((out["no-table"], out["no-rows"]),),
+          len(out["no-table"]["problems"]) == 1 and out["no-table"]["rows"] == 0
+          and len(out["no-rows"]["problems"]) == 1 and out["no-rows"]["rows"] == 0)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _harness.stage(check, "prk-block", _phase_key_cases)
+        _harness.stage(check, "fa-block", _followed_anchor_cases)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

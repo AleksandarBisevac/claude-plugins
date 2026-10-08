@@ -49,6 +49,7 @@ This module carries no `--selftest` of its own; its cases live in
 """
 import binascii
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -667,16 +668,30 @@ def row_trailer(nonce):
     return "%s: %s" % (_invariants.ROW_TRAILER, nonce)
 
 
-def with_row_trailer(paragraphs, nonce):
-    """`paragraphs` with the row trailer as a line of the LAST paragraph.
+# A line git reads as a trailer: a token, a colon, a space and a value.
+_TRAILER_LINE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*: \S")
 
-    The last paragraph and not a new one after it: git reads trailers from the
-    final paragraph only, so a co-author trailer followed by a paragraph of its
-    own would stop being one. With only a subject there is no such paragraph,
-    and the trailer becomes it.
+
+def is_trailer_paragraph(paragraph):
+    """True when every line of `paragraph` reads as a trailer - the only kind of
+    final paragraph the row trailer may join."""
+    lines = [ln for ln in (paragraph or "").splitlines() if ln.strip()]
+    return bool(lines) and all(_TRAILER_LINE.match(ln) for ln in lines)
+
+
+def with_row_trailer(paragraphs, nonce):
+    """`paragraphs` with the row trailer kept in a paragraph of TRAILERS.
+
+    Git reads trailers from the final paragraph only. So when that paragraph is
+    already trailers - a co-author line - the row trailer joins it, because a
+    paragraph of its own after the co-author would stop that one being a
+    trailer. When it is anything else - the subject alone, or prose such as a
+    task's filed `claims` block - the row trailer becomes a paragraph of its own:
+    joined onto prose it would be a line no trailer reader finds, and the prose
+    is carried byte-identical either way.
     """
     paragraphs = list(paragraphs)
-    if len(paragraphs) > 1:
+    if len(paragraphs) > 1 and is_trailer_paragraph(paragraphs[-1]):
         return paragraphs[:-1] + ["%s\n%s" % (paragraphs[-1],
                                               row_trailer(nonce))]
     return paragraphs + [row_trailer(nonce)]

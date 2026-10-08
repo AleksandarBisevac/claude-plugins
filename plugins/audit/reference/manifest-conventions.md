@@ -144,7 +144,7 @@ wide because its question is wide, and a task gate is narrowed to the task's own
 a wider one does not answer its question any better, it answers the PHASE's question
 again, once per attempt, per task, per phase running in parallel. `commands/init.md` →
 step 5.3 is where a plan's gates are derived; `/audit:task add` derives one the same way
-for a task added later and prints which default it took (`commands/task.md` → *The task
+for a task added later and prints which default it took (`reference/verbs-in-full.md` → *The task
 gate is derived*).
 
 **Every `tests.add` entry is written `"<path>: <what it asserts>"`**, the path being
@@ -173,6 +173,20 @@ shows it, task subagents receive it, and sign-off must address it), and a
 sign-off reviewer, overriding `meta.reviewSkill`) and `area` — a label, or a **list** of
 labels for cross-cutting concerns (`"backend"` or `["backend","security"]`; any vocabulary —
 devops/security/embedded/data/ml/…) — for grouping/filtering in status/report/panel. Both default to absent.
+
+`review.readReturns` is never initialized. `audit-task.py signoff` writes it with the verdict: one
+`{return, sha256}` row per filed phase return that sign-off read, so `close-phase.py` can refuse a
+return needing a human that the verdict never read, wherever it was filed. Absent means a verdict
+written before the field, which the landing reads by where each return sits.
+
+A human's settlement of such a return binds the answer it settled, not the return's name. The
+driver's state (`<stateDir>/drive/<phase>.json`, outside the plan) records it under
+`answersAccepted`: `keys` names each settled answer, and `signatures` holds one `{key, sha256}`
+entry per answer, the sha256 being the signature of the return the answer sits in - the same
+signature a `readReturns` row records. The sign-off verb, which writes `readReturns`, and
+`close-phase.py` over a verdict recording it honour a settlement only for a return carrying the
+signature it records; a key recorded without one settles nothing there, and only the landing of a
+verdict recording no `readReturns` still reads `keys` alone.
 
 ## Phase priority (`phase.priority`)
 
@@ -410,6 +424,12 @@ The journal's **completion-record actions**:
 - `task.block` — `audit-task.py block` set a task blocked with its reason (details: taskId,
   phaseId, reason, changes). It is the verb's own row, the way `task.done` sits beside
   `task.complete`: the hook derives `task.blocked` from a status an edit tool moved
+- `task.unblock` — `audit-task.py unblock` gave a task whose attempts are spent a fresh
+  budget: `attempts` back to 0 and, for a blocked task, `status` back to pending with its
+  `blockedReason` cleared (details: taskId, phaseId, reason, changes)
+- `task.start` — `audit-task.py start` promoted a task to in_progress (details: taskId,
+  phaseId, attempt, changes; `commit` is the HEAD the start was taken at, absent outside git,
+  and is where a later `done --no-change` starts the span of commits it asks about)
 - `task.note` — `audit-task.py note` appended one `{at, text}` entry to a task's `notes[]`
   (details: taskId, phaseId, changes)
 - `review.finding` — `audit-task.py finding` appended one finding to a phase's
@@ -516,7 +536,7 @@ derived, and an old, unrelated completion of the same task is a different record
 by design:** a sign-off of a branchless phase (`mergedAt` is null, which cannot tell one sign-off
 from another), and a completion that was never recorded anywhere. Both cost a repeated row, never
 a lost one.
-`task.move`, `task.block`, `task.note`, `coupling.learned`, `coupling.dropped`, `coupling.caught`,
+`task.start`, `task.move`, `task.block`, `task.unblock`, `task.note`, `coupling.learned`, `coupling.dropped`, `coupling.caught`,
 `bug.add`, `test.muted` and `test.unmuted` are written **in process** by `audit-task.py`, the same way its `task.done`, `task.reopen` and `plan.settle` rows
 are. `phase.gateDerived` is written **in process** by `derive-phase-gate.py`, its own entry point,
 for the identical reason. `phase.merged` and `phase.mergedHead.recorded` are written **in process** by

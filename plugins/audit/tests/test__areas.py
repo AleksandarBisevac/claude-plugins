@@ -506,6 +506,41 @@ def _cases(check):
           bool(M.UNANCHORED_SECTIONS)
           and all(len(why) >= 120 for why in M.UNANCHORED_SECTIONS.values()),
           repr(sorted((n, len(w)) for n, w in M.UNANCHORED_SECTIONS.items())))
+    # THE VERB REFERENCE IS SCANNED TOO. The prose the command bodies shed moved
+    # into a shipped reference no claim row anchors in, so it is in `ANCHOR_DOCS`
+    # and its sections are declared against IT: a new section there is a finding,
+    # a declaration whose section left that file is stale against that file, and
+    # neither is judged against the orchestrator's sections.
+    _vdoc = getattr(M, "_VERBS_IN_FULL", None)
+    _vreal = M.anchor_coverage(doc=_vdoc) if _vdoc else {}
+    check("oa38 `reference/verbs-in-full.md` is one of the documents the anchor "
+          "scan reads, every `## ` section it holds is declared against it, and "
+          "none of those declarations reads as stale for the orchestrator: %r"
+          % (_vreal,),
+          bool(_vdoc) and _vdoc in M.ANCHOR_DOCS
+          and len(_vreal.get("sections") or []) >= 4
+          and _vreal.get("undeclared") == [] and _vreal.get("stale_declarations") == []
+          and M.anchor_coverage()["stale_declarations"] == [])
+    if _vdoc:
+        _vsecs = [(n, "") for n in _vreal.get("sections") or []]
+        _vnew = M.anchor_coverage(sections=_vsecs + [("A new verb", "")], doc=_vdoc)
+        _vgone = M.anchor_coverage(sections=_vsecs[1:], doc=_vdoc)
+        _vorch = M.anchor_coverage(sections=[("Reporting", "")]
+                                   + [(n, "") for n in _vreal.get("sections") or []],
+                                   doc=M._ORCHESTRATOR)
+    else:
+        _vnew = _vgone = _vorch = {}
+    check("oa39 ...and the scan is per document in both directions: a new section "
+          "of the verb reference is undeclared, one whose section left it is a "
+          "stale declaration THERE, and a verb-reference section pasted into the "
+          "orchestrator is undeclared there rather than covered by a row that "
+          "names the other file: %r" % ((_vnew.get("undeclared"),
+                                          _vgone.get("stale_declarations"),
+                                          _vorch.get("undeclared")),),
+          _vnew.get("undeclared") == ["A new verb"]
+          and len(_vgone.get("stale_declarations") or []) == 1
+          and sorted(_vorch.get("undeclared") or [])
+          == sorted(_vreal.get("sections") or ["?"]))
     empty = M.claim_drift(text="no sections at all, just prose\n")
     check("oa9 a document with no '## ' at all is ONE finding about the SCAN, "
           "not a clean run and not a wall of findings about the document - an "

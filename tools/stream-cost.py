@@ -13,7 +13,8 @@ needs two views, and this prints both:
   * BY STAGE, AS BILLED - every token of a request in the stage of that request,
     which is what each step of the pipeline was charged;
   * BY CONTENT - what put the tokens there: each cache write, its source (a file read,
-    a command's output, an agent's hand-back, the session's own start), what writing
+    a command's output, an agent's hand-back, an injected command body, the session's
+    own start), what writing
     it cost and what carrying it through every later request cost, totalled by the
     stage the content came from and by class - fixed per run, per task, per file.
     The bytes an Edit or a Write emits take the class of the path it writes, by the
@@ -61,6 +62,13 @@ WHAT THE STREAM DOES NOT CARRY, AND WHAT IS DONE ABOUT IT.
     printed side by side. With several dispatches on one model each cache read comes
     from the identity and the residual cache write is split by the bytes that entered
     after each dispatch's last visible request - an estimate, and labelled as one.
+    A dispatch whose tool result is the background-launch notice is the exception: its
+    report is its own last request, which the stream shows, so nothing is rebuilt for
+    it. Rebuilding one there counts that request twice and leaves a negative residual.
+  * A command body a `Skill` call injects arrives as a user text block, not a tool
+    result. Each such block is sized and is a source of its own, `command body:
+    <skill>`, fixed per run in the main loop as a Read of the same file would be;
+    any other user text block of the main loop is `user text`.
   * Output counts in the stream are emit-time and undercount. The measured ones are the
     main loop's (each stretch's `usage`, which the stream's own input-side sums are
     checked against) and each model's (`modelUsage`). Within such a pool, output is
@@ -84,6 +92,31 @@ where its result sits. The result events do not all carry the same kind of figur
 A stream whose `init` events do not pair one to one with its results is checked on the
 summed `usage` alone, and the reconstruction says so.
 
+SPANS read a session by what its main loop did rather than by stage, from the verbs it
+called through the plugin's task script and their operands - never from the text around
+them, so `done --help` closes nothing and a script path held in a shell variable or a
+`for` loop over task ids is followed (`script_calls`):
+
+  planning  from the first request before the cycle that plans - a `Skill` call to
+            `audit:phase` or `audit:task` whose args begin with `add`, or the `add` or
+            `add-phase` verb - to the last one before the cycle that calls one of those
+            verbs, or the request that opened it when none does
+  cycle     from the first request that starts a task to the last that closes one
+            before any request inside it plans; the tasks it holds are the operands of
+            its `done` calls. A request that runs the step driver (`drive-phase.py`)
+            starts and closes the tasks its printed result says it started and
+            closed, because the driver calls `start` and `done` in subprocesses the
+            stream does not show. A session with no start has no cycle, and one with
+            no close after its start has a cycle that never closed: each says so
+  after it  a fix task from each planning verb to the next close; the close from the
+            lock release or the request after the landing, whichever comes first; and
+            sign-off, the rest
+
+An agent's requests are in the span of the main-loop request that dispatched it. The
+cycle is then priced by class with its agents, its content counted for the request that
+added it; the main loop's context is split by origin; and each dispatch's start, read
+and written, is printed with how it was launched.
+
 PRICES come from the plugin's own shipped table (`_usage_core.DEFAULT_PRICING`), with
 the five-minute and one-hour write rates applied to the split the stream records. The
 priced total is compared, per model, with the session's own `costUSD` and the
@@ -100,6 +133,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import sys
 from datetime import datetime
 
@@ -114,6 +148,12 @@ import _output  # noqa: E402  (the anchor: install_path, safe_stdio)
 _output.install_path()
 
 import _usage_core  # noqa: E402  (the shipped price table and its resolver)
+import _loader  # noqa: E402  (load_script: the step driver's own did-line reader)
+
+# The step driver starts and closes a task in its own subprocesses, which the stream
+# never shows; what it shows is the driver's print, and the driver's own reader of
+# that print is the one place the words it uses are kept.
+_DRIVE = _loader.load_script("drive-phase.py", "stream_cost_drive_phase")
 
 MAIN = "main"
 STAGE_ORDER = ("orient", "plan", "main", "executor", "gate", "reviewer", "close")
@@ -191,6 +231,16 @@ def _text_bytes(value):
     return 0
 
 
+def _text_of(value):
+    """A content value's text: a string as it is, a list's text parts joined."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "\n".join(str(part.get("text") or "") for part in value
+                         if isinstance(part, dict))
+    return ""
+
+
 def _emitted_bytes(block):
     """Bytes a content block puts on the wire as model output."""
     kind = block.get("type")
@@ -240,7 +290,11 @@ def parse(events):
                        if isinstance(p, dict) and isinstance(p.get("path"), str)
                        and os.path.isabs(p.get("path"))))
     requests, order, agents, results, calls = {}, [], {}, {}, {}
+    # Bash calls that run the step driver: their results' text is kept, because
+    # the tasks the driver started and closed are named there and nowhere else.
+    driven = set()
     timeline, seen, unjoined, ends, inits = [], set(), 0, [], 0
+    last_main, before_any = None, 0
     for event in events:
         uid = event.get("uuid")
         if uid is not None:
@@ -264,7 +318,7 @@ def parse(events):
                 req = {"id": mid, "context": event.get("parent_tool_use_id") or MAIN,
                        "model": message.get("model") or "?", "tools": [],
                        "emitWrite": {}, "emitOther": 0, "reconstructed": False,
-                       "stretch": max(inits - 1, 0)}
+                       "stretch": max(inits - 1, 0), "at": stamp, "injected": []}
                 req.update(_usage_counts(message.get("usage")))
                 requests[mid] = req
                 order.append(mid)
@@ -280,6 +334,10 @@ def parse(events):
                             "input": block.get("input") or {}}
                     req["tools"].append(tool)
                     calls[tool["id"]] = mid
+                    if tool["name"] == "Bash" and any(
+                            script == DRIVER_SCRIPT for script, _v, _o in
+                            script_calls(str(tool["input"].get("command") or ""))):
+                        driven.add(tool["id"])
                     if tool["name"] in AGENT_TOOLS:
                         agents[tool["id"]] = {
                             "type": tool["input"].get("subagent_type") or "?",
@@ -290,6 +348,8 @@ def parse(events):
                         req["emitWrite"][kind] = req["emitWrite"].get(kind, 0) + size
                         continue
                 req["emitOther"] += size
+            if req["context"] == MAIN:
+                last_main = mid
             timeline.append((stamp, "request", mid))
         elif kind == "user":
             parent = event.get("parent_tool_use_id")
@@ -299,15 +359,46 @@ def parse(events):
                     got = True
                     tid = block.get("tool_use_id")
                     results[tid] = {"bytes": _text_bytes(block.get("content")),
-                                    "error": bool(block.get("is_error"))}
+                                    "error": bool(block.get("is_error")),
+                                    "launched": _launch_notice(block.get("content"))}
+                    if tid in driven:
+                        results[tid]["text"] = _text_of(block.get("content"))
                     timeline.append((stamp, "result", tid))
+                elif block.get("type") == "text" and not parent:
+                    if last_main is None:
+                        before_any += 1
+                        continue
+                    host = requests[last_main]
+                    host["injected"].append({"label": _injected_label(host),
+                                             "bytes": _text_bytes(block.get("text"))})
             if parent and not got:
                 timeline.append((stamp, "brief", parent))
     return {"roots": roots, "cwd": init.get("cwd") or "", "init": init,
             "requests": [requests[m] for m in order], "agents": agents,
             "results": results, "calls": calls, "timeline": timeline,
             "result": session_result(ends), "ends": ends, "inits": inits,
-            "unjoined": unjoined}
+            "unjoined": unjoined, "textBeforeAny": before_any}
+
+
+# The tool result an `Agent` call gets back when the agent was launched in the
+# background, whatever its `run_in_background` said: the recorded sessions launched
+# two that way with the key absent. Such an agent's report is its own last request,
+# which the stream shows.
+LAUNCH_NOTICE = "Async agent launched successfully."
+
+
+def _launch_notice(content):
+    text = content if isinstance(content, str) else "".join(
+        (part.get("text") or "") for part in content or [] if isinstance(part, dict))
+    return text.lstrip().startswith(LAUNCH_NOTICE)
+
+
+def _injected_label(req):
+    """The source name of a user text block the main loop received after `req`: a
+    `Skill` call's command body is named by its skill, anything else is user text."""
+    skills = [str((t.get("input") or {}).get("skill") or "?") for t in req["tools"]
+              if t["name"] == "Skill"]
+    return "command body: %s" % skills[-1] if skills else "user text"
 
 
 # A result's `usage` holds its own stretch's main loop, so these are summed across
@@ -444,7 +535,8 @@ def _emitted(req):
 def _tail_bytes(req, results):
     """Bytes that entered a context after `req`: its own output and its tools' results."""
     return (_emitted(req)
-            + sum((results.get(t["id"]) or {}).get("bytes", 0) for t in req["tools"]))
+            + sum((results.get(t["id"]) or {}).get("bytes", 0) for t in req["tools"])
+            + sum(i["bytes"] for i in req.get("injected") or []))
 
 
 def _pseudo(rid, context, model, counts, why):
@@ -486,6 +578,11 @@ def reconstruct(session):
     by_model = {}
     for aid, dispatch in sorted(session["agents"].items()):
         mine = [r for r in reqs if r["context"] == aid]
+        if (session["results"].get(aid) or {}).get("launched"):
+            notes.append("dispatch %s (%s) was launched in the background: its tool result "
+                         "is the launch notice and its last visible request is its final, "
+                         "so nothing is rebuilt for it" % (aid[-6:], dispatch["type"]))
+            continue
         if aid not in session["results"]:
             notes.append("dispatch %s (%s) has no hand-back: nothing rebuilt for it"
                          % (aid[-6:], dispatch["type"]))
@@ -866,6 +963,11 @@ def _sources(prev, stages, agents, results, in_main, roots, redact):
         origin = agent_stage(agents[tool["id"]]["type"]) if tool["id"] in agents else stage
         out.append((origin, classify(tool, in_main, roots),
                     describe(tool, agents, redact), size))
+    # A command body is plugin prose the host typed into the context: fixed per run in
+    # the main loop, as a Read of the same file would be.
+    for block in prev.get("injected") or []:
+        kind = "run" if in_main and block["label"].startswith("command body") else "task"
+        out.append((stage, kind, block["label"], block["bytes"]))
     return out
 
 
@@ -893,6 +995,416 @@ def wall_clock(session, stages):
         spent[stage] = spent.get(stage, 0.0) + gap
     span = stamped[-1][0] - stamped[0][0] if len(stamped) > 1 else 0.0
     return {"byStage": spent, "span": span, "backwards": backwards}
+
+
+# --- spans: planning, the task cycle, and what follows it --------------------------
+# The task verbs a span bound is read off. A verb is the word after the script's own
+# path and its operand the word after that, so `done --help` names no task and closes
+# nothing, and a path held in a shell variable is followed to the script it names.
+TASK_SCRIPT = "audit-task.py"
+PLAN_VERBS = ("add", "add-phase")
+PLAN_SKILLS = ("audit:phase", "audit:task")
+LANDING_SCRIPT = "close-phase.py"
+DRIVER_SCRIPT = "drive-phase.py"
+LOCK_SCRIPT = "audit-lock.py"
+_VAR_RE = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?")
+# A shell assignment as a word after quote removal: its value may hold spaces.
+_NAME_SET_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def _words(segment):
+    """A shell segment's words, quotes removed; an unbalanced quote falls back to a
+    split on whitespace rather than dropping the segment."""
+    try:
+        return shlex.split(segment, comments=False, posix=True)
+    except ValueError:
+        return segment.split()
+
+
+def _expand(word, names):
+    """Every value `word` takes under the shell variables `names` holds, each a list
+    because a `for` loop binds one name to several words. An unknown name stays as
+    written, so `$t` outside a loop is an operand nobody can read."""
+    found = _VAR_RE.search(word)
+    if not found or found.group(1) not in names:
+        return [word]
+    out = []
+    for value in names[found.group(1)]:
+        out.extend(_expand(word[:found.start()] + value + word[found.end():], names))
+    return out
+
+
+def script_calls(command):
+    """[(script, verb, operand)] for every Python script a shell command runs, in order.
+    `verb` is the first word after the script, `operand` the next one when it is not a
+    flag; either is None when absent."""
+    names, calls = {}, []
+    for segment in _segments(command):
+        words = _words(segment)
+        while words and words[0] in ("do", "then", "else", "{", "(", "!"):
+            words = words[1:]
+        if len(words) >= 3 and words[0] == "for" and words[2] == "in":
+            names[words[1]] = [w for w in words[3:] if w not in ("do", ";")]
+            continue
+        held = []
+        for word in words:
+            if not _NAME_SET_RE.match(word):
+                break
+            held.append(word)
+        for word in held:
+            name, value = word.split("=", 1)
+            names[name] = _expand(value, names)
+        # One command line per value a loop variable takes, so `start $t` over two
+        # ids is two starts. Only a variable's value is split again, as the shell
+        # splits an unquoted expansion; a quoted literal stays one word.
+        lines = [[]]
+        for word in words[len(held):]:
+            values = _expand(word, names)
+            parts = [[word]] if values == [word] else [_words(v) for v in values]
+            lines = [line + part for line in lines for part in parts]
+        for flat in lines:
+            calls.extend(_calls_in(flat))
+    return calls
+
+
+def _calls_in(flat):
+    """[(script, verb, operand)] for each word of one expanded command line that names
+    a Python script."""
+    calls = []
+    for i, word in enumerate(flat):
+        script = os.path.basename(word.replace("\\", "/"))
+        if not script.endswith(".py"):
+            continue
+        verb = flat[i + 1] if i + 1 < len(flat) else None
+        operand = flat[i + 2] if verb is not None and i + 2 < len(flat) else None
+        if verb is not None and verb.startswith("-"):
+            verb, operand = None, None
+        if operand is not None and (operand.startswith("-") or "$" in operand):
+            operand = None
+        calls.append((script, verb, operand))
+    return calls
+
+
+def request_marks(req, results=None):
+    """What one main-loop request did that a span bound reads: whether it planned, the
+    tasks it started and closed, whether it called a planning verb, landed the phase or
+    released the lock. A step driver's call does what its result's did-lines say it
+    did, read from `results` (tool id -> the parsed result): the tasks it started and
+    closed, a fix task it added - a planning verb run in its subprocess - and the
+    landing and lock release its final step made."""
+    marks = {"plans": False, "adds": False, "starts": [], "dones": [], "lands": False,
+             "releases": False}
+    for tool in req["tools"]:
+        data = tool.get("input") or {}
+        if tool["name"] == "Skill":
+            args = str(data.get("args") or "").split()
+            if data.get("skill") in PLAN_SKILLS and args[:1] == ["add"]:
+                marks["plans"] = True
+            continue
+        if tool["name"] != "Bash":
+            continue
+        for script, verb, operand in script_calls(data.get("command") or ""):
+            if script == DRIVER_SCRIPT:
+                did = _DRIVE.did_events(((results or {}).get(tool.get("id")) or {})
+                                        .get("text"))
+                marks["starts"].extend(did[_DRIVE.STARTED])
+                marks["dones"].extend(did[_DRIVE.CLOSED])
+                if did["added"]:
+                    marks["plans"] = marks["adds"] = True
+                marks["lands"] = marks["lands"] or did["landed"]
+                marks["releases"] = marks["releases"] or did["released"]
+            elif script == TASK_SCRIPT and verb in PLAN_VERBS:
+                marks["plans"] = marks["adds"] = True
+            elif script == TASK_SCRIPT and verb in ("start", "done") and operand:
+                marks["starts" if verb == "start" else "dones"].append(operand)
+            elif script == LANDING_SCRIPT:
+                marks["lands"] = True
+            elif script == LOCK_SCRIPT and verb == "release":
+                marks["releases"] = True
+    return marks
+
+
+def find_spans(main, results=None):
+    """The span of every visible main-loop request, by index, and what bounds them.
+
+    The cycle opens at the first request that starts a task and closes at the last
+    request that closes one before any request inside it plans. Planning opens at the
+    first request before the cycle that plans and closes at the last one before the
+    cycle that calls a planning verb, or where it opened when none does. After the
+    cycle: a fix task runs from each planning verb to the next request that closes a
+    task, the close starts at the lock release or after the landing, whichever comes
+    first, and sign-off is the rest."""
+    marks = [request_marks(r, results) for r in main]
+    count = len(main)
+    lo = next((i for i, m in enumerate(marks) if m["starts"]), None)
+    found = {"marks": marks, "lo": lo, "hi": None, "why": None, "tasks": [],
+             "doneAfter": [], "unclosedFix": []}
+    if lo is None:
+        found["why"] = "no request starts a task, so this session has no task cycle"
+        before = count
+    else:
+        stop = next((i for i in range(lo + 1, count) if marks[i]["plans"]), count)
+        closes = [i for i in range(lo, stop) if marks[i]["dones"]]
+        if not closes:
+            found["why"] = ("request %d starts a task and no request after it closes one "
+                            "before any plans: the cycle never closed" % (lo + 1))
+        else:
+            found["hi"] = closes[-1]
+            found["tasks"] = sorted(set(t for i in closes for t in marks[i]["dones"]))
+        before = lo
+    span = [None] * count
+    planners = [i for i in range(before) if marks[i]["plans"]]
+    if planners:
+        verbs = [i for i in range(before) if marks[i]["adds"]]
+        last = verbs[-1] if verbs else planners[0]
+        for i in range(planners[0], max(last, planners[0]) + 1):
+            span[i] = "planning"
+    other = "before the cycle" if lo is not None else "outside any cycle"
+    for i in range(before):
+        span[i] = span[i] or other
+    if lo is not None and found["hi"] is None:
+        for i in range(lo, count):
+            span[i] = "unclosed cycle"
+        return span, found
+    if lo is None:
+        return span, found
+    hi = found["hi"]
+    for i in range(lo, hi + 1):
+        span[i] = "cycle"
+    after = range(hi + 1, count)
+    found["doneAfter"] = [(i, t) for i in after for t in marks[i]["dones"]]
+    landed = [i for i in after if marks[i]["lands"]]
+    released = [i for i in after if marks[i]["releases"]]
+    starts = [released[0]] if released else []
+    if landed:
+        starts.append(landed[-1] + 1)
+    close = min(starts) if starts else count
+    for i in range(close, count):
+        span[i] = "close"
+    for i in [j for j in after if j < close and marks[j]["adds"]]:
+        end = next((j for j in range(i, close) if marks[j]["dones"]), None)
+        if end is None:
+            found["unclosedFix"].append(i)
+            end = close - 1
+        for j in range(i, end + 1):
+            span[j] = "fix task"
+    for i in after:
+        span[i] = span[i] or "sign-off"
+    return span, found
+
+
+SPAN_ORDER = ("planning", "before the cycle", "outside any cycle", "cycle",
+              "unclosed cycle", "sign-off", "fix task", "close", "unattributed")
+
+
+def _ranges(numbers):
+    """`1-3, 7` for [1, 2, 3, 7]."""
+    out, run = [], []
+    for n in sorted(numbers):
+        if run and n != run[-1] + 1:
+            out.append(run)
+            run = []
+        run.append(n)
+    if run:
+        out.append(run)
+    return ", ".join("%d" % r[0] if len(r) == 1 else "%d-%d" % (r[0], r[-1]) for r in out)
+
+
+def spans(reading):
+    """The span reading: every visible main-loop request's span, each request's span
+    (an agent's is that of the main-loop request that dispatched it), and the bounds."""
+    session = reading["session"]
+    main = [r for r in reading["requests"] if r["context"] == MAIN and not r["reconstructed"]]
+    span, found = find_spans(main, session.get("results"))
+    of_main = dict((r["id"], span[i]) for i, r in enumerate(main))
+    agents = session["agents"]
+    by_id = dict((r["id"], r) for r in reading["requests"])
+
+    def owner(req, depth=0):
+        if req["id"] in of_main:
+            return of_main[req["id"]]
+        dispatch = agents.get(req["context"])
+        if dispatch is None or depth > len(agents):
+            return "unattributed"
+        parent = by_id.get(dispatch["request"])
+        return owner(parent, depth + 1) if parent else "unattributed"
+    of_request = dict((r["id"], owner(r)) for r in reading["requests"])
+    return {"main": main, "span": span, "found": found, "ofRequest": of_request,
+            "position": dict((r["id"], i) for i, r in enumerate(main))}
+
+
+def span_table(reading, spread):
+    """{span: {requests, numbers, mainUSD, agentsUSD, read, written, output}}: every
+    request in the span of the main-loop request it belongs to, priced as billed."""
+    rows = {}
+    out = reading["output"] or {}
+    for req in reading["requests"]:
+        name = spread["ofRequest"][req["id"]]
+        row = rows.setdefault(name, {"requests": 0, "numbers": [], "mainUSD": 0.0,
+                                     "agentsUSD": 0.0, "read": 0, "written": 0,
+                                     "output": 0.0})
+        cost = reading["costs"][req["id"]]["total"]
+        if req["context"] == MAIN and req["id"] in spread["position"]:
+            row["mainUSD"] += cost
+            row["requests"] += 1
+            row["numbers"].append(spread["position"][req["id"]] + 1)
+            row["read"] += req["cr"]
+            row["written"] += req["cw5"] + req["cw1"]
+            row["output"] += out.get(req["id"], 0.0)
+        else:
+            row["agentsUSD"] += cost
+    return rows
+
+
+def _made_by(main):
+    """{request id: the main-loop request before it}: a main-loop cache write holds
+    what the request before it added, so content is counted for that request."""
+    return dict((main[i]["id"], main[i - 1]["id"]) for i in range(1, len(main)))
+
+
+def cycle_reading(reading, spread, top=4):
+    """The task cycle's own figures, or None when the session has none: its requests,
+    their output, the task-class tokens they put into the main loop, its cost by class
+    with the agents its requests dispatched, and its largest outputs."""
+    found = spread["found"]
+    if found["hi"] is None:
+        return None
+    main = spread["main"]
+    cycle = set(r["id"] for r in main[found["lo"]:found["hi"] + 1])
+    made = _made_by(main)
+    sent = set(aid for aid, a in reading["session"]["agents"].items()
+               if spread["ofRequest"].get(a["request"]) == "cycle")
+    usd = dict((k, 0.0) for k in CLASSES)
+    tokens = dict((k, 0.0) for k in CLASSES)
+    context = dict((r["id"], r["context"]) for r in reading["requests"])
+    for item in reading["content"]["items"]:
+        where = context[item["request"]]
+        if (where == MAIN and made.get(item["request"]) in cycle) or where in sent:
+            usd[item["class"]] += item["writeUSD"] + item["carryUSD"]
+            if where == MAIN:
+                tokens[item["class"]] += item["tokens"]
+    members = [r for r in reading["requests"] if r["id"] in cycle or r["context"] in sent]
+    for req in members:
+        cost, stage = reading["costs"][req["id"]], reading["stages"][req["id"]]
+        usd["run" if stage == "orient" else "task"] += cost["in"]
+        for kind, share in _output_class(req, stage).items():
+            usd[kind] += (cost["out"] or 0.0) * share
+    out = reading["output"] or {}
+    loud = [row for row in largest_outputs(reading, len(reading["requests"]))
+            if row["request"] in set(r["id"] for r in members)][:top]
+    return {"first": found["lo"] + 1, "last": found["hi"] + 1, "requests": len(cycle),
+            "tasks": found["tasks"], "output": sum(out.get(i, 0.0) for i in cycle),
+            "tokens": tokens, "usd": usd, "agents": len(sent), "largest": loud,
+            "outputMeasured": reading["output"] is not None}
+
+
+def origin_of(item):
+    """Where a piece of main-loop content came from, by its source."""
+    source = item["source"]
+    if item.get("base"):
+        return "cached before"
+    if source == "session start":
+        return source
+    if source.startswith("Read <plugin>/reference/"):
+        return "reference prose"
+    if (source.startswith("command body") or source.startswith("Read <plugin>/commands/")
+            or source == "Skill"):
+        return "command bodies"
+    if source.startswith("hand-back"):
+        return "hand-backs"
+    if source.startswith("output:"):
+        return "main-loop output"
+    if item["class"] == "file":
+        return "file reads"
+    if source.startswith("Bash") and ("<plugin>" in source or "/scripts/" in source):
+        return "plugin script output"
+    return "other tool output"
+
+
+def origins(reading, spread):
+    """{origin: {atStart, inCycle, sessionUSD}} for the main loop: the tokens of the
+    prefix the cycle's first request read, the tokens the cycle's requests read, and
+    each origin's write and carry over the session. With no cycle the first two are
+    None."""
+    found = spread["found"]
+    lo, hi = found["lo"], found["hi"]
+    pos = spread["position"]
+    count = len(spread["main"])
+    rows = {}
+    for item in reading["content"]["items"]:
+        if item["request"] not in pos:
+            continue
+        row = rows.setdefault(origin_of(item), {"atStart": 0.0, "inCycle": 0.0,
+                                                "sessionUSD": 0.0})
+        row["sessionUSD"] += item["writeUSD"] + item["carryUSD"]
+        if hi is None:
+            continue
+        j = pos[item["request"]]
+        if j <= lo - 1 or (item.get("base") and j <= lo):
+            row["atStart"] += item["tokens"]
+        first = j if item.get("base") else j + 1
+        row["inCycle"] += item["tokens"] * sum(1 for k in range(first, count) if lo <= k <= hi)
+    if hi is None:
+        for row in rows.values():
+            row["atStart"] = row["inCycle"] = None
+    return rows
+
+
+def reference_reads(reading, spread):
+    """{span: [reads, tokens]}: every `Read` of a plugin reference file the main loop
+    made, by the span of the request that made it."""
+    made = _made_by(spread["main"])
+    out = {}
+    for item in reading["content"]["items"]:
+        if origin_of(item) != "reference prose" or item["request"] not in made:
+            continue
+        name = spread["ofRequest"][made[item["request"]]]
+        slot = out.setdefault(name, [0, 0.0])
+        slot[0] += 1
+        slot[1] += item["tokens"]
+    return out
+
+
+def injections(session):
+    """[(main-loop request number, label, bytes)] for each user text block the main
+    loop received, in stream order."""
+    main = [r for r in session["requests"] if r["context"] == MAIN]
+    return [(n + 1, block["label"], block["bytes"])
+            for n, req in enumerate(main) for block in req.get("injected") or []]
+
+
+def context_gaps(session):
+    """{context: (seconds, after request number) or None}: the longest wait between
+    two consecutive requests of a context, each timed at its first event. None when
+    the context has fewer than two timed requests."""
+    out = {}
+    for context, members in _contexts([r for r in session["requests"]]).items():
+        timed = [(n + 1, r["at"]) for n, r in enumerate(members) if r.get("at") is not None]
+        gaps = [(b[1] - a[1], a[0]) for a, b in zip(timed, timed[1:])]
+        out[context] = max(gaps) if gaps else None
+    return out
+
+
+def dispatches(reading, spread):
+    """One row per dispatch the main loop made: where, of what type, on which model,
+    whether it was launched in the background, its requests, its start read and
+    written, and what it cost - a rebuilt final included."""
+    session = reading["session"]
+    rows = []
+    for aid, dispatch in session["agents"].items():
+        mine = [r for r in reading["requests"] if r["context"] == aid]
+        seen = [r for r in mine if not r["reconstructed"]]
+        if dispatch["context"] != MAIN or not seen:
+            continue
+        first = seen[0]
+        rows.append({"id": aid, "at": spread["position"].get(dispatch["request"], -1) + 1,
+                     "span": spread["ofRequest"].get(dispatch["request"], "unattributed"),
+                     "type": dispatch["type"], "model": first["model"],
+                     "background": bool((session["results"].get(aid) or {}).get("launched")),
+                     "requests": len(mine), "rebuilt": len(mine) - len(seen),
+                     "startRead": first["cr"], "startWritten": first["cw5"] + first["cw1"],
+                     "usd": sum(reading["costs"][r["id"]]["total"] for r in mine)})
+    return sorted(rows, key=lambda r: (r["at"], r["id"]))
 
 
 # --- the whole reading -------------------------------------------------------------
@@ -1183,24 +1695,146 @@ def render(reading, top=10):
     lines.append("contexts: requests, identity breaks, what the first request found cached "
                  "and wrote [measured], and the prefix a further request would read, by "
                  "class [tokens; sizes split by bytes: estimate], priced at the cache-read rate")
-    lines.append("  %-10s %4s %6s %8s %8s %9s %9s %9s %10s"
+    lines.append("  %-10s %4s %6s %8s %8s %9s %9s %9s %10s %7s"
                  % ("context", "req", "breaks", "start_cR", "start_cW", "run", "task", "file",
-                    "$/request"))
+                    "$/request", "gap_s"))
+    gaps = context_gaps(session)
     for context, info in sorted(filled["contexts"].items(), key=lambda kv: kv[0] != MAIN):
         name = MAIN if context == MAIN else agent_stage(
             session["agents"].get(context, {}).get("type"))
         held = info["heldByClass"]
-        lines.append("  %-10s %4d %6d %8d %8d %9d %9d %9d %10.4f"
+        gap = gaps.get(context)
+        lines.append("  %-10s %4d %6d %8d %8d %9d %9d %9d %10.4f %7s"
                      % (name, info["requests"], info["identityBreaks"], info["startRead"],
                         info["startWrite"], round(held["run"]), round(held["task"]),
-                        round(held["file"]), sum(held.values()) * info["readRate"]))
+                        round(held["file"]), sum(held.values()) * info["readRate"],
+                        "-" if gap is None else "%.0f" % gap[0]))
+    main_gap = gaps.get(MAIN)
+    lines.append("  gap_s: the longest wait between two consecutive requests of the context, "
+                 "each timed at its first event; - where fewer than two are timed")
+    if main_gap is not None:
+        lines.append("  longest main-loop gap: %.0fs, after main-loop request %d"
+                     % (main_gap[0], main_gap[1]))
+    lines.extend(render_spans(reading, top))
     return "\n".join(lines)
+
+
+def render_spans(reading, top=10):
+    """The span view: planning, the task cycle and what follows it, with the main
+    loop's context by origin, the plugin prose it took in, and every dispatch."""
+    session = reading["session"]
+    spread = spans(reading)
+    found = spread["found"]
+    lines = ["", "spans [main-loop requests numbered in stream order; bounds read off "
+             "the task verbs and their operands; an agent in the span of the request "
+             "that dispatched it]"]
+    if found["why"]:
+        lines.append("  %s" % found["why"])
+    else:
+        lines.append("  task cycle: requests %d-%d, tasks %s"
+                     % (found["lo"] + 1, found["hi"] + 1, " ".join(found["tasks"])))
+    for index, task in found["doneAfter"]:
+        lines.append("  done after the cycle: %s at request %d" % (task, index + 1))
+    for index in found["unclosedFix"]:
+        lines.append("  a fix task added at request %d is never closed before the close"
+                     % (index + 1))
+    table = span_table(reading, spread)
+    if "planning" not in table:
+        lines.append("  planning: empty - no request before the cycle plans")
+    lines.append("  %-17s %-14s %8s %8s %8s %4s %9s %8s %7s"
+                 % ("span", "requests", "$main", "$agents", "$total", "req", "read", "written",
+                    "output"))
+    for name in sorted(table, key=lambda n: SPAN_ORDER.index(n) if n in SPAN_ORDER else 99):
+        row = table[name]
+        lines.append("  %-17s %-14s %8.4f %8.4f %8.4f %4d %9d %8d %7.0f"
+                     % (name, _ranges(row["numbers"]) or "-", row["mainUSD"],
+                        row["agentsUSD"], row["mainUSD"] + row["agentsUSD"], row["requests"],
+                        row["read"], row["written"], row["output"]))
+    cycle = cycle_reading(reading, spread, min(top, 4))
+    if cycle is not None:
+        tasks = len(cycle["tasks"]) or 1
+        whole = sum(cycle["usd"].values())
+        lines.append("")
+        lines.append("task cycle [its requests and every request of the agents they "
+                     "dispatched; content counted for the request that added it; output "
+                     "apportioned by emitted bytes, estimate]")
+        lines.append("  requests %d-%d: %d main-loop requests, %d dispatches, holding %s"
+                     % (cycle["first"], cycle["last"], cycle["requests"], cycle["agents"],
+                        " ".join(cycle["tasks"])))
+        lines.append("  main-loop output %s tokens; task-class tokens put into the main "
+                     "loop %d (run %d, file %d)"
+                     % ("%.0f" % cycle["output"] if cycle["outputMeasured"] else
+                        "not measured", round(cycle["tokens"]["task"]),
+                        round(cycle["tokens"]["run"]), round(cycle["tokens"]["file"])))
+        lines.append("  by class: run %.6f  task %.6f  file %.6f  total %.6f; per task "
+                     "(%d) %.6f" % (cycle["usd"]["run"], cycle["usd"]["task"],
+                                    cycle["usd"]["file"], whole, tasks, whole / tasks))
+        for row in cycle["largest"]:
+            lines.append("  largest output: %-9s %7d %8.4f  %s"
+                         % (row["stage"], round(row["tokens"]), row["usd"],
+                            "; ".join(row["emitted"]) or "-"))
+    rows = origins(reading, spread)
+    lines.append("")
+    lines.append("main loop by origin [tokens; sizes split by bytes within a write: "
+                 "estimate]")
+    lines.append("  %-22s %14s %16s %12s" % ("origin", "cycle's prefix", "read in cycle",
+                                              "$session"))
+    for name in sorted(rows, key=lambda k: (-rows[k]["sessionUSD"], k)):
+        row = rows[name]
+        lines.append("  %-22s %14s %16s %12.4f"
+                     % (name, "-" if row["atStart"] is None else "%.0f" % row["atStart"],
+                        "-" if row["inCycle"] is None else "%.0f" % row["inCycle"],
+                        row["sessionUSD"]))
+    lines.append("  cycle's prefix: what its first request read; read in cycle: summed over "
+                 "its requests; $session: write and carry over the session")
+    told = injections(session)
+    lines.append("")
+    lines.append("injected text [user text blocks of the main loop, sized as sources of "
+                 "their own]: %d" % len(told))
+    for number, label, size in told:
+        lines.append("  after request %-4d %-28s %7d B" % (number, label, size))
+    if session.get("textBeforeAny"):
+        lines.append("  %d before the first request, inside the session start's write"
+                     % session["textBeforeAny"])
+    reads = reference_reads(reading, spread)
+    lines.append("reference reads [Read <plugin>/reference/..., by the span of the request "
+                 "that read them]: %d" % sum(v[0] for v in reads.values()))
+    for name in sorted(reads, key=lambda n: SPAN_ORDER.index(n) if n in SPAN_ORDER else 99):
+        lines.append("  %-17s %3d reads %9.0f tokens" % (name, reads[name][0], reads[name][1]))
+    rows = dispatches(reading, spread)
+    lines.append("")
+    lines.append("dispatches [start read and written: the first visible request; $ holds a "
+                 "rebuilt final where marked *]")
+    for row in rows:
+        lines.append("  at %-3d %-17s %-22s %-18s %-10s %3d%s req  start_cR %6d  start_cW "
+                     "%6d  %.4f"
+                     % (row["at"], row["span"], row["type"][:22], row["model"][:18],
+                        "background" if row["background"] else "foreground",
+                        row["requests"], "*" if row["rebuilt"] else " ", row["startRead"],
+                        row["startWritten"], row["usd"]))
+    return lines
 
 
 def as_json(reading):
     redact = redactor(reading["session"]["roots"], reading["session"]["cwd"])
     rows, total = reconciliation(reading)
-    return {"stages": stage_table(reading), "classes": class_table(reading),
+    spread = spans(reading)
+    found = spread["found"]
+    return {"spans": {"cycle": None if found["hi"] is None else
+                      {"first": found["lo"] + 1, "last": found["hi"] + 1,
+                       "tasks": found["tasks"]},
+                      "why": found["why"],
+                      "doneAfter": [{"request": i + 1, "task": t} for i, t in found["doneAfter"]],
+                      "table": span_table(reading, spread),
+                      "byRequest": [spread["span"][i] for i in range(len(spread["main"]))]},
+            "taskCycle": cycle_reading(reading, spread),
+            "origins": origins(reading, spread),
+            "injected": [{"request": n, "label": l, "bytes": b}
+                         for n, l, b in injections(reading["session"])],
+            "referenceReads": reference_reads(reading, spread),
+            "dispatches": dispatches(reading, spread),
+            "gaps": dict((k, v) for k, v in context_gaps(reading["session"]).items()),
+            "stages": stage_table(reading), "classes": class_table(reading),
             "byOrigin": origin_matrix(reading),
             "largestOutputs": largest_outputs(reading, 10),
             "cache": cache_economics(reading),
@@ -1404,11 +2038,18 @@ def _fx_events(flow, split=False, noise=False, duplicate=False, result=True, roo
                                            "usage": _fx_usage(cr, cw, ttl),
                                            "content": part}})
         elif step[0] == "res":
+            # A size is a body of that many bytes; a string is the body itself.
             _kind, tid, size, parent = step
+            body = size if isinstance(size, str) else "y" * size
             events.append({"type": "user", "uuid": "u-res-" + tid, "timestamp": stamp(),
                            "parent_tool_use_id": parent,
                            "message": {"content": [{"type": "tool_result", "tool_use_id": tid,
-                                                    "content": "y" * size}]}})
+                                                    "content": body}]}})
+        elif step[0] == "text":
+            # A user text block of the main loop, as the host injects a command body.
+            events.append({"type": "user", "uuid": "u-text-%d" % n, "timestamp": stamp(),
+                           "parent_tool_use_id": None, "isSynthetic": True,
+                           "message": {"content": [{"type": "text", "text": step[1]}]}})
         elif step[0] == "init":
             events.append(dict(init, uuid="u-init-%d" % n))
         else:
@@ -1893,6 +2534,323 @@ def _cases(check):
           len(loud) == 1 and _fx_stage_totals(odd) == _FX_EXPECTED
           and len(same) == 1
           and not [n for n in two["notes"] if "DISAGREE on modelUsage" in n])
+    _span_cases(check)
+
+
+# --- selftest: spans, injected bodies and background agents ------------------------
+_FX_TASK = 'python3 "%s/scripts/manifest/audit-task.py"' % _FX_PLUGIN
+
+
+def _fx_bash(command):
+    return ("Bash", {"command": command})
+
+
+def _fx_verb(text):
+    return _fx_bash("%s %s" % (_FX_TASK, text))
+
+
+_FX_PLAN = ("Skill", {"skill": "audit:phase", "args": "add"})
+_FX_RUN = ("Skill", {"skill": "audit:phase", "args": "P1"})
+_FX_PREFLIGHT = _fx_bash('python3 "%s/scripts/status/audit-status.py" docs/audit/audit-plan.json'
+                         % _FX_PLUGIN)
+_FX_LAND = _fx_bash('python3 "%s/scripts/git/close-phase.py" docs/audit/audit-plan.json P1'
+                    % _FX_PLUGIN)
+_FX_RELEASE = _fx_bash('python3 "%s/scripts/governance/audit-lock.py" release phase-P1'
+                       % _FX_PLUGIN)
+
+
+def _fx_main_only(steps):
+    """A main-loop-only flow: one request per entry of `steps`, each a list of
+    (tool name, input) calls, every call answered with a small result."""
+    flow, cr = [], 100
+    for n, calls in enumerate(steps):
+        blocks = [{"type": "tool_use", "id": "c%d_%d" % (n, k), "name": name, "input": data}
+                  for k, (name, data) in enumerate(calls)]
+        flow.append(("req", "s%d" % n, None, _FX_OPUS, cr, 10, "1h",
+                     blocks or [{"type": "text", "text": "ok"}]))
+        flow.extend(("res", "c%d_%d" % (n, k), 20, None) for k in range(len(calls)))
+        cr += 10
+    return flow
+
+
+def _fx_spans(steps):
+    reading = analyse(_fx_events(_fx_main_only(steps), result=False))
+    spread = spans(reading)
+    return reading, spread
+
+
+def _fx_numbers(spread, name):
+    return [i + 1 for i, s in enumerate(spread["span"]) if s == name]
+
+
+def _fx_launch(background, handback):
+    """The twin pair for a background launch: one executor and one reviewer, both on
+    the same model, so a rebuild that predicted a final for the executor would take its
+    read from the prefix identity rather than from the model's residual. The executor's
+    final request is in the stream only when it ran in the background, and its
+    hand-back then is the launch notice; the result event is the same in both."""
+    exe = {"description": "d", "subagent_type": "audit:audit-executor"}
+    rev = {"description": "r", "subagent_type": "audit:audit-reviewer"}
+    t = lambda tid, name, data: {"type": "tool_use", "id": tid, "name": name, "input": data}  # noqa: E731
+    look = {"command": "git diff"}
+    flow = [("req", "m1", None, _FX_OPUS, 100, 50, "1h", [t("tX", "Agent", exe)]),
+            ("brief", "tX"),
+            ("req", "x1", "tX", _FX_SONNET, 0, 500, "5m", [t("x1t", "Bash", look)]),
+            ("res", "x1t", 300, "tX"),
+            ("req", "x2", "tX", _FX_SONNET, 500, 100, "5m", [t("x2t", "Bash", look)]),
+            ("res", "x2t", 300, "tX")]
+    if background:
+        flow.append(("req", "x3", "tX", _FX_SONNET, 600, 60, "5m",
+                     [{"type": "text", "text": "z" * len(handback)}]))
+    flow += [("res", "tX", (LAUNCH_NOTICE + " agentId: a1") if background else handback, None),
+             ("req", "m2", None, _FX_OPUS, 150, 40, "1h", [t("tR", "Agent", rev)]),
+             ("brief", "tR"),
+             ("req", "r1", "tR", _FX_SONNET, 0, 400, "5m", [t("r1t", "Bash", look)]),
+             ("res", "r1t", 300, "tR"),
+             ("res", "tR", "w" * len(handback), None),
+             ("req", "m3", None, _FX_OPUS, 190, 20, "1h", [{"type": "text", "text": "done"}])]
+    main = {"in": 6, "cw": 110, "cr": 440, "out": 300}
+    sonnet = {"in": 10, "cw": 1120, "cr": 1500, "out": 200}
+
+    def cost(model, row, w5, w1):
+        return _usage_core.price({"in": row["in"], "cacheW5m": w5, "cacheW1h": w1,
+                                  "cacheR": row["cr"], "out": row["out"]}, model)
+    end = {"type": "result", "subtype": "success", "uuid": "u-result", "duration_ms": 9000,
+           "num_turns": 3,
+           "usage": {"input_tokens": main["in"], "cache_creation_input_tokens": main["cw"],
+                     "cache_read_input_tokens": main["cr"], "output_tokens": main["out"]},
+           "modelUsage": {
+               _FX_OPUS: {"inputTokens": main["in"], "cacheCreationInputTokens": main["cw"],
+                          "cacheReadInputTokens": main["cr"], "outputTokens": main["out"],
+                          "costUSD": cost(_FX_OPUS, main, 0, main["cw"])},
+               _FX_SONNET: {"inputTokens": sonnet["in"],
+                            "cacheCreationInputTokens": sonnet["cw"],
+                            "cacheReadInputTokens": sonnet["cr"],
+                            "outputTokens": sonnet["out"],
+                            "costUSD": cost(_FX_SONNET, sonnet, sonnet["cw"], 0)}}}
+    end["total_cost_usd"] = sum(r["costUSD"] for r in end["modelUsage"].values())
+    return analyse(_fx_events(flow, result=end))
+
+
+def _fx_context_usd(reading, context):
+    return sum(reading["costs"][r["id"]]["total"] for r in reading["requests"]
+               if r["context"] == context)
+
+
+def _span_cases(check):
+    calls = script_calls('S=/p/scripts/manifest/audit-task.py; python3 $S done P1.1 --commit c'
+                         '\nT="python3 /p/scripts/manifest/audit-task.py"\n$T add "a b" --phase P1'
+                         '\nfor t in P1.2 P1.3; do python3 "${PL}/x/audit-task.py" start $t; done'
+                         '\npython3 /p/audit-task.py done --help; python3 /p/audit-task.py start $u')
+    check("sp1 a verb and its operand are read off the words after the script, through a path "
+          "held in a variable, a variable holding the whole command, and a loop over task "
+          "ids; a flag or an unreadable variable is no operand: %r" % (calls,),
+          calls == [("audit-task.py", "done", "P1.1"), ("audit-task.py", "add", "a b"),
+                    ("audit-task.py", "start", "P1.2"), ("audit-task.py", "start", "P1.3"),
+                    ("audit-task.py", "done", None), ("audit-task.py", "start", None)])
+    quoted = script_calls("echo 'audit-task.py done P1.1' && grep -n done audit-task.md")
+    check("sp2 THE OVER-FIRE TWIN: the verb's name inside a quoted string or a grep pattern "
+          "is not a call - only a word naming the script is: %r" % (quoted,), quoted == [])
+
+    # The reference read is in planning's last request, so the write that holds it falls
+    # at the first request after planning: a reading by the holding request's span
+    # would put it outside planning.
+    shared = [[_FX_PLAN], [_fx_verb('add-phase "x" --outcome y')],
+              [_fx_verb('add "one" --phase P1')],
+              [_fx_verb('add "two" --phase P1'),
+               ("Read", {"file_path": _FX_PLUGIN + "/reference/a.md"})]]
+    tail = [[_fx_verb("start P1.1")], [_fx_verb("done P1.1 --commit c")], [_FX_RELEASE]]
+    gap, spread_gap = _fx_spans(shared + [[_FX_RUN], [_FX_PREFLIGHT]] + tail)
+    flat, spread_flat = _fx_spans(shared + tail)
+    got = (_fx_numbers(spread_gap, "planning"), _fx_numbers(spread_flat, "planning"),
+           _fx_numbers(spread_gap, "before the cycle"))
+    check("sp3 THE PLANNING TWIN: a run whose second Skill call and preflight sit between the "
+          "last add and the first start, and one whose start follows the last add, hold the "
+          "same planning row; the requests between fall in neither span. A rule that closed "
+          "planning at the start would put them in the first: %r" % (got,),
+          got == ([1, 2, 3, 4], [1, 2, 3, 4], [5, 6]))
+    reads = reference_reads(gap, spread_gap)
+    check("sp4 a reference read is summed in the span of the request that made it, not the "
+          "one whose cache write held it: %r" % (reads,),
+          dict((k, v[0]) for k, v in reads.items()) == {"planning": 1})
+
+    work = [[_fx_verb("start P1.1")], [_fx_verb("done P1.1 --commit c")],
+            [_fx_verb("start P1.2")], [_fx_verb("done P1.2 --commit c")]]
+    # A request between the landing and the lock release, so a close read from the
+    # release alone starts one request later than the close read from the landing.
+    close = [[_fx_verb("signoff P1 --verdict passed")], [_FX_LAND], [_fx_bash("git log -1")],
+             [_FX_RELEASE]]
+    fixed, spread_fixed = _fx_spans(work + [[_fx_verb('add "fix" --phase P1')],
+                                            [_fx_verb("start P1.3-fcb")],
+                                            [_fx_verb("done P1.3-fcb --commit c")]] + close)
+    plain, spread_plain = _fx_spans(work + close)
+    got = [(s["found"]["lo"], s["found"]["hi"], s["found"]["tasks"])
+           for s in (spread_fixed, spread_plain)]
+    parts = [(_fx_numbers(s, "fix task"), _fx_numbers(s, "sign-off"), _fx_numbers(s, "close"))
+             for s in (spread_fixed, spread_plain)]
+    check("sp5 THE SIGN-OFF TWIN: a phase whose sign-off adds and runs a fix task after the "
+          "last task's done, and one that adds none, hold the same cycle and tasks; what "
+          "follows is sign-off, the fix task and the close, the close from the request after "
+          "the landing. A rule that closed the cycle at the last done would swallow the fix "
+          "task: %r" % ((got, parts, spread_fixed["found"]["doneAfter"]),),
+          got == [(0, 3, ["P1.1", "P1.2"]), (0, 3, ["P1.1", "P1.2"])]
+          and parts == [([5, 6, 7], [8, 9], [10, 11]), ([], [5, 6], [7, 8])]
+          and spread_fixed["found"]["doneAfter"] == [(6, "P1.3-fcb")])
+
+    helped, spread_help = _fx_spans([[_fx_verb("start P1.1")], [_fx_verb("done --help")]])
+    closed, spread_closed = _fx_spans([[_fx_verb("start P1.1")], [_fx_verb("done --help")],
+                                       [_fx_verb("done P1.1")]])
+    text = "\n".join(render_spans(helped))
+    check("sp6 `done --help` names no task, so it closes nothing: a cycle with only that after "
+          "its start prints that it never closed, and the twin with a real done after it "
+          "closes there: %r" % ((spread_help["found"]["why"], spread_closed["found"]["hi"]),),
+          spread_help["found"]["hi"] is None and "never closed" in text
+          and _fx_numbers(spread_help, "unclosed cycle") == [1, 2]
+          and spread_closed["found"]["hi"] == 2
+          and spread_closed["found"]["tasks"] == ["P1.1"])
+
+    denied, spread_denied = _fx_spans([[_FX_PLAN], [_fx_bash("ls")], [_fx_bash("cat src/a.rb")]])
+    text = "\n".join(render_spans(denied))
+    check("sp7 a session whose only planning is one Skill call and which starts nothing has a "
+          "planning row of that one request and no task cycle, said in words - a rule that "
+          "closed planning only at a start would read every request as planning: %r"
+          % (_fx_numbers(spread_denied, "planning"),),
+          _fx_numbers(spread_denied, "planning") == [1]
+          and _fx_numbers(spread_denied, "outside any cycle") == [2, 3]
+          and "no task cycle" in text and cycle_reading(denied, spread_denied) is None
+          and "task cycle [" not in text)
+
+    plain_twin = analyse(_fx_events(_fx_session()))
+    cyc_none = spans(plain_twin)["found"]["why"]
+    check("sp8 the known-answer session calls no start through the task script, so it has no "
+          "cycle, rather than a cycle of nothing: %r" % (cyc_none,),
+          cyc_none is not None and "no task cycle" in cyc_none)
+
+    handback = "h" * 640
+    fore = _fx_launch(False, handback)
+    back = _fx_launch(True, handback)
+    prices = [(_fx_context_usd(r, "tX"), _fx_context_usd(r, "tR")) for r in (fore, back)]
+    phantom = [r["id"] for r in back["requests"] if r["id"].startswith(("final:tX", "residual:"))]
+    rows = [(d["type"], d["background"], d["rebuilt"]) for d in dispatches(back, spans(back))]
+    check("sp9 THE LAUNCH TWIN: an agent launched in the background, whose last request the "
+          "stream shows and whose tool result is the launch notice, is priced as the same "
+          "agent run in the foreground with its final rebuilt - no phantom final, no "
+          "unattributed row, and the dispatch says how it was launched: %r"
+          % ((prices, phantom, rows),),
+          _close(prices[0][0], prices[1][0]) and _close(prices[0][1], prices[1][1])
+          and not phantom
+          and not [r for r in fore["requests"] if r["id"].startswith("residual:")]
+          and rows == [("audit:audit-executor", True, 0), ("audit:audit-reviewer", False, 1)]
+          and _close(sum(c["total"] for c in fore["costs"].values()),
+                     sum(c["total"] for c in back["costs"].values())))
+
+    body = "B" * 4000
+    flow = [("req", "m1", None, _FX_OPUS, 100, 50, "1h",
+             [{"type": "tool_use", "id": "k1", "name": "Skill",
+               "input": {"skill": "audit:phase", "args": "add"}}]),
+            ("res", "k1", "Launching skill: audit:phase", None), ("text", body),
+            ("req", "m2", None, _FX_OPUS, 150, 1500, "1h",
+             [{"type": "tool_use", "id": "k2", "name": "Bash", "input": {"command": "ls"}}]),
+            ("res", "k2", 30, None), ("text", "u" * 300),
+            ("req", "m3", None, _FX_OPUS, 1650, 120, "1h", [{"type": "text", "text": "ok"}])]
+    sized = analyse(_fx_events(flow, result=False))
+    rows = sorted((i["source"], i["class"], i["bytes"]) for i in sized["content"]["items"]
+                  if i["source"] in ("command body: audit:phase", "user text"))
+    held = sum(i["tokens"] for i in sized["content"]["items"] if i["request"] == "msg_m2")
+    check("sp10 a command body a Skill call injects is a source of its own, sized by its bytes "
+          "and fixed per run, and a user text block after any other call is user text; the "
+          "write that held it still sums to what was billed (%.1f of 1500): %r" % (held, rows),
+          rows == [("command body: audit:phase", "run", 4000), ("user text", "task", 300)]
+          and _close(held, 1500)
+          and [n for n, _l, _b in injections(sized["session"])] == [1, 2])
+
+    session = {"requests": [{"context": MAIN, "at": 10.0}, {"context": MAIN, "at": 15.0},
+                            {"context": MAIN, "at": 27.0}, {"context": "a", "at": 12.0},
+                            {"context": "a", "at": 13.5}, {"context": "b", "at": 14.0}]}
+    gaps = context_gaps(session)
+    check("sp11 the longest gap is read per context between its own consecutive requests, "
+          "with the request it followed, and a context of one request has none: %r" % (gaps,),
+          gaps == {MAIN: (12.0, 2), "a": (1.5, 1), "b": None})
+    _driver_span_cases(check)
+
+
+_FX_DRIVE = 'python3 "%s/scripts/governance/drive-phase.py" next P1' % _FX_PLUGIN
+
+
+def _fx_driven(steps):
+    """A main-loop-only flow of Bash calls, each `(command, its printed result)`."""
+    flow, cr = [], 100
+    for n, (command, said) in enumerate(steps):
+        flow.append(("req", "d%d" % n, None, _FX_OPUS, cr, 10, "1h",
+                     [{"type": "tool_use", "id": "dc%d" % n, "name": "Bash",
+                       "input": {"command": command}}]))
+        flow.append(("res", "dc%d" % n, said, None))
+        cr += 10
+    reading = analyse(_fx_events(flow, result=False))
+    return reading, spans(reading)
+
+
+def _driver_span_cases(check):
+    # The prints are the driver's own shape: a did-line, then the instruction.
+    drive = [(_FX_DRIVE, "[drive-phase] P1: started P1.1\n"
+                         "dispatch audit:audit-executor P1.1 model=sonnet brief=/b/1"),
+             ("ls", "x"),
+             (_FX_DRIVE, "[drive-phase] P1: gate P1.1 green; stamp current\n"
+                         "dispatch audit:audit-reviewer P1.1 model=sonnet brief=/b/2"),
+             ("ls", "x"),
+             (_FX_DRIVE, "[drive-phase] P1: closed P1.1 at abc1234; started P1.2\n"
+                         "dispatch audit:audit-executor P1.2 model=sonnet brief=/b/3"),
+             (_FX_DRIVE, "[drive-phase] P1: closed P1.2 at def5678\n"
+                         "done P1: every task is closed; sign-off is next")]
+    _r, spread = _fx_driven(drive)
+    found = spread["found"]
+    check("sp12 a session that drives its tasks through the step driver, calling no "
+          "start or done itself, has a task cycle: from the request whose print says it "
+          "started a task to the last whose print says it closed one, holding the tasks "
+          "closed: %r" % ((found["lo"], found["hi"], found["tasks"]),),
+          (found["lo"], found["hi"], found["tasks"]) == (0, 5, ["P1.1", "P1.2"])
+          and _fx_numbers(spread, "cycle") == [1, 2, 3, 4, 5, 6])
+    echoed = [("echo '[drive-phase] P1: started P1.1'",
+               "[drive-phase] P1: started P1.1"),
+              ("cat notes.txt", "[drive-phase] P1: closed P1.1 at abc1234"),
+              (_FX_DRIVE, "decide gate-red P1.1: its recorded gate is red (GATE RED: x)")]
+    _r, spread_echo = _fx_driven(echoed)
+    check("sp13 THE OVER-FIRE TWIN: the driver's words in the result of a command that "
+          "does not run the driver start nothing, and a driver print with no did-line "
+          "starts nothing either - so no cycle: %r" % (spread_echo["found"]["why"],),
+          spread_echo["found"]["lo"] is None
+          and "no task cycle" in (spread_echo["found"]["why"] or ""))
+
+    # A driven sign-off with a fix task: the review's dispatch, the triage, the fix
+    # task added and started inside the driver, its close beside the triage again,
+    # and the final step that signs off, lands and releases the lock.
+    signed = [(_FX_DRIVE, "[drive-phase] P1: started P1.1\n"
+                          "dispatch audit:audit-executor P1.1 model=sonnet brief=/b/1"),
+              (_FX_DRIVE, "[drive-phase] P1: gate P1.1 green; stamp current; closed "
+                          "P1.1 at abc1234\n"
+                          "dispatch audit:audit-reviewer P1 model=sonnet brief=/b/2"),
+              (_FX_DRIVE, "[drive-phase] P1: 1 finding(s) of the phase review filed\n"
+                          "decide triage P1: the phase review returned `findings`"),
+              (_FX_DRIVE, "[drive-phase] P1: fix task P1.2-fcb added for P1-R1; "
+                          "started P1.2-fcb\n"
+                          "dispatch audit:audit-executor P1.2-fcb model=sonnet brief=/b/3"),
+              (_FX_DRIVE, "[drive-phase] P1: gate P1.2-fcb green; stamp current; "
+                          "closed P1.2-fcb at def5678\n"
+                          "decide triage P1: the phase review returned `findings`"),
+              (_FX_DRIVE, "[drive-phase] P1: phase gate green; invariants clean; "
+                          "signed off; committed 1234567; landed (audit/p1 -> main); "
+                          "lock released\ndone P1: signed off (passed)")]
+    _r, spread_signed = _fx_driven(signed)
+    found = spread_signed["found"]
+    parts = (_fx_numbers(spread_signed, "cycle"), _fx_numbers(spread_signed, "sign-off"),
+             _fx_numbers(spread_signed, "fix task"), _fx_numbers(spread_signed, "close"))
+    check("sp14 a driven sign-off with a fix task reads as the driver's did-words say: "
+          "the cycle holds the phase's own task, the fix task runs from the request that "
+          "added it to the one that closed it, the triage is sign-off, and the request "
+          "that landed and released the lock is the close: %r"
+          % ((found["tasks"], parts),),
+          found["tasks"] == ["P1.1"]
+          and parts == ([1, 2], [3], [4, 5], [6]))
 
 
 def _selftest():

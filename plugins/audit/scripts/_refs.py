@@ -1244,12 +1244,86 @@ def red_first_vocabulary_drift(repo_root=None):
             "problems": problems}
 
 
+# --- the keys of a phase review's per-task entry ----------------------------------
+# Under `review.perTask: phase` the phase reviewer answers each task in a `tasks`
+# entry, and the filing verb refuses an entry that lacks a key of
+# `_filed_returns.PHASE_ENTRY_KEYS`. The reviewer learns the keys from its return
+# format, so the two are one tuple stated twice: a key the format drops is one no
+# reviewer sends and every filing refuses, and a key the verb gains is one the
+# format never asks for. The tuple is read off the verb's SOURCE rather than
+# imported, because `_filed_returns` is a layer-mate of this module.
+PHASE_RETURN_VERB = "scripts/manifest/_filed_returns.py"
+PHASE_ENTRY_TUPLE = "PHASE_ENTRY_KEYS"
+_PHASE_ENTRY_RE = re.compile(r'"tasks":\s*\[\{(.*?)\}', re.S)
+_ENTRY_KEY_RE = re.compile(r'"([A-Za-z]+)":')
+
+
+def _verb_entry_keys(root):
+    """`(keys, problem)` - the literal `PHASE_ENTRY_KEYS` tuple in the verb."""
+    rel = PHASE_RETURN_VERB
+    try:
+        with open(os.path.join(root, PLUGIN_REL, *rel.split("/")), "r",
+                  encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+    except (OSError, SyntaxError, ValueError) as exc:
+        return None, "%s: unreadable (%s)" % (rel, exc)
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == PHASE_ENTRY_TUPLE
+                for t in node.targets) and isinstance(node.value, ast.Tuple):
+            keys = [e.value for e in node.value.elts
+                    if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+            if keys:
+                return keys, None
+    return None, ("%s: declares no literal %s tuple, so there is nothing to hold "
+                  "the reviewer's entry to" % (rel, PHASE_ENTRY_TUPLE))
+
+
+def phase_return_key_drift(repo_root=None):
+    """{"brief": [key, ...], "verb": [key, ...], "problems": [str, ...]} - the
+    keys of the `tasks` entry in `agents/audit-reviewer.md`'s return format
+    against the filing verb's tuple. Empty `problems` is the healthy answer; a
+    side that cannot be read is a problem, never a list compared as empty."""
+    root = repo_root or REPO_ROOT
+    problems = []
+    verb, problem = _verb_entry_keys(root)
+    if problem:
+        problems.append(problem)
+    rel = RED_FIRST_REVIEWER_BRIEF
+    try:
+        with open(os.path.join(root, PLUGIN_REL, *rel.split("/")), "r",
+                  encoding="utf-8", errors="replace") as fh:
+            blocks = _PHASE_ENTRY_RE.findall(fh.read())
+    except OSError as exc:
+        blocks = None
+        problems.append("%s: unreadable (%s)" % (rel, exc))
+    brief = None
+    if blocks is not None and len(blocks) != 1:
+        problems.append("%s: its return format declares a `tasks` entry %d "
+                        "times, where one is the only count a reader can follow"
+                        % (rel, len(blocks)))
+    elif blocks:
+        brief = _ENTRY_KEY_RE.findall(blocks[0])
+    if brief is not None and verb is not None:
+        problems.extend("%s: the `tasks` entry omits %r, which the filing verb "
+                        "refuses an entry without" % (rel, k)
+                        for k in verb if k not in brief)
+        problems.extend("%s: the `tasks` entry names %r, which the filing verb "
+                        "does not read" % (rel, k) for k in brief if k not in verb)
+    return {"brief": brief or [], "verb": verb or [], "problems": problems}
+
+
 # --- the shape the executor hands back, and who has to keep asking for it -------
-# THE RETURN IS PROSE AN AGENT WRITES. Nothing parses it, nothing rejects it,
-# and the orchestrator -- the one actor that could quietly fill a gap in -- is also
-# its only reader. So the return itself cannot be validated at the boundary, and
-# saying that plainly is the point rather than an apology: what CAN be checked is
-# the pair of documents that describe it, and this is that check.
+# A RETURN THE AGENT FILES IS CHECKED AT THE BOUNDARY; ONE IT DOES NOT IS PROSE.
+# `audit-task.py file-return` parses a filed return and refuses one missing a
+# field the brief declares (`_filed_returns.return_problems`), and `fr6` in
+# `plugins/audit/tests/test__filed_returns.py` deletes each declared field in
+# turn and holds that the check names it - so the
+# brief and the verb cannot drift apart. A return handed back without filing is
+# still prose nothing parses, and the orchestrator -- the one actor that could
+# quietly fill a gap in -- is its only reader. What THIS function checks is the
+# other pair: the brief that declares the shape and the reference that has to ask
+# for every field of it.
 #
 # THE DEFECT IT WAS WRITTEN FOR. `agents/audit-executor.md` declares the shape.
 # `reference/execute-task.md` (the `## Execute the task` section, split out of
@@ -1484,6 +1558,156 @@ def runner_list_drift(repo_root=None):
     return {"runners": runners, "problems": problems}
 
 
+# --- a followed rule names where the model meets it -------------------------------
+# THE PIPELINE STOPPED READING REFERENCE PROSE, AND THE FOLLOWED TABLE HAD TO MOVE
+# WITH IT. The README's second table lists the rules nothing refuses - the model
+# follows them - and each row named a section of `reference/orchestrator.md` as
+# where the rule is stated. That was true while every pipeline command told the main
+# loop to read that file first. Once the step driver prints what a step needs, and
+# the commands read no reference file (`tools/measure-context.py --gate` holds that),
+# a row citing a reference section names prose its reader never opens: the rule is
+# then followed by nobody, and the table still presents it as stated.
+#
+# So a row's "Stated in" has exactly two legal shapes, the two places the model meets
+# a followed rule now:
+#   * step `<name>` - a step of `drive-phase.py`'s `STEPS` whose `rule` is not
+#     empty, so the driver prints the rule under that step's instruction;
+#   * `<agent>.md` -> **<lead>** - a bullet of that agent's prompt opening with the
+#     bolded lead, the prompt being the one text an agent always reads.
+# WHAT THIS CANNOT SEE: whether the printed rule SAYS what the row says. It holds that
+# the row names a place the model reads and that the place states a rule; reading the
+# sentence against the row is the reviewer's, as it is for every prose rule.
+FOLLOWED_DOC = "README.md"
+FOLLOWED_HEADING = "### Followed from"
+FOLLOWED_END = "**How a row moves left"
+FOLLOWED_STEP_SOURCE = "scripts/governance/drive-phase.py"
+FOLLOWED_STEP_TABLE = "STEPS"
+_FOLLOWED_STEP = re.compile(r"\bstep `([a-z][a-z-]*)`")
+_FOLLOWED_AGENT = re.compile("`([a-z][a-z-]*\\.md)` → \\*\\*(.+?)\\*\\*")
+_CELL_SPLIT = re.compile(r"(?<!\\)\|")
+
+
+def _followed_rows(text):
+    """`(rows, problem)` - `[(invariant, stated_in)]` of the followed table, or why
+    there is no table to read."""
+    start = text.find(FOLLOWED_HEADING)
+    if start < 0:
+        return [], "%s has no `%s` table" % (FOLLOWED_DOC, FOLLOWED_HEADING)
+    stop = text.find(FOLLOWED_END, start)
+    rows = []
+    for line in text[start:stop if stop >= 0 else len(text)].splitlines():
+        if not line.startswith("|") or line.startswith("|---"):
+            continue
+        cells = [c.strip() for c in _CELL_SPLIT.split(line.strip().strip("|"))]
+        if len(cells) < 2 or cells[1] == "Stated in":
+            continue
+        rows.append((cells[0], cells[1]))
+    if not rows:
+        return [], "the `%s` table in %s has no row" % (FOLLOWED_HEADING, FOLLOWED_DOC)
+    return rows, None
+
+
+def _step_rules(root):
+    """`(steps, problem)` - `{name: rule tuple}` read off the driver's literal
+    `STEPS`, never by importing an entry point."""
+    rel = FOLLOWED_STEP_SOURCE
+    try:
+        with open(os.path.join(root, PLUGIN_REL, *rel.split("/")), "r",
+                  encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+    except (OSError, SyntaxError, ValueError) as exc:
+        return None, "%s: unreadable (%s)" % (rel, exc)
+    # A rule shared by several steps is one module-level string the table names,
+    # so a name bound to a string literal at module level reads as that string.
+    strings = {}
+    for node in tree.body:
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)):
+            try:
+                value = ast.literal_eval(node.value)
+            except ValueError:
+                continue
+            if isinstance(value, str):
+                strings[node.targets[0].id] = value
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == FOLLOWED_STEP_TABLE
+                for t in node.targets):
+            for sub in ast.walk(node.value):
+                for _field, child in ast.iter_fields(sub):
+                    if isinstance(child, list):
+                        child[:] = [ast.Constant(value=strings[c.id])
+                                    if isinstance(c, ast.Name) and c.id in strings
+                                    else c for c in child]
+            try:
+                table = ast.literal_eval(node.value)
+            except ValueError:
+                break
+            return dict((k, tuple((v or {}).get("rule") or ()))
+                        for k, v in table.items()), None
+    return None, "%s: no literal %s table" % (rel, FOLLOWED_STEP_TABLE)
+
+
+def followed_anchor_drift(repo_root=None):
+    """{"rows": n, "anchors": n, "problems": [str, ...]} - every followed row whose
+    "Stated in" names neither a driver step that prints its rule nor a bullet of
+    an agent prompt.
+
+    `rows` and `anchors` are counts beside the list because an empty list over a
+    table that was never read is the silent pass this repository keeps
+    re-finding; a missing table and a table with no row are problems themselves.
+    """
+    root = repo_root or REPO_ROOT
+    text, problem = _plugin_doc(root, FOLLOWED_DOC)
+    if problem is not None:
+        return {"rows": 0, "anchors": 0, "problems": [problem]}
+    rows, problem = _followed_rows(text)
+    if problem is not None:
+        return {"rows": 0, "anchors": 0, "problems": [problem]}
+    steps, problem = _step_rules(root)
+    problems = [problem] if problem else []
+    prompts = {}
+    anchors = 0
+    for invariant, stated in rows:
+        label = _clip_row(invariant)
+        if "§" in stated:
+            problems.append("%s: cites a reference section (%s), which no pipeline "
+                            "command reads - name the driver step or the agent "
+                            "prompt that states it" % (label, stated))
+            continue
+        named = 0
+        for name in _FOLLOWED_STEP.findall(stated):
+            named += 1
+            if steps is None:
+                continue
+            if name not in steps:
+                problems.append("%s: names step `%s`, which %s does not have"
+                                % (label, name, FOLLOWED_STEP_SOURCE))
+            elif not steps[name]:
+                problems.append("%s: names step `%s`, whose rule is empty - the "
+                                "driver prints no rule there" % (label, name))
+        for agent, lead in _FOLLOWED_AGENT.findall(stated):
+            named += 1
+            if agent not in prompts:
+                prompts[agent] = _plugin_doc(root, "agents/" + agent)
+            body, unreadable = prompts[agent]
+            if unreadable is not None:
+                problems.append("%s: %s" % (label, unreadable))
+            elif not re.search(r"^- \*\*" + re.escape(lead), body, re.M):
+                problems.append("%s: names **%s** in %s, and no bullet of that "
+                                "prompt opens with it" % (label, lead, agent))
+        anchors += named
+        if not named:
+            problems.append("%s: names no driver step and no agent prompt section "
+                            "(%s)" % (label, stated))
+    return {"rows": len(rows), "anchors": anchors, "problems": problems}
+
+
+def _clip_row(invariant):
+    """A row's invariant, short enough to name it in a finding."""
+    return invariant if len(invariant) <= 60 else invariant[:57] + "..."
+
+
 def command_flag_drift(repo_root=None):
     """{"missing": [(command, flag), ...], "checked": n} -- flags the README omits.
 
@@ -1543,16 +1767,15 @@ def command_flag_drift(repo_root=None):
 # but the same refusal falls on the model's own reach, so hiding a command the
 # pipeline invokes BY NAME - not a document merely naming it, an instruction
 # telling THIS session to run it - would refuse the pipeline's own step the day
-# it takes that path. `reference/orchestrator.md`'s Phase sign-off and
-# `commands/review.md` both do exactly this for the fix loop they open: invoke
-# `/audit:task add`, then `/audit:run`, rather than reimplementing either
-# command's own dialogue inline.
+# it takes that path. `reference/phase-signoff.md`'s Phase sign-off does exactly
+# this for the fix loop it opens: invoke `/audit:task add`, then `/audit:run`,
+# rather than reimplementing either command's own dialogue inline.
 #
 # A FENCED CODE BLOCK IS THE LINE, drawn where the documents already draw it.
 # Every plain mention of a command name elsewhere in this tree sits in prose or
 # a single backtick - "point to /audit:init", "/audit:doctor is what says which
 # direction it broke in" - and neither is an instruction to run anything now.
-# The two places that actually tell a session to invoke another command put
+# The places that actually tell a session to invoke another command put
 # that invocation inside a fenced block, which is the shape this tree already
 # uses for "type this". So a command counts as CALLED when its `/audit:<name>`
 # spelling appears inside a fenced block somewhere under `reference/` or
@@ -1729,16 +1952,9 @@ _PLACEHOLDER_AFTER_RE = re.compile(
 # Command documents that still hand a self-resolving script the placeholder, each
 # with the reason it is not yet repaired. A row whose document no longer carries
 # one is reported stale, so this table shrinks with the debt and never outlives it.
-MANIFEST_PLACEHOLDER_PENDING = (
-    ("commands/phase.md",
-     "reads reference/orchestrator.md, where the default manifestPath is stated, "
-     "so the model is not left guessing; routing it through the resolver is "
-     "follow-up work alongside the other orchestrator-driven commands"),
-    ("commands/task.md",
-     "reads reference/orchestrator.md, where the default manifestPath is stated, "
-     "so the model is not left guessing; routing it through the resolver is "
-     "follow-up work alongside the other orchestrator-driven commands"),
-)
+# Empty since the pipeline commands stopped reading the orchestration reference:
+# their bodies now hand no self-resolving script a placeholder at all.
+MANIFEST_PLACEHOLDER_PENDING = ()
 
 
 def _calls_resolver(source):

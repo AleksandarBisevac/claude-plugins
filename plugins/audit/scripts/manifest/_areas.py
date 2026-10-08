@@ -617,6 +617,10 @@ _ORCHESTRATOR = os.path.join("reference", "orchestrator.md")
 # `SECTION_DOC` names for its prefix — `_ORCHESTRATOR` when the prefix names none.
 _EXECUTE_TASK = os.path.join("reference", "execute-task.md")
 _PHASE_SIGNOFF = os.path.join("reference", "phase-signoff.md")
+# What each pipeline verb writes and refuses, moved out of the command bodies so the
+# main loop stops reading it. No claim row anchors in it; its sections are declared
+# in `UNANCHORED_SECTIONS`, and `ANCHOR_DOCS` scans it so a new one is a finding.
+_VERBS_IN_FULL = os.path.join("reference", "verbs-in-full.md")
 
 # section prefix -> the file its `##` heading now lives in. Consulted by
 # `_doc_for_prefix`, which is the ONLY function on either side of this move that reads
@@ -883,6 +887,42 @@ UNANCHORED_SECTIONS = {
         "an anchor here could only assert that a sentence is present, which is "
         "the half this block deliberately does not build. Anchoring it needs the "
         "orchestrator to emit a machine-readable discharge signal first."),
+    # The four sections of `_VERBS_IN_FULL`. That file is documentation of what a
+    # verb's script already enforces - it moved out of the command bodies so the
+    # main loop stops reading it - and the scripts, not this prose, are what a
+    # reader's call meets; so each section is declared rather than anchored.
+    "What the run commands leave behind": (
+        "DOCUMENTATION OF STEPS A SCRIPT PERFORMS. Every guard and record it "
+        "describes is done by drive-phase.py and commit-audit-state.py, whose own "
+        "cases hold the behaviour; an anchor would only assert a sentence about "
+        "them is present. Anchoring it needs a row reading those scripts' "
+        "constants, which nothing here has needed yet."),
+    "`/audit:task`'s verbs": (
+        "DOCUMENTATION OF ONE SCRIPT'S VERBS. Each refusal and write it describes "
+        "is audit-task.py's, held by test_audit_task.py, and the flags are held "
+        "to the parser by the tk and pf cases in test__refs.py. A value anchor "
+        "here would need a row per verb reading audit-task.py, which would be a "
+        "second suite for the same behaviour rather than a check on this prose."),
+    "Re-running sign-off (`/audit:review`)": (
+        "DOCUMENTATION OF A RE-RUN'S BEHAVIOUR. close-phase.py's ancestry answer, "
+        "verify-invariants.py's no-basis verdict and full-gate.py's exit are each "
+        "their own script's and held by its own cases; nothing in this section is "
+        "a value a reader types, so an anchor could only assert presence."),
+    "`/audit:phase`'s verbs": (
+        "DOCUMENTATION OF THE PHASE VERBS. add, retarget, priority, signoff, "
+        "settle and cancel are audit-task.py and set-priority.py calls whose "
+        "refusals their suites hold, and the one worked example a reader could "
+        "copy - the next phase id - is graded in commands/phase.md by "
+        "_proposals.phase_id_doc_drift. Anchoring the rest needs rows per verb."),
+}
+# The document each declaration above belongs to, when it is not `_ORCHESTRATOR`.
+# A declaration is stale against ITS document only, so a section of one file is
+# never reported stale because another file lacks it.
+UNANCHORED_IN = {
+    "What the run commands leave behind": _VERBS_IN_FULL,
+    "`/audit:task`'s verbs": _VERBS_IN_FULL,
+    "Re-running sign-off (`/audit:review`)": _VERBS_IN_FULL,
+    "`/audit:phase`'s verbs": _VERBS_IN_FULL,
 }
 
 
@@ -1172,7 +1212,12 @@ def claim_drift(plugin_root=None, text=None):
     for doc in ANCHOR_DOCS:
         sections, doc_err = _doc_sections_cached(root, doc, text, cache)
         if doc_err is not None:
-            continue  # already reported above, by the row(s) anchored there
+            # Reported above by the row(s) anchored there - unless no row anchors
+            # in this document, which would make an unreadable one silent.
+            if not any(_doc_for_prefix(row[1]) == doc
+                       for row in CLAIM_ANCHORS + LIST_ANCHORS):
+                out.append((doc, "unreadable: %s" % (doc_err,)))
+            continue
         coverage = anchor_coverage(root, sections=sections, doc=doc)
         for name in coverage["undeclared"]:
             out.append((name, "a '## ' section with no anchor and no row in "
@@ -1191,7 +1236,12 @@ def claim_drift(plugin_root=None, text=None):
 # order `render_coverage` prints them. Derived from `SECTION_DOC`'s VALUES would
 # miss `_ORCHESTRATOR` itself (nothing maps TO it, every unlisted prefix defaults
 # to it) - so this is the one place the three are named as a set instead.
-ANCHOR_DOCS = (_ORCHESTRATOR, _EXECUTE_TASK, _PHASE_SIGNOFF)
+ANCHOR_DOCS = (_ORCHESTRATOR, _EXECUTE_TASK, _PHASE_SIGNOFF, _VERBS_IN_FULL)
+
+
+def _declared_in(name):
+    """The document a `UNANCHORED_SECTIONS` declaration belongs to."""
+    return UNANCHORED_IN.get(name, _ORCHESTRATOR)
 
 
 def anchor_coverage(plugin_root=None, sections=None, text=None, doc=None):
@@ -1201,10 +1251,9 @@ def anchor_coverage(plugin_root=None, sections=None, text=None, doc=None):
     Derived rather than written down, because a coverage figure in prose is the
     defect this repository has recorded most often. `undeclared` and
     `stale_declarations` are what make `UNANCHORED_SECTIONS` a checked claim in
-    both directions instead of a list that only grows - checked only against
-    `_ORCHESTRATOR`, because every entry `UNANCHORED_SECTIONS` declares today
-    names one of ITS sections; a document with no entry of its own simply has
-    nothing to declare stale yet.
+    both directions instead of a list that only grows - each declaration against
+    the document `UNANCHORED_IN` says it belongs to (`_ORCHESTRATOR` when it says
+    none), so a section is never declared for one file by a row naming another.
 
     BOTH TABLES, and reading only `CLAIM_ANCHORS` was a real gap rather than an
     omission with no consequence: `audit-state-statuses` held a whole vocabulary
@@ -1248,10 +1297,11 @@ def anchor_coverage(plugin_root=None, sections=None, text=None, doc=None):
         "anchored": anchored,
         "unanchored": unanchored,
         "claims": claims,
-        "undeclared": [n for n in unanchored if n not in UNANCHORED_SECTIONS],
-        "stale_declarations": (sorted(n for n in UNANCHORED_SECTIONS
-                                     if n not in unanchored)
-                               if doc == _ORCHESTRATOR else []),
+        "undeclared": [n for n in unanchored if n not in UNANCHORED_SECTIONS
+                       or _declared_in(n) != doc],
+        "stale_declarations": sorted(n for n in UNANCHORED_SECTIONS
+                                     if _declared_in(n) == doc
+                                     and n not in unanchored),
     }
 
 

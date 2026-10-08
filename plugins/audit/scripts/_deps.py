@@ -214,6 +214,13 @@ LAYERS = (
      # nothing on the hook path reaches it, and a path rule is not vocabulary.
      # It reaches nothing but `_output` and `fnmatch`.
      "_task_outputs",
+     # `_filed_returns` is where an agent's filed return lives, the shape each
+     # role owes and the write-once create. Its three readers - `audit-task`,
+     # `audit-lookup` and `commit-task-work` - are entry points at L7 that may
+     # not import each other, so the path they must agree on lives below all
+     # three. The evidence directory is handed in rather than resolved, which
+     # keeps it at the floor: it reaches nothing but `_output`.
+     "_filed_returns",
      # `_ado_conventions` is what a work item must look like to BELONG on a
      # board - required fields, description skeleton, tag vocabulary, parent. It
      # reaches nothing but `_output`, and it is at the floor for the same reason
@@ -765,6 +772,17 @@ LAYERS = (
      # suite to one coupled key or to none, and `_status_facts` (L2) for
      # `CLOSED_BUG`, so a miss an open bug already tracks is not filed twice.
      "full-gate",
+     # `drive-phase` is the step driver: one `next` runs every step of a phase's
+     # run that needs no judgement and prints the one instruction left for the
+     # main loop. It sits beside `full-gate` for the same reason - every verb it
+     # performs (`audit-task`, `audit-lookup`, `run-test-gate`,
+     # `stamp-verification`, `commit-task-work`, `audit-lock`) is an entry point
+     # it may not import, so each is resolved through `_loader.script_path` (L1)
+     # and run as a subprocess, and no edge to any of them appears here. It
+     # reads `_manifest_io` (L1) for the plan, `_filed_returns` (L0) for where a
+     # return is filed, `_evidence_io` (L2) for the project and the evidence
+     # directory, and `_status_facts` (L2) for the one readiness rule.
+     "drive-phase",
      # `propose-gates` folds the evidence ledger into a plan proposal instead
      # of leaving `/audit:init`'s recon read the tree alone: a candidate gate
      # command that has run before is classified by what it actually caught,

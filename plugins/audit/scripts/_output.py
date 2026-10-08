@@ -54,8 +54,10 @@ and is what CI's sweep skips by, so it keeps working with no suite here at all.
 """
 
 import ast
+import contextlib
 import functools
 import hashlib
+import io
 import json
 import os
 import shutil
@@ -141,6 +143,133 @@ def safe_stdio():
                 stream.reconfigure(errors="replace")
             except Exception:
                 pass
+
+
+# --- the success line ------------------------------------------------------------
+# What a verb the main loop calls prints when it succeeded and nobody asked for more.
+# Every line a verb prints is read back into a model's context on every call, and a
+# success says one thing - what was done and which record now holds it - so the rest
+# of today's text is paid for by a reader who already has the answer.
+SUCCESS_LINE_BYTES = 200
+VERBOSE_FLAG = "--verbose"
+CLIPPED_MARK = " ... [clipped; --verbose prints all of it]"
+# Flags under which the long form is the contract rather than a habit: a machine
+# payload, and the help text argparse prints with exit 0.
+LONG_FORM_FLAGS = ("--json", "-h", "--help")
+
+
+def own_args(argv):
+    """The arguments a command reads as its own: everything before the first `--`,
+    after which a test command's flags belong to that command."""
+    argv = list(argv)
+    return argv[:argv.index("--")] if "--" in argv else argv
+
+
+def without_verbose(argv):
+    """`(verbose, argv)` with `--verbose` taken out of the command's own arguments.
+
+    Only from before the first `--`: `stamp-verification.py red -- <command>`
+    hands everything after it to a test runner, whose own `--verbose` is not this
+    command's to remove.
+    """
+    argv = list(argv)
+    head = own_args(argv)
+    tail = argv[len(head):]
+    verbose = VERBOSE_FLAG in head
+    return verbose, [a for a in head if a != VERBOSE_FLAG] + tail
+
+
+def clip_bytes(text, limit):
+    """`text` cut to at most `limit` bytes of UTF-8, never inside a character."""
+    raw = text.encode("utf-8")
+    if len(raw) <= limit:
+        return text
+    return raw[:max(limit, 0)].decode("utf-8", "ignore")
+
+
+def success_line(text, keep=""):
+    """`text` then `keep`, folded onto one line of at most `SUCCESS_LINE_BYTES`
+    bytes of UTF-8.
+
+    A line that does not fit is cut AND SAYS SO: the mark names `--verbose`, so a
+    reader of the short form knows there is more and how to get it rather than
+    taking the cut for the whole answer. The cut falls in `text`; `keep` - the
+    record a verb wrote - is never cut, unless it alone leaves no room.
+    """
+    one = " ".join(str(text).split())
+    kept = " ".join(str(keep).split())
+    if kept and one:
+        kept = " " + kept if not kept.startswith(";") else kept
+    if len((one + kept).encode("utf-8")) <= SUCCESS_LINE_BYTES:
+        return one + kept
+    room = SUCCESS_LINE_BYTES - len((CLIPPED_MARK + kept).encode("utf-8"))
+    if room <= 0:
+        return success_line(one + kept)
+    return clip_bytes(one, room).rstrip() + CLIPPED_MARK + kept
+
+
+def terse_choice(code, lines, summarize):
+    """The one line to print in place of `lines`, or None to print them all.
+
+    None whenever the long form is owed: a non-zero exit is a refusal or a failure
+    and prints in full, unchanged; and so does a success whose `summarize` answers
+    None (the verb's own output carries something the caller must still act on) or
+    raises (a summary that could not be made is no reason to hide the answer). An
+    output that is already one line within the bound is kept exactly as it is,
+    because a caller may be reading that line as a value.
+    """
+    if code != 0:
+        return None
+    if len(lines) == 1 and len(lines[0].encode("utf-8")) <= SUCCESS_LINE_BYTES:
+        return lines[0]
+    if not any(ln.strip() for ln in lines):
+        return None
+    try:
+        picked = summarize(list(lines))
+    except Exception:
+        return None
+    if isinstance(picked, tuple):
+        # `(text, payload)`: a token the caller must carry byte for byte, which
+        # a cut would make unreadable to the verb that parses it back. It is
+        # printed whole, and is the one way a success line exceeds the bound.
+        text, payload = picked
+        return " ".join(p for p in (success_line(text), payload) if p) or None
+    return success_line(picked) if picked else None
+
+
+def terse_cli(run, argv, summarize, keep_verbose=False, long_form=()):
+    """Run an entry point's `run(argv)` and print its success as one line.
+
+    THE DOOR EVERY VERB THE MAIN LOOP CALLS GOES THROUGH, from its `__main__`
+    only. `run` is the verb's `main`, unchanged: an in-process caller still gets
+    today's text from it, and so does `--verbose` here, which calls it with stdout
+    untouched. Otherwise stdout is held, and on success `summarize(lines)` names
+    what was done and the record it wrote (see `terse_choice` for when the long
+    form is printed instead). stderr is never held.
+
+    `keep_verbose` is for a verb that already reads `--verbose` itself: the flag
+    then reaches it, and asks for the same long form it always printed.
+    `long_form` names a verb's own flags that keep the long form, unheld, beside
+    `LONG_FORM_FLAGS`.
+    """
+    verbose, rest = without_verbose(argv)
+    if keep_verbose and verbose:
+        rest = list(argv)
+    if verbose or any(f in own_args(rest)
+                      for f in LONG_FORM_FLAGS + tuple(long_form)):
+        return run(rest)
+    held = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(held):
+            code = run(rest)
+    except BaseException:
+        # Whatever escaped, the text printed before it is still the caller's.
+        sys.stdout.write(held.getvalue())
+        raise
+    text = held.getvalue()
+    line = terse_choice(code, text.splitlines(), summarize)
+    sys.stdout.write(text if line is None else line + "\n")
+    return code
 
 
 # --- removing a scratch tree ----------------------------------------------------

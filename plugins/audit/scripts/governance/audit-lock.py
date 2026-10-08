@@ -223,6 +223,18 @@ def shell_code(code):
     return 0 if code == E_OURS else code
 
 
+def success_line(lines):
+    """The one line a held-lock listing is said in: each lock, and how it was
+    judged. `acquire` and `release` already answer in one line, which
+    `_output.terse_choice` keeps as it is."""
+    head = lines[0].strip()
+    rows = [ln.split(None, 2) for ln in lines[1:]
+            if len(ln.split()) >= 2 and ln.split()[1] in ("LIVE", "abandoned")]
+    return "%s: %s" % (head, "; ".join(
+        "%s %s%s" % (row[0], row[1], " (%s)" % row[2] if len(row) > 2 else "")
+        for row in rows))
+
+
 def main(argv, out=print):
     p = argparse.ArgumentParser(prog="audit-lock.py", add_help=True)
     p.add_argument("command", choices=["acquire", "release", "status"])
@@ -262,4 +274,4 @@ if __name__ == "__main__":
         print("audit-lock.py has no inline --selftest; its cases moved to "
               "plugins/audit/tests/test_audit_lock.py - run that file instead.")
         sys.exit(0)
-    sys.exit(shell_code(main(sys.argv[1:])))
+    sys.exit(shell_code(_output.terse_cli(main, sys.argv[1:], success_line)))

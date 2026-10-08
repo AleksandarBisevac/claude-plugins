@@ -17,10 +17,14 @@ Output classes:
 Usage:
   python3 validate-manifest.py <manifest-path> [--verbose]
 
-`--verbose` prints one line per warning. The default groups the warnings that
-differ only in the item they name (`_warning_groups`), because a rule that fires
-once per task buried a priority warning nobody read on a real plan; every elided
-line names this flag, so nothing is out of reach.
+Run as a command, a VALID plan is said in one line: the OK line, naming
+`--verbose` when there were warnings (`_output.terse_cli`). An invalid plan
+prints in full, exactly as `main` prints it.
+
+`--verbose` prints one line per warning. `main` without it groups the warnings
+that differ only in the item they name (`_warning_groups`), because a rule that
+fires once per task buried a priority warning nobody read on a real plan; every
+elided line names this flag, so nothing is out of reach.
 
 Which is why the OK line names WARNING LINES and ITEMS separately whenever the
 collapse did something (`warning_tail`): the printed lines and the counted items
@@ -97,6 +101,16 @@ def warning_tail(n_lines, n_items):
 
 
 # --- cli ------------------------------------------------------------------------
+def success_line(lines):
+    """A valid plan's one line: the OK line, which names the file and counts the
+    warnings, and - when there were any - the flag that prints them."""
+    ok = [ln for ln in lines if ln.startswith("OK: ")]
+    if len(ok) != 1:
+        return None
+    warned = any(ln.startswith("WARNING: ") for ln in lines)
+    return ok[0] + (" - `--verbose` prints the warnings" if warned else "")
+
+
 def main(argv):
     verbose = "--verbose" in argv
     paths = [a for a in argv if a != "--verbose"]
@@ -228,4 +242,5 @@ if __name__ == "__main__":
               "plugins/audit/tests/test_validate_manifest.py - run that file "
               "instead.")
         sys.exit(0)
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(_output.terse_cli(main, sys.argv[1:], success_line,
+                               keep_verbose=True))

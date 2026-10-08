@@ -1904,6 +1904,19 @@ def build_parser():
     return _claude_home.attach_usage_hint(p)
 
 
+def success_line(lines):
+    """None, always: every render this command makes is a PAYLOAD, printed whole.
+
+    The `--short` entry view is printed verbatim into the reply `/audit:phase`
+    and the orchestrator open a run with, the bare table is what a typed
+    `/audit:status` exists to show, and a gate's verdict lines are what CI
+    reads - so there is no shorter line any of them could be said in. The
+    command still goes through `_output.terse_cli`, so `--verbose` is accepted
+    here as on every verb the main loop calls, and prints the same bytes.
+    """
+    return None
+
+
 def main(argv):
     try:
         args = build_parser().parse_args(list(argv))
@@ -2245,4 +2258,4 @@ if __name__ == "__main__":
         print("audit-status.py has no inline --selftest; its cases moved to "
               "plugins/audit/tests/test_audit_status.py - run that file instead.")
         sys.exit(0)
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(_output.terse_cli(main, sys.argv[1:], success_line))

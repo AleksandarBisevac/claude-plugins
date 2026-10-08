@@ -2007,8 +2007,34 @@ def _copy_headline_cases(check):
           and M.copy_headline({}) is None)
 
 
+def _intent_unanswered_cases(check):
+    """`deferred` is the word a close writes for a task whose answers the phase
+    review still owes, so it is no answer: the task is listed beside one whose
+    `intentCheck` is absent, and a real answer - `not-asked` with its basis
+    included - is not."""
+    def task(tid, status="done", answer=None):
+        t = {"id": tid, "status": status}
+        if answer is not None:
+            t["intentCheck"] = {"answer": answer}
+        return t
+    phase = {"id": "P1", "tasks": [
+        task("P1.1", answer="deferred"), task("P1.2"),
+        task("P1.3", answer="matches"), task("P1.4", answer="not-asked"),
+        task("P1.5", status="cancelled", answer="deferred"),
+        task("P1.6", status="in_progress", answer="deferred")]}
+    listed = M.intent_unanswered(phase)
+    check("iu1 a done task whose intent reads `deferred` is still owed its phase "
+          "review, and is listed beside the one with no intentCheck: %r" % (listed,),
+          listed == ["P1.1", "P1.2"])
+    check("iu2 THE ALLOW TWIN: an answer - `matches`, or `not-asked` - is not "
+          "listed, and neither is a task that is not done: %r" % (listed,),
+          "P1.3" not in listed and "P1.4" not in listed
+          and "P1.5" not in listed and "P1.6" not in listed)
+
+
 def _selftest():
     def body(check):
+        _harness.stage(check, "iu", _intent_unanswered_cases)
         _cases(check)
         _derived_status_cases(check)
         _graded_by_cases(check)

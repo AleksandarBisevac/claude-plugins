@@ -37,11 +37,30 @@ spans tokenizes denser than prose, so the default understates; a recorded sessio
 cache writes against the bytes that produced them are the calibration, and
 `tools/stream-cost.py` prints that ratio per write.
 
+SECTIONS. `--sections` cuts each file `/audit:run` reads first into sections - a
+heading and the lines up to the next, or a declared line range for a file that is one
+heading - and sums them by the four classes the design document sorts them into
+(`SECTION_CLASSES`). A section the table does not name is printed `unclassified`, and
+a copy whose headings or line count no longer match the table says so, so a stale
+table reads as a gap rather than as a smaller class.
+
 Usage:  python3 tools/measure-context.py --ref v3.1.0 --ref main [--claude-md FILE] [--json]
+        python3 tools/measure-context.py --ref <ref> --sections
         python3 tools/measure-context.py --tree <plugin root> [--claude-md FILE]
+        python3 tools/measure-context.py --gate [--ref <ref> | --tree <plugin root>]
         python3 tools/measure-context.py --selftest
-Exit codes: 0 measured - 1 a file a step loads is missing at that ref - 2 usage error
-or a ref that does not resolve.
+Exit codes: 0 measured, or under --gate every entry within its ceiling - 1 a file a
+step loads is missing at that ref, or under --gate a breach - 2 usage error or a ref
+that does not resolve.
+
+THE GATE. `--gate` holds `ENTRY_CEILINGS` - the pipeline-cost design's ceilings on
+what each pipeline entry loads before any work - and `AGENT_CEILINGS`, reading the
+same `total` line the report prints, so the gate and the measurement cannot measure
+two different things. A gated command that reads a file under `reference/` first, or
+names one anywhere in its body (a `see reference/...` pointer), breaches whatever its
+size: no pipeline command makes the main loop read reference prose, and this is the
+check that holds it. A command outside the pipeline is not gated and may point there.
+CI and `tools/verify.sh` run it.
 """
 import argparse
 import io
@@ -57,20 +76,125 @@ PLUGIN_REL = "plugins/audit"
 DEFAULT_BYTES_PER_TOKEN = 4.0
 ROOT_VAR = "${CLAUDE_PLUGIN_ROOT}/"
 
-# The pipeline's real path: the commands that run work and the agents they dispatch.
-# Sign-off is measured through the command that re-runs it on its own.
+# The pipeline's real path: the commands that run work and the agents they dispatch,
+# and the planning verbs a session calls before it runs anything. Sign-off is measured
+# through the command that re-runs it on its own, so the phase run form at sign-off is
+# the run form plus whatever that command reads first which the run form has not.
+# A verb entry measures what its command loads, by the up-front rule below: while a
+# command reads the same files whatever its verb, its verb entries equal it, and they
+# part only when the reads do.
+SIGNOFF_COMMAND = "commands/review.md"
 PIPELINE = (
     ("/audit:run", "command", "commands/run.md"),
     ("/audit:next", "command", "commands/next.md"),
+    ("/audit:resume", "command", "commands/resume.md"),
     ("/audit:phase", "command", "commands/phase.md"),
-    ("sign-off (/audit:review)", "command", "commands/review.md"),
+    ("/audit:phase add", "command", "commands/phase.md"),
+    ("/audit:task add", "command", "commands/task.md"),
+    ("/audit:phase run form, before sign-off", "command", "commands/phase.md"),
+    ("/audit:phase run form, at sign-off", "at sign-off", "commands/phase.md"),
+    ("sign-off (/audit:review)", "command", SIGNOFF_COMMAND),
     ("executor", "agent", "agents/audit-executor.md"),
     ("reviewer", "agent", "agents/audit-reviewer.md"),
 )
+# The most bytes each agent's start may load. An agent's start is written once and read
+# by every request that agent makes, so a sentence added there is paid per request; the
+# ceiling is the design document's target for the trimmed prompts, whose procedure
+# moved into `drive-phase.py submit`. `mc19` in this file's selftest holds the shipped
+# tree under it, so a prompt that grows past one fails the sweep rather than a review.
+# The prompt is the one lever on an agent's start taken. Leaving out the project's
+# CLAUDE.md saves cents and drops the rules the benchmark found separate a run that
+# breaks things from one that does not; preloading skills writes the same content the
+# first request's Skill call does and saves no request, and a plugin agent cannot know a
+# project's skills; a longer agent cache bridges nothing between requests seconds apart
+# and raises every agent write's rate (docs/research/pipeline-cost-design.md prices each).
+AGENT_CEILINGS = {"executor": 9000, "reviewer": 7000}
+# The most bytes each pipeline entry may load before any work - its command body
+# plus every file it reads first, the same `total` line the report prints - from the
+# pipeline-cost design's T2 table. The main loop is the dearest place in the pipeline
+# to hold a byte, because every one of its requests reads it again, so these are
+# small: a command body is the step driver's loop and the verb's own section, and
+# the rule each step needs is printed by the driver at that step. A gated entry that
+# reads a file under `reference/` first, or names one in its body, breaches whatever
+# its size, since that read is the cost this ceiling exists to keep out; `--gate` exits 1 on any breach, and
+# `mc24` holds the shipped tree under it in the sweep.
+ENTRY_CEILINGS = (
+    ("/audit:phase run form, before sign-off", 4000),
+    ("/audit:phase add", 8000),
+    ("/audit:task add", 8000),
+    ("/audit:run", 4000),
+    ("/audit:next", 4000),
+    ("/audit:resume", 4000),
+    ("sign-off (/audit:review)", 6000),
+)
+REFERENCE_DIR = "reference/"
+# The entries that run work.
+RUN_ENTRIES = ("/audit:run", "/audit:next", "/audit:resume", "/audit:phase",
+               "/audit:phase run form, before sign-off", "/audit:phase run form, at sign-off",
+               "sign-off (/audit:review)")
+
+# --- the section classes ---------------------------------------------------------
+# Each section of a reference file the run reads first, sorted into one of four classes
+# by docs/research/pipeline-cost-design.md, where it cuts reference prose by section:
+# `keep` is always read, `conditional` is read when its condition holds, `elsewhere`
+# belongs to another command or to sign-off, `maintainer` explains what a script
+# enforces. A section is a heading of
+# one to three `#` with every line up to the next one; a file that is one heading is
+# classed by line ranges instead, declared for the line count they were cut at.
+SECTION_CLASS_NAMES = ("keep", "conditional", "elsewhere", "maintainer")
+SECTION_CLASSES = {
+    "reference/orchestrator.md": {"headings": {
+        "Audit orchestrator — shared execution logic": "keep",
+        "At a glance": "keep",
+        "Preflight": "keep",
+        "Non-negotiable guardrails": "keep",
+        "Readiness rule": "conditional",
+        "Concurrency lock": "keep",
+        "Branch-per-phase": "elsewhere",
+        "Keeping a failed run's record (audit-state commits)": "conditional",
+        "ADO echo (best-effort, linked items only)": "conditional",
+        "Answering one question about the trail": "conditional",
+        "The third place": "elsewhere",
+        "What a red full run teaches": "elsewhere",
+        "Quarantine: `meta.muted`": "elsewhere",
+        "Resume after interruption": "elsewhere",
+        "Progress output": "keep",
+        "Dry-run / preview": "conditional",
+        "Reporting": "keep"}},
+    "reference/manifest-conventions.md": {"headings": {
+        "Manifest conventions": "keep",
+        "Locating the manifest": "keep",
+        "Edit-and-revalidate rule": "keep",
+        "Concurrency lock": "keep",
+        "ID allocation": "elsewhere",
+        "Status enums": "keep",
+        "New task template": "elsewhere",
+        "New phase template": "elsewhere",
+        "Phase priority (`phase.priority`)": "elsewhere",
+        "Areas (`meta.areas`)": "keep",
+        "Proposals (parked phases)": "elsewhere",
+        "Decisions (`decisions[]`)": "conditional",
+        "Task outputs (`task.outputs`)": "keep",
+        "fileIndex maintenance": "keep",
+        "Immutable history": "keep",
+        "Moving a task (`/audit:task move`)": "elsewhere",
+        "The operator's words go in unchanged": "keep",
+        "Tamper evidence and completion records": "maintainer"}},
+    "reference/execute-task.md": {"lines": 714, "ranges": (
+        (1, 383, "keep"), (384, 447, "conditional"), (448, 455, "keep"),
+        (456, 483, "conditional"), (484, 507, "keep"), (508, 571, "maintainer"),
+        (572, 599, "conditional"), (600, 638, "maintainer"), (639, 670, "keep"),
+        (671, 690, "conditional"), (691, 701, "keep"), (702, 712, "conditional"),
+        (713, 714, "keep"))},
+}
+_HEADING_RE = re.compile(r"^#{1,3} ")
 
 _READ_RE = re.compile(r"\bRead\s+`" + re.escape(ROOT_VAR))
 _FIRST_RE = re.compile(r"\bfirst\b", re.IGNORECASE)
 _ROOTED_RE = re.compile(r"`" + re.escape(ROOT_VAR) + r"([^`]+)`")
+# A reference path a body names anywhere, rooted or bare: the shape a `see ...`
+# pointer takes, which the up-front rule above does not count as a read.
+_POINTER_RE = re.compile(r"\breference/[\w./-]*\w")
 
 
 # --- where the files come from ---------------------------------------------------
@@ -171,6 +295,18 @@ def first_reads(body):
     return []
 
 
+def reference_pointers(body):
+    """Every reference path a command body names, in first-seen order. A model
+    handed `see reference/x.md` reads it as often as not, so a pointer costs the
+    main loop what a read does, and the up-front rule cannot see one."""
+    text = body.decode("utf-8") if isinstance(body, bytes) else body
+    seen = []
+    for rel in _POINTER_RE.findall(text):
+        if rel not in seen:
+            seen.append(rel)
+    return seen
+
+
 # --- what each step loads ----------------------------------------------------------
 def _row(part, rel, data):
     return {"part": part, "path": rel, "bytes": None if data is None else len(data)}
@@ -183,9 +319,17 @@ def entry_rows(source, kind, rel, claude_md):
     if data is None:
         return [_row("definition", rel, None)]
     fields, body = split_frontmatter(data)
-    if kind == "command":
+    if kind in ("command", "at sign-off"):
         rows = [_row("command body", rel, body)]
         rows.extend(_row("read first", path, source["read"](path)) for path in first_reads(body))
+        if kind == "at sign-off":
+            loaded = set(r["path"] for r in rows)
+            signoff = source["read"](SIGNOFF_COMMAND)
+            if signoff is None:
+                return rows + [_row("read at sign-off", SIGNOFF_COMMAND, None)]
+            rows.extend(_row("read at sign-off", path, source["read"](path))
+                        for path in first_reads(split_frontmatter(signoff)[1])
+                        if path not in loaded)
         return rows
     rows = [_row("system prompt", rel, body)]
     skills = fields.get("skills") or []
@@ -242,10 +386,161 @@ def measure(source, claude_md=None):
     for label, kind, rel in PIPELINE:
         rows = entry_rows(source, kind, rel, claude_md)
         known = [r["bytes"] for r in rows if r["bytes"] is not None]
+        loaded = set(r["path"] for r in rows)
+        data = source["read"](rel) if kind != "agent" else None
+        pointers = [p for p in reference_pointers(split_frontmatter(data)[1])
+                    if p not in loaded] if data is not None else []
         entries.append({"entry": label, "rows": rows, "bytes": sum(known),
-                        "missing": [r["path"] for r in rows if r["bytes"] is None]})
+                        "missing": [r["path"] for r in rows if r["bytes"] is None],
+                        "pointers": pointers})
     return {"label": source["label"], "entries": entries, "listing": listing(source),
             "claudeMd": claude_md}
+
+
+def ceiling_breaches(measured):
+    """`[(entry, bytes, ceiling), ...]` - every agent whose start loads more than
+    `AGENT_CEILINGS` allows, or loads a file that is missing. Empty is the one
+    answer that holds; an agent the measurement lacks is a breach, never a pass."""
+    found = dict((e["entry"], e) for e in measured["entries"])
+    out = []
+    for name in sorted(AGENT_CEILINGS):
+        entry = found.get(name)
+        if entry is None or entry["missing"] or entry["bytes"] > AGENT_CEILINGS[name]:
+            out.append((name, None if entry is None else entry["bytes"],
+                        AGENT_CEILINGS[name]))
+    return out
+
+
+def entry_ceiling_breaches(measured):
+    """`[(entry, bytes, ceiling, why), ...]` - every gated pipeline entry that
+    loads more than `ENTRY_CEILINGS` allows, reads a reference file first, names
+    one in its body, or loads a file that is missing. An entry the measurement lacks is a breach,
+    never a pass; empty is the one answer that holds."""
+    found = dict((e["entry"], e) for e in measured["entries"])
+    out = []
+    for name, ceiling in ENTRY_CEILINGS:
+        entry = found.get(name)
+        if entry is None:
+            out.append((name, None, ceiling, "not measured"))
+            continue
+        why = []
+        if entry["missing"]:
+            why.append("loads %s, which is missing" % ", ".join(entry["missing"]))
+        reads = [r["path"] for r in entry["rows"] if r["part"] != "command body"
+                 and r["path"].startswith(REFERENCE_DIR)]
+        if reads:
+            why.append("reads %s first" % ", ".join(reads))
+        if entry.get("pointers"):
+            why.append("names %s in its body" % ", ".join(entry["pointers"]))
+        if entry["bytes"] > ceiling:
+            why.append("%d bytes, over a ceiling of %d" % (entry["bytes"], ceiling))
+        if why:
+            out.append((name, entry["bytes"], ceiling, "; ".join(why)))
+    return out
+
+
+def gate_breaches(measured):
+    """What `--gate` refuses: every pipeline entry past its T2 ceiling and every
+    agent start past its own, as `(entry, bytes, ceiling, why)`."""
+    agents = [(name, size, ceiling, "the agent's start is %s bytes, over %d"
+               % ("missing" if size is None else size, ceiling))
+              for name, size, ceiling in ceiling_breaches(measured)]
+    return entry_ceiling_breaches(measured) + agents
+
+
+def render_gate(measured, breaches):
+    """The gate's own report: each gated entry against its ceiling, then the
+    verdict naming every breach."""
+    found = dict((e["entry"], e) for e in measured["entries"])
+    lines = ["measure-context --gate over %s [bytes: what the entry loads before any "
+             "work, against its ceiling]" % (measured["label"],)]
+    for name, ceiling in list(ENTRY_CEILINGS) + sorted(AGENT_CEILINGS.items()):
+        entry = found.get(name)
+        lines.append("  %-42s %8s / %d" % (name, "-" if entry is None
+                                            else entry["bytes"], ceiling))
+    if not breaches:
+        lines.append("GATE OK: every entry within its ceiling, and no gated command "
+                     "reads or names a reference file")
+    for name, _size, _ceiling, why in breaches:
+        lines.append("BREACH %s: %s" % (name, why))
+    return "\n".join(lines)
+
+
+def file_sections(rel, data):
+    """[(section, class, bytes)] for one file under SECTION_CLASSES, and a problem or
+    None. Each line counts with its newline, the empty one after a final newline
+    included, so a file's sections sum to one byte more than its size when it ends in
+    one - the expression the classification was taken with. A section the table does
+    not class is `unclassified`, never dropped."""
+    lines = data.decode("utf-8").split("\n")
+    spec = SECTION_CLASSES.get(rel) or {}
+
+    def size(a, b):
+        return sum(len(line.encode("utf-8")) + 1 for line in lines[a:b])
+    if "ranges" in spec:
+        if len(lines) != spec["lines"]:
+            return ([("lines 1-%d" % len(lines), "unclassified", size(0, len(lines)))],
+                    "line ranges declared for %d lines, and this copy has %d: not applied"
+                    % (spec["lines"], len(lines)))
+        return [("lines %d-%d" % (a, z), kind, size(a - 1, z))
+                for a, z, kind in spec["ranges"]], None
+    heads = [i for i, line in enumerate(lines) if _HEADING_RE.match(line)]
+    named = spec.get("headings") or {}
+    out = []
+    if not heads or heads[0] > 0:
+        out.append(("(before the first heading)", "unclassified",
+                    size(0, heads[0] if heads else len(lines))))
+    for k, i in enumerate(heads):
+        title = lines[i].lstrip("#").strip()
+        end = heads[k + 1] if k + 1 < len(heads) else len(lines)
+        out.append((title, named.get(title, "unclassified"), size(i, end)))
+    missing = [t for t in named if t not in set(s[0] for s in out)]
+    problem = ("classed headings not in this copy: %s" % ", ".join(missing)) if missing else None
+    return out, problem
+
+
+def sections(source, entry="/audit:run"):
+    """{"entry", "files": [{path, rows, sums, problem, bytes}], "sums"} - every file
+    `entry` reads first, cut into sections and summed by class."""
+    label, kind, rel = next(p for p in PIPELINE if p[0] == entry)
+    files, sums = [], dict((k, 0) for k in SECTION_CLASS_NAMES + ("unclassified",))
+    for row in entry_rows(source, kind, rel, None):
+        if row["part"] not in ("read first", "read at sign-off"):
+            continue
+        data = source["read"](row["path"])
+        if data is None:
+            files.append({"path": row["path"], "rows": [], "sums": {}, "bytes": None,
+                          "problem": "not there"})
+            continue
+        rows, problem = file_sections(row["path"], data)
+        mine = dict((k, 0) for k in sums)
+        for _title, kind_of, size in rows:
+            mine[kind_of] += size
+            sums[kind_of] += size
+        files.append({"path": row["path"], "rows": rows, "sums": mine, "bytes": len(data),
+                      "problem": problem})
+    return {"entry": label, "files": files, "sums": sums}
+
+
+def render_sections(label, cut, per):
+    names = SECTION_CLASS_NAMES + ("unclassified",)
+    lines = ["", "== %s: %s reads first, by section [bytes; each line with its newline]"
+             % (label, cut["entry"])]
+    for item in cut["files"]:
+        if item["bytes"] is None:
+            lines.append("  %s: MISSING" % item["path"])
+            continue
+        lines.append("  %s (%d bytes)" % (item["path"], item["bytes"]))
+        for title, kind, size in item["rows"]:
+            lines.append("    %-12s %8d  %s" % (kind, size, title))
+        if item["problem"]:
+            lines.append("    NOTE: %s" % item["problem"])
+        lines.append("    %s" % "  ".join("%s %d" % (k, item["sums"][k]) for k in names))
+    whole = sum(cut["sums"].values())
+    lines.append("  class sums: %s  total %d (~%d tok)"
+                 % ("  ".join("%s %d" % (k, cut["sums"][k]) for k in names), whole,
+                    _tok(whole, per)))
+    return lines
 
 
 def contributors(measured):
@@ -333,8 +628,17 @@ def main(argv):
     ap.add_argument("--claude-md", help="the project's CLAUDE.md, counted where it loads")
     ap.add_argument("--bytes-per-token", type=float, default=DEFAULT_BYTES_PER_TOKEN)
     ap.add_argument("--top", type=int, default=12)
+    ap.add_argument("--sections", action="store_true",
+                    help="also cut each file /audit:run reads first into sections, summed "
+                         "by class")
     ap.add_argument("--json", action="store_true", dest="as_json")
+    ap.add_argument("--gate", action="store_true",
+                    help="exit 1 when an entry passes its ceiling or a gated command "
+                         "reads or names a reference file; with no --ref or --tree, "
+                         "measures this repository's plugin tree")
     args = ap.parse_args(argv)
+    if args.gate and not args.ref and not args.tree:
+        args.tree = os.path.join(REPO, PLUGIN_REL)
     if not args.ref and not args.tree:
         print("measure-context: name what to measure: --ref <ref> (repeatable) or "
               "--tree <plugin root>", file=sys.stderr)
@@ -363,12 +667,26 @@ def main(argv):
             return 2
         sources.append(tree_source(args.tree))
     measured = [measure(s, claude_md) for s in sources]
+    if args.gate:
+        breached = False
+        for one in measured:
+            breaches = gate_breaches(one)
+            breached = breached or bool(breaches)
+            print(render_gate(one, breaches))
+        return 1 if breached else 0
+    cuts = [sections(s) for s in sources] if args.sections else []
     if args.as_json:
-        print(json.dumps({"bytesPerToken": args.bytes_per_token, "measured": measured,
-                          "contributors": [contributors(m) for m in measured]},
-                         indent=2, sort_keys=True))
+        shown = {"bytesPerToken": args.bytes_per_token, "measured": measured,
+                 "contributors": [contributors(m) for m in measured]}
+        if cuts:
+            shown["sections"] = cuts
+        print(json.dumps(shown, indent=2, sort_keys=True))
     else:
-        print(render(measured, args.bytes_per_token, args.top))
+        text = render(measured, args.bytes_per_token, args.top)
+        for source, cut in zip(sources, cuts):
+            text += "\n" + "\n".join(render_sections(source["label"], cut,
+                                                     args.bytes_per_token))
+        print(text)
     missing = [(m["label"], e["entry"], p) for m in measured for e in m["entries"]
                for p in e["missing"]]
     for label, entry, path in missing:
@@ -408,8 +726,16 @@ def _fx_plugin(root, executor_skills=True):
     _fx_write(root, "commands/next.md",
               "---\ndescription: x\n---\nRead `%sreference/c.md` only if the human asks."
               "\n\nRead `%sreference/a.md` first.\n" % (_FX_ROOT, _FX_ROOT))
-    for rel in ("commands/phase.md", "commands/review.md"):
-        _fx_write(root, rel, "---\ndescription: x\n---\nnothing up front\n")
+    # The phase run form reads `a.md` first and sign-off reads `a.md` and `s.md`: at
+    # sign-off the run form adds `s.md` alone, since `a.md` is already loaded.
+    _fx_write(root, "commands/phase.md", "---\ndescription: x\n---\nRead `%sreference/a.md` "
+              "first.\n" % _FX_ROOT)
+    _fx_write(root, "commands/review.md", "---\ndescription: x\n---\nRead `%sreference/s.md` "
+              "and `%sreference/a.md` first.\n" % (_FX_ROOT, _FX_ROOT))
+    sizes["s"] = _fx_write(root, "reference/s.md", "S" * 900)
+    task_body = "# task\n\nRead `%sreference/b.md` FIRST.\n" % _FX_ROOT
+    _fx_write(root, "commands/task.md", "---\ndescription: x\n---\n" + task_body)
+    sizes["task body"] = len(task_body.encode("utf-8"))
     agent_body = "You execute one task.\n"
     head = "---\nname: audit-executor\ndescription: 'Executes.'\n"
     if executor_skills:
@@ -463,12 +789,13 @@ def _cases(check):
 
         lst = measured["listing"]
         want = (len("audit:run" + "Run one task.")
-                + sum(len(name + "x") for name in ("audit:next", "audit:phase", "audit:review"))
+                + sum(len(name + "x") for name in ("audit:next", "audit:phase", "audit:review",
+                                                         "audit:task"))
                 + len("audit-executor" + "Executes.") + len("audit-reviewer" + "Reviews.")
                 + len("house-style" + "The dialect." + "Always."))
         check("mc5 the always-on listing is the name and description of every command, agent "
               "and skill, plus a skill's when_to_use - counted, not guessed (%d)" % lst["bytes"],
-              lst["bytes"] == want and (lst["commands"], lst["agents"], lst["skills"]) == (4, 2, 1))
+              lst["bytes"] == want and (lst["commands"], lst["agents"], lst["skills"]) == (5, 2, 1))
 
         check("mc6 without --claude-md the project's CLAUDE.md is NOT counted as nothing - "
               "no agent row claims it and the report says it was not measured",
@@ -542,26 +869,253 @@ def _cases(check):
               "sets it false is listed: %r" % (lst,),
               lst["bytes"] == want + len("audit:status" + "Show status.")
               and (lst["commands"], lst["agents"], lst["skills"], lst["withheld"])
-              == (5, 2, 1, 2)
+              == (6, 2, 1, 2)
               and "2 command(s) or skill(s) set disable-model-invocation" in shown)
     finally:
         remove_tree(quiet)
+
+    verbs = tempfile.mkdtemp(prefix="measure-context-v-")
+    try:
+        sizes = _fx_plugin(verbs)
+        got = measure(tree_source(verbs))
+        rows = dict((e["entry"], [(r["part"], r["path"]) for r in e["rows"]])
+                    for e in got["entries"])
+        totals = dict((e["entry"], e["bytes"]) for e in got["entries"])
+        at = rows["/audit:phase run form, at sign-off"]
+        check("mc14 the phase run form at sign-off is the run form plus what sign-off reads "
+              "first that the run form has not loaded - a file both read is counted once: %r"
+              % (at,),
+              at == rows["/audit:phase run form, before sign-off"]
+              + [("read at sign-off", "reference/s.md")]
+              and totals["/audit:phase run form, at sign-off"]
+              == totals["/audit:phase run form, before sign-off"] + sizes["s"])
+        check("mc15 the planning verbs are entries of their own: `/audit:task add` is the task "
+              "command's body and what it reads first, and `/audit:phase add` is what the phase "
+              "command loads while its reads do not depend on the verb: %r"
+              % ((rows["/audit:task add"], totals["/audit:task add"]),),
+              rows["/audit:task add"] == [("command body", "commands/task.md"),
+                                          ("read first", "reference/b.md")]
+              and totals["/audit:task add"] == sizes["task body"] + sizes["b"]
+              and rows["/audit:phase add"] == rows["/audit:phase"]
+              and rows["/audit:phase run form, before sign-off"] == rows["/audit:phase"])
+
+        heads = ("# Audit orchestrator — shared execution logic\nintro\n## At a glance\nxx\n"
+                 "## Readiness rule\nyyy\n## Something new\nz\n")
+        _fx_write(verbs, "reference/orchestrator.md", heads)
+        ranged = "".join("line %d\n" % n for n in range(1, 714))
+        _fx_write(verbs, "reference/execute-task.md", ranged)
+        _fx_write(verbs, "commands/run.md", "---\ndescription: x\n---\nRead "
+                  "`%sreference/orchestrator.md` and `%sreference/execute-task.md` first.\n"
+                  % (_FX_ROOT, _FX_ROOT))
+        cut = sections(tree_source(verbs))
+        orch = cut["files"][0]
+
+        def width(text):
+            return len(text.encode("utf-8")) + 1
+        keep = (width("# Audit orchestrator — shared execution logic") + width("intro")
+                + width("## At a glance") + width("xx"))
+        want_orch = {"keep": keep, "conditional": width("## Readiness rule") + width("yyy"),
+                     "elsewhere": 0, "maintainer": 0,
+                     "unclassified": width("## Something new") + width("z") + width("")}
+        lines = ranged.split("\n")
+        want_exe = dict((k, 0) for k in want_orch)
+        for a, z, kind in SECTION_CLASSES["reference/execute-task.md"]["ranges"]:
+            want_exe[kind] += sum(width(x) for x in lines[a - 1:z])
+        check("mc16 --sections sums each file /audit:run reads first by class - a heading's "
+              "section up to the next heading, a one-heading file by its declared line "
+              "ranges - and a heading the table does not class is printed unclassified "
+              "rather than dropped: %r" % ((orch["sums"], cut["files"][1]["sums"]),),
+              orch["sums"] == want_orch and cut["files"][1]["sums"] == want_exe
+              and cut["files"][1]["problem"] is None
+              and orch["problem"] is not None and "Preflight" in orch["problem"]
+              and sum(cut["sums"].values()) == sum(want_orch.values()) + sum(want_exe.values()))
+        _fx_write(verbs, "reference/execute-task.md", ranged + "one more\n")
+        moved = sections(tree_source(verbs))["files"][1]
+        check("mc17 THE LINE-COUNT TWIN: a copy whose line count is not the one the ranges were "
+              "cut at is not classed by them - every byte is unclassified and the report "
+              "says why - where applying them would class shifted lines: %r"
+              % ((moved["sums"], moved["problem"]),),
+              moved["sums"]["unclassified"] == moved["bytes"] + 1
+              and not any(moved["sums"][k] for k in SECTION_CLASS_NAMES)
+              and "not applied" in (moved["problem"] or "")
+              and "NOTE: line ranges declared for 714 lines"
+              in "\n".join(render_sections("x", sections(tree_source(verbs)), 4.0)))
+    finally:
+        remove_tree(verbs)
+
+    pinned, problem = git_source("7b489337c06d")
+    if problem:
+        check("mc18 the design document's reference commit is readable here (%s): a clone "
+              "too shallow to hold it cannot check the classification" % problem, False)
+    else:
+        sums = sections(pinned)["sums"]
+        check("mc18 AT THE COMMIT THE CLASSIFICATION WAS TAKEN AT the class sums are the design "
+              "document's, with nothing unclassified: %r" % (sums,),
+              sums == {"keep": 77811, "conditional": 27767, "elsewhere": 25037,
+                       "maintainer": 23089, "unclassified": 0})
+
+    shipped = measure(tree_source(os.path.join(REPO, PLUGIN_REL)))
+    check("mc19 the agents' starts in this tree stay within their ceilings, measured: %r"
+          % ([(e["entry"], e["bytes"]) for e in shipped["entries"]
+              if e["entry"] in AGENT_CEILINGS],),
+          ceiling_breaches(shipped) == [])
+    scratch = tempfile.mkdtemp(prefix="measure-context-ceiling-")
+    try:
+        _fx_plugin(scratch, executor_skills=False)
+        within = ceiling_breaches(measure(tree_source(scratch)))
+        _fx_write(scratch, "agents/audit-reviewer.md",
+                  "---\nname: audit-reviewer\ndescription: Reviews.\n---\n"
+                  + "R" * (AGENT_CEILINGS["reviewer"] + 1))
+        over = ceiling_breaches(measure(tree_source(scratch)))
+        os.remove(os.path.join(scratch, "agents", "audit-executor.md"))
+        gone = ceiling_breaches(measure(tree_source(scratch)))
+    finally:
+        remove_tree(scratch)
+    check("mc20 THE RED TWIN: a reviewer one byte past its ceiling is named with its size, "
+          "the executor within its own is not, and an agent whose prompt is missing is a "
+          "breach rather than a zero; the small fixture breaches nothing: %r"
+          % ((within, over, gone),),
+          within == []
+          and over == [("reviewer", AGENT_CEILINGS["reviewer"] + 1,
+                        AGENT_CEILINGS["reviewer"])]
+          and [b[0] for b in gone] == ["executor", "reviewer"])
+
+    _gate_cases(check, shipped)
+
+
+def _fx_lean(root):
+    """A plugin tree whose pipeline commands read no reference file first and
+    whose every body is far inside its ceiling - the shape the gate allows."""
+    _fx_plugin(root, executor_skills=False)
+    for rel in ("commands/run.md", "commands/next.md", "commands/phase.md",
+                "commands/review.md", "commands/task.md", "commands/resume.md"):
+        _fx_write(root, rel, "---\ndescription: x\n---\nRun `drive-phase.py next`, "
+                  "do what it prints, and run it again.\n")
+
+
+def _gate_run(scratch):
+    """`(breaches, code, printed)` of the gate over the tree at `scratch`."""
+    breaches = gate_breaches(measure(tree_source(scratch)))
+    old_out, sys.stdout = sys.stdout, io.StringIO()
+    old_err, sys.stderr = sys.stderr, io.StringIO()
+    try:
+        code = main(["--gate", "--tree", scratch])
+        printed = sys.stdout.getvalue() + sys.stderr.getvalue()
+    finally:
+        sys.stdout, sys.stderr = old_out, old_err
+    return breaches, code, printed
+
+
+def _gate_cases(check, shipped):
+    import tempfile
+    from _suite import remove_tree
+    gated = dict(ENTRY_CEILINGS) if isinstance(globals().get("ENTRY_CEILINGS"),
+                                                tuple) else {}
+    if "gate_breaches" not in globals():
+        for label in ("mc21", "mc22", "mc23", "mc24"):
+            check("%s the ceiling gate exists (gate_breaches)" % (label,), False)
+        return
+    scratch = tempfile.mkdtemp(prefix="measure-context-gate-")
+    try:
+        _fx_lean(scratch)
+        lean, lean_code, _p = _gate_run(scratch)
+        _fx_write(scratch, "commands/phase.md", "---\ndescription: x\n---\n"
+                  + "P" * (gated.get("/audit:phase run form, before sign-off", 0) + 1))
+        fat, fat_code, fat_printed = _gate_run(scratch)
+        _fx_lean(scratch)
+        _fx_write(scratch, "commands/run.md", "---\ndescription: x\n---\nRead "
+                  "`%sreference/a.md` first.\n" % (_FX_ROOT,))
+        reads, _c, _p = _gate_run(scratch)
+        _fx_lean(scratch)
+        os.remove(os.path.join(scratch, "commands", "resume.md"))
+        gone, gone_code, _p = _gate_run(scratch)
+        # A pointer is a reference path the body NAMES without a `Read ... first`
+        # paragraph - "see `reference/x.md`" - which the up-front rule cannot
+        # see and which a model follows anyway.
+        _fx_lean(scratch)
+        _fx_write(scratch, "commands/next.md", "---\ndescription: x\n---\nRun "
+                  "`drive-phase.py next`. The rule is stated in "
+                  "`reference/conventions.md` - see it.\n")
+        _fx_write(scratch, "commands/review.md", "---\ndescription: x\n---\nRun "
+                  "it. What each step checks is `%sreference/signoff.md`.\n"
+                  % (_FX_ROOT,))
+        pointed, pointed_code, pointed_printed = _gate_run(scratch)
+        # THE ALLOW TWIN for the pointer rule: a body outside the pipeline may
+        # point at reference prose (bug.md and layout.md read it on purpose),
+        # and a pipeline body may say the word without naming a path.
+        _fx_lean(scratch)
+        _fx_write(scratch, "commands/bug.md", "---\ndescription: x\n---\nRead "
+                  "`%sreference/conventions.md` FIRST; see "
+                  "`reference/conventions.md` for the rest.\n" % (_FX_ROOT,))
+        _fx_write(scratch, "commands/run.md", "---\ndescription: x\n---\nRun "
+                  "`drive-phase.py next`; no reference prose is read here.\n")
+        unpointed, unpointed_code, _p = _gate_run(scratch)
+    finally:
+        remove_tree(scratch)
+    check("mc25 a gated command body that NAMES a reference path - a `see` pointer "
+          "or a rooted path, with no `Read ... first` paragraph - breaches, naming "
+          "the path, and --gate exits 1 printing it: %r"
+          % ((pointed, pointed_code),),
+          sorted(b[0] for b in pointed) == ["/audit:next", "sign-off (/audit:review)"]
+          and any("reference/conventions.md" in b[3] for b in pointed)
+          and any("reference/signoff.md" in b[3] for b in pointed)
+          and pointed_code == 1 and "reference/conventions.md" in pointed_printed)
+    check("mc26 ALLOW: a command outside the pipeline that points at reference "
+          "prose, and a pipeline body that says the word without a path, breach "
+          "nothing - widening the rule to every command, or to the bare word, is "
+          "what this goes red on: %r" % ((unpointed, unpointed_code),),
+          unpointed == [] and unpointed_code == 0)
+    check("mc21 THE ALLOW TWIN: a tree whose pipeline commands read no reference file "
+          "first and stay inside every ceiling breaches nothing, and --gate exits 0 over "
+          "it: %r" % ((lean, lean_code),), lean == [] and lean_code == 0)
+    fat_names = [b[0] for b in fat]
+    check("mc22 a phase body one byte past the run form's ceiling is named with its size "
+          "and the ceiling, the verb whose ceiling is higher is not, and --gate exits 1 "
+          "printing the breach: %r" % ((fat, fat_code),),
+          "/audit:phase run form, before sign-off" in fat_names
+          and "/audit:phase add" not in fat_names and fat_code == 1
+          and "/audit:phase run form, before sign-off" in fat_printed
+          and any(b[1] == gated.get("/audit:phase run form, before sign-off", 0) + 1
+                  for b in fat))
+    check("mc23 a gated command that reads a reference file first breaches whatever its "
+          "size, naming the file - the rule is that no pipeline command makes the main "
+          "loop read reference prose - and an entry whose command is missing is a breach "
+          "rather than a zero: %r" % ((reads, gone, gone_code),),
+          [b[0] for b in reads] == ["/audit:run"]
+          and "reference/a.md" in reads[0][3]
+          and [b[0] for b in gone] == ["/audit:resume"] and gone_code == 1)
+    breaches = gate_breaches(shipped)
+    check("mc24 the shipped tree holds the ceilings the pipeline-cost design sets for each "
+          "entry, and no gated command reads or names a reference file: %r"
+          % ([(e["entry"], e["bytes"]) for e in shipped["entries"]
+              if e["entry"] in gated] + breaches,),
+          gated and breaches == [])
 
     head, problem = git_source("HEAD")
     if problem:
         check("mc12 HEAD of this checkout is readable as a source (%s)" % problem, False)
         return
     real = measure(head)
-    named = dict((e["entry"], [r["path"] for r in e["rows"] if r["part"] == "read first"])
-                 for e in real["entries"])
-    check("mc12 ON THE REAL PROSE at HEAD the up-front rule finds the reference files every "
-          "pipeline command reads, and every file it names is there - a rule that quietly "
-          "stopped matching would read as a cheap pipeline: %r" % (named,),
-          all("reference/orchestrator.md" in named[label] for label, kind, _rel in PIPELINE
-              if kind == "command")
-          and "reference/phase-signoff.md" in named["sign-off (/audit:review)"]
-          and "reference/phase-signoff.md" not in named["/audit:run"]
+    # The pipeline's own commands read no reference file first any more, so the
+    # anti-vacuity half reads commands OUTSIDE the pipeline that still do: a rule
+    # that quietly stopped matching would read every pipeline entry as cheap, and
+    # the gate above as green over nothing.
+    outside = dict((rel, first_reads(split_frontmatter(head["read"](rel) or b"")[1]))
+                   for rel in ("commands/bug.md", "commands/layout.md"))
+    check("mc12 ON THE REAL PROSE at HEAD the up-front rule still finds the reference "
+          "files the commands outside the pipeline read first, and every file a "
+          "pipeline entry loads is there: %r" % (outside,),
+          "reference/manifest-conventions.md" in outside["commands/bug.md"]
+          and "reference/orchestrator.md" in outside["commands/layout.md"]
           and not any(e["missing"] for e in real["entries"]))
+    finder = globals().get("reference_pointers")
+    named = finder(split_frontmatter(head["read"]("commands/bug.md") or b"")[1]) \
+        if finder else None
+    check("mc27 ON THE REAL PROSE at HEAD the pointer rule finds the `see` pointer "
+          "commands/bug.md carries outside the pipeline, so mc24's empty answer over "
+          "the pipeline is a rule that still matches, not one that matches nothing: "
+          "%r" % (named,),
+          named is not None and "reference/manifest-conventions.md" in named)
 
 
 def _selftest():

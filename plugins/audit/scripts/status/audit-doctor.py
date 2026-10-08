@@ -160,6 +160,7 @@ state_shape_drift = _trail.state_shape_drift
 running_plugin_verdict = _trail.running_plugin_verdict
 check_running_plugin = _trail.check_running_plugin
 check_ledger = _trail.check_ledger
+check_ttl_trade = _trail.check_ttl_trade
 _journal_never_committed = _trail._journal_never_committed
 _anchor_row = _trail._anchor_row
 check_journal = _trail.check_journal
@@ -183,9 +184,12 @@ check_panel_opened = _panel_runstate.check_panel_opened
 
 
 # --- diagnose / render / cli ----------------------------------------------------
-def diagnose(project, deep=False):
+def diagnose(project, deep=False, transcript_path=None):
     """Run every check. Returns a Report. `deep` adds the journal-in-commit
-    cross-check to check_completions (read-only, just slower)."""
+    cross-check to check_completions (read-only, just slower). `transcript_path`
+    names a session's own transcript .jsonl for the TTL-trade row - absent by
+    default, because it prints no figure without one (see
+    `check_ttl_trade`)."""
     rep = Report()
     check_interpreter(rep)
     # Next, because it is the same question one layer down: `check_interpreter`
@@ -236,6 +240,20 @@ def diagnose(project, deep=False):
     # installation.
     check_running_plugin(rep, project, cfg, cfg_mod)
     check_ledger(rep, project, cfg, manifest_rel)
+    # Directly after: the same ledger's pricing table, read the way every other
+    # priced usage surface reads it, resolved only when a transcript was named
+    # - nothing here needs it otherwise, and `check_ttl_trade` itself says so
+    # plainly when none was given.
+    pricing = None
+    if transcript_path:
+        try:
+            ul = _trail._load("usage_ledger", "usage_ledger.py")
+            pricing = ul.project_pricing(
+                manifest, manifest_path=os.path.join(project, manifest_rel),
+                project_dir=project)
+        except Exception:
+            pricing = None
+    check_ttl_trade(rep, transcript_path, pricing)
     check_journal(rep, project, cfg, cfg_mod, git_root)
     # Directly after: `check_journal` asks whether the trail still HOLDS, and
     # these two ask what it has been SAYING all along. Both fold the whole
@@ -328,6 +346,10 @@ def build_parser():
     ap.add_argument("--deep", action="store_true",
                     help="also verify each task commit carries the journal "
                          "file that records it (read-only, slower)")
+    ap.add_argument("--transcript", default=None,
+                    help="a session's own transcript .jsonl, to print the "
+                         "main-loop cache TTL trade (documentation only - "
+                         "no figure is printed without it)")
     ap.add_argument("--color", choices=list(_cli_fmt.MODES), default="auto",
                     help="ANSI color for the terminal render (auto colors "
                          "only a TTY and respects NO_COLOR; --json never "
@@ -343,7 +365,7 @@ def main(argv):
         sys.stderr.write("ERROR: %s is not a directory\n" % project)
         return 2
 
-    rep = diagnose(project, deep=args.deep)
+    rep = diagnose(project, deep=args.deep, transcript_path=args.transcript)
     if args.as_json:
         print(json.dumps({"project": project, "counts": rep.counts(),
                           "checks": rep.rows}, indent=2))

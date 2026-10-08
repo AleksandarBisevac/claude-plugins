@@ -271,6 +271,89 @@ def _recorder_cases(check):
           and moved_text.count("moved: other.txt") == 1)
 
 
+def _plan_repo(prefix):
+    """A committed repository laid out the way the plugin writes one: a sharded
+    plan at the default manifest path, its shard, a gate ledger under the
+    evidence directory, a journal file, and a file merely NAMED like the
+    evidence directory beside it."""
+    repo = _seeded_repo(prefix)
+    audit = os.path.join(repo, "docs", "audit")
+    for sub in ("phases", "evidence", "journal"):
+        os.makedirs(os.path.join(audit, sub))
+    index = {"meta": MANIFEST["meta"],
+             "phases": [{"id": "P1", "shard": "phases/P1.json"}]}
+    _write(os.path.join(audit, "audit-plan.json"), json.dumps(index))
+    _write(os.path.join(audit, "phases", "P1.json"),
+           json.dumps(MANIFEST["phases"][0]))
+    _write(os.path.join(audit, "evidence", "gates.jsonl"), "{}\n")
+    _write(os.path.join(audit, "journal", "2026-10.jsonl"), "{}\n")
+    _write(os.path.join(audit, "evidence-notes.md"), "notes\n")
+    _git(repo, "add", "docs")
+    _git(repo, "commit", "-q", "-m", "plan")
+    return repo, os.path.join(audit, "audit-plan.json")
+
+
+def _stamp_then(repo, man_path, mutate):
+    """`(code, text)` of a compare against a stamp taken just before `mutate`."""
+    _code, text = _run(["take", "--project", repo, "--manifest", man_path,
+                        "--files", "src/mine.py"])
+    mutate()
+    return _run(["compare", "--project", repo], stdin_text=text)
+
+
+def _recorder_dirty_cases(check):
+    """The dirty digest at the door: what the plugin's own recorders write
+    between a stamp and its comparison - a filed return, a recorded gate - is
+    left out, and every other write still reads stale."""
+    repo, man_path = _plan_repo("stamp-door-dirty-")
+    audit = os.path.join(repo, "docs", "audit")
+
+    def file_return():
+        where = os.path.join(audit, "evidence", "returns", "P1.1")
+        os.makedirs(where)
+        _write(os.path.join(where, "20261008T000000Z.executor.json"), "{}\n")
+    code, text = _stamp_then(repo, man_path, file_return)
+    check("sv18 A FILED RETURN ALONE LEAVES THE STAMP CURRENT, exit 0: the "
+          "return lands under the evidence directory, which the stamp's dirty "
+          "digest now leaves out the way its content field already did: "
+          "exit=%r %r" % (code, [ln for ln in text.splitlines()
+                                 if "dirtyDigest" in ln]),
+          code == 0 and _tree_stamp.CURRENT in text)
+
+    def record_gate():
+        with open(os.path.join(audit, "evidence", "gates.jsonl"), "a") as fh:
+            fh.write('{"row": 2}\n')
+        with open(os.path.join(audit, "journal", "2026-10.jsonl"), "a") as fh:
+            fh.write('{"row": 2}\n')
+        _write(os.path.join(audit, "phases", "P1.json"),
+               json.dumps(MANIFEST["phases"][0], indent=1))
+        _write(man_path, json.dumps({"meta": MANIFEST["meta"], "phases": [
+            {"id": "P1", "shard": "phases/P1.json"}]}, indent=1))
+    code, text = _stamp_then(repo, man_path, record_gate)
+    check("sv19 A RECORDED GATE ALONE LEAVES THE STAMP CURRENT, exit 0: a "
+          "ledger row, a journal row, and the plan index and its shard "
+          "rewritten - every path the plugin's recorders write: exit=%r %r"
+          % (code, [ln for ln in text.splitlines() if "dirtyDigest" in ln]),
+          code == 0 and _tree_stamp.CURRENT in text)
+
+    code, text = _stamp_then(
+        repo, man_path,
+        lambda: _write(os.path.join(repo, "src", "other.py"), "x = 1\n"))
+    check("sv20 ...AND A SOURCE EDIT OUTSIDE THOSE PATHS STILL READS STALE, "
+          "exit 1, on the dirty digest itself - an exclusion that swallowed "
+          "every dirty line would pass sv18 and sv19 and fail here: exit=%r"
+          % (code,),
+          code == M.E_STALE and "dirtyDigest  moved" in text)
+
+    code, text = _stamp_then(
+        repo, man_path,
+        lambda: _write(os.path.join(audit, "evidence-notes.md"), "edited\n"))
+    check("sv21 THE OVER-FIRE TWIN: an edit to a file merely named like the "
+          "evidence directory, beside it and not under it, reads stale on the "
+          "dirty digest, exit 1: exit=%r" % (code,),
+          code == M.E_STALE and "dirtyDigest  moved" in text)
+
+
 # --- the machine-readable half and the command's own shape --------------------
 def _shape_cases(check):
     repo = _seeded_repo("stamp-door-json-")
@@ -3755,6 +3838,7 @@ def _cases(check):
     _harness.stage(check, "sv-compare", _compare_cases)
     _harness.stage(check, "sv-shape", _shape_cases)
     _harness.stage(check, "sv-recorder", _recorder_cases)
+    _harness.stage(check, "sv-recorder-dirty", _recorder_dirty_cases)
     _harness.stage(check, "sr-red", _red_cases)
     _harness.stage(check, "sr-tally", _tally_cases)
     _harness.stage(check, "sr-introduces", _introduces_cases)
@@ -3784,6 +3868,76 @@ def _cases(check):
     _harness.stage(check, "sr-env", _env_cases)
     _harness.stage(check, "sr-final", _final_pass_cases)
     _harness.stage(check, "sr-budget", _budget_cases)
+    _harness.stage(check, "sl-block", _success_line_cases)
+
+
+def _cli(argv, stdin_text=None):
+    """`(exit, stdout)` of this command run as the main loop runs it: a process,
+    with the session's own variables dropped."""
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+    done = subprocess.run(
+        [sys.executable, _loader.script_path("stamp-verification.py")] + argv,
+        env=env, input=stdin_text or "", stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, universal_newlines=True, encoding="utf-8")
+    return done.returncode, done.stdout
+
+
+def _success_line_cases(check):
+    """Each action's success in one line - the stamp and the red-first block
+    carried whole, since a caller parses them back - and `--verbose`, a stale
+    stamp and a red that was not proved, in full."""
+    repo = _seeded_repo("stamp-sl-")
+    code, short = _cli(["take", "--project", repo, "--files", "src/mine.py"])
+    lines = short.splitlines()
+    stamp, problem = _tree_stamp.parse_stamp(short)
+    check("sl1 `take` prints ONE line, and it is the stamp token itself, whole "
+          "- a cut token would not parse back, so it is the one success line "
+          "allowed past the byte bound: %r" % (short[:120],),
+          code == 0 and len(lines) == 1 and problem is None
+          and lines[0].startswith(_tree_stamp.STAMP_TOKEN)
+          and stamp.get("scope") == ["src/mine.py"])
+    vcode, verbose = _cli(["take", "--project", repo, "--files", "src/mine.py",
+                           "--verbose"])
+    held = _run(["take", "--project", repo, "--files", "src/mine.py"])[1]
+    check("sl2 ...and `--verbose` prints the fields with their bases, byte for "
+          "byte what `take` always printed, ending on the same token: %r"
+          % (verbose[:120],),
+          vcode == 0 and verbose == held + "\n"
+          and verbose.splitlines()[-1].strip() == lines[0])
+    ccode, current = _cli(["compare", "--project", repo], stdin_text=short)
+    check("sl3 `compare` on an untouched tree prints ONE line within the byte "
+          "bound, naming the verdict: %r" % (current,),
+          ccode == 0 and len(current.splitlines()) == 1
+          and len(current.rstrip("\n").encode("utf-8")) <= 200
+          and _tree_stamp.CURRENT in current)
+    _write(os.path.join(repo, "src", "mine.py"), "v = 2\n")
+    stale = _cli(["compare", "--project", repo], stdin_text=short)
+    check("sl4 a STALE stamp prints in full, naming the field that moved, "
+          "`--verbose` or not - the deny twin of sl3: %r" % (stale[1][:120],),
+          stale[0] == M.E_STALE and "scopeDigest" in stale[1]
+          and len(stale[1].splitlines()) > 1
+          and stale == _cli(["compare", "--project", repo, "--verbose"],
+                            stdin_text=short))
+    py = sys.executable
+    root, man = _red_repo("stamp-sl-red-",
+                          _red_test("import mine", "mine.v == 2"))
+    rcode, red = _cli(["red", "--project", root, "--manifest", man, "--task",
+                       "P1.1", "--", py, "tests/test_mine.py"])
+    block_line = red.rstrip("\n").split(" redFirst: ")[-1]
+    check("sl5 a PROVED red prints ONE line: the verdict, then the redFirst "
+          "block whole, which parses back as the return carries it: %r"
+          % (red[:160],),
+          rcode == M.E_PROVED and len(red.splitlines()) == 1
+          and red.startswith("red-first: red ")
+          and json.loads(block_line).get("status") == "proved")
+    root_n, man_n = _red_repo("stamp-sl-notred-",
+                              _red_test("import mine", "mine.v >= 1"))
+    not_red = _cli(["red", "--project", root_n, "--manifest", man_n, "--task",
+                    "P1.1", "--", py, "tests/test_mine.py"])
+    check("sl6 a red that was NOT proved prints in full - the deny twin of "
+          "sl5: %r" % (not_red[1][:160],),
+          not_red[0] != M.E_PROVED and len(not_red[1].splitlines()) > 1)
 
 
 def _selftest():

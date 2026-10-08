@@ -108,6 +108,7 @@ import argparse
 import datetime
 import json
 import os
+import pathlib
 import posixpath
 import shutil
 import subprocess
@@ -139,7 +140,10 @@ _output.install_path()
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _branch                                                       # noqa: E402
 import _evidence_io  # noqa: E402  (where the ledger lives, and its one strict decode)
+import _config_rules  # noqa: E402  (review_per_task_mode: the live key, refused not defaulted)
+import _filed_returns as _fr  # noqa: E402  (landing_refusals: sign-off's own property)
 import _journal_io                                                 # noqa: E402
+import _loader  # noqa: E402  (script_path: the commit verbs run as subprocesses, never imported)
 import _manifest_io as _mio                                          # noqa: E402
 import _manifest_rules as _rules  # noqa: E402  (revalidate what the stamp writes)
 import _panel_write  # noqa: E402  (the index lock the stub mirror is written under)
@@ -662,7 +666,12 @@ def phase_as_landed(git_root, manifest_path, branch, phase_id):
     and the second run it forced moved `mergedAt`. Once the branch is gone - the
     re-run after a cleanup - the tree's own copy is the landed one, and says so.
     """
-    rel = os.path.relpath(os.path.abspath(manifest_path), git_root)
+    # The path is relative to the tree that HOLDS the manifest: a worktree's
+    # manifest handed from the main checkout sits outside `git_root`, and a path
+    # taken against `git_root` would name a file no commit holds.
+    holder = _wt.tree_root(os.path.dirname(os.path.abspath(manifest_path)))["root"]
+    rel = os.path.relpath(os.path.realpath(os.path.abspath(manifest_path)),
+                          os.path.realpath(holder or git_root))
     landed = _mio.load_manifest_at(git_root, "refs/heads/" + branch, rel.replace(os.sep, "/"))
     for ph in ((landed or {}).get("phases") or []):
         if isinstance(ph, dict) and str(ph.get("id")) == str(phase_id):
@@ -1369,6 +1378,235 @@ def _parked_after_merge(manifest_path, branch):
         return []
 
 
+# --- committing the stamp ----------------------------------------------------------
+# A landing that writes `mergedAt` and the stored `done` into the parent's copy
+# and leaves them there is half a landing: a clone of the parent reads the phase
+# as running, and the next commit made in that tree sweeps the stamp into work
+# that has nothing to do with it. So the stamp is committed where it was
+# written - by the audit-state commit verb, and in a sharded plan the index
+# verb after it, run as subprocesses because an entry point may not import
+# another, and because their staging discipline (the allow-list, the index read
+# back, the row inside the commit) is theirs to hold, not a second copy here.
+LANDING_SUBJECT = "landed on %s"
+
+
+def _commit_verb(script, manifest_path, phase_id, project, subject):
+    """`(answer, None)` - the verb's `--json` answer - or `(None, why)`."""
+    argv = [sys.executable, _loader.script_path(script), manifest_path, phase_id,
+            "--project", project, "--subject", subject, "--json"]
+    try:
+        done = subprocess.run(argv, cwd=project, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, timeout=300)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, "%s could not be run (%s)" % (script, exc)
+    text = done.stdout.decode("utf-8", "replace")
+    try:
+        answer = json.loads(text)
+    except ValueError:
+        return None, "%s exited %d with no answer it could read: %s" % (
+            script, done.returncode,
+            (done.stderr.decode("utf-8", "replace") or text).strip()[:200])
+    if done.returncode != 0 or answer.get("refused"):
+        return None, "%s refused: %s" % (script, answer.get("refused")
+                                         or "exit %d" % (done.returncode,))
+    return answer, None
+
+
+def commit_landing(target, phase_id, project, git_root, parent, branch=None,
+                   run=None):
+    """`{"landingCommits", "landingCommitWhy" | "landingCommitSkipped"}` -
+    the stamp in `target` committed where it reaches `parent`; or why a commit
+    verb or the follow-on fast-forward refused (`landingCommitWhy`, a failure
+    of the landing); or why no commit was owed in that tree
+    (`landingCommitSkipped`, said and not a failure).
+
+    TWO TREES CAN HOLD THE STAMP. The parent's checkout, where the commit is
+    the parent's next commit. Or - the parent checked out nowhere, so the merge
+    was a ref-only fast-forward - the tree holding the phase branch itself:
+    the commit goes on the branch, and the parent is fast-forwarded to it once
+    more, so the record of the landing is on the parent and the branch is
+    still contained in it. A stamp in a tree holding any other branch is left
+    for that tree: a commit there would put the landing on a branch that is
+    neither of the two."""
+    listing = _wt.list_worktrees(git_root, run=run)
+    if listing["error"]:
+        return {"landingCommits": [], "landingCommitWhy": (
+            "git would not list the worktrees (%s), so the tree the stamp sits "
+            "in cannot be named" % (listing["error"],))}
+    holder = _wt.holder_of(listing["trees"], parent)["tree"]
+    here = _tree_holding(listing["trees"], target) or {}
+    on_branch = (holder is None and branch and here.get("branch") == branch)
+    if not on_branch and (not holder
+                          or not _wt.within_tree(holder.get("path"), target)):
+        return {"landingCommits": [], "landingCommitSkipped": (
+            "%s sits in a tree holding %s, which is neither %s nor the branch "
+            "that landed in it, so a commit there would not reach %s - commit "
+            "it with that tree's own work" % (
+                target, here.get("branch") or "no branch", parent, parent))}
+    others = pending_beyond_stamp(
+        target, phase_id, project, (here if on_branch else holder).get("path"))
+    if others:
+        return {"landingCommits": [], "landingCommitSkipped": (
+            "%s holds uncommitted changes this landing did not write (%s), and the "
+            "audit-state commit stages the whole of each file and directory they "
+            "sit in - so committing the stamp there would carry them under a "
+            "subject saying the phase landed. Commit it with that tree's own work"
+            % ((here if on_branch else holder).get("path"), "; ".join(others)))}
+    made = _commit_stamp(target, phase_id, project, parent)
+    if made.get("landingCommitWhy") or not on_branch:
+        made["landingCommitIn"] = (holder or here).get("path")
+        return made
+    made["landingCommitIn"] = here.get("path")
+    if not made["landingCommits"]:
+        return made
+    # The parent follows the stamp commit by the same ref-only fast-forward
+    # the merge was, and the ancestry is read back rather than trusted.
+    fn = _wt._runner(run)
+    argv = ["fetch", ".", "%s:refs/heads/%s" % (branch, parent)]
+    code, _out, err = fn(git_root, argv)
+    if code != 0 or _wt.merged_into(git_root, branch, parent,
+                                    run=run)["answer"] != _wt.CONTAINED:
+        made["landingCommitWhy"] = (
+            "the stamp is committed on %s, and `git %s` did not carry %s to it "
+            "(exit %s: %s) - run it once %s can fast-forward"
+            % (branch, " ".join(argv), parent, code,
+               (err or "").strip()[:160], parent))
+    return made
+
+
+# The fields a landing writes on its own phase. Anything else differing from the
+# tree's HEAD in what the audit-state commit stages is somebody else's.
+_STAMP_FIELDS = (MERGED_FIELD, MERGED_HEAD_FIELD, MERGED_HEAD_AT_FIELD, "status")
+
+
+def _git_text(tree, args):
+    """`(code, text)` of one git call in `tree`, or (None, "") when git cannot run."""
+    code, raw = _git_bytes(tree, args)
+    return code, raw.decode("utf-8", "replace")
+
+
+def _tree_rel(tree, path):
+    """`path` relative to `tree`, `/`-separated, or None when it is outside it."""
+    rel = os.path.relpath(os.path.realpath(path), os.path.realpath(tree))
+    return None if rel == ".." or rel.startswith(".." + os.sep) else \
+        rel.replace(os.sep, "/")
+
+
+def _unstamped(text, phase_id):
+    """The plan file's JSON with this phase's stamp fields taken out, or None
+    when it does not parse."""
+    try:
+        body = json.loads(text)
+    except ValueError:
+        return None
+    for ph in _phases_in(body, phase_id):
+        for key in _STAMP_FIELDS:
+            ph.pop(key, None)
+    return body
+
+
+def _foreign_rows(head_text, text, phase_id):
+    """Why the rows `text` holds past `head_text` are not all this phase's, or
+    None when they are. The trail is append-only, so anything but an extension
+    of what HEAD holds is somebody else's change too."""
+    if not text.startswith(head_text):
+        return "it no longer begins with what HEAD holds"
+    for line in text[len(head_text):].splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            return "a row that does not parse"
+        if str(((row if isinstance(row, dict) else {}).get("details") or {})
+               .get("phaseId")) != str(phase_id):
+            return "a row about something other than phase %s" % (phase_id,)
+    return None
+
+
+def pending_beyond_stamp(target, phase_id, project, tree):
+    """`[sentence, ...]` - each change pending in `tree` that the audit-state
+    commit would stage and that this landing did not write: the plan file(s)
+    differing from HEAD beyond this phase's stamp fields, a journal file holding
+    a row about anything else, and any evidence change. Empty is the one answer
+    that commits.
+
+    THE COMMIT STAGES WHOLE FILES AND DIRECTORIES. In a parent checkout another
+    session shares, its uncommitted plan edit or trail row would otherwise ride
+    into a commit titled as this phase's landing."""
+    if not tree:
+        return ["no tree is named to compare against"]
+    config = _journal_io.load_config(project)
+    found = []
+    for path in sorted(set(p for p in (target, _phase_file(target, phase_id)) if p)):
+        rel = _tree_rel(tree, path)
+        if rel is None:
+            continue
+        code, head = _git_text(tree, ["show", "HEAD:%s" % (rel,)])
+        if code != 0:
+            found.append("%s is not in HEAD, so all of it would be added" % (rel,))
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                now = fh.read()
+        except OSError as exc:
+            found.append("%s could not be read (%s)" % (rel, exc))
+            continue
+        was, is_now = _unstamped(head, phase_id), _unstamped(now, phase_id)
+        if was is None or is_now is None or was != is_now:
+            found.append("%s differs from HEAD beyond phase %s's stamp"
+                         % (rel, phase_id))
+    for label, directory in (("journal", _journal_io.journal_dir(project, config)),
+                             ("evidence",
+                              _evidence_io.evidence_dir(project, config))):
+        rel = _tree_rel(tree, directory) if directory else None
+        if rel is None or not os.path.isdir(directory):
+            continue
+        code, listing = _git_text(tree, ["status", "--porcelain", "-z",
+                                         "--untracked-files=all", "--", rel])
+        if code != 0:
+            found.append("git would not list the %s directory %s" % (label, rel))
+            continue
+        for entry in [e for e in listing.split("\0") if len(e) > 3]:
+            changed = entry[3:]
+            if label == "evidence":
+                found.append("%s is an evidence change" % (changed,))
+                continue
+            hcode, head = _git_text(tree, ["show", "HEAD:%s" % (changed,)])
+            try:
+                with open(os.path.join(tree, *changed.split("/")), "r",
+                          encoding="utf-8") as fh:
+                    now = fh.read()
+            except OSError:
+                found.append("%s is changed and cannot be read" % (changed,))
+                continue
+            why = _foreign_rows(head if hcode == 0 else "", now, phase_id)
+            if why:
+                found.append("%s holds %s" % (changed, why))
+    return found
+
+
+def _commit_stamp(target, phase_id, project, parent):
+    """The stamp committed by the audit-state verb, and the index verb after it
+    in a sharded plan, run in `project`."""
+    subject = LANDING_SUBJECT % (parent,)
+    scripts = ["commit-audit-state.py"]
+    try:
+        if _mio.is_sharded(_mio.read_json(target)):
+            scripts.append("commit-manifest-index.py")
+    except Exception as exc:
+        return {"landingCommits": [], "landingCommitWhy": (
+            "%s cannot be read to tell its layout (%s)" % (target, exc))}
+    made = []
+    for script in scripts:
+        answer, why = _commit_verb(script, target, phase_id, project, subject)
+        if why:
+            return {"landingCommits": made, "landingCommitWhy": why}
+        if answer.get("commit"):
+            made.append(answer["commit"])
+    return {"landingCommits": made, "landingCommitWhy": ""}
+
+
 # --- the verdict at the head it would merge ---------------------------------------
 # WHICH TREE `--project` NAMES IS NOT THE QUESTION. A landing is often run from the
 # parent's tree, which holds none of the phase's ledger rows and none of its
@@ -1703,6 +1941,9 @@ def gate_answer(project, manifest_path, manifest, phase, git_root=None,
                           "%s's tip, so whether its newest verdict measured the "
                           "work that would land is not established - %s"
                           % (cid, branch, record)))
+    if answer.get("arm") == _vb.ARM_DIGEST_MOVED and branch and git_root:
+        answer = _uncommitted_remedy(answer, record, uncommitted_declared(
+            git_root, project, phase_tree, files))
     if str((phase or {}).get("id")) != cid and _vb.close_refusal(answer) is None:
         own = _vb.member_red(
             texts if texts is not None else _vb.ledger_texts(project, config),
@@ -1710,6 +1951,706 @@ def gate_answer(project, manifest_path, manifest, phase, git_root=None,
         if own is not None:
             answer = own
     return answer, signed, notes
+
+
+def uncommitted_declared(git_root, project, phase_tree, files):
+    """The declared files (project-relative, sorted) holding changes no commit
+    carries, in the worktree that holds the branch; [] when none do, when no
+    worktree holds it, or when git could not say - the clause this feeds is a
+    remedy, and the refusal it rides on stands either way."""
+    tree = _phase_project(git_root, project, phase_tree)
+    declared = _tree_stamp.declared_scope(files)
+    if not tree or not declared:
+        return []
+    code, out = _git_bytes(tree, ["status", "--porcelain", "-z",
+                                  "--untracked-files=all", "--"] + declared)
+    if code != 0:
+        return []
+    prefix = os.path.relpath(project, git_root).replace(os.sep, "/")
+    prefix = "" if prefix == "." else prefix + "/"
+    found, skip = [], False
+    for entry in out.decode("utf-8", "replace").split("\0"):
+        if skip or len(entry) < 4:
+            skip = False
+            continue
+        # A rename's entry is followed by its source path, which is not one.
+        skip = any(c in "RC" for c in entry[:2])
+        path = entry[3:]
+        found.append(path[len(prefix):] if path.startswith(prefix) else path)
+    return sorted(set(found))
+
+
+def _uncommitted_remedy(answer, record, dirty):
+    """`answer` with its remedy naming the `dirty` declared files, or unchanged
+    when there are none.
+
+    RECORDING AGAIN OVER THE SAME DIRT LOOPS: the recorder hashes the working
+    files and the landing digests the tip's committed ones, so a run recorded
+    while a declared file holds an uncommitted change is refused here however
+    often it is recorded. The change has to reach a commit, or leave the tree,
+    first."""
+    if not dirty:
+        return answer
+    fixed = ("declared file(s) %s hold uncommitted changes in the worktree "
+             "holding the branch, which the recorded run measured and the tip "
+             "does not carry - commit or revert them before recording, then %s"
+             % (", ".join(dirty), record))
+    sentence = answer.get("sentence") or ""
+    return dict(answer, sentence=(sentence.replace(record, fixed)
+                                  if record in sentence
+                                  else "%s; %s" % (sentence, fixed)))
+
+
+def review_answers_refusal(project, manifest_path, phase):
+    """The sentence refusing a landing under `review.perTask: phase`, or None.
+
+    THE SAME PROPERTY SIGN-OFF ASKS, through the same function
+    (`_filed_returns.landing_refusals`), of the plan's RECORD as it stands now -
+    so a commit or an answer changed by hand after sign-off, or by a writer
+    nobody listed, is refused here too. Without it this command would be a way
+    past the sign-off verb. A task with no recorded key reads the config's
+    value now, and a config value outside the vocabulary is refused, never read
+    as `always`."""
+    tasks = [t for t in (phase or {}).get("tasks") or [] if isinstance(t, dict)]
+    live = None
+    if any(t.get("commit") and _fr.review_key(t, phase, None)[1] == "config"
+           for t in tasks):
+        _proj, config = _evidence_io.project_config_for(manifest_path, project)
+        live, problem = _config_rules.review_per_task_mode(config)
+        if problem:
+            return "%s." % (problem,)
+    held = _fr.landing_refusals(phase or {}, live)
+    if not held:
+        return None
+    pid = (phase or {}).get("id")
+    remedy = ("Sign-off writes them from the phase review's filed return - file "
+              "it and sign off again.")
+    if _mio.signoff_recorded(phase):
+        remedy = ("This copy records a sign-off verdict, which is not "
+                  "re-decided: neither filing a phase return nor signing off "
+                  "again is open over it. Restore the record to what that "
+                  "sign-off wrote - a change made after it is what is refused "
+                  "here - or leave %s unmerged and report it (/audit:bug add)."
+                  % ((phase or {}).get("branch") or "the branch",))
+    return ("review.perTask reads `phase` and phase %s has task(s) whose review "
+            "answers are not on the record bound to their commits: %s. %s"
+            % (pid, "; ".join("%s: %s" % (tid, why) for tid, why in held), remedy))
+
+
+def landed_answers_refusal(project, manifest_path, phase, landed, branch,
+                           git_root=None, phase_tree=None, refs=(),
+                           parent=None, parent_tree=None, trees=None):
+    """The sentence refusing a landing under `review.perTask: phase`, asked of
+    EVERY copy of the phase the landing can see, or None.
+
+    The copy handed in is the parent's when the merge is run from the parent's
+    checkout, and there it still shows the phase as it stood at the fork: no
+    task records a commit, so the property finds nothing to ask. The copy the
+    merge brings in is the branch tip's (`landed`), and the copy on disk in the
+    worktree holding the branch is the newest record of all, so both are asked
+    too.
+
+    A TIP COPY WITH NO SIGN-OFF VERDICT IS REFUSED wherever the property could
+    apply. A task closed `deferred` reaches the tip only with the sign-off
+    commit - the task's own commit staged the plan before its close was
+    written - so a tip recording no verdict can hold a closed task its copy does
+    not show, and the question is asked of the tip rather than of whichever
+    worktree still stands.
+
+    A tip whose copy cannot be read is refused under the same condition only
+    when the plan is VERSIONED (`plan_versioned`): a plan git never commits is
+    in no tip, and its copy on disk is then the record, asked the property and
+    the verdict in the tip's place.
+
+    UNDER EVERY KEY, A FILED PHASE RETURN HOLDING AN ANSWER ONLY A HUMAN
+    SETTLES (`_fr.needs_human`) asks for the same verdict: only the sign-off
+    verb writes one, and it refuses while such an answer is unsettled. A
+    return that will not parse could hold one, and asks for the verdict too.
+
+    The returns asked are every one the landing can reach
+    (`every_filed_return`): the evidence of every worktree git lists,
+    prunable ones skipped, the branch tip and the target branch's committed
+    tree. With no verdict on the copy that decides, such a return is refused
+    wherever it sits - the tip (hl1), the tip read from the parent's checkout
+    (hl4), the worktree (vr8c), the parent's evidence (vr21); a verdict the
+    worktree's copy holds and the tip lacks is refused with the remedy of
+    committing it (vr8, then vr8b), one only on the parent's copy of a
+    versioned plan with the remedy of signing off on the branch (vr20).
+
+    A VERDICT COVERS WHAT IT READ, WHEREVER THAT SITS (`read_set_refusal`).
+    The sign-off verb records the signature of every filed phase return it
+    read (`_fr.READ_RETURNS_FIELD`) and refuses while one holds an unsettled
+    answer, so a return whose signature is in that set was put to a human. A
+    return needing a human whose signature is not in it is refused unless a
+    known checkout's settlement record settles that answer - bound to the
+    return's signature, never its name alone: another answer under the name
+    is refused (rs9), so is one under a name the verdict read (rs8, twin
+    rs8b), and a key recorded with no signature settles nothing (rs10, twin
+    rs10b). A copy of a read return
+    lands wherever it sits (rs2, rs5); one filed after the verdict is refused
+    in any checkout - a sibling worktree (rs1), the signing checkout after it
+    switched to the target and back (rs3, twin rs4) - and so is one a merge
+    of the target into the branch brought to the tip (rs7, twin rs7b). A
+    return settled by a known checkout's record lands, the plan outside the
+    repository and the branch checked out nowhere included (rs6, rs6b).
+
+    A VERDICT RECORDING NO READ SET - written before the field existed -
+    keeps the per-place reading (`unseen_returns`, `verdict_reach_refusal`;
+    rs5b): it settles the returns of the place its checkout's sign-off read,
+    and only the places `returns_by_place` names are candidates. Pinned:
+    - the tip: lands when the return is at the tip (vr4) or in the worktree
+      (vr2, vr6b); refused when it sits only in the parent's evidence (vr1,
+      vr3, vr5), and under a name the branch carries with another answer
+      (vr7); lands when the parent's copy is the same answer (vr6).
+    - the branch checked out in this checkout itself: a return the target
+      commits (vr17, vr19) or its worktree holds (vr17b) is refused; a copy
+      of one the tip commits lands (vr18).
+    - a plan git never versions: the verdict on the worktree's copy read the
+      worktree's evidence (vr12) and not the parent's (vr11); one on the
+      parent's copy read the parent's (vr13) and not the worktree's (vr14).
+    - a plan outside the project: no checkout's evidence is assumed read, and
+      each place is settled through the record of the checkout it belongs to
+      (vr15, vr16, vr16b); a return a ref commits through every known
+      checkout's record (rs6c).
+    - a shared `evidence.dir`: settled only through the signing checkout's
+      record (vr9, vr10; on the parent's copy vr23, vr23b). With the
+      worktree removed under a tip verdict, a return there is refused,
+      settled or not: no checkout is left to name as the signer, so no
+      record is read for it. Unpinned.
+    What the per-place reading cannot see, and the read set does: a return
+    filed in a checkout it does not name, in the signing checkout after a
+    switch away and back, or brought to the tip by a merge after the
+    verdict. A verdict needs a sign-off by this version for those.
+
+    Unreachable, and why: a tip verdict with the tip itself unreadable -
+    refused above as unestablished before any return is asked. Not told
+    apart: a return any hand put where the sign-off read it, before the
+    verdict, is in the read set - the filing verb's or not."""
+    phase_id = (phase or {}).get("id")
+    on_disk = worktree_phase(git_root, project, phase_tree, manifest_path,
+                             phase_id)
+    copies = [("", phase)]
+    if on_disk:
+        copies.append(("in the worktree holding %s: " % (branch,), on_disk))
+    if landed is not None:
+        copies.append(("on %s: " % (branch,), landed))
+    for where, copy in copies:
+        held = review_answers_refusal(project, manifest_path, copy)
+        if held:
+            return where + held
+    applies, problem = _phase_key_applies(project, manifest_path,
+                                          [copy for _w, copy in copies])
+    if problem:
+        return problem
+    places = returns_by_place(project, manifest_path, git_root, branch,
+                              phase_tree, phase_id, parent=parent,
+                              parent_tree=parent_tree)
+    wide = every_filed_return(project, manifest_path, git_root, trees, places,
+                              phase_id)
+    human = unsettled_sentence(phase_id, [e for entries, _w, _f
+                                          in wide["groups"] for e in entries])
+    if not applies and human is None:
+        return None
+    if applies:
+        subject = "review.perTask reads `phase` for phase %s" % (phase_id,)
+        unknown = "whether its tasks carry their review answers"
+        because = ("a task's close reaches the branch only with the sign-off "
+                   "commit")
+    else:
+        subject, unknown = human, "whether a human settled them"
+        because = ("only the sign-off verb writes the verdict, and it refuses "
+                   "while such an answer is unsettled")
+    if landed is not None:
+        if _mio.signoff_recorded(landed):
+            return _reach_refusal(project, manifest_path, phase_id, places,
+                                  wide, landed, VERDICT_AT_TIP, branch)
+        # A verdict the worktree's copy holds and the tip does not is one
+        # commit away; signing off again is refused over it.
+        remedy = ("Commit the plan on %s - the worktree's copy records the "
+                  "verdict and the tip does not - and run this again" % (branch,)
+                  if _mio.signoff_recorded(on_disk)
+                  else "Sign the phase off on %s and run this again" % (branch,))
+        return ("%s, and the copy of the plan %s would bring in records no "
+                "sign-off verdict, so %s is not established: %s. %s."
+                % (subject, branch, unknown, because, remedy))
+    versioned, basis = plan_versioned(git_root, manifest_path, refs)
+    if versioned is not False:
+        return ("%s, and the copy of the plan %s would bring in could not be "
+                "read (%s), so %s is not established. The parent's copy does not "
+                "stand in for it: it records the phase as it stood at the fork. "
+                "Commit the plan on %s and run this again."
+                % (subject, branch, basis, unknown, branch))
+    record = on_disk or phase
+    if _mio.signoff_recorded(record):
+        # A plan outside the project is the one file every checkout reads, so
+        # the copy recording the verdict cannot say which checkout signed.
+        at = (VERDICT_AT_WORKTREE if on_disk else VERDICT_AT_EITHER
+              if _plan_outside(project, manifest_path) else VERDICT_AT_PARENT)
+        return _reach_refusal(project, manifest_path, phase_id, places, wide,
+                              record, at, branch)
+    return ("%s, the plan is not versioned (%s), so its copy on disk is the "
+            "record - and it records no sign-off verdict. Sign the phase off and "
+            "run this again." % (subject, basis))
+
+
+def _reach_refusal(project, manifest_path, phase_id, places, wide, record,
+                   verdict_at, branch):
+    """The verdict `record` holds, asked of the returns it could not have
+    read: by its read set when it records one (`read_set_refusal`), by where
+    each return sits when it records none - a verdict an older plugin wrote
+    (`verdict_reach_refusal`)."""
+    review = (record or {}).get("review")
+    read = _fr.read_set(review)
+    if read is None:
+        return verdict_reach_refusal(project, manifest_path, phase_id, places,
+                                     verdict_at, branch)
+    return read_set_refusal(project, manifest_path, phase_id, wide, read,
+                            verdict_at, branch, names=_fr.read_names(review))
+
+
+def unsettled_sentence(phase_id, filed, settled=(), bound=()):
+    """The clause naming what in `filed` (`(rel, body, problem)` entries) waits on
+    a human - an answer `_fr.needs_human` reports and neither `settled` (keys)
+    nor `bound` (`(key, sha256)` pairs) settles, or a return that will not
+    parse and so could hold one - or None when nothing does."""
+    asked = _fr.needs_human(filed, settled, bound)
+    unread = [why for _rel, _body, why in filed if why]
+    if not asked and not unread:
+        return None
+    said = []
+    if asked:
+        said.append("answer(s) only a human settles (%s)" % ("; ".join(
+            "%s %s" % (a["who"], a["what"]) for a in asked),))
+    if unread:
+        said.append("a return that cannot be read, so could hold one only a "
+                    "human settles (%s)" % ("; ".join(unread),))
+    return "phase %s's filed review holds %s" % (phase_id, " and ".join(said))
+
+
+def _same_path(a, b):
+    return bool(a and b) and os.path.realpath(a) == os.path.realpath(b)
+
+
+def returns_by_place(project, manifest_path, git_root, branch, phase_tree,
+                     phase_id, parent=None, parent_tree=None):
+    """Every phase return filed for `phase_id` the landing can see, by where
+    it sits - `{"dirs", "tip", "target", "project", "tree", "home",
+    "evidence", "branch", "parent"}`.
+
+    `dirs` holds one entry per distinct evidence directory - `{"dir",
+    "trees", "returns"}` - over the checkouts the landing knows: the one it
+    runs from (`project`), the one holding the branch (`tree`), the one
+    holding the target branch (`home`). A directory several checkouts resolve
+    to, which an `evidence.dir` outside the repository makes, lists every one
+    of them in `trees`. `tip` is what the branch tip commits and `target` what
+    the target branch commits, each in `_fr.phase_returns`' shape. With the
+    branch checked out in `project` itself, `tree` is `project` and the two
+    are one entry of `dirs`.
+
+    A REF GIT WOULD NOT LIST is a problem entry, never no return filed. A
+    target branch git says does not exist commits nothing; the merge refuses
+    that on its own terms."""
+    proj, config = _evidence_io.project_config_for(manifest_path, project)
+    evidence = _evidence_io.evidence_dir(proj, config)
+    tree = _phase_project(git_root, project, phase_tree) if git_root else None
+    home = _phase_project(git_root, project, parent_tree) if git_root else None
+    checkouts = [project]
+    for other in (tree, home):
+        if other and not any(_same_path(other, c) for c in checkouts):
+            checkouts.append(other)
+    dirs = []
+    for index, checkout in enumerate(checkouts):
+        # The same resolution the project's directory had, with this checkout
+        # in the project's place: a directory outside the repository is then
+        # the one several checkouts share.
+        where = (evidence if index == 0
+                 else _evidence_io.evidence_dir(checkout, config))
+        held = [d for d in dirs if _same_path(d["dir"], where)]
+        if held:
+            held[0]["trees"].append(checkout)
+            continue
+        dirs.append({"dir": where, "trees": [checkout],
+                     "returns": list(_fr.phase_returns(where, phase_id))})
+    places = {"dirs": dirs, "tip": [], "target": [], "project": project,
+              "tree": tree, "home": home, "evidence": evidence,
+              "branch": branch, "parent": parent}
+    folder = os.path.join(evidence, _fr.RETURNS_DIRNAME, str(phase_id))
+    rel = (os.path.relpath(folder, git_root).replace(os.sep, "/")
+           if git_root else "..")
+    if rel.startswith(".."):
+        return places
+    if branch:
+        places["tip"] = _fr.ref_phase_returns(git_root, branch, rel,
+                                                phase_id)
+    known = _fr.ref_known(git_root, parent) if parent else False
+    if known is None:
+        places["target"] = [("%s:%s" % (parent, rel), None,
+                             "git could not say whether %s is a branch"
+                             % (parent,))]
+    elif known:
+        places["target"] = _fr.ref_phase_returns(git_root, parent, rel,
+                                                   phase_id)
+    return places
+
+
+# Where the sign-off verdict a landing stands on was read from: the branch tip,
+# the worktree's own copy of a plan git never versions, the copy of the
+# checkout the landing runs from, or a plan outside the repository - one file
+# every checkout reads, so it cannot say which of them signed.
+VERDICT_AT_TIP, VERDICT_AT_WORKTREE, VERDICT_AT_PARENT = "tip", "worktree", "parent"
+VERDICT_AT_EITHER = "either"
+
+
+def _signing_checkout(places, verdict_at):
+    """The checkout whose sign-off wrote the verdict, None when it is gone or
+    cannot be said (`VERDICT_AT_EITHER`)."""
+    if verdict_at == VERDICT_AT_PARENT:
+        return places["project"]
+    if verdict_at == VERDICT_AT_EITHER:
+        return None
+    return places["tree"]
+
+
+def unseen_returns(places, verdict_at):
+    """`[(entries, why, folder, settle)]` - the returns in `returns_by_place`'
+    answer the sign-off which wrote a verdict read `verdict_at` could not have
+    read, grouped by where they sit: the clause saying so, what holds them,
+    and the checkouts whose settlement record can settle them.
+
+    A VERDICT SETTLES ONLY THE EVIDENCE ITS SIGNING CHECKOUT READ. The
+    sign-off verb reads the evidence of the checkout it runs in, and the
+    filing verb refuses once that checkout's copy records a verdict. So a tip
+    verdict - written in the checkout holding the branch - read that
+    checkout's evidence and every return the tip commits; a verdict on a copy
+    on disk read that copy's checkout's evidence; the target branch's
+    committed returns were read only by a sign-off in the checkout holding
+    it. Every other place a return can sit is a candidate, whenever it was
+    filed - the target's committed tree and its worktree included.
+
+    WHERE A PLACE CANNOT SAY WHO FILED, THE SETTLEMENT IS THE EVIDENCE. The
+    sign-off verb writes no verdict over an answer only a human settles until
+    the settlement record in its checkout names it. A directory several
+    checkouts share is settled through the signing checkout's record; with a
+    plan outside the repository the signing checkout cannot be named, so each
+    place is settled through the record of the checkout it belongs to."""
+    signer = _signing_checkout(places, verdict_at)
+    either = verdict_at == VERDICT_AT_EITHER
+    home = places["home"]
+
+    def signed_here(trees):
+        return bool(signer) and any(_same_path(signer, t) for t in trees)
+
+    seen = list(places["tip"]) if verdict_at == VERDICT_AT_TIP else []
+    if signer and home and _same_path(signer, home):
+        seen += places["target"]
+    for d in places["dirs"]:
+        if len(d["trees"]) == 1 and signed_here(d["trees"]):
+            seen += d["returns"]
+    taken = set(_fr.return_signature(e) for e in seen)
+    who = ("the checkout at %s" % (signer,) if signer else
+           "a checkout this plan outside the repository cannot name" if either
+           else "the worktree that held the branch, now gone")
+    groups = []
+    for d in places["dirs"]:
+        if len(d["trees"]) == 1 and signed_here(d["trees"]):
+            continue
+        if len(d["trees"]) > 1:
+            settle = d["trees"] if either else (
+                [signer] if signed_here(d["trees"]) else [])
+            why = ("in %s, the evidence directory %s share, so where it sits "
+                   "does not say whether the sign-off read it"
+                   % (d["dir"], " and ".join(d["trees"])))
+        elif either:
+            settle = d["trees"]
+            why = ("in %s, and the plan lies outside the repository - one file "
+                   "every checkout reads - so it cannot say which checkout "
+                   "signed" % (d["dir"],))
+        else:
+            settle = []
+            why = ("only in %s, and the sign-off verb reads the evidence of the "
+                   "checkout it runs in - the verdict's was %s" % (d["dir"], who))
+        groups.append((d["returns"], why, d["dir"], settle))
+    # A plan outside the repository cannot name the signer, and a ref is no
+    # checkout's: any known checkout's settlement is a human's word on it.
+    every = _known_checkouts(places) if either else []
+    if verdict_at != VERDICT_AT_TIP:
+        groups.append((places["tip"], (
+            "committed at the tip of %s, and the sign-off that wrote the verdict "
+            "ran in %s" % (places["branch"], who)),
+            "the returns %s commits" % (places["branch"],), every))
+    if not (signer and home and _same_path(signer, home)):
+        groups.append((places["target"], (
+            "committed on %s, the branch this lands on, and the sign-off that "
+            "wrote the verdict ran in %s" % (places["parent"], who)),
+            "the returns %s commits" % (places["parent"],), every))
+    unseen = []
+    for entries, why, folder, settle in groups:
+        fresh = [e for e in entries if _fr.return_signature(e) not in taken]
+        taken.update(_fr.return_signature(e) for e in fresh)
+        if fresh:
+            unseen.append((fresh, why, folder, settle))
+    return unseen
+
+
+def _known_checkouts(places):
+    """Every checkout `places` knows, each once, in the order it lists them."""
+    found = []
+    for tree in [t for d in places["dirs"] for t in d["trees"]]:
+        if tree and not any(_same_path(tree, f) for f in found):
+            found.append(tree)
+    return found
+
+
+def every_filed_return(project, manifest_path, git_root, trees, places,
+                       phase_id):
+    """`{"groups", "checkouts"}` - every filed phase return for the phase the
+    landing can reach, grouped by where it sits: `places`
+    (`returns_by_place`) widened to the evidence of EVERY worktree git lists,
+    prunable ones skipped. `groups` is `[(entries, where, folder)]` - each
+    evidence directory once, then the tip, then the target branch;
+    `checkouts` every checkout whose settlement record can settle one."""
+    _proj, config = _evidence_io.project_config_for(manifest_path, project)
+    dirs = [dict(d, trees=list(d["trees"])) for d in places["dirs"]]
+    for tree in trees or []:
+        checkout = (_phase_project(git_root, project, tree)
+                    if git_root else None)
+        if not checkout or any(_same_path(checkout, t)
+                               for d in dirs for t in d["trees"]):
+            continue
+        where = _evidence_io.evidence_dir(checkout, config)
+        held = [d for d in dirs if _same_path(d["dir"], where)]
+        if held:
+            held[0]["trees"].append(checkout)
+            continue
+        dirs.append({"dir": where, "trees": [checkout],
+                     "returns": list(_fr.phase_returns(where, phase_id))})
+    groups = [(d["returns"], "in %s" % (d["dir"],), d["dir"]) for d in dirs]
+    groups.append((places["tip"], "committed at the tip of %s"
+                   % (places["branch"],),
+                   "the returns %s commits" % (places["branch"],)))
+    groups.append((places["target"], "committed on %s, the branch this lands "
+                   "on" % (places["parent"],),
+                   "the returns %s commits" % (places["parent"],)))
+    # The sign-off verb asks the same set through the same helper, so what a
+    # verdict was signed over and what its landing honours cannot drift; the
+    # checkouts `places` names join it only where no worktree list was handed
+    # in.
+    checkouts = (_fr.settlement_checkouts(git_root, project, trees)
+                 if git_root else [project])
+    for tree in _known_checkouts({"dirs": dirs}):
+        if not any(_same_path(tree, c) for c in checkouts):
+            checkouts.append(tree)
+    return {"groups": groups, "checkouts": checkouts}
+
+
+def read_set_refusal(project, manifest_path, phase_id, wide, read, verdict_at,
+                     branch, names=()):
+    """The sentence refusing a landing over a verdict that records what it
+    read (`_fr.READ_RETURNS_FIELD`), or None - every filed return the landing
+    can reach (`every_filed_return`) needing a human whose signature `read`
+    does not hold, and that no known checkout's settlement record settles.
+
+    A return is covered by WHAT it is, not where: the sign-off verb refuses
+    over an unsettled answer in everything it read, so a signature in `read`
+    was put to a human, and a copy of it is covered in any checkout or ref.
+    One filed after the verdict - in any checkout, the signing one included,
+    or brought to the tip by a merge - is in no read set.
+
+    A SETTLEMENT BINDS TO THE ANSWER IT SETTLED: it counts for a return only
+    where it records that return's signature (`_fr.needs_human`'s `bound`),
+    so another answer filed later under the same name - a name is the phase
+    and the head, and two checkouts filing at one head share it - is not
+    settled by it. A record naming the key alone, written before
+    signatures were kept, settles nothing here, and the refusal says so. A
+    return under a name in `names`, the names the verdict read, holding
+    another answer is refused whatever any record says: the human was asked
+    about the answer the verdict read under that name."""
+    _proj, config = _evidence_io.project_config_for(manifest_path, project)
+    record = _fr.settlements([_state_in(tree, config)
+                              for tree in wide["checkouts"]], phase_id)
+    taken, names = set(read), set(names or ())
+    told = []
+    for entries, where, folder in wide["groups"]:
+        fresh = [e for e in entries if _fr.return_signature(e) not in taken]
+        taken.update(_fr.return_signature(e) for e in fresh)
+        renamed = [e for e in fresh if e[0] in names]
+        others = [e for e in fresh if e[0] not in names]
+        for group, bound, why in (
+                (renamed, None, " under a name the verdict read, holding another "
+                 "answer than the one read there, which no settlement covers"),
+                (others, record["pairs"], "")):
+            human = unsettled_sentence(phase_id, group, bound=bound or ())
+            if human is None:
+                continue
+            by_name = ([] if bound is None else _fr.settled_by_name_only(
+                _fr.needs_human(group, bound=bound), record))
+            told.append((human, where + why, folder, by_name))
+    if not told:
+        return None
+    problems = record["problems"]
+    settled = (" - and the settlement records of the known checkouts %s"
+               % ("could not all be read (%s)" % ("; ".join(problems),)
+                  if problems else "settle no answer it holds"))
+    said = "; and ".join(
+        "%s, and the sign-off verdict %s records could not have read it - it "
+        "is not among the returns that sign-off recorded reading: it sits "
+        "%s%s%s" % (human, _VERDICT_WORDS[verdict_at] % {"branch": branch},
+                    where, settled, _name_only_words(by_name))
+        for human, where, _folder, by_name in told)
+    return _reach_remedy(said, " and ".join(f for _h, _w, f, _b in told),
+                         branch)
+
+
+def _name_only_words(answers):
+    """The clause saying which of `answers` a record settles by name only, and
+    why that binds none of them - empty when none."""
+    if not answers:
+        return ""
+    return (" (%s settled by name only, in a record written before a "
+            "settlement carried the signature of the answer it settled: a name "
+            "is shared by every answer filed under it, so it binds none of "
+            "them - the driver's triage records the signature with its accept, "
+            "before a sign-off)" % (", ".join(
+                "%s %s" % (a["who"], a["what"]) for a in answers),))
+
+
+# How a refusal names the copy of the plan holding the verdict.
+_VERDICT_WORDS = {
+    VERDICT_AT_TIP: "the tip of %(branch)s",
+    VERDICT_AT_WORKTREE: "the worktree's copy of the plan",
+    VERDICT_AT_PARENT: "this checkout's copy of the plan",
+    VERDICT_AT_EITHER: "the one copy of the plan outside the repository"}
+
+
+def _reach_remedy(said, folders, branch):
+    return ("%s. That verdict is not re-decided and the filing verb refuses "
+            "after it, so no verb records a human's word on it now: put it to a "
+            "human, and where they judge it settled, move it out of %s and run "
+            "this again; where it stands, leave %s unmerged and report it "
+            "(/audit:bug add)." % (said, folders, branch))
+
+
+def _state_in(tree, config):
+    """The state directory of the checkout at `tree`, where the driver keeps
+    its settlement record."""
+    hc = _loader.load_hooks_config(modname="audit__config")
+    return str(hc.state_dir(pathlib.Path(tree), config or {}))
+
+
+def _settled_in(tree, config, phase_id):
+    """`(keys, problem)` - the answers the driver's settlement record in the
+    checkout at `tree` names as settled by a human; nothing when no tree."""
+    if not tree:
+        return set(), ""
+    keys, _reasons, problem = _fr.settled_answers(_state_in(tree, config),
+                                                  phase_id)
+    return keys, problem
+
+
+def verdict_reach_refusal(project, manifest_path, phase_id, places, verdict_at,
+                          branch):
+    """The sentence refusing a landing whose recorded verdict could not have
+    read a filed return holding an answer only a human settles, or None -
+    every such place named, so one run reports them all.
+
+    A place `unseen_returns` settles through a settlement record lands when
+    that record names the answer: the sign-off verb writes no verdict over it
+    until the record in its checkout does, so a named answer was put to a
+    human and one it does not name was filed where that sign-off never
+    asked."""
+    _proj, config = _evidence_io.project_config_for(manifest_path, project)
+    told = []
+    for entries, where, folder, settle in unseen_returns(places, verdict_at):
+        settled, problems = set(), []
+        for tree in settle:
+            keys, problem = _settled_in(tree, config, phase_id)
+            settled |= set(keys)
+            if problem:
+                problems.append(problem)
+        human = unsettled_sentence(phase_id, entries, settled)
+        if human is None:
+            continue
+        named = ("" if not settle else
+                 " - and the settlement record there %s" % (
+                     "could not be read (%s)" % ("; ".join(problems),)
+                     if problems else "names no human settling it"))
+        told.append((human, where + named, folder))
+    if not told:
+        return None
+    said = "; and ".join(
+        "%s, and the sign-off verdict %s records could not have read it: it "
+        "sits %s" % (human, _VERDICT_WORDS[verdict_at] % {"branch": branch},
+                     where)
+        for human, where, _folder in told)
+    return _reach_remedy(said, " and ".join(f for _h, _w, f in told), branch)
+
+
+def _phase_key_applies(project, manifest_path, copies):
+    """`(applies, problem)` - whether any task of any copy reads the key
+    `phase`, its unrecorded key read off the config; `problem` is a config
+    value outside the vocabulary, refused rather than read as `always`."""
+    pairs = [(t, copy) for copy in copies
+             for t in (copy or {}).get("tasks") or [] if isinstance(t, dict)]
+    live = None
+    if any(_fr.review_key(t, copy, None)[1] == "config" for t, copy in pairs):
+        _proj, config = _evidence_io.project_config_for(manifest_path, project)
+        live, problem = _config_rules.review_per_task_mode(config)
+        if problem:
+            return False, "%s." % (problem,)
+    return any(_fr.review_key(t, copy, live)[0] == _fr.KEY_PHASE
+               for t, copy in pairs), ""
+
+
+def _plan_outside(project, manifest_path):
+    """True when the plan lies outside the project directory - one file every
+    checkout of the repository reads, rather than a copy per checkout."""
+    rel = os.path.relpath(os.path.abspath(manifest_path), os.path.abspath(project))
+    return rel == ".." or rel.startswith(".." + os.sep)
+
+
+def worktree_phase(git_root, project, phase_tree, manifest_path, phase_id):
+    """The phase as the plan on disk in the worktree holding the branch records
+    it, or None - none when no worktree holds it, the plan sits outside the
+    project, or the copy there is the one handed in."""
+    if not git_root:
+        return None
+    tree = _phase_project(git_root, project, phase_tree)
+    if not tree:
+        return None
+    if _plan_outside(project, manifest_path):
+        return None
+    there = os.path.join(tree, os.path.relpath(os.path.abspath(manifest_path),
+                                               os.path.abspath(project)))
+    if os.path.realpath(there) == os.path.realpath(manifest_path) \
+            or not os.path.isfile(there):
+        return None
+    return _recorded_phase(there, phase_id) or None
+
+
+def plan_versioned(git_root, manifest_path, refs):
+    """`(answer, basis)` - True when git versions the plan: inside the tree
+    that holds it, not ignored there, and present at one of `refs` (the
+    parent, the phase's `baseRef`). False when one of those fails; None when
+    git could not say, which the caller refuses as it would True."""
+    if not git_root:
+        return None, "no git root to ask"
+    holder = _wt.tree_root(os.path.dirname(os.path.abspath(manifest_path)))["root"]
+    rel = _tree_rel(holder or git_root, manifest_path)
+    if rel is None:
+        return False, "%s lies outside the git root" % (manifest_path,)
+    code, _out = _git_bytes(holder or git_root, ["check-ignore", "-q", "--", rel])
+    if code == 0:
+        return False, "git ignores %s" % (rel,)
+    if code != 1:
+        return None, "git check-ignore could not answer for %s" % (rel,)
+    asked = [r for r in refs if r]
+    for ref in asked:
+        code, _out = _git_bytes(git_root, ["cat-file", "-e", "%s:%s" % (ref, rel)])
+        if code == 0:
+            return True, "%s holds %s" % (ref, rel)
+    if not asked:
+        return None, "no parent or base to ask whether %s is committed" % (rel,)
+    return False, "%s is committed at none of %s" % (rel, ", ".join(asked))
 
 
 def override_row(project, phase_id, answer, reason, config=None):
@@ -1863,6 +2804,18 @@ def render(answer, out=print):
                 % (answer["stubMirrored"],))
         elif answer.get("stubWhy"):
             out("  index stub NOT re-mirrored: %s" % (answer["stubWhy"],))
+        if answer.get("landingCommitWhy"):
+            out("  the stamp is NOT committed: %s" % (answer["landingCommitWhy"],))
+        elif answer.get("landingCommitSkipped"):
+            out("  the stamp is not committed here: %s"
+                % (answer["landingCommitSkipped"],))
+        elif answer.get("landingCommits"):
+            out("  the stamp committed in %s as %s"
+                % (answer.get("landingCommitIn"),
+                   ", ".join(c[:12] for c in answer["landingCommits"])))
+        elif "landingCommits" in answer:
+            out("  the stamp was already committed in %s"
+                % (answer.get("landingCommitIn"),))
     elif answer.get("stampWhy"):
         out("  %s NOT written: %s" % (MERGED_FIELD, answer["stampWhy"]))
     if answer.get("finishFrom"):
@@ -1890,6 +2843,56 @@ def render(answer, out=print):
 
 
 # --- cli -------------------------------------------------------------------------
+
+# What a landing's long form says when it still owes the reader something: a
+# refusal, a preview, a cleanup to finish, a field it could not write, an
+# override of the verdict, a lock taken while it ran, work parked to materialize.
+_OWED = ("REFUSED", "NOT MERGED", "WARNING", "would run", "would write",
+         "cleanup is not finished", "after the merge", "parked on", " NOT ",
+         "OVER ITS VERDICT", "not committed here")
+
+
+def _short_record(line):
+    """A written field's line, shortened for the one-line form: the merged head
+    abbreviated, and a path written under the working directory spelled
+    relative to it."""
+    head = "%s = " % (MERGED_HEAD_FIELD,)
+    if line.startswith(head):
+        return head + line[len(head):].strip()[:12]
+    lead, sep, path = line.rpartition(" written to ")
+    here = os.getcwd()
+    if sep and _wt.within_tree(here, path):
+        return "%s%s%s" % (lead, sep, _output.posix_rel(
+            os.path.realpath(path), os.path.realpath(here)))
+    return line
+
+
+def success_line(lines):
+    """A landing's one line: branch, parent and mode, the merge field it wrote
+    and where, the merged head, and how many steps were not done.
+
+    None - the long form - when a git step failed or any line carries one of
+    `_OWED`. A `not done:` row is counted rather than printed, with the flag
+    that prints why: the ordinary one says there was no worktree to own.
+    """
+    said = [ln.strip() for ln in lines if ln.strip()]
+    if not said or not said[0].startswith("[close-phase] "):
+        return None
+    failed = [ln for ln in said if ln.startswith("git ")
+              and (ln.split(" -> ", 1)[1:] or ["?"])[0].split()[:1] != ["0"]]
+    if failed or any(mark in ln for ln in said for mark in _OWED):
+        return None
+    record = [_short_record(ln) for ln in said
+              if ln.startswith(("%s = " % (MERGED_FIELD,),
+                                "%s = " % (MERGED_HEAD_FIELD,)))]
+    skipped = len([ln for ln in said if ln.startswith("not done: ")])
+    if not record:
+        return None
+    return _output.success_line(
+        said[0], "; %s%s" % ("; ".join(record),
+                             "; %d step(s) not done (`--verbose` says why)"
+                             % (skipped,) if skipped else ""))
+
 
 def build_parser():
     p = argparse.ArgumentParser(
@@ -1983,13 +2986,28 @@ def main(argv, out=print):
             lambda recorded: contained_task_commits(git_root, recorded,
                                                     names["parent"]),
             after_the_fact=True, dry_run=args.dry_run)
+        # A STAMP LEFT UNCOMMITTED by an earlier landing is committed by the
+        # re-run, so the repair of that state is the command that made it.
+        kept = ({} if args.dry_run or filled.get("planUnrestored")
+                else commit_landing(args.manifest, args.phase, project, git_root,
+                                    names["parent"], branch=names["branch"]))
         out("[close-phase] phase %s landed at %s and %s is gone - %s"
             % (args.phase, phase[MERGED_FIELD], names["branch"],
-               "nothing left to merge or clean up" if filled
-               else "nothing left to do"))
+               "nothing left to merge or clean up" if filled or kept.get(
+                   "landingCommits") else "nothing left to do"))
         _render_told(filled, out=out)
         _render_backfill(filled, out=out)
-        return E_FAIL if filled.get("planUnrestored") else E_OK
+        if kept.get("landingCommitWhy"):
+            out("  the stamp is NOT committed: %s" % (kept["landingCommitWhy"],))
+        elif kept.get("landingCommitSkipped"):
+            out("  the stamp is not committed here: %s"
+                % (kept["landingCommitSkipped"],))
+        elif kept.get("landingCommits"):
+            out("  the stamp committed in %s as %s"
+                % (kept.get("landingCommitIn"),
+                   ", ".join(c[:12] for c in kept["landingCommits"])))
+        return E_FAIL if (filled.get("planUnrestored")
+                          or kept.get("landingCommitWhy")) else E_OK
     # ...AND A COMPOSED NAME NOTHING HOLDS IS NOT AN ANCESTRY QUESTION. Asked of git,
     # it came back as "could not be established", which names the wrong gap: the
     # plan recorded no branch, and the one predicted from the template is not in
@@ -2059,6 +3077,15 @@ def main(argv, out=print):
         out("           or pass %s \"<why this lands over it>\", which is "
             "journaled as %s" % (_vb.OVERRIDE_FLAG, _vb.ACTION_CLOSE_OVERRIDDEN))
         return E_FAIL
+    held = landed_answers_refusal(
+        project, args.manifest, phase, landed, names["branch"],
+        git_root=git_root, phase_tree=observation.get("phaseTree"),
+        refs=(names["parent"], phase.get("baseRef")), parent=names["parent"],
+        parent_tree=observation.get("parentTree"),
+        trees=observation.get("trees")) if landing_due else None
+    if held:
+        out("[close-phase] REFUSED: %s Nothing was merged or written." % (held,))
+        return E_FAIL
     if refused and landing_due \
             and not _journal_io.enabled(_journal_io.load_config(project)):
         out("[close-phase] REFUSED: %s was given and journal.enabled is false, so "
@@ -2100,7 +3127,8 @@ def main(argv, out=print):
             # A re-run records the merge that happened; it does not move it. A
             # recorded mergedHead is kept too; only a merge recorded WITHOUT one -
             # a plan older than the field - has the recovered commit added, once.
-            kept = {"stamped": target, "stampedAt": earlier, "stampKept": True,
+            kept = {"stamped": target, "stampManifest": target,
+                    "stampedAt": earlier, "stampKept": True,
                     "stampedElsewhere": (os.path.abspath(target)
                                          != os.path.abspath(args.manifest)),
                     "parkedOnBranch": _parked_after_merge(target, names["branch"])}
@@ -2133,7 +3161,8 @@ def main(argv, out=print):
         record_row(project_for_row, args.phase, names["branch"], names["parent"])
         mirrored, mirror_why, mirror_notes = mirror_stub(target, args.phase,
                                                          project_for_row)
-        stamped = {"stamped": path, "stampedAt": stamp_at,
+        stamped = {"stamped": path, "stampManifest": target,
+                   "stampedAt": stamp_at,
                    "mergedHead": merged_head, "mergedHeadWhy": merged_head_why,
                    "stubMirrored": mirrored,
                    "stubWhy": "" if mirror_notes["unrestored"] else mirror_why,
@@ -2148,6 +3177,14 @@ def main(argv, out=print):
                          settled_now=settlement(landed or phase, merged=True),
                          stamp=_stamp)
     answer["settledBasis"] = landed_basis
+    if answer.get("stamped") and not answer.get("dryRun"):
+        answer.update(commit_landing(
+            answer.get("stampManifest") or answer["stamped"], args.phase,
+            surviving_copy(args.manifest, project, git_root, observation,
+                           the_plan, phase_id=args.phase)[1],
+            git_root, names["parent"], branch=names["branch"]))
+        if answer.get("landingCommitWhy") and code == E_OK:
+            code = E_FAIL
     # A PREVIEW OWES THE BACKFILL TOO. `close()` never calls the stamp on a dry run,
     # so a re-run over a merge recorded without a head would preview in silence
     # what the real run then writes. Asked of the copy the real run would write.
@@ -2206,4 +3243,4 @@ if __name__ == "__main__":
         print("close-phase.py has no inline --selftest; its cases live in "
               "plugins/audit/tests/test_close_phase.py - run that file instead.")
         sys.exit(0)
-    raise SystemExit(main(sys.argv[1:]))
+    raise SystemExit(_output.terse_cli(main, sys.argv[1:], success_line))

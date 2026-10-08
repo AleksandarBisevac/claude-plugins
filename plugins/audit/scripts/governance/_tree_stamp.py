@@ -295,11 +295,29 @@ def scope_list_digest(owns, excluded=None):
     return _digest(declared) if declared else None
 
 
-def dirty_digest(before):
+def _porcelain_paths(line):
+    """The path(s) one `status --porcelain` line names: one, or a rename's two.
+
+    A path git QUOTES is read without its quotes and with its escapes left in,
+    so an escaped byte inside a recorder prefix keeps that line IN the digest -
+    the direction that reads stale rather than inventing a match."""
+    return [p.strip().strip('"') for p in line[3:].split(" -> ")]
+
+
+def dirty_digest(before, excluded=None):
     """`(digest, basis)` over the porcelain lines taken BEFORE the run.
 
     Reuses the snapshot a caller already holds, so this costs no extra git call
     at all.
+
+    `excluded` is the paths the caller's own recorder writes, matched by
+    `_outside` - the one predicate the content field also leaves them out by -
+    and a line is dropped only when EVERY path it names is under one of them, so
+    a rename out of the recorder's directory still counts. A stamp passes it: a
+    filed return or a recorded gate between a stamp and its comparison is the
+    orchestrator's own bookkeeping, and left in it made every stamp stale. The
+    basis names how many lines were left out, and a set with nothing excluded
+    digests exactly as before.
 
     WHAT IT DOES AND DOES NOT SAY is `DIRTY_LIMIT` above, which is the sentence
     the stamp prints; the limit is pinned by a case rather than left for a reader
@@ -307,20 +325,28 @@ def dirty_digest(before):
     """
     if before is None:
         return None, "git could not describe the tree, so it has no fingerprint"
-    return (_digest(sorted(before)),
-            "git described the tree before the run; %d dirty path(s)"
-            % (len(before),))
+    drop = _outside(excluded)
+    kept = sorted(ln for ln in before
+                  if not all(drop(p) for p in _porcelain_paths(ln)))
+    basis = ("git described the tree before the run; %d dirty path(s)"
+             % (len(kept),))
+    if len(kept) != len(before):
+        basis = ("%s; %d more the caller's recorder writes were left out"
+                 % (basis, len(before) - len(kept)))
+    return _digest(kept), basis
 
 
-def tested_state(project, owns, before, excluded=None):
+def tested_state(project, owns, before, excluded=None, dirty_excluded=None):
     """The three identity fields, each with the basis that bounds it, plus the
     digest of the declared list itself (`scope_list_digest`).
 
     `excluded` reaches `scope_digest` and nothing else; the gate runner passes
     the paths its recorder writes, and the committer that grades the row passes
-    the same set."""
+    the same set. `dirty_excluded` reaches `dirty_digest` and is passed by
+    `take` alone: a gate row's dirty digest was recorded over the whole status,
+    and the committer grading it has to reach the same bytes."""
     scope, sbasis = scope_digest(project, owns, excluded=excluded)
-    dirty, dbasis = dirty_digest(before)
+    dirty, dbasis = dirty_digest(before, excluded=dirty_excluded)
     return {"head": _head(project), "headBasis": HEAD_BASIS,
             "scopeDigest": scope, "scopeBasis": sbasis,
             "scopeListDigest": scope_list_digest(owns, excluded=excluded),
@@ -623,7 +649,8 @@ def take(project, owns, excluded=None, manifest=None):
     the basis sentence for every field and are what the human rendering prints.
 
     `excluded` is the paths the caller's recorder writes, left out of the content
-    field (`content_digest`'s argument of the same name). `manifest` is stored in
+    field (`content_digest`'s argument of the same name) and of the dirty digest
+    (`dirty_digest`'s), by the one predicate. `manifest` is stored in
     the stamp as given - the plan those paths were derived from - so a caller of
     `compare` can derive the same set again; the paths themselves are not stored,
     because a sharded plan carries one per phase and the stamp is one line.
@@ -632,7 +659,7 @@ def take(project, owns, excluded=None, manifest=None):
     digest that decides the verdict and the list that names the moved path cannot
     describe different moments."""
     before = porcelain(project)
-    state = dict(tested_state(project, owns, before))
+    state = dict(tested_state(project, owns, before, dirty_excluded=excluded))
     reading, problem = _content_reading(project, excluded)
     if reading is None:
         content, cbasis, paths = None, problem, None

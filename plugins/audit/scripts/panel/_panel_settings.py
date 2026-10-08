@@ -277,6 +277,13 @@ FIELD_HELP = {
         "run is evidence. never trusts the recorded run entirely; own-tests (the "
         "default) runs only the test(s) the task added; full runs every command in "
         "the task's gate, same as leaving this unset.",
+    "review.perTask":
+        "Where a task's review answers are given. phase (the default) spawns no "
+        "reviewer per task: the phase review answers every task at sign-off, and "
+        "sign-off and the merge refuse while one lacks its answers. always spawns "
+        "a reviewer per task before its close. signals spawns one only where the "
+        "task's red-first proof was not proved or its return disagrees with the "
+        "recorded gate.",
     "executor.maxHours":
         "How many hours a single spawned executor may be continued onto further "
         "tasks — never re-spawned — before the orchestrator prefers handing it "
@@ -597,6 +604,19 @@ SETTINGS_GROUPS = (
              "kind": "number", "min": 0},
         ),
     },
+    {
+        "id": "review",
+        "title": "Per-task review",
+        "blurb": "Where each task's three review answers are given: by a reviewer "
+                 "per task before its close, or by the phase review at sign-off, "
+                 "which then refuses to sign off a task that lacks them. Recorded "
+                 "on a phase when its first task starts, so changing this does "
+                 "not change a phase already under way.",
+        "fields": (
+            {"path": "review.perTask", "label": "Where a task's review is answered",
+             "kind": "enum", "enum": "perTask"},
+        ),
+    },
 )
 
 
@@ -632,7 +652,8 @@ def _cfg_enums():
             "strictManifestState": list(vc.STRICT_MANIFEST_STATE),
             "planGate": list(vc.PLAN_GATE_MODES),
             "portability": list(vc.PORTABILITY_MODES),
-            "runsGate": list(vc.RUNS_GATE_MODES)}
+            "runsGate": list(vc.RUNS_GATE_MODES),
+            "perTask": list(vc.REVIEW_PER_TASK_MODES)}
 
 
 # --- cli --------------------------------------------------------------------

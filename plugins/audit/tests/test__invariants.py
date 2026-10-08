@@ -1930,8 +1930,92 @@ def _carrier_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _landing_repo(tmp, name):
+    """`(manifest path, root)` - a committed single-file plan whose one phase
+    records a branch and has not landed."""
+    root = os.path.join(tmp, name)
+    os.makedirs(os.path.join(root, "docs", "audit"))
+    phase = _phase("P1", [])
+    phase.update(branch="audit/p1", status="in_progress")
+    path = os.path.join(root, "docs", "audit", "audit-plan.json")
+    _write_json(path, {"meta": {"developmentBranch": "main"}, "phases": [phase]})
+    for argv in (["init", "-q"], ["symbolic-ref", "HEAD", "refs/heads/main"],
+                 ["config", "user.email", "fixture@example.com"],
+                 ["config", "user.name", "Fixture"],
+                 ["config", "commit.gpgsign", "false"],
+                 ["add", "-A"], ["commit", "-q", "-m", "plan"]):
+        _git(root, *argv)
+    return path, root
+
+
+def _land(path, when="2026-01-02T00:00:00Z"):
+    """What a landing writes into the parent's copy: `mergedAt` and `done`."""
+    with open(path, encoding="utf-8") as fh:
+        body = json.load(fh)
+    body["phases"][0].update(mergedAt=when, status="done")
+    _write_json(path, body)
+
+
+def _named(answer, name):
+    """The check called `name` in `answer`, or None - an absent check is a
+    failing case, never a raise that ends the block."""
+    return next((c for c in answer.get("checks") or [] if c["name"] == name),
+                None)
+
+
+def _landing_cases(check):
+    """`landing-committed`: a landed phase whose stamp is in the working tree
+    and not in HEAD's commit of the plan - asked by the library, so the gate
+    and the CLI read one answer."""
+    tmp = _harness.fixture_root("inv-landing-")
+    try:
+        path, root = _landing_repo(tmp, "dirty")
+        _land(path)
+        manifest = _mio.load_manifest(path)
+        answer = M.check_phase(manifest, "P1", path, root, root)
+        got = _named(answer, "landing-committed")
+        said = " ".join((got or {}).get("breaches") or [])
+        check("ln1 the library's check_phase answers landing-committed: a landed "
+              "phase whose status and mergedAt are uncommitted is a breach naming "
+              "the file and the stamp, carried into the phase's breach lines: %r"
+              % (((got or {}).get("verdict"), said),),
+              (got or {}).get("verdict") == M.BREACH
+              and "docs/audit/audit-plan.json" in said
+              and "2026-01-02T00:00:00Z" in said
+              and any(b.startswith("landing-committed: ")
+                      for b in answer.get("breaches") or []))
+        everything = M.check_manifest(manifest, path, root, root)
+        check("ln2 ...and check_manifest - what /audit:status --gate reads - "
+              "carries it too: %r" % (everything.get("breaches"),),
+              any("P1 landing-committed: " in b
+                  for b in everything.get("breaches") or []))
+        _git(root, "commit", "-q", "-am", "landed")
+        got = _named(M.check_phase(manifest, "P1", path, root, root),
+                     "landing-committed")
+        check("ln3 THE ALLOW TWIN: the same stamp committed is clean: %r"
+              % ((got or {}).get("verdict"),),
+              (got or {}).get("verdict") == M.CLEAN)
+        _write(path, open(path, encoding="utf-8").read() + "\n")
+        got = _named(M.check_phase(manifest, "P1", path, root, root),
+                     "landing-committed")
+        check("ln4 a plan dirty for another reason, its stamp committed, is not "
+              "this breach: %r" % ((got or {}).get("verdict"),),
+              (got or {}).get("verdict") == M.CLEAN)
+        path, root = _landing_repo(tmp, "open")
+        got = _named(M.check_phase(_mio.load_manifest(path), "P1", path, root,
+                                   root), "landing-committed")
+        check("ln5 a phase that has not landed gives the check no subject: %r"
+              % ((got or {}).get("verdict"),),
+              (got or {}).get("verdict") == M.NA)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _harness.stage(check, "ln-block", _landing_cases)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":
