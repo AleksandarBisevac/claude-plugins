@@ -658,24 +658,30 @@
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py _human_settlement",
         "issue": "The sign-off refuses whenever any worktree's settlement record cannot be parsed, before asking whether anything needs a human. An unreadable record in a sibling worktree now blocks the sign-off of a phase with no human-only answer. This is a regression; it was reproduced by a direct probe.",
-        "resolution": "Compute what is waiting first, and refuse over unreadable records only when an answer is left unsettled, naming them in that refusal, as close-phase does. Pin the deny case and its allow twin."
+        "resolution": "fixed in P118.24-v7t (ec59ec31): Compute what is waiting first, and refuse over unreadable records only when an answer is left unsettled, naming them in that refusal, as close-phase does. Pin the deny case and its allow twin.",
+        "fixTask": "P118.24-v7t",
+        "commit": "ec59ec31"
       },
       {
         "id": "P118-R72",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py _human_settlement remedy; drive-phase.py human_answers",
         "issue": "When a sign-off run from the parent refuses over a return only the tip commits, its remedy sends the user to the driver's triage in the parent. That triage reads only its own checkout's evidence and never lists the answer.",
-        "resolution": "Name the checkout whose triage lists it (the worktree holding the branch, or `git worktree add` it), or let the triage read the same tip returns."
+        "resolution": "fixed in P118.24-v7t (ec59ec31): Name the checkout whose triage lists it (the worktree holding the branch, or `git worktree add` it), or let the triage read the same tip returns.",
+        "fixTask": "P118.24-v7t",
+        "commit": "ec59ec31"
       },
       {
         "id": "P118-R73",
         "severity": "low",
         "file": "plugins/audit/schema/audit-plan.schema.json readReturns description",
         "issue": "A space is missing after the full stop in 'settles nothing.Absent'.",
-        "resolution": "Insert the space."
+        "resolution": "fixed in P118.24-v7t (ec59ec31): Insert the space.",
+        "fixTask": "P118.24-v7t",
+        "commit": "ec59ec31"
       }
     ],
-    "outcome": "[findings: 73 - 5 high, 28 med, 40 low; 70 with a recorded fix commit]"
+    "outcome": "[findings: 73 - 5 high, 28 med, 40 low; 73 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2298,7 +2304,7 @@
     {
       "id": "P118.24-v7t",
       "title": "the sign-off refuses over an unreadable settlement record only when an answer waits",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes P118 review round 9 findings R71-R73. The sign-off's human stop first computes which answers are left unsettled, and only then refuses over a settlement record it cannot read, naming that record in the refusal. An unreadable record in another worktree therefore no longer blocks a sign-off with nothing to settle. When a waiting answer comes from the tip and not from this checkout's evidence, the refusal names the checkout whose triage lists it: the worktree holding the branch, or the `git worktree add` that creates one. The schema description's missing space is restored. Every new case is shown red first with its allow twin.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -2329,18 +2335,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ec59ec31",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes P118-R71 to R73.\n\nR71: `_human_settlement` (audit-task.py) now computes which answers still wait (`_fr.needs_human` with the records' bound pairs) before it judges the records. Unreadable records are added to the waiting refusal, one line naming each path. When nothing waits, a broken record in any checkout no longer refuses, the signing checkout's own included. The old worktree read is split into `_worktree_listing` ({top, trees, error}) and `_settlement_checkouts(proj, listing)`, so the settlement set and the holder lookup share one read.\n\nR72: `_tip_only_remedy` handles a waiting answer whose signature is not among this checkout's filed returns. Its remedy names the worktree holding the branch (`_branch_holder`, via `_fr.project_in_tree`), or `git worktree add <dir> <branch>` when none holds it. When the holder is the signing checkout itself, it says to restore the return from the tip into the evidence first. drive-phase.py is untouched.\n\nR73: the schema description's missing space is restored.\n\nCHANGELOG: one sentence in the [Unreleased] settlement paragraph.\n\nCases: hs4, hs4b and hs4c (unreadable records with and without a waiting answer); hs5, hs5b and hs5c (the tip-only remedy and its over-fire twin).\n\nRed-first: stamp-verification red proved; five of the new cases failed at HEAD and pass with the fix. hs5c passes at HEAD by design.\n\nMutation probe (scratchpad v7t4/mut.py, monkeypatch only), re-run by the orchestrator: exit 0, all five rows KILLED, each with exactly its expected reds.",
+        "descriptive": "A sign-off with nothing for a human to settle is no longer blocked by a broken record in another worktree, and a waiting answer committed only at the branch tip now says which checkout lists it."
       },
       "startedAt": "2026-10-08T15:49:49Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T16:19:22Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-08T16:19:13Z.87a4f0",
         "status": "passed",
         "at": "2026-10-08T16:19:13Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ec59ec31",
+        "at": "2026-10-08T16:19:22Z",
+        "basis": "orchestrator check: waiting computed before record problems; mutation probe re-run, five rows killed with exact cases"
       }
     }
   ],
