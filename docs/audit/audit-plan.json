@@ -973,7 +973,8 @@
       "P118.24-v7t",
       "P119.2-g0k",
       "P119.4-g0k",
-      "P119.6-g0k"
+      "P119.6-g0k",
+      "P119.9-g0k"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -4653,7 +4654,8 @@
       "P118.24-v7t",
       "P119.2-g0k",
       "P119.5-g0k",
-      "P119.8-g0k"
+      "P119.8-g0k",
+      "P119.9-g0k"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -6374,7 +6376,8 @@
       "P118.17-v7t",
       "P118.22-v7t",
       "P118.23-v7t",
-      "P119.5-g0k"
+      "P119.5-g0k",
+      "P119.9-g0k"
     ],
     "plugins/audit/tests/test__filed_returns.py": [
       "P118.3",
@@ -6386,7 +6389,8 @@
       "P118.17-v7t",
       "P118.22-v7t",
       "P118.23-v7t",
-      "P119.5-g0k"
+      "P119.5-g0k",
+      "P119.9-g0k"
     ],
     "plugins/audit/agents/guide.md": [
       "P118.9"
@@ -6401,7 +6405,8 @@
       "P118.9",
       "P118.14-v7t",
       "P118.16-v7t",
-      "P119.2-g0k"
+      "P119.2-g0k",
+      "P119.9-g0k"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
