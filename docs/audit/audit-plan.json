@@ -959,7 +959,8 @@
       "P118.13-v7t",
       "P118.15-v7t",
       "P118.17-v7t",
-      "P118.18-v7t"
+      "P118.18-v7t",
+      "P118.20-v7t"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1010,7 +1011,8 @@
       "P118.6",
       "P118.13-v7t",
       "P118.15-v7t",
-      "P118.18-v7t"
+      "P118.18-v7t",
+      "P118.20-v7t"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -1209,7 +1211,8 @@
       "P118.13-v7t",
       "P118.15-v7t",
       "P118.17-v7t",
-      "P118.18-v7t"
+      "P118.18-v7t",
+      "P118.20-v7t"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2572,7 +2575,8 @@
       "P118.13-v7t",
       "P118.15-v7t",
       "P118.17-v7t",
-      "P118.18-v7t"
+      "P118.18-v7t",
+      "P118.20-v7t"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -3187,7 +3191,8 @@
       "P118.13-v7t",
       "P118.15-v7t",
       "P118.17-v7t",
-      "P118.18-v7t"
+      "P118.18-v7t",
+      "P118.20-v7t"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -4587,7 +4592,8 @@
       "P118.13-v7t",
       "P118.15-v7t",
       "P118.17-v7t",
-      "P118.18-v7t"
+      "P118.18-v7t",
+      "P118.20-v7t"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -4647,7 +4653,8 @@
       "P118.13-v7t",
       "P118.15-v7t",
       "P118.17-v7t",
-      "P118.18-v7t"
+      "P118.18-v7t",
+      "P118.20-v7t"
     ],
     "plugins/audit/tests/test_commit_audit_state.py": [
       "P28.2",
@@ -6266,7 +6273,8 @@
       "P118.15-v7t",
       "P118.16-v7t",
       "P118.17-v7t",
-      "P118.18-v7t"
+      "P118.18-v7t",
+      "P118.20-v7t"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -6277,7 +6285,8 @@
       "P118.12-v7t",
       "P118.16-v7t",
       "P118.17-v7t",
-      "P118.18-v7t"
+      "P118.18-v7t",
+      "P118.20-v7t"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6"
