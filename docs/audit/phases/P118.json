@@ -2298,7 +2298,7 @@
     {
       "id": "P118.24-v7t",
       "title": "the sign-off refuses over an unreadable settlement record only when an answer waits",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes P118 review round 9 findings R71-R73. The sign-off's human stop first computes which answers are left unsettled, and only then refuses over a settlement record it cannot read, naming that record in the refusal. An unreadable record in another worktree therefore no longer blocks a sign-off with nothing to settle. When a waiting answer comes from the tip and not from this checkout's evidence, the refusal names the checkout whose triage lists it: the worktree holding the branch, or the `git worktree add` that creates one. The schema description's missing space is restored. Every new case is shown red first with its allow twin.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -2327,16 +2327,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T15:49:49Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T16:19:13Z.87a4f0",
+        "status": "passed",
+        "at": "2026-10-08T16:19:13Z"
+      }
     }
   ],
   "startedAt": "2026-10-07T21:17:01Z"

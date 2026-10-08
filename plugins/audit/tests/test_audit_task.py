@@ -13534,11 +13534,100 @@ def _held_cases(check):
                       % ((got[0], got[1][-300:]),),
                       got[0] == M.E_USAGE and read(mpath) == before
                       and "intent diverges" in got[1])
+        unreadable_record_cases(settle)
+        tip_remedy_cases()
 
-    def outside_worktree(name):
+    # ---- a settlement record that cannot be read --------------------------------
+    # It matters only to an answer that waits on a human: a sign-off with
+    # nothing to settle reads no settlement, so a broken record anywhere among
+    # the checkouts asked does not hold it.
+    def names(path, text):
+        """Whether `text` names `path`, as given or as git prints it resolved."""
+        return path in text or os.path.realpath(path) in text
+
+    def unreadable_record_cases(settle):
+        for cid, intent in (("hs4", "diverges"), ("hs4b", "matches")):
+            proj, mpath, wt, _rel = outside_worktree("signoff-broken-%s" % (cid,),
+                                                     intent)
+            settle(wt, [], text="{not json")
+            before = read(mpath)
+            got = signoff(proj, "P1", "skipped")
+            if intent == "diverges":
+                check("hs4 a sibling worktree's settlement record that will not "
+                      "parse, with an answer waiting on a human: the sign-off is "
+                      "refused, naming the answer and that record: %r"
+                      % ((got[0], got[1][-600:]),),
+                      got[0] == M.E_USAGE and read(mpath) == before
+                      and "intent diverges" in got[1]
+                      and "cannot be read" in got[1]
+                      and os.path.join("drive", "P1.json") in got[1]
+                      and names(wt, got[1]))
+            else:
+                check("hs4b THE ALLOW TWIN: the same broken sibling record with "
+                      "no answer only a human settles signs off - refusing over "
+                      "a record nothing needs to read would fail here: %r"
+                      % ((got[0], got[1][-400:]),),
+                      got[0] == 0 and read(mpath) != before)
+
+        proj, mpath = two_done("signoff-own-broken-quiet")
+        file_phase(proj, "P1", _HD_HEAD, [_hd_entry("P1.1", _FR_SHA),
+                                          _hd_entry("P1.2", _HD_SHA2)])
+        settle(proj, [], text="{not json")
+        before = read(mpath)
+        own = signoff(proj, "P1", "skipped")
+        check("hs4c the signing checkout's own record that will not parse, with "
+              "nothing waiting on a human, signs off too: %r"
+              % ((own[0], own[1][-400:]),),
+              own[0] == 0 and read(mpath) != before)
+
+    # ---- a waiting answer only the tip commits ---------------------------------
+    # The driver's triage lists the returns in its own checkout's evidence, so a
+    # remedy pointing at the triage must name the checkout whose triage lists
+    # the answer.
+    def tip_remedy_cases():
+        import shutil
+        import subprocess
+        proj, mpath, wt, _rel = outside_worktree("signoff-tip-remedy")
+        got = signoff(proj, "P1", "skipped")
+        check("hs5 an unsettled answer the tip commits and this checkout's "
+              "evidence does not hold: the refusal names the worktree holding "
+              "the branch as the checkout whose triage lists it: %r"
+              % ((got[0], got[1][-700:]),),
+              got[0] == M.E_USAGE and "intent diverges" in got[1]
+              and "the worktree holding audit/p1-wt" in got[1]
+              and names(wt, got[1]) and "git worktree add" not in got[1])
+        subprocess.run(["git", "-C", proj, "worktree", "remove", "--force", wt],
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        gone = signoff(proj, "P1", "skipped")
+        check("hs5b ...and with no worktree holding the branch, the refusal "
+              "names the `git worktree add` that creates one: %r"
+              % ((gone[0], gone[1][-700:]),),
+              gone[0] == M.E_USAGE and "intent diverges" in gone[1]
+              and "git worktree add <dir> audit/p1-wt" in gone[1]
+              and not names(wt, gone[1]))
+
+        # The same branch, held by the same worktree, and the same return
+        # also in this checkout's evidence: only where the answer sits differs.
+        proj, mpath, wt, rel = outside_worktree("signoff-local-remedy")
+        held_here = os.path.join(proj, "docs", "audit", "evidence",
+                                 *rel.split("/"))
+        os.makedirs(os.path.dirname(held_here))
+        shutil.copyfile(os.path.join(wt, "docs", "audit", "evidence",
+                                     *rel.split("/")), held_here)
+        local = signoff(proj, "P1", "skipped")
+        check("hs5c THE TWIN: the same unsettled answer held in this "
+              "checkout's own evidence as well keeps the plain remedy - naming "
+              "another checkout for every answer on a phase branch would fail "
+              "here: %r" % ((local[0], local[1][-500:]),),
+              local[0] == M.E_USAGE and "intent diverges" in local[1]
+              and "git worktree add" not in local[1]
+              and "the worktree holding" not in local[1]
+              and "drive-phase.py next P1" in local[1])
+
+    def outside_worktree(name, intent="diverges"):
         """`(proj, mpath, wt, rel)` - a git checkout `proj` whose plan lies in
         a directory beside it, P1 on `audit/p1-wt` checked out in the linked
-        worktree `wt`, and a phase return answering `diverges` for the phase
+        worktree `wt`, and a phase return answering `intent` for the phase
         committed at that branch's tip from `wt`."""
         import subprocess
         proj = os.path.join(root, name)
@@ -13573,7 +13662,7 @@ def _held_cases(check):
         wt = proj + "-wt"
         git(proj, "worktree", "add", "-q", "-b", "audit/p1-wt", wt)
         body = json.loads(_hd_return([]))
-        body["intent"] = {"answer": "diverges", "missing": [],
+        body["intent"] = {"answer": intent, "missing": [],
                           "note": "the phase missed its outcome"}
         rel = _fr.phase_return_rel("P1", _HD_HEAD)
         path = os.path.join(wt, "docs", "audit", "evidence", *rel.split("/"))

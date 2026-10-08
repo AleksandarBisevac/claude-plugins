@@ -137,7 +137,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to the human again, whose accept records the signature. The sign-off verb asks the
   settlement records of every worktree git lists and does not report prunable - the set the
   landing honours, through one helper - so a sign-off run from the parent checkout no longer
-  refuses a return the tip commits that was settled where the branch is checked out. A verdict recorded without the field keeps the reading by place: a
+  refuses a return the tip commits that was settled where the branch is checked out. A
+  settlement record that cannot be read refuses only a sign-off with an answer still waiting,
+  named in that refusal, and a waiting answer only the tip commits names the checkout whose
+  triage lists it: the worktree holding the branch, or the `git worktree add` that makes one. A verdict recorded without the field keeps the reading by place: a
   tip's verdict settles the returns the tip commits and those in the worktree holding the
   branch, the target branch's committed tree and the worktree holding it are read from the
   branch's own checkout, an `evidence.dir` several checkouts share is settled by the signing

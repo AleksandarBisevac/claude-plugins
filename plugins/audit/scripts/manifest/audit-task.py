@@ -8254,12 +8254,21 @@ _CARRIED = ("answer", "redFirst", "redFirstBasis", "inheritedTests",
             "inheritedTestsBasis")
 
 
-def _human_settlement(proj, cfg, pid, filed, group=False):
+def _human_settlement(proj, cfg, pid, filed, group=False, local=None,
+                      branch=None):
     """`(lines, refusal)` - the sign-off's stop on a reviewer answer only a
     human settles (`_fr.needs_human`), read against the settlement the
     driver's triage records, under every review key. `lines` names what a
     human settled and in which words; `refusal` names what waits, or None.
     `group` is a member asked by a group sign-off, whose remedy differs.
+    `local` is the returns of `filed` this checkout's evidence holds, and
+    `branch` the phase branch whose tip committed the rest
+    (`_tip_only_remedy`).
+
+    WHAT WAITS IS ASKED BEFORE ANY RECORD IS JUDGED: a settlement record
+    that cannot be read refuses only a sign-off with an answer still waiting,
+    and is named in that refusal; with nothing waiting no settlement is
+    needed, so a broken record in any checkout asked does not hold it.
 
     THE VERB HOLDS IT, NOT ONLY THE DRIVER: sign-off run by hand never meets
     the triage, and a phase signed off here is landed by the next `next`.
@@ -8287,14 +8296,11 @@ def _human_settlement(proj, cfg, pid, filed, group=False):
     checked out, is settled for a sign-off run from any checkout."""
     hc = _loader.load_hooks_config(modname="audit__config")
     state_dir = str(hc.state_dir(pathlib.Path(proj), cfg or {}))
-    checkouts, unlisted = _settlement_checkouts(proj)
+    listing = _worktree_listing(proj)
     record = _fr.settlements([str(hc.state_dir(pathlib.Path(c), cfg or {}))
-                              for c in checkouts], pid)
+                              for c in _settlement_checkouts(proj, listing)],
+                             pid)
     reasons = record["reasons"]
-    if record["problems"]:
-        return [], ("REFUSED: %s, so which reviewer answers a human settled "
-                    "for %s is unknown. Nothing written."
-                    % ("; ".join(record["problems"]), pid))
     asked = _fr.needs_human(filed)
     waiting = _fr.needs_human(filed, bound=record["pairs"])
     by_name = _fr.settled_by_name_only(waiting, record)
@@ -8317,17 +8323,23 @@ def _human_settlement(proj, cfg, pid, filed, group=False):
                                            for a in by_name),)
                  if by_name else "")
         listed = ("\n    The worktree list could not be read (%s), so only "
-                  "this checkout's settlement record was asked." % (unlisted,)
-                  if unlisted else "")
+                  "this checkout's settlement record was asked."
+                  % (listing["error"],) if listing["error"] else "")
+        broken = ("\n    A settlement record that cannot be read is not "
+                  "honoured, so a settlement it holds counts for nothing here: "
+                  "%s." % ("; ".join(record["problems"]),)
+                  if record["problems"] else "")
         return [], (
             "REFUSED: phase %s's filed review holds answer(s) only a human "
-            "settles, and these are not settled. Nothing written:\n%s%s%s\n    "
-            "Put each to a human, then run `drive-phase.py next %s`%s and "
+            "settles, and these are not settled. Nothing written:\n%s%s%s%s%s"
+            "\n    Put each to a human, then run `drive-phase.py next %s`%s and "
             "answer its triage with --answer accept --reason \"<their word on "
             "each>\" - the settlement this verb reads - and %s."
             % (pid, "\n".join("  %s: %s%s" % (
                 a["who"], a["what"], " (%s)" % (a["note"],) if a["note"] else "")
-                for a in waiting), named, listed, pid, redispatch, then))
+                for a in waiting), named, listed, broken,
+               _tip_only_remedy(proj, listing, waiting, local, branch),
+               pid, redispatch, then))
     if not asked:
         return [], None
     return (["  settled by a human: %s" % (", ".join(
@@ -8336,19 +8348,74 @@ def _human_settlement(proj, cfg, pid, filed, group=False):
             None)
 
 
-def _settlement_checkouts(proj):
-    """`(checkouts, unlisted)` - the checkouts whose settlement records a
-    sign-off in `proj` honours (`_fr.settlement_checkouts`), and why the
-    worktree list could not be read, leaving `proj` alone. Where git names no
-    working tree for `proj` - no repository, or no git to ask - there is no
-    worktree list to read, and `proj` stands alone with nothing said."""
+def _worktree_listing(proj):
+    """`{"top", "trees", "error"}` - the working tree `proj` stands in, the
+    worktrees git lists for it, and why that list could not be read. Where
+    git names no working tree for `proj` - no repository, or no git to ask -
+    there is no list to read: `top` is None and nothing is said."""
     top = _worktrees.tree_root(proj)["root"]
     if not top:
-        return [proj], ""
+        return {"top": None, "trees": [], "error": ""}
     listing = _worktrees.list_worktrees(top)
-    if listing["error"]:
-        return [proj], listing["error"]
-    return _fr.settlement_checkouts(top, proj, listing["trees"]), ""
+    return {"top": top, "trees": [] if listing["error"] else listing["trees"],
+            "error": listing["error"] or ""}
+
+
+def _settlement_checkouts(proj, listing):
+    """The checkouts whose settlement records a sign-off in `proj` honours
+    (`_fr.settlement_checkouts`) over `_worktree_listing`'s `listing`; `proj`
+    alone where there is no list."""
+    if not listing["top"] or listing["error"]:
+        return [proj]
+    return _fr.settlement_checkouts(listing["top"], proj, listing["trees"])
+
+
+def _tip_only_remedy(proj, listing, waiting, local, branch):
+    """The refusal's line naming where the driver's triage lists the answers
+    of `waiting` that the tip of `branch` commits and this checkout's
+    evidence (`local`, its filed returns) does not hold, or "".
+
+    THE TRIAGE READS ITS OWN CHECKOUT'S EVIDENCE: the driver lists the
+    returns filed on disk where it runs, so an answer only the tip commits is
+    listed in the checkout holding the branch, never in this one. Where that
+    checkout is this one, the return left this evidence and the triage lists
+    it once restored from the tip; where no worktree holds the branch, the
+    remedy names the command that checks it out into one."""
+    if local is None or not branch:
+        return ""
+    held = set(_fr.return_signature(e) for e in local)
+    tipped = [a for a in waiting if a["sha256"] not in held]
+    if not tipped:
+        return ""
+    names = ", ".join("%s %s" % (a["who"], a["what"]) for a in tipped)
+    holder = _branch_holder(proj, listing, branch)
+    if holder and os.path.realpath(holder) == os.path.realpath(str(proj)):
+        where = ("restore that return from the tip into this checkout's "
+                 "evidence first, so the triage here lists it")
+    elif holder:
+        where = ("run the driver in %s, the worktree holding %s, whose "
+                 "triage lists it" % (holder, branch))
+    else:
+        where = ("no worktree holds %s, so check it out into one first - "
+                 "`git worktree add <dir> %s` - and run the driver there, "
+                 "whose triage lists it" % (branch, branch))
+    return ("\n    %s: the tip of %s commits it and this checkout's evidence "
+            "does not hold it, and the driver's triage lists only the "
+            "returns in its own checkout's evidence - %s."
+            % (names, branch, where))
+
+
+def _branch_holder(proj, listing, branch):
+    """The project directory in the worktree git lists, not prunable, with
+    `branch` checked out, or None when none does."""
+    for tree in listing["trees"]:
+        if not isinstance(tree, dict) or tree.get("prunable") \
+                or tree.get("branch") != branch:
+            continue
+        found = _fr.project_in_tree(listing["top"], proj, tree.get("path"))
+        if found:
+            return found
+    return None
 
 
 def _returns_read(proj, cfg, phase):
@@ -8383,7 +8450,8 @@ def _carry_answers(project, mpath, config, phase, now, group=False):
         return [], ("REFUSED: a phase return filed for %s cannot be read, so the "
                     "answers it carries are unknown: %s. Nothing written."
                     % (pid, "; ".join(unread))), None
-    settled_lines, refusal = _human_settlement(proj, cfg, pid, read, group)
+    settled_lines, refusal = _human_settlement(proj, cfg, pid, read, group,
+                                               filed, phase.get("branch"))
     if refusal:
         return [], refusal, None
     tasks = [t for t in phase.get("tasks") or [] if isinstance(t, dict)]
