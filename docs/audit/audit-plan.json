@@ -1231,7 +1231,8 @@
       "P118.20-v7t",
       "P118.21-v7t",
       "P118.22-v7t",
-      "P118.23-v7t"
+      "P118.23-v7t",
+      "P119.6-g0k"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1589,7 +1590,8 @@
       "P118.7",
       "P118.9",
       "P118.14-v7t",
-      "P119.3-g0k"
+      "P119.3-g0k",
+      "P119.6-g0k"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -2202,7 +2204,8 @@
       "P102.12-ptn",
       "P118.3",
       "P118.9",
-      "P118.7"
+      "P118.7",
+      "P119.6-g0k"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -2927,7 +2930,8 @@
       "P94.5-579",
       "P102.3",
       "P102.10",
-      "P118.2"
+      "P118.2",
+      "P119.6-g0k"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -3068,7 +3072,8 @@
       "P79.12-5bh",
       "P84.2",
       "P81.15-j7p",
-      "P106.2"
+      "P106.2",
+      "P119.6-g0k"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -4148,7 +4153,8 @@
       "P79.12-5bh",
       "P84.2",
       "P81.15-j7p",
-      "P106.2"
+      "P106.2",
+      "P119.6-g0k"
     ],
     "plugins/audit/tests/test__manifest_rules.py": [
       "P18.2",
@@ -5049,7 +5055,8 @@
       "P94.2",
       "P94.5-579",
       "P102.3",
-      "P118.2"
+      "P118.2",
+      "P119.6-g0k"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
