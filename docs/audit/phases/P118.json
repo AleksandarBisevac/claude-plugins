@@ -595,38 +595,48 @@
         "severity": "med",
         "file": "plugins/audit/scripts/git/close-phase.py returns_by_place (checkouts list); COMPATIBILITY.md; docstring",
         "issue": "Only three checkouts are read: the landing's, the branch's worktree and the target's worktree. A sibling worktree forked from main shows the phase with no verdict, so file-return accepts a diverges return there after a tip verdict, and close-phase lands it with no human asked. This was simulated with the real filing verb. The docstring and COMPATIBILITY claim every checkout's evidence is a candidate.",
-        "resolution": "Read every worktree git lists, or bind the verdict to what it read so that the place stops mattering. Add the sibling-worktree deny case and its allow twin, and make the documents claim only what holds."
+        "resolution": "fixed in P118.22-v7t (9d254e78): Read every worktree git lists, or bind the verdict to what it read so that the place stops mattering. Add the sibling-worktree deny case and its allow twin, and make the documents claim only what holds.",
+        "fixTask": "P118.22-v7t",
+        "commit": "9d254e78"
       },
       {
         "id": "P118-R65",
         "severity": "med",
         "file": "plugins/audit/scripts/git/close-phase.py unseen_returns (signing checkout's evidence counted as read)",
         "issue": "One checkout signs off at the tip, then switches to main, where the copy shows no verdict. There file-return writes an untracked diverges return. The checkout switches back, and close-phase from the branch's checkout lands, because every return in the signing checkout's evidence counts as read, including one filed after the verdict. This was simulated. No docstring cell names it, and the CHANGELOG and the guide read as covering it.",
-        "resolution": "Let the landing tell a return the verdict read apart from one filed after it, for example by having the sign-off record the returns it read. Add the switch-away, file, switch-back case and its twin."
+        "resolution": "fixed in P118.22-v7t (9d254e78): Let the landing tell a return the verdict read apart from one filed after it, for example by having the sign-off record the returns it read. Add the switch-away, file, switch-back case and its twin.",
+        "fixTask": "P118.22-v7t",
+        "commit": "9d254e78"
       },
       {
         "id": "P118-R66",
         "severity": "low",
         "file": "plugins/audit/scripts/git/close-phase.py tip group settle under VERDICT_AT_EITHER",
         "issue": "Predates the diff. Take a plan outside the repo with a diverges return committed at the tip and settled in the signing checkout's record. A landing from main after the checkout left the branch is refused, because the tip group settles only through places['tree'], which is None. That over-fires; landing from the branch's checkout goes through.",
-        "resolution": "Settle such a group through every known checkout's record, and add the case."
+        "resolution": "fixed in P118.22-v7t (9d254e78): Settle such a group through every known checkout's record, and add the case.",
+        "fixTask": "P118.22-v7t",
+        "commit": "9d254e78"
       },
       {
         "id": "P118-R67",
         "severity": "low",
         "file": "plugins/audit/scripts/git/close-phase.py docstring, removed-worktree cell",
         "issue": "'restoring the worktree restores the record' is false with the default stateDir, which lives inside the removed worktree.",
-        "resolution": "Drop the clause, or say the record survives only with a stateDir outside the checkout."
+        "resolution": "fixed in P118.22-v7t (9d254e78): Drop the clause, or say the record survives only with a stateDir outside the checkout.",
+        "fixTask": "P118.22-v7t",
+        "commit": "9d254e78"
       },
       {
         "id": "P118-R68",
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md vr range citation",
         "issue": "The citation vr1-vr23b implies a vr22 that does not exist.",
-        "resolution": "Renumber the cases or cite them by name."
+        "resolution": "fixed in P118.22-v7t (9d254e78): Renumber the cases or cite them by name.",
+        "fixTask": "P118.22-v7t",
+        "commit": "9d254e78"
       }
     ],
-    "outcome": "[findings: 68 - 5 high, 25 med, 38 low; 63 with a recorded fix commit]"
+    "outcome": "[findings: 68 - 5 high, 25 med, 38 low; 68 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2113,7 +2123,7 @@
     {
       "id": "P118.22-v7t",
       "title": "a verdict covers only the returns its sign-off read, wherever a later one is filed",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes P118 review round 7 findings R64-R68 by binding the verdict to what it read, so the place a return sits stops deciding. When signoff writes a verdict, it also records on the phase review the content signatures of every filed phase return its own refusal read: the returns in its checkout's evidence, and the tip's committed returns where they differ. At the landing, close-phase gathers every filed phase return it can find: every worktree git lists (prunable ones skipped), the branch tip and the target ref. Each one whose signature is not in the verdict's read set and needs a human is refused, unless a settlement record of any known checkout names it. A return filed after the verdict, in any checkout including the signing one, is therefore never covered by that verdict. A verdict written before this field existed falls back to today's per-place reading, and the documents say so. Every new case is shown red first with its allow twin: the sibling-worktree filing, the switch-away/file/switch-back filing, and the plan-outside tip return settled by the signer after the checkout left the branch. The docstring table, COMPATIBILITY.md, the guide and CHANGELOG claim exactly what holds; the removed-worktree clause and the case citation range are corrected.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -2154,18 +2164,28 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9d254e78",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes P118-R64 to R68 by binding the verdict to what it read, so the place a return sits stops deciding.\n\n_filed_returns.py holds one definition of each piece both verbs use:\n- READ_RETURNS_FIELD (`readReturns`).\n- return_signature: sha256 over the return's relative name, body and problem. The place is not part of it.\n- read_record and read_set: absent means fall back; an empty list means \"read none\".\n- ref_known and ref_phase_returns, moved here from close-phase.\n- tip_phase_returns.\n\naudit-task.py:\n- signoff computes `_returns_read`: the checkout's evidence returns, plus the tip's committed returns that differ.\n- It runs the unreadable check and the human-settlement stop over that whole set, so a tip-only `diverges` is refused at sign-off rather than recorded as read.\n- It writes review.readReturns, replacing any earlier value. A group sign-off writes each member's own set.\n\nclose-phase.py:\n- every_filed_return gathers returns from every non-prunable worktree git lists, the tip and the target ref.\n- read_set_refusal refuses any reachable return that needs a human and whose signature is not in the read set, unless any known checkout's settlement record names it.\n- A verdict without a read set keeps the per-place reading (verdict_reach_refusal). On that fallback path, a plan outside the repo now settles its tip and target groups through every known checkout (R66).\n- landed_answers_refusal's docstring is rewritten around the rule, with every case cited by name. The removed-worktree clause is corrected (R67), and merge-after-verdict is closed.\n- The schema gains the optional review.readReturns. gen-demo-manifest records why the demo carries no value for it.\n- COMPATIBILITY.md says the guarantee needs a sign-off by a version that writes the field, and that older verdicts keep the per-place reading.\n- manifest-conventions, the build guide (case range replaced by names, R68) and CHANGELOG are updated to match.\n\nCases added:\n- rd1-rd4: signatures.\n- rr1-rr3b, gsp2: the sign-off writes, rewrites and refuses.\n- rs1/rs2: sibling worktree and its byte-identical twin.\n- rs3/rs4: switch-away, file, switch-back, and its twin.\n- rs5/rs5b: a read copy lands after the worktree is removed; the fallback still refuses.\n- rs6/rs6b/rs6c: R66 under the read set and on the fallback.\n- rs7/rs7b: merge-after-verdict.\n\nRed-first: stamp-verification red proved for all three suites (introduced-symbol). Before the implementation, assertion failures were also seen in the shared tree: rr1-rr3b, gsp2, rs1, rs3, rs5, rs6, rs7.\n\nMutation probe (scratchpad v7t2/mut.py, monkeypatch, no tree edit), re-run by the orchestrator, exit 0. All eight rows were KILLED, each with exactly its expected cases red, including the over-fire row that turns the allow twins red.\n\nDecision: the no-verdict gather is also widened to every worktree, which is stricter, and no new case pins it.",
+        "descriptive": "A sign-off now records which filed results it read, and a later result that needs a human is refused at the merge wherever it sits, while copies of results the sign-off read still go through."
       },
       "startedAt": "2026-10-08T13:14:17Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T14:00:21Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__filed_returns.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-08T14:00:07Z.f48b15",
         "status": "passed",
         "at": "2026-10-08T14:00:07Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9d254e78",
+        "at": "2026-10-08T14:00:21Z",
+        "basis": "orchestrator check: the place-based class (eight instances over seven rounds) is replaced by a read set written at sign-off; mutation probe re-run, eight rows killed with exact cases"
       }
     }
   ],
