@@ -198,7 +198,7 @@
     {
       "id": "P119.4-g0k",
       "title": "a clean phase review is signed off in the same call that files it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Lever C of docs/research/pipeline-cost-levers.md, section 6. At the phase reviewer's dispatch, the driver also prints the call to send after it: `next <phase> --answer sign-off --reason <the summary>`. That answer applies only when the triage has sign-off as its single admissible answer: review clean, no finding open, no answer waiting on a human, no fix task after its head. Otherwise the triage prints as today and the answer is reported as not applied. The sign-off verb, gate, invariants, commit, landing and lock release run unchanged. Micro-test as listed: a clean review answered in advance signs off and prints done in one call; with a finding open, or an answer waiting on a human, the same call prints the triage and runs no sign-off; stream-cost's driven-span cases still place the landing in the close. CHANGELOG under [Unreleased] gets one line for lever B (the hand-back print) and one for this. Every case is shown red first.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -230,18 +230,26 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ae8023eb",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Lever C. The phase reviewer's dispatch now prints a second line: `then: next <phase> --answer sign-off --reason <the summary>`.\n\ndrive() takes `--answer sign-off` with no decision pending as an answer in advance only when advance_admissible holds: every task terminal and the phase not yet signed off. Everywhere else, `no decision is pending` still refuses.\n\nAt the triage, advance_applies decides. It holds only for a filed review with verdict `clean`, no finding open, no answer waiting on a human, and no fix task closed after the review's head. That is exactly the state in which the triage refuses every other answer. Then the normal sign-off path runs, unchanged: the phase gate, invariants, signoff verb, commit, landing and lock release. Otherwise the triage prints as before, with \"not applied\", and when no triage was reached, the call says so.\n\nThe phase loop moved unchanged into drive_phase(). CHANGELOG [Unreleased] gets one line for lever B and one for lever C.\n\nCases, in sg-block:\n- sq0: the advance call is still refused mid-phase.\n- sq1: the dispatch prints the call once.\n- sq2: a clean review signs off and lands in one call.\n- sq3: with a finding open, the call does not sign off.\n- sq4: with an answer waiting on a human, the call does not sign off.\n- sq5: with a fix task closed after the review's head, the call does not sign off. Added at the orchestrator's request, because that term guards a diff no review saw.\n- sq3m and sq0m: in-suite red mutants.\n\nRed-first: proved (sg-block at HEAD 13/19, the task's cases red). sq5 was added after that and is inferred red at HEAD (E_USAGE), not observed.\n\nMutation probe (scratchpad P119.4-g0k/mut.py), re-run by the orchestrator: exit 0, every row killed, including drop-fixes-after, which only sq5 catches.\n\nstream-cost's driven sign-off case sp14 still passes.\n\nSuite time: 217 s before the change on a quieter machine, 277 s after at load 15-17. The new cases took about 14 s, measured twice. P119.7 takes the suite's runtime.",
+        "descriptive": "When the phase review comes back clean, the one call the main session is told to send signs the phase off and merges it; with anything open, that call shows the choices instead and signs nothing."
       },
       "startedAt": "2026-10-08T18:39:58Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T19:38:22Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-08T19:28:02Z.29a29a",
         "status": "passed",
         "at": "2026-10-08T19:28:02Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ae8023eb",
+        "at": "2026-10-08T19:38:22Z",
+        "basis": "orchestrator check: lever C as designed, plus the fix-after-head twin; mutation probe re-run, every row killed"
       }
     },
     {

@@ -4383,6 +4383,11 @@ def _locked_start(args, project, config, mpath, tid, out):
 # with `audit-lookup.py brief` and `commit-task-work.py`, which read the file.
 # WHAT NOTHING CHECKS: the task id and the role are the caller's word. A filing
 # under the wrong role, or for a task nobody has filed for yet, is not refused.
+#
+# A PHASE RETURN MAY ARRIVE WITHOUT ITS MECHANICAL ANSWERS. A red-first word the
+# helper's block already gives and the `not-asked` of a gate running the whole
+# project are filled here from those sources (`_fr.complete_phase_return`), the
+# fill recorded under `computedAnswers`; a typed word that disagrees is refused.
 
 # What reads as a path rather than an id: a separator, a parent step, a leading
 # dot, or a drive colon.
@@ -4454,11 +4459,40 @@ def cmd_file_return(args, out):
                            config=config, head=head, body=body))
 
 
-def _phase_return_refusal(project, config, mpath, phase, role, head, body):
-    """`(path, None)` for a phase return that may be filed, or `(None, refusal)`:
-    the reviewer's role, a head, no sign-off verdict recorded on the phase, a
-    readable record of the returns already filed, and every entry
-    `_fr.phase_return_problems` asks for."""
+def _phase_return_refusal(project, config, mpath, phase, role, head, body,
+                          manifest):
+    """`(path, body, None)` for a phase return that may be filed - the body
+    with each entry's mechanical answers filled (`_fr.complete_phase_return`)
+    - or `(None, None, refusal)`: the reviewer's role, a head, no sign-off
+    verdict recorded on the phase, a readable record of the returns already
+    filed, and every entry `_fr.phase_return_problems` asks for, judged on
+    the completed body."""
+    held, refusal = _phase_return_gate(project, config, mpath, phase, role,
+                                       head)
+    if refusal:
+        return None, None, refusal
+    evdir, live, filed = held
+    pid = str(phase.get("id"))
+    build = (manifest.get("meta") or {}).get("buildCommands") or {}
+    computed = _fr.phase_answers(
+        evdir, phase, build,
+        lambda entries: _evidence_io.resolved_commands(manifest, entries))
+    body, _filled, problems = _fr.complete_phase_return(
+        body, dict((tid, got[0]) for tid, got in computed.items()))
+    problems += _fr.phase_return_problems(body, phase, live,
+                                          _fr.answered_entries(filed))
+    if problems:
+        return None, None, ("[audit-task] REFUSED: the phase return for %s does "
+                            "not answer what it owes -- nothing written:\n%s"
+                            % (pid, "\n".join("  " + p for p in problems)))
+    return (os.path.join(evdir, *_fr.phase_return_rel(pid, head).split("/")),
+            body, None)
+
+
+def _phase_return_gate(project, config, mpath, phase, role, head):
+    """`((evidence dir, live key, filed returns), None)` when nothing about the
+    phase refuses a phase return before its body is read, else `(None,
+    refusal)`."""
     pid = str(phase.get("id"))
     if role != "reviewer":
         return None, ("[audit-task] %s is a PHASE, and a phase return is the "
@@ -4489,13 +4523,7 @@ def _phase_return_refusal(project, config, mpath, phase, role, head, body):
     if problem and any(_fr.review_key(t, phase, None)[1] == "config"
                        for t in phase.get("tasks") or [] if isinstance(t, dict)):
         return None, "[audit-task] REFUSED: %s. Nothing written." % (problem,)
-    problems = _fr.phase_return_problems(body, phase, live,
-                                         _fr.answered_entries(filed))
-    if problems:
-        return None, ("[audit-task] REFUSED: the phase return for %s does not "
-                      "answer what it owes -- nothing written:\n%s"
-                      % (pid, "\n".join("  " + p for p in problems)))
-    return os.path.join(evdir, *_fr.phase_return_rel(pid, head).split("/")), None
+    return (evdir, live, filed), None
 
 
 def _locked_file_return(args, project, mpath, tid, role, text, out, config=None,
@@ -4509,11 +4537,15 @@ def _locked_file_return(args, project, mpath, tid, role, text, out, config=None,
         return E_USAGE
     kind, node, _phase = _find_target(assembled, tid)
     if kind == "phase":
-        path, refusal = _phase_return_refusal(project, config, mpath, node, role,
-                                              head, body)
+        path, done, refusal = _phase_return_refusal(
+            project, config, mpath, node, role, head, body, assembled)
         if refusal:
             out(refusal)
             return E_USAGE
+        # Filed as typed unless the verb filled an answer: a return it
+        # completed is written whole, its `computedAnswers` naming the fill.
+        if _fr.COMPUTED_FIELD in done:
+            text = json.dumps(done, indent=2) + "\n"
         return _file_once_report(args, project, path, tid, role, text, out,
                                  {"head": head})
     if kind != "task":

@@ -13126,6 +13126,99 @@ def _held_cases(check):
           and f4[0] == M.E_USAGE and "P1.1" in f4[1]
           and not os.path.exists(returns(proj2, "P1")))
 
+    # ---- the answers a script gives, filled at filing ---------------------------
+    # The red-first block comes from stamp-verification's own `red_verdict`, so
+    # the shape the verb recognises is the helper's and not one typed here.
+    sv = _loader.load_script("stamp-verification.py",
+                             modname="stamp_verification_for_hd")
+    helper = sv.red_verdict(
+        {"cmd": ["python3", "tests/test_a.py"], "code": 1,
+         "text": "AssertionError\n", "problem": None, "second": None,
+         "head": None, "fix": None},
+        {"root": None, "implementation": [], "tests": ["tests/test_a.py"],
+         "cases": [], "symbols": [], "dropped": [], "new": [],
+         "head_files": None, "head_defs": None, "head_modules": None,
+         "path": None})[2]
+    typed = {"status": "proved", "basis": "python3 t.py exit 1",
+             "at": "2026-01-01T00:05:00Z"}
+    mech = ("redFirst", "redFirstBasis", "inheritedTests", "inheritedTestsBasis")
+
+    def put_exec(proj, tid, red):
+        path = os.path.join(proj, "docs", "audit", "evidence", "returns", tid,
+                            "20260101T000000Z.executor.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(_fr_executor(redFirst=red))
+
+    def bare(tid, commit, *drop):
+        entry = _hd_entry(tid, commit)
+        for key in drop:
+            entry.pop(key)
+        return entry
+
+    def filed_body(proj):
+        raw = read(os.path.join(returns(proj, "P1"),
+                                "%s.reviewer.json" % (_HD_HEAD,)))
+        return json.loads(raw.decode("utf-8")) if raw else {}
+
+    proj, mpath = two_done("mech-fill")
+    put_exec(proj, "P1.1", helper)
+    m1 = file_phase(proj, "P1", _HD_HEAD, [
+        bare("P1.1", _FR_SHA, *mech),
+        bare("P1.2", _HD_SHA2, "inheritedTests", "inheritedTestsBasis")])
+    body = filed_body(proj)
+    first = (body.get("tasks") or [{}])[0]
+    m1s = signoff(proj, "P1", "skipped")
+    ic = task(mpath, "P1.1").get("intentCheck") or {}
+    check("hd31 a phase return filed without the mechanical fields is "
+          "completed at filing - the red-first word and basis from the "
+          "helper's block in the executor's filed return, `not-asked` from a "
+          "gate that runs the whole project - the filled fields recorded, and "
+          "sign-off then writes them onto the task: %r"
+          % ((m1[0], m1[1][:160], first, body.get("computedAnswers"), m1s[0],
+              ic),),
+          m1[0] == 0 and first.get("redFirst") == helper["status"]
+          and helper["basis"] in first.get("redFirstBasis", "")
+          and first.get("inheritedTests") == "not-asked"
+          and body.get("computedAnswers") == {
+              "P1.1": list(mech),
+              "P1.2": ["inheritedTests", "inheritedTestsBasis"]}
+          and m1s[0] == 0 and ic.get("redFirst") == helper["status"]
+          and ic.get("inheritedTests") == "not-asked")
+
+    named_gate = {"mode": "gate-only", "add": [], "expectRedFirst": False,
+                  "gate": ["python3 tests/test_a.py"]}
+    proj, mpath = project("mech-named", [ph("P1", [
+        done_tk("P1.1", _FR_SHA, tests=named_gate), done_tk("P1.2", _HD_SHA2)],
+        reviewPerTask="phase")])
+    put_exec(proj, "P1.1", helper)
+    m2 = file_phase(proj, "P1", _HD_HEAD, [
+        bare("P1.1", _FR_SHA, "inheritedTests", "inheritedTestsBasis"),
+        _hd_entry("P1.2", _HD_SHA2)])
+    proj2, mpath2 = two_done("mech-typed")
+    put_exec(proj2, "P1.1", typed)
+    m3 = file_phase(proj2, "P1", _HD_HEAD, [
+        bare("P1.1", _FR_SHA, "redFirst", "redFirstBasis"),
+        _hd_entry("P1.2", _HD_SHA2)])
+    check("hd32 REFUSAL TWINS of hd31: a task whose gate selects named tests, "
+          "and one whose red-first the helper did not grade, are each refused "
+          "without the reviewer's answer, naming the field and writing "
+          "nothing: %r" % ((m2[0], m2[1][-200:], m3[0], m3[1][-200:]),),
+          m2[0] == M.E_USAGE and "P1.1" in m2[1] and "`inheritedTests`" in m2[1]
+          and not os.path.exists(returns(proj, "P1"))
+          and m3[0] == M.E_USAGE and "P1.1" in m3[1] and "`redFirst`" in m3[1]
+          and not os.path.exists(returns(proj2, "P1")))
+    proj3, mpath3 = two_done("mech-differ")
+    put_exec(proj3, "P1.1", helper)
+    m4 = file_phase(proj3, "P1", _HD_HEAD, [
+        _hd_entry("P1.1", _FR_SHA, redFirst="not-proved"),
+        _hd_entry("P1.2", _HD_SHA2)])
+    check("hd33 a reviewer word that disagrees with the helper's block is "
+          "refused by name, writing nothing - the computed word is never "
+          "overwritten in silence, either way: %r" % ((m4[0], m4[1][-200:]),),
+          m4[0] == M.E_USAGE and "not-proved" in m4[1]
+          and not os.path.exists(returns(proj3, "P1")))
+
     proj, mpath = two_done("signoff")
     before = read(mpath)
     g1 = signoff(proj, "P1", "skipped")

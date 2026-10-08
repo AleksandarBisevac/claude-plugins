@@ -986,6 +986,101 @@ def _brief_cases(check):
           % (no_row,),
           no_row != [] and all("not found" in ln for ln in no_row))
 
+    # ---- what the phase brief computes for the reviewer -----------------------
+    def git(repo, *argv):
+        return subprocess.run(["git", "-C", repo, "-c", "user.email=t@t",
+                               "-c", "user.name=t", "-c", "commit.gpgsign=false"]
+                              + list(argv), capture_output=True, timeout=60)
+
+    def put(repo, rel, text):
+        path = os.path.join(repo, *rel.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(text)
+
+    grown = _bf_signed_phase()
+    projg, mpathg = project("bf-phase-existing", grown)
+    git(projg, "init", "-q")
+    put(projg, "tests/test_old.py", "def test_old():\n    assert True\n")
+    put(projg, "tests/test_untouched.py", "def test_same():\n    assert True\n")
+    put(projg, "src/m1.py", "x = 1\n")
+    git(projg, "add", "-A")
+    git(projg, "commit", "-qm", "base")
+    base = git(projg, "rev-parse", "HEAD").stdout.decode().strip()
+    put(projg, "tests/test_old.py", "def test_appended():\n    assert True\n")
+    put(projg, "tests/test_new.py", "def test_new():\n    assert True\n")
+    put(projg, "src/m1.py", "y = 2\n")
+    grown["phases"][0]["baseRef"] = base
+    with open(mpathg, "w", encoding="utf-8") as fh:
+        json.dump(grown, fh)
+    git(projg, "add", "-A")
+    git(projg, "commit", "-qm", "the phase")
+    brief(projg, mpathg, "P1", "phase")
+    gtext = read(brief_file(projg, "P1", "phase.md")) or ""
+    section = gtext.split("## Existing test files the phase modifies", 1)
+    listed = ([ln for ln in section[1].split("\n## ", 1)[0].splitlines()
+               if ln.startswith("- ")] if len(section) == 2 else None)
+    nobase = _bf_signed_phase()
+    projn, mpathn = project("bf-phase-nobase", nobase)
+    brief(projn, mpathn, "P1", "phase")
+    ntext = read(brief_file(projn, "P1", "phase.md")) or ""
+    check("bf24 the phase brief lists the existing test file the phase appended "
+          "a test to - and not the test file it added, the one it left alone "
+          "or the source file it changed - and a phase with no baseRef says "
+          "the list cannot be computed rather than listing none: %r"
+          % ((base, listed, [ln for ln in ntext.splitlines()
+                             if "baseRef" in ln]),),
+          len(base) == 40 and listed == ["- tests/test_old.py"]
+          and "## Existing test files the phase modifies" in ntext
+          and "phase.baseRef is absent" in ntext)
+
+    mixed = _bf_signed_phase()
+    mixed["phases"][0]["tasks"][0]["tests"]["gate"] = ["test"]
+    mixed["phases"][0]["tasks"][2]["tests"]["gate"] = [
+        "python3 tests/test_m3.py"]
+    projm, mpathm = project("bf-phase-mech", mixed)
+    git(projm, "init", "-q")
+    git(projm, "add", "-A")
+    git(projm, "commit", "-qm", "fixture")
+    import _loader                                 # noqa: E402  (load_script)
+    sv = _loader.load_script("stamp-verification.py",
+                             modname="stamp_verification_for_bf")
+    helper = sv.red_verdict(
+        {"cmd": ["python3", "tests/t1.py"], "code": 1, "text": "Error\n",
+         "problem": None, "second": None, "head": None, "fix": None},
+        {"root": None, "implementation": [], "tests": ["tests/t1.py"],
+         "cases": [], "symbols": [], "dropped": [], "new": [],
+         "head_files": None, "head_defs": None, "head_modules": None,
+         "path": None})[2]
+    file_exec(projm, text=_BF_EXEC.replace(
+        '{"status": "proved", "basis": "exit 1", "at": "z"}',
+        json.dumps(helper)))
+    brief(projm, mpathm, "P1", "phase")
+    mtext = read(brief_file(projm, "P1", "phase.md")) or ""
+
+    def answer_lines(tid):
+        part = mtext.split("\n## %s " % (tid,), 1)
+        body = part[1].split("\n## ", 1)[0] if len(part) == 2 else ""
+        return [ln for ln in body.splitlines()
+                if ln.startswith(("red-first:", "inherited tests:"))]
+    lines_m = dict((tid, answer_lines(tid)) for tid in ("P1.1", "P1.2", "P1.3"))
+
+    def says(tid, prefix, word):
+        return any(ln.startswith(prefix) and word in ln for ln in lines_m[tid])
+    check("bf25 for each task owed its answers the phase brief says which of "
+          "the mechanical answers the filing verb fills - the red-first of "
+          "a helper's block, `not-asked` for a gate running the whole project - "
+          "and which stay the reviewer's, with the reason: a hand-typed "
+          "red-first or none filed, a gate naming a test file, an entry that "
+          "resolves to nothing: %r" % (lines_m,),
+          all(len(v) == 2 for v in lines_m.values())
+          and says("P1.1", "red-first:", "computed")
+          and says("P1.1", "inherited tests:", "computed")
+          and says("P1.2", "red-first:", "yours")
+          and says("P1.2", "inherited tests:", "unit:api")
+          and says("P1.3", "inherited tests:", "yours")
+          and says("P1.3", "inherited tests:", "tests/test_m3.py"))
+
     code6, said6 = brief(proj, mpath, "P1", "executor")
     check("bf11 a phase id asked for a task's role, or a task id for the "
           "phase's, is a miss rather than a brief about the wrong thing: %r"

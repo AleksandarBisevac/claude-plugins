@@ -89,7 +89,6 @@ import argparse
 import json
 import os
 import pathlib
-import re
 import subprocess
 import sys
 import time
@@ -397,7 +396,7 @@ PHASE_QUESTION = ("Where does a task choose something the request leaves open? "
 
 # A gate entry that names a `meta.buildCommands` key with a project after the
 # colon: one token, a colon, no spaces.
-_KEY_PROJECT = re.compile(r"^[^\s:]+:[^\s]+$")
+_KEY_PROJECT = _fr.GATE_KEY_SHAPE
 
 
 def _brief_context(manifest_path, project_arg):
@@ -457,11 +456,7 @@ def gate_lines(manifest, entries):
 
 def _task_gate(manifest, phase, task):
     """`(entries, whose)` - the task's own `tests.gate`, else its phase's."""
-    own = ((task.get("tests") or {}).get("gate"))
-    if isinstance(own, list) and own:
-        return own, "the task's own tests.gate"
-    return list(phase.get("testGate") or []), \
-        "the phase's testGate (the task declares no gate of its own)"
+    return _fr.task_gate_entries(phase, task)
 
 
 def _section(title, body_lines):
@@ -716,14 +711,65 @@ def _head(ctx):
 
 
 # The three per-task questions a phase review answers under `review.perTask:
-# phase`, each by the rule `mode: task` applies to one task.
+# phase`, each by the rule `mode: task` applies to one task. The second and
+# third are asked only where a task's own section says they are yours: the
+# filing verb fills the mechanical ones (`_fr.complete_phase_return`).
 PER_TASK_QUESTIONS = (
     "1. intent: does this task's diff do what its description asked, and does "
     "its executor's claim describe the diff?",
-    "2. red-first: was a test this task added ever seen red? Echo the executor's "
-    "`redFirst` word when its basis holds; grade it otherwise.",
-    "3. inherited tests: of the tests its gate commands select, would any still "
-    "pass with the behaviour it names deleted?")
+    "2. red-first, where its section says yours: was a test this task added "
+    "ever seen red? Grade the executor's `redFirst` by its basis.",
+    "3. inherited tests, where its section says yours: of the tests its gate "
+    "commands select, would any still pass with the behaviour it names deleted?")
+
+
+def answer_lines(answers, owed):
+    """The two lines saying, for one owed task, whether the filing verb fills
+    its red-first and inherited-test answers or the reviewer gives them."""
+    lines = []
+    for label, word, basis in (("red-first", "redFirst", "redFirstBasis"),
+                               ("inherited tests", "inheritedTests",
+                                "inheritedTestsBasis")):
+        if word in answers:
+            lines.append("%s: computed (%s) - the filing verb fills `%s` and "
+                         "`%s`; leave both out of its entry"
+                         % (label, answers[word], word, basis))
+        else:
+            lines.append("%s: yours - %s" % (label, owed.get(word)
+                                             or "no rule computes it"))
+    return lines
+
+
+def existing_test_lines(ctx, phase, head):
+    """The existing test files the phase's diff modifies - modified between
+    `phase.baseRef` and the brief's head, a test path by `_fr.is_test_path` -
+    or why the list cannot be computed. A test file the phase added is not
+    listed, and neither is one it moved."""
+    base = phase.get("baseRef")
+    if not base:
+        return ["Not computed: phase.baseRef is absent, so which test files "
+                "existed when the phase began is not on the record."]
+    if not head:
+        return ["Not computed: the head could not be read."]
+    command = "git diff --no-renames --diff-filter=M --name-only %s %s" % (
+        base, head)
+    try:
+        done = subprocess.run(["git", "-C", ctx["gitRoot"], "-c",
+                               "core.quotepath=off", "diff", "--no-renames",
+                               "--diff-filter=M", "--name-only", base, head],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return ["Not computed: `%s` could not be run here (%s)." % (command, exc)]
+    if done.returncode != 0:
+        return ["Not computed: `%s` exited %d (%s)." % (
+            command, done.returncode,
+            done.stderr.decode("utf-8", "replace").strip()[:200])]
+    paths = [p for p in done.stdout.decode("utf-8", "replace").splitlines()
+             if _fr.is_test_path(p)]
+    return (["`%s`, test paths only; a test file the phase added is not listed. "
+             "Read each change against the task whose diff holds it:" % (command,)]
+            + (["- %s" % (p,) for p in paths] or ["None."]))
 
 
 def _review_owed(ctx, phase):
@@ -828,11 +874,18 @@ def compose_phase_brief(manifest, phase, ctx):
         rows = read["rows"]
     except Exception as exc:
         rows_why = str(exc) or exc.__class__.__name__
+    build = (manifest.get("meta") or {}).get("buildCommands") or {}
+    mechanical = _fr.phase_answers(
+        ctx["evidence"], phase, build,
+        lambda entries: _evio.resolved_commands(manifest, entries))
     for task in listed:
         tid = str(task.get("id"))
         entries, whose = _task_gate(manifest, phase, task)
         evidence = task.get("testEvidence") or {}
         rel, text = filed_return(ctx, task, "executor")
+        answers, owed_by = mechanical.get(tid, ({}, {}))
+        computed = answer_lines(answers, owed_by) if (
+            not owed_why and _fr.owed_answer(task, phase, live, answered)) else []
         lines += _section("%s %s" % (tid, task.get("title") or ""), [
             "commit: %s" % (task.get("commit"),),
             "diff: git show %s -- %s"
@@ -846,7 +899,9 @@ def compose_phase_brief(manifest, phase, ctx):
             + ["executor return (%s):" % (rel,),
                text if text is not None else
                "none filed for its current start",
-               _owed_line(task, phase, live, answered)])
+               _owed_line(task, phase, live, answered)] + computed)
+    lines += _section("Existing test files the phase modifies",
+                      existing_test_lines(ctx, phase, head))
     if skipped:
         lines += _section("Tasks with no diff", [
             "Closed with no commit (a no-change close) or cancelled, so there "

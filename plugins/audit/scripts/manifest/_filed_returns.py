@@ -38,6 +38,10 @@ it sits in, written beside its key (`settlement_after`) - and the checkouts
 whose records `audit-task.py signoff` and `close-phase.py` both honour are
 one helper's answer (`settlement_checkouts`), so the two verbs read one set.
 
+THE ANSWERS A SCRIPT GIVES are here for the same reason: the filing verb
+fills them into a phase return (`complete_phase_return`) and the phase brief
+tells the reviewer which they are, both from `phase_answers`.
+
 WHAT A VERDICT READ is here for the same reason. `audit-task.py signoff`
 records on the phase review the signature of every filed phase return it read
 (`read_record`, under `READ_RETURNS_FIELD`), and `close-phase.py` compares every
@@ -59,6 +63,7 @@ import json
 import os
 import posixpath
 import re
+import shlex
 import subprocess
 import sys
 
@@ -477,6 +482,202 @@ def phase_return_problems(body, phase, live, answered):
                  "at commit %s" % (tid, str(tasks[tid].get("commit"))[:12])
                  for tid in owed if tid not in seen]
     return problems
+
+
+# --- the answers a script gives ---------------------------------------------------
+# A phase review's red-first and inherited-test answers follow a rule with no
+# reading in it: a red-first block the helper wrote is echoed, and a gate that
+# runs the whole project puts the inherited-test question out of reach
+# (`not-asked`).
+# The filing verb fills those from their sources (`complete_phase_return`), and
+# the phase brief says which they are (`audit-lookup.py`'s `answer_lines`), so
+# the reviewer types only the answers that need reading. The intent answer is
+# never one of them.
+#
+# WHAT THIS CANNOT TELL. The helper's block is recognised by its shape - the
+# basis `stamp-verification.py red` writes and the time it stamps - because the
+# filed executor return records no provenance for it. A block typed by hand in
+# the helper's words reads as the helper's. A gate selecting tests through a
+# name that is neither a test path nor one of `SELECTION_FLAGS` (a make target,
+# a script's own argument) reads as the whole project.
+COMPUTED_FIELD = "computedAnswers"
+_ANSWER_PAIRS = (("redFirst", "redFirstBasis"),
+                 ("inheritedTests", "inheritedTestsBasis"))
+# `red_verdict` in `stamp-verification.py` opens every basis with the command
+# and the throwaway it ran in; `ma1` in the tests reads a block it wrote.
+_HELPER_BASIS = re.compile(r"^`.+?` in a throwaway tree at HEAD(?: exited -?\d+|:)",
+                           re.S)
+# A gate entry shaped `key:project` that names no build command resolves to
+# nothing; `audit-lookup.py`'s gate lines say so with this same shape.
+GATE_KEY_SHAPE = re.compile(r"^[^\s:]+:[^\s]+$")
+TEST_DIRS = ("test", "tests", "__tests__", "spec", "specs")
+_TEST_NAME = re.compile(r"^(?:test_.+|.+_test|.+\.(?:test|spec))\.[A-Za-z0-9]+$")
+SELECTION_FLAGS = ("-k", "-t", "-g", "-run", "--run", "--grep", "--filter",
+                   "--testNamePattern", "--test-name-pattern")
+
+
+def helper_red_first(executor):
+    """The executor return's `redFirst` when it is the red-first helper's block
+    - a word of the vocabulary, the helper's basis and its time - else None."""
+    red = executor.get("redFirst") if isinstance(executor, dict) else None
+    if not (isinstance(red, dict) and red.get("status") in RED_FIRST_WORDS
+            and _said(red, "at") and _said(red, "basis")
+            and _HELPER_BASIS.match(red["basis"])):
+        return None
+    return red
+
+
+def is_test_path(path):
+    """Whether `path` (a `::case` suffix ignored) is a file named as a test,
+    or a file inside a test directory. A bare test directory is not."""
+    parts = [p for p in str(path or "").split("::", 1)[0].replace("\\", "/")
+             .split("/") if p not in ("", ".")]
+    if not parts:
+        return False
+    return bool(_TEST_NAME.match(parts[-1])) or any(p in TEST_DIRS
+                                                    for p in parts[:-1])
+
+
+def _names_tests(token):
+    name = token.split("=", 1)[0]
+    if name in SELECTION_FLAGS:
+        return True
+    return not token.startswith("-") and "=" not in token and is_test_path(token)
+
+
+def gate_reading(build, resolved):
+    """`(kind, basis)` for a task's gate - `resolved` is
+    `_evidence_io.resolved_commands`'s `[(entry, command)]`, `build` the plan's
+    `meta.buildCommands`. `whole` when every entry resolves and no command
+    names a test path or a selection flag, `named` when one does, `unknown`
+    when there is no entry, an entry resolving to nothing, or a command that
+    does not split into words."""
+    build = build if isinstance(build, dict) else {}
+    if not resolved:
+        return "unknown", "no tests.gate entry is declared for it or its phase"
+    loose = [e for e, _c in resolved if e not in build and GATE_KEY_SHAPE.match(e)]
+    if loose:
+        return "unknown", ("%s resolves to no meta.buildCommands entry, so which "
+                           "tests it selects is not on the record"
+                           % (", ".join(loose),))
+    named = []
+    for _entry, command in resolved:
+        try:
+            words = shlex.split(command)
+        except ValueError as exc:
+            return "unknown", "`%s` does not split into words (%s)" % (command, exc)
+        named += [w for w in words if _names_tests(w) and w not in named]
+    shown = "; ".join("`%s`" % (c,) for _e, c in resolved)
+    if named:
+        return "named", "the gate names %s (%s)" % (", ".join(named), shown)
+    return "whole", ("no gate command names a test path or a selection flag (%s), "
+                     "so the gate runs the whole project" % (shown,))
+
+
+def mechanical_answers(executor, gate):
+    """`(answers, owed)` for one task: the fields a script fills, and for each
+    answer it does not fill, why it stays the reviewer's. `executor` is
+    `(rel, body, problem)` of its filed executor return - body None when none
+    is filed - and `gate` is `gate_reading`'s answer."""
+    rel, body, problem = executor
+    answers, owed = {}, {}
+    block = None if problem else helper_red_first(body)
+    if block is not None:
+        answers["redFirst"] = block["status"]
+        answers["redFirstBasis"] = "%s (the red-first helper's block in %s, at %s)" \
+            % (block["basis"], rel, block["at"])
+    elif problem:
+        owed["redFirst"] = problem
+    elif body is None:
+        owed["redFirst"] = "no executor return is filed at %s" % (rel,)
+    else:
+        owed["redFirst"] = ("the `redFirst` in %s is not the red-first helper's "
+                            "block, so it is graded by reading" % (rel,))
+    kind, basis = gate
+    if kind == "whole":
+        answers["inheritedTests"] = "not-asked"
+        answers["inheritedTestsBasis"] = "computed: %s" % (basis,)
+    else:
+        owed["inheritedTests"] = basis
+    return answers, owed
+
+
+def task_gate_entries(phase, task):
+    """`(entries, whose)` - the task's own `tests.gate`, else its phase's
+    `testGate`: the gate a reviewer's question is bounded by."""
+    own = (task.get("tests") or {}).get("gate")
+    if isinstance(own, list) and own:
+        return own, "the task's own tests.gate"
+    return list(phase.get("testGate") or []), \
+        "the phase's testGate (the task declares no gate of its own)"
+
+
+def phase_answers(evidence_dir, phase, build, resolve):
+    """`{task id: (answers, owed)}` for every task of `phase` recording a
+    commit. `resolve` turns gate entries into `[(entry, command)]` - the
+    caller's `_evidence_io.resolved_commands` over its manifest."""
+    found = {}
+    for task in phase.get("tasks") or []:
+        if not (isinstance(task, dict) and task.get("commit")):
+            continue
+        tid = str(task.get("id"))
+        rel = return_rel(tid, task.get("startedAt"), "executor")
+        _text, body, problem = read_filed_return(
+            return_path(evidence_dir, task, "executor"))
+        entries, _whose = task_gate_entries(phase, task)
+        found[tid] = mechanical_answers(
+            (rel, body, problem), gate_reading(build, resolve(entries)))
+    return found
+
+
+def complete_phase_return(body, computed):
+    """`(body, filled, problems)` - a phase return with each entry's absent
+    mechanical pair filled from `computed` (`{task id: answers}`), what was
+    filled per task, recorded on the body under `COMPUTED_FIELD`, and every
+    disagreement: a word typed that differs from the computed one, a basis
+    typed without its word, or a typed `computedAnswers`. A word typed equal
+    to the computed one is kept as typed, basis and all."""
+    if not isinstance(body, dict):
+        return body, {}, []
+    if COMPUTED_FIELD in body:
+        return body, {}, ["`%s` is the filing verb's record of what it filled, "
+                          "never typed in a return" % (COMPUTED_FIELD,)]
+    entries = body.get("tasks")
+    if not isinstance(entries, list):
+        return body, {}, []
+    out, filled, problems = [], {}, []
+    for entry in entries:
+        answers = computed.get(str(entry.get("id"))) \
+            if isinstance(entry, dict) else None
+        if not answers:
+            out.append(entry)
+            continue
+        tid, entry, took = str(entry.get("id")), dict(entry), []
+        for word, basis in _ANSWER_PAIRS:
+            if word not in answers:
+                continue
+            if word in entry:
+                if entry[word] != answers[word]:
+                    problems.append(
+                        "the entry for %s: `%s` is %r, and the filing verb "
+                        "computes %r (%s) - leave `%s` and `%s` out and it "
+                        "files them" % (tid, word, entry[word], answers[word],
+                                        answers[basis], word, basis))
+                continue
+            if basis in entry:
+                problems.append("the entry for %s: `%s` is given without `%s` "
+                                "- leave both out and the filing verb files them"
+                                % (tid, basis, word))
+                continue
+            entry[word], entry[basis] = answers[word], answers[basis]
+            took += [word, basis]
+        if took:
+            filled[tid] = took
+        out.append(entry)
+    done = dict(body, tasks=out)
+    if filled:
+        done[COMPUTED_FIELD] = filled
+    return done, filled, problems
 
 
 # --- the answers only a human settles ---------------------------------------------

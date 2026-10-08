@@ -325,9 +325,167 @@ def _held_cases(check):
           == "returns/P1/%s.reviewer.json" % (_SHA,))
 
 
+def _absent(*_args, **_kw):
+    """Stands in for a function the module does not define yet, so a case asks
+    its question and fails it rather than raising out of the block."""
+    return None
+
+
+def _helper_block():
+    """A red-first block as `stamp-verification.py red` writes it - its own
+    `red_verdict` over a run with no HEAD baseline - never a hand-typed copy."""
+    import _loader                                 # noqa: E402  (load_script)
+    sv = _loader.load_script("stamp-verification.py",
+                             modname="stamp_verification_for_fr")
+    run = {"cmd": ["python3", "tests/test_mine.py"], "code": 1,
+           "text": "AssertionError\n", "problem": None, "second": None,
+           "head": None, "fix": None}
+    ctx = {"root": None, "implementation": [], "tests": ["tests/test_mine.py"],
+           "cases": [], "symbols": [], "dropped": [], "new": [],
+           "head_files": None, "head_defs": None, "head_modules": None,
+           "path": None}
+    return sv.red_verdict(run, ctx)[2]
+
+
+def _mechanical_cases(check):
+    """The answers of a phase review a script gives: the red-first word when
+    the executor's block is the helper's, and `not-asked` when the gate runs the
+    whole project - filled at filing, and left to the reviewer everywhere else."""
+    helper_red = getattr(M, "helper_red_first", _absent)
+    gate_reading = getattr(M, "gate_reading", _absent)
+    is_test = getattr(M, "is_test_path", _absent)
+    answers_of = getattr(M, "mechanical_answers", _absent)
+    complete = getattr(M, "complete_phase_return", _absent)
+
+    block = _helper_block()
+    typed = {"status": "proved", "basis": "python3 t.py exit 1", "at": "z"}
+    check("ma1 the helper's own block - written by stamp-verification's "
+          "`red_verdict`, not typed here - reads as the helper's, and a block "
+          "typed by hand with the same word does not: %r" % ((block,),),
+          isinstance(block, dict)
+          and helper_red(_executor(redFirst=block)) == block
+          and helper_red(_executor(redFirst=typed)) is None
+          and helper_red(None) is None)
+
+    build = {"test": "python3 -m pytest tests", "sweep": "python3 tools/sweep.py"}
+
+    def kind(entries):
+        resolved = [(e, build.get(e, e)) for e in entries]
+        return (gate_reading(build, resolved) or (None, ""))[0]
+    whole = [kind(["test"]), kind(["sweep"]), kind(["npx vitest run"]),
+             kind(["true"])]
+    named = [kind(["python3 tests/test_refund.py --selftest"]),
+             kind(["python3 -m pytest -k refund"]),
+             kind(["pytest tests/test_a.py::test_b"]),
+             kind(["npx vitest run --testNamePattern=refund"]),
+             kind(["test", "python3 tests/test_refund.py"])]
+    unknown = [kind([]), kind(["unit:api"]), kind(["python3 'unclosed"])]
+    check("ma2 a gate runs the whole project only when every entry resolves and "
+          "no command names a test file or a selection flag; one that names "
+          "either selects named tests, and no entry, an unresolved `key:project` "
+          "or a command that will not split is unknown: %r"
+          % ((whole, named, unknown),),
+          whole == ["whole"] * 4 and named == ["named"] * 5
+          and unknown == ["unknown"] * 3)
+    paths = dict((p, bool(is_test(p))) for p in (
+        "tests/test_refund.py", "lib/specs/test__x.rb",
+        "tools/ui-tests/a.test.js", "src/b.spec.ts", "pkg/x_test.go",
+        "tests/unit/helpers.py", "src/refund.py", "tests", "tools/sweep.py",
+        "docs/testing.md"))
+    check("ma3 a test path is a file named as a test or one inside a test "
+          "directory; a source file, a runner and a bare test directory are "
+          "not: %r" % (paths,),
+          [p for p, v in paths.items() if v] == [
+              "tests/test_refund.py", "lib/specs/test__x.rb",
+              "tools/ui-tests/a.test.js", "src/b.spec.ts", "pkg/x_test.go",
+              "tests/unit/helpers.py"])
+
+    rel = "returns/P1.1/20260101T000000Z.executor.json"
+    got = answers_of((rel, _executor(redFirst=block), None),
+                     ("whole", "the gate runs the whole project")) or ({}, {})
+    check("ma4 a helper block and a whole-project gate give every mechanical field "
+          "- the helper's word, a basis quoting its basis and naming the "
+          "return, and `not-asked` with the gate's basis - and owe nothing: %r"
+          % (got,),
+          got[0].get("redFirst") == block["status"]
+          and block["basis"] in got[0].get("redFirstBasis", "")
+          and rel in got[0].get("redFirstBasis", "")
+          and got[0].get("inheritedTests") == "not-asked"
+          and "whole project" in got[0].get("inheritedTestsBasis", "")
+          and got[1] == {})
+    owed_typed = answers_of((rel, _executor(redFirst=typed), None),
+                            ("named", "the gate names tests/test_a.py")) or ({}, {})
+    owed_none = answers_of((rel, None, None), ("whole", "w")) or ({}, {})
+    owed_bad = answers_of((rel, None, "%s cannot be read as JSON" % rel),
+                          ("unknown", "unit:api resolves to nothing")) or ({}, {})
+    check("ma5 REFUSAL TWINS of ma4: a hand-typed red-first, a gate naming "
+          "tests, no executor return and an unreadable one each leave that "
+          "answer to the reviewer, the reason said: %r"
+          % ((owed_typed, owed_none, owed_bad),),
+          set(owed_typed[0]) == set() and set(owed_typed[1]) == {
+              "redFirst", "inheritedTests"}
+          and "tests/test_a.py" in owed_typed[1]["inheritedTests"]
+          and set(owed_none[0]) == {"inheritedTests", "inheritedTestsBasis"}
+          and rel in owed_none[1].get("redFirst", "")
+          and "cannot be read" in owed_bad[1].get("redFirst", "")
+          and "unit:api" in owed_bad[1].get("inheritedTests", ""))
+
+    two = _phase([{"id": "P1.1", "commit": _SHA, "reviewPerTask": "phase"},
+                  {"id": "P1.2", "commit": _SHA2, "reviewPerTask": "phase"}])
+    computed = {"P1.1": got[0], "P1.2": owed_typed[0]}
+    bare = _entry()
+    for key in ("redFirst", "redFirstBasis", "inheritedTests",
+                "inheritedTestsBasis"):
+        bare.pop(key)
+    filed, filled, problems = complete(
+        _phase_return([bare, _entry("P1.2", _SHA2)]), computed) or (
+            {}, {}, ["not completed"])
+    entry = ((filed.get("tasks") or [{}])[0]) if isinstance(filed, dict) else {}
+    check("ma6 a phase return filed without the mechanical fields is completed "
+          "from the executor's filed block and the gate's shape, the filled "
+          "fields recorded under `computedAnswers`, and the completed return "
+          "has no problem: %r" % ((entry, filled, problems),),
+          problems == [] and entry.get("redFirst") == block["status"]
+          and entry.get("inheritedTests") == "not-asked"
+          and filed.get("computedAnswers") == {"P1.1": [
+              "redFirst", "redFirstBasis", "inheritedTests",
+              "inheritedTestsBasis"]}
+          and M.phase_return_problems(filed, two, "phase", {}) == [])
+    short = _entry("P1.2", _SHA2)
+    short.pop("inheritedTests")
+    short.pop("redFirst")
+    filed2, _f2, p2 = complete(_phase_return([bare, short]), computed) or (
+        {}, {}, [])
+    left = M.phase_return_problems(filed2, two, "phase", {}) if filed2 else []
+    check("ma7 REFUSAL TWIN of ma6: the task whose red-first the helper did not "
+          "grade and whose gate names tests gets neither filled, so the entry "
+          "lacking them is refused naming each: %r" % (left,),
+          p2 == [] and any("P1.2" in p and "`redFirst`" in p for p in left)
+          and any("P1.2" in p and "`inheritedTests`" in p for p in left))
+    same, same_filled, same_p = complete(_phase_return([_entry(
+        redFirst=block["status"]), _entry("P1.2", _SHA2)]), computed) or (
+            {}, {"x": 1}, ["not completed"])
+    _d, _df, differ = complete(_phase_return([_entry(
+        redFirst="not-proved"), _entry("P1.2", _SHA2)]), computed) or (
+            {}, {}, [])
+    _t, _tf, forged = complete(dict(_phase_return([bare]), computedAnswers={
+        "P1.1": ["redFirst"]}), computed) or ({}, {}, [])
+    check("ma8 a reviewer word equal to the computed one files as typed and is "
+          "not recorded as computed; one that differs, and a typed "
+          "`computedAnswers`, are refused by name: %r"
+          % ((same_filled, same_p, differ, forged),),
+          same_p == [] and same_filled == {}
+          and "computedAnswers" not in same
+          and same.get("tasks", [{}])[0].get("redFirstBasis")
+          == _entry()["redFirstBasis"]
+          and any("not-proved" in p and "P1.1" in p for p in differ)
+          and any("computedAnswers" in p for p in forged))
+
+
 def _selftest():
     def body(check):
         _harness.stage(check, "fr-block", _cases)
+        _harness.stage(check, "ma-block", _mechanical_cases)
         _harness.stage(check, "pk-block", _held_cases)
         _harness.stage(check, "hn-block", _human_cases)
         _harness.stage(check, "dm-block", _drive_mark_cases)

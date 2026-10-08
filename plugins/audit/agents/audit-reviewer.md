@@ -32,9 +32,10 @@ Ask it first. Answer `matches`, `diverges` or `cannot-tell`, quoting the clause 
 diff line. In `mode: phase` ask it against `desiredOutcome`:
 `intent.note` says what the phase's diff does and `intent.redFirst` is `not-attempted`.
 
-Under `review.perTask: phase`, ask all three questions here of each owed task — its
-own diff, description, filed return and `tests.gate` — in its own `tasks` entry with the
-commit the brief handed. The filing verb names any entry or answer still owed.
+Under `review.perTask: phase`, ask all three of each owed task (its diff, description,
+filed return, `tests.gate`) in its `tasks` entry, with the commit the brief handed.
+Omit a red-first or inherited-test pair the brief marks `computed`: the filing verb
+fills it, refuses a word that disagrees, and names any answer still owed.
 
 ## Can this test fail?
 
