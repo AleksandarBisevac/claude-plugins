@@ -1403,13 +1403,67 @@ def _reuse_review_cases(check):
           "`next` dispatches the phase review - a reuse that read any filed "
           "return, or none, would print a triage here: %r" % ((code, text),),
           code == 0 and instruction(text) == ("dispatch", "reviewer", PHASE))
+    _reuse_findings_cases(check, M)
     _late_return_cases(check)
 
 
+def _reuse_findings_cases(check, M):
+    """A phase return reused at the current head carries findings the plan may
+    already hold - recorded when the drive state that is now lost marked them.
+    `finding` appends rather than deduplicates, so recording them again would
+    double the review's findings."""
+    def recorded(mpath):
+        return [(f.get("severity"), f.get("file"), f.get("issue"))
+                for f in (_phase_of(mpath).get("review") or {}).get("findings")
+                or []]
+
+    def to_triage(prefix):
+        root, mpath = _repo(prefix, task_ids=TASKS[:1], per_task="always")
+        _commit_plan(root, mpath, lambda p: p["meta"].__setitem__(
+            "reviewSkill", "code-review"), "skill")
+        run = drive(M, root, mpath, answer=None, findings=FINDINGS[:2])
+        os.remove(os.path.join(root, ".claude", "state", "drive", "%s.json"
+                               % (PHASE,)))
+        return root, mpath, run
+
+    root, mpath, run = to_triage("reuse-findings")
+    before = recorded(mpath)
+    code, text = _next(M, root, mpath)
+    after = recorded(mpath)
+    mark = _drive_state(root).get("phaseReview") or {}
+    check("rr3 the return reused at the head holds findings the plan already "
+          "records: the next `next` records none of them again and marks them "
+          "recorded - each finding stays once: %r"
+          % ((run["steps"][-1], before, after, code, mark),),
+          run["steps"][-1] == TRIAGE and len(before) == 2 and after == before
+          and code == 0 and instruction(text) == TRIAGE
+          and mark.get("findings") is True)
+
+    root, mpath, run = to_triage("reuse-findings-none")
+
+    # Written, not committed: a commit moves HEAD, and a return filed at the
+    # old head is then no longer the one at the current head.
+    with open(mpath) as fh:
+        plan = json.load(fh)
+    for phase in plan["phases"]:
+        if phase["id"] == PHASE:
+            phase["review"]["findings"] = []
+    with open(mpath, "w") as fh:
+        json.dump(plan, fh, indent=2)
+    code, text = _next(M, root, mpath)
+    after = recorded(mpath)
+    check("rr4 THE TWIN: the same reused return with the plan holding none of "
+          "its findings records each of them once - a mark set whenever a "
+          "return is reused would record none here: %r" % ((after, code),),
+          code == 0 and instruction(text) == TRIAGE
+          and after == [(f["severity"], f["file"], f["issue"])
+                        for f in FINDINGS[:2]])
+
+
 def _late_return_cases(check):
-    """A recorded verdict is what close-phase reads as every filed human answer
-    settled, so a phase return cannot be filed after it: the landing that
-    follows would carry an answer nobody was asked about."""
+    """A recorded verdict is what close-phase reads as every human answer its
+    checkout holds settled, so a phase return cannot be filed there after it:
+    the landing that follows would carry an answer nobody was asked about."""
     M, why = _load("drive_phase_late")
     if M is None:
         check("lr1 the driver loads", False, why)

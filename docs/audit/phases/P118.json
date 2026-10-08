@@ -1894,7 +1894,7 @@
     {
       "id": "P118.20-v7t",
       "title": "a return filed from the parent checkout after sign-off cannot land unseen",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes P118 review round 5 findings R54-R57. close-phase treats a recorded verdict as settling only the phase returns it could have seen at the branch tip or in the branch's worktree. A return that needs a human and is found only in the parent checkout's evidence is refused once the tip records a verdict. A case covers the parent-checkout filing, with its twin. COMPATIBILITY and the guide say exactly what holds. The driver's reuse of a filed return records its findings once. The verb's remedy restores its qualifier. close-phase's post-verdict remedy names a way out that exists. Every new case is shown red first.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -1928,16 +1928,21 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T10:54:08Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T12:24:11Z.92e9f7",
+        "status": "passed",
+        "at": "2026-10-08T12:24:11Z"
+      }
     }
   ],
   "startedAt": "2026-10-07T21:17:01Z"

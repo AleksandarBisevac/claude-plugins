@@ -402,7 +402,7 @@ L7:
   commit-manifest-index -> _claude_home, _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
   commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
-  drive-phase -> _areas, _claude_home, _config_rules, _evidence_io, _filed_returns, _journal_io, _loader, _manifest_io, _output, _status_facts, _verdict_binding
+  drive-phase -> _areas, _claude_home, _config_rules, _evidence_io, _filed_returns, _journal_io, _loader, _manifest_io, _manifest_phases, _output, _status_facts, _verdict_binding
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
@@ -1024,14 +1024,26 @@ Wherever a task's key reads `phase`, a tip whose copy records no sign-off verdic
 task's close reaches the branch only with the sign-off commit - and so is a tip whose copy cannot be
 read when the plan is versioned (`plan_versioned`: inside the git root, not ignored, committed at
 the parent or at `baseRef`); a plan git never commits is asked through its copy on disk, which must
-then record the verdict. `ra10`-`ra15` hold it. **Under every key**, the same verdict is asked
-for when a filed phase return the landing can see (`filed_phase_returns`: the project's evidence
+then record the verdict. `ra10`-`ra15` hold it, and over a recorded verdict the refusal's remedy
+names restoring the record or reporting it, never filing and signing off again, which both refuse
+there (`ra16`, `ra17`). **Under every key**, the same verdict is asked
+for when a filed phase return the landing can see (`returns_by_place`: the project's evidence
 directory, the worktree holding the branch, and the branch tip) holds an answer only a human settles
 (`_filed_returns.needs_human`), or will not parse (`unsettled_sentence`): only the sign-off verb
 writes the verdict, and it refuses while such an answer is unsettled. `hl1`-`hl5` hold it. A verdict
-covers only the returns filed before it: `audit-task.py file-return` refuses a phase return once a
-verdict is recorded (`hd30`, and `lr1`-`lr2` against the driver), and a return written into the
-evidence directory by any other hand after the verdict is not told apart from one it read. A
+settles only what its own checkout's sign-off read (`unseen_returns`, `verdict_reach_refusal`): the
+sign-off verb reads the evidence of the checkout it runs in, and `audit-task.py file-return` refuses
+only where the copy it reads records the verdict (`hd30`, and `lr1`-`lr2` against the driver) - so
+the parent's checkout, whose copy shows the phase at the fork, files after the branch signed off.
+A tip's verdict settles the returns the tip commits and the worktree's; a return found only in the
+parent's evidence is refused whenever it was filed, and so is one there under a name the branch
+carries with another answer. In an `evidence.dir` both checkouts share, only an answer the
+worktree's driver settlement names is settled. `landed_answers_refusal`'s docstring lists every
+placement of a verdict against every placement of a return, each with the case holding it
+(`vr1`-`vr14`) or the reason it cannot occur; a verdict on the worktree's copy that the tip lacks
+is refused with the remedy of committing it, since sign-off refuses again (`vr8`). A return written
+into the worktree's evidence or committed at the tip by any other hand than the filing verb is not
+told apart from one the verdict read. A
 digest-moved refusal whose declared files hold uncommitted changes in the worktree holding the
 branch names them (`uncommitted_declared`) and says to commit or revert them before recording,
 since a run recorded over them is refused again (`cr19b`, `cr19c`). A re-run
@@ -1965,9 +1977,10 @@ and a phase intent of `diverges`/`cannot-tell` - shared by the driver's triage a
 `audit-task.py signoff`, which refuses while one is unsettled; `settled_answers` reads the
 settlement the triage's `--answer accept` writes at `drive_state_path` (`<stateDir>/drive/<phase>.json`),
 and a record that will not parse is a problem, never nothing settled. `drive_state` reads that file
-whole and `review_marked` says whether it marks a phase review at a head - without one, the
-driver's next sign-off pass reads a phase return already filed at the current head, and dispatches
-the review only where none is, which the verb's remedy says; `return_body`
+whole and `review_marked` says whether it marks a phase review at a head - without one, and where
+a review skill resolves or a task is owed its answers, the driver's next sign-off pass reads a phase
+return already filed at the current head, and dispatches the review only where none is, which the
+verb's remedy says with that condition (`hd29q`, `hd29r`); `return_body`
 is the one parse of a return's text, shared by the read off disk and `close-phase.py`'s read of
 the branch tip. What it cannot hold: the task
 id and role a caller files under are the caller's word. Cases in `plugins/audit/tests/test__filed_returns.py`.
@@ -4135,7 +4148,9 @@ the same HEAD measures again rather than looping; the `gr` cases hold it. A per-
 `continue` takes `--reason`, and whose printed rule says to ask the human and pass their words
 verbatim (`ct1r`). With no phase review marked in the state, sign-off reads a phase return already
 filed at the current head (`filed_at_head`) rather than paying for a review whose return
-`file-return` would refuse at that head (`rr1`, `rr2`). Every reason still held, a `continue`'s included, is kept in the
+`file-return` would refuse at that head (`rr1`, `rr2`), and marks its findings recorded only where
+the plan's review already holds each of them (`findings_held`), since `finding` appends rather than
+deduplicates (`rr3`, `rr4`). Every reason still held, a `continue`'s included, is kept in the
 summary (`signoff_summary`). The `sg` cases
 drive it over the fixture plan: sign-off's model-facing steps are the review's dispatch, the
 triage and the final step, a red phase gate never reaches `signoff`, and several findings are one

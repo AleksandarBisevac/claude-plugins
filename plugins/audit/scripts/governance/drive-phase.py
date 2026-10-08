@@ -165,6 +165,7 @@ import _loader  # noqa: E402  (script_path: every verb resolved by basename, nev
 #                              any of them is counted by `_deps`; load_hooks_config
 #                              for `stateDir`)
 import _manifest_io as _mio  # noqa: E402  (loader, phase resolver, TERMINAL)
+import _manifest_phases as _phases  # noqa: E402  (FINDING_FIELDS: what a finding is)
 import _evidence_io as _evio  # noqa: E402  (project_config_for, evidence_dir)
 import _journal_io  # noqa: E402  (read_all: a high-risk answer given before the run)
 import _filed_returns as _fr  # noqa: E402  (where a filed return lives, and its read;
@@ -1094,16 +1095,48 @@ def filed_at_head(ctx, state, phase):
     or the sign-off verb run by hand, after the review filed. `file-return`
     refuses a second return at the same head, so dispatching again would pay
     for a review whose return can never be filed, while the triage read the
-    first one anyway."""
+    first one anyway.
+
+    THE MARK SAYS ITS FINDINGS ARE RECORDED only where the plan's review
+    already holds each of them (`findings_held`): the lost state may have
+    recorded them, and `finding` appends rather than deduplicates."""
     head = git_head(ctx)
-    if not head or not os.path.isfile(os.path.join(
-            ctx["evidence"], *_fr.phase_return_rel(phase["id"],
-                                                   head).split("/"))):
+    path = (os.path.join(ctx["evidence"], *_fr.phase_return_rel(
+        phase["id"], head).split("/")) if head else None)
+    if not path or not os.path.isfile(path):
         return {}
-    state["phaseReview"] = {"head": head}
+    _text, review, _problem = _fr.read_filed_return(path)
+    mark = {"head": head}
+    if findings_held(phase, (review or {}).get("findings") or []):
+        mark["findings"] = True
+    state["phaseReview"] = mark
     write_state(ctx, state)
     ctx["did"].append("phase review filed at %s read" % (head[:7],))
     return state["phaseReview"]
+
+
+def _finding_key(finding):
+    """A finding as `finding` records it, less the id the plan allocates."""
+    return tuple((finding.get(field) or "").strip()
+                 if isinstance(finding.get(field), str) else ""
+                 for field in _phases.FINDING_FIELDS if field != "id")
+
+
+def findings_held(phase, found):
+    """True when the phase's recorded review already holds every finding in
+    `found` - as many times as `found` lists it - so recording them again
+    would double them: `finding` appends, it does not deduplicate. False for
+    an empty `found`, which has nothing to mark."""
+    found = [f for f in found if isinstance(f, dict)]
+    if not found:
+        return False
+    held = [_finding_key(f) for f in (phase.get("review") or {}).get("findings")
+            or [] if isinstance(f, dict)]
+    for key in [_finding_key(f) for f in found]:
+        if key not in held:
+            return False
+        held.remove(key)
+    return True
 
 
 def record_findings(ctx, phase, found):

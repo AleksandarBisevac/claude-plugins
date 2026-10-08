@@ -367,8 +367,16 @@ is still true of a nested key.
   `review.perTask` value it refuses to land a phase whose filed phase return - on disk,
   in the worktree holding the branch, or at the branch tip - holds such an answer, or
   will not parse, while the tip's copy of the plan records no sign-off verdict (the copy
-  on disk, for a plan git never commits); and `file-return <phaseId>` refuses a phase
-  return once a sign-off verdict is recorded. A task that no longer records its commit, a merge made by hand
+  on disk, for a plan git never commits). A recorded verdict settles only the returns
+  its own checkout's sign-off read: a tip's verdict, the returns the tip commits and the
+  ones in the worktree holding the branch; a verdict on a copy on disk, that checkout's
+  own. A return holding such an answer found anywhere else - in the parent checkout's
+  evidence directory, whose copy of the plan shows the phase as at the fork, so
+  `file-return <phaseId>` run there accepts it after the branch signed off - is refused,
+  filed before the verdict or after it; in an `evidence.dir` both checkouts share, only
+  an answer the worktree's driver settlement names is settled. `file-return <phaseId>`
+  refuses a phase return only where the copy of the plan it reads records a sign-off
+  verdict. A task that no longer records its commit, a merge made by hand
   or through a pull request, and who filed the phase return are outside that refusal;
   the plugin README's followed table names each, with the evidence left afterwards. A phase already under way when the plugin is
   upgraded reads the new default too, unless it recorded a `reviewPerTask` value, which

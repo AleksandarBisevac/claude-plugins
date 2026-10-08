@@ -13265,6 +13265,16 @@ def _held_cases(check):
               "marked review's return there rather than dispatching one: %r" % ((marked[0], marked[1][-300:]),),
               marked[0] == M.E_USAGE and "intent diverges" in marked[1]
               and "already filed at the current head" not in marked[1])
+        qualifier = "where a review skill resolves or a task is owed its answers"
+        check("hd29q the unmarked remedy keeps the condition the driver reads or "
+              "dispatches a review under - a review skill resolving, or a task "
+              "owed its answers; without one the driver reads no return and "
+              "dispatches none: %r" % (h1[1][-480:],),
+              qualifier in h1[1])
+        check("hd29r THE TWIN: the marked remedy, which promises no read or "
+              "dispatch, carries no such condition - a qualifier printed on "
+              "every refusal would fail here: %r" % (marked[1][-300:],),
+              qualifier not in marked[1])
         settle(proj, [hd_rel + "#P1.1#intent diverges"])
         h2 = signoff(proj, "P1", "skipped")
         check("hd25b ...and settling one of the two still refuses, naming only the "
@@ -13312,8 +13322,8 @@ def _held_cases(check):
               h5[0] == M.E_USAGE and "intent cannot-tell" in h5[1]
               and unchanged and h6[0] == 0)
         # A recorded verdict is what close-phase reads as the human having
-        # settled every filed answer, so a return arriving after it would land
-        # an answer nobody was asked about.
+        # settled every answer that verdict's checkout holds, so a return filed
+        # there after it would land an answer nobody was asked about.
         late_body = json.loads(_hd_return([]))
         late_body["intent"] = {"answer": "diverges", "note": "late: missed it",
                                "missing": []}

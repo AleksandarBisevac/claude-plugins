@@ -108,13 +108,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   review-answer`, whose `continue` now takes `--reason`, and whose print says to ask the human
   and pass their words verbatim; the summary keeps it. With no phase review marked in its state,
   the driver reads a phase return already filed at the current head instead of dispatching a
-  second review. The sign-off verb's refusal over an unsettled answer says what `drive-phase.py
-  next` will do and, for a group member, to answer only `accept` and sign the group off again.
-  `audit-task.py file-return <phaseId>` refuses a phase return once a sign-off verdict is
-  recorded, exiting 2 and writing nothing. `close-phase.py` refuses, under every `review.perTask` value, the
+  second review, and records its findings only where the plan's review does not already hold
+  them. The sign-off verb's refusal over an unsettled answer says what `drive-phase.py
+  next` will do - where a review skill resolves or a task is owed its answers - and, for a group
+  member, to answer only `accept` and sign the group off again.
+  `audit-task.py file-return <phaseId>` refuses a phase return where the copy of the plan it
+  reads records a sign-off verdict, exiting 2 and writing nothing. `close-phase.py` refuses, under every `review.perTask` value, the
   landing of a phase whose filed phase return - on disk, in the worktree holding the branch, or
   at the branch tip - holds an answer only a human settles, or will not parse, while no sign-off
   verdict is recorded on the tip's copy of the plan (the copy on disk for an unversioned plan).
+  A recorded verdict settles only the returns its own checkout's sign-off read - for a tip's
+  verdict, those the tip commits and those in the worktree holding the branch - so such a return
+  found only in the parent checkout's evidence, which `file-return` run there accepts after the
+  branch signed off, is refused; in an `evidence.dir` both checkouts share, only an answer the
+  worktree's driver settlement names is settled. A verdict on the worktree's copy that the tip
+  lacks is refused with the remedy of committing it, and a refusal over a recorded verdict names
+  restoring the record or reporting it rather than filing and signing off again, which both refuse.
   Its refusal of a green whose declared files changed since names the declared files holding
   uncommitted changes, and says to commit or revert them before recording again. A
   high-risk task covered by a `--confirm-high-risk` answer commits without asking again. A

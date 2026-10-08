@@ -108,6 +108,7 @@ import argparse
 import datetime
 import json
 import os
+import pathlib
 import posixpath
 import shutil
 import subprocess
@@ -2021,11 +2022,19 @@ def review_answers_refusal(project, manifest_path, phase):
     held = _fr.landing_refusals(phase or {}, live)
     if not held:
         return None
+    pid = (phase or {}).get("id")
+    remedy = ("Sign-off writes them from the phase review's filed return - file "
+              "it and sign off again.")
+    if _mio.signoff_recorded(phase):
+        remedy = ("This copy records a sign-off verdict, which is not "
+                  "re-decided: neither filing a phase return nor signing off "
+                  "again is open over it. Restore the record to what that "
+                  "sign-off wrote - a change made after it is what is refused "
+                  "here - or leave %s unmerged and report it (/audit:bug add)."
+                  % ((phase or {}).get("branch") or "the branch",))
     return ("review.perTask reads `phase` and phase %s has task(s) whose review "
-            "answers are not on the record bound to their commits: %s. Sign-off "
-            "writes them from the phase review's filed return - file it and sign "
-            "off again." % ((phase or {}).get("id"),
-                            "; ".join("%s: %s" % (tid, why) for tid, why in held)))
+            "answers are not on the record bound to their commits: %s. %s"
+            % (pid, "; ".join("%s: %s" % (tid, why) for tid, why in held), remedy))
 
 
 def landed_answers_refusal(project, manifest_path, phase, landed, branch,
@@ -2054,13 +2063,45 @@ def landed_answers_refusal(project, manifest_path, phase, landed, branch,
 
     UNDER EVERY KEY, A FILED PHASE RETURN HOLDING AN ANSWER ONLY A HUMAN
     SETTLES (`_fr.needs_human`) asks for the same verdict: only the sign-off
-    verb writes one, and it refuses while such an answer is unsettled, and
-    `audit-task.py file-return` refuses a phase return once a verdict is
-    recorded - so a recorded verdict is the evidence that every return filed
-    through that verb was put to a human. A return written into the evidence
-    directory by any other hand after the verdict is not told apart from one
-    the verdict read. A return that will not parse could hold one, and asks for
-    the verdict too."""
+    verb writes one, and it refuses while such an answer is unsettled. A
+    return that will not parse could hold one, and asks for the verdict too.
+
+    A VERDICT SETTLES ONLY WHAT ITS OWN CHECKOUT'S SIGN-OFF READ
+    (`unseen_returns`). The sign-off verb reads the evidence of the checkout
+    it runs in, and `audit-task.py file-return` refuses only where the copy of
+    the plan it reads records the verdict - so the parent's checkout, whose
+    copy still shows the phase at the fork, files a return after a verdict
+    signed on the branch. Every placement the landing can meet, by where the
+    verdict sits (no verdict / the worktree's copy only / the tip) and where a
+    return holding such an answer sits (the parent's evidence / the
+    worktree's / the tip), pinned in `test_close_phase.py`:
+
+    - no verdict anywhere: refused wherever the return sits (hl1, hl4, vr8c).
+    - the worktree's copy only, the plan versioned: refused, the remedy being
+      to commit that copy, since sign-off refuses again (vr8, then vr8b).
+    - the tip: lands when the return is at the tip (vr4) or in the worktree
+      (vr2, vr6b); refused when it sits only in the parent's evidence, filed
+      before the verdict or after it (vr1, vr3), with the worktree gone too
+      (vr5), and when the parent's copy under a name the branch carries holds
+      another answer (vr7); lands when that copy is the same answer (vr6).
+    - the branch checked out in the parent's own checkout: one place, so the
+      tip's verdict read it (hl2).
+    - a plan git never versions: the verdict on the worktree's own copy read
+      the worktree's evidence (vr12) and not the parent's (vr11); one on the
+      parent's own copy - the worktree holding none - read the parent's
+      (vr13) and not the worktree's (vr14).
+    - a shared `evidence.dir` outside the repository, one directory for both
+      checkouts, so its place cannot say which hand filed it: what the
+      worktree's settlement record names lands (vr10), anything else is
+      refused (vr9). The gate verdict reads no ledger there at the tip, so
+      this landing is only reached under `--override-verdict`.
+
+    Unreachable, and why: a return in the worktree filed AFTER a verdict that
+    copy records - the filing verb refuses there; a tip verdict with the tip
+    itself unreadable - refused above as unestablished before any return is
+    asked. A return a hand other than the filing verb writes into the
+    worktree's evidence or commits at the tip is not told apart from one the
+    verdict read."""
     phase_id = (phase or {}).get("id")
     on_disk = worktree_phase(git_root, project, phase_tree, manifest_path,
                              phase_id)
@@ -2077,9 +2118,9 @@ def landed_answers_refusal(project, manifest_path, phase, landed, branch,
                                           [copy for _w, copy in copies])
     if problem:
         return problem
-    filed = filed_phase_returns(project, manifest_path, git_root, branch,
-                                phase_tree, phase_id)
-    human = unsettled_sentence(phase_id, filed)
+    places = returns_by_place(project, manifest_path, git_root, branch,
+                              phase_tree, phase_id)
+    human = unsettled_sentence(phase_id, filed_phase_returns(places))
     if not applies and human is None:
         return None
     if applies:
@@ -2093,11 +2134,17 @@ def landed_answers_refusal(project, manifest_path, phase, landed, branch,
                    "while such an answer is unsettled")
     if landed is not None:
         if _mio.signoff_recorded(landed):
-            return None
+            return verdict_reach_refusal(project, manifest_path, phase_id,
+                                         places, VERDICT_AT_TIP, branch)
+        # A verdict the worktree's copy holds and the tip does not is one
+        # commit away; signing off again is refused over it.
+        remedy = ("Commit the plan on %s - the worktree's copy records the "
+                  "verdict and the tip does not - and run this again" % (branch,)
+                  if _mio.signoff_recorded(on_disk)
+                  else "Sign the phase off on %s and run this again" % (branch,))
         return ("%s, and the copy of the plan %s would bring in records no "
-                "sign-off verdict, so %s is not established: %s. Sign the phase "
-                "off on %s and run this again."
-                % (subject, branch, unknown, because, branch))
+                "sign-off verdict, so %s is not established: %s. %s."
+                % (subject, branch, unknown, because, remedy))
     versioned, basis = plan_versioned(git_root, manifest_path, refs)
     if versioned is not False:
         return ("%s, and the copy of the plan %s would bring in could not be "
@@ -2107,17 +2154,20 @@ def landed_answers_refusal(project, manifest_path, phase, landed, branch,
                 % (subject, branch, basis, unknown, branch))
     record = on_disk or phase
     if _mio.signoff_recorded(record):
-        return None
+        return verdict_reach_refusal(
+            project, manifest_path, phase_id, places,
+            VERDICT_AT_WORKTREE if on_disk else VERDICT_AT_PARENT, branch)
     return ("%s, the plan is not versioned (%s), so its copy on disk is the "
             "record - and it records no sign-off verdict. Sign the phase off and "
             "run this again." % (subject, basis))
 
 
-def unsettled_sentence(phase_id, filed):
+def unsettled_sentence(phase_id, filed, settled=()):
     """The clause naming what in `filed` (`filed_phase_returns`' list) waits on
-    a human - an answer `_fr.needs_human` reports, or a return that will not
-    parse and so could hold one - or None when nothing does."""
-    asked = _fr.needs_human(filed)
+    a human - an answer `_fr.needs_human` reports and `settled` does not name,
+    or a return that will not parse and so could hold one - or None when
+    nothing does."""
+    asked = _fr.needs_human(filed, settled)
     unread = [why for _rel, _body, why in filed if why]
     if not asked and not unread:
         return None
@@ -2131,31 +2181,50 @@ def unsettled_sentence(phase_id, filed):
     return "phase %s's filed review holds %s" % (phase_id, " and ".join(said))
 
 
-def filed_phase_returns(project, manifest_path, git_root, branch, phase_tree,
-                        phase_id):
-    """`[(rel, body, problem)]` in `_fr.phase_returns`' shape - every phase
-    return filed for `phase_id` that the landing can see: under the project's
-    evidence directory, in the worktree holding the branch, and committed at the
-    branch tip. The first copy of a name is kept; a return is keyed on the head
-    its brief named, and the filing verb refuses a second for one head.
+def _same_path(a, b):
+    return bool(a and b) and os.path.realpath(a) == os.path.realpath(b)
+
+
+def returns_by_place(project, manifest_path, git_root, branch, phase_tree,
+                     phase_id):
+    """Every phase return filed for `phase_id` the landing can see, by where
+    it sits - `{"parent", "worktree", "tip": [(rel, body, problem)], "tree",
+    "evidence", "there", "same", "shared"}`, each list in
+    `_fr.phase_returns`' shape.
+
+    `parent` is the project's own evidence directory (`evidence`), `worktree`
+    the one in the worktree holding the branch (`tree`, its directory
+    `there`), `tip` what the branch tip commits. `same` is the branch checked out in the project's own checkout,
+    where parent and worktree are one place; `shared` is a distinct worktree
+    whose evidence directory is the parent's own, which `evidence.dir`
+    outside the repository makes.
 
     A TIP GIT WOULD NOT LIST is a problem entry, never no return filed: the
     landing cannot tell an unread directory from an empty one."""
     proj, config = _evidence_io.project_config_for(manifest_path, project)
     evidence = _evidence_io.evidence_dir(proj, config)
-    found = list(_fr.phase_returns(evidence, phase_id))
+    places = {"parent": list(_fr.phase_returns(evidence, phase_id)),
+              "worktree": [], "tip": [], "evidence": evidence, "there": "",
+              "same": False, "shared": False}
     tree = _phase_project(git_root, project, phase_tree) if git_root else None
+    places["tree"] = tree
     if tree:
-        found += _fr.phase_returns(
-            os.path.join(tree, os.path.relpath(evidence, project)), phase_id)
+        places["same"] = _same_path(tree, project)
+        # The same resolution the project's directory had, with the worktree
+        # in the project's place: a directory outside the repository is then
+        # the one both checkouts share.
+        there = _evidence_io.evidence_dir(tree, config)
+        places["there"] = there
+        places["shared"] = (not places["same"]) and _same_path(there, evidence)
+        places["worktree"] = list(_fr.phase_returns(there, phase_id))
     folder = os.path.join(evidence, _fr.RETURNS_DIRNAME, str(phase_id))
     rel = (os.path.relpath(folder, git_root).replace(os.sep, "/")
            if git_root else "..")
     if branch and not rel.startswith(".."):
         paths = _tip_paths(git_root, branch, rel)
         if paths is None:
-            found.append(("%s:%s" % (branch, rel), None,
-                          "git would not list %s at %s" % (rel, branch)))
+            places["tip"].append(("%s:%s" % (branch, rel), None,
+                                  "git would not list %s at %s" % (rel, branch)))
         for path in sorted(p for p in paths or []
                            if p.endswith(".reviewer.json")
                            and posixpath.dirname(p) == rel):
@@ -2163,14 +2232,116 @@ def filed_phase_returns(project, manifest_path, git_root, branch, phase_tree,
                                               % (branch, path)])
             text = raw.decode("utf-8", "replace") if code == 0 else None
             body, problem = _fr.return_body(text, "%s:%s" % (branch, path))
-            found.append(("%s/%s/%s" % (_fr.RETURNS_DIRNAME, phase_id,
-                                        posixpath.basename(path)), body, problem))
+            places["tip"].append(("%s/%s/%s" % (_fr.RETURNS_DIRNAME, phase_id,
+                                                posixpath.basename(path)),
+                                  body, problem))
+    return places
+
+
+def filed_phase_returns(places):
+    """`[(rel, body, problem)]` - every return in `returns_by_place`' answer,
+    parent first, then the worktree, then the tip. The first copy of a name is
+    kept; a return is keyed on the head its brief named, and the filing verb
+    refuses a second for one head."""
     kept, seen = [], set()
-    for entry in found:
+    for entry in places["parent"] + places["worktree"] + places["tip"]:
         if entry[0] not in seen:
             seen.add(entry[0])
             kept.append(entry)
     return kept
+
+
+# Where the sign-off verdict a landing stands on was read from: the branch tip,
+# the worktree's own copy of a plan git never versions, or the parent's.
+VERDICT_AT_TIP, VERDICT_AT_WORKTREE, VERDICT_AT_PARENT = "tip", "worktree", "parent"
+
+
+def _return_sig(entry):
+    """One filed return as an answer: its name, what it holds and why it
+    could not be read - a copy under the same name holding another answer is
+    another answer."""
+    rel, body, problem = entry
+    return (rel, json.dumps(body, sort_keys=True), problem or "")
+
+
+def unseen_returns(places, verdict_at):
+    """`(entries, why, folder)` - the returns in `returns_by_place`' answer
+    that the sign-off which wrote a verdict read `verdict_at` could not have
+    read, the clause saying where they sit, and the directory holding them.
+
+    The sign-off verb reads the evidence of the checkout it runs in, and the
+    filing verb refuses once that checkout's copy records a verdict. So a tip
+    verdict - written in the worktree holding the branch - read the worktree's
+    evidence and every return the tip commits; a verdict on the worktree's own
+    copy read the worktree's; one on the parent's own copy read the parent's.
+    What any other place alone holds is outside it, whenever it was filed. A
+    shared directory holds the parent's filings and the worktree's alike, so
+    for a verdict signed in the worktree only the tip vouches there."""
+    if places["same"]:
+        return [], "", ""
+    if verdict_at == VERDICT_AT_PARENT:
+        seen, candidates = places["parent"], places["worktree"] + places["tip"]
+        folder = places["there"]
+        why = ("only in the worktree holding the branch or at its tip, and the "
+               "sign-off verb that wrote the parent's verdict read %s"
+               % (places["evidence"],))
+    else:
+        seen = list(places["tip"]) if verdict_at == VERDICT_AT_TIP else []
+        if not places["shared"]:
+            seen += places["worktree"]
+        candidates, folder = places["parent"], places["evidence"]
+        why = ("only in %s, and the sign-off verb reads the evidence of the "
+               "checkout it runs in" % (places["evidence"],))
+        if places["shared"]:
+            why = ("in %s, the evidence directory this checkout shares with the "
+                   "worktree at %s, so where it sits does not say whether the "
+                   "sign-off read it" % (places["evidence"], places["tree"]))
+    sigs = set(_return_sig(e) for e in seen)
+    return [e for e in candidates if _return_sig(e) not in sigs], why, folder
+
+
+def _settled_in(tree, config, phase_id):
+    """`(keys, problem)` - the answers the driver's settlement record in the
+    checkout at `tree` names as settled by a human; nothing when no tree."""
+    if not tree:
+        return set(), ""
+    hc = _loader.load_hooks_config(modname="audit__config")
+    state = str(hc.state_dir(pathlib.Path(tree), config or {}))
+    keys, _reasons, problem = _fr.settled_answers(state, phase_id)
+    return keys, problem
+
+
+def verdict_reach_refusal(project, manifest_path, phase_id, places, verdict_at,
+                          branch):
+    """The sentence refusing a landing whose recorded verdict could not have
+    read a filed return holding an answer only a human settles, or None.
+
+    IN A SHARED DIRECTORY THE SETTLEMENT IS THE EVIDENCE: the sign-off verb
+    writes no verdict over such an answer until the settlement record in its
+    checkout names it, so an answer that record names was put to a human and
+    one it does not name was filed where that sign-off never asked."""
+    unseen, where, folder = unseen_returns(places, verdict_at)
+    settled, problem = set(), ""
+    if places["shared"] and unseen and verdict_at != VERDICT_AT_PARENT:
+        _proj, config = _evidence_io.project_config_for(manifest_path, project)
+        settled, problem = _settled_in(places["tree"], config, phase_id)
+    human = unsettled_sentence(phase_id, unseen, settled)
+    if human is None:
+        return None
+    named = ("" if not places["shared"] else
+             " - and the settlement record there %s" % (
+                 "could not be read (%s)" % (problem,) if problem
+                 else "names no human settling it"))
+    return ("%s, and the sign-off verdict %s records could not have read it: it "
+            "sits %s%s. That verdict is not re-decided and the filing verb "
+            "refuses after it, so no verb records a human's word on it now: put "
+            "it to a human, and where they judge it settled, move it out of %s "
+            "and run this again; where it stands, leave %s unmerged and report "
+            "it (/audit:bug add)."
+            % (human, {VERDICT_AT_TIP: "the tip of %s" % (branch,),
+                       VERDICT_AT_WORKTREE: "the worktree's copy of the plan",
+                       VERDICT_AT_PARENT: "the parent's copy of the plan",
+                       }[verdict_at], where, named, folder, branch))
 
 
 def _phase_key_applies(project, manifest_path, copies):
