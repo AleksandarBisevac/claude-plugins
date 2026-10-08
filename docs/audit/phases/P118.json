@@ -497,9 +497,37 @@
         "resolution": "fixed in P118.18-v7t (2e1e3376): Name the uncommitted declared files and say to commit or revert them before recording.",
         "fixTask": "P118.18-v7t",
         "commit": "2e1e3376"
+      },
+      {
+        "id": "P118-R54",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py file-return; plugins/audit/scripts/git/close-phase.py landed_answers_refusal",
+        "issue": "file-return refuses after a verdict only in the plan copy it reads. From the parent checkout, whose copy shows the phase as at the fork, a diverges phase return is accepted after the phase signed off on its branch. close-phase then finds it in the parent's evidence directory, sees a verdict at the tip and lands with no human asked. COMPATIBILITY promises more than holds.",
+        "resolution": "close-phase treats a verdict as settling only the returns it could have seen at the tip or in the branch's worktree, and refuses a needs_human return found only in the parent's evidence once the tip records a verdict; add the parent-checkout case and its twin, and make COMPATIBILITY and the guide say exactly that."
+      },
+      {
+        "id": "P118-R55",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py filed_at_head",
+        "issue": "The reused return's findings are recorded again, because the mark is set without findings: True and finding does not deduplicate.",
+        "resolution": "Set findings: True only when review.findings already holds the return's findings; add a case and its twin."
+      },
+      {
+        "id": "P118-R56",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py _human_settlement text",
+        "issue": "The remedy dropped the qualifier that the driver reads or dispatches a review only where a review skill resolves or a task is owed.",
+        "resolution": "Restore the qualifier."
+      },
+      {
+        "id": "P118-R57",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py review_answers_refusal remedy",
+        "issue": "After a verdict the remedy says to file and sign off again, but both steps now refuse.",
+        "resolution": "When the copy carries a verdict, name the way out that exists."
       }
     ],
-    "outcome": "[findings: 53 - 5 high, 20 med, 28 low; 52 with a recorded fix commit]"
+    "outcome": "[findings: 57 - 5 high, 21 med, 31 low; 52 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1814,7 +1842,7 @@
     {
       "id": "P118.19-v7t",
       "title": "the implemented pipeline's cost is measured against the target and published",
-      "status": "in_progress",
+      "status": "done",
       "description": "Measures the implemented phase against the user's target and publishes docs/research/pipeline-cost-results.md, an addendum to the design. Sources are the probe (probe-C-1 with fresh probe-A-1 and probe-A-2) and the whole-feature after-study (cost-A, cost-B and cost-C, three each, with cost-C-3's protocol follow-up), read with tools/stream-cost.py at the phase's commit, against the before sessions. Every target in design section 7 is reported confirmed, refuted or inconclusive with its reading: the per-task ratio both ways, the whole-feature ratio against A and against B, the phase overhead against its 1.00 budget, and the T2, T3, T4, T8 and T10 rows. Also reported are quality beside the before sessions, the open-choices behaviour across the three arm C sessions (one asked, two did not), deviations including the CLI version and the account change, and limits. The next levers toward the 1.25 ideal are named from the measured decomposition.",
       "files": [
         "docs/research/pipeline-cost-results.md",
@@ -1843,19 +1871,73 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6af645f3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "docs/research/pipeline-cost-results.md measures the implemented pipeline against the user's target. It reads every session with tools/stream-cost.py at the phase's commit, and repeats each reading from a clean export with byte-identical output.\n\nSessions read:\n- the probe: probe-C-1, with fresh probe-A-1 and probe-A-2;\n- the whole-feature after-study: cost-A, cost-B and cost-C, three each, with cost-C-3's follow-up joined;\n- the before sessions.\n\nResults against the targets:\n- **Per-task ratio, like for like** (the cycle against same-CLI arm A less its open and close): 1.34, 1.44 and 1.29, against 4.70-5.64 before. The 2.0 ceiling is confirmed; the 1.25 ideal is refuted.\n- **Per-task ratio against whole A:** 1.12, 1.21 and 1.08, which confirms the ideal on that reading.\n- **Whole feature:** 2.58-3.61 times arm A and 1.92-2.69 times arm B, against 9.27-10.29 and 6.01-6.67 before. Every session was at or under the prediction.\n- **Phase overhead:** 0.60, 0.75 and 1.15 against the 1.00 budget, so inconclusive. cost-C-3's planning ran in two stretches around a human question and two refused writes.\n- **Quality:** hidden tests 13/14 everywhere, with the same output before and after. The protected assertion changed only in cost-C-3, which asked first and was approved by the scripted reply.\n\nThe open-choices behaviour is analysed per session. The next measured lever is the executor's prose hand-back, at 0.05-0.06 per cycle.\n\nThe document also lists the deviations: the CLI version, the account change, the added allow rules and the probe's window gate. Prose, link and PII lints are clean. docs/README.md's research row already covers the document. The harness and plugin faults found are recorded in the internal plan.",
+        "descriptive": "Measured on the benchmark, a task now costs about 1.3 to 1.4 times plain Claude Code doing the same task, down from about 5 times, which meets the 2x ceiling; the 1.25 ideal is met against whole plain sessions but not like for like, and the measurements name the next lever."
       },
       "startedAt": "2026-10-08T09:59:54Z",
-      "completedAt": null,
+      "completedAt": "2026-10-08T10:42:59Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-08T10:42:58Z.b3ac51",
         "status": "passed",
         "at": "2026-10-08T10:42:58Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6af645f3",
+        "at": "2026-10-08T10:42:59Z",
+        "basis": "orchestrator check: every section 7 target reported with its reading and command; readings repeated byte-identical from a clean export; deviations and limits stated"
       }
+    },
+    {
+      "id": "P118.20-v7t",
+      "title": "a return filed from the parent checkout after sign-off cannot land unseen",
+      "status": "pending",
+      "description": "Fixes P118 review round 5 findings R54-R57. close-phase treats a recorded verdict as settling only the phase returns it could have seen at the branch tip or in the branch's worktree. A return that needs a human and is found only in the parent checkout's evidence is refused once the tip records a verdict. A case covers the parent-checkout filing, with its twin. COMPATIBILITY and the guide say exactly what holds. The driver's reuse of a filed return records its findings once. The verb's remedy restores its qualifier. close-phase's post-verdict remedy names a way out that exists. Every new case is shown red first.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-07T21:17:01Z"
