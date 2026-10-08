@@ -6345,7 +6345,8 @@
       "P118.20-v7t",
       "P118.23-v7t",
       "P119.3-g0k",
-      "P119.4-g0k"
+      "P119.4-g0k",
+      "P119.7-g0k"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6"
