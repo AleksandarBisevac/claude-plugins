@@ -406,21 +406,27 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:1316-1339 (green_phase_gate), :1352-1368 (run_signoff), :1496-1498 (accept → bind_at → signoff_step)",
         "issue": "Rule (c): a path that signed off at round 2 now loops. The green phase-gate run is reused whenever HEAD has not moved. But the sign-off verb also checks that the run was measured under the gate the phase declares now and over its files as they stand. Changing either without a commit makes the reused run stale. The verb then refuses every `sign-off` answer, and nothing in the driver clears `phaseGate`; only `decline` does, and the gate-coverage decision is not asked again because `coverageAccepted` holds at the same HEAD. Reproduced on a scratch fixture (per_task=phase, phase gate `echo tests/unrelated_test.py 1 passed`): drive to `decide gate-coverage`, run `audit-task.py retarget P1 --gate-set \"echo src/f1.txt 1 passed\"`, then `next P1 --answer accept --reason ...`. Result: exit 1, `phase gate green (reused 2026-10-08T08:26:54Z.90404a)`, and the verb refused with '...measured under the gate [echo tests/unrelated_test.py 1 passed] ... and the phase declares [echo src/f1.txt 1 passed] now'. Three more rounds of triage then `--answer sign-off` gave the same refusal, and the state still named the old run. An uncommitted edit to src/f1.txt between the gate and the accept gives the same loop ('scopeDigest was ... and is ... now'). At round 2, run_signoff ran the gate again and both sequences signed off. The way out is the printed `run-test-gate.py ... --record` run by hand. After it, sign-off passes but still reuses the OLD run's banner list ('reused ...29bd18'), while the verdict binds to the new run (...45ea38). So nobody saw the banners of the run the verdict stands on, and the summary's 'Gate banner accepted' describes the other run. This breaks the premise R36's resolution relied on ('the newest ledger row is still the run the verdict binds to') whenever the gate or the files move without a commit; the docstring admits the uncommitted-edit case but not that it loops.",
-        "resolution": "Store the run's gate entries and scopeDigest in `phaseGate` alongside `head`. Reuse it only while all three still match, for example by asking `_verdict_binding.phase_binding` before reusing. Also pop `phaseGate` whenever anything after the gate refuses, the sign-off verb included, so the next sign-off measures again. Add a drive case: gate-coverage → `retarget --gate-set` → accept signs off on one fresh run whose banners were read. Its twin is dc4: accept at an unchanged gate and tree reuses the run."
+        "resolution": "fixed in P118.17-v7t (1dd702f2): Store the run's gate entries and scopeDigest in `phaseGate` alongside `head`. Reuse it only while all three still match, for example by asking `_verdict_binding.phase_binding` before reusing. Also pop `phaseGate` whenever anything after the gate refuses, the sign-off verb included, so the next sign-off measures again. Add a drive case: gate-coverage → `retarget --gate-set` → accept signs off on one fresh run whose banners were read. Its twin is dc4: accept at an unchanged gate and tree reuses the run.",
+        "fixTask": "P118.17-v7t",
+        "commit": "1dd702f2"
       },
       {
         "id": "P118-R44",
         "severity": "med",
         "file": "plugins/audit/scripts/git/close-phase.py:2013-2018 (landed_answers_refusal: `_phase_key_applies` → `return None`); README.md:691; COMPATIBILITY.md:363-366",
         "issue": "Rule (a). Under `always` or `signals`, close-phase lands a phase that has no sign-off verdict, so an unsettled answer in a filed phase return lands with no human asked. Reproduced on a scratch fixture (per_task=always, meta.reviewSkill set): the phase review was filed with intent `diverges`, and the triage printed `phase intent diverges - ... [accept]`. Then `close-phase.py <plan> P1 --project <root>` exited 0 with `audit/p1-one -> main (no-checkout)`, `mergedAt` stamped and `review.status` None. The same sequence under `phase` exits 1. This diff widens the human stop to 'every review.perTask value' (README:691 'Under every value, sign-off ... refuses while a filed phase return holds a diverges, cannot-tell ...'; COMPATIBILITY: 'that stop on a phase intent holds under every review.perTask value'). The landing only asks for a verdict where a task's key reads `phase`. The gap predates this round: round 2 lands the same way. It is listed here because it sits in the function this diff rewrote and on the property this diff extended.",
-        "resolution": "In `landed_answers_refusal`, under every key: when a landing is due and `_fr.needs_human(_fr.phase_returns(...))` holds an answer, refuse unless the tip copy (or, for an unversioned plan, the on-disk copy) records a sign-off verdict. Only the verb writes that verdict, and the verb has already checked the settlement. Add a case: the sim above exits 1 and merges nothing. Its twin: the same phase lands once it is signed off with the answer settled, and an `always` phase whose returns hold no such answer lands as before. If this is out of scope, add a followed-table row naming the route and the evidence it leaves: a filed `diverges` beside `mergedAt` with no `review.status`."
+        "resolution": "fixed in P118.17-v7t (1dd702f2): In `landed_answers_refusal`, under every key: when a landing is due and `_fr.needs_human(_fr.phase_returns(...))` holds an answer, refuse unless the tip copy (or, for an unversioned plan, the on-disk copy) records a sign-off verdict. Only the verb writes that verdict, and the verb has already checked the settlement. Add a case: the sim above exits 1 and merges nothing. Its twin: the same phase lands once it is signed off with the answer settled, and an `always` phase whose returns hold no such answer lands as before. If this is out of scope, add a followed-table row naming the route and the evidence it leaves: a filed `diverges` beside `mergedAt` with no `review.status`.",
+        "fixTask": "P118.17-v7t",
+        "commit": "1dd702f2"
       },
       {
         "id": "P118-R45",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py:8263-8268 (_human_settlement remedy); plugins/audit/scripts/governance/drive-phase.py:1147-1153 (triage)",
         "issue": "The verb's refusal sends a hand-run sign-off to `drive-phase.py next <pid>`. When a review skill resolves and no drive state exists, the driver first dispatches a new phase review. Sim: after the refusal 'phase: intent cannot-tell ... run `drive-phase.py next P1` and answer its triage', `next P1` printed `dispatch audit:audit-reviewer P1`. That is a second paid review just to record one accept, and the old answer stays in the triage either way. Under the group door the remedy is printed per member. Answering that member's triage `sign-off` would sign off and land the member alone.",
-        "resolution": "Let the triage read an existing filed phase return when no drive mark exists and no task is owed, rather than dispatching again. Or say in the refusal text that a review is dispatched, and, for a group, to answer only `accept` and sign the group off again."
+        "resolution": "fixed in P118.17-v7t (1dd702f2): Let the triage read an existing filed phase return when no drive mark exists and no task is owed, rather than dispatching again. Or say in the refusal text that a review is dispatched, and, for a group, to answer only `accept` and sign the group off again.",
+        "fixTask": "P118.17-v7t",
+        "commit": "1dd702f2"
       },
       {
         "id": "P118-R46",
@@ -434,10 +440,54 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:326 (DECISIONS review-answer)",
         "issue": "Under `always`/`signals`, a per-task reviewer's `diverges` / `cannot-tell` / `not-proved` becomes `decide review-answer`. It takes only `continue`, with no `--reason`, so the human's words are kept nowhere. The triage's `accept` now requires them. This diff did not change it.",
-        "resolution": "Require `--reason` on `continue` and carry it into the summary, the same way as the triage's accept."
+        "resolution": "fixed in P118.17-v7t (1dd702f2): Require `--reason` on `continue` and carry it into the summary, the same way as the triage's accept.",
+        "fixTask": "P118.17-v7t",
+        "commit": "1dd702f2"
+      },
+      {
+        "id": "P118-R48",
+        "severity": "med",
+        "file": "plugins/audit/scripts/git/close-phase.py landed_answers_refusal; PLUGIN-BUILD-GUIDE.md close-phase section",
+        "issue": "Any recorded sign-off verdict is taken as proof that the filed returns' human answers were settled, but file-return still accepts a phase return after the verdict. A diverges filed after sign-off and before landing merges with no human asked (reproduced under always). The guide and the docstring claim more than holds.",
+        "resolution": "Have file-return refuse a phase return once a sign-off verdict is recorded, as the other post-verdict writes are guarded, with a case and its twin. Narrow the guide and docstring if anything still differs."
+      },
+      {
+        "id": "P118-R49",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py coverageAccepted",
+        "issue": "The human's gate-coverage accept is bound to HEAD only. After a retarget at the same head, a different gate's banners are never shown, and the summary keeps words about the old gate.",
+        "resolution": "Bind the accept to the run (runId, or gate entries plus scopeDigest) and ask again when the run changes, with a gr4 case."
+      },
+      {
+        "id": "P118-R50",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py _human_settlement text; drive-phase.py sign-off pass",
+        "issue": "The redispatch remedy pays for a second phase review whose return is refused at an unchanged head, while the triage reads the first.",
+        "resolution": "Have the driver reuse a phase return already filed at the current head when no drive mark exists, and drop the second-review clause."
+      },
+      {
+        "id": "P118-R51",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py decide-review-answer rule",
+        "issue": "continue requires --reason, but the printed rule does not tell the model to ask the human, so the model can write the reason itself.",
+        "resolution": "Give the decision the triage accept's rule (ask the human, pass their words verbatim) and pin it in ct1."
+      },
+      {
+        "id": "P118-R52",
+        "severity": "low",
+        "file": "COMPATIBILITY.md human stop paragraph",
+        "issue": "The contract names sign-off's stop under every key but not close-phase's landing refusal under every key.",
+        "resolution": "Add the clause."
+      },
+      {
+        "id": "P118-R53",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py verdict-binding refusal text",
+        "issue": "With an uncommitted declared file present, the printed remedy (record again, then land) loops.",
+        "resolution": "Name the uncommitted declared files and say to commit or revert them before recording."
       }
     ],
-    "outcome": "[findings: 47 - 5 high, 19 med, 23 low; 42 with a recorded fix commit]"
+    "outcome": "[findings: 53 - 5 high, 20 med, 28 low; 46 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1623,7 +1673,7 @@
     {
       "id": "P118.17-v7t",
       "title": "a reused phase gate and an unsettled answer cannot loop or land unseen",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes P118 review round 3 findings R43-R47. A reused green phase-gate run is bound to its gate entries and scope digest as well as HEAD, through _verdict_binding, and is dropped whenever a later step refuses, so sign-off cannot loop on a stale run. close-phase refuses a landing under every review key when a filed phase return holds an unsettled answer and no sign-off verdict is recorded. The sign-off verb's refusal text says what the driver will do, including a second review, and how a group signs off. decide review-answer requires --reason on continue and carries it into the summary. Every new case is shown red first.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1661,19 +1711,78 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "1dd702f2",
+      "outcome": {
+        "technical": "Fixes P118-R43, R44, R45 and R47.\n\n- **R43.** drive-phase reuses a held green phase-gate run only at the same HEAD, and only while _verdict_binding.phase_binding, the sign-off verb's own check covering the gate entries and the scopeDigest, binds that run. drop_held_gate forgets the run when it stops binding, when verify-invariants refuses, and when the sign-off verb refuses. Cases: gr1-gr3 and dc4b, with dc4 as the allow case.\n- **R44.** close-phase reads the filed phase returns from the evidence directory, the worktree and the branch tip. Under every review key, it refuses a landing when one of them holds an answer _filed_returns.needs_human reports unsettled, or a return that will not parse, and no sign-off verdict is recorded on the tip (on disk for an unversioned plan). Cases: hl1, hl4 and hl5, with hl2 and hl3 as allow cases.\n- **R45.** The sign-off verb's refusal says when the driver will dispatch a second review, and tells a group member to answer only accept (hd29, hd29g, hd29b).\n- **R47.** continue on review-answer requires --reason, which goes into the summary (ct1, ct2).\n\n_filed_returns gains drive_state, review_marked and return_body, the one return parser (dm1, dm2, sa1m). The CHANGELOG, README row and build guide follow, and the module map was regenerated.\n\nRed-first was proved at HEAD for every block. The mutation probes each turned the expected case red. check-git-pipeline and the sweep are green.",
+        "descriptive": "Sign-off no longer loops on a reused gate run that stopped matching the phase, and a reviewer's doubt that only a human can settle can no longer be merged unseen under any review setting."
+      },
+      "startedAt": "2026-10-08T08:31:33Z",
+      "completedAt": "2026-10-08T09:29:41Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__filed_returns.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T09:29:40Z.0d47c6",
+        "status": "passed",
+        "at": "2026-10-08T09:29:40Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "1dd702f2",
+        "at": "2026-10-08T09:29:41Z",
+        "basis": "orchestrator check: both meds reproduced as red cases with allow twins; one binding rule reused from the verb; mutations both ways"
+      }
+    },
+    {
+      "id": "P118.18-v7t",
+      "title": "a late return, a re-targeted gate and a re-run review cannot slip past a human",
+      "status": "pending",
+      "description": "Fixes P118 review round 4 findings R48-R53. file-return refuses a phase return once a sign-off verdict is recorded, so a late return cannot land a human answer unseen. The gate-coverage accept is bound to the run, not only HEAD. The driver reuses a phase return already filed at the current head instead of paying for a second review. decide-review-answer tells the model to ask the human. COMPATIBILITY names close-phase's landing refusal under every key. The verdict-binding refusal names uncommitted declared files. Every new case is shown red first.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-08T08:31:33Z",
+      "startedAt": null,
       "completedAt": null,
-      "verifiedBy": [],
-      "testEvidence": {
-        "runId": "2026-10-08T09:29:40Z.0d47c6",
-        "status": "passed",
-        "at": "2026-10-08T09:29:40Z"
-      }
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-07T21:17:01Z"
