@@ -1335,7 +1335,8 @@
       "P109.1",
       "P104.4",
       "P104.11-tog",
-      "P120.1"
+      "P120.1",
+      "P120.2-byv"
     ],
     "docs/design/audit-concurrency-report.md": [
       "P60.3"
@@ -1372,11 +1373,13 @@
       "P109.1",
       "P104.4",
       "P104.11-tog",
-      "P120.1"
+      "P120.1",
+      "P120.2-byv"
     ],
     "docs/screenshots": [
       "P53.9",
-      "P120.1"
+      "P120.1",
+      "P120.2-byv"
     ],
     "docs/screenshots/captured-at.json": [
       "P63.9",
@@ -1418,7 +1421,8 @@
       "P109.1",
       "P104.4",
       "P104.11-tog",
-      "P120.1"
+      "P120.1",
+      "P120.2-byv"
     ],
     "examples/acme-store/acme-store-audit.md": [
       "P13.3",
@@ -1430,7 +1434,8 @@
       "P80.15-rtb",
       "P104.4",
       "P104.11-tog",
-      "P120.1"
+      "P120.1",
+      "P120.2-byv"
     ],
     "examples/acme-store/audit-plan.json": [
       "P50.3",
