@@ -4072,6 +4072,7 @@ def _cases(check):
                    # fixture carries, with the one flag each requires.
                    "move": ["move", "P2.3", "--to", "P3"],
                    "block": ["block", "P2.3", "--reason", "r"],
+                   "unblock": ["unblock", "P2.3", "--reason", "r"],
                    "note": ["note", "P2.3", "--text", "t"],
                    # `couple`/`uncouple` take no id at all - the misplaced-flag
                    # check this grid drives fires BEFORE either verb's own
@@ -4241,6 +4242,14 @@ def _cases(check):
         _vf_ok["unmute/--test"] = run(
             ["unmute", "--test", "tests/test_vf.py", "--json",
              "--project-dir", _vf_mu_proj])[0]
+        # `unblock` reads `--reason`, on a task whose attempts are spent.
+        _vf_ub = base_manifest()
+        _vf_ub["phases"][1]["tasks"][1].update(status="blocked", attempts=3,
+                                              maxAttempts=3)
+        _vf_ub_proj, _vf_ub_mp = mk("vf-unblock", _vf_ub)
+        _vf_ok["unblock/--reason"] = run(
+            ["unblock", "P2.3", "--reason", "the human says again", "--json",
+             "--project-dir", _vf_ub_proj])[0]
         check("vf4 SECOND-DIRECTION CASE: every flag a verb DOES read still "
               "works, and `--json` / `--project-dir` reach every verb - a guard "
               "that fires on a correct call is a guard somebody routes around "
@@ -7380,6 +7389,8 @@ def _cases(check):
                       "--owner", "o", "--until", "2998-01-01",
                       "--bug", "BUG-3"]),
             ("unmute", ["unmute", "--test", "tests/test_tw.py"]),
+            # ...and `unblock`, on a pair whose task has spent its attempts.
+            ("unblock", ["unblock", "P2.3", "--reason", "try again"]),
         )
         # `signoff` gets its own pair too: by its row every other row has left P2
         # with open work, which it rightly refuses.
@@ -7392,7 +7403,12 @@ def _cases(check):
         _tw_mu = base_manifest()
         _tw_mu["bugs"] = [{"id": "BUG-3", "title": "flaky", "status": "open"}]
         tw_mu_proj, _tw_mu_mp, tw_mu_tree = mk_pair("tw-mute", _tw_mu)
-        _tw_pairs = {"mute": (tw_mu_tree, tw_mu_proj),
+        _tw_ub = base_manifest()
+        _tw_ub["phases"][1]["tasks"][1].update(status="blocked", attempts=3,
+                                              maxAttempts=3)
+        tw_ub_proj, _tw_ub_mp, tw_ub_tree = mk_pair("tw-unblock", _tw_ub)
+        _tw_pairs = {"unblock": (tw_ub_tree, tw_ub_proj),
+                     "mute": (tw_mu_tree, tw_mu_proj),
                      "unmute": (tw_mu_tree, tw_mu_proj),
                      "seed": (tw_seed_tree, tw_seed_proj),
                      "signoff": (tw_sign_tree, tw_sign_proj),
@@ -12414,6 +12430,24 @@ def _success_line_cases(check):
           refused[0] == M.E_USAGE and len(refused[1].splitlines()) > 1
           and refused == _cli(["done", "P1.1", "--outcome", "x", "--verbose"],
                               short_proj))
+    # What the write itself decided survives the short form: the gate basis,
+    # the next command, and a warning about the id it wrote. A warning about
+    # another id was there before the write and is still dropped.
+    held = project("held")
+    _cli(["add", "Earlier", "--phase", "P1", "--files", "src/c.ts",
+          "--tests-mode", "tdd"], held)
+    acode, added = _cli(["add", "Later", "--phase", "P1", "--files", "src/b.ts",
+                         "--tests-mode", "tdd"], held)
+    alines = added.splitlines()
+    check("sl6 an `add` keeps, beside its headline, the gate basis, the ready "
+          "line and the warning naming the task it added, and drops the "
+          "warning about the task added before it: %r" % (added,),
+          acode == 0 and alines[0].startswith("[audit-task] P1.3 added")
+          and alines[0].rstrip().endswith("written: docs/audit/audit-plan.json")
+          and sum(1 for ln in alines if ln.startswith("gate: ")) == 1
+          and "ready now -- /audit:run P1.3" in alines
+          and sum(1 for ln in alines if ln.startswith("WARNING: task P1.3:")) == 1
+          and not any("P1.2" in ln for ln in alines if ln.startswith("WARNING")))
 
 
 # A close against a commit needs the reviewer's filed return or a deliberate
@@ -13202,6 +13236,26 @@ def _held_cases(check):
           f6[0] == M.E_USAGE and "--head" in f6[1]
           and f7[0] == M.E_USAGE and "--head" in f7[1])
 
+    # A recorded fix task's close under `phase` has one form. With no --intent
+    # it would record `deferred`, an answer the phase review never owes a fix
+    # task, so sign-off could then never pass.
+    projx, mpathx = project("fix-deferred", [ph("P1", [tk("P1.1")], review={
+        "findings": [finding("P1-R1")]})])
+    verb(projx, "add", "fix R1", "--phase", "P1", "--files", "src/f.ts",
+         "--fixes", "P1-R1")
+    verb(projx, "start", "P1.2")
+    before = read(mpathx)
+    r22 = close(projx, "P1.2")
+    after = read(mpathx)
+    r23 = close(projx, "P1.2", "--intent", "not-asked", *_HD_BASIS)
+    check("hd24 under `phase`, a recorded fix task closed with no --intent is "
+          "refused naming `--intent not-asked --intent-basis`, writing nothing, "
+          "and the same task closed that way closes: %r"
+          % ((r22[0], r22[1][-160:], r23[0]),),
+          r22[0] == M.E_USAGE and "--intent not-asked" in r22[1]
+          and "--intent-basis" in r22[1] and after == before
+          and r23[0] == 0 and answer(mpathx, "P1.2") == "not-asked")
+
 
 def _batch_doc(**over):
     """A planning file in the shape `add --from-file` reads: the request as
@@ -13219,6 +13273,51 @@ def _batch_doc(**over):
                       "dependsOn": ["sum"]}]}
     doc.update(over)
     return doc
+
+
+def _phase_section(text, lead):
+    """The `## ` section of a command body whose heading starts with `lead`."""
+    start = text.find("\n## " + lead)
+    end = text.find("\n## ", start + 1)
+    return text[start:end if end > start else len(text)] if start >= 0 else ""
+
+
+def _phase_add_gaps(text):
+    """What the `add` section of commands/phase.md fails to name, as sentences:
+    a `phase` key the batch file takes, a flag the hint gives `add`, or
+    `add-phase` beside `--park`. Empty is the one answer that passes."""
+    import re
+    section = _phase_section(text, "Subcommand: `add")
+    if not section:
+        return ["no `add` section"]
+    hint = re.search(r"^argument-hint: '(.*)'$", text, re.M)
+    add = [part for part in (hint.group(1) if hint else "").split(" | ")
+           if part.startswith("add ")]
+    gaps = ([] if add else ["the hint gives no `add` form"])
+    gaps += ["the `phase` key %r" % (key,) for key in M.BATCH_PHASE_KEYS
+             if '"%s"' % (key,) not in section]
+    gaps += ["the flag %s" % (flag,) for flag in
+             sorted(set(re.findall(r"--[a-z][a-z-]*", add[0] if add else "")))
+             if flag not in section]
+    park = section.find("--park")
+    if park < 0 or "add-phase" not in section[park:park + 160]:
+        gaps.append("`add-phase` beside `--park`")
+    return gaps
+
+
+def _phase_run_gaps(text):
+    """What the run section of commands/phase.md fails to name: the preview's
+    `audit-status.py --phase` and the `not started yet` reading."""
+    import re
+    section = _phase_section(text, "Run a phase")
+    if not section:
+        return ["no run section"]
+    gaps = []
+    if not re.search(r'audit-status\.py"? --phase', section):
+        gaps.append("`audit-status.py --phase`")
+    if "not started yet" not in section:
+        gaps.append("`not started yet`")
+    return gaps
 
 
 def _batch_cases(check):
@@ -13295,10 +13394,12 @@ def _batch_cases(check):
           and written["fileIndex"].get("src/b.ts") == ["P2.1"]
           and findings == [])
     check("fb2 ...said in one success line naming the phase, its tasks and "
-          "the file written: %r" % (txt,),
-          txt.count("\n") == 1
-          and txt.startswith("[audit-task] phase P2 added with P2.1, P2.2")
-          and "written: docs/audit/audit-plan.json" in txt)
+          "the file written, with the gate basis the write decided on a line "
+          "of its own: %r" % (txt,),
+          txt.startswith("[audit-task] phase P2 added with P2.1, P2.2")
+          and "written: docs/audit/audit-plan.json" in txt.splitlines()[0]
+          and [ln for ln in txt.splitlines()[1:]]
+          == ["gate: test (from meta.buildCommands)"])
 
     proj, mpath = project("sharded", sharded=True)
     code, txt = _cli(["add", "--from-file", batch(proj, _batch_doc())], proj)
@@ -13387,6 +13488,213 @@ def _batch_cases(check):
           and "allowed-tools:" in head
           and "Write" in head.split("allowed-tools:", 1)[1].splitlines()[0]
           and 0 < len(section.encode("utf-8")) <= 8000)
+    gaps = _phase_add_gaps(doc_text)
+    check("fb11 the `add` section of commands/phase.md names every `phase` key "
+          "the batch file takes, every flag the hint gives `add`, and "
+          "`add-phase` beside `--park` - the main loop reads no other text "
+          "before writing the file: %r" % (gaps,),
+          gaps == [])
+    gaps = _phase_run_gaps(doc_text)
+    check("fb12 the run section of commands/phase.md names the preview's "
+          "`audit-status.py --phase` and reads a phase with no branch as `not "
+          "started yet`: %r" % (gaps,), gaps == [])
+
+
+def _unblock_cases(check):
+    """`unblock <id> --reason`: the way past a task whose attempts are spent.
+    `start` refuses one past `maxAttempts`, `--force` included, and the hand
+    edit that reset the count is what the verbs replace - so the reset is a
+    verb, takes a human's reason, and is journaled."""
+    import _journal_io
+    root = _harness.fixture_root("audit-task-ub-")
+
+    def tk(tid, status, attempts, **over):
+        task = {"id": tid, "title": tid, "status": status,
+                "description": "do " + tid, "files": ["src/%s.ts" % (tid,)],
+                "tests": {"mode": "gate-only", "add": [],
+                          "expectRedFirst": False, "gate": ["test"]},
+                "attempts": attempts, "maxAttempts": 3}
+        if attempts:
+            task["startedAt"] = "2026-01-01T00:00:00Z"
+        task.update(over)
+        return task
+
+    def project(name, tasks):
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        _panel_write._atomic_write_json(
+            os.path.join(proj, ".claude", "audit.config.json"),
+            {"manifestPath": "docs/audit/audit-plan.json",
+             "review": {"perTask": "always"}})
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        index = dict((t["files"][0], [t["id"]]) for t in tasks)
+        _panel_write._atomic_write_json(mpath, {
+            "meta": {"version": 2, "buildCommands": {"test": "true"}},
+            "phases": [{"id": "P1", "title": "P1", "status": "in_progress",
+                        "testGate": ["test"], "tasks": tasks}],
+            "fileIndex": index, "bugs": []})
+        return proj, mpath
+
+    def verb(proj, *argv):
+        lines = []
+        code = M.main(list(argv) + ["--project-dir", proj], out=lines.append)
+        return code, "\n".join(str(x) for x in lines)
+
+    def task(mpath, tid):
+        return _mio.tasks_by_id(_mio.load_manifest(mpath)).get(tid) or {}
+
+    def read(path):
+        with open(path, "rb") as fh:
+            return fh.read()
+
+    try:
+        proj, mpath = project("blocked", [
+            tk("P1.1", "blocked", 3, blockedReason="attempts exhausted"),
+            tk("P1.2", "pending", 0), tk("P1.3", "done", 1, commit="a" * 40),
+            tk("P1.4", "in_progress", 3),
+            tk("P1.5", "blocked", 1, blockedReason="waiting on the API")])
+        refused_start = verb(proj, "start", "P1.1", "--force", "--reason", "x")
+        before = read(mpath)
+        nr = verb(proj, "unblock", "P1.1")
+        fresh = verb(proj, "unblock", "P1.2", "--reason", "r")
+        closed = verb(proj, "unblock", "P1.3", "--reason", "r")
+        whole = verb(proj, "unblock", "P1", "--reason", "r")
+        waiting = verb(proj, "unblock", "P1.5", "--reason", "r")
+        check("ub1 `unblock` with no reason, of a task with attempts left, of "
+              "one blocked for another reason with attempts left (its count is "
+              "not this verb's to reset), of a done task and of a phase id is "
+              "refused, and nothing is written: %r"
+              % ([(r[0], r[1][-90:]) for r in (nr, fresh, waiting, closed,
+                                                whole)],),
+              [r[0] for r in (nr, fresh, waiting, closed, whole)]
+              == [M.E_USAGE] * 5
+              and "--reason" in nr[1] and "start P1.2" in fresh[1]
+              and "start P1.5" in waiting[1] and read(mpath) == before)
+        code, text = verb(proj, "unblock", "P1.1", "--reason",
+                          "the human read the red and says try again")
+        t1 = task(mpath, "P1.1")
+        rows = [r for r in _journal_io.read_all(proj)
+                if r.get("action") == "task.unblock"]
+        started = verb(proj, "start", "P1.1")
+        check("ub2 ALLOW: a blocked task whose attempts are spent is put back to "
+              "pending with its count reset and its block reason cleared, one "
+              "task.unblock row carries the reason, and the `start` refused "
+              "before it now runs: %r"
+              % ((refused_start[0], code, t1.get("status"), t1.get("attempts"),
+                  len(rows), started[0], text[:160]),),
+              refused_start[0] == M.E_USAGE and code == 0
+              and t1.get("status") == "pending" and t1.get("attempts") == 0
+              and "blockedReason" not in t1 and len(rows) == 1
+              and (rows[0].get("details") or {}).get("reason")
+              == "the human read the red and says try again"
+              and started[0] == 0)
+        code, _text = verb(proj, "unblock", "P1.4", "--reason", "go on")
+        t4 = task(mpath, "P1.4")
+        check("ub3 ALLOW: a running task whose attempts are spent, never set "
+              "blocked, has its count reset and stays running - the unblock "
+              "is of the count, and a rule reading status alone refuses it: %r"
+              % ((code, t4.get("status"), t4.get("attempts")),),
+              code == 0 and t4.get("status") == "in_progress"
+              and t4.get("attempts") == 0)
+        doc = M.__doc__ or ""
+        check("ub4 the verb is in the usage block and in VERB_FLAGS with "
+              "`--reason` its one flag: %r" % (M.VERB_FLAGS.get("unblock"),),
+              "audit-task.py unblock <taskId> --reason" in doc
+              and M.VERB_FLAGS.get("unblock") == ("reason",))
+    finally:
+        _harness.remove_tree(root)
+
+
+def _no_change_moved_cases(check):
+    """`done --no-change` is a claim that the task's files did not need to
+    change. A task with no commit is never asked the landing property, so the
+    claim is checked against git: a commit since the task's start touching one
+    of its files, or an uncommitted change to one, refuses it."""
+    import subprocess
+    root = _harness.fixture_root("audit-task-ncm-")
+    env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+
+    def git(proj, *argv, **kw):
+        e = dict(env)
+        if kw.get("date"):
+            e["GIT_AUTHOR_DATE"] = e["GIT_COMMITTER_DATE"] = kw["date"]
+        return subprocess.run(["git", "-C", proj] + list(argv), env=e,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    def write(proj, rel, text):
+        path = os.path.join(proj, *rel.split("/"))
+        if not os.path.isdir(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path))
+        with open(path, "w") as fh:
+            fh.write(text)
+
+    def project(name):
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        _panel_write._atomic_write_json(
+            os.path.join(proj, ".claude", "audit.config.json"),
+            {"manifestPath": "docs/audit/audit-plan.json",
+             "review": {"perTask": "always"}})
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        task = {"id": "P1.1", "title": "t", "status": "in_progress",
+                "description": "d", "files": ["src/a.ts"],
+                "tests": {"mode": "gate-only", "add": [],
+                          "expectRedFirst": False, "gate": ["test"]},
+                "attempts": 1, "maxAttempts": 3,
+                "startedAt": "2026-01-01T00:00:00Z"}
+        _panel_write._atomic_write_json(mpath, {
+            "meta": {"version": 2, "buildCommands": {"test": "true"}},
+            "phases": [{"id": "P1", "title": "P1", "status": "in_progress",
+                        "testGate": ["test"], "tasks": [task]}],
+            "fileIndex": {"src/a.ts": ["P1.1"]}, "bugs": []})
+        git(proj, "init", "-q", "-b", "main")
+        write(proj, "src/a.ts", "a\n")
+        write(proj, "src/b.ts", "b\n")
+        git(proj, "add", "-A")
+        git(proj, "commit", "-q", "-m", "base", date="2025-06-01T00:00:00Z")
+        return proj, mpath
+
+    def close(proj):
+        lines = []
+        code = M.main(["done", "P1.1", "--no-change", "--reason", "nothing to do",
+                       "--project-dir", proj], out=lines.append)
+        return code, "\n".join(str(x) for x in lines)
+
+    def read(path):
+        with open(path, "rb") as fh:
+            return fh.read()
+
+    try:
+        proj, mpath = project("committed")
+        write(proj, "src/a.ts", "changed\n")
+        git(proj, "commit", "-q", "-am", "work", date="2026-02-01T00:00:00Z")
+        before = read(mpath)
+        code, text = close(proj)
+        check("ncm1 a commit since the task's start touching its file refuses "
+              "`--no-change`, naming the file, and writes nothing: %r"
+              % ((code, text[:200]),),
+              code == M.E_USAGE and "src/a.ts" in text and read(mpath) == before)
+        proj, mpath = project("dirty")
+        write(proj, "src/a.ts", "uncommitted\n")
+        before = read(mpath)
+        code, text = close(proj)
+        check("ncm2 an uncommitted change to the task's file refuses it too, "
+              "writing nothing: %r" % ((code, text[:200]),),
+              code == M.E_USAGE and "src/a.ts" in text and read(mpath) == before)
+        proj, mpath = project("unmoved")
+        write(proj, "src/b.ts", "another task's\n")
+        git(proj, "commit", "-q", "-am", "other", date="2026-02-01T00:00:00Z")
+        code, text = close(proj)
+        check("ncm3 ALLOW: the task's file last changed BEFORE its start, and "
+              "a commit since touching another file only, closes no-change - "
+              "a check reading all of history, or every file, would refuse "
+              "this: %r" % ((code, text[:200]),),
+              code == 0)
+    finally:
+        _harness.remove_tree(root)
 
 
 def _selftest():
@@ -13397,6 +13705,8 @@ def _selftest():
         _harness.stage(check, "fr-block", _return_cases)
         _harness.stage(check, "fb-block", _batch_cases)
         _harness.stage(check, "hd-block", _held_cases)
+        _harness.stage(check, "ub-block", _unblock_cases)
+        _harness.stage(check, "ncm-block", _no_change_moved_cases)
     return _harness.run(body)
 
 

@@ -1,6 +1,6 @@
 ---
-description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — promote one to running, close one that landed, move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `start` promotes a task to in_progress so the plan gate resolves its files, without spawning anything; `done` closes it against the commit its work landed in, writing status, completedAt, commit, outcome and verifiedBy in one write — or, with `--no-change --reason`, closes a task whose answer was that nothing needed to change; `reopen` puts a done task back to pending with the reason recorded; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `block` sets a task blocked with the reason beside the status; `note` appends a dated note, the one addition a started task takes; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
-argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] [--from-file PATH] [--fixes findingIds] | start <taskId> [--force --reason "<why>"] | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] [--override-verdict TEXT] [--from-return] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id], or --test <path> --caught <runId> | uncouple --test <path> | mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId> | unmute --test <path> | cancel <id> --reason "<why>"'
+description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — promote one to running, close one that landed, move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `start` promotes a task to in_progress so the plan gate resolves its files, without spawning anything; `done` closes it against the commit its work landed in, writing status, completedAt, commit, outcome and verifiedBy in one write — or, with `--no-change --reason`, closes a task whose answer was that nothing needed to change; `reopen` puts a done task back to pending with the reason recorded; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `block` sets a task blocked with the reason beside the status; `unblock` resets the attempts a task has spent, on a human's recorded reason; `note` appends a dated note, the one addition a started task takes; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
+argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] [--from-file PATH] [--fixes findingIds] | start <taskId> [--force --reason "<why>"] | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] [--override-verdict TEXT] [--from-return] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | unblock <taskId> --reason "<why>" | note <taskId> --text TEXT | couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id], or --test <path> --caught <runId> | uncouple --test <path> | mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId> | unmute --test <path> | cancel <id> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
@@ -15,10 +15,10 @@ empty verb: print the hint and stop.
 decided as flags, and ask only for what is missing. A flag another verb reads exits 2 naming that
 verb (`scope --outcome` is refused); relay it rather than retrying.
 
-**The operator's words go in VERBATIM** — see `reference/manifest-conventions.md` → *The
-operator's words go in unchanged*. Every `--reason`, `--text` and `--description` reaches the
-hash-chained journal; `-` reads the value off stdin. **Print the writer's output as it came** -
-it names what was written, the journal row and the next command.
+**The operator's words go in VERBATIM**: a `--reason` is theirs, unparaphrased, and reaches the
+hash-chained journal, as do `--text` and `--description`; `-` reads the value off stdin. **Print
+the writer's output as it came** - a line naming what was written and the file, then any gate
+basis, `ready now` command and warning about the id it wrote; `--verbose` prints the rest.
 
 **Exit codes, every verb:** `0` written. `1` the write would leave the plan invalid - rolled back,
 the findings printed; fix the inputs. `2` usage - the message names the choices; ask, adjust,
@@ -73,6 +73,11 @@ needs - relay it, never type an `--intent` word a reviewer did not file.
 ## Subcommand: `block <taskId> --reason "<why>"`
 
 `T block <taskId> --reason "<what it waits on>"`.
+
+## Subcommand: `unblock <taskId> --reason "<why>"`
+
+`T unblock <taskId> --reason "<the human's words>"` - only after a human says try again: it
+resets the spent attempts (a blocked task goes back to pending) and journals the reason.
 
 ## Subcommand: `note <taskId> --text TEXT`
 

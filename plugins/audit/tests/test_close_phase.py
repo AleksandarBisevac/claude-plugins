@@ -1060,6 +1060,82 @@ def _review_answer_cases(check):
         finally:
             if root:
                 _harness.remove_tree(root)
+    _review_answer_parent_cases(check)
+
+
+def _review_answer_parent_cases(check):
+    """The landing asked FROM THE PARENT'S CHECKOUT, which is where it is usually
+    run: the parent's copy of the plan still shows the phase as it was at the fork
+    - no task records a commit - so a property read off that copy alone asks
+    nothing. The copy the merge brings in is the branch tip's, and it is asked
+    too."""
+    answered = dict(_RA_ANSWERED, commit="{sha}")
+    cases = (
+        ("ra8", "parent-deferred",
+         {"reviewPerTask": "phase",
+          "intentCheck": {"answer": "deferred", "commit": "{sha}"}}, False,
+         "a task closed `deferred` on the branch alone is refused at the merge "
+         "run from the parent's checkout, whose copy records no commit"),
+        ("ra9", "parent-answered",
+         {"reviewPerTask": "phase", "intentCheck": answered}, True,
+         "ALLOW: the same landing with the answers bound to the commit on the "
+         "branch merges from the parent's checkout - a refusal of every "
+         "parent-side landing would fail here"),
+    )
+    for cid, name, fields, lands, label in cases:
+        root = None
+        try:
+            root, mpath, git, sha = _review_answer_fixture(name, fields)
+            git("checkout", "-q", "main")
+            code, text = _close(mpath, root)
+            merged = git("merge-base", "--is-ancestor", sha, "main").returncode == 0
+            ok = (code == 0 and merged) if lands else (
+                code == 1 and not merged and "review.perTask" in text
+                and "P1.1" in text and "audit/p1-demo" in text)
+            check("%s %s: exit %r, %r" % (cid, label, code, text[-300:]), ok)
+        finally:
+            if root:
+                _harness.remove_tree(root)
+    # The tip's copy cannot be read when the plan is not committed at all - an
+    # excluded plan directory - and the parent's copy then cannot stand in for
+    # the copy the merge brings in.
+    for cid, key, lands, label in (
+            ("ra10", "phase", False,
+             "a branch whose tip holds no copy of the plan is refused where the "
+             "property could apply - the parent's copy never stands in for it"),
+            ("ra11", "always", True,
+             "ALLOW: the same unreadable tip merges when the task's key reads "
+             "`always`, where the property asks nothing")):
+        root = None
+        try:
+            root = _harness.fixture_root("closephase-tipless-%s" % (cid,))
+            git = _fixture_git(root)
+            _init_fixture_repo(git)
+            with open(os.path.join(root, "seed.txt"), "w") as fh:
+                fh.write("seed\n")
+            git("add", "seed.txt")
+            git("commit", "-q", "-m", "base")
+            with open(os.path.join(root, ".git", "info", "exclude"), "a") as fh:
+                fh.write("docs/\n")
+            phase = _signed_phase("P1", "audit/p1-demo")
+            phase["tasks"][0]["reviewPerTask"] = key
+            mpath = _write_plan(root, {"developmentBranch": "main"}, [phase])
+            git("checkout", "-q", "-b", "audit/p1-demo")
+            with open(os.path.join(root, "work.txt"), "w") as fh:
+                fh.write("work\n")
+            git("add", "work.txt")
+            git("commit", "-q", "-m", "work")
+            sha = git("rev-parse", "HEAD").stdout.decode().strip()
+            git("checkout", "-q", "main")
+            code, text = _close(mpath, root)
+            merged = git("merge-base", "--is-ancestor", sha, "main").returncode == 0
+            ok = merged if lands else (
+                code == 1 and not merged and "audit/p1-demo" in text
+                and "could not be read" in text)
+            check("%s %s: exit %r, %r" % (cid, label, code, text[-300:]), ok)
+        finally:
+            if root:
+                _harness.remove_tree(root)
 
 
 # The trail's action name for a close made over its verdict's refusal, spelled
@@ -2105,6 +2181,69 @@ def _landing_commit_cases(check):
               and "not committed here" in text and "other" in text)
     finally:
         _harness.remove_tree(root)
+    _foreign_pending_cases(check)
+
+
+def _foreign_pending_cases(check):
+    """A SHARED PARENT CHECKOUT: another session's uncommitted plan or journal
+    change sits in the tree a landing's stamp is committed in. The merge itself
+    refuses a dirty parent, so the shape is the re-run that commits a stamp an
+    earlier landing left uncommitted. The audit-state commit stages the whole
+    manifest file and the whole journal directory, so committing the stamp
+    there would carry that other work under a subject saying the phase landed;
+    it is left for that tree's own work, and the skip is said."""
+    import _journal_io
+    cases = (("lt6", "plan", "another session's uncommitted edit to the plan's "
+                             "meta is not committed under the landing's subject"),
+             ("lt7", "journal", "another session's uncommitted journal row about "
+                                "another phase is not committed under it either"),
+             ("lt8", None, "ALLOW: the same re-run with nothing else pending "
+                           "commits its stamp - a skip on every re-run would "
+                           "fail here"))
+    for cid, foreign, label in cases:
+        root = _harness.fixture_root("closephase-foreign-%s" % (cid,))
+        wt = None
+        try:
+            mpath, wt, _wt_mpath, git = _worktree_fixture(root)
+            M.main([mpath, "P1", "--project", root], out=lambda _line: None)
+            with open(mpath) as fh:
+                stamped = fh.read()
+            body = json.loads(stamped)
+            for ph in body["phases"]:
+                ph["mergedAt"], ph["status"] = None, "in_progress"
+                ph.pop("mergedHead", None)
+            with open(mpath, "w") as fh:
+                json.dump(body, fh)
+            git("commit", "-q", "-am", "the plan without its stamp")
+            body = json.loads(stamped)
+            if foreign == "plan":
+                body["meta"]["note"] = "another session's edit"
+            with open(mpath, "w") as fh:
+                json.dump(body, fh)
+            if foreign == "journal":
+                jdir = _journal_io.journal_dir(root, _journal_io.load_config(root))
+                if not os.path.isdir(jdir):
+                    os.makedirs(jdir)
+                with open(os.path.join(jdir, "2026-01.other.jsonl"), "w") as fh:
+                    fh.write(json.dumps({"action": "task.note", "details": {
+                        "phaseId": "P9", "taskId": "P9.1"}}) + "\n")
+            lines = []
+            code = M.main([mpath, "P1", "--project", root], out=lines.append)
+            text = "\n".join(lines)
+            if foreign:
+                ok = (_head_merged_at(git) is None and bool(_merged_at(mpath))
+                      and "not committed here" in text
+                      and ("other.jsonl" in text if foreign == "journal"
+                           else "audit-plan.json" in text))
+            else:
+                ok = (code == M.E_OK
+                      and _head_merged_at(git) == _merged_at(mpath))
+            check("%s %s: exit %r, HEAD mergedAt %r, %s"
+                  % (cid, label, code, _head_merged_at(git), text[-400:]), ok)
+        finally:
+            _harness.remove_tree(root)
+            if wt and os.path.isdir(wt):
+                _harness.remove_tree(wt)
 
 
 def _no_survivor_cases(check):

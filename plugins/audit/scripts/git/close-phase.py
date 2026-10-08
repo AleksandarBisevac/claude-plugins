@@ -665,7 +665,12 @@ def phase_as_landed(git_root, manifest_path, branch, phase_id):
     and the second run it forced moved `mergedAt`. Once the branch is gone - the
     re-run after a cleanup - the tree's own copy is the landed one, and says so.
     """
-    rel = os.path.relpath(os.path.abspath(manifest_path), git_root)
+    # The path is relative to the tree that HOLDS the manifest: a worktree's
+    # manifest handed from the main checkout sits outside `git_root`, and a path
+    # taken against `git_root` would name a file no commit holds.
+    holder = _wt.tree_root(os.path.dirname(os.path.abspath(manifest_path)))["root"]
+    rel = os.path.relpath(os.path.realpath(os.path.abspath(manifest_path)),
+                          os.path.realpath(holder or git_root))
     landed = _mio.load_manifest_at(git_root, "refs/heads/" + branch, rel.replace(os.sep, "/"))
     for ph in ((landed or {}).get("phases") or []):
         if isinstance(ph, dict) and str(ph.get("id")) == str(phase_id):
@@ -1437,6 +1442,15 @@ def commit_landing(target, phase_id, project, git_root, parent, branch=None,
             "that landed in it, so a commit there would not reach %s - commit "
             "it with that tree's own work" % (
                 target, here.get("branch") or "no branch", parent, parent))}
+    others = pending_beyond_stamp(
+        target, phase_id, project, (here if on_branch else holder).get("path"))
+    if others:
+        return {"landingCommits": [], "landingCommitSkipped": (
+            "%s holds uncommitted changes this landing did not write (%s), and the "
+            "audit-state commit stages the whole of each file and directory they "
+            "sit in - so committing the stamp there would carry them under a "
+            "subject saying the phase landed. Commit it with that tree's own work"
+            % ((here if on_branch else holder).get("path"), "; ".join(others)))}
     made = _commit_stamp(target, phase_id, project, parent)
     if made.get("landingCommitWhy") or not on_branch:
         made["landingCommitIn"] = (holder or here).get("path")
@@ -1457,6 +1471,118 @@ def commit_landing(target, phase_id, project, git_root, parent, branch=None,
             % (branch, " ".join(argv), parent, code,
                (err or "").strip()[:160], parent))
     return made
+
+
+# The fields a landing writes on its own phase. Anything else differing from the
+# tree's HEAD in what the audit-state commit stages is somebody else's.
+_STAMP_FIELDS = (MERGED_FIELD, MERGED_HEAD_FIELD, MERGED_HEAD_AT_FIELD, "status")
+
+
+def _git_text(tree, args):
+    """`(code, text)` of one git call in `tree`, or (None, "") when git cannot run."""
+    code, raw = _git_bytes(tree, args)
+    return code, raw.decode("utf-8", "replace")
+
+
+def _tree_rel(tree, path):
+    """`path` relative to `tree`, `/`-separated, or None when it is outside it."""
+    rel = os.path.relpath(os.path.realpath(path), os.path.realpath(tree))
+    return None if rel == ".." or rel.startswith(".." + os.sep) else \
+        rel.replace(os.sep, "/")
+
+
+def _unstamped(text, phase_id):
+    """The plan file's JSON with this phase's stamp fields taken out, or None
+    when it does not parse."""
+    try:
+        body = json.loads(text)
+    except ValueError:
+        return None
+    for ph in _phases_in(body, phase_id):
+        for key in _STAMP_FIELDS:
+            ph.pop(key, None)
+    return body
+
+
+def _foreign_rows(head_text, text, phase_id):
+    """Why the rows `text` holds past `head_text` are not all this phase's, or
+    None when they are. The trail is append-only, so anything but an extension
+    of what HEAD holds is somebody else's change too."""
+    if not text.startswith(head_text):
+        return "it no longer begins with what HEAD holds"
+    for line in text[len(head_text):].splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            return "a row that does not parse"
+        if str(((row if isinstance(row, dict) else {}).get("details") or {})
+               .get("phaseId")) != str(phase_id):
+            return "a row about something other than phase %s" % (phase_id,)
+    return None
+
+
+def pending_beyond_stamp(target, phase_id, project, tree):
+    """`[sentence, ...]` - each change pending in `tree` that the audit-state
+    commit would stage and that this landing did not write: the plan file(s)
+    differing from HEAD beyond this phase's stamp fields, a journal file holding
+    a row about anything else, and any evidence change. Empty is the one answer
+    that commits.
+
+    THE COMMIT STAGES WHOLE FILES AND DIRECTORIES. In a parent checkout another
+    session shares, its uncommitted plan edit or trail row would otherwise ride
+    into a commit titled as this phase's landing."""
+    if not tree:
+        return ["no tree is named to compare against"]
+    config = _journal_io.load_config(project)
+    found = []
+    for path in sorted(set(p for p in (target, _phase_file(target, phase_id)) if p)):
+        rel = _tree_rel(tree, path)
+        if rel is None:
+            continue
+        code, head = _git_text(tree, ["show", "HEAD:%s" % (rel,)])
+        if code != 0:
+            found.append("%s is not in HEAD, so all of it would be added" % (rel,))
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                now = fh.read()
+        except OSError as exc:
+            found.append("%s could not be read (%s)" % (rel, exc))
+            continue
+        was, is_now = _unstamped(head, phase_id), _unstamped(now, phase_id)
+        if was is None or is_now is None or was != is_now:
+            found.append("%s differs from HEAD beyond phase %s's stamp"
+                         % (rel, phase_id))
+    for label, directory in (("journal", _journal_io.journal_dir(project, config)),
+                             ("evidence",
+                              _evidence_io.evidence_dir(project, config))):
+        rel = _tree_rel(tree, directory) if directory else None
+        if rel is None or not os.path.isdir(directory):
+            continue
+        code, listing = _git_text(tree, ["status", "--porcelain", "-z",
+                                         "--untracked-files=all", "--", rel])
+        if code != 0:
+            found.append("git would not list the %s directory %s" % (label, rel))
+            continue
+        for entry in [e for e in listing.split("\0") if len(e) > 3]:
+            changed = entry[3:]
+            if label == "evidence":
+                found.append("%s is an evidence change" % (changed,))
+                continue
+            hcode, head = _git_text(tree, ["show", "HEAD:%s" % (changed,)])
+            try:
+                with open(os.path.join(tree, *changed.split("/")), "r",
+                          encoding="utf-8") as fh:
+                    now = fh.read()
+            except OSError:
+                found.append("%s is changed and cannot be read" % (changed,))
+                continue
+            why = _foreign_rows(head if hcode == 0 else "", now, phase_id)
+            if why:
+                found.append("%s holds %s" % (changed, why))
+    return found
 
 
 def _commit_stamp(target, phase_id, project, parent):
@@ -1851,6 +1977,41 @@ def review_answers_refusal(project, manifest_path, phase):
                             "; ".join("%s: %s" % (tid, why) for tid, why in held)))
 
 
+def landed_answers_refusal(project, manifest_path, phase, landed, branch):
+    """The sentence refusing a landing under `review.perTask: phase`, asked of
+    BOTH copies of the phase, or None.
+
+    The copy handed in is the parent's when the merge is run from the parent's
+    checkout, and there it still shows the phase as it stood at the fork: no
+    task records a commit, so the property finds nothing to ask. The copy the
+    merge brings in is the branch tip's (`landed`), so it is asked too. A tip
+    whose copy cannot be read is refused wherever the property could apply - a
+    task of the handed copy whose key, or the config's, reads `phase` - rather
+    than answered from the handed copy, which is the copy that cannot see it."""
+    held = review_answers_refusal(project, manifest_path, phase)
+    if held:
+        return held
+    if landed is not None:
+        held = review_answers_refusal(project, manifest_path, landed)
+        return ("on %s: %s" % (branch, held)) if held else None
+    tasks = [t for t in (phase or {}).get("tasks") or [] if isinstance(t, dict)]
+    live = None
+    if any(_fr.review_key(t, phase, None)[1] == "config" for t in tasks):
+        _proj, config = _evidence_io.project_config_for(manifest_path, project)
+        live, problem = _config_rules.review_per_task_mode(config)
+        if problem:
+            return "%s." % (problem,)
+    if not any(_fr.review_key(t, phase, live)[0] == _fr.KEY_PHASE
+               for t in tasks):
+        return None
+    return ("review.perTask reads `phase` for phase %s, and the copy of the plan "
+            "%s would bring in could not be read, so whether its tasks carry "
+            "their review answers is not established. The parent's copy does "
+            "not stand in for it: it records the phase as it stood at the fork. "
+            "Commit the plan on %s and run this again."
+            % ((phase or {}).get("id"), branch, branch))
+
+
 def override_row(project, phase_id, answer, reason, config=None):
     """The row a landing over its verdict's refusal writes BEFORE the merge, or
     None when the trail did not take it. Worded as what was asked, because the
@@ -2197,6 +2358,9 @@ def main(argv, out=print):
         _render_backfill(filled, out=out)
         if kept.get("landingCommitWhy"):
             out("  the stamp is NOT committed: %s" % (kept["landingCommitWhy"],))
+        elif kept.get("landingCommitSkipped"):
+            out("  the stamp is not committed here: %s"
+                % (kept["landingCommitSkipped"],))
         elif kept.get("landingCommits"):
             out("  the stamp committed in %s as %s"
                 % (kept.get("landingCommitIn"),
@@ -2272,8 +2436,8 @@ def main(argv, out=print):
         out("           or pass %s \"<why this lands over it>\", which is "
             "journaled as %s" % (_vb.OVERRIDE_FLAG, _vb.ACTION_CLOSE_OVERRIDDEN))
         return E_FAIL
-    held = review_answers_refusal(project, args.manifest, phase) \
-        if landing_due else None
+    held = landed_answers_refusal(project, args.manifest, phase, landed,
+                                  names["branch"]) if landing_due else None
     if held:
         out("[close-phase] REFUSED: %s Nothing was merged or written." % (held,))
         return E_FAIL

@@ -1357,6 +1357,21 @@ def _unland(fx, before):
     git(fx, "reset", "-q", "--mixed", before)
 
 
+def _commit_plan(fx, body):
+    """`(orig, before)` - the plan written AND committed on `FIXTURE_BRANCH`, as a
+    real landing meets it: sign-off and every task close are commits, so the
+    parent's tree holds no pending edit of the plan. `orig` is the head to
+    `_unland` to afterwards; `before` is the baseline the stamp commit is counted
+    from. Left uncommitted, the stamp commit would have to carry the whole plan
+    edit with it, which is the sweep the landing commit refuses."""
+    _, orig = git(fx, "rev-parse", FIXTURE_BRANCH)
+    write_manifest(fx, body)
+    git(fx, "add", MANIFEST_REL)
+    git(fx, "commit", "-q", "-m", "the plan as sign-off left it")
+    _, before = git(fx, "rev-parse", FIXTURE_BRANCH)
+    return orig.strip(), before.strip()
+
+
 def check_close_phase_already_contained(fx):
     """A phase that already landed makes NO merge write and exits 0 - its one
     git write is the commit of the stamp it records in the parent's tree.
@@ -1374,10 +1389,9 @@ def check_close_phase_already_contained(fx):
     code, out = _wt_add(fx, wt, branch)
     if code != 0:
         return False, "could not create the worktree: %s" % (out or "").strip()
-    _, before = git(fx, "rev-parse", FIXTURE_BRANCH)
-    before = before.strip()
+    orig = None
     try:
-        write_manifest(fx, _wt_manifest(branch=branch))
+        orig, before = _commit_plan(fx, _wt_manifest(branch=branch))
         code, out = script(fx, "close-phase.py", MANIFEST_REL, "P9",
                            "--project", ".", "--keep-worktree", "--keep-branch")
         only, said = _landing_commit_only(fx, before)
@@ -1388,7 +1402,8 @@ def check_close_phase_already_contained(fx):
                (out or "").strip().split("\n")[0][:80]))
     finally:
         _wt_drop(fx, wt, branch)
-        _unland(fx, before)
+        if orig:
+            _unland(fx, orig)
         write_manifest(fx, manifest_body())
 
 
@@ -1468,10 +1483,9 @@ def check_close_phase_stamps_already_contained(fx):
     code, out = _wt_add(fx, wt, branch)
     if code != 0:
         return False, "could not create the worktree: %s" % (out or "").strip()
-    _, head = git(fx, "rev-parse", FIXTURE_BRANCH)
-    head = head.strip()
+    orig = None
     try:
-        write_manifest(fx, _wt_manifest(branch=branch))
+        orig, head = _commit_plan(fx, _wt_manifest(branch=branch))
         before = [p for p in read_manifest(fx)["phases"] if p["id"] == "P9"]
         code, out = script(fx, "close-phase.py", MANIFEST_REL, "P9",
                            "--project", ".", "--keep-worktree", "--keep-branch")
@@ -1494,7 +1508,51 @@ def check_close_phase_stamps_already_contained(fx):
                (out or "").strip().split("\n")[0][:70]))
     finally:
         _wt_drop(fx, wt, branch)
-        _unland(fx, head)
+        if orig:
+            _unland(fx, orig)
+        write_manifest(fx, manifest_body())
+
+
+def check_close_phase_leaves_foreign_pending(fx):
+    """A SHARED PARENT TREE: another session's uncommitted plan edit sits beside
+    the landing. The audit-state commit stages the whole plan file, so a stamp
+    commit there would carry that edit under a subject saying the phase landed.
+    The stamp is written and left uncommitted (`landingCommitSkipped`), the
+    parent's HEAD does not move, and the other edit is still there, unchanged.
+    """
+    branch = "feature/wt/p9-foreign"
+    wt = os.path.join(os.path.dirname(fx["root"]),
+                      os.path.basename(fx["root"]) + "-foreign")
+    code, out = _wt_add(fx, wt, branch)
+    if code != 0:
+        return False, "could not create the worktree: %s" % (out or "").strip()
+    orig = None
+    try:
+        orig, before = _commit_plan(fx, _wt_manifest(branch=branch))
+        body = read_manifest(fx)
+        body.setdefault("meta", {})["foreignEdit"] = "another session's"
+        write_manifest(fx, body)
+        code, out = script(fx, "close-phase.py", MANIFEST_REL, "P9", "--project",
+                           ".", "--keep-worktree", "--keep-branch", "--json")
+        try:
+            answer = json.loads(out or "")
+        except ValueError:
+            answer = {}
+        _, head = git(fx, "rev-parse", FIXTURE_BRANCH)
+        now = read_manifest(fx)
+        kept = (now.get("meta") or {}).get("foreignEdit") == "another session's"
+        stamped = [p for p in now["phases"] if p["id"] == "P9"][0].get("mergedAt")
+        skipped = answer.get("landingCommitSkipped") or ""
+        return (code == 0 and head.strip() == before and kept and bool(stamped)
+                and MANIFEST_REL in skipped), (
+            "exit %r; head moved=%r; foreign edit kept=%r; mergedAt=%r; "
+            "landingCommitSkipped=%r; landingCommits=%r"
+            % (code, head.strip() != before, kept, stamped, skipped[:120],
+               answer.get("landingCommits")))
+    finally:
+        _wt_drop(fx, wt, branch)
+        if orig:
+            _unland(fx, orig)
         write_manifest(fx, manifest_body())
 
 
@@ -2013,6 +2071,9 @@ CHECKS = (
     ("g17b ...and it is STAMPED, so a phase merged by hand is not left unsettled "
      "with its worktree already gone - and the stamp is COMMITTED in the parent's "
      "tree, never left there as an edit", check_close_phase_stamps_already_contained),
+    ("g17d a shared parent tree holding another session's pending plan edit "
+     "gets the stamp left uncommitted (landingCommitSkipped): HEAD does not move "
+     "and the edit is untouched", check_close_phase_leaves_foreign_pending),
     ("g17c a merge into a parent checked out NOWHERE still deletes the branch - "
      "`git branch -d` grades from HEAD and refuses this one",
      check_close_phase_deletes_after_no_checkout_merge),

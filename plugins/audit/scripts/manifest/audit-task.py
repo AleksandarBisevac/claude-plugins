@@ -52,6 +52,8 @@ Usage:
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py block <taskId> --reason "<why>|-" [manifest]
                 [--project-dir DIR] [--takeover] [--json]
+  audit-task.py unblock <taskId> --reason "<the human's why>|-" [manifest]
+                [--project-dir DIR] [--takeover] [--json]
   audit-task.py note <taskId> --text "<what>|-" [manifest]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py cancel <id> --reason "<why>|-" [manifest]
@@ -4096,7 +4098,9 @@ def _locked_start(args, project, config, mpath, tid, out):
             "(reference/orchestrator.md, Execute the task, step 2) - "
             "`audit-task.py block %s --reason \"<attempts exhausted: the last red "
             "gate's reason>\"` - which this verb will not do on its own because "
-            "that transition also owes an ADO echo." % (tid, attempts, ceiling, tid))
+            "that transition also owes an ADO echo. Once the human says try "
+            "again, `audit-task.py unblock %s --reason \"<their words>\"` resets "
+            "the count." % (tid, attempts, ceiling, tid, tid))
         return E_USAGE
     # READINESS IS REFUSED HERE, and read from `_status_facts.unmet_refs` through
     # `_waiting_on` rather than restated: a second copy of the rule is what let
@@ -4640,6 +4644,52 @@ def _examined_head(git_root):
     return head if code == 0 and _SHA_SHAPE.match(head or "") else None
 
 
+def _no_change_moves(git_root, phase, task):
+    """`[sentence, ...]` - each way `task`'s declared files changed since it
+    started: a commit since its `startedAt` (bounded below by the phase's
+    `baseRef` where one is recorded) touching one, or an uncommitted change to
+    one. Empty when nothing moved, and when git cannot be asked - a project
+    outside git closes no-change with `examinedAt` null, which the close says.
+
+    THE START IS READ BY COMMITTER DATE, so a commit made before the start and
+    carrying a later date is counted - a refusal the caller can answer with
+    `--commit`, never a pass over work."""
+    files = sorted(set(_vocab._strip_line_suffix(f).strip()
+                       for f in (task.get("files") or [])
+                       if isinstance(f, str) and f.strip()))
+    if not files:
+        return []
+    code, _top = _git_answer(git_root, "rev-parse", "--show-toplevel")
+    if code != 0:
+        return []
+    moved = []
+    base = phase.get("baseRef")
+    span = "%s..HEAD" % (base,) if base and _git_answer(
+        git_root, "rev-parse", "--verify", "-q", "%s^{commit}" % (base,))[0] == 0 \
+        else "HEAD"
+    since = ["--since=%s" % (task["startedAt"],)] if task.get("startedAt") else []
+    # A declared directory lists the files under it, so a commit line is told
+    # apart by its own marker rather than by not being a declared path.
+    code, log = _git_answer(git_root, *(["log", "--format=@%h", "--name-only"]
+                                        + since + [span, "--"] + files))
+    if code == 0:
+        commit = None
+        for line in [ln.strip() for ln in log.splitlines() if ln.strip()]:
+            if line.startswith("@"):
+                commit = line[1:]
+            elif commit:
+                moved.append("%s changed in commit %s" % (line, commit))
+    code, status = _git_answer(git_root, "status", "--porcelain",
+                               "--untracked-files=all", "--", *files)
+    if code == 0:
+        # `_git_answer` strips the output, so the first line may have lost the
+        # blank its status code opens with: the code is cut by shape, not width.
+        moved += ["%s has an uncommitted change"
+                  % (re.sub(r"^\s*\S{1,2} ", "", line).strip(),)
+                  for line in status.splitlines() if line.strip()]
+    return moved
+
+
 def _done_task(task, now, commit, descriptive, technical, verified, intent,
                intent_basis=None, no_change=None, red_first=None,
                intent_return=None):
@@ -4942,18 +4992,29 @@ def _close_intent(args, tid, filed, no_change, held, fix_task):
     refuses every `--intent` word, `not-asked` included: the three answers are
     the phase review's, and a word typed here would be one sign-off counts as
     answered. The one exception is a fix task the plan records as one
-    (`_fr.is_fix_task`), which may close `not-asked` with its basis. A filed
-    per-task reviewer return is not read under this key either.
+    (`_fr.is_fix_task`), which closes `not-asked` with its basis and in no other
+    form: the phase review owes it no answer (`_fr.owed_answer`), so a
+    `deferred` it recorded would hold sign-off with nothing that could answer
+    it. A filed per-task reviewer return is not read under this key either.
     `held` is `(key, where it was read)`.
     """
     if no_change:
         return args.intent, args.intent_basis, None, None
     key, source = held
     if key == _fr.KEY_PHASE:
-        if args.intent is None:
-            return _fr.INTENT_DEFERRED, None, None, None
         if args.intent == "not-asked" and fix_task:
             return args.intent, args.intent_basis, None, None
+        if args.intent is None and fix_task:
+            return None, None, None, (
+                "[audit-task] REFUSED: %s is a fix task `add --fixes` recorded, "
+                "and review.perTask reads `phase` (%s): the phase review owes a "
+                "fix task no answer, so a `deferred` close could never be "
+                "answered and sign-off would refuse it for good. Close it "
+                "--intent not-asked --intent-basis \"<why>\" - the next review "
+                "round reads its findings. Nothing written."
+                % (tid, _KEY_SOURCES[source]))
+        if args.intent is None:
+            return _fr.INTENT_DEFERRED, None, None, None
         return None, None, None, (
             "[audit-task] REFUSED: %s's review.perTask reads `phase` (%s), so "
             "its three review answers are the phase review's and --intent %s is "
@@ -5113,6 +5174,14 @@ def _locked_done(args, project, config, mpath, tid, out):
                 "change, cancel this task first (/audit:task cancel %s --reason "
                 "...), then record the verdict on the bug: /audit:bug close %s "
                 "not_a_bug|wontfix" % (tid, ", ".join(bugs), tid, bugs[0]))
+            return E_USAGE
+        moved = _no_change_moves(git_root, phase, node)
+        if moved:
+            out("[audit-task] REFUSED: %s closes --no-change, and its declared "
+                "files did change: %s. A close with no commit is never asked "
+                "for review answers, so it is held to having none to give - "
+                "close it --commit <sha> naming the work, or put the files back. "
+                "Nothing written." % (tid, "; ".join(moved)))
             return E_USAGE
         sha = None
         no_change = {"reason": args.reason.strip(),
@@ -5745,6 +5814,103 @@ def _locked_block(args, project, config, mpath, tid, reason, out):
             "ADO echo (reference/orchestrator.md -> ADO echo) - this verb does "
             "not send it")
     _report_tail(out, jres, "task.block", warnings, written_manifest, written,
+                 index_note)
+    return 0
+
+
+# `unblock`: the way past a task whose attempts are spent. `start` refuses one past
+# `maxAttempts`, `--force` included, because the ceiling is what makes a human look
+# at a task that keeps failing; and the reset that followed the human's look was a
+# hand edit of `attempts`. So the reset is this verb: it takes the human's reason,
+# records it on a row, and touches the count and the block, nothing else.
+def cmd_unblock(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    tid = (args.title or "").strip()          # positional: the id to unblock
+    if not tid:
+        out("[audit-task] unblock needs a task id")
+        return E_USAGE
+    reason = (args.reason or "").strip()
+    if not reason:
+        out("[audit-task] unblock needs --reason \"<the human's words>\" -- the "
+            "attempt ceiling exists so a human looks at a task that keeps "
+            "failing, and a reset with no recorded why is the hand edit this "
+            "verb replaces")
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_unblock(
+                           args, project, config, mpath, tid, reason, out))
+
+
+def _unblock_refusal(node, tid):
+    """Why `node` has nothing to unblock, or None: it is terminal, or attempts
+    are left. A task blocked with attempts left is not this verb's - `start`
+    runs it and clears the block - so the count of a task blocked for another
+    reason is never reset by it."""
+    status = node.get("status")
+    if status in _mio.TERMINAL:
+        return ("%s is already %s -- terminal work is not unblocked; the "
+                "follow-up is a new task (/audit:task add)" % (tid, status))
+    attempts = _mio.recorded_attempt(node) or 0
+    if attempts < _attempt_ceiling(node):
+        return ("%s is %s with %s of %s attempt(s) spent -- `start %s` still "
+                "runs it%s, so there is no spent count to reset"
+                % (tid, status, attempts, _attempt_ceiling(node), tid,
+                   " and clears its block" if status == "blocked" else ""))
+    return None
+
+
+def _locked_unblock(args, project, config, mpath, tid, reason, out):
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    node, phase, refusal = _task_target(assembled, tid, "unblock")
+    if refusal is None:
+        refusal = _unblock_refusal(node, tid)
+    if refusal:
+        out("[audit-task] " + refusal)
+        return E_USAGE
+    status = node.get("status")
+    phase_id = phase.get("id")
+    changes = [{"id": tid, "field": "attempts", "from": node.get("attempts"),
+                "to": 0}]
+    node["attempts"] = 0
+    if status == "blocked":
+        changes += [{"id": tid, "field": "status", "from": status,
+                     "to": "pending"},
+                    {"id": tid, "field": "blockedReason",
+                     "from": node.get("blockedReason"), "to": None}]
+        node["status"] = "pending"
+        node.pop("blockedReason", None)
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [phase_id],
+                        "the unblock", out)
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    jres = _journal_row(project, config, mpath, "task.unblock",
+                        "%s unblocked in %s, was %s: %s"
+                        % (tid, phase_id, status, reason),
+                        {"taskId": tid, "phaseId": phase_id, "reason": reason,
+                         "changes": changes})
+    index_note = _index_dirty_note(written, mpath, project, phase_id)
+    linked = bool(((assembled.get("meta") or {}).get("ado") or {}))
+    if args.as_json:
+        out(_json_tail({"ok": True, "id": tid, "phase": phase_id,
+                        "status": node.get("status"), "was": status,
+                        "attempts": 0, "reason": reason, "changes": changes,
+                        "adoEchoOwed": linked and status == "blocked",
+                        "written": written},
+                       args, jres, warnings, written_manifest, index_note))
+        return 0
+    out("[audit-task] %s unblocked in %s -- %s, attempts reset to 0: %s"
+        % (tid, phase_id, node.get("status"), reason))
+    if linked and status == "blocked":
+        out("  ADO: this plan links a board, and a task leaving blocked owes the "
+            "ADO echo - this verb does not send it")
+    _report_tail(out, jres, "task.unblock", warnings, written_manifest, written,
                  index_note)
     return 0
 
@@ -10810,6 +10976,8 @@ VERB_FLAGS = {
     "move": ("to",),
     # `block` records why, so its one flag is `cancel`'s too.
     "block": ("reason",),
+    # `unblock` resets a spent attempt count on a human's word, and records it.
+    "unblock": ("reason",),
     # `note` appends one entry, and its text is its one flag.
     "note": ("text",),
     # `couple` writes `meta.coupling`: the test, what it is coupled to, and
@@ -10872,7 +11040,7 @@ def build_parser():
                    choices=["add", "add-phase", "cancel", "scope",
                             "retarget", "start", "done", "seed", "next-id",
                             "signoff", "settle", "reopen", "move", "block",
-                            "note", "couple", "uncouple", "finding",
+                            "unblock", "note", "couple", "uncouple", "finding",
                             "resolve-finding", "correct", "bug-add", "mute",
                             "unmute", "file-return"])
     p.add_argument("title", nargs="?", default="")
@@ -11251,10 +11419,42 @@ def json_refusal(code, lines):
                       indent=2, sort_keys=True)
 
 
+# An id as the plan spells one: a phase, a task under it, a bug or a proposal.
+_HEADLINE_ID = re.compile(r"(?<![\w.-])(?:P\d+(?:\.\d+[A-Za-z0-9-]*)?|BUG-\d+|"
+                          r"PROP-[A-Za-z0-9-]+)(?![\w-]|\.\w)")
+# Where a headline turns from what was written to what holds it: "P1.3 added TO
+# P1", "P1.1 done IN P1". The ids after it are the container's, not the write's.
+_HEADLINE_CONTAINER = re.compile(r" (?:in|to) ")
+
+
+def _written_ids(headline):
+    """The ids a headline names as the subject of its write."""
+    subject = _HEADLINE_CONTAINER.split(headline.split(" -- ")[0], 1)[0]
+    return set(_HEADLINE_ID.findall(subject))
+
+
+def _decided_lines(body, ids):
+    """The lines a write decided and the short form keeps: its gate basis, the
+    command that runs what it wrote, and every warning naming an id it wrote.
+    A warning naming no such id was true before the write and is re-printed by
+    every write; that is what the short form drops."""
+    kept = []
+    for line in body:
+        text = line.strip()
+        if text.startswith("gate:") or text.startswith("ready now -- "):
+            kept.append(text)
+        elif text.startswith("WARNING:") and ids & set(_HEADLINE_ID.findall(
+                text.split(" - ")[0])):
+            kept.append(text)
+    return kept
+
+
 def success_line(lines):
-    """A write's one line: the verb's own headline, which names what was done to
-    which id, and every file its `written:` lines name. The validator warnings
-    re-printed after each write are what this drops, and `--verbose` keeps."""
+    """A write's short form: the verb's own headline, which names what was done
+    to which id, and every file its `written:` lines name - then, a line each,
+    what the write itself decided (`_decided_lines`). The validator warnings
+    about other ids, re-printed after each write, are what this drops, and
+    `--verbose` keeps."""
     body = [ln for ln in lines if ln.strip()]
     heads = [ln for ln in body if ln.startswith("[audit-task]")] or body
     written = [ln.strip()[len("written:"):].strip() for ln in body
@@ -11262,8 +11462,14 @@ def success_line(lines):
     # The headline carries the caller's own text on some verbs (a note, a
     # title), so it is the part cut when the line will not fit - the file
     # written is the record, and is kept whole.
-    return _output.success_line(
+    line = _output.success_line(
         heads[0], "; written: %s" % (", ".join(written),) if written else "")
+    decided = _decided_lines(body, _written_ids(heads[0]))
+    if not decided:
+        return line
+    # A `(text, payload)` answer is printed whole: the decided lines are the
+    # write's own account and are never cut.
+    return line, "\n" + "\n".join(decided)
 
 
 def main(argv, out=print):
@@ -11342,6 +11548,7 @@ def _dispatch(args, argv, out):
              "done": cmd_done, "seed": cmd_seed, "next-id": cmd_next_id,
              "signoff": cmd_signoff, "settle": cmd_settle,
              "reopen": cmd_reopen, "move": cmd_move, "block": cmd_block,
+             "unblock": cmd_unblock,
              "note": cmd_note, "couple": cmd_couple, "uncouple": cmd_uncouple,
              "finding": cmd_finding, "resolve-finding": cmd_resolve_finding,
              "correct": cmd_correct, "bug-add": cmd_bug_add,

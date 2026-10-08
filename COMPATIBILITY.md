@@ -351,11 +351,15 @@ is still true of a nested key.
   default is a major. It ships as `"phase"`, which means a repository that has never
   written the key no longer has a reviewer run per task: `audit-task.py done --commit`
   records the task's intent as `deferred` and refuses every `--intent` word (a fix task
-  `add --fixes` recorded may still close `not-asked` with its basis); the phase review
+  `add --fixes` recorded closes only `not-asked` with its basis); the phase review
   answers each task at sign-off, in a `tasks` array it files with `file-return <phaseId>
   --role reviewer --head <sha>`; and `/audit:phase signoff` — under `--verdict skipped`
-  as under `passed` — and `close-phase.py` refuse while a task with a commit lacks its
-  three answers bound to that commit. A phase already under way when the plugin is
+  as under `passed` — and `close-phase.py` at its own merge refuse while a task that
+  records a commit lacks its three answers bound to that commit. `close-phase.py` asks
+  both the plan it is handed and the copy the branch tip carries in, and refuses when it
+  cannot read the tip's. A task that no longer records its commit, a merge made by hand
+  or through a pull request, and who filed the phase return are outside that refusal;
+  the plugin README's followed table names each, with the evidence left afterwards. A phase already under way when the plugin is
   upgraded reads the new default too, unless it recorded a `reviewPerTask` value, which
   no older copy wrote — so its tasks closed by a per-task reviewer are owed the phase
   review's answers before it lands. It was shipped as the default because a reviewer per
@@ -363,8 +367,11 @@ is still true of a nested key.
   (`docs/research/pipeline-cost-design.md`, C14), and every answer the per-task review
   gave is still given, bound to the same commit; what moves is when, before the merge
   instead of before the commit. Set
-  `"always"` to restore the previous behaviour exactly, before upgrading if a phase is in
-  flight.
+  `"always"`, before upgrading if a phase is in flight, to restore a reviewer per task. It
+  does not restore the previous behaviour exactly: a close under `always` is still held to
+  the filed-return rule in *closing against a commit with no review behind it* below, and
+  `start`, `done` and `signoff` refuse a `review.perTask` value outside the vocabulary
+  wherever neither the task nor its phase records a key.
 - **When two keys can express the same thing, which one wins is written down.**
   `planGate` beats `enforce`, and that precedence does not change without a major
   release. A superseded key is kept and documented, never silently reinterpreted.

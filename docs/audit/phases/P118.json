@@ -1064,7 +1064,7 @@
     {
       "id": "P118.12-v7t",
       "title": "the driver puts every phase-review answer, banner and stop in front of a human before landing",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes P118 review findings R2, R9, R6, R10, R11, R12, R13, R14, R15, R16, R19 and the driver half of R21 and R25, in the step driver and its instruments. The triage reads every per-task answer and the phase intent from the filed phase return, and diverges, cannot-tell and a tdd not-proved become lines a human answers before sign-off. A task added after the review's head re-dispatches the phase review. Fix tasks closed after the head get a re-review or a reasoned sign-off. Pre-given high-risk confirmations are honoured. meta.runtimeBoot gets its decide. The gate's NO OVERLAP and TREE CHANGED banners are carried into the did-line and decided at the phase gate. not-fast-forward offers no-ff or leave with the never-rebase rule. A blocked task's stop names audit-task.py unblock <id> --reason, which the sibling task builds, and decide stalled carries a rule. The driver prints stable did-words for a fix task added, signed off, landed and the lock released, and stream-cost reads them as spans. The serial one-task-at-a-time choice is recorded honestly in CHANGELOG and the README row. The ADO echo's hard rules go into its step text, and the fix-task price names a basis the user can open. Every new case is shown red first.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1097,18 +1097,27 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "cdded1b5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes P118-R2, R9, R6, R10, R11, R12, R13, R14, R15, R16 and R19, and the driver half of R21 and R25, in drive-phase.py and stream-cost.py.\n\n- **R2 and R9.** human_answers reads every filed phase return. A diverges or cannot-tell answer, a red-first not-proved, a flagged inherited test, and a phase intent of diverges or cannot-tell each become an [accept] triage line. triage_refusal refuses sign-off until --answer accept --reason (sa1-sa4).\n- **R6.** A task added after the review's head re-dispatches the phase review (sr1).\n- **R15.** Fix tasks closed after the head offer re-review, or a reasoned sign-off that names them. Their close basis says the diff is unreviewed (sf1-sf4).\n- **R10.** Pre-given risk.confirmed rows are honoured. A clipped or unreadable row counts as not covered (hr1, hr2).\n- **R11.** meta.runtimeBoot gets decide runtime-boot before the gate (rb1-rb4).\n- **R12.** NO OVERLAP and TREE CHANGED banners are carried into the task did-line and decided at the phase gate (gb1-gb3).\n- **R13.** not-fast-forward offers no-ff or leave, with the never-rebase rule (nf1, nf2).\n- **R14.** The stop for a blocked task and decide stalled name audit-task.py unblock (bk1, bk2).\n- **R16.** Stable did-words record fix added, signed off, landed and released. stream-cost reads them as spans (dw1, dw2, sp14).\n- **R19.** The serial choice is recorded in the README row and CHANGELOG.\n- **R21 and R25, driver half.** The ADO echo states its hard rules inline, and the fix price basis says it is a benchmark prediction, not this project's measurement (tx1, tx2).\n\nPrints stay within their bounds. The cases were proved red at HEAD through the helper, using --stage narrowing; sp14 on a scratch HEAD copy. Each over-fire twin was shown red under a mutant.",
+        "descriptive": "Under the default phase review, a reviewer's doubt about a task, an unreviewed fix, a gate that measured nothing of the work, an unreachable app or a moved parent branch now stops the drive for a human decision before anything merges."
       },
       "startedAt": "2026-10-08T05:18:14Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T06:45:16Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py",
+        "tools/stream-cost.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-08T06:30:01Z.299231",
         "status": "passed",
         "at": "2026-10-08T06:30:01Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "cdded1b5",
+        "at": "2026-10-08T06:45:16Z",
+        "basis": "orchestrator check: every finding maps to a change and a red case with an over-fire twin; byte bounds hold; the measurement reads driven sessions correctly"
       }
     },
     {
