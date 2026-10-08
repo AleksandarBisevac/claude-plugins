@@ -6930,7 +6930,7 @@
     {
       "id": "BUG-22",
       "title": "the report scrolls sideways on this repo's own plan at a narrow width",
-      "status": "in_progress",
+      "status": "fixed",
       "severity": "med",
       "reportedAt": "2026-10-08T22:26:59Z",
       "reportedBy": null,
@@ -6940,7 +6940,7 @@
       "actual": "the document scrolls sideways by about 12700px at 960px, widest table.phases",
       "files": [],
       "taskId": "P120.1",
-      "fixedIn": null,
+      "fixedIn": "7132ead8",
       "notes": null
     }
   ],
