@@ -640,17 +640,21 @@
         "severity": "med",
         "file": "plugins/audit/scripts/git/close-phase.py read_set_refusal; plugins/audit/scripts/manifest/_filed_returns.py needs_human keys",
         "issue": "A settlement is keyed by a return's name, not its content. Under a read-set verdict, a settlement given for a return the verdict read also covers a different, unread answer filed later under the same name. A sibling worktree filing at the same head collides, the different diverges return lands, and no human sees it. This was simulated with the real filing verb. The per-place reading refused this layout (vr7). The schema, COMPATIBILITY, CHANGELOG and the guide all say a settlement names the return.",
-        "resolution": "Bind the settlement to content. The driver records the signature it settled. On the read-set path, a settlement counts only for a return with that signature, and a return whose name matches a read row with a different signature is refused. Pin the deny case and its byte-identical allow twin, and reword the documents."
+        "resolution": "fixed in P118.23-v7t (8174c66d): Bind the settlement to content. The driver records the signature it settled. On the read-set path, a settlement counts only for a return with that signature, and a return whose name matches a read row with a different signature is refused. Pin the deny case and its byte-identical allow twin, and reword the documents.",
+        "fixTask": "P118.23-v7t",
+        "commit": "8174c66d"
       },
       {
         "id": "P118-R70",
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py _returns_read / _human_settlement at sign-off",
         "issue": "This is a regression. Take a plan outside the repo with the branch in a linked worktree, a return committed at the tip, and a human settlement in the worktree's record. Signing off from the parent now refuses, because the tip's returns are asked only against the signing checkout's record, while the landing settles through every known checkout. The remedy sends the user to a fresh review.",
-        "resolution": "At sign-off, ask the tip's returns against the same settlement set the landing honours. Add the case and its unsettled twin."
+        "resolution": "fixed in P118.23-v7t (8174c66d): At sign-off, ask the tip's returns against the same settlement set the landing honours. Add the case and its unsettled twin.",
+        "fixTask": "P118.23-v7t",
+        "commit": "8174c66d"
       }
     ],
-    "outcome": "[findings: 70 - 5 high, 27 med, 38 low; 68 with a recorded fix commit]"
+    "outcome": "[findings: 70 - 5 high, 27 med, 38 low; 70 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2205,7 +2209,7 @@
     {
       "id": "P118.23-v7t",
       "title": "a human's settlement binds to the answer it settled, not to the return's name",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes P118 review round 8 findings R69-R70. A human's settlement binds to the content it settled, not to the return's name. When the driver records a settlement, it records the settled return's content signature. On the read-set path, close-phase honours a settlement only for a return carrying that signature. A return whose name matches a read row but whose signature differs is refused whatever any record says. A name-only settlement, written before this field existed, is not honoured on the read-set path, and the refusal names how to settle it again. The sign-off asks the tip's returns against the same settlement set the landing honours, which is every non-prunable worktree's record, so signing off from the parent no longer refuses a return settled where the branch is checked out. The schema, COMPATIBILITY.md, the guide, manifest-conventions and CHANGELOG say exactly what a settlement binds. Every new case is shown red first with its allow twin.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2245,18 +2249,29 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8174c66d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes P118-R69 and R70. A human's settlement binds to the content it settled, and the sign-off and the landing read one settlement set.\n\nSettlement record (_filed_returns.py): answersAccepted keeps `keys` and adds `signatures`, a list of {key, sha256}. This is additive, so older readers keep working, and a list lets one key hold several settled contents. needs_human takes `bound` pairs. New pieces:\n- settlement_record / settlement_block, settlements(state_dirs) (a union, with an unreadable record kept as a problem), and settlement_after (the one writer).\n- settled_by_name_only and read_names.\n- project_in_tree and settlement_checkouts(git_root, project, trees), the shared checkout set: the project plus the same project in every non-prunable worktree.\n\ndrive-phase.py: accept writes through settlement_after. The triage matches (key, sha256). An answer settled by key alone is asked again, so the re-settle remedy is reachable.\n\naudit-task.py: the sign-off's human stop reads every record from the shared checkout set and honours only bound pairs. That fixes R70: a sign-off from the parent honours a settlement made in the branch's worktree. It names any answer settled by key alone with the way to settle it again, and says so when the worktree list cannot be read.\n\nclose-phase.py:\n- every_filed_return takes its checkouts from the same helper.\n- read_set_refusal honours only bound pairs.\n- read_set_refusal refuses a later return that needs a human and is filed under a name the verdict read but holds a different answer, whatever any record says (R69, vr7's rule kept on the read-set path).\n- The fallback path is unchanged.\n\nThe schema description, COMPATIBILITY.md, the guide, manifest-conventions, CHANGELOG and both module docstrings now say a settlement binds the answer's content.\n\nCases:\n- hn6-hn12 and rd3n: the record and its readers.\n- sa3s, sa5 and sa5b: the driver.\n- hs1-hs3b: the sign-off, each with its twin.\n- rs8, rs8b, rs9, rs10 and rs10b: the landing.\n\nRed-first: stamp-verification red proved for test__filed_returns (an assertion proof) and, as introduced-symbol proofs, for test_close_phase and test_audit_task. test_drive_phase was could-not-prove: the throwaway run timed out after 147 s.\n\nMutation probe (scratchpad v7t3/mut.py, monkeypatch only), re-run by the orchestrator: exit 0, all six rows KILLED, each with exactly its expected reds, including over-fire twins.",
+        "descriptive": "A person's approval of a reviewer's result now covers that exact result, so a different result filed later under the same name is refused at the merge. A sign-off from the main checkout reads the same approvals the merge does."
       },
       "startedAt": "2026-10-08T14:10:28Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T15:36:42Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_close_phase.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-08T15:36:33Z.51d8a9",
         "status": "passed",
         "at": "2026-10-08T15:36:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8174c66d",
+        "at": "2026-10-08T15:36:42Z",
+        "basis": "orchestrator check: settlement record binds (key, sha256) and one checkout set is shared by sign-off and landing; mutation probe re-run, six rows killed with exact cases"
       }
     }
   ],
