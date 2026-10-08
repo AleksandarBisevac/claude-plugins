@@ -1804,6 +1804,240 @@ def _same_checkout_reach_cases(check):
                     _harness.remove_tree(path)
 
 
+# --- a verdict bound to what it read ---------------------------------------------
+# A verdict written by this sign-off records the signatures of the returns it
+# read (`_filed_returns.READ_RETURNS_FIELD`). The landing then asks every place
+# it can reach - every worktree git lists, the tip, the target branch - and
+# refuses a return needing a human whose signature is not in that set, so where
+# a return sits stops deciding. A verdict recording no read set keeps the
+# per-place reading above.
+
+def _rs_sign(path, git, commit, read_from):
+    """The sign-off verdict written onto the plan at `path` with the read set
+    a sign-off reading the evidence directories `read_from` records - the
+    plan file alone committed when `commit`, so a return beside it stays as
+    it was."""
+    import _filed_returns as _fr
+    read = [r for d in read_from for r in _fr.phase_returns(d, "P1")]
+    with open(path, "r", encoding="utf-8") as fh:
+        plan = json.load(fh)
+    plan["phases"][0]["review"] = {"status": "passed",
+                                   _fr.READ_RETURNS_FIELD: _fr.read_record(read)}
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(plan, fh)
+    if commit:
+        git("add", "--", path)
+        git("commit", "-q", "-m", "sign-off")
+
+
+def _ev(tree):
+    return os.path.join(tree, "docs", "audit", "evidence")
+
+
+def _rs_outside_root(name):
+    """`(root, git, mpath, sha)` - one checkout, P1 on `audit/p1-demo` there
+    with its work committed, the plan stored in a directory beside the
+    repository and the evidence inside it; no verdict and no return yet."""
+    root = _harness.fixture_root("closephase-rs-%s" % (name,))
+    git = _fixture_git(root)
+    _init_fixture_repo(git)
+    phase = _signed_phase("P1", "audit/p1-demo")
+    phase.pop("review")
+    mpath = _write_plan(root + "-plan", {"developmentBranch": "main"}, [phase])
+    os.makedirs(os.path.join(root, ".claude"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": mpath, "review": {"perTask": "always"},
+                   "evidence": {"dir": "docs/audit/evidence"}}, fh)
+    with open(os.path.join(root, ".git", "info", "exclude"), "a") as fh:
+        fh.write(".claude/state/\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "base")
+    git("checkout", "-q", "-b", "audit/p1-demo")
+    with open(os.path.join(root, "work.txt"), "w") as fh:
+        fh.write("work\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "work")
+    return root, git, mpath, git("rev-parse", "HEAD").stdout.decode().strip()
+
+
+def _read_set_reach_cases(check):
+    """Each place a later return can be filed - a sibling worktree, the
+    signing checkout after it switched away and back, the tip after a merge
+    of the target - against a verdict that records what it read; each with
+    the twin that lands."""
+    made = []
+
+    def fixture(name, **kw):
+        got = _reach_fixture("rs-" + name, **kw)
+        made.append(got[0])
+        return got
+
+    def same(name):
+        got = _same_root("rs-" + name)
+        made.append(got[0])
+        return got
+
+    try:
+        root, wt, mpath, wpath, git, wgit, sha = fixture("sibling")
+        _rs_sign(wpath, wgit, True, [_ev(wt)])
+        sib = root + "-sib"
+        git("worktree", "add", "-q", "-b", "other", sib, "main")
+        filed = _reach_file(sib, os.path.join(sib, "docs", "audit",
+                                              "audit-plan.json"), sha)
+        code, text = _reach_close(mpath, root)
+        check("rs1 a `diverges` return filed by the real verb in a SIBLING "
+              "worktree after the tip's verdict - a checkout none of the "
+              "branch's, the parent's or the target's - is refused: its "
+              "signature is not in what the verdict read: file %r, exit %r, %r"
+              % (filed[0], code, text[-360:]),
+              filed[0] == 0 and _reach_outcome(git, sha, code, text, False)
+              and "could not have read" in text)
+
+        root, wt, mpath, wpath, git, wgit, sha = fixture("sibling-copy")
+        _reach_put(wt, sha)
+        _rs_sign(wpath, wgit, False, [_ev(wt)])
+        wgit("add", "-A")
+        wgit("commit", "-q", "-m", "sign-off and return")
+        sib = root + "-sib"
+        git("worktree", "add", "-q", "-b", "other", sib, "main")
+        _reach_put(sib, sha)
+        code, text = _reach_close(mpath, root)
+        check("rs2 THE TWIN: a byte-for-byte copy of a return the verdict read, "
+              "sitting in a sibling worktree, lands - the same answer is "
+              "covered wherever it sits: exit %r, %r" % (code, text[-300:]),
+              _reach_outcome(git, sha, code, text, True))
+
+        root, git, mpath, sha = same("switch")
+        _rs_sign(mpath, git, True, [_ev(root)])
+        git("checkout", "-q", "main")
+        filed = _reach_file(root, mpath, sha)
+        git("checkout", "-q", "audit/p1-demo")
+        code, text = _close(mpath, root)
+        check("rs3 THE SIGNING CHECKOUT, switched to the target, files a "
+              "`diverges` return there - its copy shows no verdict - and "
+              "switches back, the untracked return following it: the landing "
+              "from that checkout is refused, though the return now sits in "
+              "the evidence the verdict was signed over: file %r, exit %r, %r"
+              % (filed[0], code, text[-360:]),
+              filed[0] == 0 and _reach_outcome(git, sha, code, text, False)
+              and "could not have read" in text)
+
+        root, git, mpath, sha = same("switch-before")
+        filed = _reach_file(root, mpath, sha)
+        _rs_sign(mpath, git, True, [_ev(root)])
+        git("checkout", "-q", "main")
+        git("checkout", "-q", "audit/p1-demo")
+        code, text = _close(mpath, root)
+        check("rs4 THE TWIN: the same return filed in that checkout BEFORE the "
+              "verdict, which read it, lands after the same switch away and "
+              "back: file %r, exit %r, %r" % (filed[0], code, text[-300:]),
+              filed[0] == 0 and _reach_outcome(git, sha, code, text, True))
+
+        root, wt, mpath, wpath, git, wgit, sha = fixture("gone-copy")
+        _reach_put(wt, sha)
+        _rs_sign(wpath, wgit, True, [_ev(wt)])
+        git("worktree", "remove", "--force", wt)
+        _reach_put(root, sha)
+        _reach_commit(git)
+        code, text = _reach_close(mpath, root)
+        check("rs5 ALLOW: the verdict read a return in the worktree, never "
+              "committed; the worktree is removed and the parent holds a "
+              "byte-for-byte copy - the answer the verdict read, so it lands, "
+              "where reading by place refuses it: exit %r, %r"
+              % (code, text[-300:]),
+              _reach_outcome(git, sha, code, text, True))
+
+        root, wt, mpath, wpath, git, wgit, sha = fixture("gone-copy-legacy")
+        _reach_put(wt, sha)
+        _reach_sign(wpath, wgit, commit=False)
+        wgit("add", "--", wpath)
+        wgit("commit", "-q", "-m", "sign-off")
+        git("worktree", "remove", "--force", wt)
+        _reach_put(root, sha)
+        _reach_commit(git)
+        code, text = _reach_close(mpath, root)
+        check("rs5b A VERDICT RECORDING NO READ SET - written before the field "
+              "- keeps the per-place reading: the same layout is refused, the "
+              "parent's evidence being no place a tip's verdict read: "
+              "exit %r, %r" % (code, text[-300:]),
+              _reach_outcome(git, sha, code, text, False))
+
+        root, git, mpath, sha = _rs_outside_root("outside-settled")
+        made.append(root)
+        _rs_sign(mpath, git, False, [_ev(root)])
+        rel = _reach_put(root, sha)
+        git("add", "-A")
+        git("commit", "-q", "-m", "a return after the verdict")
+        git("checkout", "-q", "main")
+        _reach_settle(root, [rel + "#phase"])
+        code, text = _close(mpath, root, "--no-ff")
+        check("rs6 a plan outside the repository and one checkout: a return "
+              "committed at the tip after the verdict, settled by the signer "
+              "in its own record once the checkout left the branch, lands - "
+              "a settlement read only through the checkout holding the branch "
+              "refuses it, there being none: exit %r, %r"
+              % (code, text[-300:]),
+              _reach_outcome(git, sha, code, text, True))
+
+        root, git, mpath, sha = _rs_outside_root("outside-unsettled")
+        made.append(root)
+        _rs_sign(mpath, git, False, [_ev(root)])
+        _reach_put(root, sha)
+        git("add", "-A")
+        git("commit", "-q", "-m", "a return after the verdict")
+        git("checkout", "-q", "main")
+        code, text = _close(mpath, root, "--no-ff")
+        check("rs6b THE TWIN: ...and the same return that no record names is "
+              "refused: exit %r, %r" % (code, text[-360:]),
+              _reach_outcome(git, sha, code, text, False))
+
+        root, git, mpath, sha = _rs_outside_root("outside-legacy")
+        made.append(root)
+        _reach_sign(mpath, git, commit=False)
+        rel = _reach_put(root, sha)
+        git("add", "-A")
+        git("commit", "-q", "-m", "a return after the verdict")
+        git("checkout", "-q", "main")
+        _reach_settle(root, [rel + "#phase"])
+        code, text = _close(mpath, root, "--no-ff")
+        check("rs6c ...and under a verdict recording no read set, the per-place "
+              "reading settles the tip's return through every known "
+              "checkout's record too - the checkout holding the branch is "
+              "gone, and its record was never the only one a human could have "
+              "written: exit %r, %r" % (code, text[-300:]),
+              _reach_outcome(git, sha, code, text, True))
+
+        root, wt, mpath, wpath, git, wgit, sha = fixture("merged-target")
+        _rs_sign(wpath, wgit, True, [_ev(wt)])
+        _reach_put(root, sha)
+        _reach_commit(git)
+        wgit("merge", "-q", "--no-edit", "main")
+        code, text = _reach_close(mpath, root)
+        check("rs7 THE TARGET MERGED INTO THE BRANCH AFTER THE VERDICT brings "
+              "in a `diverges` return the verdict never read; the tip now "
+              "commits it, and it is refused - a tip read as wholly read would "
+              "land it: exit %r, %r" % (code, text[-360:]),
+              _reach_outcome(git, sha, code, text, False))
+
+        root, wt, mpath, wpath, git, wgit, sha = fixture("merged-matches")
+        _rs_sign(wpath, wgit, True, [_ev(wt)])
+        _reach_put(root, sha, dict(_REACH_BODY, intent={
+            "answer": "matches", "missing": [], "note": "as asked"}))
+        _reach_commit(git)
+        wgit("merge", "-q", "--no-edit", "main")
+        code, text = _reach_close(mpath, root)
+        check("rs7b THE TWIN: ...and the same merge bringing in a return no "
+              "human need settle lands - a refusal of every unread return "
+              "would stop here: exit %r, %r" % (code, text[-300:]),
+              _reach_outcome(git, sha, code, text, True))
+    finally:
+        for root in made:
+            for path in (root, root + "-wt", root + "-ev", root + "-plan",
+                         root + "-main", root + "-sib"):
+                if os.path.isdir(path):
+                    _harness.remove_tree(path)
+
+
 def _tipless_tracked_cases(check):
     """A plan git versions - committed at the parent - whose copy at the branch
     tip cannot be read: the parent's copy records the phase as it stood at the
@@ -4426,6 +4660,7 @@ def _selftest():
         _landed_cases(check)
         _main_tree_cases(check)
         _harness.stage(check, "ra-block", _review_answer_cases)
+        _harness.stage(check, "rs-block", _read_set_reach_cases)
         _override_cases(check)
         _landing_cases(check)
         _checked_out_cases(check)

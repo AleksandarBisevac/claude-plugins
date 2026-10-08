@@ -331,6 +331,7 @@ def _selftest():
         _harness.stage(check, "pk-block", _held_cases)
         _harness.stage(check, "hn-block", _human_cases)
         _harness.stage(check, "dm-block", _drive_mark_cases)
+        _harness.stage(check, "rd-block", _read_set_cases)
     return _harness.run(body)
 
 
@@ -468,6 +469,102 @@ def _human_cases(check):
               and state == M.drive_state_path(ev, "P1"))
     finally:
         _harness.remove_tree(ev)
+
+
+def _git_repo(root):
+    """`git -C root ...` in a fresh repository on `main` with a repo-local
+    identity, returning the CompletedProcess."""
+    import subprocess
+
+    def git(*a):
+        return subprocess.run(["git", "-C", root] + list(a),
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    git("init", "-q", "-b", "main")
+    git("config", "user.name", "t")
+    git("config", "user.email", "t@t")
+    return git
+
+
+def _put_return(evidence, phase_id, head, body):
+    rel = M.phase_return_rel(phase_id, head)
+    path = os.path.join(evidence, *rel.split("/"))
+    if not os.path.isdir(os.path.dirname(path)):
+        os.makedirs(os.path.dirname(path))
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(body, fh)
+    return rel
+
+
+def _read_set_cases(check):
+    """What a sign-off records as read, and the one signature a landing
+    compares against it - one definition for both verbs, so a copy of a read
+    return is covered wherever it sits and a different answer never is."""
+    a = ("returns/P1/abc1234.reviewer.json", _reviewer("diverges"), None)
+    a_copy = ("returns/P1/abc1234.reviewer.json",
+              json.loads(json.dumps(_reviewer("diverges"))), None)
+    other_answer = ("returns/P1/abc1234.reviewer.json", _reviewer("matches"),
+                    None)
+    other_name = ("returns/P1/def5678.reviewer.json", _reviewer("diverges"),
+                  None)
+    unread = ("returns/P1/abc1234.reviewer.json", None, "will not parse")
+    sig = M.return_signature
+    check("rd1 a copy of a return signs the same wherever it was read from; "
+          "another answer under the name, the answer under another name, and "
+          "a copy that will not parse each sign differently: %r"
+          % ([sig(e)[:12] for e in (a, a_copy, other_answer, other_name,
+                                    unread)],),
+          sig(a) == sig(a_copy)
+          and len(set(sig(e) for e in (a, other_answer, other_name,
+                                       unread))) == 4)
+    record = M.read_record([other_name, a, a_copy])
+    check("rd2 the record a sign-off writes is one row per distinct return, "
+          "in a total order, naming each return beside its signature: %r"
+          % (record,),
+          record == sorted(record, key=lambda r: (r["return"], r["sha256"]))
+          and len(record) == 2
+          and set(r["sha256"] for r in record) == set([sig(a), sig(other_name)])
+          and set(r["return"] for r in record) == set([a[0], other_name[0]]))
+    absent = M.read_set({"status": "passed"})
+    empty = M.read_set({"status": "passed", M.READ_RETURNS_FIELD: []})
+    held = M.read_set({"status": "passed", M.READ_RETURNS_FIELD: record})
+    check("rd3 a verdict recording no read set reads as None - the landing's "
+          "older reading - and one recording an empty set reads as the empty "
+          "set, never as None: %r" % ((absent, empty, held),),
+          absent is None and empty == set() and isinstance(empty, set)
+          and held == set([sig(a), sig(other_name)])
+          and M.read_set(None) is None)
+
+    root = _harness.fixture_root("filed-returns-tip-")
+    outside = _harness.fixture_root("filed-returns-tip-outside-")
+    try:
+        git = _git_repo(root)
+        evidence = os.path.join(root, "docs", "audit", "evidence")
+        with open(os.path.join(root, "seed.txt"), "w") as fh:
+            fh.write("seed\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "base")
+        git("checkout", "-q", "-b", "audit/p1")
+        rel = _put_return(evidence, "P1", "abc1234", _reviewer("diverges"))
+        git("add", "-A")
+        git("commit", "-q", "-m", "return")
+        _put_return(evidence, "P1", "def5678", _reviewer("matches"))
+        at_tip, why = M.tip_phase_returns(root, evidence, "audit/p1", "P1")
+        on_main, _w = M.tip_phase_returns(root, evidence, "main", "P1")
+        nowhere, gone_why = M.tip_phase_returns(root, evidence, "no-such",
+                                                "P1")
+        out, out_why = M.tip_phase_returns(root, outside, "audit/p1", "P1")
+        check("rd4 a ref's committed returns are read off git, named as the "
+              "filing verb names them on disk - an uncommitted return is not "
+              "the tip's; a ref with none commits none; a ref git does not "
+              "have, and evidence outside the repository, are said, never "
+              "read as an empty tip: %r"
+              % ((at_tip, why, on_main, nowhere, gone_why, out, out_why),),
+              [(r, b) for r, b, _p in at_tip] == [(rel, _reviewer("diverges"))]
+              and why == "" and on_main == [] and nowhere == []
+              and "no-such" in gone_why and out == [] and out_why)
+    finally:
+        _harness.remove_tree(root)
+        _harness.remove_tree(outside)
 
 
 if __name__ == "__main__":

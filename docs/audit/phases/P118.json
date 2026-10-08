@@ -2113,7 +2113,7 @@
     {
       "id": "P118.22-v7t",
       "title": "a verdict covers only the returns its sign-off read, wherever a later one is filed",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes P118 review round 7 findings R64-R68 by binding the verdict to what it read, so the place a return sits stops deciding. When signoff writes a verdict, it also records on the phase review the content signatures of every filed phase return its own refusal read: the returns in its checkout's evidence, and the tip's committed returns where they differ. At the landing, close-phase gathers every filed phase return it can find: every worktree git lists (prunable ones skipped), the branch tip and the target ref. Each one whose signature is not in the verdict's read set and needs a human is refused, unless a settlement record of any known checkout names it. A return filed after the verdict, in any checkout including the signing one, is therefore never covered by that verdict. A verdict written before this field existed falls back to today's per-place reading, and the documents say so. Every new case is shown red first with its allow twin: the sibling-worktree filing, the switch-away/file/switch-back filing, and the plan-outside tip return settled by the signer after the checkout left the branch. The docstring table, COMPATIBILITY.md, the guide and CHANGELOG claim exactly what holds; the removed-worktree clause and the case citation range are corrected.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -2128,7 +2128,8 @@
         "plugins/audit/reference/manifest-conventions.md",
         "COMPATIBILITY.md",
         "PLUGIN-BUILD-GUIDE.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -2151,16 +2152,21 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T13:14:17Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T14:00:07Z.f48b15",
+        "status": "passed",
+        "at": "2026-10-08T14:00:07Z"
+      }
     }
   ],
   "startedAt": "2026-10-07T21:17:01Z"

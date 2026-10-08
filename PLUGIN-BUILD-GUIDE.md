@@ -1027,30 +1027,31 @@ the parent or at `baseRef`); a plan git never commits is asked through its copy 
 then record the verdict. `ra10`-`ra15` hold it, and over a recorded verdict the refusal's remedy
 names restoring the record or reporting it, never filing and signing off again, which both refuse
 there (`ra16`, `ra17`). **Under every key**, the same verdict is asked
-for when a filed phase return the landing can see (`returns_by_place`: the project's evidence
-directory, the worktree holding the branch, and the branch tip) holds an answer only a human settles
-(`_filed_returns.needs_human`), or will not parse (`unsettled_sentence`): only the sign-off verb
-writes the verdict, and it refuses while such an answer is unsettled. `hl1`-`hl5` hold it. A verdict
-settles only what its own checkout's sign-off read (`unseen_returns`, `verdict_reach_refusal`): the
-sign-off verb reads the evidence of the checkout it runs in, and `audit-task.py file-return` refuses
-only where the copy it reads records the verdict (`hd30`, and `lr1`-`lr2` against the driver) - so
-the parent's checkout, whose copy shows the phase at the fork, files after the branch signed off.
-A tip's verdict settles the returns the tip commits and those of the checkout holding the branch; a
-return found only in the parent's evidence is refused whenever it was filed, and so is one there
-under a name the branch carries with another answer. A landing run from the branch's own checkout
-also reads the target branch's committed tree and the worktree holding the target, where a return
-filed after the verdict would otherwise sit unread. In an `evidence.dir` several checkouts share, an
-answer there is settled only when the signing checkout's driver settlement names it - the
-worktree's for a verdict signed there, on the tip or on its own copy, the parent's for a verdict on
-the parent's own copy - and with that worktree removed the record is gone, so such a return is
-refused. A plan stored outside the project is one file every checkout reads, so its copy cannot say
-which checkout signed (`VERDICT_AT_EITHER`): no checkout's evidence is assumed read, and a return is
-settled only by the driver settlement of the checkout holding it. `landed_answers_refusal`'s docstring lists every
-placement of a verdict against every placement of a return, each with the case holding it
-(`vr1`-`vr23b`, `hl1`-`hl4`) or the reason it cannot occur, or names it unpinned; a verdict on the worktree's copy that the tip lacks
-is refused with the remedy of committing it, since sign-off refuses again (`vr8`). A return written
-into the worktree's evidence or committed at the tip by any other hand than the filing verb is not
-told apart from one the verdict read. A
+for when a filed phase return the landing can reach (`every_filed_return`: the evidence of every
+worktree git lists, prunable ones skipped, the branch tip and the target branch's committed tree)
+holds an answer only a human settles (`_filed_returns.needs_human`), or will not parse
+(`unsettled_sentence`): only the sign-off verb writes the verdict, and it refuses while such an
+answer is unsettled. `hl1`-`hl5` hold it. **A verdict covers what its sign-off read, wherever that
+sits** (`read_set_refusal`): `audit-task.py signoff`, single or group, records in
+`review.readReturns` the signature (`_filed_returns.return_signature`) of every filed phase return
+it read - its checkout's evidence and the branch tip's committed returns, the tip's through the
+same human stop - and the landing refuses a return needing a human whose signature is not in that
+set unless a known checkout's driver settlement names it. Where a return sits no longer decides:
+one filed after the verdict is refused in a sibling worktree, in the signing checkout after a
+switch away and back, or brought to the tip by a merge of the target, and a copy of a read return
+lands anywhere - the `rs` cases in `test_close_phase.py`, and `rr1`-`rr3b`, `gsp2` in
+`test_audit_task.py` for the write. A verdict recording no read set, written by an earlier plugin,
+keeps the reading by place (`_reach_refusal` routes it to `unseen_returns`, `verdict_reach_refusal`):
+it settles only what its own checkout's sign-off read - a tip's verdict the returns the tip commits
+and those of the checkout holding the branch, a return found only in the parent's evidence refused
+whenever it was filed; an `evidence.dir` several checkouts share settled only by the signing
+checkout's driver settlement; a plan stored outside the project (`VERDICT_AT_EITHER`) settling each
+place through the record of the checkout holding it, and a return a ref commits through every
+known checkout's. `landed_answers_refusal`'s docstring lists the placements that reading meets,
+each with the `vr`, `hl` or `rs` case holding it by name, or the reason it cannot occur, or names it
+unpinned; a verdict on the worktree's copy that the tip lacks is refused with the remedy of
+committing it, since sign-off refuses again (`vr8`). A return any hand put where the sign-off read
+it before the verdict is in the read set, the filing verb's or not. A
 digest-moved refusal whose declared files hold uncommitted changes in the worktree holding the
 branch names them (`uncommitted_declared`) and says to commit or revert them before recording,
 since a run recorded over them is refused again (`cr19b`, `cr19c`). A re-run
@@ -1989,7 +1990,12 @@ a review skill resolves or a task is owed its answers, the driver's next sign-of
 return already filed at the current head, and dispatches the review only where none is, which the
 verb's remedy says with that condition (`hd29q`, `hd29r`); `return_body`
 is the one parse of a return's text, shared by the read off disk and `close-phase.py`'s read of
-the branch tip. What it cannot hold: the task
+the branch tip. What a verdict read lives here too, because sign-off writes it and the landing
+compares against it: `return_signature` is the sha256 of a return's name, body and parse problem -
+never where it sits - `read_record` the `review.readReturns` rows a sign-off writes, `read_set`
+their signatures or None for a verdict recording none, and `ref_phase_returns` /
+`tip_phase_returns` read the returns a branch commits straight off git, the one command this
+module runs (`rd1`-`rd4`). What it cannot hold: the task
 id and role a caller files under are the caller's word. Cases in `plugins/audit/tests/test__filed_returns.py`.
 
 ### `plugins/audit/scripts/manifest/_task_outputs.py`

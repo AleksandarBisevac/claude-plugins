@@ -114,20 +114,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   member, to answer only `accept` and sign the group off again.
   `audit-task.py file-return <phaseId>` refuses a phase return where the copy of the plan it
   reads records a sign-off verdict, exiting 2 and writing nothing. `close-phase.py` refuses, under every `review.perTask` value, the
-  landing of a phase whose filed phase return - on disk, in the worktree holding the branch, or
-  at the branch tip - holds an answer only a human settles, or will not parse, while no sign-off
-  verdict is recorded on the tip's copy of the plan (the copy on disk for an unversioned plan).
-  A recorded verdict settles only the returns its own checkout's sign-off read - for a tip's
-  verdict, those the tip commits and those in the worktree holding the branch - so such a return
-  found only in the parent checkout's evidence, which `file-return` run there accepts after the
-  branch signed off, is refused. A landing run from the branch's own checkout also reads the
-  target branch's committed tree and the worktree holding the target, so a return filed there
-  after the verdict is refused rather than landed unread. In an `evidence.dir` several checkouts
-  share, an answer is settled only when the signing checkout's driver settlement names it - the
-  worktree's for a verdict signed there, the parent's for one on the parent's own copy. A plan
-  stored outside the project is one file every checkout reads, so its copy cannot say which
-  checkout signed: no checkout's evidence is assumed read, and each return is settled only by the
-  driver settlement of the checkout holding it. A verdict on the worktree's copy that the tip
+  landing of a phase whose filed phase return - in the evidence of any worktree git lists, at the
+  branch tip or on the target branch - holds an answer only a human settles, or will not parse,
+  while no sign-off verdict is recorded on the tip's copy of the plan (the copy on disk for an
+  unversioned plan). A verdict now covers what its sign-off read, wherever that sits: sign-off,
+  single or group, records in `review.readReturns` the content signature of every filed phase
+  return it read - its checkout's evidence and the branch tip's committed returns, the tip's
+  through the same stop on an unsettled answer - and rewrites the field whole on each sign-off.
+  The landing refuses a return holding such an answer whose signature is not in that set unless
+  a known checkout's driver settlement names it, so one filed after the verdict is refused in a
+  sibling worktree, in the parent's checkout, in the signing checkout after it switched away and
+  back, or brought to the tip by a merge of the target, and a copy of a return the verdict read
+  lands wherever it sits. A verdict recorded without the field keeps the reading by place: a
+  tip's verdict settles the returns the tip commits and those in the worktree holding the
+  branch, the target branch's committed tree and the worktree holding it are read from the
+  branch's own checkout, an `evidence.dir` several checkouts share is settled by the signing
+  checkout's driver settlement, and under a plan stored outside the project each return is
+  settled by the settlement of the checkout holding it - a return the tip or the target commits
+  by any known checkout's.
+  A verdict on the worktree's copy that the tip
   lacks is refused with the remedy of committing it, and a refusal over a recorded verdict names
   restoring the record or reporting it rather than filing and signing off again, which both refuse.
   Its refusal of a green whose declared files changed since names the declared files holding

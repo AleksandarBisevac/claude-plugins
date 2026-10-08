@@ -364,24 +364,25 @@ is still true of a nested key.
   filed phase return holds a `diverges`, `cannot-tell`, `not-proved` or `flagged` answer
   the driver's `--answer accept --reason` has not settled, and that stop on a phase intent
   holds under every `review.perTask` value. So does `close-phase.py`'s: under every
-  `review.perTask` value it refuses to land a phase whose filed phase return - on disk,
-  in the worktree holding the branch, or at the branch tip - holds such an answer, or
+  `review.perTask` value it refuses to land a phase whose filed phase return - in the
+  evidence of any worktree git lists, at the branch tip or on the target branch - holds such an answer, or
   will not parse, while the tip's copy of the plan records no sign-off verdict (the copy
-  on disk, for a plan git never commits). A recorded verdict settles only the returns
-  its own checkout's sign-off read: a tip's verdict, the returns the tip commits and the
-  ones in the checkout holding the branch; a verdict on a copy on disk, that checkout's
-  own. A return holding such an answer found anywhere else - in the parent checkout's
-  evidence directory, whose copy of the plan shows the phase as at the fork, so
-  `file-return <phaseId>` run there accepts it after the branch signed off, or committed
-  on the target branch or held in the worktree holding it, which a landing run from the
-  branch's own checkout reads too - is refused, filed before the verdict or after it. In
-  an `evidence.dir` several checkouts share, an answer there is settled only when the
-  signing checkout's driver settlement names it: the worktree's for a verdict signed in
-  the worktree (on the tip or on its own copy), the parent's for one on the parent's own
-  copy; with that worktree removed, its record is gone and such a return is refused. A
-  plan stored outside the project is one file every checkout reads, so its copy cannot
-  say which checkout signed: no checkout's evidence is assumed read, and a return is
-  settled only when the driver settlement of the checkout holding it names it. `file-return <phaseId>`
+  on disk, for a plan git never commits). A verdict covers what its sign-off read, wherever
+  that sits: the sign-off verb records on the phase review the content signature of every
+  filed phase return it read - its checkout's evidence and the branch tip's committed
+  returns - in `review.readReturns`, and `close-phase.py` gathers every filed phase return
+  it can reach (the evidence of every worktree git lists, the branch tip, the target
+  branch's committed tree) and refuses one holding such an answer whose signature is not in
+  that set, unless a known checkout's driver settlement names it. A return filed after the
+  verdict - in a sibling worktree, in the parent's checkout, in the signing checkout after it
+  switched branches, or brought to the tip by a merge - is refused; a copy of a return the
+  verdict read lands wherever it sits. **That guarantee needs a sign-off taken by a plugin that
+  writes `review.readReturns`.** A verdict recorded without it - by an earlier plugin - is
+  read the earlier way, by where each return sits: a tip's verdict settles the returns the
+  tip commits and the ones in the checkout holding the branch, a verdict on a copy on disk
+  that checkout's own, and a return in a checkout that reading does not name, or filed in
+  the signing checkout after a switch away and back, is not seen. The field is optional:
+  a plan without it validates and lands as before. `file-return <phaseId>`
   refuses a phase return only where the copy of the plan it reads records a sign-off
   verdict. A task that no longer records its commit, a merge made by hand
   or through a pull request, and who filed the phase return are outside that refusal;

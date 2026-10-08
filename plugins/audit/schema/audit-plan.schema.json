@@ -2051,6 +2051,17 @@
           "type": "string",
           "description": "The operator's words, recorded verbatim, for a `passed` sign-off that no gate run binds (`audit-task.py signoff --no-evidence-reason`). The report and the panel show it where the evidence badge's basis goes. It is not a run: `--fail-on no-test-evidence` still names the phase."
         },
+        "readReturns": {
+          "type": "array",
+          "description": "The filed phase returns the sign-off that wrote this verdict read - the checkout's evidence and the branch tip's committed returns - one row per return: its name below the evidence directory and the sha256 of its content (`_filed_returns.return_signature`). Written by `audit-task.py signoff`, single or group, and rewritten whole by each sign-off. `close-phase.py` refuses to land a return needing a human whose signature is not here unless a known checkout's settlement record names it. Absent on a verdict written before the field, which the landing reads by where each return sits; an empty list is a sign-off that read none.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "return": {"type": "string"},
+              "sha256": {"type": "string"}
+            }
+          }
+        },
         "acceptedCommits": {
           "type": "array",
           "description": "Commits a group's branch carried past its fork that no member records, taken into the group's review with `audit-task.py signoff --accept <sha> --reason`. Each is the full SHA and the operator's reason, written on every member of the group.",

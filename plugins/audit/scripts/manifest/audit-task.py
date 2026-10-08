@@ -8306,29 +8306,47 @@ def _human_settlement(proj, cfg, pid, filed, group=False):
             None)
 
 
+def _returns_read(proj, cfg, phase):
+    """`(filed, read)` - the phase returns this sign-off reads: `filed`, the
+    ones in this checkout's evidence, whose answers are carried; `read`, those
+    plus every return the phase branch's tip commits that differs from them,
+    each of which the human stop is asked of and the verdict records reading
+    (`_fr.READ_RETURNS_FIELD`). A tip git cannot read adds nothing here, and
+    the landing then refuses whatever it holds needing a human, unread."""
+    pid = str(phase.get("id"))
+    evidence = _evidence_io.evidence_dir(proj, cfg)
+    filed = _fr.phase_returns(evidence, pid)
+    tip = []
+    if phase.get("branch"):
+        tip, _why = _fr.tip_phase_returns(proj, evidence, phase["branch"], pid)
+    seen = set(_fr.return_signature(e) for e in filed)
+    return filed, filed + [e for e in tip if _fr.return_signature(e) not in seen]
+
+
 def _carry_answers(project, mpath, config, phase, now, group=False):
-    """`(lines, refusal)` - write each filed phase return's answers onto the task
-    whose current commit it names, record the key where none is, then ask the
-    landing property. `lines` says what was carried; `refusal` is the whole
-    refusal, or None. `group` is `_human_settlement`'s. Mutates the assembled
-    `phase` only; nothing is written here."""
+    """`(lines, refusal, read)` - write each filed phase return's answers onto
+    the task whose current commit it names, record the key where none is, then
+    ask the landing property. `lines` says what was carried; `refusal` is the
+    whole refusal, or None; `read` is the read set the verdict records
+    (`_fr.read_record`). `group` is `_human_settlement`'s. Mutates the
+    assembled `phase` only; nothing is written here."""
     pid = str(phase.get("id"))
     proj, cfg = _evidence_io.project_config_for(mpath, project)
-    filed = _fr.phase_returns(_evidence_io.evidence_dir(proj, cfg), pid)
-    unread = [why for _rel, _body, why in filed if why]
+    filed, read = _returns_read(proj, cfg, phase)
+    unread = [why for _rel, _body, why in read if why]
     if unread:
         return [], ("REFUSED: a phase return filed for %s cannot be read, so the "
                     "answers it carries are unknown: %s. Nothing written."
-                    % (pid, "; ".join(unread)))
-    settled_lines, refusal = _human_settlement(proj, cfg, pid, filed, group)
+                    % (pid, "; ".join(unread))), None
+    settled_lines, refusal = _human_settlement(proj, cfg, pid, read, group)
     if refusal:
-        return [], refusal
+        return [], refusal, None
     tasks = [t for t in phase.get("tasks") or [] if isinstance(t, dict)]
     live, problem = None, None
     if any(_fr.review_key(t, phase, None)[1] == "config" for t in tasks):
         live, problem = _config_rules.review_per_task_mode(config)
     if problem:
-        return [], "REFUSED: %s. Nothing written." % (problem,)
+        return [], "REFUSED: %s. Nothing written." % (problem,), None
     answered = _fr.answered_entries(filed)
     lines = []
     for task in tasks:
@@ -8349,7 +8367,7 @@ def _carry_answers(project, mpath, config, phase, now, group=False):
     lines += settled_lines
     held = _fr.landing_refusals(phase, live)
     if not held:
-        return lines, None
+        return lines, None, _fr.read_record(read)
     return lines, (
         "REFUSED: review.perTask reads `phase` for task(s) of %s still owed their "
         "review answers, so the phase does not sign off - under --verdict passed "
@@ -8358,7 +8376,7 @@ def _carry_answers(project, mpath, config, phase, now, group=False):
         "(audit-task.py file-return %s --role reviewer --head <the head its brief "
         "names>), then sign off again."
         % (pid, "\n".join("  %s: %s" % (tid, why) for tid, why in held), pid,
-           pid))
+           pid)), None
 
 
 def _locked_signoff(args, project, config, mpath, pid, summary, out):
@@ -8380,7 +8398,8 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
     if refusal:
         out("[audit-task] " + refusal)
         return E_USAGE
-    carried, refusal = _carry_answers(project, mpath, config, phase, _utc_now())
+    carried, refusal, read = _carry_answers(project, mpath, config, phase,
+                                            _utc_now())
     if refusal:
         out("[audit-task] " + refusal)
         return E_USAGE
@@ -8409,6 +8428,9 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
         review["noEvidenceReason"] = reason
     else:
         review.pop("noEvidenceReason", None)
+    # WHAT THIS VERDICT READ, never an earlier sign-off's: `close-phase.py`
+    # refuses any return needing a human whose signature is not here.
+    review[_fr.READ_RETURNS_FIELD] = read
     phase["review"] = review
     phase["summary"] = summary
     phase.pop("claim", None)
@@ -9625,9 +9647,10 @@ def _locked_group(args, project, config, mpath, ids, summary, out):
     # EVERY MEMBER IS ASKED, before any is written: a group signs off whole or
     # not at all, so one member owed its answers refuses them all.
     now = _utc_now()
-    held = [refusal for refusal in
-            (_carry_answers(project, mpath, config, phase, now, group=True)[1]
-             for phase in plan["members"]) if refusal]
+    asked = [(phase, _carry_answers(project, mpath, config, phase, now,
+                                    group=True)) for phase in plan["members"]]
+    held = [answer[1] for _phase, answer in asked if answer[1]]
+    reads = dict((str(phase.get("id")), answer[2]) for phase, answer in asked)
     if held:
         out("[audit-task] %s cannot be signed off together - every member is "
             "asked:" % (", ".join(ids),))
@@ -9661,6 +9684,7 @@ def _locked_group(args, project, config, mpath, ids, summary, out):
         if plan["accepted"]:
             review["acceptedCommits"] = [{"commit": sha, "reason": args.reason.strip()}
                                          for sha in plan["accepted"]]
+        review[_fr.READ_RETURNS_FIELD] = reads[str(phase.get("id"))]
         phase["review"] = review
         phase["summary"] = summary
         phase.pop("claim", None)

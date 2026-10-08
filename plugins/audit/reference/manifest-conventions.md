@@ -174,6 +174,11 @@ sign-off reviewer, overriding `meta.reviewSkill`) and `area` — a label, or a *
 labels for cross-cutting concerns (`"backend"` or `["backend","security"]`; any vocabulary —
 devops/security/embedded/data/ml/…) — for grouping/filtering in status/report/panel. Both default to absent.
 
+`review.readReturns` is never initialized. `audit-task.py signoff` writes it with the verdict: one
+`{return, sha256}` row per filed phase return that sign-off read, so `close-phase.py` can refuse a
+return needing a human that the verdict never read, wherever it was filed. Absent means a verdict
+written before the field, which the landing reads by where each return sits.
+
 ## Phase priority (`phase.priority`)
 
 An optional positive integer saying which phase to reach for first **among the tasks

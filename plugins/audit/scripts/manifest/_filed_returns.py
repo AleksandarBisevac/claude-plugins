@@ -34,6 +34,14 @@ answers only a human settles (`needs_human`) lives here for the same reason:
 `drive-phase.py`'s triage and `audit-task.py signoff` both stop on them, and the
 settlement both read is the driver's state file (`settled_answers`).
 
+WHAT A VERDICT READ is here for the same reason. `audit-task.py signoff`
+records on the phase review the signature of every filed phase return it read
+(`read_record`, under `READ_RETURNS_FIELD`), and `close-phase.py` compares every
+return it can find against that set (`read_set`, `return_signature`): two
+verbs, one definition of when two copies are the same answer. Reading a ref's
+committed returns (`ref_phase_returns`, `tip_phase_returns`) asks git directly,
+which is the one place this module runs a command.
+
 WHAT NOTHING HERE CHECKS: the task id, the role and the head are the caller's
 word.
 
@@ -42,9 +50,12 @@ This module carries no `--selftest` of its own; its cases live in
 
 Stdlib only, Python 3.8 compatible.
 """
+import hashlib
 import json
 import os
+import posixpath
 import re
+import subprocess
 import sys
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -565,3 +576,104 @@ def settled_answers(state_dir, phase_id):
     reasons = held.get("reasons") or []
     return (set(str(k) for k in keys if isinstance(k, str)),
             [str(r) for r in reasons if isinstance(r, str)], "")
+
+
+# --- what a sign-off read ---------------------------------------------------------
+# The phase review's record of the filed phase returns its verdict was taken
+# over: one `{"return", "sha256"}` row per distinct return. Absent on a verdict
+# written before the field existed, which a landing then reads the older way;
+# an empty list is a sign-off that read none, which is not the same answer.
+READ_RETURNS_FIELD = "readReturns"
+
+
+def return_signature(entry):
+    """The sha256 of one filed return as an answer - `(rel, body, problem)` as
+    `phase_returns` lists it: its name, what it holds and why it could not be
+    read. Where it sits is not part of it, so a copy is the same answer in any
+    checkout or ref; another answer under the name, or the answer under
+    another name, is another signature."""
+    rel, body, problem = entry
+    text = json.dumps([rel, body, problem or ""], sort_keys=True,
+                      separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def read_record(entries):
+    """The rows a sign-off writes under `READ_RETURNS_FIELD` for `entries`,
+    one per distinct signature, ordered by name then signature."""
+    rows = dict(((rel, return_signature((rel, body, problem))), None)
+                for rel, body, problem in entries)
+    return [{"return": rel, "sha256": sig} for rel, sig in sorted(rows)]
+
+
+def read_set(review):
+    """The signatures a verdict records as read, or None when the review
+    records no read set - a verdict written before the field."""
+    held = review.get(READ_RETURNS_FIELD) if isinstance(review, dict) else None
+    if not isinstance(held, list):
+        return None
+    return set(str(r.get("sha256")) for r in held
+               if isinstance(r, dict) and r.get("sha256"))
+
+
+def _git(git_root, args):
+    """`(code, stdout bytes)` of one git call; code None when git could not
+    be run at all."""
+    try:
+        done = subprocess.run(["git", "-C", git_root] + list(args),
+                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    except Exception:
+        return None, b""
+    return done.returncode, done.stdout
+
+
+def ref_known(git_root, ref):
+    """True when `ref` names a branch, False when git says it names none, None
+    when git could not be asked."""
+    code, _out = _git(git_root, ["rev-parse", "--verify", "-q",
+                                 "refs/heads/%s" % (ref,)])
+    return {0: True, 1: False}.get(code)
+
+
+def ref_phase_returns(git_root, ref, rel, phase_id):
+    """`[(rel, body, problem)]` - the phase returns branch `ref` commits under
+    `rel` (root-relative, `/`-separated), named as the filing verb names them
+    on disk. A listing git would not give is a problem entry, never no return
+    filed: an unread tree is not an empty one."""
+    code, out = _git(git_root, ["ls-tree", "-r", "--name-only", "-z",
+                                "refs/heads/%s" % (ref,), "--", rel])
+    if code != 0:
+        return [("%s:%s" % (ref, rel), None,
+                 "git would not list %s at %s" % (rel, ref))]
+    paths = [p for p in out.decode("utf-8", "replace").split("\0") if p]
+    found = []
+    for path in sorted(p for p in paths if p.endswith(".reviewer.json")
+                       and posixpath.dirname(p) == rel):
+        code, raw = _git(git_root, ["cat-file", "blob", "refs/heads/%s:%s"
+                                    % (ref, path)])
+        text = raw.decode("utf-8", "replace") if code == 0 else None
+        body, problem = return_body(text, "%s:%s" % (ref, path))
+        found.append(("%s/%s/%s" % (RETURNS_DIRNAME, phase_id,
+                                    posixpath.basename(path)), body, problem))
+    return found
+
+
+def tip_phase_returns(checkout, evidence_dir, ref, phase_id):
+    """`(returns, why)` - the phase returns branch `ref` commits in the
+    repository holding `checkout`, at the place `evidence_dir` sits in it.
+    `why` says, with no returns, why none could be read: no repository, an
+    evidence directory outside it, or a ref git does not have."""
+    code, out = _git(checkout, ["rev-parse", "--show-toplevel"])
+    if code != 0:
+        return [], "%s is in no git repository git would name" % (checkout,)
+    top = out.decode("utf-8", "replace").strip()
+    folder = os.path.join(evidence_dir, RETURNS_DIRNAME, str(phase_id))
+    rel = os.path.relpath(os.path.realpath(folder),
+                          os.path.realpath(top)).replace(os.sep, "/")
+    if rel == ".." or rel.startswith("../"):
+        return [], "%s lies outside the repository at %s" % (folder, top)
+    known = ref_known(top, ref)
+    if known is not True:
+        return [], ("%s is not a branch in %s" % (ref, top) if known is False
+                    else "git could not say whether %s is a branch" % (ref,))
+    return ref_phase_returns(top, ref, rel, phase_id), ""

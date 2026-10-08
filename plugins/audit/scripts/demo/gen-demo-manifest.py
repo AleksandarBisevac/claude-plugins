@@ -1279,6 +1279,10 @@ SCHEMA_EXEMPTIONS = {
         "written only for a `passed` sign-off that no gate run backs, and the demo's "
         "phases are signed off on runs its ledger carries - a reason beside a run "
         "would claim the run did not exist.",
+    "review.readReturns":
+        "the content signatures of the phase returns a sign-off read; the demo "
+        "files no phase return, so a fixture value would sign evidence it does "
+        "not ship, and only close-phase reads it.",
     "review.acceptedCommits":
         "written only by a GROUP sign-off that took an unrecorded commit into its "
         "review; the demo signs no group off, and a fixture value would name a "

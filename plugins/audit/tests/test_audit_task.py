@@ -7917,6 +7917,18 @@ def _cases(check):
               _gp_held[0] == 2 and "P1.1" in _gp_held[1]
               and "P2.1" in _gp_held[1] and _gp_unwritten
               and _gp_pass[0] == 0)
+        _gp_after = _mio.load_manifest(gp_mp)
+        _gp_reads = dict(
+            (p.get("id"), (p.get("review") or {}).get(_fr.READ_RETURNS_FIELD))
+            for p in _gp_after["phases"] if p.get("id") in ("P1", "P2"))
+        _gp_want = dict((pid, _fr.read_record(_fr.phase_returns(
+            os.path.join(gp_proj, "docs", "audit", "evidence"), pid)))
+            for pid in ("P1", "P2"))
+        check("gsp2 a GROUP sign-off records on each member's review the read "
+              "set of that member's own filed returns, as the single-phase "
+              "verb does: %r" % (_gp_reads,),
+              _gp_reads == _gp_want and all(len(v or []) == 1
+                                            for v in _gp_reads.values()))
 
         # A BROKEN INSTALL IS REFUSED BEFORE THE WRITE, on the verbs that have no
         # pre-write validation of their own: sign-off, the group sign-off and
@@ -13210,6 +13222,88 @@ def _held_cases(check):
           refused_relinked and f8[0] == 0
           and g10[0] == 0)
 
+    # ---- what a verdict read ------------------------------------------------
+    # The read set is this sign-off's, never carried forward from an earlier
+    # review, and it covers the tip's committed returns as well as the
+    # checkout's evidence - each read through the same human stop.
+    def read_set_cases():
+        stale = {"return": "returns/P1/stale.reviewer.json", "sha256": "0" * 64}
+        proj, mpath = project("signoff-reread", [ph(
+            "P1", [done_tk("P1.1", _FR_SHA), done_tk("P1.2", _HD_SHA2)],
+            reviewPerTask="phase",
+            review={"status": "pending", _fr.READ_RETURNS_FIELD: [stale]})])
+        file_phase(proj, "P1", _HD_HEAD, [_hd_entry("P1.1", _FR_SHA),
+                                          _hd_entry("P1.2", _HD_SHA2)])
+        again = signoff(proj, "P1", "skipped")
+        rec = (phase(mpath, "P1").get("review") or {}).get(
+            _fr.READ_RETURNS_FIELD) or []
+        filed = _fr.phase_returns(os.path.join(proj, "docs", "audit",
+                                               "evidence"), "P1")
+        check("rr2 a sign-off over a review that already carries a read set "
+              "rewrites it with what this sign-off read - a record merged with "
+              "the earlier one would vouch for a return nobody read now: %r"
+              % ((again[0], rec),),
+              again[0] == 0 and stale not in rec
+              and rec == _fr.read_record(filed) and len(rec) == 1)
+
+        def tip_project(name, intent):
+            """P1 on branch `audit/p1-rr` in a git checkout of its own, a phase
+            return committed at the tip and then removed from the evidence on
+            disk, so the tip is the one place holding it."""
+            proj, mpath = project(name, [ph(
+                "P1", [done_tk("P1.1", _FR_SHA), done_tk("P1.2", _HD_SHA2)],
+                reviewPerTask="phase", branch="audit/p1-rr")])
+            import subprocess
+            env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                       GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+
+            def git(*a):
+                return subprocess.run(["git", "-C", proj] + list(a), env=env,
+                                      stdout=subprocess.PIPE,
+                                      stderr=subprocess.PIPE)
+            git("init", "-q", "-b", "main")
+            git("add", "-A")
+            git("commit", "-q", "-m", "base")
+            git("checkout", "-q", "-b", "audit/p1-rr")
+            body = json.loads(_hd_return([_hd_entry("P1.1", _FR_SHA),
+                                          _hd_entry("P1.2", _HD_SHA2)]))
+            body["intent"]["answer"] = intent
+            rel = _fr.phase_return_rel("P1", _HD_HEAD)
+            path = os.path.join(proj, "docs", "audit", "evidence",
+                                *rel.split("/"))
+            os.makedirs(os.path.dirname(path))
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(body, fh)
+            git("add", "-A")
+            git("commit", "-q", "-m", "the phase return")
+            os.remove(path)
+            return proj, mpath, rel, body
+
+        proj, mpath, rel, body = tip_project("signoff-tip-read", "matches")
+        file_phase(proj, "P1", _HD_HEAD2, [_hd_entry("P1.1", _FR_SHA),
+                                           _hd_entry("P1.2", _HD_SHA2)])
+        tipped = signoff(proj, "P1", "skipped")
+        rec = (phase(mpath, "P1").get("review") or {}).get(
+            _fr.READ_RETURNS_FIELD) or []
+        check("rr3 the read set covers the tip's committed returns as well as "
+              "the checkout's evidence: a return the tip commits and the disk "
+              "no longer holds is read and recorded: %r" % ((tipped[0], rec),),
+              tipped[0] == 0 and len(rec) == 2
+              and {"return": rel, "sha256": _fr.return_signature(
+                  (rel, body, None))} in rec)
+
+        proj, mpath, rel, body = tip_project("signoff-tip-human", "diverges")
+        file_phase(proj, "P1", _HD_HEAD2, [_hd_entry("P1.1", _FR_SHA),
+                                           _hd_entry("P1.2", _HD_SHA2)])
+        before = read(mpath)
+        held = signoff(proj, "P1", "skipped")
+        check("rr3b THE TWIN: ...and a `diverges` there is put through the same "
+              "human stop as one on disk - a read set recording a return the "
+              "stop never asked about would vouch for an unsettled answer: %r"
+              % ((held[0], held[1][-240:]),),
+              held[0] == M.E_USAGE and "intent diverges" in held[1]
+              and read(mpath) == before)
+
     # ---- the answers only a human settles, at the verb ------------------------
     # The driver's triage stops on them; the sign-off verb, run by hand, must
     # stop on them too, and read the same settlement the triage's accept writes.
@@ -13289,6 +13383,18 @@ def _held_cases(check):
               "verb refusing every `diverges` would pass: %r" % ((h3[0], h3[1][-200:]),),
               h3[0] == 0 and answer(mpath, "P1.1") == "diverges"
               and "the owner read it: fine" in h3[1])
+        filed_h3 = _fr.phase_returns(os.path.join(proj, "docs", "audit",
+                                                  "evidence"), "P1")
+        rec_h3 = (phase(mpath, "P1").get("review") or {}).get(
+            _fr.READ_RETURNS_FIELD)
+        check("rr1 the verdict records what it read: the sign-off writes the "
+              "signature of every filed phase return it read on the phase "
+              "review, so a landing can tell a return filed after it from one "
+              "it read, wherever either sits: %r" % (rec_h3,),
+              isinstance(rec_h3, list) and len(rec_h3) == 1
+              and rec_h3[0].get("return") == hd_rel
+              and rec_h3[0].get("sha256") == _fr.return_signature(filed_h3[0]))
+        read_set_cases()
 
         proj, mpath = two_done("signoff-state-broken")
         file_phase(proj, "P1", _HD_HEAD, [
