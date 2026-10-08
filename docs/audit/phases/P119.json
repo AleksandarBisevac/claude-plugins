@@ -29,7 +29,7 @@
     {
       "id": "P119.1",
       "title": "the remaining cost is located per step and each lever is designed with its micro-test",
-      "status": "in_progress",
+      "status": "done",
       "description": "Measure and design, with no paid call, from the recorded benchmark streams: probe-C-1, cost-C-1, cost-C-2 and cost-C-3 at 1dd702f2, plus the arm A and arm B streams. The P118 results document names where they are. The result is a design section added to docs/research/pipeline-cost-results.md or a new docs/research document, with every figure beside the command that prints it. It covers:\n(a) the phase overhead split per step: phase review dispatch, triage, phase gate, sign-off, landing and lock;\n(b) a value test for the phase review: what each one found in those sessions, and whether any finding changed a graded result or the shipped tree;\n(c) the executor's hand-back per cycle: its output tokens and the main loop's read of it;\n(d) CLAUDE.md in each agent's start: bytes, tokens, and which of its rules the agent prompt or the brief already restates;\n(e) a recommended set of levers with predicted per-task and per-phase ratios. Each lever names its mechanism, its micro-test, and the guarantee it must keep. Each estimate is labelled with its basis, and doubling any single estimate is shown not to break the target.\nFix the internal fault where tools/stream-cost.py misprices a follow-up stream read on its own: accept several streams of one session in one call, or refuse the follow-up read alone. Every new instrument case is shown red first.",
       "files": [
         "tools/stream-cost.py",
@@ -60,19 +60,250 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "8d414df3",
+      "outcome": {
+        "technical": "Locates the cost that remains after P118, per step, and designs four levers, in the new docs/research/pipeline-cost-levers.md. Every figure there sits beside the command in its section 8.\n\nstream-cost:\n- load_streams() reads several streams of one session in one call. They must share the same session id and be given in order; otherwise the call is refused with exit 2.\n- unheld_reads() and main() refuse a follow-up stream read alone with exit 2, when modelUsage's cache reads exceed what the stream can hold.\n- The mispricing was 18081 x (8.0-5.0)/1e6 = 0.054243.\n- Over every recorded stream under the experiments directory, only the follow-up alone is refused. Every other report is byte-identical to HEAD; this was run twice, about 20 minutes apart.\n- Cases sc30-sc34. sc30, sc31, sc33 and sc34 failed on the unfixed code, and the allow twin sc32 passed.\n- The orchestrator re-ran the mutation probe (scratchpad p119-1/mutations.py): nine mutations, all red on their target cases, including three over-fire rows that turn sc32 red.\n\npipeline-cost-results.md has three in-place corrections:\n- a pointer to the instrument fix;\n- the one-line hand-back estimate, re-derived with the CLI frame as 1.254 / 1.333 / 1.189;\n- cost-C-2 re-derived as 1.224.\n\nFindings:\n- The phase overhead per step: the driver's sign-off call runs in 2.4-2.6 s, and its model cost is the sign-off answer request.\n- The phase review value test: verdict clean with no findings in each session, every task `matches`, and no file outside docs/audit changed after the review. A computed fact, \"an existing test file was modified\", matched the grader's protected flag in all three sessions; the reviews' readings did not.\n- The executor hand-back costs 0.0504 / 0.0593 / 0.0557 a cycle.\n- CLAUDE.md is 2193 B in each agent start, and omitClaudeMd is not recommended.\n\nLevers:\n- A: the plan batch on stdin.\n- B: submit prints the hand-back instruction last.\n- C: the sign-off answered in advance, applied only when it is the triage's single admissible answer.\n- D: the review's mechanical answers computed, with the existing-test fact added to the phase brief.\n\nPredicted phase overhead 0.5653 / 0.5501 / 0.7096, at most 0.8267 with each estimate taken adversely. Predicted per task 1.254 / 1.333 / 1.189.\n\nNot recommended: a SubagentStop block hook, which costs more than it saves. The review on a signal or off was put to the user, who chose to keep it, narrowed.\n\nred-first: the helper is could-not-prove, because the task declares no test file. The pre-fix run recorded 44/48 with the four deny cases red.\n\nFaults recorded internally: the own-tests command in the executor brief, the --introduces symbol, and the CLI frame in the hand-back apportioning.",
+        "descriptive": "The cost left after the last phase is measured step by step, and four changes are designed that should bring the phase overhead under budget in every measured session; the cost tool now prices a resumed session correctly."
+      },
+      "startedAt": "2026-10-08T16:35:57Z",
+      "completedAt": "2026-10-08T17:49:24Z",
+      "verifiedBy": [
+        "tools/stream-cost.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T17:30:57Z.64cd45",
+        "status": "passed",
+        "at": "2026-10-08T17:30:57Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8d414df3",
+        "at": "2026-10-08T17:49:24Z",
+        "basis": "orchestrator check: every section (a)-(e) present with commands; mutation probe re-run, nine rows red; user decided the phase review stays, narrowed"
+      }
+    },
+    {
+      "id": "P119.2-g0k",
+      "title": "the plan batch is read from stdin, so planning writes no file",
+      "status": "pending",
+      "description": "Lever A of docs/research/pipeline-cost-levers.md, section 6. `audit-task.py add --from-file -` reads the batch from stdin through the same read_batch checks and revalidation. The add form in commands/phase.md shows a quoted heredoc instead of a Write to a file, and the request and the open choices are saved on every path. Micro-test as the section lists: stdin and file give byte-identical manifests with request and open choices; a malformed batch on stdin is refused naming the field and leaves the manifest unchanged; `tools/measure-context.py --gate` still holds /audit:phase add under its ceiling; and the write guards' suites, given the heredoc command, refuse nothing. CHANGELOG gets one line under [Unreleased]. Every case is shown red first.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-08T16:35:57Z",
+      "startedAt": null,
       "completedAt": null,
-      "verifiedBy": [],
-      "testEvidence": {
-        "runId": "2026-10-08T17:30:57Z.64cd45",
-        "status": "passed",
-        "at": "2026-10-08T17:30:57Z"
-      }
+      "verifiedBy": []
+    },
+    {
+      "id": "P119.3-g0k",
+      "title": "submit prints the hand-back instruction as its last line",
+      "status": "pending",
+      "description": "Lever B of docs/research/pipeline-cost-levers.md, section 6. After a filed return, `drive-phase.py submit` prints the filed line and then one more line: hand back the line above as the whole reply. A refused submit says to hand back the refusal verbatim. This covers the executor and the phase reviewer's submit --head. The prompts' closing sentence about the hand-back is removed, since the print carries it. Micro-test as listed: the last line of submit's output is the instruction and the filed line occurs once; the refusal twin; `tools/measure-context.py --gate` holds both agents under their ceilings. Do not add a stop hook (the section prices it as a net cost). No CHANGELOG edit here; the next driver task carries the line. Every case is shown red first.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/agents/audit-reviewer.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P119.4-g0k",
+      "title": "a clean phase review is signed off in the same call that files it",
+      "status": "pending",
+      "description": "Lever C of docs/research/pipeline-cost-levers.md, section 6. At the phase reviewer's dispatch, the driver also prints the call to send after it: `next <phase> --answer sign-off --reason <the summary>`. That answer applies only when the triage has sign-off as its single admissible answer: review clean, no finding open, no answer waiting on a human, no fix task after its head. Otherwise the triage prints as today and the answer is reported as not applied. The sign-off verb, gate, invariants, commit, landing and lock release run unchanged. Micro-test as listed: a clean review answered in advance signs off and prints done in one call; with a finding open, or an answer waiting on a human, the same call prints the triage and runs no sign-off; stream-cost's driven-span cases still place the landing in the close. CHANGELOG under [Unreleased] gets one line for lever B (the hand-back print) and one for this. Every case is shown red first.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P119.3-g0k"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P119.5-g0k",
+      "title": "the phase review's mechanical answers are computed and its brief names the existing tests a phase modified",
+      "status": "pending",
+      "description": "Lever D of docs/research/pipeline-cost-levers.md, section 6. The user decided the phase review stays, narrowed. The filing verb fills two of each task's answers into the phase return: the red-first block when it is the helper's, and inherited tests `not-asked` when tests.gate runs the whole project. The reviewer's prompt keeps them only where reading is needed: a red-first the helper did not grade, or a gate selecting named tests. The phase brief gains the computed list of existing test files the phase's diff modifies; new test files are not listed. Micro-test as listed: a phase return filed without the mechanical fields is completed from the executor's filed block and the gate's shape; the two refusal twins; the brief lists an existing test file a fixture phase appends to, and not a new one. The intent answer stays the reviewer's, and the sign-off verb still refuses until every owed task has one. Every case is shown red first.",
+      "files": [
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/agents/audit-reviewer.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P119.2-g0k"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P119.6-g0k",
+      "title": "the executor brief prints a test command that can run",
+      "status": "pending",
+      "description": "Internal fault, measured by the levers analysis. The executor brief prints `run-test-gate.py ... --own --quiet` while the same brief says no gate entry names the task's tests.add file, so the executors' own-tests runs printed 'no gate entry' or rc=2 three times in each arm C session: wasted requests in the cycle. Print the own-tests command only when a gate entry selects the task's tests; otherwise print the suite command the brief already names for the task's test file. Cases: a brief whose gate selects the task's tests prints the own-tests command; its twin, whose gate does not, prints the runnable suite command and no own-tests line. CHANGELOG under [Unreleased] gets one line for lever D and one for this. Every case is shown red first.",
+      "files": [
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P119.5-g0k"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-08T16:35:57Z"
