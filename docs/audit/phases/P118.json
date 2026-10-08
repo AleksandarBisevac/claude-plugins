@@ -541,45 +541,57 @@
         "severity": "med",
         "file": "plugins/audit/scripts/git/close-phase.py worktree_phase / unseen_returns",
         "issue": "Suppose a plan is stored outside the git root and its evidence.dir is inside the repository. Then worktree_phase returns None and plan_versioned is False, so the verdict is attributed to the parent even when the sign-off ran in the worktree. unseen_returns then counts the parent's evidence as seen and the worktree's evidence as candidates, the reverse of what the sign-off read. A diverges return filed from the parent before the verdict then lands with no human asked.",
-        "resolution": "When the plan lies outside the project, the on-disk copy cannot say which checkout signed. Treat both evidence directories as candidates and settle them through the signing checkout's settlement record, or refuse. Add the case and its allow twin, and name the cell in the docstring table, COMPATIBILITY.md and the guide."
+        "resolution": "fixed in P118.21-v7t (55982b08): When the plan lies outside the project, the on-disk copy cannot say which checkout signed. Treat both evidence directories as candidates and settle them through the signing checkout's settlement record, or refuse. Add the case and its allow twin, and name the cell in the docstring table, COMPATIBILITY.md and the guide.",
+        "fixTask": "P118.21-v7t",
+        "commit": "55982b08"
       },
       {
         "id": "P118-R59",
         "severity": "med",
         "file": "plugins/audit/scripts/git/close-phase.py returns_by_place / unseen_returns ('same' checkout)",
         "issue": "When the landing runs from the branch's own checkout ('same'), no place it reads holds a return filed from a checkout of the target branch. That covers main checked out in a linked worktree, and a return committed on main before the checkout switched to the branch. The phase lands with an unsettled human answer on the target, while running from main's worktree refuses the same state.",
-        "resolution": "Also read the target branch's evidence: the parent ref's committed tree, plus the worktree holding the parent when one exists. Count those returns as candidates under a tip verdict. Add the 'same'-checkout case with a return committed on the parent ref, plus its twin, and correct the hl2 row."
+        "resolution": "fixed in P118.21-v7t (55982b08): Also read the target branch's evidence: the parent ref's committed tree, plus the worktree holding the parent when one exists. Count those returns as candidates under a tip verdict. Add the 'same'-checkout case with a return committed on the parent ref, plus its twin, and correct the hl2 row.",
+        "fixTask": "P118.21-v7t",
+        "commit": "55982b08"
       },
       {
         "id": "P118-R60",
         "severity": "low",
         "file": "plugins/audit/scripts/git/close-phase.py landed_answers_refusal docstring",
         "issue": "Unnamed cell: an unversioned plan, a verdict on the worktree's own copy, and a return committed at the tip. The filing verb cannot reach it, yet the table claims to list every placement.",
-        "resolution": "Add the cell to the 'Unreachable, and why' paragraph with that reason."
+        "resolution": "fixed in P118.21-v7t (55982b08): Add the cell to the 'Unreachable, and why' paragraph with that reason.",
+        "fixTask": "P118.21-v7t",
+        "commit": "55982b08"
       },
       {
         "id": "P118-R61",
         "severity": "low",
         "file": "plugins/audit/scripts/git/close-phase.py landed_answers_refusal docstring",
         "issue": "The verdict axis does not name a versioned plan whose verdict sits only on the parent's copy. It is refused safely, but no case pins it.",
-        "resolution": "Name the row with its remedy, and pin it with one case."
+        "resolution": "fixed in P118.21-v7t (55982b08): Name the row with its remedy, and pin it with one case.",
+        "fixTask": "P118.21-v7t",
+        "commit": "55982b08"
       },
       {
         "id": "P118-R62",
         "severity": "low",
         "file": "COMPATIBILITY.md; PLUGIN-BUILD-GUIDE.md; close-phase.py verdict_reach_refusal",
         "issue": "Both documents state the shared-evidence.dir settlement rule without its condition. Three cells are unpinned: shared with an unversioned worktree verdict, shared with a parent verdict, and shared with a tip verdict after the worktree is removed. The last one refuses a settled return.",
-        "resolution": "Limit the documents to verdicts signed in the worktree. Name the parent-verdict and removed-worktree cells in the table, and pin them."
+        "resolution": "fixed in P118.21-v7t (55982b08): Limit the documents to verdicts signed in the worktree. Name the parent-verdict and removed-worktree cells in the table, and pin them.",
+        "fixTask": "P118.21-v7t",
+        "commit": "55982b08"
       },
       {
         "id": "P118-R63",
         "severity": "low",
         "file": "plugins/audit/scripts/git/close-phase.py docstring row 'no verdict anywhere'",
         "issue": "No case covers 'no verdict' with the return only in the parent's evidence and a separate worktree, so the row claims more pinning than its cited cases give.",
-        "resolution": "Add one no-verdict, parent-only case, or cite vr1/vr3 for what they actually pin."
+        "resolution": "fixed in P118.21-v7t (55982b08): Add one no-verdict, parent-only case, or cite vr1/vr3 for what they actually pin.",
+        "fixTask": "P118.21-v7t",
+        "commit": "55982b08"
       }
     ],
-    "outcome": "[findings: 63 - 5 high, 23 med, 35 low; 57 with a recorded fix commit]"
+    "outcome": "[findings: 63 - 5 high, 23 med, 35 low; 63 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2009,7 +2021,7 @@
     {
       "id": "P118.21-v7t",
       "title": "the landing check reads a plan outside the repo and a landing from the branch's own checkout",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes P118 review round 6 findings R58-R63 in close-phase's landing check. The check is read in two layouts it missed. First, a plan stored outside the git root with its evidence inside the repository: there, the on-disk copy cannot say which checkout signed off, so the verdict's own checkout is never assumed. Second, a landing run from the branch's own checkout: there, the target branch's evidence is also read, both its committed tree and the worktree holding it. In both layouts, a return the verdict could not have read is refused. The docstring table names every remaining cell, pinned or unreachable with its reason. COMPATIBILITY.md and the guide state the shared-evidence rule with its condition. Every new case is shown red first, each with its allow twin.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -2041,18 +2053,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "55982b08",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes P118-R58 to R63 with one rule. A recorded verdict settles only the evidence its signing checkout read; every other place a filed phase return can sit is a candidate, and a candidate needing a human refuses unless a settlement record covers it.\n\nreturns_by_place now enumerates each distinct evidence directory together with every checkout that resolves to it. The checkouts are the one close-phase runs from, the one holding the branch and the one holding the target branch. It also reads the branch tip's committed returns and the target ref's (`target`). The old `same`/`shared`/`there` keys are gone, and a shared directory is detected for any pair of checkouts.\n\nNew helpers:\n- `_ref_returns` reads a ref's committed returns, for both refs.\n- `_ref_known` handles a target git says does not exist; one git cannot answer about is a problem entry.\n- `_signing_checkout` names the checkout whose sign-off read the evidence.\n- `_plan_outside` is shared with worktree_phase.\n\nunseen_returns returns one group per place. Each group carries its entries, its clause, its folder, and which checkouts' settlement records can settle it. Copies are deduplicated by content across groups. verdict_reach_refusal reads each group's settlement records and names every unsettled place.\n\nR58: a plan outside the project uses VERDICT_AT_EITHER. No checkout's evidence is assumed read, and each return is settled by the record of the checkout holding it (vr15 refuse, vr16 and vr16b allow).\n\nR59: a landing run from the branch's own checkout now reads the target ref and the target's worktree (vr17, vr17b, vr19).\n\nR62: a shared directory under a parent verdict is settled through the parent's record (vr23, vr23b).\n\nR61 and R63 pin existing behaviour (vr20, vr21). R60's cell is named unreachable with its reason. The docstring table names every cell as pinned, unreachable or explicitly unpinned.\n\nCOMPATIBILITY.md, PLUGIN-BUILD-GUIDE.md and CHANGELOG.md state the shared-evidence rule with its condition, the reading of the target branch and the plan-outside rule.\n\nRed-first: stamp-verification red proved, 2026-10-08T12:52:54Z; six of the new cases failed at HEAD.\n\nMutation probe (monkeypatch in a separate process, no tree edit), re-run by the orchestrator:\n- `_plan_outside` False: vr15 and vr16 red.\n- Settlement never read: vr10 and vr16 red, among others.\n- `_ref_known` False: one case red.\n- Parent tree dropped: one case red.\n- Content dedupe off: vr6 and vr18 red, among others.\n- Unmutated: 28 of 28 pass.\n\nObservation left open: a target merged into the branch after the verdict brings its returns to the tip, where they count as read; the docstring names this as not told apart.",
+        "descriptive": "A landing now refuses an unsettled human answer wherever it sits, including a plan stored outside the repo, the target branch, or the target's worktree, and it no longer refuses one that was legitimately settled."
       },
       "startedAt": "2026-10-08T12:31:36Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T13:04:37Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_close_phase.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-08T13:04:26Z.ea0978",
         "status": "passed",
         "at": "2026-10-08T13:04:26Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "55982b08",
+        "at": "2026-10-08T13:04:37Z",
+        "basis": "orchestrator check: one rule (a verdict settles only what its signing checkout read) over every checkout and both refs; executor's mutation probe re-run, each mutation red, unmutated green"
       }
     }
   ],
