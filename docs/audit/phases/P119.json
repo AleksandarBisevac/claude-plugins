@@ -1,0 +1,73 @@
+{
+  "id": "P119",
+  "title": "the phase overhead and the task cycle cost less with every guarantee kept",
+  "status": "pending",
+  "description": "Follows docs/research/pipeline-cost-results.md, on the user's decision of 2026-10-08 to cut cost further once P118 landed. P118 measured the per-task cycle at 1.29-1.44 times plain like for like, and the phase overhead at 0.60, 0.75 and 1.15 against a budget of 1.00. The phase overhead is the larger remaining share. The user's priorities, in order:\n1. measure what the phase review actually catches, then narrow it or make it conditional;\n2. enforce the executor's one-line hand-back by mechanism rather than prose;\n3. measure CLAUDE.md in each agent's start, and drop it where the brief already carries the rules.\nThe order is fixed: an offline measurement and design task first, from the recorded benchmark streams, with no paid call. Then the levers it recommends, each with its micro-test. Then one paid probe and the full benchmark, run by the orchestrator. A smaller model for low-risk tasks is the user's call and is out of scope. The cache TTL stays documented only, as decided on 2026-10-07. No lever may weaken a guarantee P118 holds.",
+  "desiredOutcome": "the phase overhead falls inside its 1.00 budget in every benchmark session, and the per-task cycle moves toward 1.25 times plain like for like, each lever confirmed by its offline micro-test before any paid session",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P119.1",
+      "title": "the remaining cost is located per step and each lever is designed with its micro-test",
+      "status": "pending",
+      "description": "Measure and design, with no paid call, from the recorded benchmark streams: probe-C-1, cost-C-1, cost-C-2 and cost-C-3 at 1dd702f2, plus the arm A and arm B streams. The P118 results document names where they are. The result is a design section added to docs/research/pipeline-cost-results.md or a new docs/research document, with every figure beside the command that prints it. It covers:\n(a) the phase overhead split per step: phase review dispatch, triage, phase gate, sign-off, landing and lock;\n(b) a value test for the phase review: what each one found in those sessions, and whether any finding changed a graded result or the shipped tree;\n(c) the executor's hand-back per cycle: its output tokens and the main loop's read of it;\n(d) CLAUDE.md in each agent's start: bytes, tokens, and which of its rules the agent prompt or the brief already restates;\n(e) a recommended set of levers with predicted per-task and per-phase ratios. Each lever names its mechanism, its micro-test, and the guarantee it must keep. Each estimate is labelled with its basis, and doubling any single estimate is shown not to break the target.\nFix the internal fault where tools/stream-cost.py misprices a follow-up stream read on its own: accept several streams of one session in one call, or refuse the follow-up read alone. Every new instrument case is shown red first.",
+      "files": [
+        "tools/stream-cost.py",
+        "tools/measure-context.py",
+        "docs/research/pipeline-cost-results.md",
+        "docs/research/pipeline-cost-levers.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
