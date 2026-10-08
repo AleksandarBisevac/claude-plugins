@@ -433,7 +433,9 @@
         "severity": "low",
         "file": "commits 487cedd3 (P118.15) / 5b425cc2 (P118.16); plugins/audit/scripts/governance/drive-phase.py",
         "issue": "P118.16's implementation is in P118.15's commit: `decline_answer`, `held_at`/`bind_at`, `green_phase_gate`, `blocked_remedy`, and the DECISIONS `decline` options (drive-phase.py, 282 lines in 487cedd3). 5b425cc2 holds only test_drive_phase.py, phase.md and verbs-in-full.md. Any per-task answer bound to P118.16's commit is about a commit that contains none of the code its description asked for.",
-        "resolution": "Nothing to rewrite. Add a note on P118.16 (`audit-task.py note`) that its code landed in 487cedd3, so a reader binding its answers knows which commit holds it."
+        "resolution": "fixed in P118.16-v7t (5b425cc2): Nothing to rewrite. Add a note on P118.16 (`audit-task.py note`) that its code landed in 487cedd3, so a reader binding its answers knows which commit holds it.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
       },
       {
         "id": "P118-R47",
@@ -503,31 +505,81 @@
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py file-return; plugins/audit/scripts/git/close-phase.py landed_answers_refusal",
         "issue": "file-return refuses after a verdict only in the plan copy it reads. From the parent checkout, whose copy shows the phase as at the fork, a diverges phase return is accepted after the phase signed off on its branch. close-phase then finds it in the parent's evidence directory, sees a verdict at the tip and lands with no human asked. COMPATIBILITY promises more than holds.",
-        "resolution": "close-phase treats a verdict as settling only the returns it could have seen at the tip or in the branch's worktree, and refuses a needs_human return found only in the parent's evidence once the tip records a verdict; add the parent-checkout case and its twin, and make COMPATIBILITY and the guide say exactly that."
+        "resolution": "fixed in P118.20-v7t (5c421240): close-phase treats a verdict as settling only the returns it could have seen at the tip or in the branch's worktree, and refuses a needs_human return found only in the parent's evidence once the tip records a verdict; add the parent-checkout case and its twin, and make COMPATIBILITY and the guide say exactly that.",
+        "fixTask": "P118.20-v7t",
+        "commit": "5c421240"
       },
       {
         "id": "P118-R55",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py filed_at_head",
         "issue": "The reused return's findings are recorded again, because the mark is set without findings: True and finding does not deduplicate.",
-        "resolution": "Set findings: True only when review.findings already holds the return's findings; add a case and its twin."
+        "resolution": "fixed in P118.20-v7t (5c421240): Set findings: True only when review.findings already holds the return's findings; add a case and its twin.",
+        "fixTask": "P118.20-v7t",
+        "commit": "5c421240"
       },
       {
         "id": "P118-R56",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py _human_settlement text",
         "issue": "The remedy dropped the qualifier that the driver reads or dispatches a review only where a review skill resolves or a task is owed.",
-        "resolution": "Restore the qualifier."
+        "resolution": "fixed in P118.20-v7t (5c421240): Restore the qualifier.",
+        "fixTask": "P118.20-v7t",
+        "commit": "5c421240"
       },
       {
         "id": "P118-R57",
         "severity": "low",
         "file": "plugins/audit/scripts/git/close-phase.py review_answers_refusal remedy",
         "issue": "After a verdict the remedy says to file and sign off again, but both steps now refuse.",
-        "resolution": "When the copy carries a verdict, name the way out that exists."
+        "resolution": "fixed in P118.20-v7t (5c421240): When the copy carries a verdict, name the way out that exists.",
+        "fixTask": "P118.20-v7t",
+        "commit": "5c421240"
+      },
+      {
+        "id": "P118-R58",
+        "severity": "med",
+        "file": "plugins/audit/scripts/git/close-phase.py worktree_phase / unseen_returns",
+        "issue": "Suppose a plan is stored outside the git root and its evidence.dir is inside the repository. Then worktree_phase returns None and plan_versioned is False, so the verdict is attributed to the parent even when the sign-off ran in the worktree. unseen_returns then counts the parent's evidence as seen and the worktree's evidence as candidates, the reverse of what the sign-off read. A diverges return filed from the parent before the verdict then lands with no human asked.",
+        "resolution": "When the plan lies outside the project, the on-disk copy cannot say which checkout signed. Treat both evidence directories as candidates and settle them through the signing checkout's settlement record, or refuse. Add the case and its allow twin, and name the cell in the docstring table, COMPATIBILITY.md and the guide."
+      },
+      {
+        "id": "P118-R59",
+        "severity": "med",
+        "file": "plugins/audit/scripts/git/close-phase.py returns_by_place / unseen_returns ('same' checkout)",
+        "issue": "When the landing runs from the branch's own checkout ('same'), no place it reads holds a return filed from a checkout of the target branch. That covers main checked out in a linked worktree, and a return committed on main before the checkout switched to the branch. The phase lands with an unsettled human answer on the target, while running from main's worktree refuses the same state.",
+        "resolution": "Also read the target branch's evidence: the parent ref's committed tree, plus the worktree holding the parent when one exists. Count those returns as candidates under a tip verdict. Add the 'same'-checkout case with a return committed on the parent ref, plus its twin, and correct the hl2 row."
+      },
+      {
+        "id": "P118-R60",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py landed_answers_refusal docstring",
+        "issue": "Unnamed cell: an unversioned plan, a verdict on the worktree's own copy, and a return committed at the tip. The filing verb cannot reach it, yet the table claims to list every placement.",
+        "resolution": "Add the cell to the 'Unreachable, and why' paragraph with that reason."
+      },
+      {
+        "id": "P118-R61",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py landed_answers_refusal docstring",
+        "issue": "The verdict axis does not name a versioned plan whose verdict sits only on the parent's copy. It is refused safely, but no case pins it.",
+        "resolution": "Name the row with its remedy, and pin it with one case."
+      },
+      {
+        "id": "P118-R62",
+        "severity": "low",
+        "file": "COMPATIBILITY.md; PLUGIN-BUILD-GUIDE.md; close-phase.py verdict_reach_refusal",
+        "issue": "Both documents state the shared-evidence.dir settlement rule without its condition. Three cells are unpinned: shared with an unversioned worktree verdict, shared with a parent verdict, and shared with a tip verdict after the worktree is removed. The last one refuses a settled return.",
+        "resolution": "Limit the documents to verdicts signed in the worktree. Name the parent-verdict and removed-worktree cells in the table, and pin them."
+      },
+      {
+        "id": "P118-R63",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py docstring row 'no verdict anywhere'",
+        "issue": "No case covers 'no verdict' with the return only in the parent's evidence and a separate worktree, so the row claims more pinning than its cited cases give.",
+        "resolution": "Add one no-verdict, parent-only case, or cite vr1/vr3 for what they actually pin."
       }
     ],
-    "outcome": "[findings: 57 - 5 high, 21 med, 31 low; 52 with a recorded fix commit]"
+    "outcome": "[findings: 63 - 5 high, 23 med, 35 low; 57 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1894,7 +1946,7 @@
     {
       "id": "P118.20-v7t",
       "title": "a return filed from the parent checkout after sign-off cannot land unseen",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes P118 review round 5 findings R54-R57. close-phase treats a recorded verdict as settling only the phase returns it could have seen at the branch tip or in the branch's worktree. A return that needs a human and is found only in the parent checkout's evidence is refused once the tip records a verdict. A case covers the parent-checkout filing, with its twin. COMPATIBILITY and the guide say exactly what holds. The driver's reuse of a filed return records its findings once. The verb's remedy restores its qualifier. close-phase's post-verdict remedy names a way out that exists. Every new case is shown red first.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -1930,19 +1982,73 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "5c421240",
+      "outcome": {
+        "technical": "Fixes P118-R54 to R57.\n\n**R54.** close-phase keeps each filed phase return together with where it sits (returns_by_place): the parent's evidence, the branch worktree's, or the tip. A recorded verdict settles only the returns its own checkout's sign-off could have read (unseen_returns, verdict_reach_refusal):\n- a tip verdict settles the tip's returns and the worktree's;\n- a verdict on the worktree's own copy (unversioned plan) settles the worktree's;\n- a verdict on the parent's own copy settles the parent's.\n\nA return counts as seen only when an identical copy sits in a seen place. With a shared evidence.dir, only the worktree driver's recorded settlement counts.\n\nEvery combination of return place and verdict place is pinned by a case or named as unreachable in the docstring, in the table there. Cases: vr1-vr14, vr6b, vr8b, vr8c and ra16-ra17, red at HEAD. Over-fire mutations m1-m11 turned each allow case red.\n\n**R55.** filed_at_head marks findings recorded only when review.findings already holds them (rr3, rr4).\n\n**R56.** The remedy's qualifier is restored (hd29q, hd29r).\n\n**R57.** Post-verdict remedies name a way out that exists.\n\nCOMPATIBILITY.md, the guide (with its regenerated module map) and the CHANGELOG say exactly what holds. The sweep, check-git-pipeline and measure-context --gate are green.",
+        "descriptive": "A reviewer's result filed from the main checkout after the branch signed off can no longer merge unseen, and every place a result or a sign-off can sit is now covered by a test."
+      },
+      "startedAt": "2026-10-08T10:54:08Z",
+      "completedAt": "2026-10-08T12:24:19Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T12:24:11Z.92e9f7",
+        "status": "passed",
+        "at": "2026-10-08T12:24:11Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "5c421240",
+        "at": "2026-10-08T12:24:19Z",
+        "basis": "orchestrator check: the class is closed by a full combination table, each cell a case or a stated unreachable; mutations both ways"
+      }
+    },
+    {
+      "id": "P118.21-v7t",
+      "title": "the landing check reads a plan outside the repo and a landing from the branch's own checkout",
+      "status": "pending",
+      "description": "Fixes P118 review round 6 findings R58-R63 in close-phase's landing check. The check is read in two layouts it missed. First, a plan stored outside the git root with its evidence inside the repository: there, the on-disk copy cannot say which checkout signed off, so the verdict's own checkout is never assumed. Second, a landing run from the branch's own checkout: there, the target branch's evidence is also read, both its committed tree and the worktree holding it. In both layouts, a return the verdict could not have read is refused. The docstring table names every remaining cell, pinned or unreachable with its reason. COMPATIBILITY.md and the guide state the shared-evidence rule with its condition. Every new case is shown red first, each with its allow twin.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-08T10:54:08Z",
+      "startedAt": null,
       "completedAt": null,
-      "verifiedBy": [],
-      "testEvidence": {
-        "runId": "2026-10-08T12:24:11Z.92e9f7",
-        "status": "passed",
-        "at": "2026-10-08T12:24:11Z"
-      }
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-07T21:17:01Z"
