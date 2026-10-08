@@ -22,7 +22,37 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P120-R1",
+        "severity": "high",
+        "file": "tools/check-report-interactive.mjs hostile-content leg",
+        "issue": "The painted-rows expectation plants into every phases/data table, including a proposal table inside a closed details.prop, so `node tools/check-report-interactive.mjs docs/demo-large.html` exits 1. CI and verify.sh run that leg.",
+        "resolution": "Plant only into rendered tables, or open each enclosing details for the measurement and restore it. Name skipped tables. Keep `painted` strict over what was planted. Re-run on all three shipped reports and the live plan."
+      },
+      {
+        "id": "P120-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/ui/report-css/tables.css bare-cell rule",
+        "issue": "Above 52rem, `td:not([class]):not(:has(*)){overflow-wrap:anywhere}` starves the title column, so ordinary words split mid-letter at 833-900px on all three shipped reports (76 in demo-large). The comment claims that happens only below the breakpoint.",
+        "resolution": "Stop starving free-text columns: a min-width floor, or scoping to the long-text columns. Correct the comment. Add a checker assertion that no visible title word splits mid-letter above 52rem, and prove it red against the current rule."
+      },
+      {
+        "id": "P120-R3",
+        "severity": "low",
+        "file": "plugins/audit/tests/test__report_html.py css2",
+        "issue": "No check binds the accepted-commit mark, BUG-22's carrier, to the renderer's markup.",
+        "resolution": "Render _tev_phase_marks with an acceptedCommits entry in css2 and assert its span is bare text."
+      },
+      {
+        "id": "P120-R4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/ui/report-css/badges.css",
+        "issue": "Without :has(), the full-run mark loses the wrap it had in every browser.",
+        "resolution": "Keep `.ptev[data-fullrun]{white-space:normal}` beside the :has rule, or document the fallback."
+      }
+    ],
+    "outcome": "[findings: 4 - 1 high, 1 med, 2 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -93,6 +123,48 @@
         "at": "2026-10-08T23:10:31Z",
         "basis": "orchestrator check: cause located (a nowrap evidence chip), class fixed with three rules; probe re-run, each rule removed turns the case red; followers re-rendered"
       }
+    },
+    {
+      "id": "P120.2-byv",
+      "title": "the BUG-22 fix passes every shipped report and splits no title word",
+      "status": "pending",
+      "description": "Fixes the P120 review's findings R1-R4 on the BUG-22 fix. (1) The hostile-content leg plants only into tables that are rendered, or opens each enclosing details for the measurement and restores it; it names skipped tables, and `painted` stays strict over what was planted. The checker must exit 0 on examples/acme-store/acme-store-audit.html, docs/index.html, docs/demo-large.html and a fresh render of this repo's plan. (2) The bare-cell wrap rule no longer starves free-text columns above 52rem. A new checker assertion holds that no visible task or bug title word splits mid-letter at any ladder rung above 52rem (hyphen breaks excluded), shown red against the current rule, and the comment says what the rule costs and where. (3) css2 binds the accepted-commit mark: it renders _tev_phase_marks with an acceptedCommits entry and asserts the span is bare text. (4) The full-run mark keeps a :has()-free wrap rule, or the fallback is documented. Re-render the followers is the orchestrator's job; do not capture.",
+      "files": [
+        "plugins/audit/scripts/ui/report-css",
+        "tools/check-report-interactive.mjs",
+        "plugins/audit/tests/test__report_html.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-08T22:27:29Z"
