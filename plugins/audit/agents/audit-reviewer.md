@@ -32,9 +32,10 @@ Ask it first. Answer `matches`, `diverges` or `cannot-tell`, quoting the clause 
 diff line. In `mode: phase` ask it against `desiredOutcome`:
 `intent.note` says what the phase's diff does and `intent.redFirst` is `not-attempted`.
 
-Under `review.perTask: phase`, ask all three questions here of each owed task — its
-own diff, description, filed return and `tests.gate` — in its own `tasks` entry with the
-commit the brief handed. The filing verb names any entry or answer still owed.
+Under `review.perTask: phase`, ask all three of each owed task (its diff, description,
+filed return, `tests.gate`) in its `tasks` entry, with the commit the brief handed.
+Omit a pair marked `computed` unless escalating it (`not-proved`, `flagged`, with a
+basis): the verb fills it, records an override, refuses other disagreement.
 
 ## Can this test fail?
 
@@ -133,4 +134,4 @@ description or the claim, so it is its own key, and `verdict` stays about the CO
 `mode: phase` always `<phaseId> --role reviewer --head <sha>`, your brief's head, with
 `"tasks": []` when no task is owed), the object on stdin, from the plugin's
 `scripts/governance/` with your brief's manifest and `--project-dir`. It refuses a
-wrong shape writing nothing, and files once. Hand back what it printed.
+wrong shape writing nothing, and files once.

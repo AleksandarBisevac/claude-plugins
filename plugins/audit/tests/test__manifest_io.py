@@ -559,6 +559,31 @@ def _cases(check):
               set(_idx["phases"][1])
               == set(k for k in M._STUB_KEYS if k in _src["phases"][1]) | {"shard"},
               repr(_idx["phases"][1]))
+        # `shard_body` is the one conversion every writer of a shard goes
+        # through, split and the verbs' single-shard writes alike; an
+        # assembled phase carries the stub's index-only fields, so a writer
+        # that skipped it would put them back into the body.
+        _sb_phase = {"id": "P1", "title": "a", "status": "in_progress",
+                     "priority": 3, "shard": "phases/P1.json", "tasks": []}
+        _sb_body, _sb_moved = M.shard_body(_sb_phase)
+        check("sb1 shard_body drops every index-only field and the pointer "
+              "from the body, and hands the index-only values back for the "
+              "stub: %r" % ((_sb_body, _sb_moved),),
+              _sb_body == {"id": "P1", "title": "a", "status": "in_progress",
+                           "tasks": []}
+              and _sb_moved == {"priority": 3}
+              and not any(k in _sb_body for k in M.INDEX_ONLY_FIELDS))
+        check("sb2 ...without mutating the phase it was handed, which is the "
+              "assembled manifest a verb goes on validating",
+              _sb_phase.get("priority") == 3
+              and _sb_phase.get("shard") == "phases/P1.json")
+        check("sb3 SECOND-DIRECTION CASE: a phase with no index-only field "
+              "comes back whole with nothing moved - what fails if the "
+              "conversion ever drops a body field it does not own",
+              M.shard_body({"id": "P2", "status": "pending", "claim": {"s": 1},
+                            "tasks": []})
+              == ({"id": "P2", "status": "pending", "claim": {"s": 1},
+                   "tasks": []}, {}))
         # THE MIRROR THE LAYOUT RESTS ON. `INDEX_ONLY_FIELDS` is justified beside
         # `priority` by execution order being computable without opening a shard,
         # and `reference/orchestrator.md` names the write that keeps it true --

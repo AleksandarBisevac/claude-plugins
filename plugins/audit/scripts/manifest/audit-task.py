@@ -19,7 +19,7 @@ Usage:
                 [--tests-add TEXT ...] [--gate CMD ... | --gate-clear]
                 [--failing-from RUNID] [--fixes finding,finding] [--dry-run]
                 [--project-dir DIR] [--takeover] [--json]
-  audit-task.py add --from-file PATH [manifest] [--project-dir DIR]
+  audit-task.py add --from-file PATH|- [manifest] [--project-dir DIR]
                 [--takeover] [--json]
   audit-task.py add-phase "<title>" [manifest] --outcome "<what success is>|-"
                 [--park] [--id P7] [--description TEXT|-] [--area a,b]
@@ -114,7 +114,8 @@ Usage:
   value is still split on commas, so `--files a --files b,c` is three paths.
   `add --dry-run` builds the task and validates the plan with it in memory,
   and writes nothing. `add --from-file <plan.json>` writes a NEW phase and
-  its tasks from one JSON file {request, openChoices, phase, tasks} under one
+  its tasks from one JSON file {request, openChoices, phase, tasks} (`-`
+  reads that document off stdin, a quoted heredoc, an empty one refused) under one
   lock, in one write, revalidated once; a malformed file, a dependency neither
   the plan nor the file holds, or another `add` flag beside it is refused
   with nothing written (`batch_problems` reads the file's shape). Under --json every refusal is one object,
@@ -1940,7 +1941,10 @@ def _write_add(project, mpath, raw_index, assembled, phase_id, files_changed,
         if not _panel_write._within(project, spath):
             raise ValueError("refused: shard path escapes project: %s"
                              % stub["shard"])
-        body.pop("shard", None)   # the stub owns the pointer, never the body
+        # The stub owns the pointer and every index-only field: the assembled
+        # phase carries the stub's `priority`, and a body written with it puts
+        # the value where nothing reads it.
+        body = _mio.shard_body(body)[0]
         _panel_write._atomic_write_json(spath, body)
         written.append(_output.posix_rel(spath, project))
     else:
@@ -4382,6 +4386,13 @@ def _locked_start(args, project, config, mpath, tid, out):
 # with `audit-lookup.py brief` and `commit-task-work.py`, which read the file.
 # WHAT NOTHING CHECKS: the task id and the role are the caller's word. A filing
 # under the wrong role, or for a task nobody has filed for yet, is not refused.
+#
+# A PHASE RETURN MAY ARRIVE WITHOUT ITS MECHANICAL ANSWERS. A red-first word the
+# helper's block already gives and the `not-asked` of a gate running the whole
+# project are filled here from those sources (`_fr.complete_phase_return`), the
+# fill recorded under `computedAnswers`. A typed word only a human settles is
+# kept over a computed one, the override recorded under `computedOverridden`;
+# any other typed word that disagrees is refused.
 
 # What reads as a path rather than an id: a separator, a parent step, a leading
 # dot, or a drive colon.
@@ -4453,11 +4464,40 @@ def cmd_file_return(args, out):
                            config=config, head=head, body=body))
 
 
-def _phase_return_refusal(project, config, mpath, phase, role, head, body):
-    """`(path, None)` for a phase return that may be filed, or `(None, refusal)`:
-    the reviewer's role, a head, no sign-off verdict recorded on the phase, a
-    readable record of the returns already filed, and every entry
-    `_fr.phase_return_problems` asks for."""
+def _phase_return_refusal(project, config, mpath, phase, role, head, body,
+                          manifest):
+    """`(path, body, None)` for a phase return that may be filed - the body
+    with each entry's mechanical answers filled (`_fr.complete_phase_return`)
+    - or `(None, None, refusal)`: the reviewer's role, a head, no sign-off
+    verdict recorded on the phase, a readable record of the returns already
+    filed, and every entry `_fr.phase_return_problems` asks for, judged on
+    the completed body."""
+    held, refusal = _phase_return_gate(project, config, mpath, phase, role,
+                                       head)
+    if refusal:
+        return None, None, refusal
+    evdir, live, filed = held
+    pid = str(phase.get("id"))
+    build = (manifest.get("meta") or {}).get("buildCommands") or {}
+    computed = _fr.phase_answers(
+        evdir, phase, build,
+        lambda entries: _evidence_io.resolved_commands(manifest, entries))
+    body, _filled, problems = _fr.complete_phase_return(
+        body, dict((tid, got[0]) for tid, got in computed.items()))
+    problems += _fr.phase_return_problems(body, phase, live,
+                                          _fr.answered_entries(filed))
+    if problems:
+        return None, None, ("[audit-task] REFUSED: the phase return for %s does "
+                            "not answer what it owes -- nothing written:\n%s"
+                            % (pid, "\n".join("  " + p for p in problems)))
+    return (os.path.join(evdir, *_fr.phase_return_rel(pid, head).split("/")),
+            body, None)
+
+
+def _phase_return_gate(project, config, mpath, phase, role, head):
+    """`((evidence dir, live key, filed returns), None)` when nothing about the
+    phase refuses a phase return before its body is read, else `(None,
+    refusal)`."""
     pid = str(phase.get("id"))
     if role != "reviewer":
         return None, ("[audit-task] %s is a PHASE, and a phase return is the "
@@ -4488,13 +4528,7 @@ def _phase_return_refusal(project, config, mpath, phase, role, head, body):
     if problem and any(_fr.review_key(t, phase, None)[1] == "config"
                        for t in phase.get("tasks") or [] if isinstance(t, dict)):
         return None, "[audit-task] REFUSED: %s. Nothing written." % (problem,)
-    problems = _fr.phase_return_problems(body, phase, live,
-                                         _fr.answered_entries(filed))
-    if problems:
-        return None, ("[audit-task] REFUSED: the phase return for %s does not "
-                      "answer what it owes -- nothing written:\n%s"
-                      % (pid, "\n".join("  " + p for p in problems)))
-    return os.path.join(evdir, *_fr.phase_return_rel(pid, head).split("/")), None
+    return (evdir, live, filed), None
 
 
 def _locked_file_return(args, project, mpath, tid, role, text, out, config=None,
@@ -4508,11 +4542,15 @@ def _locked_file_return(args, project, mpath, tid, role, text, out, config=None,
         return E_USAGE
     kind, node, _phase = _find_target(assembled, tid)
     if kind == "phase":
-        path, refusal = _phase_return_refusal(project, config, mpath, node, role,
-                                              head, body)
+        path, done, refusal = _phase_return_refusal(
+            project, config, mpath, node, role, head, body, assembled)
         if refusal:
             out(refusal)
             return E_USAGE
+        # Filed as typed unless the verb filled an answer: a return it
+        # completed is written whole, its `computedAnswers` naming the fill.
+        if _fr.COMPUTED_FIELD in done:
+            text = json.dumps(done, indent=2) + "\n"
         return _file_once_report(args, project, path, tid, role, text, out,
                                  {"head": head})
     if kind != "task":
@@ -6565,9 +6603,11 @@ def _locked_phase_add(args, project, config, mpath, title, out):
 # --- add --from-file: a phase and its tasks, one write ----------------------------
 # Planning a phase was one `add-phase` and then one `add` per task: each its own
 # lock, read, write, revalidation and main-loop request, each typed as a shell
-# line. The batch is one file the main loop writes with its file tool, because a
-# JSON document on a shell heredoc is the shape a host refuses, and one call that
-# reads it under one lock, writes once and revalidates once.
+# line. The batch is one JSON document and one call that reads it under one
+# lock, writes once and revalidates once. `--from-file -` reads it off stdin, a
+# quoted heredoc, so planning writes no file of its own: a scratch file is one
+# more tool call that can be refused, and a shared path two sessions can collide
+# on. A path still works, through the same checks.
 #
 # The file also carries the request as the human typed it and the choices that
 # request left open, on the phase as `request` and `openChoices`: sign-off's
@@ -6703,14 +6743,40 @@ def batch_problems(doc):
     return out
 
 
-def read_batch(path):
-    """`(doc, problems)` for the file at `path`; `problems` non-empty means the
-    file cannot be written, and `doc` is then None."""
+def _batch_from_file(path):
+    """`(doc, None)` off the file at `path`, or `(None, why)`."""
     try:
         with open(path, encoding="utf-8") as fh:
-            doc = json.load(fh)
+            return json.load(fh), None
     except (OSError, ValueError) as exc:
-        return None, ["cannot read it as JSON: %s" % (exc,)]
+        return None, "cannot read it as JSON: %s" % (exc,)
+
+
+def _batch_from_stdin(stream):
+    """`(doc, None)` off stdin (or `stream`), or `(None, why)`."""
+    src = stream if stream is not None else sys.stdin
+    try:
+        text = src.read()
+    except (OSError, ValueError) as exc:
+        return None, "cannot read stdin: %s" % (exc,)
+    if not text.strip():
+        return None, ("stdin was empty - the batch goes on stdin, between the "
+                      "quoted heredoc word and its closing line")
+    try:
+        return json.loads(text), None
+    except ValueError as exc:
+        return None, "cannot read stdin as JSON: %s" % (exc,)
+
+
+def read_batch(path, stream=None):
+    """`(doc, problems)` for the file at `path`, or for stdin when `path` is
+    `-`; `problems` non-empty means the batch cannot be written, and `doc` is
+    then None. An empty stdin is its own refusal: read as `{}` it would be
+    graded as a batch missing every field, which names the wrong fault."""
+    doc, problem = (_batch_from_stdin(stream) if path == "-"
+                    else _batch_from_file(path))
+    if problem:
+        return None, [problem]
     problems = batch_problems(doc)
     return (None, problems) if problems else (doc, [])
 
@@ -6741,7 +6807,8 @@ def _cmd_batch_add(args, out):
     doc, problems = read_batch(args.from_file)
     if problems:
         out("[audit-task] REFUSED: %s is not a planning batch this verb can "
-            "write -- nothing written:" % (args.from_file,))
+            "write -- nothing written:"
+            % ("the batch on stdin" if args.from_file == "-" else args.from_file,))
         for line in problems:
             out("  - " + line)
         return E_USAGE
@@ -11471,8 +11538,9 @@ def build_parser():
     p.add_argument("--from-file", dest="from_file", default=None,
                    metavar="PATH",
                    help="add: a new phase and its tasks from one JSON file "
-                        "{request, openChoices, phase, tasks}, written in one "
-                        "call and revalidated once")
+                        "{request, openChoices, phase, tasks}, or `-` for that "
+                        "document on stdin, written in one call and "
+                        "revalidated once")
     p.add_argument("--failing-from", dest="failing_from", default=None,
                    metavar="RUNID",
                    help="add: point the new task's gate at the suites this "

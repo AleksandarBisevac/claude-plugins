@@ -13126,6 +13126,127 @@ def _held_cases(check):
           and f4[0] == M.E_USAGE and "P1.1" in f4[1]
           and not os.path.exists(returns(proj2, "P1")))
 
+    # ---- the answers a script gives, filled at filing ---------------------------
+    # The red-first block comes from stamp-verification's own `red_verdict`, so
+    # the shape the verb recognises is the helper's and not one typed here.
+    sv = _loader.load_script("stamp-verification.py",
+                             modname="stamp_verification_for_hd")
+    helper = sv.red_verdict(
+        {"cmd": ["python3", "tests/test_a.py"], "code": 1,
+         "text": "AssertionError\n", "problem": None, "second": None,
+         "head": None, "fix": None},
+        {"root": None, "implementation": [], "tests": ["tests/test_a.py"],
+         "cases": [], "symbols": [], "dropped": [], "new": [],
+         "head_files": None, "head_defs": None, "head_modules": None,
+         "path": None})[2]
+    typed = {"status": "proved", "basis": "python3 t.py exit 1",
+             "at": "2026-01-01T00:05:00Z"}
+    mech = ("redFirst", "redFirstBasis", "inheritedTests", "inheritedTestsBasis")
+
+    def put_exec(proj, tid, red):
+        path = os.path.join(proj, "docs", "audit", "evidence", "returns", tid,
+                            "20260101T000000Z.executor.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(_fr_executor(redFirst=red))
+
+    def bare(tid, commit, *drop):
+        entry = _hd_entry(tid, commit)
+        for key in drop:
+            entry.pop(key)
+        return entry
+
+    def filed_body(proj):
+        raw = read(os.path.join(returns(proj, "P1"),
+                                "%s.reviewer.json" % (_HD_HEAD,)))
+        return json.loads(raw.decode("utf-8")) if raw else {}
+
+    proj, mpath = two_done("mech-fill")
+    put_exec(proj, "P1.1", helper)
+    m1 = file_phase(proj, "P1", _HD_HEAD, [
+        bare("P1.1", _FR_SHA, *mech),
+        bare("P1.2", _HD_SHA2, "inheritedTests", "inheritedTestsBasis")])
+    body = filed_body(proj)
+    first = (body.get("tasks") or [{}])[0]
+    m1s = signoff(proj, "P1", "skipped")
+    ic = task(mpath, "P1.1").get("intentCheck") or {}
+    check("hd31 a phase return filed without the mechanical fields is "
+          "completed at filing - the red-first word and basis from the "
+          "helper's block in the executor's filed return, `not-asked` from a "
+          "gate that runs the whole project - the filled fields recorded, and "
+          "sign-off then writes them onto the task: %r"
+          % ((m1[0], m1[1][:160], first, body.get("computedAnswers"), m1s[0],
+              ic),),
+          m1[0] == 0 and first.get("redFirst") == helper["status"]
+          and helper["basis"] in first.get("redFirstBasis", "")
+          and first.get("inheritedTests") == "not-asked"
+          and body.get("computedAnswers") == {
+              "P1.1": list(mech),
+              "P1.2": ["inheritedTests", "inheritedTestsBasis"]}
+          and m1s[0] == 0 and ic.get("redFirst") == helper["status"]
+          and ic.get("inheritedTests") == "not-asked")
+
+    named_gate = {"mode": "gate-only", "add": [], "expectRedFirst": False,
+                  "gate": ["python3 tests/test_a.py"]}
+    proj, mpath = project("mech-named", [ph("P1", [
+        done_tk("P1.1", _FR_SHA, tests=named_gate), done_tk("P1.2", _HD_SHA2)],
+        reviewPerTask="phase")])
+    put_exec(proj, "P1.1", helper)
+    m2 = file_phase(proj, "P1", _HD_HEAD, [
+        bare("P1.1", _FR_SHA, "inheritedTests", "inheritedTestsBasis"),
+        _hd_entry("P1.2", _HD_SHA2)])
+    proj2, mpath2 = two_done("mech-typed")
+    put_exec(proj2, "P1.1", typed)
+    m3 = file_phase(proj2, "P1", _HD_HEAD, [
+        bare("P1.1", _FR_SHA, "redFirst", "redFirstBasis"),
+        _hd_entry("P1.2", _HD_SHA2)])
+    check("hd32 REFUSAL TWINS of hd31: a task whose gate selects named tests, "
+          "and one whose red-first the helper did not grade, are each refused "
+          "without the reviewer's answer, naming the field and writing "
+          "nothing: %r" % ((m2[0], m2[1][-200:], m3[0], m3[1][-200:]),),
+          m2[0] == M.E_USAGE and "P1.1" in m2[1] and "`inheritedTests`" in m2[1]
+          and not os.path.exists(returns(proj, "P1"))
+          and m3[0] == M.E_USAGE and "P1.1" in m3[1] and "`redFirst`" in m3[1]
+          and not os.path.exists(returns(proj2, "P1")))
+    # The helper's block here grades `could-not-prove`, so a typed `proved`
+    # lowers the work and a typed `not-proved` escalates it.
+    proj3, mpath3 = two_done("mech-differ")
+    put_exec(proj3, "P1.1", helper)
+    m4 = file_phase(proj3, "P1", _HD_HEAD, [
+        _hd_entry("P1.1", _FR_SHA, redFirst="proved"),
+        _hd_entry("P1.2", _HD_SHA2)])
+    check("hd33 a reviewer word that disagrees with the helper's block without "
+          "escalating is refused by name, writing nothing - the computed word "
+          "is never lowered in silence: %r" % ((m4[0], m4[1][-200:]),),
+          helper["status"] != "proved"
+          and m4[0] == M.E_USAGE and "'proved'" in m4[1]
+          and not os.path.exists(returns(proj3, "P1")))
+    proj4, mpath4 = two_done("mech-escalate")
+    put_exec(proj4, "P1.1", helper)
+    m5 = file_phase(proj4, "P1", _HD_HEAD, [
+        _hd_entry("P1.1", _FR_SHA, redFirst="not-proved",
+                  redFirstBasis="no red was seen",
+                  inheritedTests="flagged",
+                  inheritedTestsBasis="test_b passes with the branch deleted"),
+        _hd_entry("P1.2", _HD_SHA2)])
+    esc = filed_body(proj4)
+    esc_first = (esc.get("tasks") or [{}])[0]
+    m5s = signoff(proj4, "P1", "skipped")
+    check("hd34 a reviewer's `not-proved` over the helper's block and `flagged` "
+          "over a computed `not-asked` file as typed, the computed words "
+          "recorded as overridden, and sign-off by hand then stops on both as "
+          "answers only a human settles: %r"
+          % ((m5[0], m5[1][-200:], esc_first, esc.get("computedOverridden"),
+              m5s[0], m5s[1][-300:]),),
+          m5[0] == 0 and esc_first.get("redFirst") == "not-proved"
+          and esc_first.get("inheritedTests") == "flagged"
+          and esc_first.get("inheritedTestsBasis")
+          == "test_b passes with the branch deleted"
+          and (esc.get("computedOverridden") or {}).get("P1.1", {}).get(
+              "inheritedTests", {}).get("computed") == "not-asked"
+          and m5s[0] == M.E_USAGE and "red-first not-proved" in m5s[1]
+          and "inherited tests flagged" in m5s[1])
+
     proj, mpath = two_done("signoff")
     before = read(mpath)
     g1 = signoff(proj, "P1", "skipped")
@@ -13945,14 +14066,17 @@ def _batch_cases(check):
     start = doc_text.find("\n## Subcommand: `add")
     end = doc_text.find("\n## ", start + 1)
     section = doc_text[start:end] if start >= 0 and end > start else ""
+    import re
+    heredoc = re.findall(r"add --from-file - <<'([A-Z]+)'", section)
     check("fb10 the `add` section of commands/phase.md is the batch's own: it "
-          "names `add --from-file`, the command may use the file tool it "
-          "tells the main loop to write the file with, and the section is at "
-          "most 8000 bytes: %r"
-          % ((len(section.encode("utf-8")), "Write" in head),),
-          "add --from-file" in section
+          "names `add --from-file -` under exactly one quoted heredoc word, "
+          "sends the main loop to no file tool for the plan, the command may "
+          "still run Bash, and the section is at most 8000 bytes: %r"
+          % ((len(section.encode("utf-8")), heredoc,
+              "Write tool" in section),),
+          len(heredoc) == 1 and "Write tool" not in section
           and "allowed-tools:" in head
-          and "Write" in head.split("allowed-tools:", 1)[1].splitlines()[0]
+          and "Bash" in head.split("allowed-tools:", 1)[1].splitlines()[0]
           and 0 < len(section.encode("utf-8")) <= 8000)
     gaps = _phase_add_gaps(doc_text)
     check("fb11 the `add` section of commands/phase.md names every `phase` key "
@@ -13964,6 +14088,186 @@ def _batch_cases(check):
     check("fb12 the run section of commands/phase.md names the preview's "
           "`audit-status.py --phase` and reads a phase with no branch as `not "
           "started yet`: %r" % (gaps,), gaps == [])
+    _batch_stdin_cases(check, project, batch, tree_bytes, section, heredoc)
+
+
+def _cli_in(argv, cwd, text, env_over=None):
+    """`_cli` with `text` on stdin - the way a heredoc reaches the verb."""
+    import subprocess
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+    env.update(env_over or {})
+    done = subprocess.run(
+        [sys.executable, _loader.script_path("audit-task.py")] + argv,
+        cwd=cwd, env=env, input=text, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, universal_newlines=True, encoding="utf-8")
+    return done.returncode, done.stdout
+
+
+def _plan_bytes(proj):
+    """The plan's own files under docs/audit, by relative path. The journal is
+    left out: its rows carry the moment they were written, so two runs of
+    one write never agree there and the comparison is about the plan."""
+    base = os.path.join(proj, "docs", "audit")
+    seen = {}
+    for dirpath, dirs, files in os.walk(base):
+        dirs[:] = [d for d in dirs if d != "journal"]
+        for name in files:
+            full = os.path.join(dirpath, name)
+            with open(full, "rb") as fh:
+                seen[os.path.relpath(full, base)] = fh.read()
+    return seen
+
+
+def _bash_hooks():
+    """`[(event, script), ...]` - every hook hooks.json routes a Bash call to,
+    read from the file the host reads, so a guard added there is asked too."""
+    with open(os.path.join(_output.PLUGIN_ROOT, "hooks", "hooks.json"),
+              encoding="utf-8") as fh:
+        table = json.load(fh)["hooks"]
+    out = []
+    for event in ("PreToolUse", "PostToolUse"):
+        for group in table.get(event) or []:
+            if not _matches_bash(group.get("matcher", "")):
+                continue
+            for hook in group.get("hooks") or []:
+                parts = hook.get("command", "").split()
+                name = [p for p in parts if p.endswith(".py")]
+                if name:
+                    out.append((event, name[0]))
+    return out
+
+
+def _matches_bash(matcher):
+    import re
+    return bool(matcher) and re.fullmatch("(?:%s)" % (matcher,), "Bash") is not None
+
+
+def _hook_refusal(event, script, command, proj):
+    """`None` when the hook lets `command` through, else what it said: a
+    non-zero exit, a `deny`/`ask` permission decision, or a `block`."""
+    import subprocess
+    payload = {"hook_event_name": event, "tool_name": "Bash", "cwd": proj,
+               "tool_input": {"command": command}, "session_id": "fb-stdin"}
+    if event == "PostToolUse":
+        payload["tool_response"] = {"stdout": "", "stderr": "",
+                                    "interrupted": False}
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+    env["CLAUDE_PROJECT_DIR"] = proj
+    env["CLAUDE_PLUGIN_ROOT"] = _output.PLUGIN_ROOT
+    done = subprocess.run(
+        [sys.executable, os.path.join(_output.PLUGIN_ROOT, "hooks", script)],
+        cwd=proj, env=env, input=json.dumps(payload), stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, universal_newlines=True, encoding="utf-8")
+    said = (done.stdout or "").strip()
+    try:
+        verdict = json.loads(said) if said else {}
+    except ValueError:
+        verdict = {}
+    spec = verdict.get("hookSpecificOutput") or {}
+    if (done.returncode != 0
+            or spec.get("permissionDecision") in ("deny", "ask")
+            or verdict.get("decision") == "block"):
+        return "%s exit %d: %s %s" % (script, done.returncode, said[:200],
+                                      (done.stderr or "")[-200:])
+    return None
+
+
+def _batch_stdin_cases(check, project, batch, tree_bytes, section, heredoc):
+    """`add --from-file -`: the plan batch read off stdin, so planning writes
+    no file of its own - through the checks and the single revalidated write
+    the file form has, and as the form commands/phase.md shows."""
+    doc = _batch_doc()
+    text = json.dumps(doc, indent=1)
+    proj_f, mpath_f = project("from-file", sharded=True)
+    code_f, txt_f = _cli(["add", "--from-file", batch(proj_f, doc)], proj_f)
+    proj_s, mpath_s = project("from-stdin", sharded=True)
+    code_s, txt_s = _cli_in(["add", "--from-file", "-"], proj_s, text)
+    plan_f, plan_s = _plan_bytes(proj_f), _plan_bytes(proj_s)
+    shard = _mio.read_json(os.path.join(os.path.dirname(mpath_s), "phases",
+                                        "P2.json")) if code_s == 0 else {}
+    check("fb13 the same batch on stdin and from a file writes byte-identical "
+          "plans, the request kept verbatim and every open choice counted: %r"
+          % ((code_f, code_s, txt_s, sorted(plan_s)),),
+          code_f == 0 and code_s == 0 and plan_s == plan_f
+          and "phases/P2.json" in [p.replace(os.sep, "/") for p in plan_s]
+          and shard.get("request") == doc["request"]
+          and len(shard.get("openChoices") or []) == len(doc["openChoices"])
+          and shard.get("openChoices") == doc["openChoices"])
+
+    proj, _mpath = project("stdin-shape")
+    before = tree_bytes(proj)
+    bad = _batch_doc()
+    del bad["openChoices"]
+    code, txt = _cli_in(["add", "--from-file", "-"], proj, json.dumps(bad))
+    empty = _cli_in(["add", "--from-file", "-"], proj, "")
+    check("fb14 a malformed batch on stdin is refused naming the field and "
+          "stdin as its source, an empty stdin is refused as empty rather "
+          "than read as nothing to add, and the plan's bytes are unchanged - "
+          "the allow twin is fb13: %r" % ((code, txt, empty),),
+          code == M.E_USAGE and "openChoices" in txt
+          and "the batch on stdin" in txt and "nothing written" in txt
+          and empty[0] == M.E_USAGE and "stdin was empty" in empty[1]
+          # Read as `{}`, an empty stdin would be refused for every missing
+          # field instead - the wrong fault named, which this tells apart.
+          and "openChoices" not in empty[1]
+          and tree_bytes(proj) == before)
+
+    # The command exactly as the add section spells it, with `S` expanded the
+    # way the section's own preamble defines it and the batch as its body.
+    import re
+    shown = re.search(r"`(S/manifest/audit-task\.py\" add --from-file - "
+                      r"<<'([A-Z]+)')`", section)
+    command = None
+    if shown and len(heredoc) == 1:
+        command = (shown.group(1).replace(
+            "S/", 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/', 1)
+            + "\n" + text + "\n" + shown.group(2) + "\n")
+    proj_h, _mh = project("heredoc", sharded=True)
+    ran = None
+    if command:
+        import subprocess
+        env = dict((k, v) for k, v in os.environ.items()
+                   if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+        env["CLAUDE_PLUGIN_ROOT"] = _output.PLUGIN_ROOT
+        ran = subprocess.run(["sh", "-c", command], cwd=proj_h, env=env,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             universal_newlines=True, encoding="utf-8")
+    gate = None
+    tool = os.path.join(_output.REPO_ROOT, "tools", "measure-context.py")
+    if os.path.isfile(tool):
+        import subprocess
+        gate = subprocess.run(
+            [sys.executable, tool, "--gate", "--tree", _output.PLUGIN_ROOT],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            universal_newlines=True, encoding="utf-8")
+    check("fb15 the heredoc the add section shows, run by a shell as written, "
+          "writes the plan the file form writes, and `measure-context.py "
+          "--gate` still holds every entry the command loads under its "
+          "ceiling: %r" % ((command and command[:90],
+                            ran and (ran.returncode, ran.stdout[-160:]),
+                            gate and (gate.returncode, gate.stdout[-300:])),),
+          ran is not None and ran.returncode == 0
+          and _plan_bytes(proj_h) == plan_f
+          and gate is not None and gate.returncode == 0
+          and "GATE OK" in gate.stdout)
+
+    hooks = _bash_hooks()
+    proj_g, _mg = project("guards")
+    refused = [(e, s, why) for e, s in hooks
+               for why in [_hook_refusal(e, s, command or "", proj_g)] if why]
+    # The over-fire twin: the same runner must SEE a refusal when a guard
+    # gives one, or an empty `refused` would be a reader that never looks.
+    control = _hook_refusal("PreToolUse", "guard-secrets-read.py",
+                            "cat .env", proj_g)
+    check("fb16 every hook hooks.json routes Bash to, given the add section's "
+          "heredoc as its payload, refuses nothing - and the same reader sees "
+          "the secrets guard refuse `cat .env`: %r"
+          % ((sorted(set(s for _e, s in hooks)), refused, control),),
+          command is not None and len(hooks) >= 2
+          and "guard-secrets-read.py" in [s for _e, s in hooks]
+          and refused == [] and control is not None)
 
 
 def _unblock_cases(check):
@@ -14280,10 +14584,131 @@ def _no_change_layout_cases(check, project, git, write, close, read):
           % ((code, text[:240]),), code == 0)
 
 
+def _index_only_cases(check):
+    """A verb's shard write never carries an index-only field into the body.
+
+    The assembled phase a verb patches holds `priority` because `_merge_phase`
+    copies it from the stub, so a writer that dumps that phase whole into the
+    shard puts the value where nothing reads it and the validator warns about it
+    on every later run. The single-file twin is the second direction: there the
+    phase IS where priority lives, and a fix that stripped it on every layout
+    would drop the plan's order."""
+    import subprocess
+    root = _harness.fixture_root("audit-task-io-")
+
+    def plan():
+        def task(tid, files):
+            return {"id": tid, "title": tid, "status": "pending",
+                    "description": "", "files": files,
+                    "tests": {"mode": "gate-only", "add": [],
+                              "expectRedFirst": False, "gate": ["test"]},
+                    "model": "sonnet", "skills": [], "risk": "low",
+                    "blockedBy": [], "dependsOn": [], "attempts": 0,
+                    "maxAttempts": 3, "commit": None,
+                    "outcome": {"technical": None, "descriptive": None},
+                    "startedAt": None, "completedAt": None, "verifiedBy": []}
+        return {
+            "meta": {"version": 2, "buildCommands": {"test": "true"}},
+            "phases": [
+                {"id": "P1", "title": "Running", "status": "in_progress",
+                 "priority": 2, "testGate": ["test"],
+                 "tasks": [task("P1.1", ["src/a.ts"])]},
+                {"id": "P2", "title": "Fresh", "status": "pending",
+                 "priority": 1, "testGate": ["test"],
+                 "tasks": [task("P2.1", ["src/b.ts"])]}],
+            "fileIndex": {"src/a.ts": ["P1.1"], "src/b.ts": ["P2.1"]},
+            "bugs": []}
+
+    def project(name, sharded):
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        _panel_write._atomic_write_json(
+            os.path.join(proj, ".claude", "audit.config.json"),
+            {"manifestPath": "docs/audit/audit-plan.json"})
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        if sharded:
+            _mio.save_sharded(mpath, plan())
+        else:
+            _panel_write._atomic_write_json(mpath, plan())
+        return proj, mpath
+
+    def start(proj, tid):
+        lines = []
+        code = M.main(["start", tid, "--project-dir", proj], out=lines.append)
+        return code, "\n".join(str(x) for x in lines)
+
+    def bodies(mpath):
+        """{phase id: the body its SHARD file holds}."""
+        idx = _mio.read_json(mpath)
+        base = os.path.dirname(mpath)
+        return dict((s["id"], _mio.read_json(os.path.join(base, s["shard"])))
+                    for s in idx["phases"] if isinstance(s, dict) and "shard" in s)
+
+    def validator(mpath):
+        r = subprocess.run(
+            [sys.executable, os.path.join(_output.SCRIPTS_DIR, "manifest",
+                                          "validate-manifest.py"), mpath,
+             "--verbose"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            universal_newlines=True)
+        return r.returncode, r.stdout
+
+    def stub_priority(mpath):
+        return dict((s.get("id"), s.get("priority"))
+                    for s in _mio.read_json(mpath)["phases"])
+
+    # The first task of a PENDING phase: the bug's own repro shape, where the
+    # start also promotes the phase.
+    proj, mpath = project("io-first", sharded=True)
+    before = bodies(mpath)
+    code, text = start(proj, "P2.1")
+    after = bodies(mpath)
+    vcode, vtext = validator(mpath)
+    check("io1 start on a sharded plan writes the task into P2's shard and "
+          "leaves that shard without priority, while the stub keeps it: %r"
+          % ((code, text[:160], sorted(after.get("P2") or {}),
+              stub_priority(mpath)),),
+          code == 0 and "priority" not in before.get("P2", {})
+          and (after.get("P2") or {}).get("tasks", [{}])[0].get("status")
+          == "in_progress"
+          and "priority" not in (after.get("P2") or {})
+          and stub_priority(mpath) == {"P1": 2, "P2": 1})
+    check("io2 validate-manifest then warns about no priority sitting in a "
+          "shard body: %r" % ((vcode, vtext[-300:]),),
+          vcode == 0 and "OK:" in vtext
+          and "'priority' sits in the shard body" not in vtext
+          and _mio.index_only_in_bodies(mpath) == [])
+
+    # A task in a phase already running: the same writer, no phase promotion.
+    proj, mpath = project("io-running", sharded=True)
+    code, text = start(proj, "P1.1")
+    after = bodies(mpath)
+    check("io3 start in an already-running phase leaves its shard without "
+          "priority too: %r" % ((code, text[:160], sorted(after.get("P1") or {})),),
+          code == 0 and "priority" not in (after.get("P1") or {})
+          and (after.get("P1") or {}).get("tasks", [{}])[0].get("status")
+          == "in_progress"
+          and _mio.index_only_in_bodies(mpath) == [])
+
+    # The twin. Here for the over-fire mutation: a writer that stripped
+    # index-only fields on every layout would drop the single-file plan's order.
+    proj, mpath = project("io-single", sharded=False)
+    code, text = start(proj, "P2.1")
+    raw = _mio.read_json(mpath)
+    check("io4 the single-file twin keeps priority on the phase, where that "
+          "layout keeps it: %r"
+          % ((code, text[:160], [p.get("priority") for p in raw["phases"]]),),
+          code == 0 and not _mio.is_sharded(raw)
+          and [p.get("priority") for p in raw["phases"]] == [2, 1]
+          and _mio.tasks_by_id(raw)["P2.1"].get("status") == "in_progress")
+
+
 STAGES = (("at-block", "_cases"), ("sl-block", "_success_line_cases"),
           ("fr-block", "_return_cases"), ("fb-block", "_batch_cases"),
           ("hd-block", "_held_cases"), ("ub-block", "_unblock_cases"),
-          ("ncm-block", "_no_change_moved_cases"))
+          ("ncm-block", "_no_change_moved_cases"),
+          ("io-block", "_index_only_cases"))
 
 
 def _selftest(only=()):

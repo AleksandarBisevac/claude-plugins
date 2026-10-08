@@ -72,7 +72,9 @@ as two streams, and section 6 says why they are joined:
 cat <x3>/cost-C-3/stream.jsonl <x3>/cost-C-3/stream-followup-1.jsonl > <scratch>/cost-C-3-whole.jsonl
 ```
 
-Every `cost-C-3` figure below reads that file.
+Every `cost-C-3` figure below reads that file. The tool now takes both streams in one call, earliest
+first, and prints what that file prints, byte for byte; read alone, the follow-up is refused
+([pipeline-cost-levers.md](pipeline-cost-levers.md), section 1).
 
 **Prices** are the plugin's shipped table, `_usage_core.DEFAULT_PRICING`, as in the design. The
 `all models priced` line agreed with the session's own `total_cost_usd` in every session read here.
@@ -555,6 +557,13 @@ measured pool, as the tool does, so every output figure is an estimate.
    loop's write rate. The cycles would then read 1.23, 1.31 and 1.17 like for like, under the 1.25
    ideal in `cost-C-1` and `cost-C-3`. Making it hold needs a mechanism rather than more prose, and
    which one is not settled here.
+
+   **That estimate was wrong.** It left out the CLI's frame and trailer, 671 bytes a hand-back, which
+   the main loop receives whatever the agent writes. Re-derived with them, one line leaves the cycles
+   at 1.254, 1.333 and 1.189 like for like, and `cost-C-1` stays over the ideal
+   ([pipeline-cost-levers.md](pipeline-cost-levers.md), section 4). The 1.20 for `cost-C-2` below
+   rests on the same estimate. Re-derived, it is 0.6084 − 0.0457 − 0.0462 = `0.5165`, which is
+   1.224.
 4. **The main loop's own review inside the cycle, `0.0462` of `cost-C-2`'s.** Requests 10, 12 and 14
    joined `git diff` and a `cat` of the new test file to each `next` (the diff command). The driver
    asks for none of it. `cost-C-1` and `cost-C-3` read the diff at sign-off instead: `0.0233` and
@@ -643,7 +652,9 @@ from this study (section 4).
   show the resumed result's `modelUsage` and `total_cost_usd` covered both stretches, so the session
   cost `1.819516`. The grader's `finish` line reads `spent 2.0416 USD`, the sum of both streams' totals,
   which counts the first stretch twice. Both are faults of the instruments, not of the session, and
-  this document reports them rather than fixing them.
+  this document reports them rather than fixing them. The `stream-cost.py` half has been fixed
+  since: the tool reads both streams in one call and refuses the follow-up read alone
+  ([pipeline-cost-levers.md](pipeline-cost-levers.md), section 1). The grader's sum is unchanged.
 - **Arm C sessions shared `/tmp`.** `cost-C-2` found `cost-C-1`'s planning file there (section 5.2).
   Both wrote to the absolute path `/tmp/audit-returns-phase.json`, and the runner's session
   environment (`session_env` in `<h3>/run_session.py`) gives a session no temporary directory of

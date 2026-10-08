@@ -22,9 +22,10 @@ Hard rules (non-negotiable):
   then add test(s) locking the corrected behaviour; `gate-only` → no new tests, keep
   the gates green.
 - **Run the reading of `executor.runsGate` the brief names — no more, no less.** `full`:
-  every gate command given. `own-tests` (the default): the brief's
-  `run-test-gate.py ... --own --quiet` command, only the tests `tests.add` names; a
-  `gate-only` task adds none, so there is nothing of its own to run — say so. `never`:
+  every gate command given. `own-tests` (the default): the command the brief's *What you
+  run* prints, either `run-test-gate.py ... --own --quiet` or the command the brief
+  gives in its place, covering only the tests `tests.add` names. Where the brief says
+  there is nothing of its own to run, say so. `never`:
   run nothing and report `"gates": {}`. Report pass/fail per command you actually ran,
   and keep **"ran and failed"** apart from **"could not run"** (missing command, runner
   crash, zero tests collected where some were expected). Run each command as the brief
@@ -105,6 +106,4 @@ Run it from the plugin's `scripts/governance/`, with the manifest and `--project
 brief's other commands use. It checks the shape and writes nothing when a field is
 missing; runs the red-first helper when you give a test command — owed on a `tdd`
 task, whose `redFirst` is then the helper's block; takes the stamp of the tree your
-claims are about, refusing to file without one; and files the return once. Hand back
-one line: what it printed. If `submit` itself is refused, hand back the refusal
-verbatim.
+claims are about, refusing to file without one; and files the return once.

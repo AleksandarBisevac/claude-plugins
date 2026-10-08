@@ -1,7 +1,7 @@
 {
   "id": "P119",
   "title": "the phase overhead and the task cycle cost less with every guarantee kept",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Follows docs/research/pipeline-cost-results.md, on the user's decision of 2026-10-08 to cut cost further once P118 landed. P118 measured the per-task cycle at 1.29-1.44 times plain like for like, and the phase overhead at 0.60, 0.75 and 1.15 against a budget of 1.00. The phase overhead is the larger remaining share. The user's priorities, in order:\n1. measure what the phase review actually catches, then narrow it or make it conditional;\n2. enforce the executor's one-line hand-back by mechanism rather than prose;\n3. measure CLAUDE.md in each agent's start, and drop it where the brief already carries the rules.\nThe order is fixed: an offline measurement and design task first, from the recorded benchmark streams, with no paid call. Then the levers it recommends, each with its micro-test. Then one paid probe and the full benchmark, run by the orchestrator. A smaller model for low-risk tasks is the user's call and is out of scope. The cache TTL stays documented only, as decided on 2026-10-07. No lever may weaken a guarantee P118 holds.",
   "desiredOutcome": "the phase overhead falls inside its 1.00 budget in every benchmark session, and the per-task cycle moves toward 1.25 times plain like for like, each lever confirmed by its offline micro-test before any paid session",
   "testGate": [
@@ -15,21 +15,77 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "ca7c92d6a1cd4866eaa476496365a8d8cacec4bc",
+  "branch": "audit/p119-the-phase-overhead-and-the-tas",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P119-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/_filed_returns.py gate_reading / complete_phase_return",
+        "issue": "gate_reading reads `whole` for any gate without a test-shaped path or a listed flag. That includes `pytest -m unit`, `go test ./internal/auth/...`, `cargo test auth::login`, `npx jest src/auth` and `python -m unittest pkg.test_auth`, so the computed inherited-tests answer is `not-asked` for gates that select tests. complete_phase_return refuses a typed word that differs, so a reviewer cannot file `flagged`, the answer that puts the question to a human. The return then files clean and the advance sign-off lands. The CHANGELOG and the basis text claim `whole` means the whole project.",
+        "resolution": "fixed in P119.9-g0k (5e2c4c53): Make `whole` a positive judgement: no positional operand after the runner and no flag outside a known no-selection set; anything else is `unknown`. Accept a typed answer that only escalates (a human answer over a computed one). Add cases for each spelling with an allow twin, and make the docs say what the classifier decides.",
+        "fixTask": "P119.9-g0k",
+        "commit": "5e2c4c53"
+      },
+      {
+        "id": "P119-R2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_filed_returns.py helper_red_first with complete_phase_return",
+        "issue": "A reviewer cannot override a computed `proved` red-first with `not-proved`; the disagreement is refused.",
+        "resolution": "fixed in P119.9-g0k (5e2c4c53): Accept a typed answer that only escalates (`not-proved` over a computed `proved`).",
+        "fixTask": "P119.9-g0k",
+        "commit": "5e2c4c53"
+      },
+      {
+        "id": "P119-R3",
+        "severity": "low",
+        "file": "CHANGELOG.md lever C line",
+        "issue": "The line says the one call signs off, lands and prints done. The sign-off steps can still stop on the gate, invariants, fast-forward or `meta.merge.auto: false`.",
+        "resolution": "fixed in P119.9-g0k (5e2c4c53): Say the call is taken as the triage's sign-off answer, so the sign-off steps run as they would after it.",
+        "fixTask": "P119.9-g0k",
+        "commit": "5e2c4c53"
+      },
+      {
+        "id": "P119-R4",
+        "severity": "low",
+        "file": "plugins/audit/reference/verbs-in-full.md",
+        "issue": "'`-` is stdin throughout this plugin' does not hold: `stamp-verification.py --stamp-file -` opens a file named `-`. An older line repeats the claim.",
+        "resolution": "fixed in P119.9-g0k (5e2c4c53): Narrow both sentences to the verbs that read stdin.",
+        "fixTask": "P119.9-g0k",
+        "commit": "5e2c4c53"
+      },
+      {
+        "id": "P119-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_filed_returns.py _runner_width; CHANGELOG.md lever D line",
+        "issue": "Same class as R1: `npm run test:unit` and `node scripts/test.js` read `whole`, because a package script or script file counts as the runner. The CHANGELOG says 'the runner with no operand'.",
+        "resolution": "fixed in P119.10-g0k (c1a95d27): Read a package-script name other than `test`, and a script file other than one the project names as its whole suite, as an operand (`unknown`). Make the CHANGELOG line state the rule exactly.",
+        "fixTask": "P119.10-g0k",
+        "commit": "c1a95d27"
+      },
+      {
+        "id": "P119-R6",
+        "severity": "low",
+        "file": "CHANGELOG.md lever C line",
+        "issue": "Same class as R3: the line still says the advance call prints `done` unconditionally.",
+        "resolution": "fixed in P119.10-g0k (c1a95d27): End the clause at 'so the sign-off steps run as they would after it'.",
+        "fixTask": "P119.10-g0k",
+        "commit": "c1a95d27"
+      }
+    ],
+    "outcome": "[findings: 6 - 0 high, 1 med, 5 low; 6 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "The phase overhead and the task cycle cost less, and every guarantee is kept. The levers, designed from the recorded benchmark streams in docs/research/pipeline-cost-levers.md:\n- A: planning reads its batch from stdin, so no scratch file is written that could be refused or collide.\n- B: submit ends on the one-line hand-back instruction.\n- C: a clean phase review is signed off in the same call that files it, and only when sign-off is the triage's single admissible answer.\n- D: the review's mechanical answers are computed, a human escalation is always accepted over a computed answer, and the brief lists the existing test files the phase modified.\n\nOther changes in this phase:\n- the executor brief prints a test command that can run, with one shared own-gate rule;\n- the driver's suite runs its stages in parallel, about four times faster, with identical cases;\n- BUG-17 is fixed: index-only fields stay out of phase shards, through one writer path;\n- stream-cost reads a resumed session from its streams and refuses a follow-up read alone.\n\nEach lever was confirmed by its offline micro-test and a mutation probe re-run by the orchestrator.\n\nOne paid probe at this phase's head (probe2-C-1, CLI 2.1.295; one observation):\n- 15/15 hidden tests, no out-of-scope change, no refusal;\n- 0.449 against 0.505 for the same task at the P118 head, and 80 s against 97 s;\n- 1.32 times the fresh plain mean, against 1.49.\n\nThe full benchmark is deferred to after the release, by the user's choice to release tonight. The phase review's findings were fixed by P119.9: a computed answer that blocked a human escalation, and a gate that selects tests read as the whole project. Faults found along the way are in the internal plan (F572-F577).",
   "tasks": [
     {
       "id": "P119.1",
       "title": "the remaining cost is located per step and each lever is designed with its micro-test",
-      "status": "pending",
+      "status": "done",
       "description": "Measure and design, with no paid call, from the recorded benchmark streams: probe-C-1, cost-C-1, cost-C-2 and cost-C-3 at 1dd702f2, plus the arm A and arm B streams. The P118 results document names where they are. The result is a design section added to docs/research/pipeline-cost-results.md or a new docs/research document, with every figure beside the command that prints it. It covers:\n(a) the phase overhead split per step: phase review dispatch, triage, phase gate, sign-off, landing and lock;\n(b) a value test for the phase review: what each one found in those sessions, and whether any finding changed a graded result or the shipped tree;\n(c) the executor's hand-back per cycle: its output tokens and the main loop's read of it;\n(d) CLAUDE.md in each agent's start: bytes, tokens, and which of its rules the agent prompt or the brief already restates;\n(e) a recommended set of levers with predicted per-task and per-phase ratios. Each lever names its mechanism, its micro-test, and the guarantee it must keep. Each estimate is labelled with its basis, and doubling any single estimate is shown not to break the target.\nFix the internal fault where tools/stream-cost.py misprices a follow-up stream read on its own: accept several streams of one session in one call, or refuse the follow-up read alone. Every new instrument case is shown red first.",
       "files": [
         "tools/stream-cost.py",
@@ -58,16 +114,570 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8d414df3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Locates the cost that remains after P118, per step, and designs four levers, in the new docs/research/pipeline-cost-levers.md. Every figure there sits beside the command in its section 8.\n\nstream-cost:\n- load_streams() reads several streams of one session in one call. They must share the same session id and be given in order; otherwise the call is refused with exit 2.\n- unheld_reads() and main() refuse a follow-up stream read alone with exit 2, when modelUsage's cache reads exceed what the stream can hold.\n- The mispricing was 18081 x (8.0-5.0)/1e6 = 0.054243.\n- Over every recorded stream under the experiments directory, only the follow-up alone is refused. Every other report is byte-identical to HEAD; this was run twice, about 20 minutes apart.\n- Cases sc30-sc34. sc30, sc31, sc33 and sc34 failed on the unfixed code, and the allow twin sc32 passed.\n- The orchestrator re-ran the mutation probe (scratchpad p119-1/mutations.py): nine mutations, all red on their target cases, including three over-fire rows that turn sc32 red.\n\npipeline-cost-results.md has three in-place corrections:\n- a pointer to the instrument fix;\n- the one-line hand-back estimate, re-derived with the CLI frame as 1.254 / 1.333 / 1.189;\n- cost-C-2 re-derived as 1.224.\n\nFindings:\n- The phase overhead per step: the driver's sign-off call runs in 2.4-2.6 s, and its model cost is the sign-off answer request.\n- The phase review value test: verdict clean with no findings in each session, every task `matches`, and no file outside docs/audit changed after the review. A computed fact, \"an existing test file was modified\", matched the grader's protected flag in all three sessions; the reviews' readings did not.\n- The executor hand-back costs 0.0504 / 0.0593 / 0.0557 a cycle.\n- CLAUDE.md is 2193 B in each agent start, and omitClaudeMd is not recommended.\n\nLevers:\n- A: the plan batch on stdin.\n- B: submit prints the hand-back instruction last.\n- C: the sign-off answered in advance, applied only when it is the triage's single admissible answer.\n- D: the review's mechanical answers computed, with the existing-test fact added to the phase brief.\n\nPredicted phase overhead 0.5653 / 0.5501 / 0.7096, at most 0.8267 with each estimate taken adversely. Predicted per task 1.254 / 1.333 / 1.189.\n\nNot recommended: a SubagentStop block hook, which costs more than it saves. The review on a signal or off was put to the user, who chose to keep it, narrowed.\n\nred-first: the helper is could-not-prove, because the task declares no test file. The pre-fix run recorded 44/48 with the four deny cases red.\n\nFaults recorded internally: the own-tests command in the executor brief, the --introduces symbol, and the CLI frame in the hand-back apportioning.",
+        "descriptive": "The cost left after the last phase is measured step by step, and four changes are designed that should bring the phase overhead under budget in every measured session; the cost tool now prices a resumed session correctly."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-08T16:35:57Z",
+      "completedAt": "2026-10-08T17:49:24Z",
+      "verifiedBy": [
+        "tools/stream-cost.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T17:30:57Z.64cd45",
+        "status": "passed",
+        "at": "2026-10-08T17:30:57Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8d414df3",
+        "at": "2026-10-08T17:49:24Z",
+        "basis": "orchestrator check: every section (a)-(e) present with commands; mutation probe re-run, nine rows red; user decided the phase review stays, narrowed"
+      }
+    },
+    {
+      "id": "P119.2-g0k",
+      "title": "the plan batch is read from stdin, so planning writes no file",
+      "status": "done",
+      "description": "Lever A of docs/research/pipeline-cost-levers.md, section 6. `audit-task.py add --from-file -` reads the batch from stdin through the same read_batch checks and revalidation. The add form in commands/phase.md shows a quoted heredoc instead of a Write to a file, and the request and the open choices are saved on every path. Micro-test as the section lists: stdin and file give byte-identical manifests with request and open choices; a malformed batch on stdin is refused naming the field and leaves the manifest unchanged; `tools/measure-context.py --gate` still holds /audit:phase add under its ceiling; and the write guards' suites, given the heredoc command, refuse nothing. CHANGELOG gets one line under [Unreleased]. Every case is shown red first.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "249e9c73",
+      "outcome": {
+        "technical": "Lever A. `audit-task.py add --from-file -` reads the planning batch from stdin.\n\nHow it reads:\n- read_batch(path, stream=None) takes the batch from _batch_from_file or _batch_from_stdin.\n- Either way it is graded by the same batch_problems(), then the same single lock, write, revalidation from disk and rollback.\n- An empty stdin is refused as empty.\n- The refusal header names \"the batch on stdin\".\n\nWhat changed outside the verb:\n- commands/phase.md's add section shows `add --from-file - <<'PLAN'` with the plan as its body, and the Write-tool step is gone. The section measures 3974 -> 3962 bytes by `tools/measure-context.py --gate`, under the run form's 4000 ceiling.\n- reference/verbs-in-full.md shows the heredoc form, says to quote its word, and lists an empty stdin as a refusal.\n- CHANGELOG: one line under [Unreleased].\n\nCases (all in test_audit_task.py):\n- fb10: the add section pins the heredoc.\n- fb13: a file batch and the same batch on stdin give byte-identical plans, with the request and the open choices kept.\n- fb14: a malformed batch and an empty stdin are each refused, and the plan's bytes are unchanged.\n- fb15: phase.md's own heredoc command, run through sh, writes the same plan; the context gate still reports OK.\n- fb16: every hook hooks.json routes Bash to refuses nothing for the heredoc. Its over-fire control is guard-secrets-read denying `cat .env`.\n\nRed-first: proved, on fb10 and fb13-fb16 at HEAD.\n\nMutation probe (scratchpad P119.2-g0k/mut.py), re-run by the orchestrator: exit 0, baseline green, all 7 rows KILLED with exactly their expected cases.\n\nLeft: the `[--from-file PATH]` hints in commands/task.md and README.md, which are still true but do not mention `-`.",
+        "descriptive": "Planning a phase now passes its plan straight into the add command, so no scratch file is written that could be refused or collide, and the request and its open choices are always saved."
+      },
+      "startedAt": "2026-10-08T17:50:04Z",
+      "completedAt": "2026-10-08T18:39:57Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T18:30:34Z.1829ad",
+        "status": "passed",
+        "at": "2026-10-08T18:30:34Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "249e9c73",
+        "at": "2026-10-08T18:39:57Z",
+        "basis": "orchestrator check: lever A as designed; mutation probe re-run, seven rows killed with exact cases"
+      }
+    },
+    {
+      "id": "P119.3-g0k",
+      "title": "submit prints the hand-back instruction as its last line",
+      "status": "done",
+      "description": "Lever B of docs/research/pipeline-cost-levers.md, section 6. After a filed return, `drive-phase.py submit` prints the filed line and then one more line: hand back the line above as the whole reply. A refused submit says to hand back the refusal verbatim. This covers the executor and the phase reviewer's submit --head. The prompts' closing sentence about the hand-back is removed, since the print carries it. Micro-test as listed: the last line of submit's output is the instruction and the filed line occurs once; the refusal twin; `tools/measure-context.py --gate` holds both agents under their ceilings. Do not add a stop hook (the section prices it as a net cost). No CHANGELOG edit here; the next driver task carries the line. Every case is shown red first.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/agents/audit-reviewer.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "7d6b46e2",
+      "outcome": {
+        "technical": "Lever B. After `drive-phase.py submit` files a return, its last printed line tells the agent to hand back the line above as its whole reply. When `submit` refuses, the last line says to hand back the refusal verbatim. Both texts are STEPS entries (handback-filed, handback-refused), printed by handback_lines(code) after render() in run_submit. This covers the executor, the per-task reviewer and the phase reviewer's `submit --head`, every refusal submit() returns, and run_submit's two stderr usage refusals. Argparse's own errors are not covered. The hand-back sentence is removed from audit-executor.md and audit-reviewer.md. `tools/measure-context.py --gate` holds the executor at 7030/9000 and the reviewer at 6920/7000. No stop hook was added: the levers document prices one as a net cost.\n\nCases, inside the ds-block stage so the red helper can narrow to them:\n- dh1: the filed line, then the instruction, with \"return filed\" once and the print within its byte bound;\n- dh2, dh3: the refusal twins;\n- dh4: only the refusal says verbatim;\n- dh5: the phase reviewer's --head, filed and refused;\n- dh6: neither prompt says hand back, and both name submit;\n- ds2 now expects the two-line print.\n\nRed-first: proved (ds-block at HEAD 8/15, with ds2 and dh1-dh6 red).\n\nMutation probe (scratchpad P119.3-g0k/mut.py), re-run by the orchestrator: exit 0, baseline green, five rows KILLED (no-line, always-filed, always-refused, not-verbatim, line-first).\n\nLeft for the next task in the brief's file: audit-lookup.py's briefs still say \"hand back one line\", so an agent now reads the instruction twice.\n\nObserved: test_drive_phase.py takes about 225 s on its own, against the sweep's 300 s per-file cap. HEAD's copy takes about 230 s, so this change did not cause it. A loaded machine timed it out once.",
+        "descriptive": "When an agent files its result, the last thing it reads is to hand back that one line, or the refusal word for word, so the long prose report the main session had to read is no longer asked for."
+      },
+      "startedAt": "2026-10-08T17:50:04Z",
+      "completedAt": "2026-10-08T18:39:57Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T18:39:45Z.a2f924",
+        "status": "passed",
+        "at": "2026-10-08T18:39:45Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7d6b46e2",
+        "at": "2026-10-08T18:39:57Z",
+        "basis": "orchestrator check: lever B as designed, no stop hook; mutation probe re-run, five rows killed"
+      }
+    },
+    {
+      "id": "P119.4-g0k",
+      "title": "a clean phase review is signed off in the same call that files it",
+      "status": "done",
+      "description": "Lever C of docs/research/pipeline-cost-levers.md, section 6. At the phase reviewer's dispatch, the driver also prints the call to send after it: `next <phase> --answer sign-off --reason <the summary>`. That answer applies only when the triage has sign-off as its single admissible answer: review clean, no finding open, no answer waiting on a human, no fix task after its head. Otherwise the triage prints as today and the answer is reported as not applied. The sign-off verb, gate, invariants, commit, landing and lock release run unchanged. Micro-test as listed: a clean review answered in advance signs off and prints done in one call; with a finding open, or an answer waiting on a human, the same call prints the triage and runs no sign-off; stream-cost's driven-span cases still place the landing in the close. CHANGELOG under [Unreleased] gets one line for lever B (the hand-back print) and one for this. Every case is shown red first.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P119.3-g0k"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "ae8023eb",
+      "outcome": {
+        "technical": "Lever C. The phase reviewer's dispatch now prints a second line: `then: next <phase> --answer sign-off --reason <the summary>`.\n\ndrive() takes `--answer sign-off` with no decision pending as an answer in advance only when advance_admissible holds: every task terminal and the phase not yet signed off. Everywhere else, `no decision is pending` still refuses.\n\nAt the triage, advance_applies decides. It holds only for a filed review with verdict `clean`, no finding open, no answer waiting on a human, and no fix task closed after the review's head. That is exactly the state in which the triage refuses every other answer. Then the normal sign-off path runs, unchanged: the phase gate, invariants, signoff verb, commit, landing and lock release. Otherwise the triage prints as before, with \"not applied\", and when no triage was reached, the call says so.\n\nThe phase loop moved unchanged into drive_phase(). CHANGELOG [Unreleased] gets one line for lever B and one for lever C.\n\nCases, in sg-block:\n- sq0: the advance call is still refused mid-phase.\n- sq1: the dispatch prints the call once.\n- sq2: a clean review signs off and lands in one call.\n- sq3: with a finding open, the call does not sign off.\n- sq4: with an answer waiting on a human, the call does not sign off.\n- sq5: with a fix task closed after the review's head, the call does not sign off. Added at the orchestrator's request, because that term guards a diff no review saw.\n- sq3m and sq0m: in-suite red mutants.\n\nRed-first: proved (sg-block at HEAD 13/19, the task's cases red). sq5 was added after that and is inferred red at HEAD (E_USAGE), not observed.\n\nMutation probe (scratchpad P119.4-g0k/mut.py), re-run by the orchestrator: exit 0, every row killed, including drop-fixes-after, which only sq5 catches.\n\nstream-cost's driven sign-off case sp14 still passes.\n\nSuite time: 217 s before the change on a quieter machine, 277 s after at load 15-17. The new cases took about 14 s, measured twice. P119.7 takes the suite's runtime.",
+        "descriptive": "When the phase review comes back clean, the one call the main session is told to send signs the phase off and merges it; with anything open, that call shows the choices instead and signs nothing."
+      },
+      "startedAt": "2026-10-08T18:39:58Z",
+      "completedAt": "2026-10-08T19:38:22Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T19:28:02Z.29a29a",
+        "status": "passed",
+        "at": "2026-10-08T19:28:02Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ae8023eb",
+        "at": "2026-10-08T19:38:22Z",
+        "basis": "orchestrator check: lever C as designed, plus the fix-after-head twin; mutation probe re-run, every row killed"
+      }
+    },
+    {
+      "id": "P119.5-g0k",
+      "title": "the phase review's mechanical answers are computed and its brief names the existing tests a phase modified",
+      "status": "done",
+      "description": "Lever D of docs/research/pipeline-cost-levers.md, section 6. The user decided the phase review stays, narrowed. The filing verb fills two of each task's answers into the phase return: the red-first block when it is the helper's, and inherited tests `not-asked` when tests.gate runs the whole project. The reviewer's prompt keeps them only where reading is needed: a red-first the helper did not grade, or a gate selecting named tests. The phase brief gains the computed list of existing test files the phase's diff modifies; new test files are not listed. Micro-test as listed: a phase return filed without the mechanical fields is completed from the executor's filed block and the gate's shape; the two refusal twins; the brief lists an existing test file a fixture phase appends to, and not a new one. The intent answer stays the reviewer's, and the sign-off verb still refuses until every owed task has one. Every case is shown red first.",
+      "files": [
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/agents/audit-reviewer.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P119.2-g0k"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "7ec708fc",
+      "outcome": {
+        "technical": "Lever D. The phase review stays, narrowed, by the user's decision.\n\n_filed_returns.py gains \"the answers a script gives\":\n- helper_red_first recognises the red-first helper's block by the basis red_verdict writes, plus its `at`.\n- is_test_path recognises a test file.\n- gate_reading classifies a task's gate as whole, named or unknown.\n- mechanical_answers and phase_answers give, per task, the answers a script fills and the reason for each it does not.\n- task_gate_entries moved from audit-lookup.\n- complete_phase_return fills each missing pair (redFirst/redFirstBasis, inheritedTests/inheritedTestsBasis) and records what it filled under `computedAnswers`. It refuses a typed word that disagrees, a basis typed without its word, and a typed computedAnswers.\n\naudit-task file-return (phase path) completes the return, then judges it with the unchanged phase_return_problems.\n\naudit-lookup's phase brief now carries:\n- one `red-first:` and one `inherited tests:` line per owed task, each `computed (<word>)` or `yours - <reason>`;\n- the per-task questions 2 and 3 scoped to \"yours\";\n- a section listing the existing test files the phase's diff modifies (`git diff --diff-filter=M <baseRef> <head>`, filtered to test paths), which says it cannot be computed when baseRef is absent.\n\naudit-reviewer.md says to omit a pair the brief marks computed. The prompt is 6993/7000 bytes by `tools/measure-context.py --gate`: the task-mode rules stay, pinned by test__refs.\n\nThe intent answer stays the reviewer's. The sign-off verb's refusal for an owed task is unchanged (hd19).\n\nCases:\n- ma1-ma8: the helpers and the completion.\n- hd31-hd33: the verb fills, refuses a disagreeing word, and keeps a matching typed word.\n- bf24, bf25: the brief's lines and the existing-test section.\n\nRed-first proved for all three suites. hd32 passes at HEAD by construction.\n\nMutation probe (scratchpad P119.5-g0k/mut.py --with-task-suite), re-run by the orchestrator: exit 0, 12/12 killed, including helper-over-fire and test-path-always.\n\nStated limit: a block typed by hand in the helper's words reads as the helper's, because the filed return does not record where its red-first came from. Closing that needs submit to mark the block it fills.",
+        "descriptive": "The phase reviewer no longer types answers a script can derive; the filing step fills them and refuses a typed answer that disagrees, and the reviewer's brief now lists the existing test files the phase changed."
+      },
+      "startedAt": "2026-10-08T18:39:58Z",
+      "completedAt": "2026-10-08T19:38:23Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_audit_lookup.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T19:38:03Z.f28823",
+        "status": "passed",
+        "at": "2026-10-08T19:38:03Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7ec708fc",
+        "at": "2026-10-08T19:38:23Z",
+        "basis": "orchestrator check: lever D as designed, intent answer and sign-off refusal untouched; mutation probe re-run, twelve rows killed"
+      }
+    },
+    {
+      "id": "P119.6-g0k",
+      "title": "the executor brief prints a test command that can run",
+      "status": "done",
+      "description": "Internal fault, measured by the levers analysis. The executor brief prints `run-test-gate.py ... --own --quiet` while the same brief says no gate entry names the task's tests.add file, so the executors' own-tests runs printed 'no gate entry' or rc=2 three times in each arm C session: wasted requests in the cycle. Print the own-tests command only when a gate entry selects the task's tests; otherwise print the suite command the brief already names for the task's test file. Cases: a brief whose gate selects the task's tests prints the own-tests command; its twin, whose gate does not, prints the runnable suite command and no own-tests line. CHANGELOG under [Unreleased] gets one line for lever D and one for this. Every case is shown red first.",
+      "files": [
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/agents/audit-executor.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P119.5-g0k"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "8aefbd46",
+      "outcome": {
+        "technical": "Fixes the internal fault that the executor brief printed an own-tests command that could not run. The rule for which gate entries are a task's own now lives in one function, _manifest_phases.own_gate_entries. run-test-gate's own_gate_of and audit-lookup's own_tests_line both call it, and neither keeps a copy.\n\nThe brief's \"What you run\" line prints:\n- `--own --quiet` only when the task has its own entries;\n- otherwise, the gate command that names the task's tests.add file;\n- when no entry names that file, says so and points to the command in the filing block;\n- when the task adds no test, says it has nothing of its own to run.\n\n\"Then hand back one line\" is removed from all four briefs, because submit's last line carries it now.\n\nexecute-task.md and audit-executor.md say to run the command the brief prints, without restating the rule. The executor prompt is 7104/9000 bytes by `tools/measure-context.py --gate`.\n\nPLUGIN-BUILD-GUIDE's module-map row for audit-lookup gains _manifest_phases.\n\nCases:\n- og1, og2: the rule and its phase-gate twin.\n- own13: a phase gate naming the task's file is not its own.\n- bf26: no brief carries the hand-back sentence.\n- bf27: each brief names submit once.\n- bf28-bf30: own line; suite fallback; no entry.\n- bf31: both callers follow the shared function.\n\nRed-first: proved on og1/og2 and bf26/bf29/bf30/bf31. own13 passes at HEAD; it locks behaviour that is already correct.\n\nMutation probe (scratchpad P119.6-g0k/mut.py), re-run by the orchestrator: exit 0, all 12 checks KILLED, including three that break the shared function and turn every caller's suite red.",
+        "descriptive": "The executor is now told to run a test command that actually runs its tests, the rule for that lives in one place both the gate and the brief use, and no brief repeats the hand-back instruction."
+      },
+      "startedAt": "2026-10-08T19:38:24Z",
+      "completedAt": "2026-10-08T20:59:57Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "plugins/audit/tests/test_run_test_gate.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T20:44:50Z.73bb6b",
+        "status": "passed",
+        "at": "2026-10-08T20:44:50Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8aefbd46",
+        "at": "2026-10-08T20:59:57Z",
+        "basis": "orchestrator check: one shared own-gate rule, both callers delegate; mutation probe re-run, twelve checks killed"
+      }
+    },
+    {
+      "id": "P119.7-g0k",
+      "title": "the driver's suite runs well inside the sweep's per-file cap",
+      "status": "done",
+      "description": "Internal fault, measured twice in this phase. On its own, plugins/audit/tests/test_drive_phase.py --selftest takes about 217-231 s on a quiet machine, and 277 s was observed under load. tools/sweep-selftests.py caps each file at 300 s, so a loaded gate can time the file out and read a sound change as red. Find where the suite's time goes by profiling the stages; the likely shape is a real git fixture repo built per case. Cut the time by sharing fixtures across cases that only read them, or by building a fixture once per stage and copying it, without changing what any case asserts. Every case id keeps its name and its verdict. Report the per-stage time before and after, measured twice with a gap, and the whole-file time. The cap is not raised, and the 1:1 test-file rule (one tests/test_<module>.py per module) is kept, so the suite is not split into new files. A mutation that breaks a shared fixture must still turn the cases that read it red; show one.",
+      "files": [
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P119.4-g0k"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "a8e0f753",
+      "outcome": {
+        "technical": "Closes F575 (the driver suite running close to the sweep's per-file cap). Profiling disproved the description's guess. Almost all of each stage's wall time is the verbs run as fresh interpreters; every git call together took about one second over the whole file. So sharing or copying fixtures would have saved almost nothing.\n\nThe executor took a different lever. The full --selftest now runs its stages concurrently, each in its own child process, and replays what they report in STAGES order through one _harness.run. test_hooks.py's thread pool is the precedent, and the case code is untouched.\n- STAGE_WORKERS=6.\n- STAGE_TIMEOUT=280, under the 300 s cap, so a hung block is reported under its own label.\n- A child that reports nothing becomes one named failing case.\n- The duplicate-label check runs over the merged call sites.\n- `--stage` without --cases-to still runs in process, so the red helper's narrowed runs are unchanged.\n\nWhole file, `/usr/bin/time -p`, load average 15-21:\n- before: 291.26 s and 302.40 s;\n- after: 70.84 s and 72.14 s, with gaps between runs.\n\nuser+sys stayed about 250 s throughout. Case ids and verdicts are identical before and after (IDS-MATCH, 128/128).\n\nMutation probe (scratchpad P119.7-g0k/mut.py, mutates a copy, never the tree), re-run by the orchestrator:\n- control green;\n- a broken shared fixture turns 25 cases red through the replay;\n- a child that exits before reporting is a named red;\n- a replay forced to pass hides the red, which proves the replay carries the verdicts.\n\nredFirst not-attempted: no case was added, by design.",
+        "descriptive": "The driver's test file now runs its parts in parallel, about four times faster, with exactly the same tests and results, so a busy machine no longer turns a sound change red."
+      },
+      "startedAt": "2026-10-08T19:38:24Z",
+      "completedAt": "2026-10-08T20:59:57Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T20:52:16Z.bcb7b2",
+        "status": "passed",
+        "at": "2026-10-08T20:52:16Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "a8e0f753",
+        "at": "2026-10-08T20:59:57Z",
+        "basis": "orchestrator check: profile-led lever (stages in parallel, not fixtures); identical case ids and verdicts; probe shows the replay carries verdicts"
+      }
+    },
+    {
+      "id": "P119.8-g0k",
+      "title": "Fix BUG-17: audit-task start copies the index-only priority into the phase shard",
+      "status": "done",
+      "description": "Fixes BUG-17. On the sharded layout, `audit-task.py start` writes the phase's priority into the phase shard's body when it starts the phase's first task. priority is an index-only field: the index stub carries it, the copy in the shard is ignored, and validate-manifest warns about it on every later run. start must leave the shard without priority. Find every writer that can copy an index-only field into a shard (the same class), not only the priority one, and fix them in one place. Repro and expected are on the bug. Cases, each red first: start on a sharded plan whose stub carries priority leaves the shard without it and validate-manifest prints no priority warning; the twin, a single-file plan, keeps priority where it lives. Add a mutation probe at scratchpad/P119.8/mut.py (monkeypatch only).",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/tests/test__manifest_io.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/tests/test__panel_write.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: start on a sharded plan leaves the shard without priority - expected no priority in the shard and no validator warning, actual the shard gains priority 1"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "17f292ab",
+      "outcome": {
+        "technical": "Fixes BUG-17.\n\nCause: audit-task._write_add, the single-shard writer behind start, done, note and the rest, wrote the ASSEMBLED phase into the shard. _merge_phase puts the stub's index-only fields onto every assembled phase, so priority landed in the shard body.\n\nThe fix lives in one place, _manifest_io.shard_body(phase) -> (body, moved). It returns a copy without `shard` and without every INDEX_ONLY_FIELDS key, and hands the moved values back for the stub. Every writer that turns an assembled phase into a shard body now goes through it:\n- split_manifest, and so save_sharded and all its callers;\n- audit-task._write_add;\n- _panel_write._write_back, whose own copy of the strip loop is gone.\n\nA class sweep accounts for every other writer: each reads the raw shard body, or writes only the index.\n\nCases:\n- io1, io3: start leaves the shard without priority, in a pending phase and in a running one.\n- io2: validate-manifest prints OK with no priority warning.\n- io4: the single-file twin keeps priority.\n- sb1-sb3: shard_body strips, does not mutate its input, and keeps a phase that has no index-only field.\n- pp23c: a panel write-back leaves priority in the stub only.\n\nRed-first: proved (io1, io2 and io3 red at HEAD). pp23c is a regression lock; the panel already stripped priority at HEAD.\n\nMutation probe (scratchpad P119.8-g0k/mut.py), re-run by the orchestrator: 8/8 rows as expected. That includes the bug restored, two over-strip mutations (caught by io4 and sb3), and the panel reverted to its own loop (caught by pp23c alone).\n\nThis repo's plan: _mio.index_only_in_bodies() returns nothing.",
+        "descriptive": "Starting a task no longer copies the phase's priority into the phase file where nothing reads it, so the validator stops warning; every place that writes a phase file now does it the same way."
+      },
+      "startedAt": "2026-10-08T20:10:49Z",
+      "completedAt": "2026-10-08T20:59:58Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__manifest_io.py",
+        "plugins/audit/tests/test__panel_write.py"
+      ],
+      "bugId": "BUG-17",
+      "testEvidence": {
+        "runId": "2026-10-08T20:59:42Z.09a18d",
+        "status": "passed",
+        "at": "2026-10-08T20:59:42Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "17f292ab",
+        "at": "2026-10-08T20:59:58Z",
+        "basis": "orchestrator check: the bug's repro is a case, the class has one implementation (three callers), mutation probe re-run 8/8"
+      }
+    },
+    {
+      "id": "P119.9-g0k",
+      "title": "a computed review answer can be escalated, and a gate that selects tests is never read as the whole project",
+      "status": "done",
+      "description": "Fixes the P119 phase review's findings R1-R4.\n1. A computed answer may only ever lower the work, never block an escalation. complete_phase_return accepts a typed answer that escalates over a computed one: `flagged` over a computed `not-asked`, and `not-proved` over a computed `proved`. It keeps the typed word and its basis, and records that the computed one was overridden. Every other disagreement is still refused.\n2. gate_reading's `whole` becomes a positive judgement. A command reads `whole` only when it carries no positional operand after its runner and no flag outside a known no-selection set; everything else reads `unknown`, which leaves the answer to the reviewer. Cases, each red first, cover `pytest -m unit`, `pytest --deselect x`, `go test ./internal/auth/...`, `cargo test auth::login`, `npx jest src/auth`, `npx jest --testPathPattern auth`, `npx vitest run src/auth` and `python -m unittest pkg.test_auth`. The allow twins are `python3 tools/sweep-selftests.py` and a bare `pytest` / `npm test`, which stay `whole`.\n3. The CHANGELOG's lever D line, the classifier's WHAT THIS CANNOT TELL comment and the basis text say what the classifier decides. The lever C line says the call is taken as the triage's sign-off answer, so the sign-off steps run as they would after it.\n4. verbs-in-full.md narrows both \"`-` is stdin\" sentences to the verbs that read stdin.\nDeliver a runnable mutation probe.",
+      "files": [
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "CHANGELOG.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/scripts/manifest/audit-task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "5e2c4c53",
+      "outcome": {
+        "technical": "Fixes P119-R1 to R4. One rule closes the class: a computed answer may lower the work, but it never blocks a human escalation.\n\n_filed_returns.complete_phase_return:\n- It keeps a typed word from the field's human set over a computed one (`flagged` over `not-asked`, `not-proved` over `proved`), with its basis, and records the computed word it overrode under `computedOverridden`.\n- Every other disagreement is refused. The refusal now names the escalation words.\n- An escalation typed without its basis is refused, as is a typed computedOverridden.\n\ngate_reading is positive. `whole` means a bare runner (`_runner_width`) followed only by NO_SELECTION_FLAGS or WHOLE_OPERANDS. Any other operand or flag reads `unknown`, with a basis naming each word. That includes `pytest -m unit`, `go test ./internal/auth/...`, `cargo test auth::login`, `npx jest src/auth`, `python -m unittest pkg.test_auth`, `--testPathPattern`, `--deselect`, and a bare `tests` directory (the safe direction). The comment says the reading sees only the command line.\n\nOther changes:\n- audit-lookup's `computed` lines name the escalation words, which are read from `_fr.ESCALATIONS`.\n- audit-reviewer.md says to omit a computed pair unless escalating it; the prompt is 6995/7000 by `tools/measure-context.py --gate`.\n- The audit-task.py comment is updated.\n- CHANGELOG: the lever C line says the call is taken as the triage's sign-off answer, and the lever D line states the positive rule and the override.\n- verbs-in-full.md narrows both \"`-` is stdin\" sentences.\n- test_audit_lookup's fixture uses an operand-free gate.\n\nCases:\n- ma2: the bare-runner allow twins.\n- ma9: eight selection spellings read unknown.\n- ma10: escalation kept and recorded.\n- ma11: the refusal twins.\n- ma8: rewritten, because it had pinned the bug.\n- hd34: end to end, including that sign-off then refuses, naming both answers.\n- bf32: the brief names escalation only on computed lines.\n\nRed-first: proved for all three suites.\n\nMutation probe (scratchpad P119.9-g0k/mut.py), re-run by the orchestrator: exit 0, 12/12 killed, including the over-fire rows.",
+        "descriptive": "The phase reviewer can always put a computed answer in front of a person, and a test command that runs only some tests is no longer treated as running all of them."
+      },
+      "startedAt": "2026-10-08T21:07:20Z",
+      "completedAt": "2026-10-08T21:39:28Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_audit_lookup.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T21:39:18Z.91f536",
+        "status": "passed",
+        "at": "2026-10-08T21:39:18Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "5e2c4c53",
+        "at": "2026-10-08T21:39:28Z",
+        "basis": "orchestrator check: one rule (computed lowers work, never blocks an escalation) plus a positive whole reading; mutation probe re-run 12/12"
+      }
+    },
+    {
+      "id": "P119.10-g0k",
+      "title": "a package script or a script file is read as a selection unless the project names it as its whole suite",
+      "status": "done",
+      "description": "Fixes P119 review round 2 findings R5-R6, both the same class as round 1's.\n1. gate_reading counts only a fixed runner as the runner. A package-script name (`npm|yarn|pnpm run <script>`) reads `whole` only when the script is `test`; any other script name is an operand, so it reads `unknown`. A script file run by an interpreter (`node scripts/test.js`, `python3 tools/x.py`) is an operand too, unless it is a file the project's own gate names as its whole suite. Decide that by one explicit rule, state it in the classifier's comment, and keep `python3 tools/sweep-selftests.py` reading `whole` by that rule, not by a special case.\n2. CHANGELOG: the lever D line states exactly which commands read `whole`. The lever C line ends at \"so the sign-off steps run as they would after it\".\nCases, each red first: `npm run test:unit` and `node scripts/test.js` read unknown. Allow twins: `npm test`, `npm run test` and the sweep stay whole. Deliver a mutation probe.",
+      "files": [
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "c1a95d27",
+      "outcome": {
+        "technical": "Fixes P119-R5 and R6, the same class as round 1's: a word after the runner was treated as part of it. One stated rule lives above _SUBCOMMANDS in _filed_returns.py, and _runner_width is the only place that widens the runner.\n- `npm|yarn|pnpm run <script>` counts as the runner only when the script is `test`. Any other script name is an operand, so it reads `unknown` and the basis names it.\n- A script file run by an interpreter counts as the runner only when meta.buildCommands declares exactly that [interpreter, script] pair (`_declared_scripts`). So the sweep reads `whole` because the plan declares it, not by a special case. An undeclared `node scripts/test.js` reads unknown.\n\nStated limit: a project that declares a subset script as its own build command still reads whole. This is the existing config-selection blind spot.\n\nCHANGELOG:\n- The lever D line lists exactly which commands read whole.\n- The lever C line ends at \"so the sign-off steps run as they would after it\".\n\nCase ma12:\n- unknown: `npm run test:unit`, an undeclared script, and a declaration with more words after it;\n- whole (allow twins): `npm test`, `npm run test`, `yarn run test`, and the declared sweep.\n\nRed-first: proved (ma12 red at HEAD).\n\nMutation probe (scratchpad P119.10-g0k/mut.py), re-run by the orchestrator: exit 0, baseline 63/63, all six mutations killed, including two over-fire rows.",
+        "descriptive": "A test command that runs a named subset through a script is no longer counted as running every test, and the changelog says exactly which commands are."
+      },
+      "startedAt": "2026-10-08T21:45:39Z",
+      "completedAt": "2026-10-08T21:59:25Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__filed_returns.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T21:59:16Z.11564c",
+        "status": "passed",
+        "at": "2026-10-08T21:59:16Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c1a95d27",
+        "at": "2026-10-08T21:59:25Z",
+        "basis": "orchestrator check: one rule for a named script, declared by the plan; mutation probe re-run 6/6"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-10-08T16:35:57Z",
+  "testEvidence": {
+    "runId": "2026-10-08T22:07:11Z.55d863",
+    "status": "passed",
+    "at": "2026-10-08T22:07:11Z"
+  }
 }

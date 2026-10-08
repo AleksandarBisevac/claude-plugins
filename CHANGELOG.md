@@ -7,6 +7,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 ## [Unreleased]
 
 ### Added
+- **`drive-phase.py submit` ends on the hand-back instruction**: its last line tells the agent to hand back the filed line above it, or the refusal above it verbatim, as its whole reply, so the agents' prompts no longer state the hand-back.
+- **A clean phase review's sign-off can be sent with its dispatch.** The phase reviewer's dispatch also prints `next <phase> --answer sign-off --reason <the summary>` to send once the review files; when the triage would offer nothing but `sign-off` - a `clean` review, no finding open, no answer waiting on a human, no fix task after the review's head - that one call is taken as the triage's `sign-off` answer, so the sign-off steps run as they would after it.
+- **`audit-task.py add --from-file -` reads the planning batch off stdin**, through the same checks and single revalidated write as a file; `/audit:phase add` now passes the plan as a quoted heredoc, so planning writes no scratch file, and an empty stdin is refused rather than read as nothing.
 - **`audit-status.py` and `render-report.py` take the manifest as an optional argument.**
   Given none, they find it themselves through one shared resolver,
   `_manifest_io.resolve_manifest`: the `manifestPath` that `.claude/audit.config.json` names
@@ -74,6 +77,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   have cost at a five-minute TTL.
 
 ### Changed
+- **The phase reviewer no longer types the answers a script can derive.** Filing the phase review fills each owed task's red-first answer from the executor's helper-made block, and its inherited-tests answer as `not-asked` when every gate entry resolves and every gate command is one of these runners followed by nothing but a flag from a known no-selection set or `./...`: any first word on its own (`pytest`, `make`); `python -m <module>`; an interpreter and a script file only when `meta.buildCommands` declares exactly that pair as a command (`python3 tools/sweep-selftests.py`); `go test`, `cargo test`, `npm test`, `npm t`, `yarn test`, `pnpm test`; `npm|yarn|pnpm run test`; `npx <tool>`, or `npx vitest run`. Any other command - a package script other than `test` (`npm run test:unit`), an undeclared script file (`node scripts/test.js`), any operand - leaves that answer to the reviewer; a typed `not-proved` or `flagged` is kept over a computed answer with its basis and the override recorded under `computedOverridden`, and any other typed answer that disagrees is refused; the phase brief now lists the existing test files the phase's diff modifies, and the intent answer stays the reviewer's.
 - **`/audit:phase` runs a phase's tasks one at a time, in id order.** It used to run a wave's
   tasks in parallel where their files were disjoint. The step driver records each task's gate
   before the next task starts, because a gate run while a sibling executor edits the same tree
@@ -317,6 +321,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   release is therefore a major is the operator's call, and is not decided here.
 
 ### Fixed
+- **The executor brief prints a test command that can run.** Under `executor.runsGate: own-tests` it printed `run-test-gate.py ... --own --quiet` even when no gate entry of the task's own selects its `tests.add` file, a run that can only answer that it has nothing to run; it now prints that command only when the task's own gate selects its tests, else the gate's command naming the test file, else that no entry names it. The briefs also no longer repeat the hand-back instruction `submit` already prints.
 - **A task whose intent reads `deferred` is listed as still owed its phase review.**
   `_status_facts.intent_unanswered` counted `deferred` as an answer, so `/audit:status` and the
   sign-off verb's output dropped such a task from the list of done tasks with no intent answer.

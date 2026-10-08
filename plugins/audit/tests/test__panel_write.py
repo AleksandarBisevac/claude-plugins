@@ -2147,6 +2147,23 @@ def _cases(check):
                    if r.get("field") == _adot.FIELD] == []
               and [r.get("field") for r in _at_same["applied"]] == ["priority"],
               repr(_at_same["applied"]))
+        # A save touching a body field AND priority writes the shard, from the
+        # assembled phase that now carries the new priority: the shard body
+        # must still come out without it, and the stub must hold it.
+        with open(_at_shard, encoding="utf-8") as _fh:
+            _io_body = json.load(_fh)
+        with open(_pp_mpath, encoding="utf-8") as _fh:
+            _io_stub = json.load(_fh)["phases"][0]
+        check("pp23c a panel write-back to a sharded phase leaves priority out "
+              "of the shard and on the stub, where the index-only rule keeps "
+              "it: %r" % ((sorted(_io_body), _io_stub.get("priority"),
+                           _at_same.get("written")),),
+              _at_same["ok"]
+              and any(w.endswith("P1.json") for w in _at_same["written"])
+              and "priority" not in _io_body
+              and _io_body.get(_adot.FIELD) is True
+              and _io_stub.get("priority") == 3
+              and _mio.index_only_in_bodies(_pp_mpath) == [])
         for _atbad, _atwhy in ((1, "an integer 1, which is not a boolean"),
                                ("false", "the STRING 'false'"),
                                ({"tracked": False}, "an object")):

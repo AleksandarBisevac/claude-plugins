@@ -26,6 +26,7 @@ import _loader                                      # noqa: E402
 import _output                                      # noqa: E402  (CLIPPED_MARK, the cut a payload must never carry)
 import _journal_io                                  # noqa: E402
 import _evidence_io as _evio                        # noqa: E402
+import _manifest_phases                             # noqa: E402  (own_gate_entries, swapped in bf31)
 
 M = _loader.load_script("audit-lookup.py", modname="audit_lookup")
 
@@ -644,7 +645,7 @@ def _bf_manifest(attempts=1, request=_BF_REQUEST):
     if request is not None:
         phase["request"] = request
     return {"meta": {"version": 2,
-                     "buildCommands": {"test": "python3 -m pytest tests"}},
+                     "buildCommands": {"test": "python3 -m pytest"}},
             "phases": [phase],
             "fileIndex": {"src/refund.py": ["P1.1"],
                           "tests/test_refund.py": ["P1.1"]},
@@ -750,6 +751,91 @@ def _brief_cases(check):
           "drive-phase.py\" submit P1.1 --role executor" in text
           and "-- python3 tests/test_refund.py" in text
           and _bf_bare == [])
+    # WHICH COMMAND "WHAT YOU RUN" PRINTS UNDER own-tests. `run-test-gate.py
+    # --own` keeps only a TASK's own gate entries pointed at nothing but its
+    # tests.add paths; with none it answers "nothing of its own to run" and
+    # exits non-zero, so printing it there hands the executor a dead request.
+    def run_section(brief_text):
+        lines = brief_text.splitlines()
+        if "## What you run" not in lines:
+            return []
+        start = lines.index("## What you run") + 1
+        end = next((i for i in range(start, len(lines))
+                    if lines[i].startswith("## ")), len(lines))
+        return lines[start:end]
+
+    def suite_lines(section):
+        return [ln for ln in section if "python3 tests/test_refund.py" in ln]
+
+    own_run = run_section(text)
+    check("bf28 a brief whose OWN gate selects its tests.add file prints the "
+          "own-tests command once, and no suite-command fallback beside it - "
+          "the case that goes red if the fallback fires always: %r" % (own_run,),
+          sum(ln.count("--own --quiet") for ln in own_run) == 1
+          and suite_lines(own_run) == [])
+
+    borrowed = _bf_manifest()
+    del borrowed["phases"][0]["tasks"][0]["tests"]["gate"]
+    borrowed["phases"][0]["testGate"] = ["python3 tests/test_refund.py"]
+    projg, mpathg = project("bf-exec-phase-gate", borrowed)
+    brief(projg, mpathg, "P1.1", "executor")
+    borrowed_run = run_section(read(brief_file(
+        projg, "P1.1", "20260101T000000Z.executor.md")) or "")
+    check("bf29 its twin, measured only by the PHASE's gate - which names the "
+          "test file but is nothing of the task's own - prints the suite "
+          "command that gate names and no own-tests line: %r" % (borrowed_run,),
+          borrowed_run != []
+          and not any("--own" in ln for ln in borrowed_run)
+          and len(suite_lines(borrowed_run)) == 1)
+
+    unnamed = _bf_manifest()
+    unnamed["phases"][0]["tasks"][0]["tests"]["gate"] = ["test"]
+    proju, mpathu = project("bf-exec-no-entry", unnamed)
+    brief(proju, mpathu, "P1.1", "executor")
+    unnamed_run = run_section(read(brief_file(
+        proju, "P1.1", "20260101T000000Z.executor.md")) or "")
+    check("bf30 a gate naming no tests.add file at all prints no own-tests "
+          "line and no invented command - it says no entry names the file: %r"
+          % (unnamed_run,),
+          unnamed_run != []
+          and not any("--own" in ln for ln in unnamed_run)
+          and suite_lines(unnamed_run) == []
+          and any("tests/test_refund.py" in ln and "no gate entry" in ln
+                  for ln in unnamed_run))
+
+    # ONE RULE, TWO CALLERS. The brief and `run-test-gate --own` both ask
+    # `_manifest_phases.own_gate_entries`; the rule's own cases live in that
+    # module's suite. What is pinned here is the delegation: the shared
+    # function is swapped for one that answers the OPPOSITE of the truth on
+    # each fixture, and both callers must follow it. A caller holding its own
+    # copy of the rule keeps answering the truth and goes red.
+    rtg = _loader.load_script("run-test-gate.py", modname="rtg_for_lookup")
+    real_own = getattr(_manifest_phases, "own_gate_entries", None)
+    _follow = {}
+    try:
+        for name, man, forced in (
+                ("own", _bf_manifest(), []),
+                ("unnamed", unnamed, ["python3 tests/test_refund.py"])):
+            _manifest_phases.own_gate_entries = (
+                lambda _m, _p, _t, forced=forced: list(forced))
+            ph = man["phases"][0]
+            cmds, _src, _err = rtg.own_gate_of(man, "P1", "P1.1")
+            # Read with a default, so a module without it fails this case
+            # instead of raising out of the block before the later cases run.
+            line = getattr(M, "own_tests_line", lambda *a: "missing")(
+                man, ph, ph["tasks"][0], "RUN")
+            _follow[name] = (bool(cmds), "--own --quiet" in line)
+    finally:
+        if real_own is None:
+            vars(_manifest_phases).pop("own_gate_entries", None)
+        else:
+            _manifest_phases.own_gate_entries = real_own
+    check("bf31 the brief and run-test-gate's `--own` both answer through "
+          "`_manifest_phases.own_gate_entries` - forced to say none where the "
+          "task has its own entry, and some where it has none, both follow: %r"
+          % (_follow,),
+          _follow == {"own": (False, False), "unnamed": (True, True)})
+
     check("bf2 a first attempt's brief carries no retry section: %r"
           % (text[-200:],), "Retry" not in text)
     retry = _bf_manifest(attempts=2)
@@ -789,7 +875,7 @@ def _brief_cases(check):
           "reviewer's own filing command: %r" % ((code3, said3),),
           code3 == M.E_OK and _BF_EXEC in rtext
           and task["description"] in rtext
-          and "python3 -m pytest tests" in rtext
+          and "python3 -m pytest" in rtext
           and "submit P1.1 --role reviewer" in rtext and "file-return" not in rtext
           and "mode: task" in rtext)
 
@@ -941,6 +1027,28 @@ def _brief_cases(check):
                     "submitOpens": True, "toAFile": False}
               for s in _bf_shapes.values()))
 
+    # ONE INSTRUCTION, SAID ONCE. `submit` itself ends on what to hand back,
+    # so a brief repeating it is the same step read twice. Counted per brief,
+    # and the twin holds that the submit the instruction belongs to is still
+    # there - a brief that lost the whole filing block would pass the first.
+    _bf_handback = dict((name, t.lower().count("hand back one line"))
+                        for name, t in (("executor", text), ("reviewer", rtext),
+                                        ("phase-owed", ptext6),
+                                        ("phase-unowed", ptext7)))
+    check("bf26 no brief repeats the hand-back instruction `submit` already "
+          "prints when it finishes: %r" % (_bf_handback,),
+          _bf_handback == {"executor": 0, "reviewer": 0, "phase-owed": 0,
+                           "phase-unowed": 0})
+    _bf_submits = dict((name, t.count("drive-phase.py\" submit"))
+                       for name, t in (("executor", text), ("reviewer", rtext),
+                                       ("phase-owed", ptext6),
+                                       ("phase-unowed", ptext7)))
+    check("bf27 SECOND DIRECTION: every one of those briefs still names the "
+          "`drive-phase.py submit` its return is filed with, once: %r"
+          % (_bf_submits,),
+          _bf_submits == {"executor": 1, "reviewer": 1, "phase-owed": 1,
+                          "phase-unowed": 1})
+
     # A GREEN RUN THAT DID NOT MEASURE THE WORK. The gate exits 0 and still
     # prints NO OVERLAP or TREE CHANGED; the row keeps what those banners rest
     # on (`observations.coverage` empty, `observations.treeMutated` non-empty),
@@ -985,6 +1093,111 @@ def _brief_cases(check):
           "the gate printed a banner is then unknown, never read as none: %r"
           % (no_row,),
           no_row != [] and all("not found" in ln for ln in no_row))
+
+    # ---- what the phase brief computes for the reviewer -----------------------
+    def git(repo, *argv):
+        return subprocess.run(["git", "-C", repo, "-c", "user.email=t@t",
+                               "-c", "user.name=t", "-c", "commit.gpgsign=false"]
+                              + list(argv), capture_output=True, timeout=60)
+
+    def put(repo, rel, text):
+        path = os.path.join(repo, *rel.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(text)
+
+    grown = _bf_signed_phase()
+    projg, mpathg = project("bf-phase-existing", grown)
+    git(projg, "init", "-q")
+    put(projg, "tests/test_old.py", "def test_old():\n    assert True\n")
+    put(projg, "tests/test_untouched.py", "def test_same():\n    assert True\n")
+    put(projg, "src/m1.py", "x = 1\n")
+    git(projg, "add", "-A")
+    git(projg, "commit", "-qm", "base")
+    base = git(projg, "rev-parse", "HEAD").stdout.decode().strip()
+    put(projg, "tests/test_old.py", "def test_appended():\n    assert True\n")
+    put(projg, "tests/test_new.py", "def test_new():\n    assert True\n")
+    put(projg, "src/m1.py", "y = 2\n")
+    grown["phases"][0]["baseRef"] = base
+    with open(mpathg, "w", encoding="utf-8") as fh:
+        json.dump(grown, fh)
+    git(projg, "add", "-A")
+    git(projg, "commit", "-qm", "the phase")
+    brief(projg, mpathg, "P1", "phase")
+    gtext = read(brief_file(projg, "P1", "phase.md")) or ""
+    section = gtext.split("## Existing test files the phase modifies", 1)
+    listed = ([ln for ln in section[1].split("\n## ", 1)[0].splitlines()
+               if ln.startswith("- ")] if len(section) == 2 else None)
+    nobase = _bf_signed_phase()
+    projn, mpathn = project("bf-phase-nobase", nobase)
+    brief(projn, mpathn, "P1", "phase")
+    ntext = read(brief_file(projn, "P1", "phase.md")) or ""
+    check("bf24 the phase brief lists the existing test file the phase appended "
+          "a test to - and not the test file it added, the one it left alone "
+          "or the source file it changed - and a phase with no baseRef says "
+          "the list cannot be computed rather than listing none: %r"
+          % ((base, listed, [ln for ln in ntext.splitlines()
+                             if "baseRef" in ln]),),
+          len(base) == 40 and listed == ["- tests/test_old.py"]
+          and "## Existing test files the phase modifies" in ntext
+          and "phase.baseRef is absent" in ntext)
+
+    mixed = _bf_signed_phase()
+    mixed["phases"][0]["tasks"][0]["tests"]["gate"] = ["test"]
+    mixed["phases"][0]["tasks"][2]["tests"]["gate"] = [
+        "python3 tests/test_m3.py"]
+    projm, mpathm = project("bf-phase-mech", mixed)
+    git(projm, "init", "-q")
+    git(projm, "add", "-A")
+    git(projm, "commit", "-qm", "fixture")
+    sv =_loader.load_script("stamp-verification.py",
+                             modname="stamp_verification_for_bf")
+    helper = sv.red_verdict(
+        {"cmd": ["python3", "tests/t1.py"], "code": 1, "text": "Error\n",
+         "problem": None, "second": None, "head": None, "fix": None},
+        {"root": None, "implementation": [], "tests": ["tests/t1.py"],
+         "cases": [], "symbols": [], "dropped": [], "new": [],
+         "head_files": None, "head_defs": None, "head_modules": None,
+         "path": None})[2]
+    file_exec(projm, text=_BF_EXEC.replace(
+        '{"status": "proved", "basis": "exit 1", "at": "z"}',
+        json.dumps(helper)))
+    brief(projm, mpathm, "P1", "phase")
+    mtext = read(brief_file(projm, "P1", "phase.md")) or ""
+
+    def answer_lines(tid):
+        part = mtext.split("\n## %s " % (tid,), 1)
+        body = part[1].split("\n## ", 1)[0] if len(part) == 2 else ""
+        return [ln for ln in body.splitlines()
+                if ln.startswith(("red-first:", "inherited tests:"))]
+    lines_m = dict((tid, answer_lines(tid)) for tid in ("P1.1", "P1.2", "P1.3"))
+
+    def says(tid, prefix, word):
+        return any(ln.startswith(prefix) and word in ln for ln in lines_m[tid])
+    check("bf25 for each task owed its answers the phase brief says which of "
+          "the mechanical answers the filing verb fills - the red-first of "
+          "a helper's block, `not-asked` for a gate running the whole project - "
+          "and which stay the reviewer's, with the reason: a hand-typed "
+          "red-first or none filed, a gate naming a test file, an entry that "
+          "resolves to nothing: %r" % (lines_m,),
+          all(len(v) == 2 for v in lines_m.values())
+          and says("P1.1", "red-first:", "computed")
+          and says("P1.1", "inherited tests:", "computed")
+          and says("P1.2", "red-first:", "yours")
+          and says("P1.2", "inherited tests:", "unit:api")
+          and says("P1.3", "inherited tests:", "yours")
+          and says("P1.3", "inherited tests:", "tests/test_m3.py"))
+    check("bf32 a `computed` line also says the reviewer may type the answer "
+          "only a human settles over it - `not-proved` for red-first, "
+          "`flagged` for inherited tests, with a basis - and that the filing "
+          "verb records the override; a `yours` line carries neither, so the "
+          "words follow the computed answer and nothing else: %r" % (lines_m,),
+          says("P1.1", "red-first:", "`not-proved`")
+          and says("P1.1", "red-first:", "records the override")
+          and says("P1.1", "inherited tests:", "`flagged`")
+          and says("P1.1", "inherited tests:", "records the override")
+          and not says("P1.2", "red-first:", "`not-proved`")
+          and not says("P1.3", "inherited tests:", "`flagged`"))
 
     code6, said6 = brief(proj, mpath, "P1", "executor")
     check("bf11 a phase id asked for a task's role, or a task id for the "

@@ -463,9 +463,9 @@ brief.
 
 **The route out is `--description -`**, and it is the fix rather than a bypass: the
 brief is read from **stdin**, which no shell rewrites and which this stores verbatim.
-`-` where a value goes means stdin throughout this plugin — `scripts/manifest/check-ado-item.py`
-and its ADO siblings read a payload the same way — so there is no `--description-file`
-to learn.
+`-` where a value goes means stdin for `audit-task.py`'s prose flags, its `--from-file` and
+its `--findings-file` — and `scripts/manifest/check-ado-item.py` and its ADO siblings read a
+payload the same way — so there is no `--description-file` to learn.
 
 ```bash
 … scope <taskId> --description - <<'BRIEF'
@@ -1518,11 +1518,12 @@ Check the alternatives first and say which you ruled out: a parked proposal alre
 covering the work → `/audit:propose materialize <PROP-id>`, which is a move; an open
 phase whose `desiredOutcome` this work serves → `/audit:task add --phase <id>`.
 
-**2. Write the plan file with the Write tool** — never a shell heredoc, which a host
-refuses for a JSON document. Put it outside the tracked tree, in the session's scratch
-directory:
+**2. Run it with the plan on stdin**, a quoted heredoc, so planning writes no file of
+its own — no scratch path to collide on, and no file write to be refused and fall back
+from — and print its line verbatim:
 
-```json
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" add --from-file - [--json] <<'PLAN'
 {
   "request": "<the request, exactly as the human typed it>",
   "openChoices": ["<a choice the request left open>"],
@@ -1536,7 +1537,12 @@ directory:
      "dependsOn": ["sum"]}
   ]
 }
+PLAN
 ```
+
+**Quote the heredoc word** (`<<'PLAN'`): a bare `<<PLAN` expands `$` and backticks in
+the request, and the request is saved as typed. `--from-file <path>` still reads a file
+through the same checks; `--from-file -` reads stdin, as `audit-task.py`'s prose flags do.
 
 Optional on the phase: `testGate` (omitted, the plan's `meta.buildCommands`; `[]`, no
 gate, so sign-off rests on review alone), `blockedBy`, `area`, `reviewSkill`, and `id`.
@@ -1544,17 +1550,11 @@ Omit `id`: the script takes the **highest** `P<n>` in use and adds one, over liv
 phases and every id a parked proposal reserves. Over a plan holding `P0`, `P1` and `P3`, the next id is `P4`, and never the `P2` the gap makes look free:
 a gap is a phase that happened, and `meta.branch` derives branch names from the id.
 Optional on a task: `key`, `outputs`, `risk`, `model`, `skills`, `tests.gate`,
-`blockedBy`. A `key` is the name the file's other tasks use in `dependsOn` or
+`blockedBy`. A `key` is the name the batch's other tasks use in `dependsOn` or
 `blockedBy` before the task has an id; every other reference names an id the plan
 already holds.
 
-**3. Run it**, and print its line verbatim:
-
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" add --from-file <the file> [--json]
-```
-
-It allocates the phase id and each task's id, resolves every `key`, and writes the
+**3. What it does.** It allocates the phase id and each task's id, resolves every `key`, and writes the
 phase, with `request` and `openChoices` on it, and every task in one write — the new
 shard and its index stub in the sharded layout, **appended last**, because the written
 order is the plan's order. It re-reads the plan from disk and validates once, and on a
@@ -1562,9 +1562,9 @@ finding rolls every written file back byte for byte. Then it journals one `phase
 row and one `task.add` row per task. `--verbose` adds the gate and its basis, the open
 choices it saved, and the validator's warnings.
 
-**Every refusal comes before any write, and the file is the thing to fix:** a file that
-is not JSON or carries a key the batch does not read; a missing request, open-choices
-list, title, outcome or task list; a dependency neither the plan nor the file holds,
+**Every refusal comes before any write, and the batch is the thing to fix:** an empty
+stdin; a batch that is not JSON or carries a key the batch does not read; a missing request, open-choices
+list, title, outcome or task list; a dependency neither the plan nor the batch holds,
 named; a task `key` that is already an id; a phase `id` that is live, reserved by a
 parked proposal, a task id, or stored in a shard file another phase occupies; and any
 other `audit-task.py add` flag beside `--from-file`.
