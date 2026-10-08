@@ -652,9 +652,30 @@
         "resolution": "fixed in P118.23-v7t (8174c66d): At sign-off, ask the tip's returns against the same settlement set the landing honours. Add the case and its unsettled twin.",
         "fixTask": "P118.23-v7t",
         "commit": "8174c66d"
+      },
+      {
+        "id": "P118-R71",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py _human_settlement",
+        "issue": "The sign-off refuses whenever any worktree's settlement record cannot be parsed, before asking whether anything needs a human. An unreadable record in a sibling worktree now blocks the sign-off of a phase with no human-only answer. This is a regression; it was reproduced by a direct probe.",
+        "resolution": "Compute what is waiting first, and refuse over unreadable records only when an answer is left unsettled, naming them in that refusal, as close-phase does. Pin the deny case and its allow twin."
+      },
+      {
+        "id": "P118-R72",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py _human_settlement remedy; drive-phase.py human_answers",
+        "issue": "When a sign-off run from the parent refuses over a return only the tip commits, its remedy sends the user to the driver's triage in the parent. That triage reads only its own checkout's evidence and never lists the answer.",
+        "resolution": "Name the checkout whose triage lists it (the worktree holding the branch, or `git worktree add` it), or let the triage read the same tip returns."
+      },
+      {
+        "id": "P118-R73",
+        "severity": "low",
+        "file": "plugins/audit/schema/audit-plan.schema.json readReturns description",
+        "issue": "A space is missing after the full stop in 'settles nothing.Absent'.",
+        "resolution": "Insert the space."
       }
     ],
-    "outcome": "[findings: 70 - 5 high, 27 med, 38 low; 70 with a recorded fix commit]"
+    "outcome": "[findings: 73 - 5 high, 28 med, 40 low; 70 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2273,6 +2294,49 @@
         "at": "2026-10-08T15:36:42Z",
         "basis": "orchestrator check: settlement record binds (key, sha256) and one checkout set is shared by sign-off and landing; mutation probe re-run, six rows killed with exact cases"
       }
+    },
+    {
+      "id": "P118.24-v7t",
+      "title": "the sign-off refuses over an unreadable settlement record only when an answer waits",
+      "status": "pending",
+      "description": "Fixes P118 review round 9 findings R71-R73. The sign-off's human stop first computes which answers are left unsettled, and only then refuses over a settlement record it cannot read, naming that record in the refusal. An unreadable record in another worktree therefore no longer blocks a sign-off with nothing to settle. When a waiting answer comes from the tip and not from this checkout's evidence, the refusal names the checkout whose triage lists it: the worktree holding the branch, or the `git worktree add` that creates one. The schema description's missing space is restored. Every new case is shown red first with its allow twin.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-07T21:17:01Z"
