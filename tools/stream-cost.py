@@ -92,6 +92,22 @@ where its result sits. The result events do not all carry the same kind of figur
 A stream whose `init` events do not pair one to one with its results is checked on the
 summed `usage` alone, and the reconstruction says so.
 
+A RESUMED SESSION IS SEVERAL STREAMS. A session continued with `--resume` is recorded
+as one stream per run, and each run's result carries the whole session's `modelUsage`
+and `total_cost_usd` so far, so the results differ and the last is read. Read alone, a
+later stream's totals hold the earlier streams' requests with nothing to place them in,
+and a rebuilt final request absorbed them at its own agent's write rate. So:
+
+  * every stream of a session is named in one call, earliest first, and read as one
+    (`load_streams`): each names one session in its `init` event and begins after the
+    one before it ends, or the call exits 2 naming the stream at fault;
+  * a result whose cache reads exceed everything its streams can hold - every request
+    they show, each main-loop gap, and for each unseen final request the prefix
+    identity's bound - is refused with exit 2, naming the model and the tokens
+    (`unheld_reads`). A read SHORT of that is an identity break, which the content
+    view reports, so only an excess refuses. Writes cannot tell the two apart: a final
+    request's write is whatever its tail was.
+
 SPANS read a session by what its main loop did rather than by stage, from the verbs it
 called through the plugin's task script and their operands - never from the text around
 them, so `done --help` closes nothing and a script path held in a shell variable or a
@@ -125,9 +141,11 @@ disagreement printed rather than reconciled.
 No path from the stream is printed as recorded: the plugin root reads `<plugin>`, the
 session's working directory `<repo>`, and any other home or temp path `<abs>`.
 
-Usage:  python3 tools/stream-cost.py <stream.jsonl> [--top N] [--json]
+Usage:  python3 tools/stream-cost.py <stream.jsonl> [<follow-up.jsonl> ...] [--top N] [--json]
         python3 tools/stream-cost.py --selftest
-Exit codes: 0 report printed - 1 selftest failed - 2 unreadable input or usage error.
+Exit codes: 0 report printed - 1 selftest failed - 2 unreadable input, a usage error,
+streams that are not one session in order, or totals covering requests outside the
+streams named.
 """
 import argparse
 import json
@@ -201,6 +219,42 @@ def load_events(path):
                 raise ValueError("%s line %d is not JSON (%s)"
                                  % (os.path.basename(path), lineno, exc))
     return events
+
+
+def load_streams(paths):
+    """(events, problem): every event of `paths`, in the order given, read as ONE
+    session - or None and why they cannot be.
+
+    A session resumed with `--resume` is recorded as a stream per stretch, and its
+    stretches only price as one reading: the later result carries the whole session's
+    totals. So several streams must name one session in their `init` events and must
+    follow one another in time; read in the other order, the earlier stretch's result
+    would stand as the session's. One stream is read as it is."""
+    streams = [load_events(path) for path in paths]
+    if len(streams) == 1:
+        return streams[0], None
+    names = ["stream %d (%s)" % (k + 1, os.path.basename(path)) for k, path in enumerate(paths)]
+    ids, spans = [], []
+    for name, events in zip(names, streams):
+        init = next((e for e in events if e.get("type") == "system"
+                     and e.get("subtype") == "init"), {})
+        if not init.get("session_id"):
+            return None, ("%s names no session in an init event, so it cannot be shown to "
+                          "be the others' session" % name)
+        stamps = [t for t in (_ts(e.get("timestamp")) for e in events) if t is not None]
+        if not stamps:
+            return None, ("%s carries no timestamp, so its place in the session cannot be "
+                          "checked" % name)
+        ids.append(init["session_id"])
+        spans.append((min(stamps), max(stamps)))
+    if len(set(ids)) > 1:
+        return None, ("they are not one session: %s"
+                      % ", ".join("%s is %s" % pair for pair in zip(names, ids)))
+    for k in range(1, len(spans)):
+        if spans[k][0] < spans[k - 1][1]:
+            return None, ("%s begins before %s ends: name the streams of a session "
+                          "earliest first" % (names[k], names[k - 1]))
+    return [e for events in streams for e in events], None
 
 
 def _ts(stamp):
@@ -565,15 +619,8 @@ def reconstruct(session):
                       "%d result events DISAGREE on modelUsage or total_cost_usd: both are "
                       "read from the last, which is the session's whole only if the CLI "
                       "reports them cumulatively") % len(ends))
-    groups, why = main_stretches(session)
-    if why:
-        notes.append(why)
-    fallback = next((r["model"] for r in reversed(reqs) if r["context"] == MAIN), "?")
-    for number, told_usage, members in groups:
-        note, gap = _main_gap(number, len(groups), told_usage, members, fallback)
-        notes.append(note)
-        if gap is not None:
-            extra.append(gap)
+    gap_notes, extra = _main_gaps(session)
+    notes.extend(gap_notes)
     usage = result.get("modelUsage") or {}
     by_model = {}
     for aid, dispatch in sorted(session["agents"].items()):
@@ -620,6 +667,58 @@ def reconstruct(session):
                                  {"in": left["in"], "cw5": left["cw"], "cw1": 0,
                                   "cr": left["cr"]}, "model residual"))
     return extra, notes
+
+
+def _main_gaps(session):
+    """(notes, gap requests): every group of main-loop requests held to the usage that
+    must account for it, one note a group and one request for each gap."""
+    groups, why = main_stretches(session)
+    notes, extra = ([why] if why else []), []
+    fallback = next((r["model"] for r in reversed(session["requests"])
+                     if r["context"] == MAIN), "?")
+    for number, told_usage, members in groups:
+        note, gap = _main_gap(number, len(groups), told_usage, members, fallback)
+        notes.append(note)
+        if gap is not None:
+            extra.append(gap)
+    return notes, extra
+
+
+def unheld_reads(session):
+    """([(model, tokens)], why): cache reads the result's `modelUsage` reports on a
+    model beyond everything this stream can hold - every request it shows, each
+    main-loop gap, and the most each dispatch's unseen final request can read, which
+    the prefix identity fixes at its last visible request's read plus write.
+
+    A positive figure is a read no request of this stream made, and it is what a
+    stream recorded after `--resume` looks like read alone: its result carries the
+    whole session's `modelUsage`, so the earlier streams' reads arrive with nowhere to
+    go, and `reconstruct` would put them in a rebuilt final request at that agent's
+    write rate, or in a residual request of their own. A read SHORT of the limit is an identity break, which the content view
+    already reports, so only an excess counts. `why` is None, or says why nothing
+    could be checked: a dispatch that shows no request has no model and no limit."""
+    result = session["result"]
+    if result is None:
+        return [], None
+    reqs = session["requests"]
+    limit = {}
+    for aid, dispatch in sorted(session["agents"].items()):
+        if (session["results"].get(aid) or {}).get("launched"):
+            continue
+        mine = [r for r in reqs if r["context"] == aid]
+        if not mine:
+            return [], ("dispatch %s (%s) shows no request, so whether this stream's result "
+                        "covers only this stream was not checked" % (aid[-6:], dispatch["type"]))
+        last = mine[-1]
+        limit[last["model"]] = limit.get(last["model"], 0) + last["cr"] + last["cw5"] + last["cw1"]
+    gaps = _main_gaps(session)[1]
+    over = []
+    for model, row in sorted((result.get("modelUsage") or {}).items()):
+        held = sum(r["cr"] for r in reqs + gaps if r["model"] == model) + limit.get(model, 0)
+        excess = int(row.get("cacheReadInputTokens") or 0) - held
+        if excess > 0:
+            over.append((model, excess))
+    return over, None
 
 
 def _main_gap(number, count, told_usage, members, fallback):
@@ -1424,9 +1523,11 @@ def analyse(events):
     costs = dict((r["id"], request_cost(r, None if out is None else out.get(r["id"], 0.0)))
                  for r in reqs)
     filled = content(session, reqs, stages, costs)
+    unheld, unchecked = unheld_reads(session)
     return {"session": session, "requests": reqs, "stages": stages, "output": out,
-            "costs": costs, "content": filled, "notes": notes + out_notes,
-            "wall": wall_clock(session, stages)}
+            "costs": costs, "content": filled,
+            "notes": notes + out_notes + ([unchecked] if unchecked else []),
+            "wall": wall_clock(session, stages), "unheld": unheld}
 
 
 def stage_table(reading):
@@ -1851,22 +1952,42 @@ def as_json(reading):
                           "rebuilt": r["reconstructed"]} for r in reading["requests"]]}
 
 
+def unheld_refusal(unheld, count):
+    """The refusal `main` prints over `unheld_reads`' excess, read off `count` streams."""
+    these, imply, them = (("this stream", "it implies", "it") if count == 1
+                          else ("these streams", "they imply", "them"))
+    return ("stream-cost: refused: the result reports cache reads that no request of %s "
+            "made and no final request %s can make (%s), so its totals cover requests "
+            "outside %s and any price read here is wrong. A stream recorded after "
+            "`--resume` carries the whole session's totals: name every stream of the "
+            "session in one call, earliest first."
+            % (these, imply, ", ".join("%s: %d tokens" % pair for pair in unheld), them))
+
+
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("stream", help="a stream-json session record (.jsonl)")
+    ap.add_argument("streams", nargs="+", metavar="stream",
+                    help="a stream-json session record (.jsonl); a session resumed with "
+                         "--resume is recorded as several, named here earliest first")
     ap.add_argument("--top", type=int, default=10, help="largest cache writes to list")
     ap.add_argument("--json", action="store_true", dest="as_json")
     args = ap.parse_args(argv)
     try:
-        events = load_events(args.stream)
+        events, problem = load_streams(args.streams)
     except (OSError, ValueError) as exc:
         print("stream-cost: cannot read the stream: %s" % exc, file=sys.stderr)
+        return 2
+    if problem:
+        print("stream-cost: cannot read these as one session: %s" % problem, file=sys.stderr)
         return 2
     if not any(e.get("type") == "assistant" for e in events):
         print("stream-cost: the stream holds no assistant event, so there is no request "
               "to attribute", file=sys.stderr)
         return 2
     reading = analyse(events)
+    if reading["unheld"]:
+        print(unheld_refusal(reading["unheld"], len(args.streams)), file=sys.stderr)
+        return 2
     if args.as_json:
         print(json.dumps(as_json(reading), indent=2, sort_keys=True))
     else:
@@ -2001,23 +2122,28 @@ def _fx_result(main=None, exe=None, rev=None, exe_ttl="5m"):
                                              rev["out"])}}}
 
 
-def _fx_events(flow, split=False, noise=False, duplicate=False, result=True, roots=True):
+def _fx_events(flow, split=False, noise=False, duplicate=False, result=True, roots=True,
+               session=None, clock=0):
     """The stream for `flow`. `split` emits one event per content block with the usage
     repeated on each, as Claude Code does; `noise` interleaves the system events a real
     stream carries; `duplicate` replays one event under its own uuid. An `("init",)`
     step opens a stretch with an `init` event of its own. `result` is True for the
     known-answer result event, False for none, a result event, or a list of them -
-    every one written at the end, where the recorded streams hold them."""
+    every one written at the end, where the recorded streams hold them. `session` is
+    the id the `init` event names, as a recorded one does; `clock` is the second the
+    stamps count on from, so a stream recorded after another stamps after it."""
     init = {"type": "system", "subtype": "init", "uuid": "u-init", "cwd": _FX_REPO,
             "model": _FX_OPUS, "claude_code_version": "0.0.0",
             "plugins": ([{"name": "audit", "path": _FX_PLUGIN}] if roots else [])
             + [{"name": "builtin-thing", "path": "builtin"}]}
+    if session is not None:
+        init["session_id"] = session
     events = [init]
-    clock = [0]
+    clock = [clock]
 
     def stamp():
         clock[0] += 1
-        return "2026-10-07T09:00:%02d.000Z" % clock[0]
+        return "2026-10-07T09:%02d:%02d.000Z" % divmod(clock[0], 60)
 
     def chatter(n):
         if noise:
@@ -2535,6 +2661,7 @@ def _cases(check):
           and len(same) == 1
           and not [n for n in two["notes"] if "DISAGREE on modelUsage" in n])
     _span_cases(check)
+    _stream_cases(check)
 
 
 # --- selftest: spans, injected bodies and background agents ------------------------
@@ -2851,6 +2978,148 @@ def _driver_span_cases(check):
           % ((found["tasks"], parts),),
           found["tasks"] == ["P1.1"]
           and parts == ([1, 2], [3], [4, 5], [6]))
+
+
+# --- selftest: one session recorded as several streams ------------------------------
+_FX_SESSION_ID = "session-fixture"
+# The known-answer session resumed once with `--resume`: the first stream holds the
+# main loop's requests m1-m3, the second the rest. Each stretch's main loop is worked
+# out by hand from `_fx_session`, and the two sum to `_FX_MAIN`; the output split is
+# chosen, not derived.
+_FX_RESUMED = ({"in": 6, "cw": 1060, "cr": 410, "out": 300},
+               {"in": 10, "cw": 550, "cr": 7110, "out": 600})
+
+
+def _fx_end(usage, model_usage, uuid):
+    """A result event: `usage` is its own stretch's main loop, `model_usage` as given."""
+    return {"type": "result", "subtype": "success", "uuid": uuid, "duration_ms": 1000,
+            "num_turns": 1, "session_id": _FX_SESSION_ID,
+            "total_cost_usd": sum(row["costUSD"] for row in model_usage.values()),
+            "usage": {"input_tokens": usage["in"], "cache_creation_input_tokens": usage["cw"],
+                      "cache_read_input_tokens": usage["cr"], "output_tokens": usage["out"]},
+            "modelUsage": model_usage}
+
+
+def _fx_resumed(later=_FX_SESSION_ID):
+    """(first stream, follow-up stream) of the resumed session. The follow-up's result
+    carries its own stretch's `usage` and the WHOLE session's `modelUsage` and
+    `total_cost_usd`, which is how the recorded CLI wrote the result of a stream it
+    resumed. `later` is the session id the follow-up's `init` names."""
+    flow = _fx_session()
+    at = next(i for i, step in enumerate(flow) if step[0] == "req" and step[1] == "m4")
+    early = _FX_RESUMED[0]
+    alone = {_FX_OPUS: {"inputTokens": early["in"], "cacheCreationInputTokens": early["cw"],
+                        "cacheReadInputTokens": early["cr"], "outputTokens": early["out"],
+                        "costUSD": _usage_core.price(
+                            {"in": early["in"], "cacheW5m": 0, "cacheW1h": early["cw"],
+                             "cacheR": early["cr"], "out": early["out"]}, _FX_OPUS)}}
+    first = _fx_events(flow[:at], result=_fx_end(early, alone, "u-result-1"),
+                       session=_FX_SESSION_ID)
+    second = _fx_events(flow[at:], result=_fx_end(_FX_RESUMED[1], _fx_result()["modelUsage"],
+                                                  "u-result-2"),
+                        session=later, clock=len(first))
+    second[0] = dict(second[0], uuid="u-init-resumed")
+    return first, second
+
+
+def _fx_cli(argv):
+    """(exit code, stdout, stderr) of `main(argv)`; an argparse refusal is its exit."""
+    import io
+    out, err = io.StringIO(), io.StringIO()
+    real = sys.stdout, sys.stderr
+    sys.stdout, sys.stderr = out, err
+    try:
+        code = main(argv)
+    except SystemExit as exc:
+        code = exc.code
+    finally:
+        sys.stdout, sys.stderr = real
+    return code, out.getvalue(), err.getvalue()
+
+
+def _fx_files(scratch, streams, name="stream"):
+    """Each stream written to a file of its own in `scratch`, `<name>-<n>.jsonl`; the
+    paths, in order."""
+    paths = []
+    for k, events in enumerate(streams):
+        path = os.path.join(scratch, "%s-%d.jsonl" % (name, k + 1))
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("".join(json.dumps(e) + "\n" for e in events))
+        paths.append(path)
+    return paths
+
+
+def _stream_cases(check):
+    import tempfile
+    from _suite import remove_tree
+    first, follow = _fx_resumed()
+    scratch = tempfile.mkdtemp(prefix="stream-cost-")
+    try:
+        one, two = _fx_files(scratch, (first, follow))
+        joined, = _fx_files(scratch, (first + follow,), "joined")
+        alone = _fx_cli([two])
+        early_cr = _FX_RESUMED[0]["cr"]
+        check("sc30 a stream recorded after `--resume`, read ALONE, is refused with exit 2 and "
+              "no report, naming the %d cache-read tokens on %s its result reports and no "
+              "request of it can have read, and the way past: every stream of the session "
+              "in one call. Read alone it priced the earlier stretch's one-hour writes at "
+              "the five-minute rate, inside a rebuilt final request: %r"
+              % (early_cr, _FX_OPUS, alone[0::2]),
+              alone[0] == 2 and alone[1] == ""
+              and "%s: %d" % (_FX_OPUS, early_cr) in alone[2]
+              and "earliest first" in alone[2])
+
+        both = _fx_cli([one, two])
+        cat = _fx_cli([joined])
+        reading = analyse(first + follow)
+        rows, _total = reconciliation(reading)
+        check("sc31 the same two streams named in ONE call read as the session: exit 0, every "
+              "token in the stage worked out by hand, no request unattributed, every model "
+              "priced to its costUSD, and the report byte for byte the one the two files "
+              "concatenated into one print: %r" % ((both[0], both[2], rows),),
+              both[0] == 0 and both[2] == "" and both[1] and both[1] == cat[1]
+              and _fx_stage_totals(reading) == _FX_EXPECTED
+              and not [r for r in reading["requests"] if r["id"].startswith("residual:")]
+              and len(rows) == 2
+              and all(told is not None and abs(priced - told) < 1e-9
+                      for _m, priced, told in rows))
+
+        # The over-fire twins: the refusal must read reads with no home, not the shape of
+        # a session. Each holds a final request rebuilt on the main model from a residual,
+        # the second also holds two result events, and the third a final that read LESS
+        # than the prefix identity allows, as a cache that expired does. Refusing on any
+        # of those would refuse whole sessions the benchmarks recorded.
+        whole, = _fx_files(scratch, (_fx_events(_fx_session(), session=_FX_SESSION_ID),),
+                           "whole")
+        stretched, = _fx_files(scratch, (_fx_events(_fx_stretched(_fx_session()),
+                                                    result=_fx_ends(_FX_STRETCHES)),),
+                               "stretched")
+        short, = _fx_files(scratch, (_fx_events(_fx_session(), result=_fx_result(
+            rev={"cr": _FX_REV["cr"] - 37})),), "short")
+        quiet = [_fx_cli([whole]), _fx_cli([stretched]), _fx_cli([short])]
+        check("sc32 THE ALLOW TWIN: the session recorded whole in one stream, the same "
+              "session re-invoked inside one stream, and one whose final read falls short "
+              "of the prefix identity, all read with exit 0 and a report - a rebuilt final "
+              "on the main model is not a read without a home, and a shortfall is an "
+              "identity break the content view reports: %r" % ([(c, e) for c, _o, e in quiet],),
+              all(c == 0 and o and e == "" for c, o, e in quiet))
+
+        foreign, = _fx_files(scratch, (_fx_resumed(later="session-other")[1],), "foreign")
+        mixed = _fx_cli([one, foreign])
+        check("sc33 streams of two sessions in one call are refused with exit 2, naming each "
+              "stream's session: %r" % (mixed[0::2],),
+              mixed[0] == 2 and mixed[1] == "" and _FX_SESSION_ID in mixed[2]
+              and "session-other" in mixed[2])
+
+        backwards = _fx_cli([two, one])
+        check("sc34 the streams of one session named latest first are refused with exit 2, "
+              "saying which begins before which ends - read in that order the earlier "
+              "stretch's result would stand as the session's: %r" % (backwards[0::2],),
+              backwards[0] == 2 and backwards[1] == ""
+              and "stream 2 (stream-1.jsonl) begins before stream 1 (stream-2.jsonl) ends"
+              in backwards[2])
+    finally:
+        remove_tree(scratch)
 
 
 def _selftest():

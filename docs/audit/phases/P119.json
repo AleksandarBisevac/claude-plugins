@@ -67,7 +67,12 @@
       },
       "startedAt": "2026-10-08T16:35:57Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T17:30:57Z.64cd45",
+        "status": "passed",
+        "at": "2026-10-08T17:30:57Z"
+      }
     }
   ],
   "startedAt": "2026-10-08T16:35:57Z"
