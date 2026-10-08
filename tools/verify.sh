@@ -286,6 +286,11 @@ run "gate parity (every description of the gate set)" python3 tools/gate-parity.
 # gated is the import graph, which is exact: `bench-hooks.py` (no flag) prints the
 # measurement for a human choosing what to optimise.
 run "hook import budget" python3 tools/bench-hooks.py --gate
+# What each pipeline entry makes the main loop read before any work, against the
+# pipeline-cost design's ceilings - the command body plus every file it reads first,
+# and no pipeline command may read a reference file first at all. The main loop is
+# the dearest place to hold a byte, since every one of its requests reads it again.
+run "pipeline context ceilings" python3 tools/measure-context.py --gate
 
 # The half of the pipeline that WRITES to a repository, against a real one. Nothing
 # else here creates a git repository, so the commit trail, the branch resolution,

@@ -1,10 +1,15 @@
 # Phase sign-off — orchestrator reference
 
-Read `reference/orchestrator.md` and `reference/manifest-conventions.md` first. This is the
-one section every execution command that signs a phase off defers to — split out of
-`orchestrator.md` so a command that never reaches sign-off does not have to read it: `phase`
-and `review` read this file too; `status`, `report`, `resume`, `next`, `run`, `worktree` and
-`layout` do not need to.
+**No pipeline command reads this file first, and the main loop does not perform sign-off by
+hand any more.** Once every task is closed, the step driver (`scripts/governance/drive-phase.py`)
+dispatches the phase reviewer, records its findings in one write, prints one `decide triage`,
+and on `sign-off` runs the phase gate, the invariants check, the verdict, the commit, the
+landing and the lock release as one step, in that order, printing the rule each step needs at
+that step. `tools/measure-context.py --gate` holds that no pipeline command reads a reference
+file first. This file is the reference for what each step checks and why, for the guide agent
+and for a reader who asks: where it says "you", read the step the driver runs. What each
+`/audit:phase` verb does and refuses, and what a re-run of sign-off meets, is
+`reference/verbs-in-full.md`.
 
 ## Phase sign-off (Definition of Done — strict order)
 
@@ -27,9 +32,13 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    one. It invokes the
    skill itself and returns structured findings (it has no edit tools by design, and the diff stays out of YOUR
    context). The mode is what tells it there is no single task description or executor claim to bind
-   here: the intent question was already asked per task, against each task's own description and its own
-   executor's `outcome`, and this diff cannot say which task produced which line. What sign-off adds is the
-   review skill over the whole phase. **Record the review's findings through the verb, all of
+   for the phase as a whole: this diff cannot say which task produced which line. Where
+   `review.perTask` asked the intent question per task (`always`, or `signals` where a signal
+   fired), it was answered there. Under `phase` - the shipped default - it was not: each task closed
+   `deferred`, and the phase brief (`audit-lookup.py brief <phaseId> --role phase`) hands this
+   reviewer every such task's description, claim and commit, which it answers in its return's
+   `tasks` entries; the sign-off verb refuses while a task owed its answers lacks one. What
+   sign-off adds beside that is the review skill over the whole phase. **Record the review's findings through the verb, all of
    them in one call:**
 
    ```
@@ -159,8 +168,8 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    ```
    `<runId>` is this run's own `evidence: recorded <runId>` line. `--failing-from` reads the row's
    steps for the suite(s) they NAMED as failing and narrows the new task's gate to them, unioned
-   with whatever it also declares in `--tests-add` — see `commands/task.md` → *A failed-first fix
-   task is gated on what the run named* for the refusals and the fall-through to the ordinary
+   with whatever it also declares in `--tests-add` — see `reference/verbs-in-full.md` → *A failed-first
+   fix task is gated on what the run named* for the refusals and the fall-through to the ordinary
    derivation when the row named no suite.
 
    **Why the gate is step 2 and not step 1 — it measures the phase ONCE.** A reviewer's findings

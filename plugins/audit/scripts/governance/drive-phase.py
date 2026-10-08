@@ -92,8 +92,13 @@ and the prompt only names the call:
     and the first stays as filed. A reviewer's return, and a phase review's
     under `--head`, go to the same verb unchanged.
 
+A TASK ID IN THE PHASE'S PLACE DRIVES THAT ONE TASK. `next <taskId>` starts
+it, runs the same steps and prints `done <taskId>` once it is closed, leaving
+its siblings and the phase's sign-off alone - the run `/audit:run` and
+`/audit:next` make, which execute exactly one task.
+
 Usage:
-  drive-phase.py next <phaseId> [manifest] [--project-dir DIR]
+  drive-phase.py next <phaseId|taskId> [manifest] [--project-dir DIR]
                  [--answer OPTION] [--reason TEXT] [--fix FINDING[,FINDING]]
                  [--verbose]
   drive-phase.py submit <taskId|phaseId> --role executor|reviewer [manifest]
@@ -181,16 +186,26 @@ STARTED, CLOSED = "started", "closed"
 # One entry per step: `line` is the instruction the model is shown, `rule` the
 # lines of the rule that applies at that step, printed under it. A step whose
 # rule is empty prints its line alone.
+#
+# THIS IS WHERE A FOLLOWED RULE LIVES NOW. No pipeline command makes the main loop
+# read reference prose first (`tools/measure-context.py --gate` holds that), so a
+# rule the model must follow at a step is stated here, at that step, or in the
+# prompt of the agent that acts on it. The README's followed table names each
+# rule's step, and `_refs.followed_anchor_drift()` holds that every step it names
+# is here with a rule that is not empty. A rule printed on a success step costs
+# bytes inside `INSTRUCTION_BYTES` on every task, so each is one short line.
+DISPATCH_RULE = "Description starts with the id; dispatch nothing alongside."
 STEPS = {
     "dispatch-executor": {
         "line": "dispatch %(agent)s %(task)s model=%(model)s brief=%(brief)s",
-        "rule": ()},
+        "rule": (DISPATCH_RULE,)},
     "dispatch-reviewer": {
         "line": "dispatch %(agent)s %(task)s model=%(model)s brief=%(brief)s",
-        "rule": ()},
+        "rule": (DISPATCH_RULE,)},
     "decide-gate-red": {
-        "line": "decide gate-red %(task)s: its recorded gate is red (%(why)s)",
-        "rule": ()},
+        "line": "decide gate-red %(task)s: recorded gate red (%(why)s)",
+        "rule": ("rerun spends no attempt (GATE COULD NOT RUN); retry spends "
+                 "one; past maxAttempts, block and tell the human.",)},
     "decide-no-executor-return": {
         "line": "decide no-executor-return %(task)s: the executor was dispatched "
                 "and filed no return for this start",
@@ -202,7 +217,8 @@ STEPS = {
     "decide-high-risk": {
         "line": "decide high-risk %(task)s: risk is high, so a human confirms "
                 "before its commit",
-        "rule": ()},
+        "rule": ("Ask the human (AskUserQuestion); confirm only on their yes, "
+                 "else block with their reason.",)},
     "decide-no-change": {
         "line": "decide no-change %(task)s: the commit found nothing to commit",
         "rule": ()},
@@ -217,7 +233,11 @@ STEPS = {
         "rule": ()},
     "dispatch-phase-review": {
         "line": "dispatch %(agent)s %(phase)s model=%(model)s brief=%(brief)s",
-        "rule": ()},
+        "rule": (DISPATCH_RULE,)},
+    "decide-triage": {
+        "line": "decide triage %(phase)s: %(why)s",
+        "rule": ("Fix tasks come first: their edits invalidate a gate taken "
+                 "before them. Then: gate, invariants, verdict, commit, landing.",)},
     "decide-no-phase-review-return": {
         "line": "decide no-phase-review-return %(phase)s: the phase reviewer was "
                 "dispatched for head %(why)s and filed no return",
@@ -232,13 +252,33 @@ STEPS = {
         "rule": ()},
     "done": {
         "line": "done %(phase)s: %(why)s",
+        "rule": ("Report where it landed: a parent that is not the development "
+                 "branch does not hold the work yet.",)},
+    "done-task": {
+        "line": "done %(task)s: %(why)s",
         "rule": ()},
+    "ado-echo": {
+        "line": "ado echo owed: %(items)s",
+        "rule": ("Update each linked item's board state as reference/tracker-sync.md "
+                 "says - never create one, never ask, a failure is one report line.",)},
+    "stop-blocked": {
+        "line": "[drive-phase] %(phase)s: stopped - %(task)s is blocked: %(why)s",
+        "rule": ("Ask the human; only on their yes run audit-task.py start "
+                 "<id> (it spends an attempt), then next again.",)},
+    "stop-lock": {
+        "line": "",
+        "rule": ("Held by a live run: stop, never take it over. Looks abandoned: "
+                 "ask the human before --takeover.",)},
+    "stopped": {
+        "line": "",
+        "rule": ("Relay these words and act on the remedy they name; never edit "
+                 "the plan or the journal by hand to get past them.",)},
 }
 
 # Each decision's options, and the ones that need `--reason`. A decision with no
 # options is one only the plan can change; nothing here answers it.
 DECISIONS = {
-    "gate-red": (("retry", "block"), ("block",)),
+    "gate-red": (("retry", "rerun", "block"), ("block",)),
     "no-executor-return": (("retry", "block"), ("block",)),
     "no-reviewer-return": (("redispatch", "not-asked"), ("not-asked",)),
     "high-risk": (("confirm", "block"), ("block",)),
@@ -306,10 +346,12 @@ def run_verb(ctx, script, args, stdin=None):
 
 def relay_refusal(ctx, script, code, text):
     """`(E_STOPPED, text)` for a verb that refused: the verb named, then its own
-    words whole - the refusal and the remedy it gives."""
+    words whole - the refusal and the remedy it gives - then the rule for a
+    stop, which for a held lock is the lock's own."""
     head = "%s %s: stopped - %s refused (exit %d); its own words follow" % (
         PREFIX, ctx["phase"], script, code)
-    return E_STOPPED, "%s\n%s" % (head, (text or "").rstrip("\n"))
+    rule = STEPS["stop-lock" if script == "audit-lock.py" else "stopped"]["rule"]
+    return E_STOPPED, "\n".join([head, (text or "").rstrip("\n")] + list(rule))
 
 
 def _verb_or_stop(ctx, script, args, stdin=None):
@@ -629,7 +671,7 @@ def advance(ctx, state, manifest, phase, task):
         if code == 1:
             said = [ln for ln in (out + err).splitlines() if "GATE" in ln]
             return decision(ctx, state, "gate-red", task,
-                            (said[0].strip() if said else "exit 1")[:90])
+                            (said[0].strip() if said else "exit 1")[:80])
         if code != 0:
             return relay_refusal(ctx, "run-test-gate.py", code, out + err)
         _mark(state, "gated", task)
@@ -679,6 +721,24 @@ def answer_refusal(ctx, pending, answer, reason, fixes=()):
     return None
 
 
+def keep_record(ctx, phase):
+    """Commit a failed run's record - the plan, the journal and the evidence the
+    gate wrote, never the task's files - through the audit-state verb. A blocked
+    task gets no task commit, so nothing else would carry the rows that say why
+    it stopped. None, or the stop."""
+    out, stop = _verb_or_stop(ctx, "commit-audit-state.py", [
+        ctx["manifest"], phase["id"], "--project", ctx["project"], "--json"])
+    if stop is not None:
+        return stop
+    try:
+        made = json.loads(out).get("commit")
+    except ValueError:
+        made = None
+    ctx["did"].append("record committed at %s" % (made[:7],) if made
+                      else "record: nothing to commit")
+    return None
+
+
 def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
                  fixes=()):
     """Act on an answer to the pending decision; None when the drive goes on."""
@@ -692,9 +752,14 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
     if answer == "block":
         _out, stop = _verb_or_stop(ctx, "audit-task.py", _task_args(
             ctx, "block", task["id"], "--reason", reason))
-        if stop is None:
-            ctx["did"].append("blocked %s" % (task["id"],))
-        return stop
+        if stop is not None:
+            return stop
+        ctx["did"].append("blocked %s" % (task["id"],))
+        return keep_record(ctx, phase)
+    if answer == "rerun":
+        # The gate is not marked as run for this start, so the drive measures
+        # again; the task is not re-started, so no attempt is spent.
+        return None
     if answer == "retry":
         return start_task(ctx, task)
     if answer == "redispatch":
@@ -842,7 +907,8 @@ def render_triage(ctx, pending):
     """The triage decision: each open finding with its options, a fix task's
     predicted price with its basis, and how to answer."""
     found = pending.get("findings") or []
-    lines = ["decide triage %s: %s" % (ctx["phase"], pending.get("why") or "")]
+    head = step_text("decide-triage", phase=ctx["phase"], why=pending.get("why") or "")
+    lines = head[:1]
     for f in found:
         lines.append(_clip("  %s %s %s - %s [fix|leave]" % (
             f.get("id"), f.get("severity"), f.get("file"), f.get("issue")),
@@ -854,7 +920,7 @@ def render_triage(ctx, pending):
             ctx["phase"],))
     lines.append("answer: next %s --answer sign-off --reason <the summary>%s" % (
         ctx["phase"], " (a finding left is kept as recorded)" if found else ""))
-    return instruction("decide", lines)
+    return instruction("decide", lines + head[1:])
 
 
 def triage(ctx, state, manifest, phase):
@@ -1104,6 +1170,59 @@ def stalled_why(manifest, phase):
     return "; ".join(parts) + (" +%d more" % (more,) if more > 0 else "")
 
 
+def finish_task(ctx, state, task):
+    """A task-scoped drive is through: give back a lock this drive took, drop the
+    marks of this task, and drop the state when nothing else is in it."""
+    if state.get("lock") == "taken":
+        _out, stop = _verb_or_stop(ctx, "audit-lock.py", [
+            "release", "phase-%s" % (ctx["phase"],), "--project", ctx["gitRoot"]])
+        if stop is not None:
+            return stop
+        state.pop("lock", None)
+    for kind in [k for k, v in state.items() if isinstance(v, dict)]:
+        state[kind].pop(task["id"], None)
+        if not state[kind]:
+            state.pop(kind)
+    if state:
+        write_state(ctx, state)
+    else:
+        try:
+            os.remove(state_path(ctx))
+            os.rmdir(os.path.dirname(state_path(ctx)))
+        except OSError:
+            pass
+    closed = any(d.startswith("%s %s" % (CLOSED, task["id"])) for d in ctx["did"])
+    why = "%s%s" % ("" if closed else "already ", task.get("status") or "?")
+    if task.get("commit"):
+        why = "%s at %s" % (why, str(task["commit"])[:7])
+    return instruction("done", step_text("done-task", task=task["id"], why=why))
+
+
+def drive_task(ctx, state):
+    """The steps of the one task `ctx["only"]` names: start it, advance it, and
+    finish when it is terminal. Its siblings and sign-off are not touched."""
+    for _ in range(8):
+        manifest, phase = load_phase(ctx)
+        task = _mio.tasks_by_id(manifest).get(ctx["only"]) or {}
+        if task.get("status") in _mio.TERMINAL:
+            return _as_result(finish_task(ctx, state, task))
+        if task.get("status") == "blocked":
+            return E_STOPPED, "\n".join(step_text(
+                "stop-blocked", phase=ctx["phase"], task=task["id"],
+                why=_clip(str(task.get("blockedReason") or "no reason recorded"), 120)))
+        if task.get("status") != "in_progress":
+            stop = start_task(ctx, task)
+            if stop is not None:
+                return stop
+            continue
+        said = advance(ctx, state, manifest, phase, task)
+        if said is not None:
+            return _as_result(said)
+    return E_STOPPED, ("%s %s: stopped - the drive of %s made no progress; run "
+                       "with --verbose to see each verb's answer"
+                       % (PREFIX, ctx["phase"], ctx["only"]))
+
+
 def drive(ctx, answer=None, reason=None, fixes=()):
     """`(code, instruction_or_text)` for one `next`."""
     state = read_state(ctx)
@@ -1116,6 +1235,10 @@ def drive(ctx, answer=None, reason=None, fixes=()):
         state.pop("pending", None)
         write_state(ctx, state)
         pending = None
+    if ctx.get("only") and pending and pending.get("task") != ctx["only"]:
+        return E_STOPPED, ("%s %s: stopped - this phase's drive waits on a %s "
+                           "decision; answer it with next %s first"
+                           % (PREFIX, ctx["phase"], pending["decision"], ctx["phase"]))
     if answer is not None:
         refused = answer_refusal(ctx, pending, answer, reason, fixes)
         if refused:
@@ -1126,6 +1249,8 @@ def drive(ctx, answer=None, reason=None, fixes=()):
             return _as_result(said)
     elif pending:
         return E_OK, render_decision(ctx, pending)
+    if ctx.get("only"):
+        return drive_task(ctx, state)
     for _ in range(4 * len(_tasks(phase)) + 4):
         manifest, phase = load_phase(ctx)
         task, how = next_task(manifest, phase)
@@ -1307,6 +1432,43 @@ def echo_steps(ctx):
     return ctx["verbose"]
 
 
+def _ado_on(meta):
+    """Whether the plan's board takes the echo: `meta.ado` present, and neither
+    `enabled` nor `echo` set false."""
+    ado = (meta or {}).get("ado")
+    return (isinstance(ado, dict) and ado.get("enabled") is not False
+            and ado.get("echo") is not False)
+
+
+def ado_echo_lines(ctx):
+    """The echo owed for this call's transitions: every task it closed or
+    blocked, and the phase it signed off, that carries an `ado` link - the
+    board update the main loop makes, since no verb here sends one. Empty when
+    the plan has no board or nothing linked moved."""
+    moved = []
+    for did in ctx["did"]:
+        word = did.split(" ", 1)
+        if word[0] in (CLOSED, "blocked") and len(word) > 1:
+            moved.append(word[1].split(" ", 1)[0])
+        elif did == "signed off":
+            moved.append(ctx["phase"])
+    if not moved:
+        return []
+    try:
+        manifest = _mio.load_manifest(ctx["manifest"])
+    except Exception as exc:                                   # noqa: BLE001
+        return ["ado echo: not judged - the plan could not be read (%s)" % (exc,)]
+    if not _ado_on(manifest.get("meta")):
+        return []
+    nodes = dict(_mio.tasks_by_id(manifest))
+    nodes.update((p.get("id"), p) for p in manifest.get("phases") or []
+                 if isinstance(p, dict))
+    linked = [i for i in moved if ((nodes.get(i) or {}).get("ado") or {}).get("id")]
+    if not linked:
+        return []
+    return step_text("ado-echo", items=", ".join(linked))
+
+
 def render(ctx, code, said):
     """The text of one `next`: the did-line, then the instruction or the stop."""
     lines = []
@@ -1318,6 +1480,7 @@ def render(ctx, code, said):
         if ctx["did"]:
             lines.append("%s %s: %s" % (PREFIX, ctx["phase"], "; ".join(ctx["did"])))
         lines.extend(said["lines"])
+        lines.extend(ado_echo_lines(ctx))
     else:
         if ctx["did"]:
             lines.append("%s %s: %s" % (PREFIX, ctx["phase"], "; ".join(ctx["did"])))
@@ -1334,7 +1497,8 @@ def build_parser():
     sub = parser.add_subparsers(dest="action")
     sub.required = True
     nxt = sub.add_parser("next", help="perform the due steps, print one instruction")
-    nxt.add_argument("phase", help="the phase id")
+    nxt.add_argument("phase", help="the phase id, or a task id to drive that "
+                                   "one task")
     nxt.add_argument("manifest", nargs="?", default=None,
                      help="the manifest (default: the project's configured one)")
     nxt.add_argument("--project-dir", dest="project_dir", default=None)
@@ -1396,12 +1560,27 @@ def project_context(args):
         "verbose": bool(args.verbose), "log": [], "did": []}
 
 
+def task_phase(manifest, task_id):
+    """The id of the phase holding task `task_id`, or None."""
+    for phase in manifest.get("phases") or []:
+        if isinstance(phase, dict) and any(
+                isinstance(t, dict) and t.get("id") == task_id
+                for t in phase.get("tasks") or []):
+            return phase.get("id")
+    return None
+
+
 def context(args):
-    """Everything one `next` resolves once, or raises ValueError naming why not."""
+    """Everything one `next` resolves once, or raises ValueError naming why not.
+    A task id in the phase's place scopes the drive to that one task."""
     manifest, ctx = project_context(args)
     phase_id, problem = _mio.resolve_phase_id(manifest, args.phase)
+    ctx["only"] = None
     if problem:
-        raise ValueError(problem)
+        phase_id = task_phase(manifest, args.phase)
+        if phase_id is None:
+            raise ValueError("%s; and no task has the id %r" % (problem, args.phase))
+        ctx["only"] = args.phase
     hc = _loader.load_hooks_config(modname="audit__config")
     ctx.update(phase=phase_id, stateDir=str(
         hc.state_dir(pathlib.Path(ctx["project"]), ctx["config"] or {})))

@@ -1,10 +1,15 @@
 # Execute the task — orchestrator reference
 
-Read `reference/orchestrator.md` and `reference/manifest-conventions.md` first. This is the
-one section every execution command that actually runs a task defers to — split out of
-`orchestrator.md` so a command that never runs a task does not have to read it: `next`,
-`phase` and `run` read this file too; `status`, `report`, `resume`, `worktree` and `layout` do
-not need to.
+**No pipeline command reads this file first, and the main loop does not perform these steps
+by hand any more.** The step driver, `scripts/governance/drive-phase.py`, performs every step
+below that needs no judgement - the start, the computed brief, the recorded gate, the stamp
+grade, the commit and the close - as the existing verbs, in this order, and prints the rule a
+step needs at that step; the agents file their returns through `drive-phase.py submit`.
+`tools/measure-context.py --gate` holds that no pipeline command reads a reference file first.
+This file is the reference for what each step does and why, for the guide agent and for a
+reader who asks: where it says "you", read the step the driver runs. What each `/audit:task`
+verb writes and refuses, and what the run commands leave behind, is
+`reference/verbs-in-full.md`.
 
 ## Execute the task
 
@@ -213,11 +218,13 @@ not need to.
      brief holds the wording of each, including
      the pass/fail/could-not-run distinction the arms in step 4 turn on;
      `return_shape_drift()` in `plugins/audit/scripts/_refs.py` fails the build when this list
-     falls behind the brief's. **The executor files that object** with
-     `audit-task.py file-return <taskId> --role executor` (the object on stdin), and
-     `file-return` checks the shape: it exits 2 naming a missing field and writes nothing, and
-     writes a well-formed return once, to a path it derives from the task and its current
-     start. It hands back one line.
+     falls behind the brief's. **The executor files that object through `drive-phase.py
+     submit <taskId> --role executor`** (the object on stdin, the test command after `--` on a
+     `tdd` task): `submit` checks the shape and writes nothing when a field is missing, runs
+     the red-first helper, takes the stamp after it, and hands the object to `audit-task.py
+     file-return`. `file-return` checks the shape again - it exits 2 naming a missing field and
+     writes nothing - and writes a well-formed return once, to a path it derives from the task
+     and its current start. The agent hands back the one line `submit` printed.
      **A return handed back without filing is prose, and nothing parses it**, so a field
      that did not come back is recorded as absent and never filled in.
    - **After the subagent returns, YOU run the task's gate through the script and record it:**
@@ -322,9 +329,17 @@ not need to.
      with `scripts/status/audit-lookup.py <manifestPath> run <runId>` (the id off that line) or
      `run latest --task <taskId>` when the id was not kept, exactly as
      `reference/orchestrator.md`'s **Answering one question about the trail** describes.
-   - **Then ask the reviewer the intent question — one call per task, and only when the gate
-     you just ran came back green.** A red gate already has its answer and the task goes back
-     through step 2; there is nothing to bind a claim to yet. Spawn
+   - **Which task gets a reviewer of its own is `review.perTask`'s answer, read by the driver's
+     `reviewer_due` and nowhere else.** Under `phase` - the shipped default - no per-task
+     reviewer runs at all: the close records `intentCheck.answer = "deferred"` itself, refuses
+     every `--intent` word (a recorded fix task's `not-asked` excepted), and the phase review
+     answers each task at sign-off, which refuses until it has. Under `signals` a reviewer runs
+     only where a computed signal fires - a red-first proof that is not `proved`, or a return
+     whose gates disagree with the recorded green - and a task with neither closes `not-asked`
+     with the signals as its basis. Under `always`, every task gets the call below.
+   - **Where it is due, ask the reviewer the intent question — one call per task, and only when
+     the gate you just ran came back green.** A red gate already has its answer and the task goes
+     back through step 2; there is nothing to bind a claim to yet. Spawn
      `subagent_type: "audit:audit-reviewer"`, `model = phase.review.model`, `description`
      starting with the task id, and **`mode: task`** in the prompt. **Its brief is computed
      too** —
@@ -390,14 +405,16 @@ not need to.
        sheet the record invented.
 
      **`intent.answer` itself reaches the close through the reviewer's FILED return, whichever
-     of the three words it was.** The reviewer files its return with
-     `audit-task.py file-return <taskId> --role reviewer` — its one write — and the close in
+     of the three words it was.** The reviewer files its return with `drive-phase.py submit
+     <taskId> --role reviewer`, which hands it to `audit-task.py file-return` — its one write —
+     and the close in
      step 4c reads it: `/audit:task done <taskId> --commit <sha> --from-return` takes the
      outcome, `verifiedBy` and the red-first block from the executor's filed return and the
      intent answer from the reviewer's, in one write. That single write is what makes the
      answer NAME the diff it was given — `task.intentCheck.commit` becomes the same SHA
-     `task.commit` carries. **`done` enforces this on every form that passes `--commit`**, in
-     `_locked_done`: with no reviewer return filed for the task's current start it refuses,
+     `task.commit` carries. **Under `always` and `signals`, `done` enforces this on every form
+     that passes `--commit`**, in `_locked_done`: with no reviewer return filed for the task's
+     current start it refuses,
      writing nothing, unless the close says the question was deliberately not put —
      `--intent not-asked --intent-basis "<why>"`; and a typed `--intent` word that differs from
      the filed answer is refused, `not-asked` included. **If the reviewer call produced nothing

@@ -31,13 +31,16 @@ What each document is good for:
   policy, monorepo areas, audit trail, reports, token usage, troubleshooting.
 - `reference/orchestrator.md`, `reference/execute-task.md`,
   `reference/phase-signoff.md`, `reference/manifest-conventions.md` — how the
-  pipeline actually runs a phase, and what every manifest field means. The
-  latter two are split out of the first so a command that never runs a task or
-  never signs a phase off does not read the section it will not use.
+  pipeline runs a phase, step by step, and what every manifest field means. The
+  pipeline commands no longer read these first: the step driver,
+  `scripts/governance/drive-phase.py`, performs the steps and prints the rule
+  each one needs - its `STEPS` table is where a followed rule is stated now.
+- `commands/*.md` — what one command does: the step driver's loop, and each
+  verb's command line. What a verb writes and refuses in full, and why, is
+  `reference/verbs-in-full.md`.
 - `schema/audit-plan.schema.json`, `schema/audit-config.schema.json` — the
   normative field descriptions. When prose and schema disagree, say so; do not
   quietly pick one.
-- `commands/*.md` — what one command does, including its arguments and dry-run.
 - `SECURITY.md` (repo root, `../../SECURITY.md` from the plugin) — the honest
   limits: what the guards cannot cover, why the journal is tamper-evident and not
   tamper-proof, the four bounds on the capability policy.

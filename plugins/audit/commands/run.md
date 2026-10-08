@@ -6,83 +6,39 @@ allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 
 # /audit:run — execute one task
 
-`$ARGUMENTS` = the task id to run (plus optional `--dry-run`). Read
-`${CLAUDE_PLUGIN_ROOT}/reference/orchestrator.md`,
-`${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` and
-`${CLAUDE_PLUGIN_ROOT}/reference/execute-task.md` first — this command runs a task, so it
-needs the section that does; it never signs a phase off, so it does not read
-`reference/phase-signoff.md`.
+`$ARGUMENTS` = the task id, plus optional `--dry-run`.
 
-**If `--dry-run` is present:** follow the orchestrator's **Dry-run / preview** section — preview
-whether the task is ready + what would run, and STOP without mutating.
+**`--dry-run`:** run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" --short`,
+say whether the task is ready and what would run, and stop without changing anything.
 
-Otherwise run the full preflight (steps 1–5, including the lock) and emit **Progress output** as you go.
+**Otherwise the step driver runs it.** `drive-phase.py next <taskId>` drives that one task: it
+takes the phase lock, starts the task (a refused start names what it waits on), writes each
+agent's brief, records the gate, commits and closes - and leaves its siblings and sign-off alone.
+Run it, do exactly what it prints, and run it again:
 
-Execute exactly `<taskId>`, with status guards:
-1. `status == "done"` → refuse: report its `commit`/`outcome`. Offer (AskUserQuestion) an explicit
-   **re-open**, and on confirmation run the verb, never a hand edit:
-   ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" reopen <taskId> \
-           --reason "<the human's why, verbatim>"
-   ```
-   **The operator's words go in VERBATIM** — see `reference/manifest-conventions.md` → *The
-   operator's words go in unchanged*: `--reason` reaches the hash-chained journal, and `-` reads it
-   off stdin. It resets `status = "pending"`, `attempts = 0`, clears `commit`, `outcome`, `completedAt`,
-   `verifiedBy` and `intentCheck`, and puts a linked bug back to `in_progress` with no `fixedIn`, so
-   a re-opened bugfix task never leaves its bug marked `fixed` at a stale SHA — under the index lock,
-   revalidated, with a `task.reopen` journal row. **It refuses a task whose phase is signed off**
-   (done, or signed off and awaiting its merge): that verdict reviewed the work as it stands and
-   sign-off is not re-decided, so the phase could never be signed again, and a stored `done` over
-   an open task is a plan every later verb refuses as invalid. Relay the refusal: the new work is a
-   new task in an open phase or a bug (`/audit:bug`). On exit 0, execute. Never silently re-run a
-   done task.
-   A reopened task with an `ado` link gets the **ADO echo** (orchestrator.md → "ADO echo"): its card
-   moves back to the pending-state with the comment `reopened by /audit:run` — the reopen was
-   human-confirmed, so the board move inherits that consent.
-   **`testEvidence` is deliberately not on that list.** The block is a cache of a run that
-   really happened, the evidence ledger still holds that run, and `run-test-gate.py
-   --reconcile` re-derives every subject's pointer from that ledger — so a cleared pointer is
-   put straight back by the next reconcile or the next recorded run, and clearing it buys a
-   reader nothing but a disagreement between the plan and the record, which
-   `/audit:doctor` will then report. What marks the verdict as stale is the task
-   reading `pending` again beside an `at` stamp older than the reopen, not a missing block.
-2. `status == "blocked"` → refuse: report why (exhausted attempts / blockers, and the
-   `blockedReason` `audit-task.py block` recorded). Offer a confirmed reset of `attempts` to 0
-   (back to `pending`), then execute. The reset removes `blockedReason` with the status it
-   explained — a pending task carrying one reads as still waiting — and the `audit-task.py start`
-   that execution begins with clears it too, recording the old reason in its `task.start` row.
-3. `status == "in_progress"` → warn: likely an interrupted run — point to `/audit:resume`.
-   Proceed only if the human explicitly confirms re-execution.
-4. Unmet blockers, or a phase claimed by a session that may still be live → relay `audit-task.py
-   start`'s refusal the way `reference/manifest-conventions.md` → *The operator's words go in
-   unchanged* states.
-5. Otherwise run **Execute the task** (orchestrator).
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" next <taskId>
+```
 
-Then follow **Reporting** and release the lock.
+- `dispatch <agent> <id> model=<m> brief=<path>` → one Agent call with that `subagent_type`
+  and `model`, the prompt `Read your brief at <path> and follow it.`, and the rule printed under
+  it. Wait for its one-line hand-back.
+- `decide <name> ...` → answer with one printed option:
+  `next <taskId> --answer <option> [--reason "<words>"]`. A decision the printed rule gives to a
+  human goes to the human first (AskUserQuestion).
+- `done <taskId>: ...` → report the outcome and what is ready next (`/audit:status`), and stop.
+- a `stopped` print → relay it to the human as printed, with the rule under it.
 
-## What one run leaves behind
+**Guards the driver hands back.** `done <taskId>: already done` means the task was closed before
+this run: report its commit and offer (AskUserQuestion) a re-open, never a silent re-run. On a yes:
 
-**The gate run that becomes evidence is yours, not the subagent's.** The orchestrator's
-*Execute the task* holds the invocation and the reason; what matters here is that the
-subagent's own run is what it develops against, and the recorded one has to be the
-wrapper's — the bracket, the check count, the coverage answer and the tree comparison are
-only true of a run the wrapper made. `--record` prints two lines: one says the row was
-written, the other whether the plan now names it. Read both. A **refused pointer is not a
-failure** — another live session may hold the phase lock — so do not retry the gate to
-chase one; the row stands either way and `--reconcile` catches the plan up later.
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" reopen <taskId> --reason "<their why>"
+```
 
-A step that outruns `--timeout` (the script's own default when nothing passes one) is torn
-down and recorded as having timed out, and the tree comparison is then **refused rather than
-guessed**: a descendant that escaped the kill is still writing, so comparing the snapshots
-would be a race whose answer changes with timing.
-
-**A single-task run is the case where a failed gate has nothing to ride out on.** A task
-commit stages the evidence directory, so inside a phase run an attempt that failed and was
-retried is made durable by whatever commits next. This command commits only when the task
-reaches `done` — so when it ends `blocked` with its attempts exhausted, and on the
-infrastructure path that stops without committing, the rows just written sit in the working
-tree with nothing coming behind them. Both are named points in the orchestrator's
-*Keeping a failed run's record*; run
-`commit-audit-state.py` at them. It stages the phase's manifest file, the journal and the
-evidence directory and **never the task's `files`** — the implementation stays unstaged,
-which is what makes committing a failed task's state possible at all.
+**The operator's words go in VERBATIM** — see `reference/manifest-conventions.md` → *The
+operator's words go in unchanged*: `--reason` reaches the hash-chained journal (`-` reads it off
+stdin). A task with an `ado` link then owes its board card the move back to the pending state,
+with the comment `reopened by /audit:run`. Then run `next <taskId>` again. A blocked task stops
+the drive with its recorded reason
+and the rule for it; an `in_progress` one resumes from where its last run stopped.

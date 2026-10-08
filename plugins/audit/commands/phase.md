@@ -6,559 +6,67 @@ allowed-tools: Read, Write, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestio
 
 # /audit:phase — add a phase, run it, order it, or close it
 
-Read `${CLAUDE_PLUGIN_ROOT}/reference/orchestrator.md`,
-`${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md`,
-`${CLAUDE_PLUGIN_ROOT}/reference/execute-task.md` and
-`${CLAUDE_PLUGIN_ROOT}/reference/phase-signoff.md` first — a phase run does both: it executes
-every ready task and, once all of them are `done`, signs the phase off.
+`S` below is `python3 "${CLAUDE_PLUGIN_ROOT}/scripts`.
 
-## 0. Which verb — read off `$ARGUMENTS`, before the manifest is
+## 0. Which verb
 
-The FIRST token decides, and the reserved words are `add`, `retarget`, `priority`, `cancel`,
-`signoff` and `settle`.
-**Any other first token is a phase id**, and the command is the run form below — the
-shape this command has always had, unchanged.
-
-**Lexical, never inferred from the plan.** Deciding the verb by asking the manifest
-whether the first token happens to name a phase would give one command line two
-meanings on two machines, and the argument has to be read before the manifest is even
-located. So the rule is about the word, and it is the same word everywhere.
-
-**The one collision, and it is asked rather than guessed.** `phase.id` is a free-text
-string in `${CLAUDE_PLUGIN_ROOT}/schema/audit-plan.schema.json` — `P<n>` / `BF<n>` is
-the allocation convention (conventions → ID allocation), not a shape the validator
-holds — so a hand-written manifest MAY carry a phase whose id is one of the reserved
-words. Once the manifest is read, if it names a phase whose id equals the word you
-dispatched on, **STOP**: print both readings and ask (AskUserQuestion) which was meant,
-then follow the answer. Never resolve it silently and never refuse outright — both
-readings stay reachable, one question apart. There is no arity exception either: three
-tokens are no more decidable than one when a rule has a carve-out nobody remembers.
+The first token of `$ARGUMENTS` decides: `add`, `retarget`, `priority`, `cancel`, `signoff` or
+`settle`; any other first token is a phase id and runs it. If the manifest names a phase whose id
+is that reserved word, ask (AskUserQuestion) which was meant.
 
 ## Run a phase — `<phaseId> [--dry-run] [--confirm-high-risk "<your words>"]`
 
-`$ARGUMENTS` = the phase id (plus optional `--dry-run`, `--confirm-high-risk`).
-
-**If `--dry-run` is present:** follow the orchestrator's **Dry-run / preview** section instead —
-read-only preflight, print the plan (branch, ready tasks, parallel groups, merge target, and **what
-happens after the merge**), and STOP.
-The branch and the merge target both come from
-`resolve-branch.py <manifestPath> --phase <phaseId>` — never composed here — and when the
-merge target is not `meta.developmentBranch`, the plan says so: signing off there does not put
-the work on the development branch.
-
-**What happens after the merge is `meta.merge`'s answer, and the preview owes it too** — whether
-the branch will be merged at all (`auto`), and whether the worktree and the branch go afterwards
-(`removeWorktree`, `deleteBranch`). All three default to on, so a plan that says nothing about
-merging behaves exactly as it always has; a plan with `auto: false` signs the phase off and leaves
-the landing to a human, which the preview must say rather than let the reader assume a merge.
-`close-phase.py … --dry-run` prints the whole thing, including the exact git command it would run:
-
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/git/close-phase.py" <manifestPath> <phaseId> \
-    --project <projectDir> --dry-run
-```
-
-**The landing is stamped in the tree the merge lands in** - the parent branch's checkout - whatever
-manifest path is passed, whether the merge is made now or the branch already landed (a re-run, or a
-merge made by hand): `mergedAt`, the derived status and the index stub go to that tree's copy,
-never to the one inside the phase's own worktree, which is removed moments later. A follow-up the
-preview prints (run from the main tree when this one stands inside the worktree) names that
-surviving manifest. When the parent branch is checked out in no worktree and the manifest given is
-the phase worktree's own copy, the landing has no surviving copy to stamp: close-phase refuses
-before merging (exit 2), naming the branch - check it out in a worktree, or run close-phase from
-its checkout - so the ref never moves without the record of the landing. With `meta.merge.auto`
-false nothing is written, so that run is not refused: it exits 0 and hands over the merge command.
-
-**If `--confirm-high-risk "<your words>"` is present:** the human is answering the high-risk gate
-**before** the run instead of during it. Run this FIRST, before the preflight, and print its output
-verbatim — in your own reply, inside a fenced block:
-
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/record-risk-confirmation.py" \
-    <manifestPath> <phaseId> --confirm-high-risk "<your words>"
-```
-
-**The operator's words go in VERBATIM** — see `reference/manifest-conventions.md` → *The operator's words go in unchanged*. This value reaches the hash-chained journal, so a paraphrase makes the trail guarantee a sentence its subject never wrote.
-
-**Why the flag exists.** The orchestrator's risk gate stops and asks a human before a
-`risk: "high"` task's commit, always. An operator running the pipeline unattended has nobody to
-ask — asking parks the run for hours — so the run instruction itself gets treated as the
-confirmation and the report says so afterwards. That is a safety rule overridden quietly, which is
-worse than a stall. This is the third option: the answer is given early and recorded. *Always ask*
-stays true; the asking happened earlier, and the trail says who answered and in what words.
-
-**What it covers is a LIST OF TASK IDS, and the command prints it.** The covered set is computed
-from the manifest as it stands at that moment — this phase, `risk: "high"`, open work only — and
-written into a `risk.confirmed` journal row. **A high-risk task that is not on that list still
-stops and asks**, including one whose `risk` became high after the row was written. That is the
-whole safety property: an answer that covered any future high-risk task would not be an answer,
-it would be the gate deleted with a flag left where it used to be. Say this back to the operator
-when you relay the covered list, because a flag named *confirm* reads like a blanket permission
-and is not one.
-
-**Refused rather than recorded:** a blank value; a phase with no open high-risk task (a
-confirmation with no subject is a standing permission — exit 2, and the message says whether the
-phase is genuinely clear or the risk is simply not on the tasks yet); and, exit 1, a journal that
-is off or an append that did not land, which means there is **no** pre-given answer and every
-high-risk task in the phase goes back to asking. Relay the refusal and ask per task; do not
-re-run the run command without the flag and treat that as the same thing.
-
-Otherwise run the full preflight (steps 1–5, including the lock) and emit **Progress output** as you go:
-
-0. **Print the entry view first, verbatim — in your own reply, inside a fenced block.** A
-   tool result is collapsed behind the tool call, so running it is not showing it:
-   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <manifestPath> --short` — the
-   overall line, the usage line, the ready list (each entry with the command that runs it), the
-   open-bug count, and a closing line naming the command that shows the full table. Deterministic,
-   so it costs nothing to lay out, and this run is about to work through this phase's tasks one by
-   one anyway, so the full per-phase table it would otherwise pay for here is not what a reader
-   needs from THIS line — `/audit:status --phase <phaseId>` still renders it whole. The per-task
-   **Progress output** lines below are yours to emit as the work happens; only this entry view is
-   pre-rendered.
-1. If the phase is `done` → refuse; point to `/audit:review <phaseId>` to re-run sign-off.
-2. Execute every **ready** task in the phase in parallel where safe (disjoint `files` and satisfied
-   `dependsOn`), sequentially otherwise. (**Execute the task** performs phase entry — branch,
-   `baseRef`, phase status — on its first run.)
-3. Re-evaluate readiness and repeat until no task in the phase is ready. **A wave finishing is not
-   a stopping point.** Twenty ready tasks is eight waves, not eight commands: committing wave 1 and
-   reporting "next up is wave 2" leaves this command undischarged, and a run that did exactly that
-   sat idle for a day with nothing wrong — lock held, manifest valid, sixteen tasks ready. Emit
-   progress between waves *while continuing*, and say how much is left (`wave 2 of 8 — 16 of 20
-   still ready`), because a remainder nobody states is a remainder nobody acts on. See
-   **Reporting** in the orchestrator for when this command is actually finished.
-4. When **all** tasks in the phase are `done`, run **Phase sign-off** (orchestrator).
-
-Then follow **Reporting** and release the lock.
-
-**Sign-off measures the phase ONCE, and the order is what buys that: review first, then the fix
-tasks its findings become, then the gate.** Carry the reason with the order, because without it
-the order reads as arbitrary and gets reordered by whoever is optimising something else — a
-reviewer's findings become fix tasks, and a fix task's edits invalidate a gate taken before them,
-so a gate run before the review graded a tree that no longer exists and has to be run again.
-Gating first is this phase measured twice. **Nothing measures whether you held the order**: the
-second run supersedes the first in the evidence ledger and no reader counts the rows a phase left
-behind, so this sentence is the whole of it. The steps themselves — what each one checks, the exit
-codes, what each gate banner means — are the orchestrator's **Phase sign-off** section and are not
-repeated here, because two copies of a procedure is one copy and one lie.
-
-**What a phase run records, and where those records have to end up.** Every task's gate run
-is recorded against that task; **Phase sign-off's own gate run is recorded against the
-phase**, kept apart from its tasks' so a reader can follow either — the phase's gate and its
-tasks' gates measure different work over different files, and merging them would claim a
-measurement nobody made. Each task commit and the sign-off commit stage the evidence
-directory alongside the journal, for the same reason the journal is staged: a `testEvidence`
-pointer that reaches a clone without the row it names points at nothing, and
-`verify-invariants.py`'s `evidence-committed` is what says so afterwards.
-
-**A red sign-off gate is where a phase run stops committing.** The phase stays
-`in_progress`, nothing is committed, and the rows the gate just wrote have nothing behind
-them — a named point in the orchestrator's *Keeping a failed run's record*, where
-`commit-audit-state.py` makes them durable without staging any implementation. Read the
-gate's own lines before signing off rather than reading the exit code alone: a rewritten
-tree and a gate that checked nothing each turn the run red and say which, while
-`NO OVERLAP WITH THIS WORK` **moves the exit code not at all** — the gate ran, it passed, and
-none of the paths it printed is a file this phase's tasks declare. That last one is reported
-and never refused, because the overlap is derived from paths a runner happens to print and a
-heuristic that refused would manufacture false refusals. Deciding whether this gate can grade
-this work is therefore yours, and the line is what puts the question in front of you — with a
-bounded sample of the paths the runner actually printed under it, so you can see whether they
-are suites or stack frames without re-running anything.
-
-**`TREE CHANGED OUTSIDE THIS WORK` moves the exit code not at all either.** Paths changed during
-the gate that this work does not declare. The bracket describes the whole repository, so a task
-running in PARALLEL puts its executor's writes inside every sibling's window; porcelain reports
-what moved and never who moved it, so this is reported with both readings named rather than
-refused. `GATE MUTATED THE TREE` is the other half — a declared file, which the gate itself was
-grading — and that one still refuses.
-
-**`GATE COULD NOT RUN` is not a red suite.** The step reached no verdict, for a reason that is
-not the work's: the runner never started (a missing command, a gate entry the shell could not
-find), it started and never reached a check (a port it could not bind, a filter that selected no
-test file), or the OS ended it - which can come after checks ran, and for a jest worker is read
-from jest's own report while other suites passed. Fix the runner and re-run rather than spending
-a retry on the task, and do not let it be recorded as the task's failure.
-
-**A runner that prints only SUITE paths still names your work.** `tests/parser.spec.ts` is matched
-to `src/parser.ts` — the stem the test is named after, across directories, because `src/` tested
-from `tests/` is the ordinary layout. Without that, a jest-shaped runner produced this line on
-almost every task while the gate really had exercised the files, and a warning that fires almost
-always is one people learn to skip past. The match is deliberately narrow: only test-shaped paths,
-only onto the exact stem they carry, so a test named after a *different* file is not coverage. A
-false overlap would tell you your work was exercised when it was not, which is the comfort this
-line exists to refuse.
+0. `--dry-run`: `S/git/close-phase.py" <manifest> <phaseId> --project <dir> --dry-run` and
+   `S/manifest/resolve-branch.py" <manifest> --phase <phaseId>`; print the plan and stop.
+1. `--confirm-high-risk "<your words>"`: run `S/governance/record-risk-confirmation.py"
+   <manifest> <phaseId> --confirm-high-risk "<your words>"` first and print the task ids it covers
+   verbatim in your own reply - a high-risk task not on that list still stops and asks.
+   **The operator's words go in VERBATIM** — see `reference/manifest-conventions.md` → *The
+   operator's words go in unchanged*.
+2. Run `S/governance/drive-phase.py" next <phaseId>`, do what it prints, and run it again:
+   `dispatch <agent> <id> model=<m> brief=<path>` → one Agent call with that `subagent_type` and
+   `model`, the prompt `Read your brief at <path> and follow it.`, and the rule printed under it;
+   `decide <name> ...` → `next <phaseId> --answer <option> [--reason "<words>"]`, a human's
+   decision going to the human first (AskUserQuestion); a `stopped` print → relay it as printed.
+3. A finished wave is not a stop: run `next` again until it prints `done`.
+4. `done` → report what landed and where. **Phase sign-off** (orchestrator) is the drive's last
+   step: a fix task comes first, because its edits invalidate a gate taken before them; the
+   driver gates once, after the triage. Nothing measures whether you held the order when a gate
+   is run by hand.
 
 ## Subcommand: `add "<title>" --outcome "<what success looks like>"`
 
-A new phase and its tasks, planned from the human's request and written in **one
-call**. The script takes the index lock itself, so hold no lock by hand around it.
-
-**1. Gather** only what `$ARGUMENTS` and the conversation do not already carry:
-
-- **the outcome** — the one-line `desiredOutcome`. `/audit:status` shows it, task
-  subagents receive it, and sign-off must address it. A phase whose success cannot be
-  stated in a line is too big; split it.
-- **the tasks** — each with a title, a description, the files it edits, and a test mode.
-- **the open choices** — every decision the request leaves to whoever implements it (a
-  rounding rule, a name, a default). List them rather than settling them silently; the
-  phase reviewer asks where a task chose one. Write `[]` when the request leaves none.
-
-Check the alternatives first and say which you ruled out: a parked proposal already
-covering the work → `/audit:propose materialize <PROP-id>`, which is a move; an open
-phase whose `desiredOutcome` this work serves → `/audit:task add --phase <id>`.
-
-**2. Write the plan file with the Write tool** — never a shell heredoc, which a host
-refuses for a JSON document. Put it outside the tracked tree, in the session's scratch
-directory:
-
-```json
-{
-  "request": "<the request, exactly as the human typed it>",
-  "openChoices": ["<a choice the request left open>"],
-  "phase": {"title": "<title>", "desiredOutcome": "<one line>",
-            "description": "<why and how>"},
-  "tasks": [
-    {"key": "sum", "title": "<task>", "description": "<what to do>",
-     "files": ["src/b.ts"],
-     "tests": {"mode": "tdd", "add": ["tests/b.test.ts: <what it asserts>"]}},
-    {"title": "<task>", "description": "<what to do>", "files": ["docs/b.md"],
-     "dependsOn": ["sum"]}
-  ]
-}
-```
-
-Optional on the phase: `testGate` (omitted, the plan's `meta.buildCommands`; `[]`, no
-gate, so sign-off rests on review alone), `blockedBy`, `area`, `reviewSkill`, and `id`.
-Omit `id`: the script takes the **highest** `P<n>` in use and adds one, over live
-phases and every id a parked proposal reserves. Over a plan holding `P0`, `P1` and `P3`, the next id is `P4`, and never the `P2` the gap makes look free:
-a gap is a phase that happened, and `meta.branch` derives branch names from the id.
-Optional on a task: `key`, `outputs`, `risk`, `model`, `skills`, `tests.gate`,
-`blockedBy`. A `key` is the name the file's other tasks use in `dependsOn` or
-`blockedBy` before the task has an id; every other reference names an id the plan
-already holds.
-
-**3. Run it**, and print its line verbatim:
-
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" add --from-file <the file> [--json]
-```
-
-It allocates the phase id and each task's id, resolves every `key`, and writes the
-phase, with `request` and `openChoices` on it, and every task in one write — the new
-shard and its index stub in the sharded layout, **appended last**, because the written
-order is the plan's order. It re-reads the plan from disk and validates once, and on a
-finding rolls every written file back byte for byte. Then it journals one `phase.add`
-row and one `task.add` row per task. `--verbose` adds the gate and its basis, the open
-choices it saved, and the validator's warnings.
-
-**Every refusal comes before any write, and the file is the thing to fix:** a file that
-is not JSON or carries a key the batch does not read; a missing request, open-choices
-list, title, outcome or task list; a dependency neither the plan nor the file holds,
-named; a task `key` that is already an id; a phase `id` that is live, reserved by a
-parked proposal, a task id, or stored in a shard file another phase occupies; and any
-other `audit-task.py add` flag beside `--from-file`.
-
-**Which branch are you on? Phases are minted on the development branch.** A phase id is
-a branch name, a lock name and a shard name, so two phase branches that each added a
-phase would both mint the next `P<n>`. On a phase branch, ask the user before running:
-work **needed by the phase in hand** is a task in it (`/audit:task add --phase <that
-phase>`); **new work** is parked with the single-phase verb below and `--park`, then
-materialized with `/audit:propose materialize` after this branch merges. The first
-phase minted on a side branch prints a WARNING naming `--park`; relay it verbatim — it
-is addressed to the user.
-
-**One phase with no tasks yet**, or a parked one, is the single-phase verb — the same
-template, refusals and rollback:
-
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" add-phase "<title>" \
-        --outcome "<what success looks like>" \
-        [--park] [--id P7] [--description "<why & how>"] [--area a,b] \
-        [--gate "<entry>" ... | --gate-clear] [--blocked-by id,id] [--review-skill NAME] [--json]
-```
-
-**A flag belongs to the verb whose alternative in the hint carries it.** One parser
-serves every verb, so a pair like `/audit:phase add --files` is refused with exit 2,
-and the message names the verb that does read it; relay it rather than retrying.
-**`--risk` is one of those here and not on `/audit:task`** — a phase carries no risk and a
-task does, so `/audit:phase add --risk` is refused.
-
-**Exit codes:** `0` written. `1` the plan was already invalid, or the write would have
-left it invalid and was rolled back. `2` usage — the refusals above. `3` the index lock
-is held by a live run — stop; do not take it over. `4` the lock looks abandoned —
-confirm with the human (AskUserQuestion), then re-run with `--takeover`.
-
-**Then hand off:** `/audit:phase <newId>` runs it, and `/audit:status` shows it in the plan.
+Gather only what the conversation lacks: the outcome, the tasks (title, description, files, test
+mode) and the open choices the request leaves (`[]` when none). Write the plan file with the Write
+tool, outside the tracked tree: `{"request": "<as typed>", "openChoices": [...], "phase":
+{"title", "desiredOutcome", "description"}, "tasks": [{"key", "title", "description", "files",
+"tests": {"mode", "add": ["<path>: <what it asserts>"]}, "dependsOn"}]}`. Omit `id`: over a plan
+holding `P0`, `P1` and `P3`, the next id is `P4`, and never the `P2` the gap makes look free.
+Then run `S/manifest/audit-task.py" add --from-file <the file>` and print its line. On a phase
+branch, ask first: work the phase needs is `/audit:task add --phase <id>`; new work is
+`add-phase "<title>" --outcome "<..>" --park`. **`/audit:phase add --risk` is refused** - a
+phase carries no risk. Exit 3: the index lock is held - stop; 4: it looks abandoned - ask the
+human before `--takeover`.
 
 ## Subcommand: `retarget <phaseId>`
 
-Correct a phase that already exists: `--gate <entry>` (repeatable), `--gate-clear`,
-`--gate-set <entry> ...` (repeatable-in-one-flag), `--gate-drop <entry>` (repeatable),
-`--area a,b`, `--outcome TEXT`, `--description TEXT`, `--rename TITLE`. Runs
-`scripts/manifest/audit-task.py retarget` — same lock, same revalidate-or-roll-back,
-same journal shape as `add`.
-
-**`--gate-set` is `--gate`'s own operation under a name that takes several values at
-once** — both REPLACE the gate outright; `--gate-set lint typecheck` and two repeats of
-`--gate` write the identical list. An empty `--gate-set` (no value at all, or every value
-blank) is refused with the same sentence `--gate-drop`-to-nothing uses below, because a
-caller who typed nothing meant the empty gate and not a gate of blank commands — unlike
-plain `--gate ""`, which still writes that odd literal, since `--gate-set` exists for a
-caller naming several entries at once rather than for one flag repeated.
-
-**`--gate-drop <entry>` narrows the CURRENT gate by name, the other operation.** Every
-named entry must already be in the phase's `testGate` — an entry it does not name is
-refused, naming the missing entry and the gate as it stands, so a typo is never a silent
-no-op. A drop that would leave nothing is refused with **the same empty-gate sentence**:
-`an empty gate is --gate-clear, which says so` — that state is reached by SAYING so, not
-as a side effect of what got dropped.
-
-**`--rename` is the flag, not `--title`** — the positional slot on this verb is called
-`title` and carries the phase id, so a `--title` flag would shadow it.
-
-**And a rename is refused once the phase is on a branch.** A title is not a label here:
-`_branch.slugify` turns it into the branch's `{slug}`, so before phase entry the title
-decides which branch will be cut and renaming is exactly right. Afterwards the readers
-part company — `close-phase.py` and `manage-worktrees.py` prefer the recorded
-`phase.branch`, `resolve-branch.py` composes from the title unconditionally — and a
-renamed phase would have two names with no reader agreeing on which. Rename before entry,
-or leave the title as the record of what the branch was cut for.
-
-**Why a verb and not a flag on `add`.** The values already exist and are wrong.
-`/audit:init` and `/audit:sync pull sprint` synthesize a phase and choose its
-`testGate`; from that moment the choice was unreachable, and one wrong choice is enough
-to make a phase unable to pass its own sign-off. Measured: an imported phase was given
-`testGate: ["lint"]` because a build key existed, `lint` on that repo runs a Python
-pre-commit suite, and the phase's tasks touched only JSON and Markdown. Every route out
-was outside the plugin — a hand edit the plugin forbids, a `buildCommands` value that is
-a shell hack, or installing a third-party tool to satisfy a gate the plugin itself
-picked.
-
-**`--gate-clear` is the point, not a convenience.** `--gate` replaces, so without an
-explicit clear there is no spelling for the EMPTY gate — and the empty gate is a
-designed state, not a hole: `audit-task.py:_phase_gate` returns it with a basis, and its
-docstring says why it needs one, because *a phase nothing can prove done is a phase
-sign-off signs on review alone*. `/audit:phase add --gate` could already reach it for a
-NEW phase. An imported one could not, which is what turned a guessed gate into a trap.
-The report says so when the gate ends up empty, rather than leaving silence to be read
-as breakage.
-
-**Not a done or cancelled phase, and not one whose sign-off is recorded.** Its sign-off
-was given against the gate it had, and moving that afterwards rewrites what the sign-off
-attested - which holds as much for a phase signed off and still awaiting its merge as for
-one that reads done. A `pending` or `in_progress` phase with no verdict recorded - one only
-awaiting sign-off included - is exactly the case this verb is for.
-
-**Retargeting changes what the next run measures and rewrites nothing that already
-happened.** A recorded run is graded by the gate it ran under, and its ledger row keeps the
-steps it actually ran — so the phase's `testEvidence` goes on pointing at a run of the old
-gate until a new one is recorded, which is the honest reading and not staleness to repair.
-A phase whose gate has been cleared records nothing at all: the runner reports the EMPTY
-gate and returns before writing a row, so the report and the panel read the phase — and
-every task in it that declares no `tests.gate` of its own — as `No gate configured`,
-*nothing could have run*, rather than as a run that answered nothing.
-
-Any TWO of `--gate`, `--gate-clear`, `--gate-set` and `--gate-drop` together are refused:
-two answers about one field, and guessing which was meant is the fault this closes.
-`--area` with an empty value REMOVES
-the key rather than writing `null`, because the conventions default it to absent and a
-`null` would make an untagged phase claim to have considered the question.
+`S/manifest/audit-task.py" retarget <phaseId>` with the flags the hint lists; relay a refusal.
 
 ## Subcommand: `priority <phaseId> <tier>` (or `priority <phaseId> --clear`)
 
-Say which phase the pipeline should reach for first. Until this verb the order was implicit
-in the array — `phases[]` as written, then task id inside a phase — so "run this one next"
-meant physically moving the phase, a structural edit of the whole file that nobody performs
-in flight.
-
-**It re-sorts only work that is ALREADY ready.** A priority never makes an unready task ready
-and never skips a dependency: a pinned phase still waiting on its `blockedBy` is skipped, and
-`/audit:status` prints the note saying so and naming the task that ran instead. It is a wish
-about the schedule, not a permission.
-
-Read `${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` FIRST and resolve the manifest.
-This is a SCRIPT call — it takes the index lock itself, so hold no lock by hand around it:
-
-```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/set-priority.py" \
-  <manifestPath> P5 1 [--force] [--json]
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/set-priority.py" \
-  <manifestPath> P5 --clear
-```
-
-- **Tier 1 is unique**; 2, 3, 4 … are shared. Without `--force` a second holder of tier 1 is
-  refused and the refusal **names the phase that already has it** — relay that name, and offer
-  clearing it or picking another tier before reaching for `--force`. With `--force` both are
-  written and the one that comes FIRST in the manifest wins; the validator says so as a warning.
-- **No priority at all means unprioritised** — the phase sorts after every pinned one and keeps
-  its written position among its peers. Clearing a pin is `--clear`, which removes the key; there
-  is no "priority 0".
-- **`priority.maxTier`** in `.claude/audit.config.json` is advisory. A phase pinned above it keeps
-  the tier it was given and simply sorts after every tier at or under the maximum — nothing is
-  clamped, and the command says so.
-- The value lives on the **index stub** in the sharded layout, so one file is written and a phase
-  run editing its own shard cannot collide with it.
-
-**Exit codes:** `0` written (or already that value — it says so and writes nothing). `1` the
-manifest was already invalid, or the write would have left it invalid and was rolled back.
-`2` unknown phase, a tier that is not a positive integer, or a second holder of tier 1 without
-`--force`. `3` the index lock is held by a live run — stop; do not take it over. `4` the lock
-looks abandoned — confirm with the human (AskUserQuestion), then re-run with `--takeover`.
-
-**Display order does not change.** `/audit:status`, both reports and the panel keep showing the
-plan in the order it was written — the written plan IS the plan. The pin shows as a badge on the
-phase row and decides which READY task comes first.
-
-**`/audit:task priority <phaseId> <tier|--clear>` is the legacy spelling** and still does exactly
-this. It is documented in `${CLAUDE_PLUGIN_ROOT}/commands/task.md`; new work says
-`/audit:phase priority`, because the field is `phase.priority` and no task has one.
+`S/manifest/set-priority.py" <manifest> <phaseId> <tier> [--force]`, or `--clear`. A second
+holder of tier 1 is refused naming it - offer clearing it before `--force`.
 
 ## Subcommand: `signoff <phaseId> --verdict passed|skipped --summary TEXT`
 
-**A phase's status is derived**: it reads `done` once every task is terminal, sign-off is
-recorded, and - for a phase with a branch - that branch has merged. This verb records the
-sign-off and then stores the status it derives, so a reader of the field alone reads it too:
-`done` now for a phase with no branch; for one with a branch, `close-phase.py` stores it when it
-stamps the merge. Run it at the step of `reference/phase-signoff.md` that used to say "set
-`phase.status = done`", once the review and the gates it lists have passed:
-
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" signoff <phaseId> \
-        --verdict passed|skipped --summary "<what the phase did, and how it met its outcome>" \
-        [--review-outcome "<the review's one-line result>"]
-```
-
-It writes `review.status` (the verdict), `review.outcome`, `summary`, the status that record
-derives (on the shard and, sharded, the index stub), clears `claim`, and appends a
-`phase.verdict` journal row, under the index lock with revalidate-or-roll-back (`phase.signoff` is
-the row the journal-writes hook derives once the phase reaches done). It refuses a phase
-with open work (naming the open tasks), a phase with no task, one already signed off, and one
-already `done` or `cancelled`. Its output says what the phase now reads: `done` for a phase with no
-branch, and "done once `<branch>` lands" for one with a branch - `close-phase.py` then merges it
-and stamps `mergedAt`, which completes the derivation. `--summary` and `--review-outcome` are the
-operator's and the reviewer's words: pass them verbatim, or `-` to read them off stdin.
-
-`--verdict` is the reviewer's call and has no default. `skipped` is honest where no review ran -
-say so in `--summary` - and is never a way to sign off work nobody looked at as if it had passed.
-
-**`passed` needs the gate run it rests on.** The verb refuses `--verdict passed` unless the
-phase's newest recorded gate run binds its work — the rule a task commit is bound by, which grades
-a repeated verdict against the run it repeats and leaves the recorder's own writes out — and
-prints the gate call that supplies one. A phase whose gate declares no entry is bound to no run.
-Where no gate run can back the verdict, pass `--no-evidence-reason "<why>"`: it is the operator's
-words, recorded verbatim on `review.noEvidenceReason` and shown where the evidence badge's basis
-goes. It is not a run, so `--fail-on no-test-evidence` still names such a phase. `skipped` needs
-neither.
-
-### The review's own record — findings, their fixes, and a text correction
-
-Sign-off's review step records what the reviewer found before the verdict is written, and that
-record has three writes of its own, each a script call with a journal row, under the index lock
-with revalidate-or-roll-back. They are not `/audit:phase` subcommands; `reference/phase-signoff.md`
-step 1 is where they are run.
-
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" finding <phaseId> \
-        --severity low|med|high --file <path[:lines]> --issue - --resolution "<the change>"
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" resolve-finding <findingId> \
-        --fix-task <taskId> [--commit <sha>]
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" correct <phaseId> \
-        [--review-outcome TEXT] [--summary TEXT]
-```
-
-`finding` appends one entry to `review.findings` in the schema's shape, with the id allocated as
-`<phaseId>-R<n>`, and journals `review.finding`. It refuses, before any write, a finding missing
-a field and a severity outside `low|med|high`. `resolve-finding` writes the fix task and its
-commit onto the finding — the task's recorded commit, or `--commit` for one it has not recorded —
-and journals `review.resolve`; a fix task that is not `done`, or has no commit, has not landed,
-and is refused. `finding --findings-file PATH|-` records a whole review's findings in one write
-and is the form to use for more than one: the per-finding form takes the index lock per call, so
-run those calls one at a time. `finding` refuses a phase that has already landed (`mergedAt` set);
-on a phase signed off but not landed it records the finding and says it came after the verdict.
-`reopen` on a fix task takes its commit back off every finding that recorded it.
-`correct` rewrites the review's outcome or the phase's summary on a phase that already carries a
-verdict, and journals `review.correct`; it never touches the verdict or its `phase.verdict` row,
-and `correct --verdict` is refused as a flag the verb does not read.
-
-**The `[findings: …]` tally at the end of `review.outcome` is derived**, by these three verbs and
-by `signoff --review-outcome`, from `review.findings` as it stands after the write. The text
-before it is kept verbatim; a tally typed at its end is replaced by the derived one.
-
-### A group of phases built on one branch — `signoff <P1,P2,...> --branch NAME`
-
-Phases whose work was built on **one combined branch** record no branch and no `baseRef` of their
-own, so the single-phase sign-off has no diff to review and `close-phase.py` has no name to land.
-The same verb signs them off together; it is a flag here rather than a verb of its own because it
-writes the single sign-off's record — plus each member's `branch` and `baseRef`, and the carrier's
-evidence pointer on the other members — under the single sign-off's refusals plus the group's.
-Preview first — it writes nothing:
-
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" signoff P1,P2 \
-        --branch <combined-branch> --plan
-```
-
-It prints the whole sign-off with the command each step runs, and
-`reference/phase-signoff.md` → *Signing off a group* is the procedure: **`--bind`** records each
-member's branch and fork point first, so the invariants run grades them; the **review is scoped by
-the tasks' `commit`s**, which must be every commit the branch carries past its fork (or a member's
-journaled audit-state or index commit); **one gate run** over the union of the members'
-`testGate`, carried by the member whose gate holds all of it and owning every member's files
-(the gate's `--also`); **one invariants run**; the record, which needs that run to be
-current for `passed`; the commit — sharded, one `commit-audit-state.py` per member and then the
-index; single-file, one; and **one
-`close-phase.py --branch` per phase** — every one but the last keeps the branch and its worktree,
-because the first landing merges the whole branch. It refuses — naming every reason — a member with
-open work or already signed off, a member recording another branch, members that resolve to
-different parents, a `--branch` that is that parent, a finished task with no `commit`, a commit
-the branch does not carry (naming `repair-commits.py` for a rebase), a commit it carries that no
-member records - a merge counts only when its tree is the automatic merge of its parents,
-recomputed with `git merge-tree` (git 2.38+; a merge it cannot recompute is refused as not
-asked, never as an edit) - and `--accept <sha> --reason "<why>"`, which takes a hex SHA naming
-exactly one commit on the branch, takes one into the review, recorded on every member and shown
-beside the sign-off — and a union no member's gate holds (`/audit:phase
-retarget` gives one member the missing entries).
+`S/manifest/audit-task.py" signoff <phaseId> --verdict ... --summary "<..>"`. The drive runs it at
+sign-off; relay a refusal.
 
 ## Subcommand: `settle`
 
-**Stores every derived value a plan carries stale.** A plan signed off, merged or closed before
-the verbs stored the derived status — or edited by hand since — reads correctly to every surface
-that derives, and wrongly to every reader of the stored field alone: an older plugin's hooks,
-`jq`, an agent reading the file. `validate-manifest` warns about each such value (a warning, never
-a finding) and names this command:
-
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" settle
-```
-
-It stores a phase's derived `status`, a bug's derived `status` and `fixedIn`, and re-mirrors any
-index stub fallen behind its shard — under the index lock, revalidated, rolled back on findings,
-with one `plan.settle` journal row naming each value it moved. It only ever moves a value towards
-what the derivation already answers, so a stored `done`/`cancelled` and a person's
-`wontfix`/`not_a_bug` are never touched. A plan with nothing stale is reported as such, with what
-was examined, and nothing is written. Show the validator's warning to the human and let them
-decide when to run it; it is the plan owner's write, not a run's.
+`S/manifest/audit-task.py" settle`: stores stale derived values, when the plan owner says.
 
 ## Subcommand: `cancel <phaseId> --reason "<why>"`
 
-**The operator's words go in VERBATIM** — see `reference/manifest-conventions.md` → *The operator's words go in unchanged*. This value reaches the hash-chained journal, so a paraphrase makes the trail guarantee a sentence its subject never wrote.
-
-Close a phase that will **not** be done — the feature was dropped, the approach was
-abandoned, the phase ends with whatever landed. Not failure and not `done`: `cancelled`
-is the second TERMINAL state, and the report files it under **Archived** beside the
-finished work.
-
-**The procedure is `${CLAUDE_PLUGIN_ROOT}/commands/task.md` → *Subcommand: `cancel`*.**
-Read it and follow it with the id fixed to a phase id. There is no second copy of it here
-on purpose: one writer means one description of what it writes, what it refuses and what
-it rolls back, and two copies of that is one copy and one lie. The cascade to the work
-still open inside the phase, the released claim and the journal row are all stated there.
-
-**What this spelling adds is a narrowing.** `<phaseId>` must resolve to a **phase**. An id
-that resolves to a task → **refuse before any write**, and name the spelling that takes
-one: `/audit:task cancel <taskId> --reason "<why>"`. A command called `phase` mutating a
-task is the same noun/verb mismatch this spelling exists to remove, so it is refused
-rather than accepted quietly.
-
-**`/audit:task cancel <phaseId>` still does exactly this** — the legacy spelling for a
-phase, kept so existing transcripts and runbooks resolve. New work says
-`/audit:phase cancel`.
+The writer is `commands/task.md`'s `cancel`, with the id a phase id. A task id is refused before
+any write, naming `/audit:task cancel <taskId> --reason "<why>"`.

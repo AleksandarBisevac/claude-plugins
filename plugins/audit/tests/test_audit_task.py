@@ -3330,6 +3330,12 @@ def _cases(check):
         with open(os.path.join(_output.PLUGIN_ROOT, "commands", "task.md"),
                   "r", encoding="utf-8") as _fh:
             _fg_doc = _fh.read()
+        # Why the gate crosses the line on a started task is the verb's
+        # explanation, which moved with the rest of it out of the command body
+        # into `reference/verbs-in-full.md`, which the plugin ships.
+        with open(os.path.join(_output.PLUGIN_ROOT, "reference", "verbs-in-full.md"),
+                  "r", encoding="utf-8") as _fh:
+            _fg_guide = _fh.read()
         _fg_at = _fg_doc.find("all keep the old refusal")
         # The flag list is the RUN-UP to that clause, so the window ends where
         # the clause begins - a window reaching past it would pick up the
@@ -3345,7 +3351,7 @@ def _cases(check):
               and "`--risk`" in _fg_sent
               and "`tests.gate` may be replaced outright" in _fg_doc
               and "narrowed to a started task with no green run recorded"
-              in _fg_doc)
+              in _fg_guide)
 
         # ---- (pb) readiness ignored the owning phase's blockedBy ---------------
         # `reference/orchestrator.md`'s readiness rule has FOUR terms and the
@@ -6837,13 +6843,16 @@ def _cases(check):
         # runs a task does not have to read it.
         with open(os.path.join(_output.PLUGIN_ROOT, "reference",
                                "execute-task.md"), "r", encoding="utf-8") as _ic_fh:
-            _ic_orch = _ic_fh.read()
+            _ic_orch = " ".join(_ic_fh.read().split())
+        # The reviewer files through `drive-phase.py submit`, its last act, which
+        # hands the return to `file-return` - the one write a filing makes.
         check("ic6 `reference/execute-task.md` tells the orchestrator that the "
               "reviewer's answer reaches the SAME close that carries `--commit` "
               "through the filed return, for whichever word it was, and names "
               "the one typed word a close may still carry - `not-asked` with "
               "its basis",
-              "audit-task.py file-return <taskId> --role reviewer" in _ic_orch
+              "drive-phase.py submit <taskId> --role reviewer" in _ic_orch
+              and "`audit-task.py file-return`" in _ic_orch
               and "--commit <sha> --from-return" in _ic_orch
               and "of the three words it was" in _ic_orch
               and "--intent not-asked --intent-basis" in _ic_orch)

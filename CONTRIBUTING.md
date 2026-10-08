@@ -280,6 +280,15 @@ python3 tools/gate-parity.py
 # cannot find on its own with `--python <path>`.
 python3 tools/bench-hooks.py --gate
 
+# the pipeline context ceilings. What each pipeline entry - `/audit:run`, `/audit:next`,
+# `/audit:resume`, the `/audit:phase` run form and `add`, `/audit:task add`, sign-off -
+# makes the main loop read before any work, against the pipeline-cost design's ceilings,
+# and the agents' starts against theirs. A pipeline command that reads a reference file
+# first breaches whatever its size: the step driver prints the rule a step needs at that
+# step, and the agents carry theirs in their prompts. With no flag the tool prints the
+# whole measurement, per entry and per file, for a human deciding what to cut.
+python3 tools/measure-context.py --gate
+
 # the half of the pipeline that WRITES to a repository, driven against a real one.
 # Nothing else in this list creates a git repository: every other gate works on a
 # manifest, a rendered document or a synthetic project directory, so the commit

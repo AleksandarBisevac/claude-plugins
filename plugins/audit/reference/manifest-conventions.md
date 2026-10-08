@@ -144,7 +144,7 @@ wide because its question is wide, and a task gate is narrowed to the task's own
 a wider one does not answer its question any better, it answers the PHASE's question
 again, once per attempt, per task, per phase running in parallel. `commands/init.md` →
 step 5.3 is where a plan's gates are derived; `/audit:task add` derives one the same way
-for a task added later and prints which default it took (`commands/task.md` → *The task
+for a task added later and prints which default it took (`reference/verbs-in-full.md` → *The task
 gate is derived*).
 
 **Every `tests.add` entry is written `"<path>: <what it asserts>"`**, the path being

@@ -4292,10 +4292,104 @@ def _phase_key_cases(check):
           len(out["no-entry"]) == 1 and len(out["no-tuple"]) == 1)
 
 
+# --- (fa) a followed rule names where the model meets it ------------------------
+_FA_STEPS = ('STEPS = {\n'
+             '    "decide-high-risk": {"line": "decide high-risk %(task)s",\n'
+             '                         "rule": ("ask the human first",)},\n'
+             '    "done": {"line": "done %(phase)s", "rule": ()},\n'
+             '}\n')
+_FA_AGENT = ("---\nname: audit-executor\n---\nHard rules:\n\n"
+             "- **Test discipline** exactly as ordered.\n"
+             "Prose naming **Mid sentence** in passing.\n")
+_FA_HEAD = ("# x\n\n### Followed from the driver's steps and the agent prompts\n\n"
+            "Intro.\n\n| Invariant | Stated in | What makes it checkable |\n"
+            "|---|---|---|\n")
+_FA_TAIL = "\n**How a row moves left.** Later prose.\n"
+_FA_ROWS = ("| A high-risk task waits for a human | step `decide-high-risk` | nothing |\n"
+            "| Tests follow the mode, `a \\| b` | `audit-executor.md` → **Test "
+            "discipline** | partly |\n")
+
+
+def _followed_anchor_cases(check):
+    """`followed_anchor_drift`: every followed row's "Stated in" names a step the
+    driver prints with its rule, or a section of an agent prompt - the two places
+    the model meets a followed rule once no command makes it read reference
+    prose."""
+    lint = getattr(M, "followed_anchor_drift", None)
+    if lint is None:
+        for label in ("fa1", "fa2", "fa3", "fa4", "fa5", "fa6"):
+            check("%s followed_anchor_drift exists" % (label,), False)
+        return
+    live = lint()
+    check("fa1 every row of the README's followed table names a step text the "
+          "driver prints or an agent prompt section, and every anchor resolves: %r"
+          % (live,), live["problems"] == [] and live["rows"] > 0
+          and live["anchors"] >= live["rows"])
+
+    def tree(rows, steps=_FA_STEPS, agent=_FA_AGENT, readme=None):
+        tmp = tempfile.mkdtemp(prefix="qg-fa-")
+        _write(tmp, M.PLUGIN_REL + "/README.md",
+               readme if readme is not None else _FA_HEAD + rows + _FA_TAIL)
+        _write(tmp, M.PLUGIN_REL + "/" + M.FOLLOWED_STEP_SOURCE, steps)
+        _write(tmp, M.PLUGIN_REL + "/agents/audit-executor.md", agent)
+        return tmp
+
+    out = {}
+    for name, rows, extra in (
+            ("allow", _FA_ROWS, {}),
+            ("section", _FA_ROWS + "| Git confirmations | § Non-negotiable "
+             "guardrails | nothing |\n", {}),
+            ("empty-rule", "| Report it | step `done` | nothing |\n", {}),
+            ("no-step", "| Report it | step `decide-nowhere` | nothing |\n", {}),
+            ("no-lead", "| X | `audit-executor.md` → **Never here** | nothing |\n",
+             {}),
+            ("mid-lead", "| X | `audit-executor.md` → **Mid sentence** | nothing |\n",
+             {}),
+            ("no-table", "", {"readme": "# x\n\nNo table here.\n"}),
+            ("no-rows", "", {})):
+        tmp = tree(rows, **extra)
+        try:
+            out[name] = lint(tmp)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    # THE ALLOW CASE - the one a check widened into refusing every anchor fails,
+    # including the escaped pipe inside a cell, which a split on every `|` reads
+    # as a fourth column.
+    check("fa2 THE ALLOW CASE: a table whose rows name a step that prints its rule "
+          "and a bullet of an agent prompt is quiet, an escaped pipe in a cell "
+          "included: %r" % (out["allow"],),
+          out["allow"]["problems"] == [] and out["allow"]["rows"] == 2
+          and out["allow"]["anchors"] == 2)
+    check("fa3 a row still citing a reference section is reported by its row - no "
+          "pipeline command reads that prose: %r" % (out["section"]["problems"],),
+          len(out["section"]["problems"]) == 1
+          and "Git confirmations" in out["section"]["problems"][0]
+          and "§" in out["section"]["problems"][0])
+    check("fa4 a step whose rule is empty, and a step the driver does not have, "
+          "are each reported - a step that prints no rule states nothing: %r"
+          % ((out["empty-rule"]["problems"], out["no-step"]["problems"]),),
+          len(out["empty-rule"]["problems"]) == 1
+          and "done" in out["empty-rule"]["problems"][0]
+          and len(out["no-step"]["problems"]) == 1
+          and "decide-nowhere" in out["no-step"]["problems"][0])
+    check("fa5 an agent anchor whose lead no bullet of the prompt opens with is "
+          "reported, a bold mention mid-prose included: %r"
+          % ((out["no-lead"]["problems"], out["mid-lead"]["problems"]),),
+          len(out["no-lead"]["problems"]) == 1
+          and "Never here" in out["no-lead"]["problems"][0]
+          and len(out["mid-lead"]["problems"]) == 1)
+    check("fa6 a README with no followed table, or a table with no row, is a "
+          "problem and never a clean answer about nothing: %r"
+          % ((out["no-table"], out["no-rows"]),),
+          len(out["no-table"]["problems"]) == 1 and out["no-table"]["rows"] == 0
+          and len(out["no-rows"]["problems"]) == 1 and out["no-rows"]["rows"] == 0)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _harness.stage(check, "prk-block", _phase_key_cases)
+        _harness.stage(check, "fa-block", _followed_anchor_cases)
     return _harness.run(body)
 
 

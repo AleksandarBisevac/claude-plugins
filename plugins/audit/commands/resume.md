@@ -5,41 +5,41 @@ allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 
 # /audit:resume — continue an interrupted run
 
-Read `${CLAUDE_PLUGIN_ROOT}/reference/orchestrator.md` and
-`${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` first. Run the full preflight
-(steps 1–5, including the lock) and emit **Progress output** (orchestrator) as you go.
+For a run a crash, a lost session or an interrupted `/audit:phase`, `/audit:next` or `/audit:run`
+left behind. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" --short`: the
+phase it flags resumable is the one to continue. None flagged → say so and stop.
 
-Run the **Resume after interruption** procedure (orchestrator): find the in-progress phase and its
-branch, compare committed work, and continue from the first task whose `commit` is null/missing.
-Use after a crash, a lost session, or any interrupted `/audit:phase` / `/audit:next` / `/audit:run`
-(`/audit:status` flags when a phase is resumable). Then follow **Reporting** and release the lock.
+**Sweep the interrupted session's record first**, before anything else touches the tree:
 
-## Sweep the interrupted session's record first
-
-Once the in-progress phase is identified and before continuing from the resume point, run:
-
-```
+```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-audit-state.py" <manifestPath> <phaseId>
 ```
 
-**This is the point the record of an interrupted run depends on.** A gate that was torn down
-records its row and returns — git belongs to the orchestrator, and a commit made while
-stopping is how a half-made one happens — so what a lost session leaves behind is a row in
-the working tree that nothing is going to carry. A task commit would have carried it; an
-interrupted run never reached one. This is that sweep, and it is the resume entry among the
-points the orchestrator's *Keeping a failed run's record* names.
+It commits the phase's manifest file, the journal and the evidence directory, and never a task's
+`files` - so the rows a torn-down gate wrote reach git, and the interrupted task's own edits stay
+untrusted and unstaged. With nothing uncommitted it says so and commits nothing; run it on every
+resume rather than deciding first.
 
-**It stages the phase's manifest file, the journal and the evidence directory, and never the
-task's `files`** — which is exactly what makes it safe to run here. The interrupted task's
-working-tree changes are the thing the orchestrator's own resume step calls **untrusted**
-and refuses to discard without confirmation; this commit must not settle that question in
-the other direction by sweeping them into git on its way past. The
-exclusion is enforced rather than intended: paths are staged by name, the index is read back
-and compared against the same allow-list before anything is committed, and
-`verify-invariants.py`'s `audit-state-scope` re-derives the rule from git afterwards.
+**Then the step driver continues the phase.** It keeps its state per phase, so a task in progress
+resumes at the step it stopped on - an agent that filed nothing becomes a named decision rather
+than a silent second dispatch:
 
-**Calling it when nothing is wrong costs a line of output.** With nothing uncommitted it
-makes no commit and says so. Journal rows another writer left are committed like the other
-records: the row this command writes to name its commit is inside that commit, so a second run
-finds nothing and stops. So run it on every resume rather than first deciding whether this
-particular interruption left anything; deciding is what it is for.
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" next <phaseId>
+```
+
+Do exactly what each print says and run it again:
+
+- `dispatch <agent> <id> model=<m> brief=<path>` → one Agent call with that `subagent_type`
+  and `model`, the prompt `Read your brief at <path> and follow it.`, and the rule printed under
+  it. Wait for its one-line hand-back.
+- `decide <name> ...` → answer with one printed option:
+  `next <phaseId> --answer <option> [--reason "<words>"]`. A decision the printed rule gives to
+  a human goes to the human first (AskUserQuestion). **The operator's words go in VERBATIM** —
+  see `reference/manifest-conventions.md` → *The operator's words go in unchanged*: a `--reason`
+  is theirs, unparaphrased, and reaches the hash-chained journal.
+- `done <phaseId>: ...` → report the outcome, and stop.
+- a `stopped` print → relay it to the human as printed, with the rule under it.
+
+**An interrupted task's uncommitted edits are untrusted.** Never discard them, and never let a
+commit settle them, without the human's confirmation (AskUserQuestion).

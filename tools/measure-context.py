@@ -47,9 +47,18 @@ table reads as a gap rather than as a smaller class.
 Usage:  python3 tools/measure-context.py --ref v3.1.0 --ref main [--claude-md FILE] [--json]
         python3 tools/measure-context.py --ref <ref> --sections
         python3 tools/measure-context.py --tree <plugin root> [--claude-md FILE]
+        python3 tools/measure-context.py --gate [--ref <ref> | --tree <plugin root>]
         python3 tools/measure-context.py --selftest
-Exit codes: 0 measured - 1 a file a step loads is missing at that ref - 2 usage error
-or a ref that does not resolve.
+Exit codes: 0 measured, or under --gate every entry within its ceiling - 1 a file a
+step loads is missing at that ref, or under --gate a breach - 2 usage error or a ref
+that does not resolve.
+
+THE GATE. `--gate` holds `ENTRY_CEILINGS` - the pipeline-cost design's ceilings on
+what each pipeline entry loads before any work - and `AGENT_CEILINGS`, reading the
+same `total` line the report prints, so the gate and the measurement cannot measure
+two different things. A gated command that reads a file under `reference/` first
+breaches whatever its size: no pipeline command makes the main loop read reference
+prose, and this is the check that holds it. CI and `tools/verify.sh` run it.
 """
 import argparse
 import io
@@ -76,6 +85,7 @@ SIGNOFF_COMMAND = "commands/review.md"
 PIPELINE = (
     ("/audit:run", "command", "commands/run.md"),
     ("/audit:next", "command", "commands/next.md"),
+    ("/audit:resume", "command", "commands/resume.md"),
     ("/audit:phase", "command", "commands/phase.md"),
     ("/audit:phase add", "command", "commands/phase.md"),
     ("/audit:task add", "command", "commands/task.md"),
@@ -97,8 +107,27 @@ PIPELINE = (
 # project's skills; a longer agent cache bridges nothing between requests seconds apart
 # and raises every agent write's rate (docs/research/pipeline-cost-design.md prices each).
 AGENT_CEILINGS = {"executor": 9000, "reviewer": 7000}
-# The entries that run work, each of which reads the orchestrator's prose first today.
-RUN_ENTRIES = ("/audit:run", "/audit:next", "/audit:phase",
+# The most bytes each pipeline entry may load before any work - its command body
+# plus every file it reads first, the same `total` line the report prints - from the
+# pipeline-cost design's T2 table. The main loop is the dearest place in the pipeline
+# to hold a byte, because every one of its requests reads it again, so these are
+# small: a command body is the step driver's loop and the verb's own section, and
+# the rule each step needs is printed by the driver at that step. A gated entry that
+# reads a file under `reference/` first breaches whatever its size, since that read
+# is the cost this ceiling exists to keep out; `--gate` exits 1 on any breach, and
+# `mc24` holds the shipped tree under it in the sweep.
+ENTRY_CEILINGS = (
+    ("/audit:phase run form, before sign-off", 4000),
+    ("/audit:phase add", 8000),
+    ("/audit:task add", 8000),
+    ("/audit:run", 4000),
+    ("/audit:next", 4000),
+    ("/audit:resume", 4000),
+    ("sign-off (/audit:review)", 6000),
+)
+REFERENCE_DIR = "reference/"
+# The entries that run work.
+RUN_ENTRIES = ("/audit:run", "/audit:next", "/audit:resume", "/audit:phase",
                "/audit:phase run form, before sign-off", "/audit:phase run form, at sign-off",
                "sign-off (/audit:review)")
 
@@ -360,6 +389,59 @@ def ceiling_breaches(measured):
     return out
 
 
+def entry_ceiling_breaches(measured):
+    """`[(entry, bytes, ceiling, why), ...]` - every gated pipeline entry that
+    loads more than `ENTRY_CEILINGS` allows, reads a reference file first, or
+    loads a file that is missing. An entry the measurement lacks is a breach,
+    never a pass; empty is the one answer that holds."""
+    found = dict((e["entry"], e) for e in measured["entries"])
+    out = []
+    for name, ceiling in ENTRY_CEILINGS:
+        entry = found.get(name)
+        if entry is None:
+            out.append((name, None, ceiling, "not measured"))
+            continue
+        why = []
+        if entry["missing"]:
+            why.append("loads %s, which is missing" % ", ".join(entry["missing"]))
+        reads = [r["path"] for r in entry["rows"] if r["part"] != "command body"
+                 and r["path"].startswith(REFERENCE_DIR)]
+        if reads:
+            why.append("reads %s first" % ", ".join(reads))
+        if entry["bytes"] > ceiling:
+            why.append("%d bytes, over a ceiling of %d" % (entry["bytes"], ceiling))
+        if why:
+            out.append((name, entry["bytes"], ceiling, "; ".join(why)))
+    return out
+
+
+def gate_breaches(measured):
+    """What `--gate` refuses: every pipeline entry past its T2 ceiling and every
+    agent start past its own, as `(entry, bytes, ceiling, why)`."""
+    agents = [(name, size, ceiling, "the agent's start is %s bytes, over %d"
+               % ("missing" if size is None else size, ceiling))
+              for name, size, ceiling in ceiling_breaches(measured)]
+    return entry_ceiling_breaches(measured) + agents
+
+
+def render_gate(measured, breaches):
+    """The gate's own report: each gated entry against its ceiling, then the
+    verdict naming every breach."""
+    found = dict((e["entry"], e) for e in measured["entries"])
+    lines = ["measure-context --gate over %s [bytes: what the entry loads before any "
+             "work, against its ceiling]" % (measured["label"],)]
+    for name, ceiling in list(ENTRY_CEILINGS) + sorted(AGENT_CEILINGS.items()):
+        entry = found.get(name)
+        lines.append("  %-42s %8s / %d" % (name, "-" if entry is None
+                                            else entry["bytes"], ceiling))
+    if not breaches:
+        lines.append("GATE OK: every entry within its ceiling, and no gated command "
+                     "reads a reference file first")
+    for name, _size, _ceiling, why in breaches:
+        lines.append("BREACH %s: %s" % (name, why))
+    return "\n".join(lines)
+
+
 def file_sections(rel, data):
     """[(section, class, bytes)] for one file under SECTION_CLASSES, and a problem or
     None. Each line counts with its newline, the empty one after a final newline
@@ -526,7 +608,13 @@ def main(argv):
                     help="also cut each file /audit:run reads first into sections, summed "
                          "by class")
     ap.add_argument("--json", action="store_true", dest="as_json")
+    ap.add_argument("--gate", action="store_true",
+                    help="exit 1 when an entry passes its ceiling or a gated command "
+                         "reads a reference file first; with no --ref or --tree, "
+                         "measures this repository's plugin tree")
     args = ap.parse_args(argv)
+    if args.gate and not args.ref and not args.tree:
+        args.tree = os.path.join(REPO, PLUGIN_REL)
     if not args.ref and not args.tree:
         print("measure-context: name what to measure: --ref <ref> (repeatable) or "
               "--tree <plugin root>", file=sys.stderr)
@@ -555,6 +643,13 @@ def main(argv):
             return 2
         sources.append(tree_source(args.tree))
     measured = [measure(s, claude_md) for s in sources]
+    if args.gate:
+        breached = False
+        for one in measured:
+            breaches = gate_breaches(one)
+            breached = breached or bool(breaches)
+            print(render_gate(one, breaches))
+        return 1 if breached else 0
     cuts = [sections(s) for s in sources] if args.sections else []
     if args.as_json:
         shown = {"bytesPerToken": args.bytes_per_token, "measured": measured,
@@ -861,20 +956,99 @@ def _cases(check):
                         AGENT_CEILINGS["reviewer"])]
           and [b[0] for b in gone] == ["executor", "reviewer"])
 
+    _gate_cases(check, shipped)
+
+
+def _fx_lean(root):
+    """A plugin tree whose pipeline commands read no reference file first and
+    whose every body is far inside its ceiling - the shape the gate allows."""
+    _fx_plugin(root, executor_skills=False)
+    for rel in ("commands/run.md", "commands/next.md", "commands/phase.md",
+                "commands/review.md", "commands/task.md", "commands/resume.md"):
+        _fx_write(root, rel, "---\ndescription: x\n---\nRun `drive-phase.py next`, "
+                  "do what it prints, and run it again.\n")
+
+
+def _gate_run(scratch):
+    """`(breaches, code, printed)` of the gate over the tree at `scratch`."""
+    breaches = gate_breaches(measure(tree_source(scratch)))
+    old_out, sys.stdout = sys.stdout, io.StringIO()
+    old_err, sys.stderr = sys.stderr, io.StringIO()
+    try:
+        code = main(["--gate", "--tree", scratch])
+        printed = sys.stdout.getvalue() + sys.stderr.getvalue()
+    finally:
+        sys.stdout, sys.stderr = old_out, old_err
+    return breaches, code, printed
+
+
+def _gate_cases(check, shipped):
+    import tempfile
+    from _suite import remove_tree
+    gated = dict(ENTRY_CEILINGS) if isinstance(globals().get("ENTRY_CEILINGS"),
+                                                tuple) else {}
+    if "gate_breaches" not in globals():
+        for label in ("mc21", "mc22", "mc23", "mc24"):
+            check("%s the ceiling gate exists (gate_breaches)" % (label,), False)
+        return
+    scratch = tempfile.mkdtemp(prefix="measure-context-gate-")
+    try:
+        _fx_lean(scratch)
+        lean, lean_code, _p = _gate_run(scratch)
+        _fx_write(scratch, "commands/phase.md", "---\ndescription: x\n---\n"
+                  + "P" * (gated.get("/audit:phase run form, before sign-off", 0) + 1))
+        fat, fat_code, fat_printed = _gate_run(scratch)
+        _fx_lean(scratch)
+        _fx_write(scratch, "commands/run.md", "---\ndescription: x\n---\nRead "
+                  "`%sreference/a.md` first.\n" % (_FX_ROOT,))
+        reads, _c, _p = _gate_run(scratch)
+        _fx_lean(scratch)
+        os.remove(os.path.join(scratch, "commands", "resume.md"))
+        gone, gone_code, _p = _gate_run(scratch)
+    finally:
+        remove_tree(scratch)
+    check("mc21 THE ALLOW TWIN: a tree whose pipeline commands read no reference file "
+          "first and stay inside every ceiling breaches nothing, and --gate exits 0 over "
+          "it: %r" % ((lean, lean_code),), lean == [] and lean_code == 0)
+    fat_names = [b[0] for b in fat]
+    check("mc22 a phase body one byte past the run form's ceiling is named with its size "
+          "and the ceiling, the verb whose ceiling is higher is not, and --gate exits 1 "
+          "printing the breach: %r" % ((fat, fat_code),),
+          "/audit:phase run form, before sign-off" in fat_names
+          and "/audit:phase add" not in fat_names and fat_code == 1
+          and "/audit:phase run form, before sign-off" in fat_printed
+          and any(b[1] == gated.get("/audit:phase run form, before sign-off", 0) + 1
+                  for b in fat))
+    check("mc23 a gated command that reads a reference file first breaches whatever its "
+          "size, naming the file - the rule is that no pipeline command makes the main "
+          "loop read reference prose - and an entry whose command is missing is a breach "
+          "rather than a zero: %r" % ((reads, gone, gone_code),),
+          [b[0] for b in reads] == ["/audit:run"]
+          and "reference/a.md" in reads[0][3]
+          and [b[0] for b in gone] == ["/audit:resume"] and gone_code == 1)
+    breaches = gate_breaches(shipped)
+    check("mc24 the shipped tree holds the ceilings the pipeline-cost design sets for each "
+          "entry, and reads no reference file first from any gated command: %r"
+          % ([(e["entry"], e["bytes"]) for e in shipped["entries"]
+              if e["entry"] in gated] + breaches,),
+          gated and breaches == [])
+
     head, problem = git_source("HEAD")
     if problem:
         check("mc12 HEAD of this checkout is readable as a source (%s)" % problem, False)
         return
     real = measure(head)
-    named = dict((e["entry"], [r["path"] for r in e["rows"] if r["part"] == "read first"])
-                 for e in real["entries"])
-    check("mc12 ON THE REAL PROSE at HEAD the up-front rule finds the reference files every "
-          "pipeline command reads, and every file it names is there - a rule that quietly "
-          "stopped matching would read as a cheap pipeline: %r" % (named,),
-          all("reference/orchestrator.md" in named[label] for label in RUN_ENTRIES)
-          and "reference/manifest-conventions.md" in named["/audit:task add"]
-          and "reference/phase-signoff.md" in named["sign-off (/audit:review)"]
-          and "reference/phase-signoff.md" not in named["/audit:run"]
+    # The pipeline's own commands read no reference file first any more, so the
+    # anti-vacuity half reads commands OUTSIDE the pipeline that still do: a rule
+    # that quietly stopped matching would read every pipeline entry as cheap, and
+    # the gate above as green over nothing.
+    outside = dict((rel, first_reads(split_frontmatter(head["read"](rel) or b"")[1]))
+                   for rel in ("commands/bug.md", "commands/layout.md"))
+    check("mc12 ON THE REAL PROSE at HEAD the up-front rule still finds the reference "
+          "files the commands outside the pipeline read first, and every file a "
+          "pipeline entry loads is there: %r" % (outside,),
+          "reference/manifest-conventions.md" in outside["commands/bug.md"]
+          and "reference/orchestrator.md" in outside["commands/layout.md"]
           and not any(e["missing"] for e in real["entries"]))
 
 

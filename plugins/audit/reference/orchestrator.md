@@ -1,13 +1,16 @@
 # Audit orchestrator — shared execution logic
 
-Read this FIRST from every `/audit:*` execution command (`status`, `next`, `run`, `phase`,
-`review`, `resume`, `report`) together with `manifest-conventions.md`. Each command does its
-own slice and defers the rules every one of them needs — config resolution, preflight,
-guardrails, readiness, the lock, branch-per-phase, resume — to this file. **Execute the task**
-and **Phase sign-off** are split into their own files, `reference/execute-task.md` and
-`reference/phase-signoff.md`, so a command that never runs a task or never signs a phase off
-does not read either: `next`, `phase` and `run` read the first, `phase` and `review` read the
-second, and a command reads neither unless its own instructions say to.
+**The pipeline commands do not read this file.** `/audit:run`, `/audit:next`, `/audit:phase`,
+`/audit:resume` and `/audit:review` run through the step driver, `scripts/governance/drive-phase.py`,
+which performs every step that needs no judgement as the existing verbs and prints the rule a
+step needs at that step; the agents carry their own rules in their prompts.
+`tools/measure-context.py --gate` holds that no pipeline command reads a reference file first,
+and `_refs.followed_anchor_drift()` that every followed rule in the README names the step or the
+prompt that states it. What stays here is the shared logic as documentation - config
+resolution, preflight, guardrails, readiness, the lock, branch-per-phase, resume - for the guide
+agent, for a reader who asks, and for the commands outside the pipeline (`/audit:report`,
+`/audit:worktree`, `/audit:layout`) that still read it first. **Execute the task** and **Phase
+sign-off** are in `reference/execute-task.md` and `reference/phase-signoff.md`.
 
 ## At a glance
 
@@ -18,9 +21,9 @@ second, and a command reads neither unless its own instructions say to.
   via `git -C <gitRoot>`, gates run from the project dir verbatim; `risk:"high"` → human confirm
   before commit (asked then, or pre-given per phase for named task ids) and never on `haiku`;
   every manifest write is re-validated; the manifest is the single source of truth.
-- **A phase run:** preflight → phase branch off `developmentBranch` → Execute each ready task
-  (parallel where `files` disjoint) → Phase sign-off (review? → test gate → runtime boot?) → merge
-  back (ff, else confirmed `--no-ff`) → release lock.
+- **A phase run:** the step driver's lock → phase branch off `developmentBranch` → Execute each
+  ready task, one at a time in id order → Phase sign-off (review? → test gate → runtime boot?) →
+  merge back (ff, else confirmed `--no-ff`) → release lock.
 - **On trouble:** unmet blockers → skip; gates red → retry to `maxAttempts` → `blocked`; gates
   can't run (infra) → don't burn an attempt, human action item; interrupted → `/audit:resume`.
 - **One task per agent, bounded:** continuing a running agent onto its next task is preferred
@@ -734,17 +737,16 @@ run that stopped here. This is written down because it happened: a run with twen
 committed wave 1 of eight, reported which four came next, and sat idle for a day with its lock still
 held and nothing refusing anything.
 
-**What NOT to lay out by hand.** The *entry view* is already rendered: run
-`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <manifestPath> --short`
-and print it verbatim. It carries the overall line, the usage line, the ready list — each entry
-with the command that runs it — and the open-bug count, closing with the command that shows the
-full table — so re-tabulating any of that costs tokens for a worse-aligned copy, and the phase
-table this echoes between waves is not what that reader needs paid for again; `/audit:status`
-still renders it whole, typed. `commands/next.md` and `commands/phase.md` print their own, wider
-entry view instead of this default — `next` because its next step reads the full table's
-`waiting on` column, `phase` because it scopes to one phase — so neither takes `--short` here.
-The lines above are the ones a script genuinely cannot produce, because they report events as
-they happen; those stay yours.
+**What NOT to lay out by hand.** The *entry view* is already rendered:
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <manifestPath> --short` carries
+the overall line, the usage line, the ready list — each entry with the command that runs it —
+and the open-bug count, closing with the command that shows the full table — so re-tabulating
+any of that costs tokens for a worse-aligned copy. It is no longer printed as a long block at
+the start of a run: `/audit:next` reads its first READY NOW entry and shows that short list,
+`/audit:resume` reads the phase it flags, and `/audit:phase` prints none - the step driver's
+one-line instructions are the run's progress. `/audit:status` still renders the whole table,
+typed. The lines above are the ones a script genuinely cannot produce, because they report
+events as they happen; those stay yours.
 
 ## Dry-run / preview
 

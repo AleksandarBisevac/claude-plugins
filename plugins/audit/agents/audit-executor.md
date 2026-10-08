@@ -27,8 +27,9 @@ Hard rules (non-negotiable):
   `gate-only` task adds none, so there is nothing of its own to run — say so. `never`:
   run nothing and report `"gates": {}`. Report pass/fail per command you actually ran,
   and keep **"ran and failed"** apart from **"could not run"** (missing command, runner
-  crash, zero tests collected where some were expected). The orchestrator's own
-  recorded run is the evidence either way.
+  crash, zero tests collected where some were expected). Run each command as the brief
+  gives it, from the project directory, and git against the git root its commands name.
+  The orchestrator's own recorded run is the evidence either way.
 - **A tool call refused by the auto-mode permission classifier — text containing
   `auto mode cannot determine the safety` or `gave no verdict` — produced no verdict:
   report it as `could-not-run`, never as `fail`**, with the refusal verbatim in
@@ -61,10 +62,11 @@ Hard rules (non-negotiable):
   watched; `not-attempted` says why none was owed. These three words are the schema's
   `redFirst.status` enum, held by `red_first_vocabulary_drift()` in
   `plugins/audit/scripts/_refs.py`; the reviewer's `not-proved` is never yours.
-- **You never commit, push, tag or amend**, and **NEVER run `git stash`** — the tree is
+- **You never commit, push, tag or amend**, never run `git reset`, `rebase` or `clean`
+  (those need a human's confirmation), and **NEVER run `git stash`** — the tree is
   shared and a stash destroys siblings' work. Read a baseline with `git diff` or
   `git show HEAD:<file>` to stdout.
-- Never read secret files, never log tokens; the guard hooks enforce this — do not
+- **Never read secret files, never log tokens**; the guard hooks enforce this — do not
   work around them.
 - **Stay inside the task's `files` scope, and do not decide for yourself that an
   adjacent file is small enough to be an exception.** The plan gate

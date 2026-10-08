@@ -1064,6 +1064,16 @@ jobs:
           # the product is what was wrong.
           python -V
           python tools/bench-hooks.py --gate
+      - name: pipeline context ceilings
+        run: |
+          # Ubuntu only: it measures FILES in the repository - what each pipeline
+          # entry makes the main loop read before any work, its command body plus
+          # every file it reads first - against the pipeline-cost design's ceilings,
+          # and refuses any pipeline command that reads a reference file first. The
+          # same `total` line the tool's report prints is what it reads, so the
+          # gate and the measurement cannot measure two different things. Its own
+          # cases run inside the selftest job's sweep, which covers tools/.
+          python tools/measure-context.py --gate
       - name: vermin holds the 3.8 floor
         run: |
           # -t=3.8- carries the trailing dash on purpose: it means "3.8 or lower",

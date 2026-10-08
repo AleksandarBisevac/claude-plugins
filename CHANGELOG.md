@@ -45,8 +45,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   check compares a landed phase's `status` and `mergedAt`, as the working tree holds them, with
   what HEAD commits, and names the file and both values when they differ. `verify-invariants.py`
   and `/audit:status --gate --fail-on invariant-breach` both run it.
+- **`drive-phase.py next <taskId>` drives one task.** It starts the task, runs the same steps a
+  phase drive does and prints `done <taskId>` once the task is closed, leaving its siblings and
+  sign-off alone; a task already closed is reported at once, and a blocked one stops the drive
+  with its recorded reason. `/audit:run` and `/audit:next` run through it.
+- **A red recorded gate offers `rerun`** beside `retry` and `block`: it measures again without
+  re-starting the task, so a gate that could not run spends no attempt. Answering `block` now
+  commits the failed run's record through `commit-audit-state.py`.
+- **`tools/measure-context.py --gate`** holds what each pipeline entry makes the main loop read
+  before any work under the pipeline-cost design's ceilings, and refuses a pipeline command
+  that reads a reference file first. CI and `tools/verify.sh` run it.
+- **`_refs.followed_anchor_drift()`** holds every row of the README's followed table to a step
+  text the driver prints or a bullet of an agent prompt.
 
 ### Changed
+- **No pipeline command makes the main loop read reference prose first.** `/audit:run`,
+  `/audit:next`, `/audit:resume`, `/audit:phase`, `/audit:review` and `/audit:task` are cut to
+  the step driver's loop and each verb's own command line. The rule a step needs is printed by
+  `drive-phase.py` at that step - the dispatch's description, the high-risk confirmation, which
+  answer to a red gate spends an attempt, the sign-off order and its reason, a held lock, any
+  other stop, and an ADO echo a linked item is owed - and the agents carry theirs in their
+  prompts. The README's followed table names each rule's step or prompt. What each verb writes
+  and refuses, and why, moved from the command bodies into `reference/verbs-in-full.md`, a
+  reference the plugin ships and no command reads first. The reference files stay as documentation, and now say that the
+  driver performs their steps. `python3 tools/measure-context.py --gate` prints each entry's
+  size against its ceiling.
 - **`close-phase.py` commits the stamp it writes.** The phase's `mergedAt` and stored `done`
   used to stay as uncommitted edits in the parent's tree after a landing. They are now committed
   there through `commit-audit-state.py` (and `commit-manifest-index.py` in a sharded plan), with

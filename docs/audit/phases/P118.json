@@ -557,7 +557,7 @@
     {
       "id": "P118.8",
       "title": "sign-off is one step that ends with the landing stamp committed",
-      "status": "in_progress",
+      "status": "done",
       "description": "Design section 6, T10. At sign-off the driver prints the phase reviewer's dispatch, then one decide for the triage, then runs the phase gate, the invariants check, the sign-off verb, the commit, the landing and the lock release as one step. Findings are recorded from one file in one call. The landing commits the status and mergedAt it stamps into the parent tree, and verify-invariants flags a landed phase whose status is uncommitted (internal fault F564). Cases are shown red first.",
       "files": [
         "CHANGELOG.md",
@@ -617,45 +617,90 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ce8d5d29",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Design T10, plus faults F564 and the deferred count.\n\nSign-off in drive-phase.py, once every task is terminal:\n1. It dispatches the phase reviewer with the phase brief and keeps the head. The reviewer files through submit --head.\n2. It records every finding in one finding --findings-file call.\n3. It prints one decide triage, listing each open finding with its options and a fix task's predicted price. The price is printed with its design basis and marked not measured.\n4. --answer fix creates the fix tasks through add --fixes and drives them.\n5. --answer sign-off runs one step: the phase gate, verify-invariants, signoff, the commit, close-phase and the lock release.\n\nA red phase gate stops before the sign-off verb. The new decisions are no-phase-review-return, invariant-breach and not-fast-forward. Without a fix, the model faces three steps: the review's dispatch, the triage and the final step.\n\nF564: close-phase's commit_landing commits the mergedAt and done stamp it writes into the parent tree, or on the phase branch and then fast-forwards the parent. It says so when the stamp sits in a third tree, and a re-run commits a stamp left earlier. _invariants.landing_committed, the last entry of CHECK_NAMES, compares the stamp in the working tree against HEAD. It is read by verify-invariants and by /audit:status --gate.\n\n_status_facts.intent_unanswered lists a deferred task as still owed its phase review.\n\nThe phase brief and audit-reviewer.md file the phase return through submit --head even with no task owed, and the reviewer prompt stays under its ceiling.\n\nThe CHANGELOG, build guide, README rows, review.md and task.md follow. check-git-pipeline g17 and g17b assert the stamp commit.\n\nCases: sg1-sg6, sg3b, sg3m, sg4m, lt1-lt5, lc1-lc5, ln1-ln5, iu1-iu2 and bf20, proved red at HEAD in six suites. check-git-pipeline passes 40 checks against real git, and the sweep is green.",
+        "descriptive": "A phase now signs off in three model-facing steps - dispatch the phase review, decide the findings, sign off - and its landing commits its own status, so a merged phase never reads as unfinished in the committed plan."
       },
       "startedAt": "2026-10-08T02:34:43Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T03:48:52Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_verify_invariants.py",
+        "plugins/audit/tests/test__invariants.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "tools/check-git-pipeline.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-08T03:48:36Z.e79c2b",
         "status": "passed",
         "at": "2026-10-08T03:48:36Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ce8d5d29",
+        "at": "2026-10-08T03:48:52Z",
+        "basis": "orchestrator check: one-step sign-off with red-gate stop and mutants; the landing commit and its invariant in the shared check set; deferred counted as owed; reviewer prompt consistent with the brief"
       }
     },
     {
       "id": "P118.9",
       "title": "no pipeline command makes the main loop read reference prose, and a ceiling gate holds it there",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Design section 6, T2. Each rule is re-homed to the step text the driver prints, the agent prompt that acts on it, or, for prose that explains what a script enforces, the build guide and the script's docstring. A new lint checks that every followed row's Stated-in resolves to a printed step text or an agent prompt section. measure-context.py --gate holds the T2 ceilings in CI and verify.sh. Both are shown red first.",
       "files": [
-        "plugins/audit/reference/orchestrator.md",
-        "plugins/audit/reference/execute-task.md",
-        "plugins/audit/reference/manifest-conventions.md",
-        "plugins/audit/reference/phase-signoff.md",
-        "plugins/audit/commands/phase.md",
-        "plugins/audit/commands/run.md",
+        ".github/workflows/ci.yml",
+        "CHANGELOG.md",
+        "CLAUDE.md",
+        "CONTRIBUTING.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "README.md",
+        "plugins/audit/README.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/agents/guide.md",
+        "plugins/audit/commands/bug.md",
+        "plugins/audit/commands/doctor.md",
+        "plugins/audit/commands/guide.md",
+        "plugins/audit/commands/init.md",
+        "plugins/audit/commands/layout.md",
+        "plugins/audit/commands/logs.md",
+        "plugins/audit/commands/migrate.md",
         "plugins/audit/commands/next.md",
+        "plugins/audit/commands/panel.md",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/commands/propose.md",
+        "plugins/audit/commands/report.md",
         "plugins/audit/commands/resume.md",
         "plugins/audit/commands/review.md",
+        "plugins/audit/commands/run.md",
+        "plugins/audit/commands/status.md",
+        "plugins/audit/commands/sync.md",
         "plugins/audit/commands/task.md",
+        "plugins/audit/commands/usage.md",
+        "plugins/audit/commands/version.md",
+        "plugins/audit/commands/worktree.md",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/reference/tracker-sync.md",
+        "plugins/audit/reference/verbs-in-full.md",
         "plugins/audit/scripts/_refs.py",
+        "plugins/audit/scripts/config/_help.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/manifest/_areas.py",
+        "plugins/audit/tests/test__areas.py",
+        "plugins/audit/tests/test__help.py",
         "plugins/audit/tests/test__refs.py",
-        "plugins/audit/README.md",
-        "PLUGIN-BUILD-GUIDE.md",
-        "CHANGELOG.md",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "tools/gate-parity.py",
         "tools/measure-context.py",
-        "tools/verify.sh",
-        ".github/workflows/ci.yml",
-        "tools/gate-parity.py"
+        "tools/prove-gates.py",
+        "tools/verify.sh"
       ],
       "tests": {
         "mode": "tdd",
@@ -683,16 +728,21 @@
         "P118.7",
         "P118.8"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T03:48:52Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T04:57:06Z.42d859",
+        "status": "passed",
+        "at": "2026-10-08T04:57:06Z"
+      }
     },
     {
       "id": "P118.10",

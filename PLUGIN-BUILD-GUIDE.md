@@ -1585,10 +1585,20 @@ to `<module>.resolve_manifest(...)` — not the string or the docstring naming i
 and `_manifest_io.py` both carry — and returns the basenames that make the call. The drift check
 then walks `commands/*.md` for a line handing one of those scripts the placeholder right after its
 name and reports it: the command still types the path for a script that would find it alone.
-`MANIFEST_PLACEHOLDER_PENDING` excuses the two command files that still hand the placeholder to an
-orchestrator-driven step reading `reference/orchestrator.md` rather than calling the resolver
-directly, each row carrying the reason; a row whose document no longer carries that line is itself
-a finding, so the excuse cannot go stale quietly either.
+`MANIFEST_PLACEHOLDER_PENDING` is where a command file still handing the placeholder on would be
+excused, each row carrying the reason; it is empty since the pipeline commands stopped reading the
+orchestration reference, and a row whose document no longer carries that line is itself a
+finding, so an excuse cannot go stale quietly either.
+
+`followed_anchor_drift()` holds the README's followed table to the two places the model meets a
+followed rule once no pipeline command reads reference prose: each row's "Stated in" must name a
+step of `drive-phase.py`'s `STEPS` whose `rule` is not empty - read off that literal by AST, a
+module-level string the table names read as that string - or a bullet of an agent prompt opening
+with the bolded lead the row names. A row still citing a reference section (a `§`), a step the
+driver lacks or prints no rule at, a lead no bullet opens with, a row naming neither, and a README
+with no table or no row are each a problem; `rows` and `anchors` are counted beside them. It cannot
+see whether the printed rule says what the row says - that is the reviewer's, as for every prose
+rule. The `fa` cases in `tests/test__refs.py` hold each refusal beside the allow case.
 
 `--selftest`.
 
@@ -3996,7 +4006,7 @@ why. Learning twice files nothing new, by the own-miss rule above. Beside `--wri
 writer to name.
 
 ### `plugins/audit/scripts/governance/drive-phase.py`
-`drive-phase.py next <phaseId> [manifest] [--project-dir DIR] [--answer OPTION] [--reason TEXT]
+`drive-phase.py next <phaseId|taskId> [manifest] [--project-dir DIR] [--answer OPTION] [--reason TEXT]
 [--fix FINDING[,FINDING]] [--verbose]` — **the step driver.** One `next` reads the plan and the filed returns, performs
 every step of the phase's run that is due and needs no judgement, and prints exactly one
 instruction: `dispatch` (an agent type, the task, its model and the brief file `audit-lookup.py
@@ -4020,6 +4030,13 @@ graded in the `next` that writes the reviewer's brief, so the reviewer reads the
 instead of making its own. A stale stamp prints the fields that moved (`moved_fields`, off the
 comparison's own `fields`), so nothing is left for the model to look up; a comparison git could
 not answer says so and never reads as unchanged.
+
+**A task id drives that one task.** `next <taskId>` (`drive_task`) starts it when it is
+pending, advances it through the same steps, and prints `done <taskId>` once it is terminal
+(`finish_task`, which says `already` when this call closed nothing), leaving its siblings and the
+phase's sign-off alone - the run `/audit:run` and `/audit:next` make. A `blocked` task stops it
+with its recorded reason and the rule for it; a decision pending about another task in the
+phase's drive stops it too, naming the phase drive that answers it. The `dt` cases drive it.
 
 **One task at a time, in id order.** `next_task` takes the task in progress, else the first
 ready one. A recorded gate run while sibling executors edit the same tree measures their
@@ -4061,7 +4078,18 @@ triage and the final step, a red phase gate never reaches `signoff`, and several
 `finding` call - each beside a mutant driver that breaks it.
 
 **Where the text and the seams are.** Every line the model is shown is rendered from `STEPS`,
-one entry per step, whose `rule` lines print under its instruction when it has any. `reviewer_due` is the one place the
+one entry per step, whose `rule` lines print under its instruction when it has any. **That is
+where a followed rule lives now**: no pipeline command makes the main loop read reference prose
+first (`tools/measure-context.py --gate`), so the rule a step needs - the dispatch's description,
+the high-risk confirmation, which answer to a red gate spends an attempt, the sign-off order and
+its reason, a held lock, what to do with any other stop - is printed at that step, and
+`_refs.followed_anchor_drift()` holds that every step the README's followed table names is here
+with a rule. A red gate offers `rerun` beside `retry` and `block`: `rerun` measures again without
+re-starting the task, so a gate that could not run spends no attempt; `block` runs
+`commit-audit-state.py` after the block verb (`keep_record`), since a blocked task gets no task
+commit to carry the rows its gate wrote. A print whose call closed, blocked or signed off an item
+carrying an `ado` link, on a plan whose board takes the echo, adds `ado echo owed: <ids>`
+(`ado_echo_lines`) - no verb sends the board update, so the instruction is the whole of it. `reviewer_due` is the one place the
 per-task reviewer's dispatch is decided. `did_tasks` reads the driver's own did-line back, and is
 what `tools/stream-cost.py` reads a driver session's task cycle from, since the driver's `start`
 and `done` run in subprocesses the session's stream never shows.
@@ -5700,3 +5728,15 @@ edit) consumes it or enforces the plan gate → `guard-edits` + `guard-secrets-r
 token-logging/secret-reads → `remind-tdd` (after an edit) nudges toward test-first without
 blocking. All project specifics come from `.claude/audit.config.json` (hooks) and `meta.*`
 (commands).
+
+## 6. The command verbs, in full
+
+The pipeline's command bodies carry the step driver's loop and each verb's own command line;
+the rule a step needs is printed by `drive-phase.py` at that step, and each agent carries its
+own in its prompt (`tools/measure-context.py --gate` holds the bodies under the pipeline-cost
+design's ceilings, and `_refs.followed_anchor_drift()` holds that every followed rule names its
+step or its prompt). What each verb writes, refuses and why moved out of the main loop's path
+into `plugins/audit/reference/verbs-in-full.md`, a reference the plugin ships and no command
+reads first - so `/audit:guide` and a reader of an installed copy still have it. The
+explanation of what each script enforces stays beside that script's own section above
+(`drive-phase.py`, `_refs.py`, `audit-task.py`), and is not repeated here.

@@ -255,7 +255,7 @@ def sign_off(kind, text):
 
 
 def drive(M, root, mpath, on_dispatch=None, cap=40, returns=None,
-          answer=sign_off, phase_review=True, findings=()):
+          answer=sign_off, phase_review=True, findings=(), target=PHASE):
     """Play the main loop until `done`, a stop, or `cap` calls.
 
     -> {"prints": [(code, text)], "steps": [instruction], "nexts", "dispatches"}
@@ -271,7 +271,7 @@ def drive(M, root, mpath, on_dispatch=None, cap=40, returns=None,
     with _Env(root):
         for _ in range(cap):
             said = []
-            code = M.main(["next", PHASE, mpath, "--project-dir", root] + reply,
+            code = M.main(["next", target, mpath, "--project-dir", root] + reply,
                           out=said.append)
             reply = []
             text = "\n".join(said)
@@ -544,6 +544,138 @@ def _decide_cases(check):
           again == 0 and instruction("\n".join(said))[1] == "gate-red"
           and bad == M.E_USAGE and unreasoned == M.E_USAGE
           and blocked == 0 and status == "blocked")
+    dirty = subprocess.run(["git", "status", "--porcelain", "--", "docs/audit"],
+                           cwd=root, capture_output=True, text=True).stdout
+    check("dd4 a task blocked over its red gate keeps the record of that gate: the "
+          "rows the gate wrote and the block are committed through the audit-state "
+          "verb, since no task commit is coming to carry them: %r" % (dirty,),
+          blocked == 0 and dirty.strip() == ""
+          and "record committed" in "\n".join(said_b))
+
+
+def _attempts(mpath, task_id):
+    return tasks_of(mpath).get(task_id, {}).get("attempts")
+
+
+def _rerun_cases(check):
+    """A gate that reached no verdict is the runner's, not the work's: `rerun`
+    measures again without re-starting the task, so it spends no attempt, and the
+    decision's printed rule says which answer spends one."""
+    M, why = _load("drive_phase_rerun")
+    if M is None:
+        check("dd3 the driver loads", False, why)
+        return
+    root, mpath = _repo("rerun", task_ids=TASKS[:1], gate=("false",))
+    run = drive(M, root, mpath, cap=3)
+    _code, text = run["prints"][-1]
+    rule = list((M.STEPS.get("decide-gate-red") or {}).get("rule") or ())
+    before = _attempts(mpath, "P1.1")
+    with _Env(root):
+        said = []
+        rerun = M.main(["next", PHASE, mpath, "--project-dir", root,
+                        "--answer", "rerun"], out=said.append)
+    after = _attempts(mpath, "P1.1")
+    check("dd3 a red gate's decision offers `rerun` beside `retry` and prints the "
+          "rule saying which spends an attempt; answered `rerun`, the gate runs "
+          "again and the task is not re-started - its attempts stay %r: %r"
+          % (before, (rerun, after, said, text)),
+          rule and all(line in text for line in rule)
+          and "rerun" in text and rerun == 0 and after == before
+          and instruction("\n".join(said))[1] == "gate-red"
+          and len(text.encode("utf-8")) <= BOUND)
+    with _Env(root):
+        said_r = []
+        retry = M.main(["next", PHASE, mpath, "--project-dir", root,
+                        "--answer", "retry"], out=said_r.append)
+    check("dd3m THE TWIN: `retry` re-starts the task and spends one attempt, so the "
+          "two answers are not the same answer under two names: %r"
+          % ((retry, before, _attempts(mpath, "P1.1")),),
+          retry == 0 and _attempts(mpath, "P1.1") == (before or 0) + 1)
+
+
+def _single_task_cases(check):
+    """`next <taskId>` drives that one task and stops: the run of `/audit:run`
+    and `/audit:next`, which execute exactly one task, through the same steps."""
+    M, why = _load("drive_phase_single")
+    if M is None:
+        check("dt1 the driver loads", False, why)
+        return
+    root, mpath = _repo("single")
+    run = drive(M, root, mpath, target="P1.2")
+    tasks = tasks_of(mpath)
+    check("dt1 `next P1.2` dispatches that task's executor and reviewer, closes it "
+          "and prints `done`, leaving its siblings pending, the phase unsigned, "
+          "the lock released and no drive state behind: %r"
+          % ((run["steps"], [(t, tasks.get(t, {}).get("status")) for t in TASKS]),),
+          run["steps"] == [("dispatch", "executor", "P1.2"),
+                           ("dispatch", "reviewer", "P1.2"), ("done", None, None)]
+          and tasks.get("P1.2", {}).get("status") == "done"
+          and [tasks.get(t, {}).get("status") for t in ("P1.1", "P1.3")]
+          == ["pending", "pending"]
+          and not os.path.exists(os.path.join(root, ".claude", "state", "drive"))
+          and "phase-%s" % (PHASE,) not in _verb(
+              root, "audit-lock.py", ["status", "--project", root])[1])
+    again = drive(M, root, mpath, target="P1.2", cap=2)
+    check("dt2 a task already done is reported done at once, and nothing is "
+          "started: %r" % ((again["steps"], _attempts(mpath, "P1.2")),),
+          again["steps"] == [("done", None, None)]
+          and tasks_of(mpath).get("P1.2", {}).get("status") == "done")
+    whole = drive(M, root, mpath, cap=3)
+    check("dt3 THE TWIN: `next P1` still drives the phase - its first dispatch is "
+          "the first pending task, so the task scope narrows only when asked: %r"
+          % (whole["steps"],),
+          whole["steps"][:1] == [("dispatch", "executor", "P1.1")])
+    echo_free = [t for _c, t in run["prints"] + again["prints"] + whole["prints"]
+                 if "ado echo" in t]
+    check("dt5 THE ALLOW TWIN: a plan with no board owes no ADO echo, and no print "
+          "says one is owed: %r" % (echo_free,), echo_free == [])
+    root_a, mpath_a = _repo("single-ado")
+    with open(mpath_a) as fh:
+        plan = json.load(fh)
+    plan["meta"]["ado"] = {"organization": "o", "project": "p"}
+    plan["phases"][0]["tasks"][1]["ado"] = {"id": 4242}
+    with open(mpath_a, "w") as fh:
+        json.dump(plan, fh, indent=2)
+    subprocess.run(_GIT + ["commit", "-qam", "board"], cwd=root_a, check=True,
+                   capture_output=True, timeout=60)
+    run_a = drive(M, root_a, mpath_a, target="P1.2")
+    owed = [t for _c, t in run_a["prints"] if "ado echo owed: P1.2" in t]
+    rule_a = list((M.STEPS.get("ado-echo") or {}).get("rule") or ())
+    check("dt6 a linked task the drive closed owes the board its echo, and the print "
+          "that reports the close says so with the rule for it - no verb sends it, "
+          "so the instruction is the whole of it: %r" % (owed,),
+          len(owed) == 1 and rule_a and all(line in owed[0] for line in rule_a)
+          and run_a["steps"][-1] == ("done", None, None))
+    rule = list((M.STEPS.get("dispatch-executor") or {}).get("rule") or ())
+    first = run["prints"][0][1] if run["prints"] else ""
+    check("dt4 the executor's dispatch prints the rule that applies at it, under "
+          "the instruction, inside the bound: %r" % (first,),
+          rule and all(line in first for line in rule)
+          and len(first.encode("utf-8")) <= BOUND)
+
+
+def _lock_stop_cases(check):
+    """A lock another live run holds stops the drive, and the stop carries the
+    rule for it: wait, never take it over by hand."""
+    M, why = _load("drive_phase_lock")
+    if M is None:
+        check("dl1 the driver loads", False, why)
+        return
+    real = M.run_verb
+
+    def held(ctx, script, args, stdin=None):
+        if script == "audit-lock.py" and args[:1] == ["acquire"]:
+            return 3, "[audit-lock] phase-P1 is held by a live session\n", ""
+        return real(ctx, script, args, stdin=stdin)
+    M.run_verb = held
+    root, mpath = _repo("lock", task_ids=TASKS[:1])
+    run = drive(M, root, mpath, cap=1)
+    code, text = run["prints"][-1]
+    rule = list((M.STEPS.get("stop-lock") or {}).get("rule") or ())
+    check("dl1 a held lock stops the drive with the lock verb's own words and the "
+          "rule printed under them: %r" % ((code, text),),
+          code == 1 and "[audit-lock]" in text and rule
+          and all(line in text for line in rule))
 
 
 def _key_cases(check):
@@ -1038,6 +1170,9 @@ def _selftest():
         _harness.stage(check, "dp-block", _drive_cases)
         _harness.stage(check, "dr-block", _refusal_cases)
         _harness.stage(check, "dd-block", _decide_cases)
+        _harness.stage(check, "dd3-block", _rerun_cases)
+        _harness.stage(check, "dt-block", _single_task_cases)
+        _harness.stage(check, "dl-block", _lock_stop_cases)
         _harness.stage(check, "dk-block", _key_cases)
         _harness.stage(check, "ds-block", _submit_cases)
         _harness.stage(check, "dsm-block", _submit_mutant_cases)

@@ -195,6 +195,7 @@ python3 tools/sweep-selftests.py --selftest
 python3 tools/sweep-selftests.py --encoding cp1252   # again, on a legacy code page; --fast skips it
 python3 tools/gate-parity.py               # every description of the gate set, compared
 python3 tools/bench-hooks.py --gate        # the hook import budget; no flag prints the measurement
+python3 tools/measure-context.py --gate    # what each pipeline entry makes the main loop read, vs its ceiling
 python3 tools/check-git-pipeline.py        # the write half, against a REAL git repo
 npx vitest run                             # the JavaScript unit tests
 ruff check plugins/audit tools
