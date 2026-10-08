@@ -1426,7 +1426,7 @@
     {
       "id": "P118.15-v7t",
       "title": "the human-settled answers and the landing property hold at the verbs, not only in the driver",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes P118 review round 2 findings R27, R28, R29, R30, R34 and R40, plus the phase-intent wording of R31, in the guarantee core. close-phase refuses to land a phase whose tip records no sign-off verdict when any task's key reads phase. The settlement of a reviewer's diverges, cannot-tell, not-proved or flagged answer moves into the signoff verb, through one predicate in _filed_returns shared with the driver's human_answers. An unreadable tip is refused only when the plan is versioned. --no-change maps task files to the git root as commit-task-work does, and bounds its span by the start's HEAD rather than by date. The unblock journal action is documented. CHANGELOG, COMPATIBILITY and the README say exactly where each stop applies. Every new case is shown red first, with its allow half.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -1466,18 +1466,28 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "487cedd3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes P118-R27, R28, R29, R30, R34, R40 and the phase-intent wording half of R31. Both guarantees now hold at the verbs.\n\n- **R27.** close-phase's landed_answers_refusal asks three copies: the handed plan, the worktree's copy on disk, and the branch tip's copy. Where any task's key reads phase, it refuses a tip with no sign-off verdict.\n- **R28.** _filed_returns.needs_human(returns, settled) is the one predicate the driver's human_answers and audit-task signoff share. Single and group sign-off refuse while an answer only a human settles is unsettled. Settlement is read from the driver state's answersAccepted, which --answer accept --reason writes, and an unparseable record is refused.\n- **R29.** An unreadable tip is refused only when the plan is versioned (plan_versioned). Otherwise the copy on disk must record a sign-off verdict.\n- **R30.** --no-change maps task files to the git root as stage_targets does, and names an entry outside the root.\n- **R40.** start records its HEAD on the task.start row, and --no-change spans from it. With no row, it falls back to baseRef and the date, excluding sibling commits.\n- **R34.** manifest-conventions documents task.unblock and task.start.\n- **R31.** The docs say the phase-intent stop applies under every key.\n\nThe CHANGELOG and build guide also describe the driver's decline, its head binding, the gate reuse and the per-task remedy.\n\nCases: ra12-ra15 (ra10 rebuilt), hd25-hd28, ncm4-ncm6 and hn1-hn5. All were proved red at HEAD, and every guard was mutated both ways in a scratch copy. check-git-pipeline and the sweep are green.",
+        "descriptive": "The review guarantees now hold even when someone runs the plugin's commands by hand: sign-off refuses while a reviewer's doubt is unsettled, and a phase cannot merge unless its branch records the sign-off."
       },
       "startedAt": "2026-10-08T07:10:12Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T08:14:54Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__filed_returns.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-08T08:06:31Z.c765d2",
         "status": "passed",
         "at": "2026-10-08T08:06:31Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "487cedd3",
+        "at": "2026-10-08T08:14:54Z",
+        "basis": "orchestrator check: both highs enforced in the verbs with deny and allow cases and two-way mutations; one shared predicate; docs match"
       }
     },
     {

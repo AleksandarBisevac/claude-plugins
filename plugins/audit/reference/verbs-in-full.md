@@ -54,10 +54,12 @@ Execute exactly `<taskId>`, with status guards:
    reading `pending` again beside an `at` stamp older than the reopen, not a missing block.
 2. `status == "blocked"` → the drive stops, naming the `blockedReason` the block recorded
    (exhausted attempts, a blocker, or `audit-task.py block`'s own reason), and prints the remedy
-   as the rule under that stop; the human answers it, never a hand edit of the plan. The driver
-   offers no reset of `attempts`: a remedy that restarts the task goes through
-   `audit-task.py start`, which clears `blockedReason` and records the old reason in its
-   `task.start` row — a pending task still carrying one would read as waiting.
+   as the rule under that stop; the human answers it, never a hand edit of the plan. The remedy
+   is named per task, from its attempts against `maxAttempts`: a task with attempts left is
+   restarted by `audit-task.py start`, which clears `blockedReason` and records the old reason in
+   its `task.start` row — a pending task still carrying one would read as waiting; a task whose
+   attempts are spent is `audit-task.py unblock <id> --reason "<their words>"`'s, since `start`
+   refuses it and `unblock` refuses a task with attempts left.
 3. `status == "in_progress"` → the drive resumes it at the step its last run stopped on: the
    driver keeps its state per phase, so no re-execution question is asked, and an agent that
    filed nothing becomes a named decision rather than a silent second dispatch.

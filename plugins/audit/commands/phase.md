@@ -1,5 +1,5 @@
 ---
-description: 'Audit pipeline: everything a phase has done to it — add one to a plan that already exists, run it end to end (every ready task, parallel where safe, then sign-off), pin which phase the pipeline reaches for first, or cancel one that will not be done. A bare `<phaseId>` runs it; --dry-run previews the run without mutating.'
+description: 'Audit pipeline: everything a phase has done to it — add one to a plan that already exists, run it end to end (every ready task, one at a time, then sign-off), pin which phase the pipeline reaches for first, or cancel one that will not be done. A bare `<phaseId>` runs it; --dry-run previews the run without mutating.'
 argument-hint: '<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] | add "<title>" --outcome "<what success is>" [--park] [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--gate-set <entry> ...] [--gate-drop <entry>] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>" | signoff <phaseId[,phaseId...]> --verdict VERDICT --summary TEXT [--review-outcome TEXT] [--no-evidence-reason TEXT] [--branch NAME] [--plan] [--bind] [--accept SHA --reason TEXT] | settle'
 allowed-tools: Read, Write, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 ---
@@ -24,7 +24,7 @@ phase id to run. A phase whose id is that word: ask (AskUserQuestion) which was 
    verbatim in your own reply - a high-risk task not on that list still stops and asks.
    **The operator's words go in VERBATIM**: the journal keeps them as typed.
 2. Run `S/governance/drive-phase.py" next <phaseId>`, do what it prints, and run it again until
-   it prints `done` - a finished wave is not a stop:
+   it prints `done` - a closed task is not a stop:
    `dispatch <agent> <id> model=<m> brief=<path>` → one Agent call with that `subagent_type` and
    `model`, the prompt `Read your brief at <path> and follow it.`, and the rule printed under it.
 3. `decide <name> ...` → `next <phaseId> --answer <option> [--reason "<words>"]`, a human's

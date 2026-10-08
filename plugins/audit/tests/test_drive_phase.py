@@ -1278,6 +1278,7 @@ def _review_answer_cases(check):
           "no answer line and no `accept` in the triage: %r" % (triage,),
           run["steps"][-1] == TRIAGE and _answer_lines(triage) == []
           and "--answer accept" not in triage)
+    _decline_answer_cases(check)
 
 
 def _redispatch_cases(check):
@@ -1349,6 +1350,7 @@ def _fix_review_cases(check):
           "task as unreviewed and offers no `re-review`: %r" % (text,),
           code == 0 and instruction(text) == TRIAGE
           and "--answer re-review" not in text and fix_id not in text)
+    _rereview_scope_cases(check)
 
 
 def _head_of_brief(root, rel):
@@ -1392,6 +1394,27 @@ def _risk_cases(check):
           run["steps"][-1] == ("decide", "high-risk", None)
           and "decide high-risk P1.2" in last
           and tasks_of(mpath).get("P1.2", {}).get("status") == "in_progress")
+    # A confirmation covers open work as it stood when it was given: a task
+    # reopened after it is run again on a commit nobody confirmed.
+    root, mpath = _repo("risk-reopen", task_ids=TASKS[:2])
+    _commit_plan(root, mpath, risky(("P1.1",)), "P1.1 is high risk")
+    _verb(root, "record-risk-confirmation.py", [
+        mpath, PHASE, "--confirm-high-risk", "yes, commit P1.1 unattended",
+        "--project", root])
+    reopened = []
+
+    def reopen_first(role, tid):
+        if role == "executor" and tid == "P1.2" and not reopened:
+            reopened.append(_verb(root, "audit-task.py", [
+                "reopen", "P1.1", mpath, "--project-dir", root, "--reason",
+                "the human wants P1.1 done again"]))
+    run = drive(M, root, mpath, answer=None, on_dispatch=reopen_first)
+    last = run["prints"][-1][1]
+    check("hr3 a high-risk task reopened after the confirmation stops at the "
+          "high-risk decision on its second run: %r" % ((reopened, last),),
+          reopened and reopened[0][0] == 0
+          and run["steps"][-1] == ("decide", "high-risk", None)
+          and "decide high-risk P1.1" in last)
 
 
 def _boot_cases(check):
@@ -1443,6 +1466,7 @@ def _boot_cases(check):
           "signs off with no boot decision: %r" % (run["steps"][-3:],),
           run["steps"][-1] == DONE
           and not any(s[1] == "runtime-boot" for s in run["steps"]))
+    _decline_boot_cases(check)
 
 
 UNRELATED_GATE = "echo tests/unrelated_test.py 1 passed"
@@ -1475,6 +1499,8 @@ def _banner_cases(check):
           "keeps the reason: %r" % ((code, text),),
           code == 0 and instruction(text) == DONE
           and words in (_phase_of(mpath).get("summary") or ""))
+    _decline_coverage_cases(check)
+    _decline_breach_cases(check)
 
 
 def _landing_cases(check):
@@ -1511,6 +1537,7 @@ def _landing_cases(check):
           and not phase.get("mergedAt")
           and "phase-%s" % (PHASE,) not in _verb(
               root, "audit-lock.py", ["status", "--project", root])[1])
+    _landing_word_cases(check)
 
 
 def _blocked_cases(check):
@@ -1527,19 +1554,324 @@ def _blocked_cases(check):
         return False
     run = drive(M, root, mpath, answer=block_it)
     last = run["prints"][-1][1]
-    check("bk1 a phase whose only task is blocked prints `decide stalled` with "
-          "the rule naming the remedy - audit-task.py unblock with the human's "
-          "reason: %r" % (last,),
-          run["steps"][-1] == ("decide", "stalled", None)
-          and "audit-task.py unblock" in last and "--reason" in last
+    attempts = _attempts(mpath, "P1.1")
+    check("bk1 a phase whose only task is blocked with attempts left prints "
+          "`decide stalled` with that task's remedy - `start`, which runs it "
+          "and clears the block - and not `unblock`, which refuses it: %r"
+          % ((attempts, last),),
+          run["steps"][-1] == ("decide", "stalled", None) and attempts == 1
+          and _remedy(last) == ["start P1.1"]
           and len(last.encode("utf-8")) <= BOUND)
     single = drive(M, root, mpath, target="P1.1", cap=2)
     code, text = single["prints"][-1]
+    ran = _verb(root, "audit-task.py", ["start", "P1.1", mpath,
+                                        "--project-dir", root])
     check("bk2 the task drive's stop on the same blocked task names the same "
-          "remedy, and no longer `start`, which refuses a task past its "
-          "attempts: %r" % (text,),
-          code == 1 and "audit-task.py unblock" in text
-          and "audit-task.py start" not in text)
+          "remedy, and the real verb takes it: %r" % ((text, ran),),
+          code == 1 and _remedy(text) == ["start P1.1"] and ran[0] == 0)
+    # The twin: a task whose attempts are spent is `unblock`'s, with the
+    # human's reason. A remedy that named `start` for every blocked task fails
+    # here, as the old single `unblock` rule fails bk1.
+    root, mpath = _repo("stall-spent", task_ids=TASKS[:1], gate=("false",))
+
+    def one_attempt(plan):
+        plan["phases"][0]["tasks"][0]["maxAttempts"] = 1
+    _commit_plan(root, mpath, one_attempt, "one attempt")
+    run = drive(M, root, mpath, answer=block_it)
+    last = run["prints"][-1][1]
+    ran = _verb(root, "audit-task.py", ["unblock", "P1.1", mpath,
+                                        "--project-dir", root, "--reason",
+                                        "the human: try once more"])
+    check("bk3 THE TWIN: a task blocked with its attempts spent is named "
+          "`unblock` with the human's reason, and the real verb takes it: %r"
+          % ((last, ran),),
+          run["steps"][-1] == ("decide", "stalled", None)
+          and _remedy(last) == ['unblock P1.1 --reason "<their words>"']
+          and ran[0] == 0 and len(last.encode("utf-8")) <= BOUND)
+
+
+def _remedy(text):
+    """The per-task remedies a blocked stop names, in order, read off its
+    `remedy (audit-task.py):` line."""
+    for line in text.splitlines():
+        if line.startswith("remedy (audit-task.py): "):
+            return line[len("remedy (audit-task.py): "):].split("; ")
+    return []
+
+
+# --- a human's no hands back to the work ---------------------------------------
+def _drive_state(root):
+    """The driver's own state for the fixture phase, or {} when it has none."""
+    path = os.path.join(root, ".claude", "state", "drive", "%s.json" % (PHASE,))
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def _add_task(root, mpath, gate="true", title="the remedy a human asked for"):
+    """A task added to the phase the way a human's remedy is: through the verb."""
+    with _Env(root):
+        code, out = _verb(root, "audit-task.py", [
+            "add", title, mpath, "--project-dir", root, "--phase", PHASE,
+            "--files", "src/f1.txt", "--description", "do what the human asked",
+            "--gate", gate, "--json"])
+    try:
+        return json.loads(out).get("id")
+    except ValueError:
+        return "(add exit %d: %s)" % (code, out[:200])
+
+
+def _phase_gate_runs(module):
+    """Count the phase gate's recorded runs - `run-test-gate.py` with no
+    `--task` - through `module.run_verb`."""
+    seen = {"runs": 0}
+    real = module.run_verb
+
+    def counted(ctx, script, args, stdin=None):
+        if script == "run-test-gate.py" and "--task" not in args:
+            seen["runs"] += 1
+        return real(ctx, script, args, stdin=stdin)
+    module.run_verb = counted
+    return seen
+
+
+def _decline_coverage_cases(check):
+    """A gate that graded none of this work: `decline` keeps the human's words,
+    drops the decision and hands back to the work; the gate after the remedy
+    task is asked about again."""
+    M, why = _load("drive_phase_decline_gate")
+    if M is None:
+        check("dc1 the driver loads", False, why)
+        return
+    root, mpath = _repo("decline-gc", task_ids=TASKS[:1], gate=(UNRELATED_GATE,),
+                        per_task="phase", phase_gate=(UNRELATED_GATE,))
+    run = drive(M, root, mpath, answer=_stop_at_other)
+    words = "the human: no - the suite never imports f1"
+    code, text = _next(M, root, mpath, "--answer", "decline", "--reason", words)
+    check("dc1 decline on gate-coverage, with no task open, stops with the remedy "
+          "of adding the task and drops the pending decision, the phase "
+          "unsigned: %r" % ((run["steps"][-1], code, text),),
+          run["steps"][-1] == ("decide", "gate-coverage", None)
+          and code == M.E_STOPPED and "audit-task.py add" in text
+          and "pending" not in _drive_state(root) and not _signed(mpath)
+          and len(text.encode("utf-8")) <= BOUND)
+    added = _add_task(root, mpath, gate=UNRELATED_GATE)
+    run = drive(M, root, mpath, answer=_stop_at_other)
+    check("dc2 the drive then runs the task added as the remedy, and the phase "
+          "gate after it asks gate-coverage again: %r" % ((added, run["steps"]),),
+          ("dispatch", "executor", added) in run["steps"]
+          and run["steps"][-1] == ("decide", "gate-coverage", None))
+    code, text = _next(M, root, mpath, "--answer", "accept", "--reason",
+                       "the human: the new suite reaches f1")
+    summary = _phase_of(mpath).get("summary") or ""
+    check("dc3 THE TWIN: an accept then signs off, and the summary keeps the "
+          "human's no beside their yes: %r" % ((code, summary),),
+          code == 0 and instruction(text) == DONE and words in summary)
+
+    # An accept at the head the green run was taken at reuses that run; a task
+    # closed after the accept is a new tree, so its gate is asked about again.
+    M2, _w = _load("drive_phase_reuse_gate")
+    seen = _phase_gate_runs(M2)
+    root, mpath = _repo("reuse-gc", task_ids=TASKS[:1], gate=(UNRELATED_GATE,),
+                        per_task="phase", phase_gate=(UNRELATED_GATE,))
+    drive(M2, root, mpath, answer=_stop_at_other)
+    before = seen["runs"]
+    added = _add_task(root, mpath, gate=UNRELATED_GATE)
+    code, text = _next(M2, root, mpath, "--answer", "accept", "--reason",
+                       "the human: a false yes, given before the task ran")
+    check("dc4 an accept at an unchanged head reuses the recorded green phase "
+          "gate rather than running the suite again, and says so: %r"
+          % ((before, seen["runs"], code, text),),
+          before == 1 and seen["runs"] == before and "reused" in text)
+    run = drive(M2, root, mpath, answer=_stop_at_other)
+    check("dc5 THE TWIN: once the added task closes, the phase gate runs again "
+          "at the new head and gate-coverage is asked again - the accept given "
+          "before the task no longer holds: %r" % ((seen["runs"], run["steps"]),),
+          seen["runs"] == before + 1
+          and ("dispatch", "executor", added) in run["steps"]
+          and run["steps"][-1] == ("decide", "gate-coverage", None)
+          and not _signed(mpath))
+
+
+def _decline_boot_cases(check):
+    """A boot that failed: `decline` hands back to the work, the remedy task is
+    driven on its own, and the boot is asked again over the new tree."""
+    M, why = _load("drive_phase_decline_boot")
+    if M is None:
+        check("db1 the driver loads", False, why)
+        return
+
+    def booting(plan):
+        plan["meta"]["runtimeBoot"] = {"appRootPath": "src",
+                                       "launch": "open the app",
+                                       "verify": "the home screen renders"}
+    root, mpath = _repo("decline-boot", task_ids=TASKS[:1], per_task="phase")
+    _commit_plan(root, mpath, booting, "boot")
+    run = drive(M, root, mpath, answer=_stop_at_other)
+    words = "the human: it boots and crashes on the settings screen"
+    code, text = _next(M, root, mpath, "--answer", "decline", "--reason", words)
+    check("db1 decline on runtime-boot stops with the remedy of adding the task "
+          "and drops the pending decision: %r" % ((run["steps"][-1], code, text),),
+          run["steps"][-1] == ("decide", "runtime-boot", None)
+          and code == M.E_STOPPED and "audit-task.py add" in text
+          and "pending" not in _drive_state(root) and not _signed(mpath))
+    added = _add_task(root, mpath)
+    single = drive(M, root, mpath, target=added)
+    check("db2 the task added as the remedy is driven on its own, not refused "
+          "for a decision the human already answered: %r" % (single["prints"][-1],),
+          single["steps"][-1] == DONE
+          and tasks_of(mpath).get(added, {}).get("status") == "done")
+    run = drive(M, root, mpath, answer=_stop_at_other)
+    seen = "booted on the simulator; settings renders now"
+    code, text = _next(M, root, mpath, "--answer", "booted", "--reason", seen)
+    summary = _phase_of(mpath).get("summary") or ""
+    check("db3 the sign-off after it asks the boot again, booted then lands, and "
+          "the summary keeps the human's no and their yes: %r"
+          % ((run["steps"][-1], code, summary),),
+          run["steps"][-1] == ("decide", "runtime-boot", None)
+          and code == 0 and instruction(text) == DONE
+          and words in summary and seen in summary)
+    # A boot confirmed before a task closed was a boot of the old tree.
+    root, mpath = _repo("reboot", task_ids=TASKS[:1], per_task="phase")
+    _commit_plan(root, mpath, booting, "boot")
+    drive(M, root, mpath, answer=_stop_at_other)
+    added = _add_task(root, mpath)
+    code, text = _next(M, root, mpath, "--answer", "booted", "--reason",
+                       "booted the tree before the task ran")
+    run = drive(M, root, mpath, answer=_stop_at_other)
+    check("db4 a boot confirmed before a task closed is asked again after it: "
+          "%r" % ((code, text[-300:], run["steps"]),),
+          ("dispatch", "executor", added) in run["steps"]
+          and run["steps"][-1] == ("decide", "runtime-boot", None)
+          and not _signed(mpath))
+
+
+def _decline_answer_cases(check):
+    """A reviewer answer a human says no to: `decline` on the triage keeps their
+    words and hands back to the work; it is refused where nothing waits."""
+    M, why = _load("drive_phase_decline_answers")
+    if M is None:
+        check("da1 the driver loads", False, why)
+        return
+    root, mpath = _repo("decline-ans", task_ids=TASKS[:1], per_task="phase")
+    over = {"P1.1": {"answer": "diverges", "note": "it edits f2, not f1"}}
+    run = drive(M, root, mpath, entry_over=over, answer=None)
+    words = "the human: no - P1.1 must edit f1; fix it"
+    code, text = _next(M, root, mpath, "--answer", "decline", "--reason", words)
+    check("da1 decline on the triage's answers stops with the remedy of adding "
+          "the task and drops the pending triage: %r" % ((code, text),),
+          run["steps"][-1] == TRIAGE and "decline" in run["prints"][-1][1]
+          and code == M.E_STOPPED and "audit-task.py add" in text
+          and "pending" not in _drive_state(root) and not _signed(mpath))
+    added = _add_task(root, mpath)
+    run = drive(M, root, mpath, answer=None)
+    _c, text_a = _next(M, root, mpath, "--answer", "accept", "--reason",
+                       "the human: %s edits f1 now" % (added,))
+    code, text = _next(M, root, mpath, "--answer", "sign-off", "--reason", SUMMARY)
+    summary = _phase_of(mpath).get("summary") or ""
+    check("da2 the remedy task is driven, the triage comes back with the answer "
+          "still for a human, and once accepted the summary keeps the no: %r"
+          % ((run["steps"], code, summary),),
+          ("dispatch", "executor", added) in run["steps"]
+          and run["steps"][-1] == TRIAGE
+          and code == 0 and instruction(text) == DONE and words in summary)
+    root, mpath = _repo("decline-none", task_ids=TASKS[:1], per_task="phase")
+    drive(M, root, mpath, answer=None)
+    code, text = _next(M, root, mpath, "--answer", "decline", "--reason", "no")
+    check("da3 THE OVER-FIRE TWIN: a triage with no answer for a human refuses "
+          "decline, and keeps the decision: %r" % ((code, text),),
+          code == M.E_USAGE and "decline" in text
+          and (_drive_state(root).get("pending") or {}).get("decision") == "triage")
+
+
+def _decline_breach_cases(check):
+    """An invariant breach is the same shape: a human's no hands back."""
+    M, why = _load("drive_phase_decline_breach")
+    if M is None:
+        check("di1 the driver loads", False, why)
+        return
+    real = M.run_verb
+
+    def breaching(ctx, script, args, stdin=None):
+        if script == "verify-invariants.py":
+            return 1, "BREACH src-untouched: src/f1.txt changed\n", ""
+        return real(ctx, script, args, stdin=stdin)
+    M.run_verb = breaching
+    root, mpath = _repo("decline-inv", task_ids=TASKS[:1], per_task="phase")
+    run = drive(M, root, mpath, answer=_stop_at_other)
+    code, text = _next(M, root, mpath, "--answer", "decline", "--reason",
+                       "the human: that invariant must hold")
+    check("di1 decline on invariant-breach stops with the remedy of adding the "
+          "task and drops the pending decision: %r"
+          % ((run["steps"][-1], code, text),),
+          run["steps"][-1] == ("decide", "invariant-breach", None)
+          and code == M.E_STOPPED and "audit-task.py add" in text
+          and "pending" not in _drive_state(root) and not _signed(mpath))
+    _next(M, root, mpath)
+    _c, said = _next(M, root, mpath, "--answer", "sign-off", "--reason", SUMMARY)
+    code, text = _next(M, root, mpath, "--answer", "accept", "--reason",
+                       "the human: accepted after all")
+    check("di2 THE TWIN: the breach is asked again at the next sign-off, and an "
+          "accept then signs off: %r" % ((said, code, text),),
+          instruction(said) == ("decide", "invariant-breach", None)
+          and code == 0 and instruction(text) == DONE and _signed(mpath))
+
+
+def _rereview_scope_cases(check):
+    """Only a fix task closed `not-asked` under the phase key went unreviewed;
+    one its own per-task reviewer answered did not."""
+    M, why = _load("drive_phase_fix_scope")
+    if M is None:
+        check("fa1 the driver loads", False, why)
+        return
+    M.is_ancestor = lambda ctx, commit, head: False
+    phase = {"id": PHASE, "reviewPerTask": "phase", "review": {"findings": [
+        {"id": "P1-R1", "fixTask": "P1.4"}, {"id": "P1-R2", "fixTask": "P1.5"},
+        {"id": "P1-R3", "fixTask": "P1.6"}]}, "tasks": [
+        {"id": "P1.4", "fixes": ["P1-R1"], "commit": "a" * 40,
+         "intentCheck": {"answer": "not-asked", "basis": "a fix task"}},
+        {"id": "P1.5", "fixes": ["P1-R2"], "commit": "b" * 40,
+         "reviewPerTask": "always",
+         "intentCheck": {"answer": "matches", "basis": "its reviewer"}},
+        {"id": "P1.6", "fixes": ["P1-R3"], "commit": "c" * 40,
+         "intentCheck": {"answer": "matches", "basis": "answered"}}]}
+    got = M.fixes_after({"config": {}, "gitRoot": "/nowhere"}, phase, "d" * 40)
+    check("fa1 fixes_after lists the fix task closed `not-asked` under the phase "
+          "key, and not one its own reviewer answered: %r" % (got,),
+          got == ["P1.4"])
+
+
+def _landing_word_cases(check):
+    """A stamp close-phase left uncommitted is named where the drive reports
+    the landing."""
+    M, why = _load("drive_phase_landing_word")
+    if M is None:
+        check("lw1 the driver loads", False, why)
+        return
+    said = {"out": ""}
+    M.run_verb = lambda ctx, script, args, stdin=None: (0, said["out"], "")
+    ctx = {"manifest": "m.json", "project": "/p", "phase": PHASE, "did": [],
+           "log": []}
+    said["out"] = ("[close-phase] P1 landed: audit/p1 fast-forwarded into main\n"
+                   "  the stamp is not committed here: /p/main holds uncommitted "
+                   "changes this landing did not write (x)\n")
+    skipped, _s = M.land(ctx, {}, {"id": PHASE, "branch": "audit/p1"})
+    said["out"] = ("[close-phase] P1 landed: audit/p1 fast-forwarded into main\n"
+                   "  the stamp is NOT committed: the audit-state verb refused\n")
+    failed, _s = M.land(ctx, {}, {"id": PHASE, "branch": "audit/p1"})
+    said["out"] = ("[close-phase] P1 landed: audit/p1 fast-forwarded into main\n"
+                   "  the stamp committed in /p as abc123\n")
+    plain, _s = M.land(ctx, {}, {"id": PHASE, "branch": "audit/p1"})
+    check("lw1 a landing whose stamp was not committed says so on the did-line, "
+          "naming where it sits; one whose stamp was committed does not: %r"
+          % ((skipped, plain),),
+          (skipped or "").startswith("landed (") and "/p/main" in (skipped or "")
+          and "uncommitted" in (skipped or "")
+          and "uncommitted" in (failed or "") and "refused" in (failed or "")
+          and (plain or "").startswith("landed (")
+          and "uncommitted" not in (plain or ""))
 
 
 def _text_cases(check):
