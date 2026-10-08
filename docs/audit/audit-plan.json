@@ -3382,7 +3382,8 @@
       "P84.9-791",
       "P105.4",
       "P105.8-m32",
-      "P108.10-4gh"
+      "P108.10-4gh",
+      "P119.8-g0k"
     ],
     "plugins/audit/scripts/panel/panel-server.py": [
       "P10.2",
@@ -4302,7 +4303,8 @@
       "P84.9-791",
       "P105.4",
       "P105.8-m32",
-      "P108.10-4gh"
+      "P108.10-4gh",
+      "P119.8-g0k"
     ],
     "plugins/audit/tests/test__priority.py": [
       "P63.8"
