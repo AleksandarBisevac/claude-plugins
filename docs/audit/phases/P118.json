@@ -262,115 +262,182 @@
         "severity": "high",
         "file": "plugins/audit/scripts/git/close-phase.py:1980-2012 (landed_answers_refusal), :659-678 (phase_as_landed), :2439-2440; plugins/audit/scripts/governance/drive-phase.py:699-714 (close_task), :1340-1361 (commit_signoff)",
         "issue": "The R1 fix is incomplete: the last task's close is never at the branch tip. `close_task` runs commit-task-work first. That commit stages the shard as it stands, with the task still in_progress and `commit` null. Only after that does `done` write the close (`deferred`, commit C). Nothing commits the plan again until `commit_signoff`. So the phase-review and triage window has a gap, and so does any refused or red sign-off. In that window the tip copy shows the last task with no commit, and the parent's copy shows it pending. Bypass in a worktree layout under the default key: from the parent's checkout, run `close-phase.py <parent manifest> PN --project . [--branch audit/pN]`. Neither copy has a task to ask about, so C merges with no answers. For a one-task phase, that is the whole phase. The gate check does not stop this. `gate_answer` reads the ledger through `branch_texts` (:1666-1686), which also reads the worktree's uncommitted evidence. So a phase gate recorded in the worktree reads green without `--override-verdict`, and `--override-verdict` covers the remaining case. ra8 and ra9 commit the deferred close on the branch, which the driver never does for the last task. README:691 and COMPATIBILITY.md:355-360 say close-phase refuses while 'a task that records a commit' lacks its answers. Here the only copy that records the commit is the one close-phase does not read.",
-        "resolution": "1) When any task's key reads `phase`, refuse a landing whose tip copy records no sign-off verdict (`_mio.signoff_recorded(landed)`). Only `commit_signoff` puts the last close at the tip, and this rule still holds after the worktree is removed. 2) Also ask the property of the worktree's on-disk plan when the branch is checked out there (`_phase_project(git_root, project, observation['phaseTree'])`), the same way `branch_texts` reads the ledger. 3) Add case ra12: a worktree holds audit/p1 and its only task is closed `deferred` at C, with the plan change uncommitted as the driver leaves it, and a green phase-gate row sits in the worktree. close-phase run from main must exit 1, and C must not be in main. Add an allow twin after the sign-off is committed. 4) Bring the README:691 and COMPATIBILITY wording into line."
+        "resolution": "fixed in P118.15-v7t (487cedd3): 1) When any task's key reads `phase`, refuse a landing whose tip copy records no sign-off verdict (`_mio.signoff_recorded(landed)`). Only `commit_signoff` puts the last close at the tip, and this rule still holds after the worktree is removed. 2) Also ask the property of the worktree's on-disk plan when the branch is checked out there (`_phase_project(git_root, project, observation['phaseTree'])`), the same way `branch_texts` reads the ledger. 3) Add case ra12: a worktree holds audit/p1 and its only task is closed `deferred` at C, with the plan change uncommitted as the driver leaves it, and a green phase-gate row sits in the worktree. close-phase run from main must exit 1, and C must not be in main. Add an allow twin after the sign-off is committed. 4) Bring the README:691 and COMPATIBILITY wording into line.",
+        "fixTask": "P118.15-v7t",
+        "commit": "487cedd3"
       },
       {
         "id": "P118-R28",
         "severity": "high",
         "file": "plugins/audit/scripts/manifest/audit-task.py:8183-8231 (_carry_answers); plugins/audit/scripts/governance/drive-phase.py:1457-1466 (sign_off), :842-855 (triage_refusal); plugins/audit/commands/phase.md (Subcommand: signoff)",
         "issue": "The rule that a human settles a reviewer's `diverges`, `cannot-tell`, `not-proved` or `flagged` (R2/R9) is enforced only inside the driver's triage. The documented `/audit:phase signoff <id> --verdict passed --summary x` runs `audit-task.py signoff`. `_carry_answers` copies those answers onto `intentCheck` and signs off, because `landing_problem` accepts any answer except `deferred`. The next `drive-phase.py next <id>` sees `signed_off(phase)` and goes straight to `finish_signoff`, then close-phase. The triage is never built, and close-phase accepts the same answers. So, through one documented verb, a task the phase reviewer said does not do what it asked lands with no human asked. The same route also skips the new runtime-boot and gate-coverage decisions. No followed-table row names this route: row 397 covers order only and row 402 covers whether answers exist. CHANGELOG:82 says the answers reach a human 'before the landing'.",
-        "resolution": "Enforce it in the verb. Move the human-answer predicate (`human_answers`' words) into `_filed_returns`, so the driver and the verb share one definition. In `_carry_answers`, under a `phase` key, refuse while a filed phase return holds such an answer, unless `--accept-answers \"<the human's words>\"` is passed. Record those words in the summary and in the `phase.verdict` row. Have the driver pass its accepted reasons through that flag. Pin it: sign-off over a `diverges` entry exits 2, and the same with `--accept-answers` signs off. If the verb is meant to stay 'followed' only, add a README followed row that names this route and the evidence it leaves: a filed `diverges` beside a signed-off phase."
+        "resolution": "fixed in P118.15-v7t (487cedd3): Enforce it in the verb. Move the human-answer predicate (`human_answers`' words) into `_filed_returns`, so the driver and the verb share one definition. In `_carry_answers`, under a `phase` key, refuse while a filed phase return holds such an answer, unless `--accept-answers \"<the human's words>\"` is passed. Record those words in the summary and in the `phase.verdict` row. Have the driver pass its accepted reasons through that flag. Pin it: sign-off over a `diverges` entry exits 2, and the same with `--accept-answers` signs off. If the verb is meant to stay 'followed' only, add a README followed row that names this route and the evidence it leaves: a filed `diverges` beside a signed-off phase.",
+        "fixTask": "P118.15-v7t",
+        "commit": "487cedd3"
       },
       {
         "id": "P118-R29",
         "severity": "med",
         "file": "plugins/audit/scripts/git/close-phase.py:1994-2012, :659-678; plugins/audit/tests/test_close_phase.py (ra10)",
         "issue": "When the tip holds no copy of the plan, `landed_answers_refusal` refuses every landing that has a task keyed `phase`, and prints 'Commit the plan on <branch>'. A lost tip is not the only reason a tip has no copy. The plan may sit outside the git root, which README:1744-1747 supports ('Prefer keeping the manifest inside'), or be ignored or excluded. Such a plan is never in any commit, and the copy close-phase is handed is not a snapshot from the fork: it is the live record shared across branches. Under the default key, such a project can land no phase through close-phase or the driver, even with every answer bound, and the remedy it prints cannot be applied. ra10 pins this refusal on an excluded plan as if it were intended.",
-        "resolution": "Refuse on an unreadable tip only when the plan is versioned: inside the git root, not ignored, and tracked at the parent or at `baseRef`. Otherwise the handed copy (plus the worktree copy from finding 1, where one exists) is the record, and `review_answers_refusal` on it is the whole check. Add an allow case: an excluded plan whose task has a commit with answers bound, landed from the same checkout. Keep a refusal case for a tracked plan whose tip copy cannot be read."
+        "resolution": "fixed in P118.15-v7t (487cedd3): Refuse on an unreadable tip only when the plan is versioned: inside the git root, not ignored, and tracked at the parent or at `baseRef`. Otherwise the handed copy (plus the worktree copy from finding 1, where one exists) is the record, and `review_answers_refusal` on it is the whole check. Add an allow case: an excluded plan whose task has a commit with answers bound, landed from the same checkout. Keep a refusal case for a tracked plan whose tip copy cannot be read.",
+        "fixTask": "P118.15-v7t",
+        "commit": "487cedd3"
       },
       {
         "id": "P118-R30",
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py:4647-4690 (_no_change_moves), :5155-5156, :5178",
         "issue": "Task `files` entries are relative to the project directory (README:1744: 'Task files stay project-dir-relative (e.g. test/src/foo.ts)'). `_no_change_moves` passes them unchanged as pathspecs to `git -C <project>/<gitRoot> log` and `status`. In the documented 'Git repo in a subdirectory' layout (gitRoot set), every pathspec then points at <gitRoot>/<gitRoot>/... and matches nothing. The refusal never fires, so a `--no-change` close over committed work passes, which is the route past the landing property that R8 meant to close. `commit-task-work.stage_targets` (:289-301) maps the same entries through `os.path.join(project, name)` and `_invariants._rel(abs, git_root)` for exactly this reason. The CHANGELOG and README claim this refusal without saying it depends on the layout.",
-        "resolution": "Map each entry the way `stage_targets` does: join it to the project, then make it relative to the git root, and name an entry that falls outside the root rather than dropping it. Do this before both git calls. Add an ncm case with gitRoot pointing at a subdirectory; it fails against the current code."
+        "resolution": "fixed in P118.15-v7t (487cedd3): Map each entry the way `stage_targets` does: join it to the project, then make it relative to the git root, and name an entry that falls outside the root rather than dropping it. Do this before both git calls. Add an ncm case with gitRoot pointing at a subdirectory; it fails against the current code.",
+        "fixTask": "P118.15-v7t",
+        "commit": "487cedd3"
       },
       {
         "id": "P118-R31",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:1044-1050 (fixes_after), :1121-1125, :1285-1287 (signoff_summary); CHANGELOG.md:82",
         "issue": "`fixes_after` lists every recorded fix task closed after the review head, whatever its key. Under `always` (and under `signals` where a signal fired), that fix task had its own per-task reviewer. Even so, the triage says 'their diff unreviewed', and sign-off writes 'Fix task(s) ... signed off with their diff unreviewed.' into the recorded summary, which is false. Separately, `human_answers` reads the phase-level intent under every key. So an `always` phase with a review skill now stops on a phase intent of `diverges` or `cannot-tell`, while CHANGELOG:82 says this happens 'Under review.perTask: phase' only.",
-        "resolution": "Limit `fixes_after` to fix tasks whose `intentCheck` is the `not-asked` close the phase key writes. Make CHANGELOG/COMPATIBILITY say that the phase-intent stop applies under every key."
+        "resolution": "fixed in P118.16-v7t (5b425cc2): Limit `fixes_after` to fix tasks whose `intentCheck` is the `not-asked` close the phase key writes. Make CHANGELOG/COMPATIBILITY say that the phase-intent stop applies under every key.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
       },
       {
         "id": "P118-R32",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:1364-1384 (land); plugins/audit/scripts/git/close-phase.py:1445-1453",
         "issue": "close-phase now prints R7's new `landingCommitSkipped` on a later line ('the stamp is not committed here: ...'). `land()` keeps only the first line, so the drive prints `landed (...)` and `done`. Meanwhile the parent's checkout holds an uncommitted `mergedAt` stamp, and nobody is told.",
-        "resolution": "When close-phase's output contains 'not committed here', add a clause to the did-line, for example 'stamp left uncommitted in <tree>; re-run close-phase there once it is clean'."
+        "resolution": "fixed in P118.16-v7t (5b425cc2): When close-phase's output contains 'not committed here', add a clause to the did-line, for example 'stamp left uncommitted in <tree>; re-run close-phase there once it is clean'.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
       },
       {
         "id": "P118-R33",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:1441-1454 (apply_phase_answer), :1297-1314 (run_signoff)",
         "issue": "Answering `accept` on gate-coverage goes back through `signoff_step` and `run_signoff`, which runs and records the whole phase gate a second time, because the first green run is not marked. Because `coverageAccepted` is set, the second run's banners are not read at all, so a banner that only the second run prints is accepted without the human seeing it. `coverageAccepted` and `bootConfirmed` also survive a later red gate followed by a fix task, so a fix that touches the app root is not boot-checked again.",
-        "resolution": "Record the green phase-gate run (runId and head) in the drive state, and skip re-running the gate on `accept` while HEAD is unchanged. Clear `coverageAccepted` and `bootConfirmed` when a task closes after they were given."
+        "resolution": "fixed in P118.16-v7t (5b425cc2): Record the green phase-gate run (runId and head) in the drive state, and skip re-running the gate on `accept` while HEAD is unchanged. Clear `coverageAccepted` and `bootConfirmed` when a task closes after they were given.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
       },
       {
         "id": "P118-R34",
         "severity": "low",
         "file": "plugins/audit/reference/manifest-conventions.md:394-421, :519-520",
         "issue": "`unblock` writes a new journal action from inside the verb, `task.unblock`. The journal action list and the 'written in process by `audit-task.py`' list both name `task.block` but not `task.unblock`.",
-        "resolution": "Add a `task.unblock` bullet (details: taskId, phaseId, reason, changes) and add the action to the in-process list."
+        "resolution": "fixed in P118.15-v7t (487cedd3): Add a `task.unblock` bullet (details: taskId, phaseId, reason, changes) and add the action to the in-process list.",
+        "fixTask": "P118.15-v7t",
+        "commit": "487cedd3"
       },
       {
         "id": "P118-R35",
         "severity": "low",
         "file": "plugins/audit/commands/phase.md:2 (and :26 'a finished wave')",
         "issue": "The command description, which is the text the command picker shows, still says '(every ready task, parallel where safe, then sign-off)'. The driver runs one task at a time. The README and CHANGELOG were corrected, and R19's resolution explicitly named the description.",
-        "resolution": "Change it to 'every ready task, one at a time in id order, then sign-off', and drop 'wave' from step 2."
+        "resolution": "fixed in P118.16-v7t (5b425cc2): Change it to 'every ready task, one at a time in id order, then sign-off', and drop 'wave' from step 2.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
       },
       {
         "id": "P118-R36",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:324-325 (DECISIONS gate-coverage, runtime-boot), :1423-1452 (apply_phase_answer), :917-926 (pending_still_applies), :1547-1560 (drive), :1301-1314 (run_signoff)",
         "issue": "Two of the new sign-off decisions only let a human say yes. `gate-coverage` offers only `accept`. `runtime-boot` offers `booted` or `not-reachable`, and `not-reachable` keeps the same decision pending. When the human says no (the gate grades nothing of this work, or the app boots and crashes), there is no way back to the work. A pending decision with no task is replayed on every `next`, whatever the plan now holds (`pending_still_applies` returns True). `/audit:run` of a task added as the remedy is also refused: 'this phase's drive waits on a gate-coverage decision'. Reproduced on fixtures: after `audit-task.py add` and `retarget --gate-set`, `next P1` re-printed `decide gate-coverage`, and `--answer decline` was refused. After `not-reachable` with a crash reason and an added fix task, `next P1` re-asked runtime-boot and `next P1.2-xic` was refused. The only way forward is a false `accept`/`booted`. That answer stays in the drive state (`coverageAccepted`/`bootConfirmed`) and switches off the same check on the tree after the fix. Reproduced: added P1.2-xic, then `accept --reason \"the human: no - added P1.2-xic\"`. The phase gate re-ran, signoff refused because the task was open, and the drive ran P1.2-xic. The final phase gate printed NO OVERLAP again and no decision fired. The recorded summary reads 'Gate banner accepted: the human: no - ...'. The triage's `[accept]` lines are the same class: a human who wants a diverging task fixed has only `accept`.",
-        "resolution": "Give each of these decisions an answer that hands back to the work. For example, `decline --reason` on gate-coverage and runtime-boot, and on the triage's answers: it records the human's words, drops the pending decision and lets the drive run tasks added since. Clear `coverageAccepted`, `bootConfirmed` and `answersAccepted` when a task closes after they were given, or bind each to the HEAD it was given at, so the gate and boot after a fix are asked again. Apply the same to `breachAccepted` (invariant-breach, from P118.8, has the same shape). Add a drive case: banner, then decline, then a task added and driven, then the final gate asks gate-coverage again. Its twin is a plain accept that signs off."
+        "resolution": "fixed in P118.16-v7t (5b425cc2): Give each of these decisions an answer that hands back to the work. For example, `decline --reason` on gate-coverage and runtime-boot, and on the triage's answers: it records the human's words, drops the pending decision and lets the drive run tasks added since. Clear `coverageAccepted`, `bootConfirmed` and `answersAccepted` when a task closes after they were given, or bind each to the HEAD it was given at, so the gate and boot after a fix are asked again. Apply the same to `breachAccepted` (invariant-breach, from P118.8, has the same shape). Add a drive case: banner, then decline, then a task added and driven, then the final gate asks gate-coverage again. Its twin is a plain accept that signs off.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
       },
       {
         "id": "P118-R37",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:1444-1454 -> :1304 (run_signoff)",
         "issue": "`--answer accept` on gate-coverage goes back through `signoff_step` -> `run_signoff`, which runs the whole phase gate (and `derive-phase-gate.py`) a second time. That is a second evidence row and a second full suite's wall clock, for an answer about the first run. The fixture's did-line printed `phase gate green` again after the accept.",
-        "resolution": "Keep the green run's runId and HEAD in the drive state. On an accept at an unchanged HEAD, go straight to the invariants and the verdict; the newest ledger row is still the run the verdict binds to."
+        "resolution": "fixed in P118.16-v7t (5b425cc2): Keep the green run's runId and HEAD in the drive state. On an accept at an unchanged HEAD, go straight to the invariants and the verdict; the newest ledger row is still the run the verdict binds to.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
       },
       {
         "id": "P118-R38",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:789-811 (confirmed_in_advance)",
         "issue": "Any `risk.confirmed` row ever written for the phase that names the task counts as confirmation, with no bound in time. A high-risk task that is reopened and re-run commits unattended on an answer given for an earlier commit. record-risk-confirmation.py's own contract says the list covers open work as it stood at the moment of the answer.",
-        "resolution": "Only count a row written after the task's most recent `task.reopen` row (or after its last `completedAt` was cleared). Add an hr case: confirm, run, reopen, run again, and it must stop at `decide high-risk`."
+        "resolution": "fixed in P118.16-v7t (5b425cc2): Only count a row written after the task's most recent `task.reopen` row (or after its last `completedAt` was cleared). Add an hr case: confirm, run, reopen, run again, and it must stop at `decide high-risk`.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
       },
       {
         "id": "P118-R39",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:213-214, :249-251, :295-297 (UNBLOCK_RULE); plugins/audit/scripts/manifest/audit-task.py:5847 (_unblock_refusal)",
         "issue": "`decide stalled` and `stop-blocked` name `audit-task.py unblock` for every blocked task. `unblock` refuses a task blocked with attempts left, which is the usual result of `--answer block` at the first red gate, at high-risk or at no-executor-return; it points to `start` instead. On the fixture, the stalled print listed 'P1.1 blocked; P1.2 blocked' (P1.2 at 1 of 3 attempts) under a single unblock rule, so each such task costs a refused call first.",
-        "resolution": "Render the remedy per blocked task from attempts against maxAttempts: `unblock` when they are spent, `start` otherwise. Add a bk case for a task blocked at 1 of 3."
+        "resolution": "fixed in P118.16-v7t (5b425cc2): Render the remedy per blocked task from attempts against maxAttempts: `unblock` when they are spent, `start` otherwise. Add a bk case for a task blocked at 1 of 3.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
       },
       {
         "id": "P118-R40",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py:4670 (_no_change_moves --since), :5183",
         "issue": "`git log --since=<startedAt>` includes a commit made in the same second. The driver starts the next task right after committing the previous one. On a fixture where P1.1 and P1.2 share src/f1.txt, a later `done P1.2 --no-change` was refused in 3 of 4 trials, blaming P1.1's commit made in the second P1.2 started. The remedy printed ('close it --commit <sha> naming the work, or put the files back') would bind the sibling's commit to the task or revert the sibling's work. Under the driver it is rarely reached, because a no-work task closes on a record-only commit.",
-        "resolution": "Bound the span below by the HEAD at the task's start (record it on start, or read it from the `task.start` row) rather than by committer date. Failing that, exclude commits a closed sibling records as its own `commit`. Add an ncm case where the sibling commits in the same second."
+        "resolution": "fixed in P118.15-v7t (487cedd3): Bound the span below by the HEAD at the task's start (record it on start, or read it from the `task.start` row) rather than by committer date. Failing that, exclude commits a closed sibling records as its own `commit`. Add an ncm case where the sibling commits in the same second.",
+        "fixTask": "P118.15-v7t",
+        "commit": "487cedd3"
       },
       {
         "id": "P118-R41",
         "severity": "low",
         "file": "plugins/audit/commands/phase.md:2",
         "issue": "The description, which is also what the skill listing shows, still says 'run it end to end (every ready task, parallel where safe, then sign-off)'. R19 named this sentence. Only the README row and CHANGELOG were corrected; the driver runs one task at a time.",
-        "resolution": "Change it to 'every ready task one at a time, then sign-off'. measure-context's phase entry stands at 3976/4000, so keep the edit byte-neutral or shorter."
+        "resolution": "fixed in P118.16-v7t (5b425cc2): Change it to 'every ready task one at a time, then sign-off'. measure-context's phase entry stands at 3976/4000, so keep the edit byte-neutral or shorter.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
       },
       {
         "id": "P118-R42",
         "severity": "low",
         "file": "plugins/audit/reference/verbs-in-full.md:55-60",
         "issue": "The blocked-task paragraph, written by P118.14 alongside P118.13's new verb, says 'The driver offers no reset of `attempts`: a remedy that restarts the task goes through `audit-task.py start`'. `start` refuses a task whose attempts are spent; the remedy the driver prints is `audit-task.py unblock`. The guide reads this file, so a user asking how to unblock is sent to the verb that refuses.",
-        "resolution": "Name `unblock <id> --reason` for a task whose attempts are spent and `start` for one blocked with attempts left, matching the stop's rule once finding 4 is fixed."
+        "resolution": "fixed in P118.16-v7t (5b425cc2): Name `unblock <id> --reason` for a task whose attempts are spent and `start` for one blocked with attempts left, matching the stop's rule once finding 4 is fixed.",
+        "fixTask": "P118.16-v7t",
+        "commit": "5b425cc2"
+      },
+      {
+        "id": "P118-R43",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:1316-1339 (green_phase_gate), :1352-1368 (run_signoff), :1496-1498 (accept → bind_at → signoff_step)",
+        "issue": "Rule (c): a path that signed off at round 2 now loops. The green phase-gate run is reused whenever HEAD has not moved. But the sign-off verb also checks that the run was measured under the gate the phase declares now and over its files as they stand. Changing either without a commit makes the reused run stale. The verb then refuses every `sign-off` answer, and nothing in the driver clears `phaseGate`; only `decline` does, and the gate-coverage decision is not asked again because `coverageAccepted` holds at the same HEAD. Reproduced on a scratch fixture (per_task=phase, phase gate `echo tests/unrelated_test.py 1 passed`): drive to `decide gate-coverage`, run `audit-task.py retarget P1 --gate-set \"echo src/f1.txt 1 passed\"`, then `next P1 --answer accept --reason ...`. Result: exit 1, `phase gate green (reused 2026-10-08T08:26:54Z.90404a)`, and the verb refused with '...measured under the gate [echo tests/unrelated_test.py 1 passed] ... and the phase declares [echo src/f1.txt 1 passed] now'. Three more rounds of triage then `--answer sign-off` gave the same refusal, and the state still named the old run. An uncommitted edit to src/f1.txt between the gate and the accept gives the same loop ('scopeDigest was ... and is ... now'). At round 2, run_signoff ran the gate again and both sequences signed off. The way out is the printed `run-test-gate.py ... --record` run by hand. After it, sign-off passes but still reuses the OLD run's banner list ('reused ...29bd18'), while the verdict binds to the new run (...45ea38). So nobody saw the banners of the run the verdict stands on, and the summary's 'Gate banner accepted' describes the other run. This breaks the premise R36's resolution relied on ('the newest ledger row is still the run the verdict binds to') whenever the gate or the files move without a commit; the docstring admits the uncommitted-edit case but not that it loops.",
+        "resolution": "Store the run's gate entries and scopeDigest in `phaseGate` alongside `head`. Reuse it only while all three still match, for example by asking `_verdict_binding.phase_binding` before reusing. Also pop `phaseGate` whenever anything after the gate refuses, the sign-off verb included, so the next sign-off measures again. Add a drive case: gate-coverage → `retarget --gate-set` → accept signs off on one fresh run whose banners were read. Its twin is dc4: accept at an unchanged gate and tree reuses the run."
+      },
+      {
+        "id": "P118-R44",
+        "severity": "med",
+        "file": "plugins/audit/scripts/git/close-phase.py:2013-2018 (landed_answers_refusal: `_phase_key_applies` → `return None`); README.md:691; COMPATIBILITY.md:363-366",
+        "issue": "Rule (a). Under `always` or `signals`, close-phase lands a phase that has no sign-off verdict, so an unsettled answer in a filed phase return lands with no human asked. Reproduced on a scratch fixture (per_task=always, meta.reviewSkill set): the phase review was filed with intent `diverges`, and the triage printed `phase intent diverges - ... [accept]`. Then `close-phase.py <plan> P1 --project <root>` exited 0 with `audit/p1-one -> main (no-checkout)`, `mergedAt` stamped and `review.status` None. The same sequence under `phase` exits 1. This diff widens the human stop to 'every review.perTask value' (README:691 'Under every value, sign-off ... refuses while a filed phase return holds a diverges, cannot-tell ...'; COMPATIBILITY: 'that stop on a phase intent holds under every review.perTask value'). The landing only asks for a verdict where a task's key reads `phase`. The gap predates this round: round 2 lands the same way. It is listed here because it sits in the function this diff rewrote and on the property this diff extended.",
+        "resolution": "In `landed_answers_refusal`, under every key: when a landing is due and `_fr.needs_human(_fr.phase_returns(...))` holds an answer, refuse unless the tip copy (or, for an unversioned plan, the on-disk copy) records a sign-off verdict. Only the verb writes that verdict, and the verb has already checked the settlement. Add a case: the sim above exits 1 and merges nothing. Its twin: the same phase lands once it is signed off with the answer settled, and an `always` phase whose returns hold no such answer lands as before. If this is out of scope, add a followed-table row naming the route and the evidence it leaves: a filed `diverges` beside `mergedAt` with no `review.status`."
+      },
+      {
+        "id": "P118-R45",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:8263-8268 (_human_settlement remedy); plugins/audit/scripts/governance/drive-phase.py:1147-1153 (triage)",
+        "issue": "The verb's refusal sends a hand-run sign-off to `drive-phase.py next <pid>`. When a review skill resolves and no drive state exists, the driver first dispatches a new phase review. Sim: after the refusal 'phase: intent cannot-tell ... run `drive-phase.py next P1` and answer its triage', `next P1` printed `dispatch audit:audit-reviewer P1`. That is a second paid review just to record one accept, and the old answer stays in the triage either way. Under the group door the remedy is printed per member. Answering that member's triage `sign-off` would sign off and land the member alone.",
+        "resolution": "Let the triage read an existing filed phase return when no drive mark exists and no task is owed, rather than dispatching again. Or say in the refusal text that a review is dispatched, and, for a group, to answer only `accept` and sign the group off again."
+      },
+      {
+        "id": "P118-R46",
+        "severity": "low",
+        "file": "commits 487cedd3 (P118.15) / 5b425cc2 (P118.16); plugins/audit/scripts/governance/drive-phase.py",
+        "issue": "P118.16's implementation is in P118.15's commit: `decline_answer`, `held_at`/`bind_at`, `green_phase_gate`, `blocked_remedy`, and the DECISIONS `decline` options (drive-phase.py, 282 lines in 487cedd3). 5b425cc2 holds only test_drive_phase.py, phase.md and verbs-in-full.md. Any per-task answer bound to P118.16's commit is about a commit that contains none of the code its description asked for.",
+        "resolution": "Nothing to rewrite. Add a note on P118.16 (`audit-task.py note`) that its code landed in 487cedd3, so a reader binding its answers knows which commit holds it."
+      },
+      {
+        "id": "P118-R47",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:326 (DECISIONS review-answer)",
+        "issue": "Under `always`/`signals`, a per-task reviewer's `diverges` / `cannot-tell` / `not-proved` becomes `decide review-answer`. It takes only `continue`, with no `--reason`, so the human's words are kept nowhere. The triage's `accept` now requires them. This diff did not change it.",
+        "resolution": "Require `--reason` on `continue` and carry it into the summary, the same way as the triage's accept."
       }
     ],
-    "outcome": "[findings: 42 - 5 high, 17 med, 20 low; 26 with a recorded fix commit]"
+    "outcome": "[findings: 47 - 5 high, 19 med, 23 low; 42 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1493,7 +1560,7 @@
     {
       "id": "P118.16-v7t",
       "title": "every driver decision a human can answer no to hands back to the work",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes P118 review round 2 findings R36, R31 (the fix-task half), R32, R33, R35, R37, R38, R39, R41 and R42, in the step driver and its prose. gate-coverage, runtime-boot and the triage answers gain a decline that hands back to the work. An accept at an unchanged head reuses the recorded green phase-gate run. Accepted coverage and boot are reset when a task closes after them. A risk confirmation counts only after the task's last reopen. The blocked remedy names unblock or start per task, from its attempts. fixes_after lists only fix tasks closed not-asked under the phase key. A skipped landing commit is named on the did-line. phase.md's description says one task at a time, and verbs-in-full.md names unblock. Every new case is shown red first.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1525,19 +1592,83 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "5b425cc2",
+      "outcome": {
+        "technical": "Fixes P118-R36, R31 (the fix-task half), R32, R33, R35, R37, R38, R39, R41 and R42.\n\n- **R36.** gate-coverage, runtime-boot, invariant-breach and the triage gain decline --reason, offered on the triage only while an answer waits on a human. decline_answer keeps the human's words, which signoff_summary records, drops the pending decision and the recorded phase gate, and goes on to an open task. With no open task it stops with DECLINE_REMEDY.\n- **R33 and R37.** bootConfirmed, coverageAccepted and breachAccepted are bound to the HEAD they were given at, so a task close resets them. A green phase gate is stored and reused at the same HEAD.\n- **R38.** A risk confirmation ends at the task's later task.reopen row.\n- **R39.** The stalled print and the blocked stop name start or unblock per task, from its attempts against maxAttempts. The real verbs pin the mirrored default.\n- **R31.** fixes_after lists only fix tasks closed not-asked under the phase key.\n- **R32.** land names a stamp left uncommitted.\n- **R35 and R41.** phase.md says \"one at a time\" and \"a closed task\", at 3974 of 4000 bytes.\n- **R42.** verbs-in-full.md names start or unblock correctly.\n\nCases: dc1-dc5, db1-db4, da1-da3, di1-di2, hr3, bk1-bk3, fa1 and lw1, with over-fire twins. The tdd red was seen with only the test file changed, at 3/22. The helper reports could-not-prove only because human_answers already calls the sibling's unlanded _filed_returns.needs_human. The sweep is green.",
+        "descriptive": "When a human says no at sign-off - the gate did not measure the work, the app does not boot, a reviewer's doubt stands - the drive now records their words and goes back to the work instead of stalling, and a blocked task is shown the right way out."
+      },
+      "startedAt": "2026-10-08T07:10:13Z",
+      "completedAt": "2026-10-08T08:14:55Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-08T08:14:42Z.d5c7e7",
+        "status": "passed",
+        "at": "2026-10-08T08:14:42Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "5b425cc2",
+        "at": "2026-10-08T08:14:55Z",
+        "basis": "orchestrator check: every finding maps to a change and a red case; accepts bound to HEAD; ceilings hold; sweep green"
+      },
+      "notes": [
+        {
+          "at": "2026-10-08T08:31:32Z",
+          "text": "P118.16's drive-phase.py implementation (decline_answer, held_at/bind_at, green_phase_gate, blocked_remedy, DECISIONS decline options) was committed in 487cedd3 with P118.15's commit, because both tasks declared drive-phase.py; 5b425cc2 holds its tests, phase.md and verbs-in-full.md."
+        }
+      ]
+    },
+    {
+      "id": "P118.17-v7t",
+      "title": "a reused phase gate and an unsettled answer cannot loop or land unseen",
+      "status": "pending",
+      "description": "Fixes P118 review round 3 findings R43-R47. A reused green phase-gate run is bound to its gate entries and scope digest as well as HEAD, through _verdict_binding, and is dropped whenever a later step refuses, so sign-off cannot loop on a stale run. close-phase refuses a landing under every review key when a filed phase return holds an unsettled answer and no sign-off verdict is recorded. The sign-off verb's refusal text says what the driver will do, including a second review, and how a group signs off. decide review-answer requires --reason on continue and carries it into the summary. Every new case is shown red first.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-08T07:10:13Z",
+      "startedAt": null,
       "completedAt": null,
-      "verifiedBy": [],
-      "testEvidence": {
-        "runId": "2026-10-08T08:14:42Z.d5c7e7",
-        "status": "passed",
-        "at": "2026-10-08T08:14:42Z"
-      }
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-07T21:17:01Z"
