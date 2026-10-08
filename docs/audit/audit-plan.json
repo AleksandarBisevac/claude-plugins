@@ -746,6 +746,12 @@
       "title": "the plugin pipeline costs at most 2x plain per task",
       "status": "done",
       "shard": "phases/P118.json"
+    },
+    {
+      "id": "P119",
+      "title": "the phase overhead and the task cycle cost less with every guarantee kept",
+      "status": "pending",
+      "shard": "phases/P119.json"
     }
   ],
   "fileIndex": {
@@ -6261,7 +6267,8 @@
       "P118.1",
       "P118.9",
       "P118.7",
-      "P118.14-v7t"
+      "P118.14-v7t",
+      "P119.1"
     ],
     "tools/stream-cost.py": [
       "P117.1",
@@ -6270,7 +6277,8 @@
       "P118.1",
       "P118.5",
       "P118.12-v7t",
-      "P118.16-v7t"
+      "P118.16-v7t",
+      "P119.1"
     ],
     "docs/research/pipeline-cost-analysis.md": [
       "P117.1",
@@ -6360,7 +6368,11 @@
       "P118.16-v7t"
     ],
     "docs/research/pipeline-cost-results.md": [
-      "P118.19-v7t"
+      "P118.19-v7t",
+      "P119.1"
+    ],
+    "docs/research/pipeline-cost-levers.md": [
+      "P119.1"
     ]
   },
   "bugs": [
