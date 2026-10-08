@@ -449,45 +449,57 @@
         "severity": "med",
         "file": "plugins/audit/scripts/git/close-phase.py landed_answers_refusal; PLUGIN-BUILD-GUIDE.md close-phase section",
         "issue": "Any recorded sign-off verdict is taken as proof that the filed returns' human answers were settled, but file-return still accepts a phase return after the verdict. A diverges filed after sign-off and before landing merges with no human asked (reproduced under always). The guide and the docstring claim more than holds.",
-        "resolution": "Have file-return refuse a phase return once a sign-off verdict is recorded, as the other post-verdict writes are guarded, with a case and its twin. Narrow the guide and docstring if anything still differs."
+        "resolution": "fixed in P118.18-v7t (2e1e3376): Have file-return refuse a phase return once a sign-off verdict is recorded, as the other post-verdict writes are guarded, with a case and its twin. Narrow the guide and docstring if anything still differs.",
+        "fixTask": "P118.18-v7t",
+        "commit": "2e1e3376"
       },
       {
         "id": "P118-R49",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py coverageAccepted",
         "issue": "The human's gate-coverage accept is bound to HEAD only. After a retarget at the same head, a different gate's banners are never shown, and the summary keeps words about the old gate.",
-        "resolution": "Bind the accept to the run (runId, or gate entries plus scopeDigest) and ask again when the run changes, with a gr4 case."
+        "resolution": "fixed in P118.18-v7t (2e1e3376): Bind the accept to the run (runId, or gate entries plus scopeDigest) and ask again when the run changes, with a gr4 case.",
+        "fixTask": "P118.18-v7t",
+        "commit": "2e1e3376"
       },
       {
         "id": "P118-R50",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py _human_settlement text; drive-phase.py sign-off pass",
         "issue": "The redispatch remedy pays for a second phase review whose return is refused at an unchanged head, while the triage reads the first.",
-        "resolution": "Have the driver reuse a phase return already filed at the current head when no drive mark exists, and drop the second-review clause."
+        "resolution": "fixed in P118.18-v7t (2e1e3376): Have the driver reuse a phase return already filed at the current head when no drive mark exists, and drop the second-review clause.",
+        "fixTask": "P118.18-v7t",
+        "commit": "2e1e3376"
       },
       {
         "id": "P118-R51",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py decide-review-answer rule",
         "issue": "continue requires --reason, but the printed rule does not tell the model to ask the human, so the model can write the reason itself.",
-        "resolution": "Give the decision the triage accept's rule (ask the human, pass their words verbatim) and pin it in ct1."
+        "resolution": "fixed in P118.18-v7t (2e1e3376): Give the decision the triage accept's rule (ask the human, pass their words verbatim) and pin it in ct1.",
+        "fixTask": "P118.18-v7t",
+        "commit": "2e1e3376"
       },
       {
         "id": "P118-R52",
         "severity": "low",
         "file": "COMPATIBILITY.md human stop paragraph",
         "issue": "The contract names sign-off's stop under every key but not close-phase's landing refusal under every key.",
-        "resolution": "Add the clause."
+        "resolution": "fixed in P118.18-v7t (2e1e3376): Add the clause.",
+        "fixTask": "P118.18-v7t",
+        "commit": "2e1e3376"
       },
       {
         "id": "P118-R53",
         "severity": "low",
         "file": "plugins/audit/scripts/git/close-phase.py verdict-binding refusal text",
         "issue": "With an uncommitted declared file present, the printed remedy (record again, then land) loops.",
-        "resolution": "Name the uncommitted declared files and say to commit or revert them before recording."
+        "resolution": "fixed in P118.18-v7t (2e1e3376): Name the uncommitted declared files and say to commit or revert them before recording.",
+        "fixTask": "P118.18-v7t",
+        "commit": "2e1e3376"
       }
     ],
-    "outcome": "[findings: 53 - 5 high, 20 med, 28 low; 46 with a recorded fix commit]"
+    "outcome": "[findings: 53 - 5 high, 20 med, 28 low; 52 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1739,7 +1751,7 @@
     {
       "id": "P118.18-v7t",
       "title": "a late return, a re-targeted gate and a re-run review cannot slip past a human",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes P118 review round 4 findings R48-R53. file-return refuses a phase return once a sign-off verdict is recorded, so a late return cannot land a human answer unseen. The gate-coverage accept is bound to the run, not only HEAD. The driver reuses a phase return already filed at the current head instead of paying for a second review. decide-review-answer tells the model to ask the human. COMPATIBILITY names close-phase's landing refusal under every key. The verdict-binding refusal names uncommitted declared files. Every new case is shown red first.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -1775,18 +1787,28 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2e1e3376",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes P118-R48 to R53.\n\n- **R48.** file-return refuses a phase return once a sign-off verdict is recorded (exit 2, nothing written), through _signed_off_refusal. close-phase's docstring and the guide say a verdict covers the returns filed through the verb before it. Cases: hd30 and lr1, with hd30b and lr2 as allow cases.\n- **R49.** The gate-coverage accept is bound to HEAD, the held run's runId and the gate declared now (bind_coverage, coverage_held). The summary drops words about a run the verdict no longer stands on. Cases: gr4, gr4b and gr4c; gr2 was updated.\n- **R50.** With no drive mark, the driver reads a phase return already filed at the current HEAD instead of dispatching a second review (filed_at_head). The verb's refusal text matches. Cases: rr1, rr2, and hd29 repinned.\n- **R51.** decide-review-answer tells the model to ask the human and pass their words verbatim (ct1r).\n- **R52.** COMPATIBILITY names close-phase's landing refusal under every key and the post-verdict file-return refusal.\n- **R53.** A digest-moved refusal names the uncommitted declared files and says to commit or revert them (cr19b, cr19c).\n\ntest_audit_task gains --stage selection. Every case was proved red at HEAD, and the over-fire mutations each turned their allow case red. The sweep and check-git-pipeline are green.\n\nA related gap is recorded as an internal fault: a hand-run reused verdict carries no banner.",
+        "descriptive": "A reviewer's result can no longer be slipped in after sign-off, a human's acceptance of a gate warning no longer carries over to a different gate run, and a lost drive state no longer pays for a second phase review."
       },
       "startedAt": "2026-10-08T09:41:29Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T10:33:50Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_close_phase.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-08T10:33:37Z.299e0f",
         "status": "passed",
         "at": "2026-10-08T10:33:37Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "2e1e3376",
+        "at": "2026-10-08T10:33:50Z",
+        "basis": "orchestrator check: the med reproduced and refused with its twin; each low maps to a change and a case; mutations both ways"
       }
     },
     {
@@ -1828,7 +1850,12 @@
       },
       "startedAt": "2026-10-08T09:59:54Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T10:42:58Z.b3ac51",
+        "status": "passed",
+        "at": "2026-10-08T10:42:58Z"
+      }
     }
   ],
   "startedAt": "2026-10-07T21:17:01Z"
