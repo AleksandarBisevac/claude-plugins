@@ -36,9 +36,8 @@ this run: report its commit and offer (AskUserQuestion) a re-open, never a silen
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" reopen <taskId> --reason "<their why>"
 ```
 
-**The operator's words go in VERBATIM** — see `reference/manifest-conventions.md` → *The
-operator's words go in unchanged*: `--reason` reaches the hash-chained journal (`-` reads it off
-stdin). A task with an `ado` link then owes its board card the move back to the pending state,
+**The operator's words go in VERBATIM**, unparaphrased: `--reason` reaches the hash-chained
+journal (`-` reads it off stdin). A task with an `ado` link then owes its board card the move back to the pending state,
 with the comment `reopened by /audit:run`. Then run `next <taskId>` again. A blocked task stops
 the drive with its recorded reason
 and the rule for it; an `in_progress` one resumes from where its last run stopped.

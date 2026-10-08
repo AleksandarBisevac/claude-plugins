@@ -42,7 +42,8 @@ the task commits actually carry, and the default run never looks at that.
 Off by default, and the row prints no figure without it: name a session's own transcript
 `.jsonl` and the `ttl trade` line reports that session's longest gap between main-loop
 requests, its one-hour cache writes, and what those same writes would have cost at a
-five-minute TTL instead. Documentation only — it recommends nothing the gaps do not
+five-minute TTL instead. Once a gap reaches five minutes that price is a floor, printed `at
+least`: it leaves out the re-writes the expired cache forces. Documentation only — it recommends nothing the gaps do not
 support, and the setting stays yours.
 
 ## The `evidence` line — the plan's pointers against the ledger, both ways

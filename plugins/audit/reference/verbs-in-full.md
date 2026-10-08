@@ -52,13 +52,15 @@ Execute exactly `<taskId>`, with status guards:
    reader nothing but a disagreement between the plan and the record, which
    `/audit:doctor` will then report. What marks the verdict as stale is the task
    reading `pending` again beside an `at` stamp older than the reopen, not a missing block.
-2. `status == "blocked"` → refuse: report why (exhausted attempts / blockers, and the
-   `blockedReason` `audit-task.py block` recorded). Offer a confirmed reset of `attempts` to 0
-   (back to `pending`), then execute. The reset removes `blockedReason` with the status it
-   explained — a pending task carrying one reads as still waiting — and the `audit-task.py start`
-   that execution begins with clears it too, recording the old reason in its `task.start` row.
-3. `status == "in_progress"` → warn: likely an interrupted run — point to `/audit:resume`.
-   Proceed only if the human explicitly confirms re-execution.
+2. `status == "blocked"` → the drive stops, naming the `blockedReason` the block recorded
+   (exhausted attempts, a blocker, or `audit-task.py block`'s own reason), and prints the remedy
+   as the rule under that stop; the human answers it, never a hand edit of the plan. The driver
+   offers no reset of `attempts`: a remedy that restarts the task goes through
+   `audit-task.py start`, which clears `blockedReason` and records the old reason in its
+   `task.start` row — a pending task still carrying one would read as waiting.
+3. `status == "in_progress"` → the drive resumes it at the step its last run stopped on: the
+   driver keeps its state per phase, so no re-execution question is asked, and an agent that
+   filed nothing becomes a named decision rather than a silent second dispatch.
 4. Unmet blockers, or a phase claimed by a session that may still be live → relay `audit-task.py
    start`'s refusal the way `reference/manifest-conventions.md` → *The operator's words go in
    unchanged* states.
@@ -737,7 +739,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" done P3.2 \
 
 It writes `commit: null` and `outcome.noChange = {reason, examinedAt}`, where `examinedAt` is
 the HEAD SHA the task was examined at — the commit the claim was measured against — and is
-written `null`, and **said**, when git cannot name one. The `task.done` row carries the reason
+written `null`, and **said**, when git cannot name one. **A no-change close is refused while the task's declared files show a change since its current start** - a commit or an uncommitted edit - **but it looks no further back than that start**, so work committed under an earlier start and then reopened is not seen, and a task with no commit is never asked for review answers. It is a way past the landing property the README's followed table names (the row on answers not routed around), and its evidence is post-hoc: the commits past `baseRef` that no task records. The `task.done` row carries the reason
 in its summary and in `details.reason`. `/audit:doctor`'s *done task(s) carry no commit SHA*
 warning leaves such a task out and names it on a line of its own. `--commit` and `--no-change`
 together are refused, as are `--no-change` with no `--reason` and a `--reason` on a close
@@ -837,6 +839,8 @@ under `--verdict passed` and `--verdict skipped` alike — while any task owed i
 one; `close-phase.py` asks the same of the plan's record before it merges.
 
 ### Subcommand: `reopen <taskId> --reason "<why>"`
+
+**Under `review.perTask: phase`, a reopen followed by `cancel`, `move` or a `--no-change` close takes a committed task's work off its record before the landing;** nothing refuses the cancel or the move, and a no-change close looks back only to the task's current start. It is a way past the landing property the README's followed table names (the row on answers not routed around), and its evidence is post-hoc: the commits past `baseRef` that no task records.
 
 `--reason` goes in unchanged, by the rule stated under `cancel` below: it reaches the hash-chained journal.
 
@@ -999,6 +1003,8 @@ carries one is not refused by the check every verb runs first: `unmute` and an e
 run on it like every other verb.
 
 ### Subcommand: `cancel <id> --reason "<why>"`
+
+**Under `review.perTask: phase`, cancelling a reopened task whose work was committed takes that work off its record, and nothing refuses it.** It is a way past the landing property the README's followed table names (the row on answers not routed around), and its evidence is post-hoc: the commits past `baseRef` that no task records.
 
 **The operator's words go in VERBATIM** — see `reference/manifest-conventions.md` → *The operator's words go in unchanged*. This value reaches the hash-chained journal, so a paraphrase makes the trail guarantee a sentence its subject never wrote.
 
@@ -1182,6 +1188,8 @@ resolved against a root these paths are not relative to.
 
 ### Subcommand: `move <taskId> --to <phaseId>`
 
+**Under `review.perTask: phase`, moving a reopened task whose work was committed takes that work off this phase's record, and nothing refuses it.** It is a way past the landing property the README's followed table names (the row on answers not routed around), and its evidence is post-hoc: the commits past `baseRef` that no task records.
+
 Relocate a pending/blocked task into another open phase. This is the ONLY sanctioned
 way to move a task: a hand-drag keeps the old id, which the validator flags
 (`id does not follow its phase's prefix`) and which breaks the ledger join. It is a SCRIPT
@@ -1353,9 +1361,12 @@ tokens are no more decidable than one when a rule has a carve-out nobody remembe
 
 `$ARGUMENTS` = the phase id (plus optional `--dry-run`, `--confirm-high-risk`).
 
-**If `--dry-run` is present:** follow the orchestrator's **Dry-run / preview** section instead —
-read-only preflight, print the plan (branch, ready tasks, parallel groups, merge target, and **what
-happens after the merge**), and STOP.
+**If `--dry-run` is present:** a read-only preview, then STOP. It prints the phase's tasks with
+`audit-status.py --phase <phaseId>` (the drive starts the first READY task in id order and runs
+one task at a time, so there are no parallel groups to print), the branch and merge target, and
+**what happens after the merge**. On a phase not yet started, `close-phase.py --dry-run` exits 1
+saying no branch is recorded and the composed name is not a branch here: that reads as *not
+started yet*, never as a refusal of the run.
 The branch and the merge target both come from
 `resolve-branch.py <manifestPath> --phase <phaseId>` — never composed here — and when the
 merge target is not `meta.developmentBranch`, the plan says so: signing off there does not put

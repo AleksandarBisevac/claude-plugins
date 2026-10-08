@@ -92,11 +92,16 @@ Report back a structured outcome:
  "testsAdded": ["test name/id", ...],
  "claims": "optional: a claims: block a task's skill asked for, kept verbatim"}
 
-**Your last act is one call:** write that object to a file, then run
+**Your last act is one call**, the object on its stdin in a quoted heredoc — no file to write,
+which the plan gate would refuse — with the closing line starting its line:
 
-    drive-phase.py submit <taskId> --role executor [--case <id or full label of the case you added>] [--introduces <symbol>] [-- <test command>] < <your file>
+```sh
+drive-phase.py submit <taskId> --role executor [--case <id or full label of the case you added>] [--introduces <symbol>] [-- <test command>] <<'AUDIT_RETURN'
+<the return object, as JSON>
+AUDIT_RETURN
+```
 
-from the plugin's `scripts/governance/`, with the manifest and `--project-dir` your
+Run it from the plugin's `scripts/governance/`, with the manifest and `--project-dir` your
 brief's other commands use. It checks the shape and writes nothing when a field is
 missing; runs the red-first helper when you give a test command — owed on a `tdd`
 task, whose `redFirst` is then the helper's block; takes the stamp of the tree your

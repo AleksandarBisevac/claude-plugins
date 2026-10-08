@@ -913,6 +913,79 @@ def _brief_cases(check):
           and "`\"tasks\": []`" in ptext7
           and not [ln for ln in ptext7.splitlines() if ln.startswith("owed:")])
 
+    # WHERE THE RETURN GOES. The reviewer has no Write tool and the plan gate
+    # refuses an executor's write outside its task files, so a brief saying
+    # "write it to a file" with no location costs a refused guess per agent.
+    # The return travels on the submit's stdin as a quoted heredoc instead:
+    # nothing is written, and a quoted delimiter keeps `$` and backticks in the
+    # JSON as typed. Its closing line must start the line, or the shell never
+    # ends the heredoc - which an indented code block would do to it.
+    def heredoc_shape(text):
+        lines = text.splitlines()
+        opens = [i for i, ln in enumerate(lines)
+                 if ln.rstrip().endswith("<<'AUDIT_RETURN'")]
+        closes = [i for i, ln in enumerate(lines) if ln == "AUDIT_RETURN"]
+        return {"opens": len(opens), "closes": len(closes),
+                "ordered": bool(opens and closes and closes[0] > opens[0]),
+                "submitOpens": bool(opens and "submit" in lines[opens[0]]),
+                "toAFile": "to a file" in text or "return file" in text}
+    _bf_shapes = dict((name, heredoc_shape(t)) for name, t in (
+        ("executor", text), ("reviewer", rtext), ("phase-owed", ptext6),
+        ("phase-unowed", ptext7)))
+    check("bf21 every brief that files a return - the executor's, the task "
+          "reviewer's and the phase reviewer's, owing answers or not - hands it "
+          "on the submit's stdin as ONE quoted heredoc whose closing line "
+          "starts its line, and none says to write a file, which the reviewer "
+          "cannot and the plan gate refuses the executor: %r" % (_bf_shapes,),
+          all(s == {"opens": 1, "closes": 1, "ordered": True,
+                    "submitOpens": True, "toAFile": False}
+              for s in _bf_shapes.values()))
+
+    # A GREEN RUN THAT DID NOT MEASURE THE WORK. The gate exits 0 and still
+    # prints NO OVERLAP or TREE CHANGED; the row keeps what those banners rest
+    # on (`observations.coverage` empty, `observations.treeMutated` non-empty),
+    # and the phase reviewer reads the task's recorded run from this brief.
+    projb, mpathb = project("bf-phase-banner", _bf_signed_phase())
+    ledger = os.path.join(projb, "docs", "audit", "evidence",
+                          "2026-10.fixture.jsonl")
+    os.makedirs(os.path.dirname(ledger), exist_ok=True)
+
+    def _row(run_id, subject, coverage, mutated):
+        return json.dumps({"v": 1, "runId": run_id, "ts": "2026-10-01T00:00:00Z",
+                           "scope": "task", "taskId": subject, "status": "passed",
+                           "failed": [], "steps": [],
+                           "observations": {"ranTotal": 3, "coverage": coverage,
+                                            "treeMutated": mutated}})
+    with open(ledger, "w", encoding="utf-8", newline="") as fh:
+        fh.write("\n".join([_row("run-1", "P1.1", [], []),
+                            _row("run-2", "P1.2", ["src/m2.py"],
+                                 ["src/elsewhere.py"]),
+                            _row("run-3", "P1.3", ["src/m3.py"], [])]) + "\n")
+    brief(projb, mpathb, "P1", "phase")
+    btext = read(brief_file(projb, "P1", "phase.md")) or ""
+    runs = dict((ln.split("runId ", 1)[1].split(",", 1)[0], ln)
+                for ln in btext.splitlines()
+                if ln.startswith("recorded run: runId "))
+    check("bf22 a task whose recorded run printed NO OVERLAP or TREE CHANGED "
+          "carries that banner beside the run in the phase brief, so the "
+          "reviewer sees the gate did not measure the work - and a run that "
+          "named the task's own file with the tree untouched carries neither "
+          "(the over-fire twin): %r" % (runs,),
+          "NO OVERLAP" in runs.get("run-1", "")
+          and "TREE CHANGED" not in runs.get("run-1", "")
+          and "TREE CHANGED" in runs.get("run-2", "")
+          and "src/elsewhere.py" in runs.get("run-2", "")
+          and "NO OVERLAP" not in runs.get("run-2", "")
+          and runs.get("run-3", "") != ""
+          and "NO OVERLAP" not in runs["run-3"]
+          and "TREE CHANGED" not in runs["run-3"])
+    no_row = [ln for ln in ptext.splitlines()
+              if ln.startswith("recorded run: runId ")]
+    check("bf23 a recorded run whose ledger row is not there says so - whether "
+          "the gate printed a banner is then unknown, never read as none: %r"
+          % (no_row,),
+          no_row != [] and all("not found" in ln for ln in no_row))
+
     code6, said6 = brief(proj, mpath, "P1", "executor")
     check("bf11 a phase id asked for a task's role, or a task id for the "
           "phase's, is a miss rather than a brief about the wrong thing: %r"

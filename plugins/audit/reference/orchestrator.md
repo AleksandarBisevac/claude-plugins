@@ -756,8 +756,8 @@ events as they happen; those stay yours.
   acquire the lock, create branches, spawn subagents, run gates, edit the manifest, or commit.**
 - Print the plan the real run would follow and STOP:
   - the resolved **gitRoot** and **developmentBranch**, and the **phase branch name** that would be created;
-  - the **ready tasks** in execution order, with the **parallel groups** (disjoint `files` + satisfied
-    `dependsOn`) vs the ones that must run sequentially, each with its `model`, `tests.mode`, and gate(s);
+  - the phase's tasks (`audit-status.py --phase <phaseId>`), the first READY one in id order being
+    the one the drive starts - it runs one task at a time, so there are no parallel groups to print;
   - any task that is NOT ready and why (unmet `blockedBy`/`dependsOn`);
   - the **eventual merge target** (`<developmentBranch>`) and whether a fast-forward is currently possible
     (`git -C <gitRoot> merge-base --is-ancestor` check — informational only);

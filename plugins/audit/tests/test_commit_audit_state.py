@@ -879,8 +879,78 @@ def _staging_cases(check, repos):
               root, "show", "--name-only", "--pretty=format:", after))
 
 
+def _as_command(fx, *extra):
+    """`(exitCode, stdout)` of the script run as the command `/audit:resume`
+    runs on every resume - through its `__main__`, which is where the one-line
+    success output is wired and where an in-process `main()` never reaches."""
+    script = os.path.join(_harness.SCRIPTS_DIR, "governance",
+                          "commit-audit-state.py")
+    done = subprocess.run([sys.executable, script, fx["manifest"], PHASE,
+                           "--project", fx["root"]] + list(extra),
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          timeout=120)
+    return done.returncode, done.stdout.decode("utf-8", "replace")
+
+
+def _terse_cases(check):
+    """The main loop reads this verb's stdout on every resume, so a success is
+    one line naming the commit; whatever the caller must still act on - a
+    degraded record, a row outside the commit - keeps the long form."""
+    repos = Repos()
+    try:
+        fx = repos.make(leave_dirty=True)
+        _exhaust(fx)
+        code, out = _as_command(fx)
+        lines = out.splitlines()
+        sha = _head(fx)
+        check("cas50 a commit run as a command prints ONE line, carrying the "
+              "SHA it made and how many paths it holds, rather than the path "
+              "list and the trail sentence: %r" % (out,),
+              code == 0 and len(lines) == 1 and sha[:12] in lines[0]
+              and "path(s)" in lines[0]
+              and _scoped_commit.ROW_CARRIED.split("%")[0] not in out)
+
+        verbose = repos.make(leave_dirty=True)
+        _exhaust(verbose)
+        vcode, vout = _as_command(verbose, "--verbose")
+        check("cas51 ...and `--verbose` prints the long form it always did - "
+              "the path list and the sentence saying the row is inside the "
+              "commit: %r" % (vout,),
+              vcode == 0 and len(vout.splitlines()) > 2
+              and _head(verbose)[:12] in vout
+              and _scoped_commit.ROW_CARRIED.split("%")[0] in vout)
+
+        away = repos.make(evidence_outside=True)
+        TI._evidence_file(away["audit"], "failed")
+        acode, aout = _as_command(away)
+        check("cas52 THE OVER-FIRE TWIN: a commit made past a degraded record "
+              "keeps every line, the `degraded:` one first, because a summary "
+              "that dropped it would report a durable record that is not: %r"
+              % (aout,),
+              acode == 0 and "degraded:" in aout and len(aout.splitlines()) > 1
+              and _head(away)[:12] in aout)
+
+        # Every record present and committed, so no `degraded:` line stands
+        # beside the answer - a missing evidence directory is one.
+        quiet = repos.make()
+        TI._evidence_file(quiet["audit"], "passed")
+        TI._git(quiet["root"], "add", "-A")
+        TI._git(quiet["root"], "commit", "-q", "-m", "chore: settle the records")
+        qcode, qout = _as_command(quiet)
+        check("cas53 nothing to commit is one line too, still saying that "
+              "nothing was committed: %r" % (qout,),
+              qcode == 0 and len(qout.splitlines()) == 1
+              and "nothing uncommitted" in qout)
+    finally:
+        repos.close()
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        # Each block staged, so one that raises still lets the other run.
+        _harness.stage(check, "cas-block", _cases)
+        _harness.stage(check, "terse-block", _terse_cases)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

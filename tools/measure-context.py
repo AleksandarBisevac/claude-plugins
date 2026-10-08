@@ -56,9 +56,11 @@ that does not resolve.
 THE GATE. `--gate` holds `ENTRY_CEILINGS` - the pipeline-cost design's ceilings on
 what each pipeline entry loads before any work - and `AGENT_CEILINGS`, reading the
 same `total` line the report prints, so the gate and the measurement cannot measure
-two different things. A gated command that reads a file under `reference/` first
-breaches whatever its size: no pipeline command makes the main loop read reference
-prose, and this is the check that holds it. CI and `tools/verify.sh` run it.
+two different things. A gated command that reads a file under `reference/` first, or
+names one anywhere in its body (a `see reference/...` pointer), breaches whatever its
+size: no pipeline command makes the main loop read reference prose, and this is the
+check that holds it. A command outside the pipeline is not gated and may point there.
+CI and `tools/verify.sh` run it.
 """
 import argparse
 import io
@@ -113,8 +115,8 @@ AGENT_CEILINGS = {"executor": 9000, "reviewer": 7000}
 # to hold a byte, because every one of its requests reads it again, so these are
 # small: a command body is the step driver's loop and the verb's own section, and
 # the rule each step needs is printed by the driver at that step. A gated entry that
-# reads a file under `reference/` first breaches whatever its size, since that read
-# is the cost this ceiling exists to keep out; `--gate` exits 1 on any breach, and
+# reads a file under `reference/` first, or names one in its body, breaches whatever
+# its size, since that read is the cost this ceiling exists to keep out; `--gate` exits 1 on any breach, and
 # `mc24` holds the shipped tree under it in the sweep.
 ENTRY_CEILINGS = (
     ("/audit:phase run form, before sign-off", 4000),
@@ -190,6 +192,9 @@ _HEADING_RE = re.compile(r"^#{1,3} ")
 _READ_RE = re.compile(r"\bRead\s+`" + re.escape(ROOT_VAR))
 _FIRST_RE = re.compile(r"\bfirst\b", re.IGNORECASE)
 _ROOTED_RE = re.compile(r"`" + re.escape(ROOT_VAR) + r"([^`]+)`")
+# A reference path a body names anywhere, rooted or bare: the shape a `see ...`
+# pointer takes, which the up-front rule above does not count as a read.
+_POINTER_RE = re.compile(r"\breference/[\w./-]*\w")
 
 
 # --- where the files come from ---------------------------------------------------
@@ -290,6 +295,18 @@ def first_reads(body):
     return []
 
 
+def reference_pointers(body):
+    """Every reference path a command body names, in first-seen order. A model
+    handed `see reference/x.md` reads it as often as not, so a pointer costs the
+    main loop what a read does, and the up-front rule cannot see one."""
+    text = body.decode("utf-8") if isinstance(body, bytes) else body
+    seen = []
+    for rel in _POINTER_RE.findall(text):
+        if rel not in seen:
+            seen.append(rel)
+    return seen
+
+
 # --- what each step loads ----------------------------------------------------------
 def _row(part, rel, data):
     return {"part": part, "path": rel, "bytes": None if data is None else len(data)}
@@ -369,8 +386,13 @@ def measure(source, claude_md=None):
     for label, kind, rel in PIPELINE:
         rows = entry_rows(source, kind, rel, claude_md)
         known = [r["bytes"] for r in rows if r["bytes"] is not None]
+        loaded = set(r["path"] for r in rows)
+        data = source["read"](rel) if kind != "agent" else None
+        pointers = [p for p in reference_pointers(split_frontmatter(data)[1])
+                    if p not in loaded] if data is not None else []
         entries.append({"entry": label, "rows": rows, "bytes": sum(known),
-                        "missing": [r["path"] for r in rows if r["bytes"] is None]})
+                        "missing": [r["path"] for r in rows if r["bytes"] is None],
+                        "pointers": pointers})
     return {"label": source["label"], "entries": entries, "listing": listing(source),
             "claudeMd": claude_md}
 
@@ -391,8 +413,8 @@ def ceiling_breaches(measured):
 
 def entry_ceiling_breaches(measured):
     """`[(entry, bytes, ceiling, why), ...]` - every gated pipeline entry that
-    loads more than `ENTRY_CEILINGS` allows, reads a reference file first, or
-    loads a file that is missing. An entry the measurement lacks is a breach,
+    loads more than `ENTRY_CEILINGS` allows, reads a reference file first, names
+    one in its body, or loads a file that is missing. An entry the measurement lacks is a breach,
     never a pass; empty is the one answer that holds."""
     found = dict((e["entry"], e) for e in measured["entries"])
     out = []
@@ -408,6 +430,8 @@ def entry_ceiling_breaches(measured):
                  and r["path"].startswith(REFERENCE_DIR)]
         if reads:
             why.append("reads %s first" % ", ".join(reads))
+        if entry.get("pointers"):
+            why.append("names %s in its body" % ", ".join(entry["pointers"]))
         if entry["bytes"] > ceiling:
             why.append("%d bytes, over a ceiling of %d" % (entry["bytes"], ceiling))
         if why:
@@ -436,7 +460,7 @@ def render_gate(measured, breaches):
                                             else entry["bytes"], ceiling))
     if not breaches:
         lines.append("GATE OK: every entry within its ceiling, and no gated command "
-                     "reads a reference file first")
+                     "reads or names a reference file")
     for name, _size, _ceiling, why in breaches:
         lines.append("BREACH %s: %s" % (name, why))
     return "\n".join(lines)
@@ -610,7 +634,7 @@ def main(argv):
     ap.add_argument("--json", action="store_true", dest="as_json")
     ap.add_argument("--gate", action="store_true",
                     help="exit 1 when an entry passes its ceiling or a gated command "
-                         "reads a reference file first; with no --ref or --tree, "
+                         "reads or names a reference file; with no --ref or --tree, "
                          "measures this repository's plugin tree")
     args = ap.parse_args(argv)
     if args.gate and not args.ref and not args.tree:
@@ -1005,8 +1029,42 @@ def _gate_cases(check, shipped):
         _fx_lean(scratch)
         os.remove(os.path.join(scratch, "commands", "resume.md"))
         gone, gone_code, _p = _gate_run(scratch)
+        # A pointer is a reference path the body NAMES without a `Read ... first`
+        # paragraph - "see `reference/x.md`" - which the up-front rule cannot
+        # see and which a model follows anyway.
+        _fx_lean(scratch)
+        _fx_write(scratch, "commands/next.md", "---\ndescription: x\n---\nRun "
+                  "`drive-phase.py next`. The rule is stated in "
+                  "`reference/conventions.md` - see it.\n")
+        _fx_write(scratch, "commands/review.md", "---\ndescription: x\n---\nRun "
+                  "it. What each step checks is `%sreference/signoff.md`.\n"
+                  % (_FX_ROOT,))
+        pointed, pointed_code, pointed_printed = _gate_run(scratch)
+        # THE ALLOW TWIN for the pointer rule: a body outside the pipeline may
+        # point at reference prose (bug.md and layout.md read it on purpose),
+        # and a pipeline body may say the word without naming a path.
+        _fx_lean(scratch)
+        _fx_write(scratch, "commands/bug.md", "---\ndescription: x\n---\nRead "
+                  "`%sreference/conventions.md` FIRST; see "
+                  "`reference/conventions.md` for the rest.\n" % (_FX_ROOT,))
+        _fx_write(scratch, "commands/run.md", "---\ndescription: x\n---\nRun "
+                  "`drive-phase.py next`; no reference prose is read here.\n")
+        unpointed, unpointed_code, _p = _gate_run(scratch)
     finally:
         remove_tree(scratch)
+    check("mc25 a gated command body that NAMES a reference path - a `see` pointer "
+          "or a rooted path, with no `Read ... first` paragraph - breaches, naming "
+          "the path, and --gate exits 1 printing it: %r"
+          % ((pointed, pointed_code),),
+          sorted(b[0] for b in pointed) == ["/audit:next", "sign-off (/audit:review)"]
+          and any("reference/conventions.md" in b[3] for b in pointed)
+          and any("reference/signoff.md" in b[3] for b in pointed)
+          and pointed_code == 1 and "reference/conventions.md" in pointed_printed)
+    check("mc26 ALLOW: a command outside the pipeline that points at reference "
+          "prose, and a pipeline body that says the word without a path, breach "
+          "nothing - widening the rule to every command, or to the bare word, is "
+          "what this goes red on: %r" % ((unpointed, unpointed_code),),
+          unpointed == [] and unpointed_code == 0)
     check("mc21 THE ALLOW TWIN: a tree whose pipeline commands read no reference file "
           "first and stay inside every ceiling breaches nothing, and --gate exits 0 over "
           "it: %r" % ((lean, lean_code),), lean == [] and lean_code == 0)
@@ -1028,7 +1086,7 @@ def _gate_cases(check, shipped):
           and [b[0] for b in gone] == ["/audit:resume"] and gone_code == 1)
     breaches = gate_breaches(shipped)
     check("mc24 the shipped tree holds the ceilings the pipeline-cost design sets for each "
-          "entry, and reads no reference file first from any gated command: %r"
+          "entry, and no gated command reads or names a reference file: %r"
           % ([(e["entry"], e["bytes"]) for e in shipped["entries"]
               if e["entry"] in gated] + breaches,),
           gated and breaches == [])
@@ -1050,6 +1108,14 @@ def _gate_cases(check, shipped):
           "reference/manifest-conventions.md" in outside["commands/bug.md"]
           and "reference/orchestrator.md" in outside["commands/layout.md"]
           and not any(e["missing"] for e in real["entries"]))
+    finder = globals().get("reference_pointers")
+    named = finder(split_frontmatter(head["read"]("commands/bug.md") or b"")[1]) \
+        if finder else None
+    check("mc27 ON THE REAL PROSE at HEAD the pointer rule finds the `see` pointer "
+          "commands/bug.md carries outside the pipeline, so mc24's empty answer over "
+          "the pipeline is a rule that still matches, not one that matches nothing: "
+          "%r" % (named,),
+          named is not None and "reference/manifest-conventions.md" in named)
 
 
 def _selftest():

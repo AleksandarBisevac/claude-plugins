@@ -560,11 +560,29 @@ def red_command(manifest, phase, task):
     return None
 
 
+# The return travels on the submit's stdin, never through a file: the reviewer
+# has no Write tool, and the plan gate refuses an executor's write outside its
+# task's files, so "write it to a file" named a step one agent cannot take and
+# the other is refused at. The delimiter is QUOTED so the shell leaves `$` and
+# backticks inside the JSON as typed, and the block is fenced rather than
+# indented because a heredoc ends only on a line that starts with its delimiter.
+RETURN_DELIMITER = "AUDIT_RETURN"
+RETURN_ON_STDIN = ("Put the return object in place of the middle line and run "
+                   "the block as it stands - the object goes on the command's "
+                   "stdin and nothing is written to disk")
+
+
 def submit_command(ctx, node_id, role, tail=""):
-    """The resolved `drive-phase.py submit` line an agent's last act runs."""
-    return "    %s submit %s --role %s %s --project-dir %s%s < <your return file>" % (
-        _script(ctx, "governance/drive-phase.py"), node_id, role,
-        ctx["manifest"], ctx["project"], tail)
+    """The resolved `drive-phase.py submit` an agent's last act runs, as a
+    fenced block carrying the return on stdin in a quoted heredoc."""
+    return "\n".join([
+        "```sh",
+        "%s submit %s --role %s %s --project-dir %s%s <<'%s'" % (
+            _script(ctx, "governance/drive-phase.py"), node_id, role,
+            ctx["manifest"], ctx["project"], tail, RETURN_DELIMITER),
+        "<the return object, as JSON>",
+        RETURN_DELIMITER,
+        "```"])
 
 
 def executor_return_lines(manifest, phase, task, ctx):
@@ -587,10 +605,10 @@ def executor_return_lines(manifest, phase, task, ctx):
         tail, note = "", [
             "Add `-- <test command>` to prove a regression test red in a "
             "throwaway tree; without it the `redFirst` you wrote is filed."]
-    return (["Write the return object agents/audit-executor.md declares to a "
-             "file, then make this your last act - it checks the shape, runs the "
-             "red-first helper on the command after `--`, takes the stamp and "
-             "files the return once:", submit_command(ctx, tid, "executor", tail)]
+    return (["Your last act files the return object agents/audit-executor.md "
+             "declares - it checks the shape, runs the red-first helper on the "
+             "command after `--`, takes the stamp and files the return once. %s:"
+             % (RETURN_ON_STDIN,), submit_command(ctx, tid, "executor", tail)]
             + note + ["Then hand back one line: what that command printed."])
 
 
@@ -650,8 +668,8 @@ def compose_reviewer_brief(manifest, phase, task, ctx, filed):
                       gate_lines(manifest, entries))
     lines += _section("The diff", _diff_lines(ctx, task.get("files")))
     lines += _section("Your return", [
-        "Write the return object agents/audit-reviewer.md declares to a file, "
-        "then file it - your one write:",
+        "File the return object agents/audit-reviewer.md declares - your one "
+        "write. %s:" % (RETURN_ON_STDIN,),
         submit_command(ctx, tid, "reviewer"),
         "Then hand back one line: what that command printed."])
     return lines
@@ -737,6 +755,41 @@ def _owed_line(task, phase, live, answered):
     return "review answers: OWED - answer the three questions for this task"
 
 
+def gate_banners(row):
+    """The banners a green gate run still printed, read off its ledger row:
+    NO OVERLAP when the run named none of the task's files (`coverage` empty -
+    None is a run that could not be asked, which is not this), TREE CHANGED
+    when files changed while it ran. Both say the gate did not measure the work
+    the way its exit code reads."""
+    obs = (row or {}).get("observations") or {}
+    out = []
+    if obs.get("coverage") == []:
+        out.append("NO OVERLAP - the gate named none of this task's files, so "
+                   "it did not measure this work")
+    mutated = obs.get("treeMutated") or []
+    if mutated:
+        out.append("TREE CHANGED - files changed while it ran: %s"
+                   % (", ".join(str(m) for m in mutated),))
+    return out
+
+
+def _recorded_run_line(evidence, rows, rows_why):
+    """The `recorded run:` line of one task in the phase brief, with the gate's
+    banners beside it, or why the row that would carry them was not read."""
+    if not evidence:
+        return "recorded run: none recorded"
+    line = "recorded run: runId %s, status %s" % (evidence.get("runId"),
+                                                 evidence.get("status"))
+    if rows_why:
+        return "%s (its ledger row could not be read: %s)" % (line, rows_why)
+    row = _evio.row_by_run(rows, evidence.get("runId"))
+    if row is None:
+        return ("%s (its ledger row was not found, so whether the gate printed "
+                "a banner is not known)" % (line,))
+    banners = gate_banners(row)
+    return "%s; %s" % (line, "; ".join(banners)) if banners else line
+
+
 def compose_phase_brief(manifest, phase, ctx):
     """The sign-off reviewer's whole brief, as lines: the request as saved and
     the choices it left open, the fixed question, every task with a diff on its
@@ -769,6 +822,12 @@ def compose_phase_brief(manifest, phase, ctx):
                 skipped.append(str(task.get("id")))
             continue
         listed.append(task)
+    rows, rows_why = [], ""
+    try:
+        read = _evio.read_rows(ctx["project"], ctx["config"])
+        rows = read["rows"]
+    except Exception as exc:
+        rows_why = str(exc) or exc.__class__.__name__
     for task in listed:
         tid = str(task.get("id"))
         entries, whose = _task_gate(manifest, phase, task)
@@ -782,10 +841,7 @@ def compose_phase_brief(manifest, phase, ctx):
             "files:"] + ["- %s" % (f,) for f in task.get("files") or []] + [
             "description (verbatim):",
             task.get("description") or "none recorded",
-            "recorded run: %s" % (
-                "runId %s, status %s" % (evidence.get("runId"),
-                                         evidence.get("status"))
-                if evidence else "none recorded"),
+            _recorded_run_line(evidence, rows, rows_why),
             "gate commands, %s:" % (whose,)] + gate_lines(manifest, entries)
             + ["executor return (%s):" % (rel,),
                text if text is not None else
@@ -803,7 +859,7 @@ def compose_phase_brief(manifest, phase, ctx):
             "and its filing refuse until it can." % (owed_why,)])
         return lines
     file_cmd = submit_command(ctx, pid, "reviewer",
-                              " --head %s" % (head or "<head>",)).strip()
+                              " --head %s" % (head or "<head>",))
     if not owed:
         # FILED EVEN WHEN NOTHING IS OWED: the step driver reads the phase
         # review's findings from the filed return, so a return handed back
@@ -811,10 +867,10 @@ def compose_phase_brief(manifest, phase, ctx):
         lines += _section("Review answers owed per task", [
             "None: no task here is owed its three answers by this review."])
         lines += _section("Your return", [
-            "Write the return object agents/audit-reviewer.md declares with "
-            "`\"tasks\": []`, then file it - the verb writes it once for this "
-            "head:",
-            "    %s" % (file_cmd,) if head else
+            "File the return object agents/audit-reviewer.md declares, with "
+            "`\"tasks\": []` - the verb writes it once for this head. %s:"
+            % (RETURN_ON_STDIN,),
+            file_cmd if head else
             "The head could not be read (%s), so there is no head to file "
             "under: run this brief again where git answers." % (head_why,),
             "Then hand back one line: what that command printed."])
@@ -826,10 +882,11 @@ def compose_phase_brief(manifest, phase, ctx):
         "in its section above:"] + ["owed: %s" % (tid,) for tid in owed]
         + ["Ask of each:"] + list(PER_TASK_QUESTIONS))
     lines += _section("Your return", [
-        "Write the return object agents/audit-reviewer.md declares, with one "
-        "`tasks` entry per task owed above, then file it - the verb refuses a "
-        "return that leaves one out, and writes it once for this head:",
-        "    %s" % (file_cmd,) if head else
+        "File the return object agents/audit-reviewer.md declares, with one "
+        "`tasks` entry per task owed above - the verb refuses a return that "
+        "leaves one out, and writes it once for this head. %s:"
+        % (RETURN_ON_STDIN,),
+        file_cmd if head else
         "The head could not be read (%s), so there is no head to file under: "
         "run this brief again where git answers." % (head_why,),
         "Then hand back one line: what that command printed."])

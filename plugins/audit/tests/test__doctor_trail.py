@@ -1888,25 +1888,61 @@ def _ttl_trade_cases(check):
         rep = base.Report()
         M.check_ttl_trade(rep, over, _TTL_PRICING)
         detail_over = _detail(rep, "ttl trade")
-        check("dt61 a gap over five minutes prints THAT longest gap (340s) "
-              "and says a five-minute TTL would have missed the cache here - "
-              "the pair differs only in the gap and its implication, same "
-              "tokens, same prices: %r" % (detail_over,),
+        check("dt61 a gap over five minutes prints THAT longest gap (340s), "
+              "says a five-minute TTL would have missed the cache here, and "
+              "prices the five-minute side as a FLOOR that leaves out the "
+              "re-writes the gap forces - the same-token price alone reads "
+              "cheaper exactly when it would not be: %r" % (detail_over,),
               _levels(rep, "ttl trade") == ["OK"]
               and "340s" in detail_over
               and "would have missed the cache at least once" in detail_over
-              and "$0.0120" in detail_over and "$0.0075" in detail_over)
+              and "$0.0120" in detail_over
+              and "at least $0.0075" in detail_over
+              and "leaves out" in detail_over)
 
-        check("dt62 the twin pair differs ONLY in the gap and its implication "
-              "- token counts and prices are byte-identical between them",
-              detail_under.replace("120s", "X").replace(
-                  "every gap in this session stayed under five minutes, so a "
-                  "five-minute TTL would not have forced an extra cache write "
-                  "here", "Y")
-              == detail_over.replace("340s", "X").replace(
-                  "the longest gap exceeds five minutes, so a five-minute TTL "
-                  "would have missed the cache at least once here, re-writing "
-                  "context the one-hour TTL kept warm", "Y"))
+        check("dt62 the twin pair shares its token count and both prices - "
+              "only the gap, its implication and the floor's wording differ - "
+              "and the under-five-minutes side states no floor, since no "
+              "re-write is left out there: %r" % ((detail_under, detail_over),),
+              "3000 one-hour" in detail_under and "3000 one-hour" in detail_over
+              and "$0.0075" in detail_under and "at least" not in detail_under
+              and "leaves out" not in detail_under)
+
+        at300 = os.path.join(tmp, "at300.jsonl")
+        _ttl_write(at300, [
+            _ttl_assistant_line("m1", _TTL_BASE_TS, 1000),
+            _ttl_assistant_line("m2", _TTL_BASE_TS + 300, 1000)])
+        rep = base.Report()
+        M.check_ttl_trade(rep, at300, _TTL_PRICING)
+        detail_300 = _detail(rep, "ttl trade")
+        check("dt64 a gap of EXACTLY five minutes is on the expiring side and is "
+              "worded as one that REACHES five minutes - never as one that "
+              "exceeds them, which it does not, nor as staying under: %r"
+              % (detail_300,),
+              "300s" in detail_300 and "reaches five minutes" in detail_300
+              and "exceeds" not in detail_300
+              and "stayed under" not in detail_300)
+
+        side = os.path.join(tmp, "side.jsonl")
+        side_lines = [
+            _ttl_assistant_line("m1", _TTL_BASE_TS, 1000),
+            _ttl_assistant_line("m2", _TTL_BASE_TS + 690, 1000)]
+        # In time order, so read as main-loop requests the two would cut the
+        # longest gap to 300s - the misreading this case exists for.
+        for k, at in (("s2", 500), ("s1", 200)):
+            entry = json.loads(_ttl_assistant_line(k, _TTL_BASE_TS + at, 5000))
+            entry["isSidechain"] = True
+            side_lines.insert(1, json.dumps(entry))
+        _ttl_write(side, side_lines)
+        side_entries = M.main_loop_requests(side, ul)
+        rep = base.Report()
+        M.check_ttl_trade(rep, side, _TTL_PRICING)
+        detail_side = _detail(rep, "ttl trade")
+        check("dt65 a sidechain entry (an agent's request, `isSidechain: true`) "
+              "is not a main-loop request: it neither cuts the main loop's "
+              "690s gap nor adds its writes: %r" % ((side_entries, detail_side),),
+              side_entries is not None and len(side_entries) == 2
+              and "690s" in detail_side and "2000 one-hour" in detail_side)
 
         dup = os.path.join(tmp, "dup.jsonl")
         _ttl_write(dup, [

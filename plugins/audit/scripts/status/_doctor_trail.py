@@ -202,7 +202,10 @@ def main_loop_requests(transcript_path, ul):
     `subagents/` directory, which is `usage_ledger.scan_transcripts`' job and
     not this one: the TTL trade is about the gaps a human main loop leaves
     between its own requests, and an agent's transcript answers a different
-    question. A message id repeated across entries (the streaming-partial
+    question. An entry marked `isSidechain` is an agent's request written into
+    the same file, so it is skipped too: read as the main loop's, it splits
+    the main loop's own gap and adds writes the main loop never made. A
+    message id repeated across entries (the streaming-partial
     trap `usage_ledger.py` documents at length) is folded into its LAST
     occurrence - the final entry carries the complete counts, and this check
     never meters spend, so it owes the ledger's own provisional-id
@@ -223,6 +226,8 @@ def main_loop_requests(transcript_path, ul):
         except ValueError:
             continue                     # a malformed line must never abort the read
         if not isinstance(entry, dict) or entry.get("type") != "assistant":
+            continue
+        if entry.get("isSidechain") is True:
             continue
         message = entry.get("message")
         if not isinstance(message, dict):
@@ -314,21 +319,30 @@ def check_ttl_trade(rep, transcript_path, pricing=None):
                  % (gap, trade["requestCount"], trade["cacheW1hTokens"]),
                  "pass a resolved pricing table to price this session's writes")
         return
+    # A five-minute entry has expired once five minutes have passed, so a gap
+    # of exactly FIVE_MIN_S is on the expiring side, and both sentences say so.
     if gap < FIVE_MIN_S:
+        five_min, floor = "$%.4f" % (trade["atFiveMinUSD"],), ""
         implication = ("every gap in this session stayed under five minutes, "
                        "so a five-minute TTL would not have forced an extra "
                        "cache write here")
     else:
-        implication = ("the longest gap exceeds five minutes, so a "
+        # The five-minute price is of the SAME tokens, so here it is a floor:
+        # the re-writes the gap forces are not in it, and printed bare it reads
+        # cheaper exactly when it would not be.
+        five_min = "at least $%.4f" % (trade["atFiveMinUSD"],)
+        floor = (" (a floor: it prices these same tokens and leaves out the "
+                 "re-writes)")
+        implication = ("the longest gap reaches five minutes, so a "
                        "five-minute TTL would have missed the cache at "
                        "least once here, re-writing context the one-hour "
                        "TTL kept warm")
     rep.ok("ttl trade",
            "longest main-loop gap %.0fs over %d request(s); %d one-hour "
-           "cache-write token(s) cost $%.4f here and would cost $%.4f at a "
-           "five-minute TTL - %s. The setting stays yours"
+           "cache-write token(s) cost $%.4f here and would cost %s at a "
+           "five-minute TTL%s - %s. The setting stays yours"
            % (gap, trade["requestCount"], trade["cacheW1hTokens"],
-              trade["atOneHourUSD"], trade["atFiveMinUSD"], implication))
+              trade["atOneHourUSD"], five_min, floor, implication))
 
 
 # --- checks: which copy of the plugin ran them ----------------------------------

@@ -19,9 +19,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" next <phaseId>
   it. Wait for its one-line hand-back.
 - `decide <name> ...` → answer with one printed option:
   `next <phaseId> --answer <option> [--reason "<words>"]`. A decision the printed rule gives to
-  a human goes to the human first (AskUserQuestion). **The operator's words go in VERBATIM** —
-  see `reference/manifest-conventions.md` → *The operator's words go in unchanged*: a `--reason`
-  is theirs, unparaphrased, and reaches the hash-chained journal.
+  a human goes to the human first (AskUserQuestion). **The operator's words go in VERBATIM**:
+  a `--reason` is theirs, unparaphrased, and reaches the hash-chained journal.
 - `done <phaseId>: ...` → report the verdict and where the phase landed, and stop.
 - a `stopped` print → relay it to the human as printed, with the rule under it.
 
@@ -56,5 +55,3 @@ answer afterwards in `/audit:status`'s tests column and `/audit:doctor`'s `full 
 with no `meta.fullGate` prints that it names no third place and exits 0. A red run files what it
 taught - a coupling and a bug per selection miss - under `[full-gate]`, and stays red: report the
 coupling and the bug with the rest of the sign-off.
-
-What each step checks, and why, is `reference/phase-signoff.md` for a reader who asks.

@@ -28,8 +28,7 @@ Do exactly what each print says and run it again:
   it. Wait for its one-line hand-back.
 - `decide <name> ...` → answer with one printed option:
   `next <taskId> --answer <option> [--reason "<words>"]`. A decision the printed rule gives to a
-  human goes to the human first (AskUserQuestion). **The operator's words go in VERBATIM** — see
-  `reference/manifest-conventions.md` → *The operator's words go in unchanged*: a `--reason` is
-  theirs, unparaphrased, and reaches the hash-chained journal.
+  human goes to the human first (AskUserQuestion). **The operator's words go in VERBATIM**: a
+  `--reason` is theirs, unparaphrased, and reaches the hash-chained journal.
 - `done <taskId>: ...` → report the outcome and what is ready next, and stop.
 - a `stopped` print → relay it to the human as printed, with the rule under it.
