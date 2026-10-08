@@ -1035,12 +1035,19 @@ settles only what its own checkout's sign-off read (`unseen_returns`, `verdict_r
 sign-off verb reads the evidence of the checkout it runs in, and `audit-task.py file-return` refuses
 only where the copy it reads records the verdict (`hd30`, and `lr1`-`lr2` against the driver) - so
 the parent's checkout, whose copy shows the phase at the fork, files after the branch signed off.
-A tip's verdict settles the returns the tip commits and the worktree's; a return found only in the
-parent's evidence is refused whenever it was filed, and so is one there under a name the branch
-carries with another answer. In an `evidence.dir` both checkouts share, only an answer the
-worktree's driver settlement names is settled. `landed_answers_refusal`'s docstring lists every
+A tip's verdict settles the returns the tip commits and those of the checkout holding the branch; a
+return found only in the parent's evidence is refused whenever it was filed, and so is one there
+under a name the branch carries with another answer. A landing run from the branch's own checkout
+also reads the target branch's committed tree and the worktree holding the target, where a return
+filed after the verdict would otherwise sit unread. In an `evidence.dir` several checkouts share, an
+answer there is settled only when the signing checkout's driver settlement names it - the
+worktree's for a verdict signed there, on the tip or on its own copy, the parent's for a verdict on
+the parent's own copy - and with that worktree removed the record is gone, so such a return is
+refused. A plan stored outside the project is one file every checkout reads, so its copy cannot say
+which checkout signed (`VERDICT_AT_EITHER`): no checkout's evidence is assumed read, and a return is
+settled only by the driver settlement of the checkout holding it. `landed_answers_refusal`'s docstring lists every
 placement of a verdict against every placement of a return, each with the case holding it
-(`vr1`-`vr14`) or the reason it cannot occur; a verdict on the worktree's copy that the tip lacks
+(`vr1`-`vr23b`, `hl1`-`hl4`) or the reason it cannot occur, or names it unpinned; a verdict on the worktree's copy that the tip lacks
 is refused with the remedy of committing it, since sign-off refuses again (`vr8`). A return written
 into the worktree's evidence or committed at the tip by any other hand than the filing verb is not
 told apart from one the verdict read. A

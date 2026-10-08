@@ -369,12 +369,19 @@ is still true of a nested key.
   will not parse, while the tip's copy of the plan records no sign-off verdict (the copy
   on disk, for a plan git never commits). A recorded verdict settles only the returns
   its own checkout's sign-off read: a tip's verdict, the returns the tip commits and the
-  ones in the worktree holding the branch; a verdict on a copy on disk, that checkout's
+  ones in the checkout holding the branch; a verdict on a copy on disk, that checkout's
   own. A return holding such an answer found anywhere else - in the parent checkout's
   evidence directory, whose copy of the plan shows the phase as at the fork, so
-  `file-return <phaseId>` run there accepts it after the branch signed off - is refused,
-  filed before the verdict or after it; in an `evidence.dir` both checkouts share, only
-  an answer the worktree's driver settlement names is settled. `file-return <phaseId>`
+  `file-return <phaseId>` run there accepts it after the branch signed off, or committed
+  on the target branch or held in the worktree holding it, which a landing run from the
+  branch's own checkout reads too - is refused, filed before the verdict or after it. In
+  an `evidence.dir` several checkouts share, an answer there is settled only when the
+  signing checkout's driver settlement names it: the worktree's for a verdict signed in
+  the worktree (on the tip or on its own copy), the parent's for one on the parent's own
+  copy; with that worktree removed, its record is gone and such a return is refused. A
+  plan stored outside the project is one file every checkout reads, so its copy cannot
+  say which checkout signed: no checkout's evidence is assumed read, and a return is
+  settled only when the driver settlement of the checkout holding it names it. `file-return <phaseId>`
   refuses a phase return only where the copy of the plan it reads records a sign-off
   verdict. A task that no longer records its commit, a merge made by hand
   or through a pull request, and who filed the phase return are outside that refusal;

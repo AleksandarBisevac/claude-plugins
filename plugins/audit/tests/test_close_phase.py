@@ -1237,13 +1237,16 @@ _REACH_BODY = {"findings": [], "preExisting": [], "verdict": "clean",
                                        "note": "the phase missed its outcome"}}
 
 
-def _reach_fixture(name, shared=False, versioned=True):
+def _reach_fixture(name, shared=False, versioned=True, outside=False):
     """`(root, wt, mpath, wpath, git, wgit, sha)` - P1 forked onto
     `audit/p1-demo` in a linked worktree `wt`, its one task closed under
     `review.perTask: always` there and committed; no verdict yet anywhere.
     `shared` points `evidence.dir` at one directory outside both checkouts.
     Not `versioned`: the plan directory is excluded, so git carries no copy
-    of it and each checkout's file on disk is its own record."""
+    of it and each checkout's file on disk is its own record. `outside`
+    stores the plan in a directory beside the repository - one file both
+    checkouts read, `mpath` and `wpath` alike - with `evidence.dir` inside
+    the repository, so each checkout keeps its own evidence."""
     root = _harness.fixture_root("closephase-reach-%s" % (name,))
     git = _fixture_git(root)
     _init_fixture_repo(git)
@@ -1251,6 +1254,29 @@ def _reach_fixture(name, shared=False, versioned=True):
               "review": {"perTask": "always"}}
     if shared:
         config["evidence"] = {"dir": root + "-ev"}
+    if outside:
+        phase = _signed_phase("P1", "audit/p1-demo")
+        phase.pop("review")
+        mpath = _write_plan(root + "-plan", {"developmentBranch": "main"},
+                            [phase])
+        config = dict(config, manifestPath=mpath,
+                      evidence={"dir": "docs/audit/evidence"})
+        os.makedirs(os.path.join(root, ".claude"))
+        with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+            json.dump(config, fh)
+        with open(os.path.join(root, "seed.txt"), "w") as fh:
+            fh.write("seed\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "base")
+        wt = root + "-wt"
+        git("worktree", "add", "-q", "-b", "audit/p1-demo", wt)
+        wgit = _fixture_git(wt)
+        with open(os.path.join(wt, "work.txt"), "w") as fh:
+            fh.write("work\n")
+        wgit("add", "-A")
+        wgit("commit", "-q", "-m", "work")
+        sha = wgit("rev-parse", "HEAD").stdout.decode().strip()
+        return root, wt, mpath, mpath, git, wgit, sha
     os.makedirs(os.path.join(root, ".claude"))
     with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
         json.dump(config, fh)
@@ -1328,6 +1354,16 @@ def _reach_settle(tree, keys):
     with open(path, "w", encoding="utf-8") as fh:
         json.dump({"answersAccepted": {"keys": keys,
                                        "reasons": ["the owner: it stands"]}}, fh)
+
+
+def _reach_settle_parent(root, keys):
+    """`_reach_settle` in the parent's checkout, its state directory excluded
+    the way a project ignores it: an untracked file in the checkout holding
+    the parent refuses any landing on its own, which is not the refusal asked
+    of."""
+    _reach_settle(root, keys)
+    with open(os.path.join(root, ".git", "info", "exclude"), "a") as fh:
+        fh.write(".claude/state/\n")
 
 
 def _reach_outcome(git, sha, code, text, lands):
@@ -1559,9 +1595,211 @@ def _verdict_reach_cases(check):
               "exit %r, %r" % (code, text[-300:]),
               _reach_outcome(git, sha, code, text, False)
               and "could not have read" in text)
+
+        _verdict_reach_layout_cases(check, fixture)
     finally:
         for root in roots:
-            for path in (root, root + "-wt", root + "-ev"):
+            for path in (root, root + "-wt", root + "-ev", root + "-plan",
+                         root + "-main"):
+                if os.path.isdir(path):
+                    _harness.remove_tree(path)
+
+
+def _verdict_reach_layout_cases(check, fixture):
+    """The layouts where the copy of the plan cannot say which checkout
+    signed - one plan file outside the repository that both checkouts read -
+    and the verdict-and-return cells the main table leaves to name."""
+    root, wt, mpath, wpath, git, wgit, sha = fixture("outside-parent",
+                                                      outside=True)
+    _reach_put(root, sha)
+    _reach_commit(git)
+    _reach_sign(mpath, wgit, commit=False)
+    code, text = _reach_close(mpath, root)
+    check("vr15 a plan outside the repository, one file both checkouts read, "
+          "its evidence inside: a `diverges` return in the parent's evidence, "
+          "then a verdict written on that shared file - by the worktree, whose "
+          "sign-off never read the parent's - is refused, with no settlement "
+          "anywhere naming it: the file cannot say which checkout signed, so "
+          "the parent's evidence is never assumed read: exit %r, %r"
+          % (code, text[-360:]),
+          _reach_outcome(git, sha, code, text, False)
+          and "could not have read" in text)
+
+    root, wt, mpath, wpath, git, wgit, sha = fixture("outside-wt-settled",
+                                                      outside=True)
+    rel = _reach_put(wt, sha)
+    _reach_settle(wt, [rel + "#phase"])
+    _reach_sign(mpath, wgit, commit=False)
+    code, text = _reach_close(mpath, root)
+    check("vr16 THE TWIN: the same layout, the return in the worktree's "
+          "evidence and settled in the worktree's settlement record - which "
+          "the sign-off verb there requires before its verdict - lands; a "
+          "landing that assumed the parent signed refuses it: exit %r, %r"
+          % (code, text[-300:]),
+          _reach_outcome(git, sha, code, text, True))
+
+    root, wt, mpath, wpath, git, wgit, sha = fixture("outside-parent-settled",
+                                                      outside=True)
+    rel = _reach_put(root, sha)
+    _reach_commit(git)
+    _reach_settle_parent(root, [rel + "#phase"])
+    _reach_sign(mpath, wgit, commit=False)
+    code, text = _reach_close(mpath, root)
+    check("vr16b ALLOW: ...and a return in the parent's evidence settled in "
+          "the parent's own record lands too - either checkout may have "
+          "signed, so either one's settlement is a human's word; a landing "
+          "reading the worktree's record alone refuses it: exit %r, %r"
+          % (code, text[-300:]),
+          _reach_outcome(git, sha, code, text, True))
+
+    root, wt, mpath, wpath, git, wgit, sha = fixture("parent-signed-versioned")
+    _reach_put(wt, sha)
+    _reach_sign(mpath, git, commit=False)
+    _reach_commit(git)
+    code, text = _reach_close(mpath, root)
+    check("vr20 a versioned plan whose verdict sits only on the parent's "
+          "copy - signed off in the parent while the branch stands in a "
+          "linked worktree - is refused, the remedy being to sign the phase "
+          "off on the branch: exit %r, %r" % (code, text[-300:]),
+          code == 1 and not _landed(git)
+          and "Sign the phase off on audit/p1-demo" in text
+          and "Commit the plan" not in text)
+
+    root, wt, mpath, wpath, git, wgit, sha = fixture("unsigned-parent-only")
+    _reach_put(root, sha)
+    _reach_commit(git)
+    code, text = _reach_close(mpath, root)
+    check("vr21 no verdict anywhere, a separate worktree, the return only in "
+          "the parent's evidence: refused, the remedy to sign the phase off: "
+          "exit %r, %r" % (code, text[-300:]),
+          _reach_outcome(git, sha, code, text, False)
+          and "Sign the phase off on audit/p1-demo" in text)
+
+    root, wt, mpath, wpath, git, wgit, sha = fixture("shared-parent-verdict",
+                                                      shared=True,
+                                                      versioned=False)
+    os.remove(wpath)
+    _reach_put(None, sha, shared_dir=root + "-ev")
+    _reach_sign(mpath, git, commit=False)
+    code, text = _reach_close(mpath, root, *_REACH_OVERRIDE)
+    check("vr23 a shared `evidence.dir`, the verdict on the parent's own copy "
+          "of a plan git never versions: the shared directory says nothing of "
+          "which checkout filed its return, so with no settlement naming it "
+          "the landing is refused: exit %r, %r" % (code, text[-360:]),
+          _reach_outcome(git, sha, code, text, False))
+
+    root, wt, mpath, wpath, git, wgit, sha = fixture("shared-parent-settled",
+                                                      shared=True,
+                                                      versioned=False)
+    os.remove(wpath)
+    rel = _reach_put(None, sha, shared_dir=root + "-ev")
+    _reach_settle_parent(root, [rel + "#phase"])
+    _reach_sign(mpath, git, commit=False)
+    code, text = _reach_close(mpath, root, *_REACH_OVERRIDE)
+    check("vr23b THE TWIN: ...and the same return settled in the parent's own "
+          "record, the signing checkout's, lands: exit %r, %r"
+          % (code, text[-300:]),
+          _reach_outcome(git, sha, code, text, True))
+    _same_checkout_reach_cases(check)
+
+
+def _same_root(name):
+    """`(root, git, mpath, sha)` - P1 on `audit/p1-demo` in the repository's
+    own checkout, its work committed; no verdict and no return yet. The config
+    is committed on `main` before the fork, so every checkout of either branch
+    reads it."""
+    root = _harness.fixture_root("closephase-same-%s" % (name,))
+    git = _fixture_git(root)
+    _init_fixture_repo(git)
+    os.makedirs(os.path.join(root, ".claude"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json",
+                   "review": {"perTask": "always"}}, fh)
+    phase = _signed_phase("P1", "audit/p1-demo")
+    phase.pop("review")
+    mpath = _write_plan(root, {"developmentBranch": "main"}, [phase])
+    git("add", "-A")
+    git("commit", "-q", "-m", "base")
+    git("checkout", "-q", "-b", "audit/p1-demo")
+    with open(os.path.join(root, "work.txt"), "w") as fh:
+        fh.write("work\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "work")
+    return root, git, mpath, git("rev-parse", "HEAD").stdout.decode().strip()
+
+
+def _same_checkout_reach_cases(check):
+    """THE LANDING RUN FROM THE BRANCH'S OWN CHECKOUT. There the project's
+    evidence is the branch's, so a return filed where the target branch is
+    checked out - and committed there - sits in no place the branch's
+    checkout reads: the target's committed tree and the worktree holding it
+    are read as well."""
+    made = []
+    try:
+        root, git, mpath, sha = _same_root("target-after")
+        made.append(root)
+        _reach_sign(mpath, git, commit=True)
+        git("worktree", "add", "-q", root + "-main", "main")
+        mgit = _fixture_git(root + "-main")
+        _reach_put(root + "-main", sha)
+        _reach_commit(mgit)
+        code, text = _reach_close(mpath, root)
+        check("vr17 run from the branch's own checkout, the target branch "
+              "checked out in a linked worktree: a `diverges` return filed and "
+              "committed there after the tip's verdict is refused - run from the "
+              "target's worktree the same state already was: exit %r, %r"
+              % (code, text[-360:]),
+              _reach_outcome(git, sha, code, text, False)
+              and "could not have read" in text)
+
+        root, git, mpath, sha = _same_root("target-wt-uncommitted")
+        made.append(root)
+        _reach_sign(mpath, git, commit=True)
+        with open(os.path.join(root, ".git", "info", "exclude"), "a") as fh:
+            fh.write("docs/audit/evidence/\n")
+        git("worktree", "add", "-q", root + "-main", "main")
+        _reach_put(root + "-main", sha)
+        code, text = _reach_close(mpath, root)
+        check("vr17b ...and a return filed in that worktree and never "
+              "committed - the evidence directory ignored there, so the "
+              "target's committed tree does not hold it - is read off the "
+              "worktree holding the target and refused: exit %r, %r"
+              % (code, text[-360:]),
+              _reach_outcome(git, sha, code, text, False)
+              and "could not have read" in text)
+
+        root, git, mpath, sha = _same_root("target-same")
+        made.append(root)
+        _reach_put(root, sha)
+        _reach_sign(mpath, git, commit=True)
+        git("worktree", "add", "-q", root + "-main", "main")
+        mgit = _fixture_git(root + "-main")
+        _reach_put(root + "-main", sha)
+        _reach_commit(mgit)
+        code, text = _reach_close(mpath, root)
+        check("vr18 THE TWIN: the same layout, the target holding a "
+              "byte-for-byte copy of the return the tip commits beside its "
+              "verdict, lands - a landing refusing every return the target "
+              "holds would stop here: exit %r, %r" % (code, text[-300:]),
+              _reach_outcome(git, sha, code, text, True))
+
+        root, git, mpath, sha = _same_root("target-ref-only")
+        made.append(root)
+        _reach_sign(mpath, git, commit=True)
+        git("checkout", "-q", "main")
+        _reach_put(root, sha)
+        _reach_commit(git)
+        git("checkout", "-q", "audit/p1-demo")
+        code, text = _close(mpath, root)
+        check("vr19 ...and with the target checked out nowhere, the return "
+              "committed on it alone is read off its committed tree and refused "
+              "for the answer, never reported only as a merge that cannot "
+              "fast-forward: exit %r, %r" % (code, text[-360:]),
+              _reach_outcome(git, sha, code, text, False)
+              and "could not have read" in text)
+    finally:
+        for root in made:
+            for path in (root, root + "-main"):
                 if os.path.isdir(path):
                     _harness.remove_tree(path)
 

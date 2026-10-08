@@ -120,8 +120,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   A recorded verdict settles only the returns its own checkout's sign-off read - for a tip's
   verdict, those the tip commits and those in the worktree holding the branch - so such a return
   found only in the parent checkout's evidence, which `file-return` run there accepts after the
-  branch signed off, is refused; in an `evidence.dir` both checkouts share, only an answer the
-  worktree's driver settlement names is settled. A verdict on the worktree's copy that the tip
+  branch signed off, is refused. A landing run from the branch's own checkout also reads the
+  target branch's committed tree and the worktree holding the target, so a return filed there
+  after the verdict is refused rather than landed unread. In an `evidence.dir` several checkouts
+  share, an answer is settled only when the signing checkout's driver settlement names it - the
+  worktree's for a verdict signed there, the parent's for one on the parent's own copy. A plan
+  stored outside the project is one file every checkout reads, so its copy cannot say which
+  checkout signed: no checkout's evidence is assumed read, and each return is settled only by the
+  driver settlement of the checkout holding it. A verdict on the worktree's copy that the tip
   lacks is refused with the remedy of committing it, and a refusal over a recorded verdict names
   restoring the record or reporting it rather than filing and signing off again, which both refuse.
   Its refusal of a green whose declared files changed since names the declared files holding

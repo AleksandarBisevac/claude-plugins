@@ -2009,7 +2009,7 @@
     {
       "id": "P118.21-v7t",
       "title": "the landing check reads a plan outside the repo and a landing from the branch's own checkout",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes P118 review round 6 findings R58-R63 in close-phase's landing check. The check is read in two layouts it missed. First, a plan stored outside the git root with its evidence inside the repository: there, the on-disk copy cannot say which checkout signed off, so the verdict's own checkout is never assumed. Second, a landing run from the branch's own checkout: there, the target branch's evidence is also read, both its committed tree and the worktree holding it. In both layouts, a return the verdict could not have read is refused. The docstring table names every remaining cell, pinned or unreachable with its reason. COMPATIBILITY.md and the guide state the shared-evidence rule with its condition. Every new case is shown red first, each with its allow twin.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -2039,16 +2039,21 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T12:31:36Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T13:04:26Z.ea0978",
+        "status": "passed",
+        "at": "2026-10-08T13:04:26Z"
+      }
     }
   ],
   "startedAt": "2026-10-07T21:17:01Z"
