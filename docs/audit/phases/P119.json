@@ -255,7 +255,7 @@
     {
       "id": "P119.5-g0k",
       "title": "the phase review's mechanical answers are computed and its brief names the existing tests a phase modified",
-      "status": "in_progress",
+      "status": "done",
       "description": "Lever D of docs/research/pipeline-cost-levers.md, section 6. The user decided the phase review stays, narrowed. The filing verb fills two of each task's answers into the phase return: the red-first block when it is the helper's, and inherited tests `not-asked` when tests.gate runs the whole project. The reviewer's prompt keeps them only where reading is needed: a red-first the helper did not grade, or a gate selecting named tests. The phase brief gains the computed list of existing test files the phase's diff modifies; new test files are not listed. Micro-test as listed: a phase return filed without the mechanical fields is completed from the executor's filed block and the gate's shape; the two refusal twins; the brief lists an existing test file a fixture phase appends to, and not a new one. The intent answer stays the reviewer's, and the sign-off verb still refuses until every owed task has one. Every case is shown red first.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -291,29 +291,46 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7ec708fc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Lever D. The phase review stays, narrowed, by the user's decision.\n\n_filed_returns.py gains \"the answers a script gives\":\n- helper_red_first recognises the red-first helper's block by the basis red_verdict writes, plus its `at`.\n- is_test_path recognises a test file.\n- gate_reading classifies a task's gate as whole, named or unknown.\n- mechanical_answers and phase_answers give, per task, the answers a script fills and the reason for each it does not.\n- task_gate_entries moved from audit-lookup.\n- complete_phase_return fills each missing pair (redFirst/redFirstBasis, inheritedTests/inheritedTestsBasis) and records what it filled under `computedAnswers`. It refuses a typed word that disagrees, a basis typed without its word, and a typed computedAnswers.\n\naudit-task file-return (phase path) completes the return, then judges it with the unchanged phase_return_problems.\n\naudit-lookup's phase brief now carries:\n- one `red-first:` and one `inherited tests:` line per owed task, each `computed (<word>)` or `yours - <reason>`;\n- the per-task questions 2 and 3 scoped to \"yours\";\n- a section listing the existing test files the phase's diff modifies (`git diff --diff-filter=M <baseRef> <head>`, filtered to test paths), which says it cannot be computed when baseRef is absent.\n\naudit-reviewer.md says to omit a pair the brief marks computed. The prompt is 6993/7000 bytes by `tools/measure-context.py --gate`: the task-mode rules stay, pinned by test__refs.\n\nThe intent answer stays the reviewer's. The sign-off verb's refusal for an owed task is unchanged (hd19).\n\nCases:\n- ma1-ma8: the helpers and the completion.\n- hd31-hd33: the verb fills, refuses a disagreeing word, and keeps a matching typed word.\n- bf24, bf25: the brief's lines and the existing-test section.\n\nRed-first proved for all three suites. hd32 passes at HEAD by construction.\n\nMutation probe (scratchpad P119.5-g0k/mut.py --with-task-suite), re-run by the orchestrator: exit 0, 12/12 killed, including helper-over-fire and test-path-always.\n\nStated limit: a block typed by hand in the helper's words reads as the helper's, because the filed return does not record where its red-first came from. Closing that needs submit to mark the block it fills.",
+        "descriptive": "The phase reviewer no longer types answers a script can derive; the filing step fills them and refuses a typed answer that disagrees, and the reviewer's brief now lists the existing test files the phase changed."
       },
       "startedAt": "2026-10-08T18:39:58Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T19:38:23Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_audit_lookup.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-08T19:38:03Z.f28823",
         "status": "passed",
         "at": "2026-10-08T19:38:03Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7ec708fc",
+        "at": "2026-10-08T19:38:23Z",
+        "basis": "orchestrator check: lever D as designed, intent answer and sign-off refusal untouched; mutation probe re-run, twelve rows killed"
       }
     },
     {
       "id": "P119.6-g0k",
       "title": "the executor brief prints a test command that can run",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Internal fault, measured by the levers analysis. The executor brief prints `run-test-gate.py ... --own --quiet` while the same brief says no gate entry names the task's tests.add file, so the executors' own-tests runs printed 'no gate entry' or rc=2 three times in each arm C session: wasted requests in the cycle. Print the own-tests command only when a gate entry selects the task's tests; otherwise print the suite command the brief already names for the task's test file. Cases: a brief whose gate selects the task's tests prints the own-tests command; its twin, whose gate does not, prints the runnable suite command and no own-tests line. CHANGELOG under [Unreleased] gets one line for lever D and one for this. Every case is shown red first.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
         "plugins/audit/tests/test_audit_lookup.py",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/agents/audit-executor.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -338,21 +355,21 @@
       "dependsOn": [
         "P119.5-g0k"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T19:38:24Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P119.7-g0k",
       "title": "the driver's suite runs well inside the sweep's per-file cap",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Internal fault, measured twice in this phase. On its own, plugins/audit/tests/test_drive_phase.py --selftest takes about 217-231 s on a quiet machine, and 277 s was observed under load. tools/sweep-selftests.py caps each file at 300 s, so a loaded gate can time the file out and read a sound change as red. Find where the suite's time goes by profiling the stages; the likely shape is a real git fixture repo built per case. Cut the time by sharing fixtures across cases that only read them, or by building a fixture once per stage and copying it, without changing what any case asserts. Every case id keeps its name and its verdict. Report the per-stage time before and after, measured twice with a gap, and the whole-file time. The cap is not raised, and the 1:1 test-file rule (one tests/test_<module>.py per module) is kept, so the suite is not split into new files. A mutation that breaks a shared fixture must still turn the cases that read it red; show one.",
       "files": [
         "plugins/audit/tests/test_drive_phase.py"
@@ -380,6 +397,51 @@
       "dependsOn": [
         "P119.4-g0k"
       ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-08T19:38:24Z",
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P119.8-g0k",
+      "title": "Fix BUG-17: audit-task start copies the index-only priority into the phase shard",
+      "status": "pending",
+      "description": "Fixes BUG-17. On the sharded layout, `audit-task.py start` writes the phase's priority into the phase shard's body when it starts the phase's first task. priority is an index-only field: the index stub carries it, the copy in the shard is ignored, and validate-manifest warns about it on every later run. start must leave the shard without priority. Find every writer that can copy an index-only field into a shard (the same class), not only the priority one, and fix them in one place. Repro and expected are on the bug. Cases, each red first: start on a sharded plan whose stub carries priority leaves the shard without it and validate-manifest prints no priority warning; the twin, a single-file plan, keeps priority where it lives. Add a mutation probe at scratchpad/P119.8/mut.py (monkeypatch only).",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/tests/test__manifest_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: start on a sharded plan leaves the shard without priority - expected no priority in the shard and no validator warning, actual the shard gains priority 1"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,
@@ -389,7 +451,8 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "bugId": "BUG-17"
     }
   ],
   "startedAt": "2026-10-08T16:35:57Z"
