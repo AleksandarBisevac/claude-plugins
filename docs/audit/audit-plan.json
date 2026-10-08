@@ -970,7 +970,10 @@
       "P118.21-v7t",
       "P118.22-v7t",
       "P118.23-v7t",
-      "P118.24-v7t"
+      "P118.24-v7t",
+      "P119.2-g0k",
+      "P119.4-g0k",
+      "P119.6-g0k"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1585,7 +1588,8 @@
       "P118.3",
       "P118.7",
       "P118.9",
-      "P118.14-v7t"
+      "P118.14-v7t",
+      "P119.3-g0k"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -1612,7 +1616,9 @@
       "P118.7",
       "P118.6",
       "P118.8",
-      "P118.9"
+      "P118.9",
+      "P119.3-g0k",
+      "P119.5-g0k"
     ],
     "plugins/audit/commands/audit.md": [
       "P1.6",
@@ -1747,7 +1753,8 @@
       "P118.4",
       "P118.9",
       "P118.14-v7t",
-      "P118.16-v7t"
+      "P118.16-v7t",
+      "P119.2-g0k"
     ],
     "plugins/audit/commands/propose.md": [
       "P31.2",
@@ -3221,7 +3228,9 @@
       "P118.20-v7t",
       "P118.22-v7t",
       "P118.23-v7t",
-      "P118.24-v7t"
+      "P118.24-v7t",
+      "P119.2-g0k",
+      "P119.5-g0k"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -3602,7 +3611,9 @@
       "P118.6",
       "P118.7",
       "P118.8",
-      "P118.14-v7t"
+      "P118.14-v7t",
+      "P119.5-g0k",
+      "P119.6-g0k"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -4494,7 +4505,9 @@
       "P118.6",
       "P118.7",
       "P118.8",
-      "P118.14-v7t"
+      "P118.14-v7t",
+      "P119.5-g0k",
+      "P119.6-g0k"
     ],
     "plugins/audit/tests/test_audit_status.py": [
       "P25.2",
@@ -4626,7 +4639,9 @@
       "P118.20-v7t",
       "P118.22-v7t",
       "P118.23-v7t",
-      "P118.24-v7t"
+      "P118.24-v7t",
+      "P119.2-g0k",
+      "P119.5-g0k"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -6313,7 +6328,9 @@
       "P118.17-v7t",
       "P118.18-v7t",
       "P118.20-v7t",
-      "P118.23-v7t"
+      "P118.23-v7t",
+      "P119.3-g0k",
+      "P119.4-g0k"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -6326,7 +6343,9 @@
       "P118.17-v7t",
       "P118.18-v7t",
       "P118.20-v7t",
-      "P118.23-v7t"
+      "P118.23-v7t",
+      "P119.3-g0k",
+      "P119.4-g0k"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6"
@@ -6340,7 +6359,8 @@
       "P118.15-v7t",
       "P118.17-v7t",
       "P118.22-v7t",
-      "P118.23-v7t"
+      "P118.23-v7t",
+      "P119.5-g0k"
     ],
     "plugins/audit/tests/test__filed_returns.py": [
       "P118.3",
@@ -6351,7 +6371,8 @@
       "P118.15-v7t",
       "P118.17-v7t",
       "P118.22-v7t",
-      "P118.23-v7t"
+      "P118.23-v7t",
+      "P119.5-g0k"
     ],
     "plugins/audit/agents/guide.md": [
       "P118.9"
@@ -6365,7 +6386,8 @@
     "plugins/audit/reference/verbs-in-full.md": [
       "P118.9",
       "P118.14-v7t",
-      "P118.16-v7t"
+      "P118.16-v7t",
+      "P119.2-g0k"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
