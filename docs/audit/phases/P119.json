@@ -58,9 +58,23 @@
         "resolution": "fixed in P119.9-g0k (5e2c4c53): Narrow both sentences to the verbs that read stdin.",
         "fixTask": "P119.9-g0k",
         "commit": "5e2c4c53"
+      },
+      {
+        "id": "P119-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_filed_returns.py _runner_width; CHANGELOG.md lever D line",
+        "issue": "Same class as R1: `npm run test:unit` and `node scripts/test.js` read `whole`, because a package script or script file counts as the runner. The CHANGELOG says 'the runner with no operand'.",
+        "resolution": "Read a package-script name other than `test`, and a script file other than one the project names as its whole suite, as an operand (`unknown`). Make the CHANGELOG line state the rule exactly."
+      },
+      {
+        "id": "P119-R6",
+        "severity": "low",
+        "file": "CHANGELOG.md lever C line",
+        "issue": "Same class as R3: the line still says the advance call prints `done` unconditionally.",
+        "resolution": "End the clause at 'so the sign-off steps run as they would after it'."
       }
     ],
-    "outcome": "[findings: 4 - 0 high, 1 med, 3 low; 4 with a recorded fix commit]"
+    "outcome": "[findings: 6 - 0 high, 1 med, 5 low; 4 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -599,6 +613,48 @@
         "at": "2026-10-08T21:39:28Z",
         "basis": "orchestrator check: one rule (computed lowers work, never blocks an escalation) plus a positive whole reading; mutation probe re-run 12/12"
       }
+    },
+    {
+      "id": "P119.10-g0k",
+      "title": "a package script or a script file is read as a selection unless the project names it as its whole suite",
+      "status": "pending",
+      "description": "Fixes P119 review round 2 findings R5-R6, both the same class as round 1's.\n1. gate_reading counts only a fixed runner as the runner. A package-script name (`npm|yarn|pnpm run <script>`) reads `whole` only when the script is `test`; any other script name is an operand, so it reads `unknown`. A script file run by an interpreter (`node scripts/test.js`, `python3 tools/x.py`) is an operand too, unless it is a file the project's own gate names as its whole suite. Decide that by one explicit rule, state it in the classifier's comment, and keep `python3 tools/sweep-selftests.py` reading `whole` by that rule, not by a special case.\n2. CHANGELOG: the lever D line states exactly which commands read `whole`. The lever C line ends at \"so the sign-off steps run as they would after it\".\nCases, each red first: `npm run test:unit` and `node scripts/test.js` read unknown. Allow twins: `npm test`, `npm run test` and the sweep stay whole. Deliver a mutation probe.",
+      "files": [
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-08T16:35:57Z"
