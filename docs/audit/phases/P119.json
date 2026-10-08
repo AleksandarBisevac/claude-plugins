@@ -1,7 +1,7 @@
 {
   "id": "P119",
   "title": "the phase overhead and the task cycle cost less with every guarantee kept",
-  "status": "in_progress",
+  "status": "done",
   "description": "Follows docs/research/pipeline-cost-results.md, on the user's decision of 2026-10-08 to cut cost further once P118 landed. P118 measured the per-task cycle at 1.29-1.44 times plain like for like, and the phase overhead at 0.60, 0.75 and 1.15 against a budget of 1.00. The phase overhead is the larger remaining share. The user's priorities, in order:\n1. measure what the phase review actually catches, then narrow it or make it conditional;\n2. enforce the executor's one-line hand-back by mechanism rather than prose;\n3. measure CLAUDE.md in each agent's start, and drop it where the brief already carries the rules.\nThe order is fixed: an offline measurement and design task first, from the recorded benchmark streams, with no paid call. Then the levers it recommends, each with its micro-test. Then one paid probe and the full benchmark, run by the orchestrator. A smaller model for low-risk tasks is the user's call and is out of scope. The cache TTL stays documented only, as decided on 2026-10-07. No lever may weaken a guarantee P118 holds.",
   "desiredOutcome": "the phase overhead falls inside its 1.00 budget in every benchmark session, and the per-task cycle moves toward 1.25 times plain like for like, each lever confirmed by its offline micro-test before any paid session",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "ca7c92d6a1cd4866eaa476496365a8d8cacec4bc",
   "branch": "audit/p119-the-phase-overhead-and-the-tas",
-  "mergedAt": null,
+  "mergedAt": "2026-10-08T22:07:41Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -679,5 +679,6 @@
     "runId": "2026-10-08T22:07:11Z.55d863",
     "status": "passed",
     "at": "2026-10-08T22:07:11Z"
-  }
+  },
+  "mergedHead": "6db830e6553a6be14c0283b648799d67960695bc"
 }
