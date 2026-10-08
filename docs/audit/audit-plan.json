@@ -744,7 +744,7 @@
     {
       "id": "P118",
       "title": "the plugin pipeline costs at most 2x plain per task",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P118.json"
     }
   ],
