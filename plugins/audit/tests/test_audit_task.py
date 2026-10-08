@@ -13208,16 +13208,44 @@ def _held_cases(check):
           and not os.path.exists(returns(proj, "P1"))
           and m3[0] == M.E_USAGE and "P1.1" in m3[1] and "`redFirst`" in m3[1]
           and not os.path.exists(returns(proj2, "P1")))
+    # The helper's block here grades `could-not-prove`, so a typed `proved`
+    # lowers the work and a typed `not-proved` escalates it.
     proj3, mpath3 = two_done("mech-differ")
     put_exec(proj3, "P1.1", helper)
     m4 = file_phase(proj3, "P1", _HD_HEAD, [
-        _hd_entry("P1.1", _FR_SHA, redFirst="not-proved"),
+        _hd_entry("P1.1", _FR_SHA, redFirst="proved"),
         _hd_entry("P1.2", _HD_SHA2)])
-    check("hd33 a reviewer word that disagrees with the helper's block is "
-          "refused by name, writing nothing - the computed word is never "
-          "overwritten in silence, either way: %r" % ((m4[0], m4[1][-200:]),),
-          m4[0] == M.E_USAGE and "not-proved" in m4[1]
+    check("hd33 a reviewer word that disagrees with the helper's block without "
+          "escalating is refused by name, writing nothing - the computed word "
+          "is never lowered in silence: %r" % ((m4[0], m4[1][-200:]),),
+          helper["status"] != "proved"
+          and m4[0] == M.E_USAGE and "'proved'" in m4[1]
           and not os.path.exists(returns(proj3, "P1")))
+    proj4, mpath4 = two_done("mech-escalate")
+    put_exec(proj4, "P1.1", helper)
+    m5 = file_phase(proj4, "P1", _HD_HEAD, [
+        _hd_entry("P1.1", _FR_SHA, redFirst="not-proved",
+                  redFirstBasis="no red was seen",
+                  inheritedTests="flagged",
+                  inheritedTestsBasis="test_b passes with the branch deleted"),
+        _hd_entry("P1.2", _HD_SHA2)])
+    esc = filed_body(proj4)
+    esc_first = (esc.get("tasks") or [{}])[0]
+    m5s = signoff(proj4, "P1", "skipped")
+    check("hd34 a reviewer's `not-proved` over the helper's block and `flagged` "
+          "over a computed `not-asked` file as typed, the computed words "
+          "recorded as overridden, and sign-off by hand then stops on both as "
+          "answers only a human settles: %r"
+          % ((m5[0], m5[1][-200:], esc_first, esc.get("computedOverridden"),
+              m5s[0], m5s[1][-300:]),),
+          m5[0] == 0 and esc_first.get("redFirst") == "not-proved"
+          and esc_first.get("inheritedTests") == "flagged"
+          and esc_first.get("inheritedTestsBasis")
+          == "test_b passes with the branch deleted"
+          and (esc.get("computedOverridden") or {}).get("P1.1", {}).get(
+              "inheritedTests", {}).get("computed") == "not-asked"
+          and m5s[0] == M.E_USAGE and "red-first not-proved" in m5s[1]
+          and "inherited tests flagged" in m5s[1])
 
     proj, mpath = two_done("signoff")
     before = read(mpath)

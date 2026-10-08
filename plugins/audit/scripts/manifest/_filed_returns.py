@@ -486,21 +486,27 @@ def phase_return_problems(body, phase, live, answered):
 
 # --- the answers a script gives ---------------------------------------------------
 # A phase review's red-first and inherited-test answers follow a rule with no
-# reading in it: a red-first block the helper wrote is echoed, and a gate that
-# runs the whole project puts the inherited-test question out of reach
-# (`not-asked`).
+# reading in it: a red-first block the helper wrote is echoed, and a gate whose
+# every command is its runner alone puts the inherited-test question out of
+# reach (`not-asked`).
 # The filing verb fills those from their sources (`complete_phase_return`), and
 # the phase brief says which they are (`audit-lookup.py`'s `answer_lines`), so
 # the reviewer types only the answers that need reading. The intent answer is
-# never one of them.
+# never one of them. A computed answer only ever lowers the work: a typed answer
+# only a human settles is kept over it, and the override recorded.
 #
 # WHAT THIS CANNOT TELL. The helper's block is recognised by its shape - the
 # basis `stamp-verification.py red` writes and the time it stamps - because the
 # filed executor return records no provenance for it. A block typed by hand in
-# the helper's words reads as the helper's. A gate selecting tests through a
-# name that is neither a test path nor one of `SELECTION_FLAGS` (a make target,
-# a script's own argument) reads as the whole project.
+# the helper's words reads as the helper's. The gate reading sees the command
+# line and nothing behind it: a selection made in the runner's configuration
+# (an `addopts`, a package script running a subset), in the environment, or
+# inside a script the command runs reads as the whole project, because the
+# command line passes the runner nothing.
 COMPUTED_FIELD = "computedAnswers"
+# Where the filing verb records each computed answer a typed escalation
+# overrode: `{task id: {word: {"computed": ..., "basis": ...}}}`.
+OVERRIDDEN_FIELD = "computedOverridden"
 _ANSWER_PAIRS = (("redFirst", "redFirstBasis"),
                  ("inheritedTests", "inheritedTestsBasis"))
 # `red_verdict` in `stamp-verification.py` opens every basis with the command
@@ -514,6 +520,26 @@ TEST_DIRS = ("test", "tests", "__tests__", "spec", "specs")
 _TEST_NAME = re.compile(r"^(?:test_.+|.+_test|.+\.(?:test|spec))\.[A-Za-z0-9]+$")
 SELECTION_FLAGS = ("-k", "-t", "-g", "-run", "--run", "--grep", "--filter",
                    "--testNamePattern", "--test-name-pattern")
+# What a command may pass its runner and still read as the whole project. The
+# reading is positive: any word after the runner outside these reads `unknown`,
+# so a selection this table has never heard of (`-m`, `--deselect`,
+# `--testPathPattern`, a package path, a module name) leaves the inherited-test
+# question to the reviewer rather than putting it out of reach. Each flag here
+# changes how a run reports or when it stops, never which tests it collects; a
+# flag is matched by its name, so `--tb=short` is `--tb`. A flag whose value is a
+# separate word (`--tb short`) reads that value as an operand, and so `unknown`.
+NO_SELECTION_FLAGS = ("-q", "-qq", "-v", "-vv", "-s", "-x", "--quiet",
+                      "--verbose", "--exitfirst", "--failfast", "--tb",
+                      "--color", "--colors", "--no-header", "--ci", "--silent",
+                      "--reporter", "--no-tips", "-race", "--race")
+# An operand meaning every package rather than one: `go test ./...`.
+WHOLE_OPERANDS = ("./...",)
+# Runners whose first word takes a subcommand that is part of the runner, not
+# an operand: `go test`, `npm test`. `npm run <script>` takes the script's name
+# too, and `npx <tool>` the tool's (`run` as well, for vitest).
+_SUBCOMMANDS = {"go": ("test",), "cargo": ("test",), "npm": ("test", "t"),
+                "yarn": ("test",), "pnpm": ("test",)}
+_INTERPRETER = re.compile(r"^(?:python[0-9.]*|py|node)(?:\.exe)?$")
 
 
 def helper_red_first(executor):
@@ -545,13 +571,39 @@ def _names_tests(token):
     return not token.startswith("-") and "=" not in token and is_test_path(token)
 
 
+def _runner_width(words):
+    """How many leading `words` are the runner: an interpreter with its script
+    or `-m` module, a known runner with its subcommand, else the first word."""
+    head = os.path.basename(words[0]) if words else ""
+    nxt = words[1] if len(words) > 1 else None
+    if _INTERPRETER.match(head):
+        if nxt == "-m" and len(words) > 2:
+            return 3
+        return 2 if nxt is not None and not nxt.startswith("-") else 1
+    if head in ("npm", "yarn", "pnpm") and nxt == "run" and len(words) > 2:
+        return 3
+    if nxt is not None and nxt in _SUBCOMMANDS.get(head, ()):
+        return 2
+    if head == "npx" and nxt is not None:
+        return 3 if nxt == "vitest" and words[2:3] == ["run"] else 2
+    return 1
+
+
+def _selects_nothing(word):
+    if word in WHOLE_OPERANDS:
+        return True
+    return word.startswith("-") and word.split("=", 1)[0] in NO_SELECTION_FLAGS
+
+
 def gate_reading(build, resolved):
     """`(kind, basis)` for a task's gate - `resolved` is
     `_evidence_io.resolved_commands`'s `[(entry, command)]`, `build` the plan's
-    `meta.buildCommands`. `whole` when every entry resolves and no command
-    names a test path or a selection flag, `named` when one does, `unknown`
-    when there is no entry, an entry resolving to nothing, or a command that
-    does not split into words."""
+    `meta.buildCommands`. `named` when a command names a test path or a
+    selection flag; `whole` only when every entry resolves and every command
+    is its runner (`_runner_width`) followed by nothing but
+    `NO_SELECTION_FLAGS` and `WHOLE_OPERANDS`; `unknown` otherwise - no entry,
+    an entry resolving to nothing, a command that does not split into words or
+    is empty, or one passing its runner anything else."""
     build = build if isinstance(build, dict) else {}
     if not resolved:
         return "unknown", "no tests.gate entry is declared for it or its phase"
@@ -560,18 +612,32 @@ def gate_reading(build, resolved):
         return "unknown", ("%s resolves to no meta.buildCommands entry, so which "
                            "tests it selects is not on the record"
                            % (", ".join(loose),))
-    named = []
+    named, split = [], []
     for _entry, command in resolved:
         try:
             words = shlex.split(command)
         except ValueError as exc:
             return "unknown", "`%s` does not split into words (%s)" % (command, exc)
         named += [w for w in words if _names_tests(w) and w not in named]
+        split.append((command, words))
     shown = "; ".join("`%s`" % (c,) for _e, c in resolved)
     if named:
         return "named", "the gate names %s (%s)" % (", ".join(named), shown)
-    return "whole", ("no gate command names a test path or a selection flag (%s), "
-                     "so the gate runs the whole project" % (shown,))
+    for command, words in split:
+        if not words:
+            return "unknown", "a gate command is empty (%s)" % (shown,)
+        width = _runner_width(words)
+        passed = [w for w in words[width:] if not _selects_nothing(w)]
+        if passed:
+            return "unknown", (
+                "`%s` passes %s to its runner `%s`, which this reading does not "
+                "know to select nothing, so whether the gate runs the whole "
+                "project is the reviewer's to read"
+                % (command, ", ".join("`%s`" % (w,) for w in passed),
+                   " ".join(words[:width])))
+    return "whole", ("each gate command is its runner with no operand and no "
+                     "flag outside the no-selection set (%s), so the gate is "
+                     "read as running the whole project" % (shown,))
 
 
 def mechanical_answers(executor, gate):
@@ -634,35 +700,42 @@ def complete_phase_return(body, computed):
     """`(body, filled, problems)` - a phase return with each entry's absent
     mechanical pair filled from `computed` (`{task id: answers}`), what was
     filled per task, recorded on the body under `COMPUTED_FIELD`, and every
-    disagreement: a word typed that differs from the computed one, a basis
-    typed without its word, or a typed `computedAnswers`. A word typed equal
-    to the computed one is kept as typed, basis and all."""
+    disagreement: a word typed that differs from the computed one without
+    escalating it, an escalation typed without its basis, a basis typed
+    without its word, or a typed `COMPUTED_FIELD` or `OVERRIDDEN_FIELD`. A
+    word typed equal to the computed one is kept as typed, basis and all.
+
+    A computed answer only ever lowers the work, so it never blocks a word
+    only a human settles (`ESCALATIONS`): that word is kept with its basis,
+    and the computed one it overrode recorded under `OVERRIDDEN_FIELD`.
+    `COMPUTED_FIELD` is then written too, empty when nothing was filled - it
+    is the mark the filing verb writes a completed body by."""
     if not isinstance(body, dict):
         return body, {}, []
-    if COMPUTED_FIELD in body:
-        return body, {}, ["`%s` is the filing verb's record of what it filled, "
-                          "never typed in a return" % (COMPUTED_FIELD,)]
+    forged = [f for f in (COMPUTED_FIELD, OVERRIDDEN_FIELD) if f in body]
+    if forged:
+        return body, {}, ["`%s` is the filing verb's record of what it filled or "
+                          "overrode, never typed in a return" % (f,)
+                          for f in forged]
     entries = body.get("tasks")
     if not isinstance(entries, list):
         return body, {}, []
-    out, filled, problems = [], {}, []
+    out, filled, overridden, problems = [], {}, {}, []
     for entry in entries:
         answers = computed.get(str(entry.get("id"))) \
             if isinstance(entry, dict) else None
         if not answers:
             out.append(entry)
             continue
-        tid, entry, took = str(entry.get("id")), dict(entry), []
+        tid, entry, took, over = str(entry.get("id")), dict(entry), [], {}
         for word, basis in _ANSWER_PAIRS:
             if word not in answers:
                 continue
             if word in entry:
-                if entry[word] != answers[word]:
-                    problems.append(
-                        "the entry for %s: `%s` is %r, and the filing verb "
-                        "computes %r (%s) - leave `%s` and `%s` out and it "
-                        "files them" % (tid, word, entry[word], answers[word],
-                                        answers[basis], word, basis))
+                record, refusal = _typed_over(tid, entry, answers, word, basis)
+                if record:
+                    over[word] = record
+                problems += [refusal] if refusal else []
                 continue
             if basis in entry:
                 problems.append("the entry for %s: `%s` is given without `%s` "
@@ -673,11 +746,36 @@ def complete_phase_return(body, computed):
             took += [word, basis]
         if took:
             filled[tid] = took
+        if over:
+            overridden[tid] = over
         out.append(entry)
     done = dict(body, tasks=out)
-    if filled:
+    if filled or overridden:
         done[COMPUTED_FIELD] = filled
+    if overridden:
+        done[OVERRIDDEN_FIELD] = overridden
     return done, filled, problems
+
+
+def _typed_over(tid, entry, answers, word, basis):
+    """`(record, refusal)` for a typed `word` over a computed one: both None
+    when they agree, the override record `{"computed", "basis"}` when the
+    typed word escalates and says why, else the refusal sentence."""
+    typed, ups = entry[word], ESCALATIONS.get(word, ())
+    if typed == answers[word]:
+        return None, None
+    if typed in ups and _said(entry, basis):
+        return {"computed": answers[word], "basis": answers[basis]}, None
+    if typed in ups:
+        return None, ("the entry for %s: `%s` is %r, which puts the answer to "
+                      "a human over the computed %r, and `%s` is absent or "
+                      "empty - say why"
+                      % (tid, word, typed, answers[word], basis))
+    return None, ("the entry for %s: `%s` is %r, and the filing verb computes "
+                  "%r (%s) - leave `%s` and `%s` out and it files them, or "
+                  "type %s with its basis to put the answer to a human"
+                  % (tid, word, typed, answers[word], answers[basis], word,
+                     basis, " or ".join("`%s`" % (u,) for u in ups)))
 
 
 # --- the answers only a human settles ---------------------------------------------
@@ -689,6 +787,10 @@ def complete_phase_return(body, computed):
 HUMAN_ANSWERS = ("diverges", "cannot-tell")
 HUMAN_RED_FIRST = ("not-proved",)
 HUMAN_INHERITED = ("flagged",)
+# The words a reviewer may type over a computed answer (`_typed_over`): per
+# field, the answers only a human settles, so a computed answer never stands
+# between a reviewer and the human it escalates to.
+ESCALATIONS = {"redFirst": HUMAN_RED_FIRST, "inheritedTests": HUMAN_INHERITED}
 
 # Where a human's settlement is recorded: the driver's state for the phase,
 # under `<stateDir>/drive/<phase>.json`, whose `answersAccepted` the triage's

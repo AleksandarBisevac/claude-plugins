@@ -532,14 +532,18 @@
     {
       "id": "P119.9-g0k",
       "title": "a computed review answer can be escalated, and a gate that selects tests is never read as the whole project",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes the P119 phase review's findings R1-R4.\n1. A computed answer may only ever lower the work, never block an escalation. complete_phase_return accepts a typed answer that escalates over a computed one: `flagged` over a computed `not-asked`, and `not-proved` over a computed `proved`. It keeps the typed word and its basis, and records that the computed one was overridden. Every other disagreement is still refused.\n2. gate_reading's `whole` becomes a positive judgement. A command reads `whole` only when it carries no positional operand after its runner and no flag outside a known no-selection set; everything else reads `unknown`, which leaves the answer to the reviewer. Cases, each red first, cover `pytest -m unit`, `pytest --deselect x`, `go test ./internal/auth/...`, `cargo test auth::login`, `npx jest src/auth`, `npx jest --testPathPattern auth`, `npx vitest run src/auth` and `python -m unittest pkg.test_auth`. The allow twins are `python3 tools/sweep-selftests.py` and a bare `pytest` / `npm test`, which stay `whole`.\n3. The CHANGELOG's lever D line, the classifier's WHAT THIS CANNOT TELL comment and the basis text say what the classifier decides. The lever C line says the call is taken as the triage's sign-off answer, so the sign-off steps run as they would after it.\n4. verbs-in-full.md narrows both \"`-` is stdin\" sentences to the verbs that read stdin.\nDeliver a runnable mutation probe.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
         "plugins/audit/tests/test__filed_returns.py",
         "plugins/audit/tests/test_audit_task.py",
         "CHANGELOG.md",
-        "plugins/audit/reference/verbs-in-full.md"
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/scripts/manifest/audit-task.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -562,16 +566,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T21:07:20Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T21:39:18Z.91f536",
+        "status": "passed",
+        "at": "2026-10-08T21:39:18Z"
+      }
     }
   ],
   "startedAt": "2026-10-08T16:35:57Z"

@@ -34,8 +34,8 @@ diff line. In `mode: phase` ask it against `desiredOutcome`:
 
 Under `review.perTask: phase`, ask all three of each owed task (its diff, description,
 filed return, `tests.gate`) in its `tasks` entry, with the commit the brief handed.
-Omit a red-first or inherited-test pair the brief marks `computed`: the filing verb
-fills it, refuses a word that disagrees, and names any answer still owed.
+Omit a pair marked `computed` unless escalating it (`not-proved`, `flagged`, with a
+basis): the verb fills it, records an override, refuses other disagreement.
 
 ## Can this test fail?
 

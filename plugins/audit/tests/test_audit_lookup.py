@@ -645,7 +645,7 @@ def _bf_manifest(attempts=1, request=_BF_REQUEST):
     if request is not None:
         phase["request"] = request
     return {"meta": {"version": 2,
-                     "buildCommands": {"test": "python3 -m pytest tests"}},
+                     "buildCommands": {"test": "python3 -m pytest"}},
             "phases": [phase],
             "fileIndex": {"src/refund.py": ["P1.1"],
                           "tests/test_refund.py": ["P1.1"]},
@@ -875,7 +875,7 @@ def _brief_cases(check):
           "reviewer's own filing command: %r" % ((code3, said3),),
           code3 == M.E_OK and _BF_EXEC in rtext
           and task["description"] in rtext
-          and "python3 -m pytest tests" in rtext
+          and "python3 -m pytest" in rtext
           and "submit P1.1 --role reviewer" in rtext and "file-return" not in rtext
           and "mode: task" in rtext)
 
@@ -1187,6 +1187,17 @@ def _brief_cases(check):
           and says("P1.2", "inherited tests:", "unit:api")
           and says("P1.3", "inherited tests:", "yours")
           and says("P1.3", "inherited tests:", "tests/test_m3.py"))
+    check("bf32 a `computed` line also says the reviewer may type the answer "
+          "only a human settles over it - `not-proved` for red-first, "
+          "`flagged` for inherited tests, with a basis - and that the filing "
+          "verb records the override; a `yours` line carries neither, so the "
+          "words follow the computed answer and nothing else: %r" % (lines_m,),
+          says("P1.1", "red-first:", "`not-proved`")
+          and says("P1.1", "red-first:", "records the override")
+          and says("P1.1", "inherited tests:", "`flagged`")
+          and says("P1.1", "inherited tests:", "records the override")
+          and not says("P1.2", "red-first:", "`not-proved`")
+          and not says("P1.3", "inherited tests:", "`flagged`"))
 
     code6, said6 = brief(proj, mpath, "P1", "executor")
     check("bf11 a phase id asked for a task's role, or a task id for the "

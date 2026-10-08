@@ -463,9 +463,9 @@ brief.
 
 **The route out is `--description -`**, and it is the fix rather than a bypass: the
 brief is read from **stdin**, which no shell rewrites and which this stores verbatim.
-`-` where a value goes means stdin throughout this plugin — `scripts/manifest/check-ado-item.py`
-and its ADO siblings read a payload the same way — so there is no `--description-file`
-to learn.
+`-` where a value goes means stdin for `audit-task.py`'s prose flags, its `--from-file` and
+its `--findings-file` — and `scripts/manifest/check-ado-item.py` and its ADO siblings read a
+payload the same way — so there is no `--description-file` to learn.
 
 ```bash
 … scope <taskId> --description - <<'BRIEF'
@@ -1542,7 +1542,7 @@ PLAN
 
 **Quote the heredoc word** (`<<'PLAN'`): a bare `<<PLAN` expands `$` and backticks in
 the request, and the request is saved as typed. `--from-file <path>` still reads a file
-through the same checks; `-` is stdin throughout this plugin.
+through the same checks; `--from-file -` reads stdin, as `audit-task.py`'s prose flags do.
 
 Optional on the phase: `testGate` (omitted, the plan's `meta.buildCommands`; `[]`, no
 gate, so sign-off rests on review alone), `blockedBy`, `area`, `reviewSkill`, and `id`.

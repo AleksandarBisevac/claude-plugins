@@ -4390,7 +4390,9 @@ def _locked_start(args, project, config, mpath, tid, out):
 # A PHASE RETURN MAY ARRIVE WITHOUT ITS MECHANICAL ANSWERS. A red-first word the
 # helper's block already gives and the `not-asked` of a gate running the whole
 # project are filled here from those sources (`_fr.complete_phase_return`), the
-# fill recorded under `computedAnswers`; a typed word that disagrees is refused.
+# fill recorded under `computedAnswers`. A typed word only a human settles is
+# kept over a computed one, the override recorded under `computedOverridden`;
+# any other typed word that disagrees is refused.
 
 # What reads as a path rather than an id: a separator, a parent step, a leading
 # dot, or a drive colon.

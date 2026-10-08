@@ -372,21 +372,39 @@ def _mechanical_cases(check):
     def kind(entries):
         resolved = [(e, build.get(e, e)) for e in entries]
         return (gate_reading(build, resolved) or (None, ""))[0]
-    whole = [kind(["test"]), kind(["sweep"]), kind(["npx vitest run"]),
-             kind(["true"])]
+    whole = [kind(["sweep"]), kind(["npx vitest run"]), kind(["true"]),
+             kind(["python3 tools/sweep-selftests.py"]), kind(["pytest"]),
+             kind(["npm test"]), kind(["pytest -q"]), kind(["go test ./..."])]
     named = [kind(["python3 tests/test_refund.py --selftest"]),
              kind(["python3 -m pytest -k refund"]),
              kind(["pytest tests/test_a.py::test_b"]),
              kind(["npx vitest run --testNamePattern=refund"]),
-             kind(["test", "python3 tests/test_refund.py"])]
-    unknown = [kind([]), kind(["unit:api"]), kind(["python3 'unclosed"])]
-    check("ma2 a gate runs the whole project only when every entry resolves and "
-          "no command names a test file or a selection flag; one that names "
-          "either selects named tests, and no entry, an unresolved `key:project` "
-          "or a command that will not split is unknown: %r"
+             kind(["sweep", "python3 tests/test_refund.py"])]
+    unknown = [kind([]), kind(["unit:api"]), kind(["python3 'unclosed"]),
+               kind(["test"])]
+    check("ma2 a gate reads as the whole project only when every entry resolves "
+          "and each command is its runner with no operand and no flag outside "
+          "the no-selection set; one naming a test file or a selection flag "
+          "selects named tests, and no entry, an unresolved `key:project`, a "
+          "command that will not split, or a runner handed a bare test "
+          "directory is unknown: %r"
           % ((whole, named, unknown),),
-          whole == ["whole"] * 4 and named == ["named"] * 5
-          and unknown == ["unknown"] * 3)
+          whole == ["whole"] * 8 and named == ["named"] * 5
+          and unknown == ["unknown"] * 4)
+    selecting = ("pytest -m unit", "pytest --deselect x",
+                 "go test ./internal/auth/...", "cargo test auth::login",
+                 "npx jest src/auth", "npx jest --testPathPattern auth",
+                 "npx vitest run src/auth", "python -m unittest pkg.test_auth")
+    read = dict((c, gate_reading({}, [(c, c)]) or (None, ""))
+                for c in selecting)
+    check("ma9 a command passing its runner an operand or a flag the reading "
+          "does not know to select nothing reads `unknown`, never `whole`, and "
+          "its basis names what was passed - the allow twins are ma2's bare "
+          "runners: %r" % (read,),
+          all(read[c][0] == "unknown" for c in selecting)
+          and "`-m`" in read["pytest -m unit"][1]
+          and "`auth::login`" in read["cargo test auth::login"][1]
+          and "`pkg.test_auth`" in read["python -m unittest pkg.test_auth"][1])
     paths = dict((p, bool(is_test(p))) for p in (
         "tests/test_refund.py", "lib/specs/test__x.rb",
         "tools/ui-tests/a.test.js", "src/b.spec.ts", "pkg/x_test.go",
@@ -465,21 +483,66 @@ def _mechanical_cases(check):
     same, same_filled, same_p = complete(_phase_return([_entry(
         redFirst=block["status"]), _entry("P1.2", _SHA2)]), computed) or (
             {}, {"x": 1}, ["not completed"])
+    # The computed red-first here is the helper's `could-not-prove`, so a typed
+    # `proved` LOWERS the work: the disagreement an escalation does not cover.
     _d, _df, differ = complete(_phase_return([_entry(
-        redFirst="not-proved"), _entry("P1.2", _SHA2)]), computed) or (
+        redFirst="proved"), _entry("P1.2", _SHA2)]), computed) or (
             {}, {}, [])
     _t, _tf, forged = complete(dict(_phase_return([bare]), computedAnswers={
         "P1.1": ["redFirst"]}), computed) or ({}, {}, [])
     check("ma8 a reviewer word equal to the computed one files as typed and is "
-          "not recorded as computed; one that differs, and a typed "
-          "`computedAnswers`, are refused by name: %r"
+          "not recorded as computed; one that differs without escalating, and "
+          "a typed `computedAnswers`, are refused by name: %r"
           % ((same_filled, same_p, differ, forged),),
-          same_p == [] and same_filled == {}
+          block["status"] != "proved"
+          and same_p == [] and same_filled == {}
           and "computedAnswers" not in same
           and same.get("tasks", [{}])[0].get("redFirstBasis")
           == _entry()["redFirstBasis"]
-          and any("not-proved" in p and "P1.1" in p for p in differ)
+          and any("'proved'" in p and "P1.1" in p for p in differ)
           and any("computedAnswers" in p for p in forged))
+
+    up = _entry(redFirst="not-proved", redFirstBasis="no red was seen",
+                inheritedTests="flagged",
+                inheritedTestsBasis="test_b passes with the branch deleted")
+    esc, esc_filled, esc_p = complete(_phase_return([up, _entry(
+        "P1.2", _SHA2)]), computed) or ({}, {}, ["not completed"])
+    kept = (esc.get("tasks") or [{}])[0] if isinstance(esc, dict) else {}
+    over = (esc.get("computedOverridden") or {}).get("P1.1", {}) \
+        if isinstance(esc, dict) else {}
+    check("ma10 a typed answer only a human settles - `not-proved` over a "
+          "computed red-first, `flagged` over a computed `not-asked` - is an "
+          "escalation: it files with its own word and basis, nothing filled "
+          "over it, the computed word recorded as overridden, and the return "
+          "has no problem: %r" % ((kept, esc_filled, over, esc_p),),
+          esc_p == [] and esc_filled == {}
+          and kept.get("redFirst") == "not-proved"
+          and kept.get("redFirstBasis") == "no red was seen"
+          and kept.get("inheritedTests") == "flagged"
+          and kept.get("inheritedTestsBasis")
+          == "test_b passes with the branch deleted"
+          and over.get("redFirst", {}).get("computed") == block["status"]
+          and over.get("inheritedTests", {}).get("computed") == "not-asked"
+          and "computedAnswers" in esc
+          and M.phase_return_problems(esc, two, "phase", {}) == [])
+    no_basis = dict(up)
+    no_basis.pop("inheritedTestsBasis")
+    _n, _nf, unsaid = complete(_phase_return([no_basis, _entry(
+        "P1.2", _SHA2)]), computed) or ({}, {}, [])
+    lower = _entry(inheritedTests="none-found",
+                   inheritedTestsBasis="read every test")
+    _l, _lf, lowered = complete(_phase_return([lower, _entry(
+        "P1.2", _SHA2)]), computed) or ({}, {}, [])
+    _o, _of, forged_over = complete(dict(_phase_return([bare]),
+                                         computedOverridden={"P1.1": {}}),
+                                    computed) or ({}, {}, [])
+    check("ma11 REFUSAL TWINS of ma10: an escalation typed without its basis, a "
+          "typed `none-found` over a computed `not-asked`, and a typed "
+          "`computedOverridden` are each refused by name: %r"
+          % ((unsaid, lowered, forged_over),),
+          any("P1.1" in p and "inheritedTestsBasis" in p for p in unsaid)
+          and any("P1.1" in p and "none-found" in p for p in lowered)
+          and any("computedOverridden" in p for p in forged_over))
 
 
 def _selftest():

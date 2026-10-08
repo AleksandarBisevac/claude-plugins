@@ -750,15 +750,20 @@ PER_TASK_QUESTIONS = (
 
 def answer_lines(answers, owed):
     """The two lines saying, for one owed task, whether the filing verb fills
-    its red-first and inherited-test answers or the reviewer gives them."""
+    its red-first and inherited-test answers or the reviewer gives them - and,
+    for a filled one, the word only a human settles that may be typed over it
+    (`_fr.ESCALATIONS`)."""
     lines = []
     for label, word, basis in (("red-first", "redFirst", "redFirstBasis"),
                                ("inherited tests", "inheritedTests",
                                 "inheritedTestsBasis")):
         if word in answers:
+            ups = " or ".join("`%s`" % (u,) for u in _fr.ESCALATIONS[word])
             lines.append("%s: computed (%s) - the filing verb fills `%s` and "
-                         "`%s`; leave both out of its entry"
-                         % (label, answers[word], word, basis))
+                         "`%s`; leave both out of its entry, or type %s with "
+                         "its basis to put it to a human, and the verb "
+                         "records the override"
+                         % (label, answers[word], word, basis, ups))
         else:
             lines.append("%s: yours - %s" % (label, owed.get(word)
                                              or "no rule computes it"))
