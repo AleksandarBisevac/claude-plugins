@@ -328,7 +328,7 @@
     {
       "id": "P118.5",
       "title": "a step driver runs every step that needs no judgement, in four main-loop requests a task",
-      "status": "in_progress",
+      "status": "done",
       "description": "Design section 6, T4. drive-phase.py next <phase> reads the plan and the filed returns, performs every due step that needs no judgement by calling the existing verbs, and prints one instruction: dispatch, decide or done. A refusal prints the verb's own refusal and stops. The recorded gate stays before the reviewer. The new entry point owes everything CLAUDE.md names for a new .py. stream-cost's cycle rule reads the driver's start and done in the same change. Micro-test: a drive over a three-task fixture plan, with four model-facing steps a task, success prints of at most 300 bytes, a stale stamp naming the moved field, and a refused verb stopping the drive, each shown red against a mutated driver.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -364,35 +364,66 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "86f1a086",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Design T4. New entry point governance/drive-phase.py with `next <phase>`. It runs every step that needs no judgement as the existing verb in a subprocess: audit-lock, audit-task start/block/finding/done --from-return, audit-lookup brief, run-test-gate --record, stamp-verification compare and commit-task-work. It prints exactly one instruction:\n- dispatch, with the brief path;\n- decide, from DECISIONS, answered through --answer;\n- done.\n\nA refused verb stops the drive and relays the verb's own words. The recorded gate and the stamp grading run before the reviewer's brief. A stale stamp names the fields that moved. Drive state lives in stateDir/drive/<phase>.json.\n\nSeams are left for the next tasks: reviewer_due (T6), STEPS as the single source of printed lines (T2), subcommands for submit (T8), and finish() for sign-off (T10).\n\ntools/stream-cost.py reads a driver session's task cycle from the driver's own started/closed words (sp12, with the over-fire twin sp13).\n\nThe fixture micro-test drives a three-task wave with real verbs and filed returns:\n- 12 model-facing requests for three tasks, plus the opening next;\n- every print at or under 300 bytes;\n- the gate recorded before each reviewer dispatch;\n- a stale stamp naming the moved fields;\n- a refused verb stopping in its own words.\n\nEach property is shown red by an in-suite mutant (dp2m, dp3m, dp4m, dp5m, dr2m), and red-first is proved at HEAD. The new file owes all five CLAUDE.md items, and they are present.\n\nReported, not fixed: every task's stamp comes out stale on dirtyDigest, because filing the return and recording the gate dirty the evidence directory. That is recorded as its own task.",
+        "descriptive": "One command now runs a phase's mechanical steps through the existing verbs, leaving the model four requests a task: dispatch the executor, ask what is next, dispatch the reviewer, ask what is next."
       },
       "startedAt": "2026-10-07T23:51:52Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T00:36:28Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py",
+        "tools/stream-cost.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-08T00:36:12Z.aa8b75",
         "status": "passed",
         "at": "2026-10-08T00:36:12Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "86f1a086",
+        "at": "2026-10-08T00:36:28Z",
+        "basis": "orchestrator check: every step calls an existing verb, refusals are relayed verbatim, the fixture drive meets four steps a task and the byte bound, each property has a red mutant, seams left for T6/T8/T10/T2"
       }
     },
     {
       "id": "P118.6",
       "title": "under review.perTask phase the per-task review moves into the phase review and sign-off refuses an unanswered task",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Design section 6, T6, as G1. review.perTask takes always (today), phase (G1) or signals (G2). Under phase, the driver dispatches no per-task reviewer, and done --from-return writes the deferred state and refuses an --intent flag on a task with a diff. The phase reviewer's brief asks each task's three answers, and the sign-off verb refuses while any deferred task lacks one. Whether phase becomes the default is a release decision for the user, because COMPATIBILITY.md makes a changed default a major release. Every case the design lists is shown red first. The panel control and the doctor line follow if the schema lint requires them.",
       "files": [
+        "CHANGELOG.md",
+        "COMPATIBILITY.md",
+        "plugins/audit/README.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/commands/task.md",
         "plugins/audit/schema/audit-config.schema.json",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/_refs.py",
         "plugins/audit/scripts/config/_config_rules.py",
-        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/scripts/git/close-phase.py",
         "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/panel/_panel_settings.py",
         "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test__config.py",
         "plugins/audit/tests/test__config_rules.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/tests/test__panel_settings.py",
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/tests/test_audit_lookup.py",
         "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_close_phase.py",
         "plugins/audit/tests/test_drive_phase.py",
-        "plugins/audit/tests/test_audit_lookup.py"
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        "tools/prove-gates.py",
+        "plugins/audit/hooks/_config.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -418,16 +449,21 @@
         "P118.5",
         "P118.4"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T00:36:44Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T01:50:07Z.0c195f",
+        "status": "passed",
+        "at": "2026-10-08T01:50:07Z"
+      }
     },
     {
       "id": "P118.7",
@@ -648,6 +684,56 @@
         "commit": "d5b6c67b",
         "at": "2026-10-07T23:51:51Z",
         "basis": "orchestrator check: documentation-only as the user decided; no figure without a named session; pricing through the shared usage functions with the duplicates removed"
+      }
+    },
+    {
+      "id": "P118.11-v7t",
+      "title": "a stamp stays fresh when only the plugin's own recorders wrote",
+      "status": "in_progress",
+      "description": "A stamp taken before the recorded gate comes back stale on dirtyDigest after every task. Filing a return and recording a gate both dirty the evidence directory and the journal, which the stamp's dirty set includes, while content already excludes the recorder's own paths. The P118.5 driver fixture saw this on every task, and P117's analysis saw it in feature-C-1 as a re-check request. So stale is the normal state rather than a signal, and each task pays a needless main-loop request. dirtyDigest leaves out exactly the paths the plugin's own recorders write (evidence, journal, filed returns, the plan index and shards the close stamps), by the same exclusion content uses, with a case showing a real edit outside those paths still reads stale. A filed return or recorded gate alone leaves the stamp fresh. Shown red first both ways.",
+      "files": [
+        "plugins/audit/scripts/governance/_tree_stamp.py",
+        "plugins/audit/tests/test__tree_stamp.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-08T00:36:44Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-08T01:42:58Z.464ef7",
+        "status": "passed",
+        "at": "2026-10-08T01:42:58Z"
       }
     }
   ],

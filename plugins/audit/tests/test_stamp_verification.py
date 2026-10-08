@@ -271,6 +271,89 @@ def _recorder_cases(check):
           and moved_text.count("moved: other.txt") == 1)
 
 
+def _plan_repo(prefix):
+    """A committed repository laid out the way the plugin writes one: a sharded
+    plan at the default manifest path, its shard, a gate ledger under the
+    evidence directory, a journal file, and a file merely NAMED like the
+    evidence directory beside it."""
+    repo = _seeded_repo(prefix)
+    audit = os.path.join(repo, "docs", "audit")
+    for sub in ("phases", "evidence", "journal"):
+        os.makedirs(os.path.join(audit, sub))
+    index = {"meta": MANIFEST["meta"],
+             "phases": [{"id": "P1", "shard": "phases/P1.json"}]}
+    _write(os.path.join(audit, "audit-plan.json"), json.dumps(index))
+    _write(os.path.join(audit, "phases", "P1.json"),
+           json.dumps(MANIFEST["phases"][0]))
+    _write(os.path.join(audit, "evidence", "gates.jsonl"), "{}\n")
+    _write(os.path.join(audit, "journal", "2026-10.jsonl"), "{}\n")
+    _write(os.path.join(audit, "evidence-notes.md"), "notes\n")
+    _git(repo, "add", "docs")
+    _git(repo, "commit", "-q", "-m", "plan")
+    return repo, os.path.join(audit, "audit-plan.json")
+
+
+def _stamp_then(repo, man_path, mutate):
+    """`(code, text)` of a compare against a stamp taken just before `mutate`."""
+    _code, text = _run(["take", "--project", repo, "--manifest", man_path,
+                        "--files", "src/mine.py"])
+    mutate()
+    return _run(["compare", "--project", repo], stdin_text=text)
+
+
+def _recorder_dirty_cases(check):
+    """The dirty digest at the door: what the plugin's own recorders write
+    between a stamp and its comparison - a filed return, a recorded gate - is
+    left out, and every other write still reads stale."""
+    repo, man_path = _plan_repo("stamp-door-dirty-")
+    audit = os.path.join(repo, "docs", "audit")
+
+    def file_return():
+        where = os.path.join(audit, "evidence", "returns", "P1.1")
+        os.makedirs(where)
+        _write(os.path.join(where, "20261008T000000Z.executor.json"), "{}\n")
+    code, text = _stamp_then(repo, man_path, file_return)
+    check("sv18 A FILED RETURN ALONE LEAVES THE STAMP CURRENT, exit 0: the "
+          "return lands under the evidence directory, which the stamp's dirty "
+          "digest now leaves out the way its content field already did: "
+          "exit=%r %r" % (code, [ln for ln in text.splitlines()
+                                 if "dirtyDigest" in ln]),
+          code == 0 and _tree_stamp.CURRENT in text)
+
+    def record_gate():
+        with open(os.path.join(audit, "evidence", "gates.jsonl"), "a") as fh:
+            fh.write('{"row": 2}\n')
+        with open(os.path.join(audit, "journal", "2026-10.jsonl"), "a") as fh:
+            fh.write('{"row": 2}\n')
+        _write(os.path.join(audit, "phases", "P1.json"),
+               json.dumps(MANIFEST["phases"][0], indent=1))
+        _write(man_path, json.dumps({"meta": MANIFEST["meta"], "phases": [
+            {"id": "P1", "shard": "phases/P1.json"}]}, indent=1))
+    code, text = _stamp_then(repo, man_path, record_gate)
+    check("sv19 A RECORDED GATE ALONE LEAVES THE STAMP CURRENT, exit 0: a "
+          "ledger row, a journal row, and the plan index and its shard "
+          "rewritten - every path the plugin's recorders write: exit=%r %r"
+          % (code, [ln for ln in text.splitlines() if "dirtyDigest" in ln]),
+          code == 0 and _tree_stamp.CURRENT in text)
+
+    code, text = _stamp_then(
+        repo, man_path,
+        lambda: _write(os.path.join(repo, "src", "other.py"), "x = 1\n"))
+    check("sv20 ...AND A SOURCE EDIT OUTSIDE THOSE PATHS STILL READS STALE, "
+          "exit 1, on the dirty digest itself - an exclusion that swallowed "
+          "every dirty line would pass sv18 and sv19 and fail here: exit=%r"
+          % (code,),
+          code == M.E_STALE and "dirtyDigest  moved" in text)
+
+    code, text = _stamp_then(
+        repo, man_path,
+        lambda: _write(os.path.join(audit, "evidence-notes.md"), "edited\n"))
+    check("sv21 THE OVER-FIRE TWIN: an edit to a file merely named like the "
+          "evidence directory, beside it and not under it, reads stale on the "
+          "dirty digest, exit 1: exit=%r" % (code,),
+          code == M.E_STALE and "dirtyDigest  moved" in text)
+
+
 # --- the machine-readable half and the command's own shape --------------------
 def _shape_cases(check):
     repo = _seeded_repo("stamp-door-json-")
@@ -3755,6 +3838,7 @@ def _cases(check):
     _harness.stage(check, "sv-compare", _compare_cases)
     _harness.stage(check, "sv-shape", _shape_cases)
     _harness.stage(check, "sv-recorder", _recorder_cases)
+    _harness.stage(check, "sv-recorder-dirty", _recorder_dirty_cases)
     _harness.stage(check, "sr-red", _red_cases)
     _harness.stage(check, "sr-tally", _tally_cases)
     _harness.stage(check, "sr-introduces", _introduces_cases)
