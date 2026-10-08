@@ -29,7 +29,7 @@
     {
       "id": "P120.1",
       "title": "Fix BUG-22: the report scrolls sideways on a plan with long phase content",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix BUG-22. Rendered from this repository's own plan, the report scrolls sideways at 960-1152px (table.phases right@13685). The likely cause is long phase content in an element that does not wrap; the latest phases' summaries run to thousands of characters. Find the element with the browser checker, and fix the class rather than the instance: no text-bearing element of the report's phases table, or of any other table, may force the document wider than the viewport, whatever the content. Use the stylesheet's own wrapping rule, and read the refactoring-the-assembled-ui skill first. Add a regression case to the report checker's legs, or to the report's selftests: a phase carrying a very long summary and a very long unbroken token. That case must show the overflow red before the fix. Print the UI pin budget (tools/count-ui-pins.py) before starting. Do not run the screenshot or GIF capture; the orchestrator does that after landing. Run `node tools/check-report-interactive.mjs` on a fresh render of this repo's plan and of the demo, and report the exit codes.",
       "files": [
         "plugins/audit/scripts/ui/report-css",
@@ -70,19 +70,28 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7132ead8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes BUG-22. Rendered from this repository's own plan, the report scrolled sideways at 833-1512px. The cause was not the phase summary. It was a `span.ptev` evidence chip with `white-space:nowrap` whose text is an accepted commit's free-text reason (`accepted <sha>: <reason>`), so one unbreakable line widened table.phases.\n\nThe fix is three rules, covering the class:\n- tables.css: `:where(table.phases,table.data) td[colspan]{overflow-wrap:anywhere}` at every width.\n- tables.css: plain-text cells (`td:not([class]):not(:has(*))`) wrap, above the 52rem breakpoint only. Below it the table already scrolls inside its own frame, and wrapping there split words mid-letter when measured.\n- badges.css: `.ptev:not(:has(*)){white-space:normal}` lets a plain-text chip wrap, while chips built from pills or counts keep nowrap. The redundant `.ptev[data-fullrun]` rule is removed.\n\nPin css2's label and clauses now say this, and they tie the full-run claim to the rendered markup.\n\nRegression cases live in tools/check-report-interactive.mjs, so every report it checks is covered:\n- For each phases/data table, it plants copies of the table's first row carrying a very long summary and an unbroken token, plus a plain-text chip and a token chip. At every width on the ladder, it compares the page's scroll width with and without them.\n- A second check fails if the planted rows never painted or never wrapped.\n\nRed-first: the helper's verdict is could-not-prove, because playwright is missing in its throwaway tree (verbatim in the return). The orchestrator re-ran the executor's probe, scratchpad P120.1/mut.py: exit 0, with each of the three rules removed on its own turning the case red, and a detached or unpainted planting turning the second check red. A css2 mutation probe turns the pin red three ways.\n\nFollowers re-rendered in the same commit, so the committed pages carry the fix: examples/report.sh, docs/index.html as its byte copy, docs/demo-large.html, and the screenshots.\n\nFresh renders of this repo's plan and the demo pass the browser checker.",
+        "descriptive": "The report no longer scrolls sideways on a plan with long free text, at any width, and the browser check now plants hostile content in every report it checks to keep it that way."
       },
       "startedAt": "2026-10-08T22:27:29Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T23:10:31Z",
+      "verifiedBy": [
+        "tools/check-report-interactive.mjs",
+        "plugins/audit/tests/test__report_html.py"
+      ],
       "bugId": "BUG-22",
       "testEvidence": {
         "runId": "2026-10-08T23:10:16Z.0c1853",
         "status": "passed",
         "at": "2026-10-08T23:10:16Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7132ead8",
+        "at": "2026-10-08T23:10:31Z",
+        "basis": "orchestrator check: cause located (a nowrap evidence chip), class fixed with three rules; probe re-run, each rule removed turns the case red; followers re-rendered"
       }
     }
   ],
