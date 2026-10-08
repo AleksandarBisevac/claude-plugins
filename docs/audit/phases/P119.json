@@ -439,7 +439,7 @@
     {
       "id": "P119.8-g0k",
       "title": "Fix BUG-17: audit-task start copies the index-only priority into the phase shard",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes BUG-17. On the sharded layout, `audit-task.py start` writes the phase's priority into the phase shard's body when it starts the phase's first task. priority is an index-only field: the index stub carries it, the copy in the shard is ignored, and validate-manifest warns about it on every later run. start must leave the shard without priority. Find every writer that can copy an index-only field into a shard (the same class), not only the priority one, and fix them in one place. Repro and expected are on the bug. Cases, each red first: start on a sharded plan whose stub carries priority leaves the shard without it and validate-manifest prints no priority warning; the twin, a single-file plan, keeps priority where it lives. Add a mutation probe at scratchpad/P119.8/mut.py (monkeypatch only).",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -474,19 +474,29 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "17f292ab",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes BUG-17.\n\nCause: audit-task._write_add, the single-shard writer behind start, done, note and the rest, wrote the ASSEMBLED phase into the shard. _merge_phase puts the stub's index-only fields onto every assembled phase, so priority landed in the shard body.\n\nThe fix lives in one place, _manifest_io.shard_body(phase) -> (body, moved). It returns a copy without `shard` and without every INDEX_ONLY_FIELDS key, and hands the moved values back for the stub. Every writer that turns an assembled phase into a shard body now goes through it:\n- split_manifest, and so save_sharded and all its callers;\n- audit-task._write_add;\n- _panel_write._write_back, whose own copy of the strip loop is gone.\n\nA class sweep accounts for every other writer: each reads the raw shard body, or writes only the index.\n\nCases:\n- io1, io3: start leaves the shard without priority, in a pending phase and in a running one.\n- io2: validate-manifest prints OK with no priority warning.\n- io4: the single-file twin keeps priority.\n- sb1-sb3: shard_body strips, does not mutate its input, and keeps a phase that has no index-only field.\n- pp23c: a panel write-back leaves priority in the stub only.\n\nRed-first: proved (io1, io2 and io3 red at HEAD). pp23c is a regression lock; the panel already stripped priority at HEAD.\n\nMutation probe (scratchpad P119.8-g0k/mut.py), re-run by the orchestrator: 8/8 rows as expected. That includes the bug restored, two over-strip mutations (caught by io4 and sb3), and the panel reverted to its own loop (caught by pp23c alone).\n\nThis repo's plan: _mio.index_only_in_bodies() returns nothing.",
+        "descriptive": "Starting a task no longer copies the phase's priority into the phase file where nothing reads it, so the validator stops warning; every place that writes a phase file now does it the same way."
       },
       "startedAt": "2026-10-08T20:10:49Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T20:59:58Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__manifest_io.py",
+        "plugins/audit/tests/test__panel_write.py"
+      ],
       "bugId": "BUG-17",
       "testEvidence": {
         "runId": "2026-10-08T20:59:42Z.09a18d",
         "status": "passed",
         "at": "2026-10-08T20:59:42Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "17f292ab",
+        "at": "2026-10-08T20:59:58Z",
+        "basis": "orchestrator check: the bug's repro is a case, the class has one implementation (three callers), mutation probe re-run 8/8"
       }
     }
   ],
