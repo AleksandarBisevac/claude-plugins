@@ -183,6 +183,24 @@ def _merge_phase(stub, body):
     return merged
 
 
+def shard_body(phase):
+    """`(body, moved)` -- what a shard file holds for an ASSEMBLED `phase`.
+
+    THE ONE PLACE AN ASSEMBLED PHASE BECOMES A SHARD BODY. `_merge_phase` puts
+    the stub's `INDEX_ONLY_FIELDS` onto every phase it assembles, so a writer
+    that dumps a patched phase whole into its shard carries `priority` into a
+    body where nothing reads it, and `index_only_in_bodies()` reports it on
+    every later run. The stub's `shard` pointer is dropped for the same reason:
+    the stub owns it. `moved` is `{field: value}` for each index-only field the
+    phase carried, which is what a caller building the STUB needs.
+
+    Returns a NEW dict; `phase` is never mutated."""
+    body = dict(phase) if isinstance(phase, dict) else {}
+    body.pop("shard", None)
+    moved = dict((k, body.pop(k)) for k in INDEX_ONLY_FIELDS if k in body)
+    return body, moved
+
+
 def index_without_stub_claim(index, phase_id):
     """(index, dropped) -- `index` with `phase_id`'s stub carrying no `claim`.
 
@@ -1096,12 +1114,8 @@ def split_manifest(manifest, shard_rel_dir="phases"):
         # The index-only fields MOVE: into the stub, out of the body. A migration
         # that left `priority` in the shard would produce, in one step, exactly the
         # state `index_only_in_bodies()` exists to report.
-        body = ph
-        if any(k in ph for k in INDEX_ONLY_FIELDS):
-            body = dict(ph)
-            for k in INDEX_ONLY_FIELDS:
-                if k in body:
-                    stub[k] = body.pop(k)
+        body, moved = shard_body(ph)
+        stub.update(moved)
         shards[pid] = body
         index["phases"].append(stub)
     # AFTER the loop, off the stubs that were actually written — see the docstring.

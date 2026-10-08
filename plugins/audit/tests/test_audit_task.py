@@ -14556,10 +14556,131 @@ def _no_change_layout_cases(check, project, git, write, close, read):
           % ((code, text[:240]),), code == 0)
 
 
+def _index_only_cases(check):
+    """A verb's shard write never carries an index-only field into the body.
+
+    The assembled phase a verb patches holds `priority` because `_merge_phase`
+    copies it from the stub, so a writer that dumps that phase whole into the
+    shard puts the value where nothing reads it and the validator warns about it
+    on every later run. The single-file twin is the second direction: there the
+    phase IS where priority lives, and a fix that stripped it on every layout
+    would drop the plan's order."""
+    import subprocess
+    root = _harness.fixture_root("audit-task-io-")
+
+    def plan():
+        def task(tid, files):
+            return {"id": tid, "title": tid, "status": "pending",
+                    "description": "", "files": files,
+                    "tests": {"mode": "gate-only", "add": [],
+                              "expectRedFirst": False, "gate": ["test"]},
+                    "model": "sonnet", "skills": [], "risk": "low",
+                    "blockedBy": [], "dependsOn": [], "attempts": 0,
+                    "maxAttempts": 3, "commit": None,
+                    "outcome": {"technical": None, "descriptive": None},
+                    "startedAt": None, "completedAt": None, "verifiedBy": []}
+        return {
+            "meta": {"version": 2, "buildCommands": {"test": "true"}},
+            "phases": [
+                {"id": "P1", "title": "Running", "status": "in_progress",
+                 "priority": 2, "testGate": ["test"],
+                 "tasks": [task("P1.1", ["src/a.ts"])]},
+                {"id": "P2", "title": "Fresh", "status": "pending",
+                 "priority": 1, "testGate": ["test"],
+                 "tasks": [task("P2.1", ["src/b.ts"])]}],
+            "fileIndex": {"src/a.ts": ["P1.1"], "src/b.ts": ["P2.1"]},
+            "bugs": []}
+
+    def project(name, sharded):
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        _panel_write._atomic_write_json(
+            os.path.join(proj, ".claude", "audit.config.json"),
+            {"manifestPath": "docs/audit/audit-plan.json"})
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        if sharded:
+            _mio.save_sharded(mpath, plan())
+        else:
+            _panel_write._atomic_write_json(mpath, plan())
+        return proj, mpath
+
+    def start(proj, tid):
+        lines = []
+        code = M.main(["start", tid, "--project-dir", proj], out=lines.append)
+        return code, "\n".join(str(x) for x in lines)
+
+    def bodies(mpath):
+        """{phase id: the body its SHARD file holds}."""
+        idx = _mio.read_json(mpath)
+        base = os.path.dirname(mpath)
+        return dict((s["id"], _mio.read_json(os.path.join(base, s["shard"])))
+                    for s in idx["phases"] if isinstance(s, dict) and "shard" in s)
+
+    def validator(mpath):
+        r = subprocess.run(
+            [sys.executable, os.path.join(_output.SCRIPTS_DIR, "manifest",
+                                          "validate-manifest.py"), mpath,
+             "--verbose"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            universal_newlines=True)
+        return r.returncode, r.stdout
+
+    def stub_priority(mpath):
+        return dict((s.get("id"), s.get("priority"))
+                    for s in _mio.read_json(mpath)["phases"])
+
+    # The first task of a PENDING phase: the bug's own repro shape, where the
+    # start also promotes the phase.
+    proj, mpath = project("io-first", sharded=True)
+    before = bodies(mpath)
+    code, text = start(proj, "P2.1")
+    after = bodies(mpath)
+    vcode, vtext = validator(mpath)
+    check("io1 start on a sharded plan writes the task into P2's shard and "
+          "leaves that shard without priority, while the stub keeps it: %r"
+          % ((code, text[:160], sorted(after.get("P2") or {}),
+              stub_priority(mpath)),),
+          code == 0 and "priority" not in before.get("P2", {})
+          and (after.get("P2") or {}).get("tasks", [{}])[0].get("status")
+          == "in_progress"
+          and "priority" not in (after.get("P2") or {})
+          and stub_priority(mpath) == {"P1": 2, "P2": 1})
+    check("io2 validate-manifest then warns about no priority sitting in a "
+          "shard body: %r" % ((vcode, vtext[-300:]),),
+          vcode == 0 and "OK:" in vtext
+          and "'priority' sits in the shard body" not in vtext
+          and _mio.index_only_in_bodies(mpath) == [])
+
+    # A task in a phase already running: the same writer, no phase promotion.
+    proj, mpath = project("io-running", sharded=True)
+    code, text = start(proj, "P1.1")
+    after = bodies(mpath)
+    check("io3 start in an already-running phase leaves its shard without "
+          "priority too: %r" % ((code, text[:160], sorted(after.get("P1") or {})),),
+          code == 0 and "priority" not in (after.get("P1") or {})
+          and (after.get("P1") or {}).get("tasks", [{}])[0].get("status")
+          == "in_progress"
+          and _mio.index_only_in_bodies(mpath) == [])
+
+    # The twin. Here for the over-fire mutation: a writer that stripped
+    # index-only fields on every layout would drop the single-file plan's order.
+    proj, mpath = project("io-single", sharded=False)
+    code, text = start(proj, "P2.1")
+    raw = _mio.read_json(mpath)
+    check("io4 the single-file twin keeps priority on the phase, where that "
+          "layout keeps it: %r"
+          % ((code, text[:160], [p.get("priority") for p in raw["phases"]]),),
+          code == 0 and not _mio.is_sharded(raw)
+          and [p.get("priority") for p in raw["phases"]] == [2, 1]
+          and _mio.tasks_by_id(raw)["P2.1"].get("status") == "in_progress")
+
+
 STAGES = (("at-block", "_cases"), ("sl-block", "_success_line_cases"),
           ("fr-block", "_return_cases"), ("fb-block", "_batch_cases"),
           ("hd-block", "_held_cases"), ("ub-block", "_unblock_cases"),
-          ("ncm-block", "_no_change_moved_cases"))
+          ("ncm-block", "_no_change_moved_cases"),
+          ("io-block", "_index_only_cases"))
 
 
 def _selftest(only=()):

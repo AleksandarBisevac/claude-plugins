@@ -1941,7 +1941,10 @@ def _write_add(project, mpath, raw_index, assembled, phase_id, files_changed,
         if not _panel_write._within(project, spath):
             raise ValueError("refused: shard path escapes project: %s"
                              % stub["shard"])
-        body.pop("shard", None)   # the stub owns the pointer, never the body
+        # The stub owns the pointer and every index-only field: the assembled
+        # phase carries the stub's `priority`, and a body written with it puts
+        # the value where nothing reads it.
+        body = _mio.shard_body(body)[0]
         _panel_write._atomic_write_json(spath, body)
         written.append(_output.posix_rel(spath, project))
     else:

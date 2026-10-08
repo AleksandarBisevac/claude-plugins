@@ -384,7 +384,7 @@
     {
       "id": "P119.7-g0k",
       "title": "the driver's suite runs well inside the sweep's per-file cap",
-      "status": "in_progress",
+      "status": "done",
       "description": "Internal fault, measured twice in this phase. On its own, plugins/audit/tests/test_drive_phase.py --selftest takes about 217-231 s on a quiet machine, and 277 s was observed under load. tools/sweep-selftests.py caps each file at 300 s, so a loaded gate can time the file out and read a sound change as red. Find where the suite's time goes by profiling the stages; the likely shape is a real git fixture repo built per case. Cut the time by sharing fixtures across cases that only read them, or by building a fixture once per stage and copying it, without changing what any case asserts. Every case id keeps its name and its verdict. Report the per-stage time before and after, measured twice with a gap, and the whole-file time. The cap is not raised, and the 1:1 test-file rule (one tests/test_<module>.py per module) is kept, so the suite is not split into new files. A mutation that breaks a shared fixture must still turn the cases that read it red; show one.",
       "files": [
         "plugins/audit/tests/test_drive_phase.py"
@@ -414,18 +414,26 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a8e0f753",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Closes F575 (the driver suite running close to the sweep's per-file cap). Profiling disproved the description's guess. Almost all of each stage's wall time is the verbs run as fresh interpreters; every git call together took about one second over the whole file. So sharing or copying fixtures would have saved almost nothing.\n\nThe executor took a different lever. The full --selftest now runs its stages concurrently, each in its own child process, and replays what they report in STAGES order through one _harness.run. test_hooks.py's thread pool is the precedent, and the case code is untouched.\n- STAGE_WORKERS=6.\n- STAGE_TIMEOUT=280, under the 300 s cap, so a hung block is reported under its own label.\n- A child that reports nothing becomes one named failing case.\n- The duplicate-label check runs over the merged call sites.\n- `--stage` without --cases-to still runs in process, so the red helper's narrowed runs are unchanged.\n\nWhole file, `/usr/bin/time -p`, load average 15-21:\n- before: 291.26 s and 302.40 s;\n- after: 70.84 s and 72.14 s, with gaps between runs.\n\nuser+sys stayed about 250 s throughout. Case ids and verdicts are identical before and after (IDS-MATCH, 128/128).\n\nMutation probe (scratchpad P119.7-g0k/mut.py, mutates a copy, never the tree), re-run by the orchestrator:\n- control green;\n- a broken shared fixture turns 25 cases red through the replay;\n- a child that exits before reporting is a named red;\n- a replay forced to pass hides the red, which proves the replay carries the verdicts.\n\nredFirst not-attempted: no case was added, by design.",
+        "descriptive": "The driver's test file now runs its parts in parallel, about four times faster, with exactly the same tests and results, so a busy machine no longer turns a sound change red."
       },
       "startedAt": "2026-10-08T19:38:24Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T20:59:57Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-08T20:52:16Z.bcb7b2",
         "status": "passed",
         "at": "2026-10-08T20:52:16Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "a8e0f753",
+        "at": "2026-10-08T20:59:57Z",
+        "basis": "orchestrator check: profile-led lever (stages in parallel, not fixtures); identical case ids and verdicts; probe shows the replay carries verdicts"
       }
     },
     {

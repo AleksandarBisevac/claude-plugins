@@ -2237,15 +2237,11 @@ def _write_back(project, mpath, raw_index, assembled, patch, touched,
         spath = os.path.abspath(os.path.join(base, stub["shard"]))
         if not _within(project, spath):
             raise ValueError("refused: shard path escapes project: %s" % stub["shard"])
-        body = dict(patched)
-        # The stub owns identity; the shard body never carries its own pointer.
-        body.pop("shard", None)
-        # ...and it never carries an index-only field either. Writing `priority`
-        # here would put it exactly where `_manifest_io.index_only_in_bodies()`
-        # reports it as ignored - a value the panel just promised to save, in a
-        # place the next load discards.
-        for k in _mio.INDEX_ONLY_FIELDS:
-            body.pop(k, None)
+        # The stub owns the pointer and every index-only field. Writing
+        # `priority` here would put it exactly where
+        # `_manifest_io.index_only_in_bodies()` reports it as ignored - a value
+        # the panel just promised to save, in a place the next load discards.
+        body = _mio.shard_body(patched)[0]
         _atomic_write_json(spath, body)
         written.append(_output.posix_rel(spath, project))
 
