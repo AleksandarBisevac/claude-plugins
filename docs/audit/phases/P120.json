@@ -1,0 +1,78 @@
+{
+  "id": "P120",
+  "title": "the report never scrolls sideways, whatever the plan holds",
+  "status": "pending",
+  "description": "Release blocker for 3.2.0, found by tools/verify.sh --release: BUG-22.",
+  "desiredOutcome": "every leg of the release verification's rendered-plan check, this repository's own plan included, renders with no sideways scroll at any width it checks",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P120.1",
+      "title": "Fix BUG-22: the report scrolls sideways on a plan with long phase content",
+      "status": "pending",
+      "description": "Fix BUG-22. Rendered from this repository's own plan, the report scrolls sideways at 960-1152px (table.phases right@13685). The likely cause is long phase content in an element that does not wrap; the latest phases' summaries run to thousands of characters. Find the element with the browser checker, and fix the class rather than the instance: no text-bearing element of the report's phases table, or of any other table, may force the document wider than the viewport, whatever the content. Use the stylesheet's own wrapping rule, and read the refactoring-the-assembled-ui skill first. Add a regression case to the report checker's legs, or to the report's selftests: a phase carrying a very long summary and a very long unbroken token. That case must show the overflow red before the fix. Print the UI pin budget (tools/count-ui-pins.py) before starting. Do not run the screenshot or GIF capture; the orchestrator does that after landing. Run `node tools/check-report-interactive.mjs` on a fresh render of this repo's plan and of the demo, and report the exit codes.",
+      "files": [
+        "plugins/audit/scripts/ui/report-css",
+        "plugins/audit/scripts/ui/report",
+        "plugins/audit/scripts/ui/shared",
+        "tools/check-report-interactive.mjs",
+        "plugins/audit/tests/test_render_report.py",
+        "plugins/audit/scripts/report/render-report.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-report-interactive.mjs: a phase with a very long summary and unbroken token renders with no sideways scroll - expected no overflow, actual table.phases right@13685 at 960px"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "bugId": "BUG-22"
+    }
+  ]
+}
