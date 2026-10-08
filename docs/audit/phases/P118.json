@@ -689,7 +689,7 @@
     {
       "id": "P118.11-v7t",
       "title": "a stamp stays fresh when only the plugin's own recorders wrote",
-      "status": "in_progress",
+      "status": "done",
       "description": "A stamp taken before the recorded gate comes back stale on dirtyDigest after every task. Filing a return and recording a gate both dirty the evidence directory and the journal, which the stamp's dirty set includes, while content already excludes the recorder's own paths. The P118.5 driver fixture saw this on every task, and P117's analysis saw it in feature-C-1 as a re-check request. So stale is the normal state rather than a signal, and each task pays a needless main-loop request. dirtyDigest leaves out exactly the paths the plugin's own recorders write (evidence, journal, filed returns, the plan index and shards the close stamps), by the same exclusion content uses, with a case showing a real edit outside those paths still reads stale. A filed return or recorded gate alone leaves the stamp fresh. Shown red first both ways.",
       "files": [
         "plugins/audit/scripts/governance/_tree_stamp.py",
@@ -722,18 +722,27 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c1a3ac91",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_tree_stamp.dirty_digest(before, excluded) drops a porcelain line only when every path on it, a rename's two paths included, is under excluded. It uses _outside, the same segment-boundary predicate content uses, so there is no second list. tested_state passes dirty_excluded only from take; compare goes through take, so both sides agree. The excluded set is _evidence_io.recorded_paths, which already covers the evidence directory and filed returns under evidence/returns, the journal, the plan index and the shards. _evidence_io.py and stamp-verification.py needed no change.\n\nrun-test-gate's recorded dirtyDigest is deliberately unchanged, so rows already recorded still grade to the same bytes (tsd6). A stamp taken by an older version while recorder paths were dirty reads stale once, which is the safe direction.\n\nCases tsd1-tsd6 and sv18-sv21 cover these:\n- a filed return alone stays fresh;\n- a recorded gate alone stays fresh;\n- a source edit still reads stale;\n- a lookalike of the evidence path outside the directory still reads stale.\n\nThey were red at HEAD, with over-fire and segment mutations shown red in a scratch copy. On the driver fixture the per-task stamp now reads current, except for the task whose file really moved.",
+        "descriptive": "An executor's proof that the tree is unchanged no longer goes stale just because the plugin itself recorded a gate or filed a result, so stale means a real edit again and the extra re-check request goes away."
       },
       "startedAt": "2026-10-08T00:36:44Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T01:50:21Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__tree_stamp.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-08T01:42:58Z.464ef7",
         "status": "passed",
         "at": "2026-10-08T01:42:58Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c1a3ac91",
+        "at": "2026-10-08T01:50:21Z",
+        "basis": "orchestrator check: one shared exclusion, real edits and lookalike paths still stale, recorded rows untouched, driver fixture now reads current"
       }
     }
   ],

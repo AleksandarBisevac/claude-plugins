@@ -72,6 +72,7 @@ KNOWN_ROOT = {
     "trivialLineThreshold", "stateDir", "logsDir", "bypassKeyword",
     "secretPatterns", "guardEdits", "bashWriteCheck", "tddReminder", "usage",
     "journal", "evidence", "policy", "ui", "priority", "portability", "executor",
+    "review",
 }
 # The tiers `planGate` may pin. Mirror of hooks/_config.py PLAN_GATE_TIERS (that
 # module stays the source of truth for the gate itself); the selftest below pins
@@ -90,6 +91,38 @@ PORTABILITY_MODES = ("strict", "warn", "off")
 # the same shape PLAN_GATE_MODES above mirrors PLAN_GATE_TIERS.
 KNOWN_EXECUTOR = {"runsGate", "maxHours"}
 RUNS_GATE_MODES = ("never", "own-tests", "full")
+# Mirror of hooks/_config.py REVIEW_PER_TASK_MODES, pinned the same way: where a
+# task's three review answers are given - by a reviewer per task, by the phase
+# review at sign-off, or per task only where a computed signal fires.
+KNOWN_REVIEW = {"perTask"}
+REVIEW_PER_TASK_MODES = ("always", "phase", "signals")
+
+
+def review_per_task_mode(config, defaults=None):
+    """`(mode, problem)` - `review.perTask` as `config` sets it, else the shipped
+    default; `(None, problem)` for a value outside REVIEW_PER_TASK_MODES.
+
+    REFUSED, NOT FOLDED INTO THE DEFAULT, unlike `portability_mode`: this key
+    decides which close and which landing a task's review answers hold, and a
+    typo read as the default would make a guarantee nobody chose look chosen.
+    Asked by every verb that records the key where a phase has none yet, each of
+    which refuses on the problem. `defaults` is the hooks' DEFAULTS when a caller
+    already holds it."""
+    if defaults is None:
+        defaults = getattr(_loader.load_hooks_config(), "DEFAULTS", None) or {}
+    block = (config or {}).get("review")
+    if not isinstance(block, dict) or "perTask" not in block:
+        shipped = (defaults.get("review") or {}).get("perTask")
+        if shipped in REVIEW_PER_TASK_MODES:
+            return shipped, None
+        return None, ("the hooks' DEFAULTS ship no review.perTask in %s, so "
+                      "there is no default to read" % (REVIEW_PER_TASK_MODES,))
+    mode = block["perTask"]
+    if mode in REVIEW_PER_TASK_MODES:
+        return mode, None
+    return None, ("review.perTask is %r, not one of %s - fix the config "
+                  "(/audit:doctor names it); it is not read as the default"
+                  % (mode, ", ".join(REVIEW_PER_TASK_MODES)))
 
 
 def portability_mode(config, defaults=None):
@@ -370,6 +403,7 @@ def validate_config(obj):
     _check_journal(obj.get("journal"), findings, warnings)
     _check_evidence(obj.get("evidence"), findings, warnings)
     _check_executor(obj.get("executor"), findings, warnings)
+    _check_review(obj.get("review"), findings, warnings)
 
     # Delegated whole: the module that resolves a policy decides what a malformed
     # one is. A copy of those rules here would be free to call legal what the guard
@@ -469,6 +503,24 @@ def _check_executor(executor, findings, warnings):
                             "value outside this vocabulary is refused rather "
                             "than read as the default, the same shape "
                             "executor.runsGate uses above")
+
+
+def _check_review(review, findings, warnings):
+    """Where a task's three review answers are given. A FINDING for a value
+    outside the vocabulary, `_check_executor`'s reason: only a finding refuses
+    the panel's save, and `review_per_task_mode` refuses to read one."""
+    if review is None:
+        return
+    if not isinstance(review, dict):
+        findings.append("review must be an object")
+        return
+    for k in _real_keys(review):
+        if k not in KNOWN_REVIEW:
+            warnings.append("unknown review key %r" % k)
+    if "perTask" in review and review["perTask"] not in REVIEW_PER_TASK_MODES:
+        findings.append("review.perTask must be one of %s - a value outside "
+                        "this vocabulary is refused rather than read as the "
+                        "default" % (REVIEW_PER_TASK_MODES,))
 
 
 def _check_bands(bands, findings, warnings):

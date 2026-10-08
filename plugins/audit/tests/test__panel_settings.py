@@ -50,7 +50,8 @@ def _cases(check):
                    "usage": _vc.KNOWN_USAGE, "journal": _vc.KNOWN_JOURNAL,
                    "evidence": _vc.KNOWN_EVIDENCE,
                    "priority": _vc.KNOWN_PRIORITY,
-                   "executor": _vc.KNOWN_EXECUTOR}
+                   "executor": _vc.KNOWN_EXECUTOR,
+                   "review": _vc.KNOWN_REVIEW}
     # `policy` is a root key with no control on this form, on purpose — the one
     # kind of exemption, and it is stated rather than silently subtracted. It is
     # not a setting with a value; it is a rule set whose meaning is the verdict it
@@ -113,7 +114,7 @@ def _cases(check):
     check("the groups are the decisions the config makes, not one list",
           tuple(g["id"] for g in M.SETTINGS_GROUPS)
           == ("paths", "guards", "tdd", "usage", "journal", "priority",
-              "portability", "executor")
+              "portability", "executor", "review")
           and all(g["blurb"] for g in M.SETTINGS_GROUPS))
     check("the audit trail's card states the limit of the claim, where someone "
           "deciding whether to rely on it will read it",
@@ -153,6 +154,11 @@ def _cases(check):
           "copy free to drift on its own schedule",
           M._cfg_enums()["runsGate"] == list(_vc.RUNS_GATE_MODES)
           and tuple(_vc.RUNS_GATE_MODES) == tuple(_hcfg.RUNS_GATE_MODES))
+    check("ps1 the review.perTask words reach the form from the validator's "
+          "own tuple, which is the hooks' own vocabulary",
+          M._cfg_enums()["perTask"] == list(_vc.REVIEW_PER_TASK_MODES)
+          and tuple(_vc.REVIEW_PER_TASK_MODES)
+          == tuple(_hcfg.REVIEW_PER_TASK_MODES))
     check("_cfg_enums() is JSON-serializable (panel-server bakes it into UI_HTML "
           "with json.dumps)", json.dumps(M._cfg_enums(), sort_keys=True))
 

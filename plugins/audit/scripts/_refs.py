@@ -1244,6 +1244,75 @@ def red_first_vocabulary_drift(repo_root=None):
             "problems": problems}
 
 
+# --- the keys of a phase review's per-task entry ----------------------------------
+# Under `review.perTask: phase` the phase reviewer answers each task in a `tasks`
+# entry, and the filing verb refuses an entry that lacks a key of
+# `_filed_returns.PHASE_ENTRY_KEYS`. The reviewer learns the keys from its return
+# format, so the two are one tuple stated twice: a key the format drops is one no
+# reviewer sends and every filing refuses, and a key the verb gains is one the
+# format never asks for. The tuple is read off the verb's SOURCE rather than
+# imported, because `_filed_returns` is a layer-mate of this module.
+PHASE_RETURN_VERB = "scripts/manifest/_filed_returns.py"
+PHASE_ENTRY_TUPLE = "PHASE_ENTRY_KEYS"
+_PHASE_ENTRY_RE = re.compile(r'"tasks":\s*\[\{(.*?)\}', re.S)
+_ENTRY_KEY_RE = re.compile(r'"([A-Za-z]+)":')
+
+
+def _verb_entry_keys(root):
+    """`(keys, problem)` - the literal `PHASE_ENTRY_KEYS` tuple in the verb."""
+    rel = PHASE_RETURN_VERB
+    try:
+        with open(os.path.join(root, PLUGIN_REL, *rel.split("/")), "r",
+                  encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+    except (OSError, SyntaxError, ValueError) as exc:
+        return None, "%s: unreadable (%s)" % (rel, exc)
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == PHASE_ENTRY_TUPLE
+                for t in node.targets) and isinstance(node.value, ast.Tuple):
+            keys = [e.value for e in node.value.elts
+                    if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+            if keys:
+                return keys, None
+    return None, ("%s: declares no literal %s tuple, so there is nothing to hold "
+                  "the reviewer's entry to" % (rel, PHASE_ENTRY_TUPLE))
+
+
+def phase_return_key_drift(repo_root=None):
+    """{"brief": [key, ...], "verb": [key, ...], "problems": [str, ...]} - the
+    keys of the `tasks` entry in `agents/audit-reviewer.md`'s return format
+    against the filing verb's tuple. Empty `problems` is the healthy answer; a
+    side that cannot be read is a problem, never a list compared as empty."""
+    root = repo_root or REPO_ROOT
+    problems = []
+    verb, problem = _verb_entry_keys(root)
+    if problem:
+        problems.append(problem)
+    rel = RED_FIRST_REVIEWER_BRIEF
+    try:
+        with open(os.path.join(root, PLUGIN_REL, *rel.split("/")), "r",
+                  encoding="utf-8", errors="replace") as fh:
+            blocks = _PHASE_ENTRY_RE.findall(fh.read())
+    except OSError as exc:
+        blocks = None
+        problems.append("%s: unreadable (%s)" % (rel, exc))
+    brief = None
+    if blocks is not None and len(blocks) != 1:
+        problems.append("%s: its return format declares a `tasks` entry %d "
+                        "times, where one is the only count a reader can follow"
+                        % (rel, len(blocks)))
+    elif blocks:
+        brief = _ENTRY_KEY_RE.findall(blocks[0])
+    if brief is not None and verb is not None:
+        problems.extend("%s: the `tasks` entry omits %r, which the filing verb "
+                        "refuses an entry without" % (rel, k)
+                        for k in verb if k not in brief)
+        problems.extend("%s: the `tasks` entry names %r, which the filing verb "
+                        "does not read" % (rel, k) for k in brief if k not in verb)
+    return {"brief": brief or [], "verb": verb or [], "problems": problems}
+
+
 # --- the shape the executor hands back, and who has to keep asking for it -------
 # A RETURN THE AGENT FILES IS CHECKED AT THE BOUNDARY; ONE IT DOES NOT IS PROSE.
 # `audit-task.py file-return` parses a filed return and refuses one missing a

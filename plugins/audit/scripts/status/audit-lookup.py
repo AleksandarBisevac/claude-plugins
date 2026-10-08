@@ -124,7 +124,9 @@ import _journal_io  # noqa: E402  (layer 1: the trail this cross-checks against)
 import _evidence_io as _evio  # noqa: E402  (layer 2: project/config resolution)
 import _loader  # noqa: E402  (the one way scripts/ loads hooks/_config as a library)
 import _areas  # noqa: E402  (resolve_skills: area skills first, then the task's)
-import _filed_returns as _fr  # noqa: E402  (where `file-return` put a return)
+import _filed_returns as _fr  # noqa: E402  (where `file-return` put a return, and
+#                                            which tasks a phase review owes)
+import _config_rules  # noqa: E402  (review_per_task_mode: the config's reading now)
 
 E_OK = 0
 E_NOMATCH = 1
@@ -634,19 +636,93 @@ def phase_brief_refusal(phase):
     return held
 
 
+def _choices_lines(phase):
+    """`phase.openChoices` verbatim, one line each, or what its absence means."""
+    choices = phase.get("openChoices")
+    if not isinstance(choices, list):
+        return ["No open choices were recorded (phase.openChoices is absent): "
+                "nobody was asked which choices the request left open."]
+    if not choices:
+        return ["The planner recorded that the request left no choice open."]
+    return ["- %s" % (c,) for c in choices]
+
+
+def _head(ctx):
+    """`(sha, None)` - the head this brief is computed at - or `(None, why)`."""
+    try:
+        done = subprocess.run(["git", "-C", ctx["gitRoot"], "rev-parse", "HEAD"],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, "git could not be run here (%s)" % (exc,)
+    sha = done.stdout.decode("utf-8", "replace").strip()
+    if done.returncode != 0 or not sha:
+        return None, ("`git rev-parse HEAD` exited %d (%s)" % (
+            done.returncode, done.stderr.decode("utf-8", "replace").strip()[:160]))
+    return sha, None
+
+
+# The three per-task questions a phase review answers under `review.perTask:
+# phase`, each by the rule `mode: task` applies to one task.
+PER_TASK_QUESTIONS = (
+    "1. intent: does this task's diff do what its description asked, and does "
+    "its executor's claim describe the diff?",
+    "2. red-first: was a test this task added ever seen red? Echo the executor's "
+    "`redFirst` word when its basis holds; grade it otherwise.",
+    "3. inherited tests: of the tests its gate commands select, would any still "
+    "pass with the behaviour it names deleted?")
+
+
+def _review_owed(ctx, phase):
+    """`(live, answered, problem)` - the config's `review.perTask` now (read only
+    where a task with a commit records no key), and the commits filed phase
+    returns already answer."""
+    live, problem = None, None
+    if any(t.get("commit") and _fr.review_key(t, phase, None)[1] == "config"
+           for t in phase.get("tasks") or [] if isinstance(t, dict)):
+        live, problem = _config_rules.review_per_task_mode(ctx["config"])
+    filed = _fr.phase_returns(ctx["evidence"], str(phase.get("id")))
+    unread = [why for _rel, _body, why in filed if why]
+    return live, _fr.answered_entries(filed), problem or (
+        "; ".join(unread) if unread else None)
+
+
+def _owed_line(task, phase, live, answered):
+    """What this task's entry is owed, said on its own line."""
+    hit = answered.get((str(task.get("id")), task.get("commit")))
+    if hit is not None:
+        return "review answers: answered by %s at this commit" % (hit[0],)
+    key, source = _fr.review_key(task, phase, live)
+    if key != _fr.KEY_PHASE:
+        return ("review answers: not owed here - review.perTask reads %s (%s)"
+                % (key, source))
+    if _fr.is_fix_task(task, phase):
+        return ("review answers: not owed - a fix task the plan records as one "
+                "(task.fixes), closed with its own basis")
+    return "review answers: OWED - answer the three questions for this task"
+
+
 def compose_phase_brief(manifest, phase, ctx):
-    """The sign-off reviewer's whole brief, as lines: the request as saved, the
-    fixed question, and every task with a diff on its own record."""
+    """The sign-off reviewer's whole brief, as lines: the request as saved and
+    the choices it left open, the fixed question, every task with a diff on its
+    own record, and under `review.perTask: phase` the tasks owed their three
+    answers, the head this brief was computed at and the filing command keyed
+    on it."""
     pid = str(phase.get("id"))
+    head, head_why = _head(ctx)
+    live, answered, owed_why = _review_owed(ctx, phase)
     lines = ["# Brief for %s (reviewer, mode: phase)" % (pid,), "",
              "Computed by audit-lookup.py brief from %s at %s, plugin copy %s."
              % (ctx["manifest"], ctx["at"], ctx["plugin"]),
+             "head: %s" % (head,) if head else
+             "head: not read - %s" % (head_why,),
              "The rules and the return shape are agents/audit-reviewer.md's."]
     lines += _section("The request, as saved", _verbatim(
         phase.get("request"),
         "No request was saved for this phase (phase.request is absent), so "
         "where a task chose what the request left open cannot be asked of "
         "the record."))
+    lines += _section("The choices the request left open", _choices_lines(phase))
     lines += _section("The question", [PHASE_QUESTION])
     lines += _section("Phase desired outcome",
                       _verbatim(phase.get("desiredOutcome"),
@@ -678,11 +754,42 @@ def compose_phase_brief(manifest, phase, ctx):
             "gate commands, %s:" % (whose,)] + gate_lines(manifest, entries)
             + ["executor return (%s):" % (rel,),
                text if text is not None else
-               "none filed for its current start"])
+               "none filed for its current start",
+               _owed_line(task, phase, live, answered)])
     if skipped:
         lines += _section("Tasks with no diff", [
             "Closed with no commit (a no-change close) or cancelled, so there "
             "is no diff to review: %s" % (", ".join(skipped),)])
+    owed = [str(t.get("id")) for t in listed
+            if _fr.owed_answer(t, phase, live, answered)]
+    if owed_why:
+        lines += _section("Review answers owed per task", [
+            "Which tasks are owed their answers could not be read: %s. Sign-off "
+            "and its filing refuse until it can." % (owed_why,)])
+        return lines
+    if not owed:
+        lines += _section("Review answers owed per task", [
+            "None: no task here is owed its three answers by this review, so "
+            "return the object as your final message, as `mode: phase` always "
+            "has."])
+        return lines
+    file_cmd = ("%s file-return %s --role reviewer --head %s --project-dir %s "
+                "< <your return file>" % (_script(ctx, "manifest/audit-task.py"),
+                                          pid, head or "<head>", ctx["project"]))
+    lines += _section("Review answers owed per task", [
+        "review.perTask reads `phase`, so no reviewer answered these tasks one "
+        "by one: you do, by the rules `mode: task` applies to one task. Each "
+        "line below is one task owed a `tasks` entry, bound to the commit named "
+        "in its section above:"] + ["owed: %s" % (tid,) for tid in owed]
+        + ["Ask of each:"] + list(PER_TASK_QUESTIONS))
+    lines += _section("Your return", [
+        "Write the return object agents/audit-reviewer.md declares, with one "
+        "`tasks` entry per task owed above, then file it - the verb refuses a "
+        "return that leaves one out, and writes it once for this head:",
+        "    %s" % (file_cmd,) if head else
+        "The head could not be read (%s), so there is no head to file under: "
+        "run this brief again where git answers." % (head_why,),
+        "Then hand back one line: what that command printed."])
     return lines
 
 

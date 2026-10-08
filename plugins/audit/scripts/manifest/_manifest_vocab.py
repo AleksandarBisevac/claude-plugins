@@ -530,6 +530,11 @@ KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                # it left open; written by `audit-task.py add --from-file`, read by
                # the sign-off reviewer's brief.
                "request", "openChoices",
+               # `review.perTask` as it read when the phase's first task
+               # started, written once so the live config stops being read for
+               # this phase; each task copies it. Its words are the schema
+               # enum's.
+               "reviewPerTask",
                # v0.15 sharded layout: an index stub points at its shard file and
                # may carry an optimistic parallel-run claim (both surface on the
                # assembled phase via _manifest_io):
@@ -634,6 +639,13 @@ KNOWN_TASK = {"id", "title", "status", "model", "skills", "blockedBy",
               # path, and the premise at `SCHEMA_ANCHORS` below is that nothing
               # on that path loads this module.
               "outputs",
+              # The `review.perTask` value this task's work began under, kept
+              # so a key switched mid-phase or a move to another phase does
+              # not change how its answers are owed; and the review findings
+              # it was added to fix, the one thing that lets a task under
+              # `phase` close `not-asked`. The words of the first are the
+              # schema enum's, for `redFirst`'s reason above.
+              "reviewPerTask", "fixes",
               # not in the schema; reason in `OFF_SCHEMA` below:
               "details"}
 KNOWN_BUG = {"id", "title", "status", "severity", "reportedAt", "reportedBy",

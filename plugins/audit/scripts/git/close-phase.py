@@ -139,6 +139,8 @@ _output.install_path()
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _branch                                                       # noqa: E402
 import _evidence_io  # noqa: E402  (where the ledger lives, and its one strict decode)
+import _config_rules  # noqa: E402  (review_per_task_mode: the live key, refused not defaulted)
+import _filed_returns as _fr  # noqa: E402  (landing_refusals: sign-off's own property)
 import _journal_io                                                 # noqa: E402
 import _manifest_io as _mio                                          # noqa: E402
 import _manifest_rules as _rules  # noqa: E402  (revalidate what the stamp writes)
@@ -1712,6 +1714,34 @@ def gate_answer(project, manifest_path, manifest, phase, git_root=None,
     return answer, signed, notes
 
 
+def review_answers_refusal(project, manifest_path, phase):
+    """The sentence refusing a landing under `review.perTask: phase`, or None.
+
+    THE SAME PROPERTY SIGN-OFF ASKS, through the same function
+    (`_filed_returns.landing_refusals`), of the plan's RECORD as it stands now -
+    so a commit or an answer changed by hand after sign-off, or by a writer
+    nobody listed, is refused here too. Without it this command would be a way
+    past the sign-off verb. A task with no recorded key reads the config's
+    value now, and a config value outside the vocabulary is refused, never read
+    as `always`."""
+    tasks = [t for t in (phase or {}).get("tasks") or [] if isinstance(t, dict)]
+    live = None
+    if any(t.get("commit") and _fr.review_key(t, phase, None)[1] == "config"
+           for t in tasks):
+        _proj, config = _evidence_io.project_config_for(manifest_path, project)
+        live, problem = _config_rules.review_per_task_mode(config)
+        if problem:
+            return "%s." % (problem,)
+    held = _fr.landing_refusals(phase or {}, live)
+    if not held:
+        return None
+    return ("review.perTask reads `phase` and phase %s has task(s) whose review "
+            "answers are not on the record bound to their commits: %s. Sign-off "
+            "writes them from the phase review's filed return - file it and sign "
+            "off again." % ((phase or {}).get("id"),
+                            "; ".join("%s: %s" % (tid, why) for tid, why in held)))
+
+
 def override_row(project, phase_id, answer, reason, config=None):
     """The row a landing over its verdict's refusal writes BEFORE the merge, or
     None when the trail did not take it. Worded as what was asked, because the
@@ -2108,6 +2138,11 @@ def main(argv, out=print):
             "verdict - %s. Nothing was merged or written." % (args.phase, refused))
         out("           or pass %s \"<why this lands over it>\", which is "
             "journaled as %s" % (_vb.OVERRIDE_FLAG, _vb.ACTION_CLOSE_OVERRIDDEN))
+        return E_FAIL
+    held = review_answers_refusal(project, args.manifest, phase) \
+        if landing_due else None
+    if held:
+        out("[close-phase] REFUSED: %s Nothing was merged or written." % (held,))
         return E_FAIL
     if refused and landing_due \
             and not _journal_io.enabled(_journal_io.load_config(project)):

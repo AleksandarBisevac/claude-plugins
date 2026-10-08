@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Where an agent's filed return lives, what shape it must have, and how it is read.
+Where an agent's filed return lives, what shape it must have, and how it is read;
+and the one property a phase's landing asks of the plan under `review.perTask`.
 
 An agent's return used to be prose the main loop read and retyped, so nothing
 checked its shape and a close carried whatever the retyping kept. A return is now
@@ -22,7 +23,14 @@ The evidence directory is the caller's to resolve and hand in: resolving it is
 `_evidence_io`'s, one layer up, and keeping it out leaves this module at the
 floor with nothing to import but `_output`.
 
-WHAT NOTHING HERE CHECKS: the task id and the role are the caller's word.
+A PHASE-MODE REVIEW FILES TOO, under the phase id, keyed on the head its brief
+was computed at (`phase_return_rel`), and it carries one `tasks` entry per task
+owed an answer. The property a landing asks of the record (`landing_refusals`)
+lives here because two entry points ask it, `audit-task.py signoff` and
+`close-phase.py`, and a rule held twice is two rules.
+
+WHAT NOTHING HERE CHECKS: the task id, the role and the head are the caller's
+word.
 
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__filed_returns.py` - see `plugins/audit/tests/_harness.py`.
@@ -72,6 +80,12 @@ REVIEW_VERDICTS = ("clean", "findings")
 # `fr7` in `plugins/audit/tests/test__filed_returns.py` holds this tuple equal to
 # the enum.
 RED_FIRST_WORDS = ("proved", "could-not-prove", "not-attempted")
+
+# The grade only a reviewer gives - `_refs.RED_FIRST_REVIEWER_ONLY`, held equal
+# to it by `pk4` in the tests - and the words of the inherited-test question,
+# held equal to the plan schema's `intentCheck.inheritedTests` enum the same way.
+REVIEWER_ONLY_RED_FIRST = ("not-proved",)
+INHERITED_WORDS = ("none-found", "flagged", "not-asked")
 
 
 # --- the path ---------------------------------------------------------------------
@@ -196,3 +210,235 @@ def claims_from_return(evidence_dir, task):
         return None, problem
     claims = (body or {}).get("claims")
     return (claims if isinstance(claims, str) and claims.strip() else None), None
+
+
+# --- the per-task review's key, and the property a landing asks ---------------
+# `review.perTask` says where a task's three review answers - the intent binding,
+# the red-first grade and the inherited-test question - are given: by a reviewer
+# per task (`always`), by the phase review at sign-off (`phase`), or per task only
+# where a computed signal fires (`signals`). Its value is recorded on the phase at
+# its first start and on each task at its own, so a key switched mid-phase, or a
+# task moved between phases, keeps the reading its work began under.
+REVIEW_KEY_FIELD = "reviewPerTask"
+KEY_PHASE = "phase"
+# The intent word `done` writes for a task whose answers the phase review owes.
+# No caller can type it: `--intent` offers the answers, never this.
+INTENT_DEFERRED = "deferred"
+
+
+def review_key(task, phase, live):
+    """`(value, source)` - the task's recorded key, else its phase's, else
+    `live`, the config's reading now; `source` is `task`, `phase` or `config`.
+    A key recorded nowhere is never read as `always`."""
+    if isinstance(task, dict) and task.get(REVIEW_KEY_FIELD):
+        return task[REVIEW_KEY_FIELD], "task"
+    if isinstance(phase, dict) and phase.get(REVIEW_KEY_FIELD):
+        return phase[REVIEW_KEY_FIELD], "phase"
+    return live, "config"
+
+
+def is_fix_task(task, phase):
+    """Whether `task` is a fix task the plan records as one: it carries `fixes`,
+    and each finding named there sits in `phase`'s own review naming it as its
+    `fixTask`. A finding moved to another task, or a task moved away from its
+    findings, ends it."""
+    fixes = task.get("fixes") if isinstance(task, dict) else None
+    if not (isinstance(fixes, list) and fixes):
+        return False
+    review = phase.get("review") if isinstance(phase, dict) else None
+    found = dict((str(f.get("id")), f) for f in
+                 ((review or {}).get("findings") or []) if isinstance(f, dict))
+    return all((found.get(str(fid)) or {}).get("fixTask") == task.get("id")
+               for fid in fixes)
+
+
+def _said(block, key):
+    return isinstance(block.get(key), str) and block[key].strip() != ""
+
+
+def landing_problem(task, phase, live):
+    """None when `task` may reach its phase's landing, else what it lacks.
+
+    Asked only of a task that records a commit and whose key reads `phase`: its
+    `intentCheck` must carry an intent answer other than `deferred`, a red-first
+    grade and an inherited-test answer, each with its basis where it is
+    `not-asked`, bound to the commit the task records now. A recorded fix task
+    may carry `not-asked` with its basis instead."""
+    commit = task.get("commit") if isinstance(task, dict) else None
+    if not commit or review_key(task, phase, live)[0] != KEY_PHASE:
+        return None
+    block = task.get("intentCheck") if isinstance(task.get("intentCheck"),
+                                                  dict) else {}
+    if block.get("commit") != commit:
+        return ("no review answers are bound to its commit %s (intentCheck "
+                "names %s)" % (str(commit)[:12],
+                               str(block.get("commit") or "none")[:12]))
+    answer = block.get("answer")
+    if answer == "not-asked" and _said(block, "basis") \
+            and is_fix_task(task, phase):
+        return None
+    lacks = []
+    if answer in (None, "", INTENT_DEFERRED):
+        lacks.append("an intent answer (it reads %s)" % (answer or "none",))
+    elif answer == "not-asked" and not _said(block, "basis"):
+        lacks.append("the basis of its `not-asked`")
+    if not _said(block, "redFirst"):
+        lacks.append("a red-first grade")
+    if not _said(block, "inheritedTests"):
+        lacks.append("an inherited-test answer")
+    elif block["inheritedTests"] == "not-asked" \
+            and not _said(block, "inheritedTestsBasis"):
+        lacks.append("the basis of its inherited-test `not-asked`")
+    return ("it lacks %s" % (", ".join(lacks),)) if lacks else None
+
+
+def landing_refusals(phase, live):
+    """`[(task id, why), ...]` - every task of `phase` the property refuses,
+    in plan order. Empty is the one answer that lands."""
+    held = []
+    for task in (phase.get("tasks") or []) if isinstance(phase, dict) else []:
+        if not isinstance(task, dict):
+            continue
+        why = landing_problem(task, phase, live)
+        if why:
+            held.append((str(task.get("id")), why))
+    return held
+
+
+def owed_answer(task, phase, live, answered):
+    """Whether a phase review owes `task` its answers: it records a commit, its
+    key reads `phase`, it is not a recorded fix task, and no filed phase return
+    answers that commit (`answered` is `answered_entries`'s map)."""
+    commit = task.get("commit") if isinstance(task, dict) else None
+    return bool(commit
+                and review_key(task, phase, live)[0] == KEY_PHASE
+                and not is_fix_task(task, phase)
+                and (str(task.get("id")), commit) not in answered)
+
+
+# --- the phase return -------------------------------------------------------------
+# The keys of one `tasks` entry, read by the filing verb and held equal to the
+# return format in `agents/audit-reviewer.md` by `_refs.phase_return_key_drift`.
+PHASE_ENTRY_KEYS = ("id", "commit", "answer", "note", "missing", "redFirst",
+                    "redFirstBasis", "inheritedTests", "inheritedTestsBasis")
+_HEAD_SHAPE = re.compile(r"^[0-9a-f]{7,40}$")
+
+
+def phase_return_rel(phase_id, head):
+    """A phase review's filed return below the evidence directory: keyed on the
+    head its brief was computed at, so a review after fix tasks files beside the
+    earlier one and a second filing for one head is refused."""
+    return "%s/%s/%s.reviewer.json" % (RETURNS_DIRNAME, phase_id,
+                                       return_start_key(head))
+
+
+def head_problem(head):
+    """Why `head` cannot key a phase return, or None."""
+    return None if _HEAD_SHAPE.match(str(head or "")) else (
+        "the head %r is not a commit SHA in lower-case hex" % (head,))
+
+
+def phase_returns(evidence_dir, phase_id):
+    """`[(rel, body, problem), ...]` - every phase return filed for `phase_id`,
+    in file-name order. A file that will not parse is listed with its problem,
+    never dropped."""
+    folder = os.path.join(evidence_dir, RETURNS_DIRNAME, str(phase_id))
+    try:
+        names = sorted(n for n in os.listdir(folder)
+                       if n.endswith(".reviewer.json"))
+    except OSError:
+        return []
+    found = []
+    for name in names:
+        _text, body, problem = read_filed_return(os.path.join(folder, name))
+        found.append(("%s/%s/%s" % (RETURNS_DIRNAME, phase_id, name), body,
+                      problem))
+    return found
+
+
+def answered_entries(returns):
+    """`{(task id, commit): (rel, entry)}` off `phase_returns`'s list - the
+    first return to answer a commit; the filing verb refuses a second."""
+    answered = {}
+    for rel, body, _problem in returns:
+        entries = body.get("tasks") if isinstance(body, dict) else None
+        for entry in entries if isinstance(entries, list) else []:
+            if isinstance(entry, dict) and entry.get("id") and entry.get("commit"):
+                answered.setdefault((str(entry["id"]), entry["commit"]),
+                                    (rel, entry))
+    return answered
+
+
+def _entry_problems(entry, label):
+    problems = ["%s lacks `%s`" % (label, key) for key in PHASE_ENTRY_KEYS
+                if key not in entry]
+    words = (("answer", REVIEW_ANSWERS),
+             ("redFirst", RED_FIRST_WORDS + REVIEWER_ONLY_RED_FIRST),
+             ("inheritedTests", INHERITED_WORDS))
+    problems += ["%s: `%s` is %r, not one of %s"
+                 % (label, key, entry.get(key), ", ".join(vocab))
+                 for key, vocab in words
+                 if key in entry and entry.get(key) not in vocab]
+    if "missing" in entry and not isinstance(entry.get("missing"), list):
+        problems.append("%s: `missing` is not a list" % (label,))
+    if "redFirstBasis" in entry and not _said(entry, "redFirstBasis"):
+        problems.append("%s: `redFirstBasis` is empty" % (label,))
+    if entry.get("inheritedTests") == "not-asked" \
+            and not _said(entry, "inheritedTestsBasis"):
+        problems.append("%s: `inheritedTests` is not-asked with no basis"
+                        % (label,))
+    return problems
+
+
+def phase_return_problems(body, phase, live, answered):
+    """Every way a phase-mode reviewer return falls short, as sentences: the
+    reviewer's shape, then a `tasks` entry for each task owed an answer, whole,
+    naming a task of this phase at the commit it records and at a commit no
+    earlier filed return answers. Empty is the one answer that files."""
+    if not isinstance(body, dict):
+        return ["the return is a JSON %s, not an object" % type(body).__name__]
+    problems = _reviewer_problems(body)
+    tasks = dict((str(t.get("id")), t) for t in (phase.get("tasks") or [])
+                 if isinstance(t, dict))
+    owed = [tid for tid, t in tasks.items()
+            if owed_answer(t, phase, live, answered)]
+    entries = body.get("tasks")
+    if not isinstance(entries, list):
+        return problems + [
+            "`tasks` is missing or not a list - a phase review answers each "
+            "task owed an answer in its own entry, and this one owes: %s"
+            % (", ".join(owed) or "none")]
+    seen = []
+    for n, entry in enumerate(entries, 1):
+        if not isinstance(entry, dict):
+            problems.append("tasks entry %d is not an object" % (n,))
+            continue
+        tid = str(entry.get("id"))
+        label = "the entry for %s" % (tid,)
+        if tid in seen:
+            problems.append("%s is given twice" % (label,))
+            continue
+        seen.append(tid)
+        task = tasks.get(tid)
+        if task is None:
+            problems.append("%s names a task outside phase %s"
+                            % (label, phase.get("id")))
+            continue
+        problems += _entry_problems(entry, label)
+        prior = answered.get((tid, entry.get("commit")))
+        if entry.get("commit") != task.get("commit"):
+            problems.append("%s names commit %s, and %s records %s"
+                            % (label, str(entry.get("commit"))[:12], tid,
+                               str(task.get("commit") or "none")[:12]))
+        elif prior is not None:
+            problems.append("%s: %s already answers %s at %s, so each commit of "
+                            "a task is answered once"
+                            % (label, prior[0], tid, str(task["commit"])[:12]))
+        elif tid not in owed:
+            problems.append("%s: %s is owed no answer by this review (its key "
+                            "does not read phase, or it is a recorded fix task)"
+                            % (label, tid))
+    problems += ["the return lacks the entry for %s, which is owed an answer "
+                 "at commit %s" % (tid, str(tasks[tid].get("commit"))[:12])
+                 for tid in owed if tid not in seen]
+    return problems

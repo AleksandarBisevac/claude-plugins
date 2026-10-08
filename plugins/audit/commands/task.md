@@ -1,6 +1,6 @@
 ---
 description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — promote one to running, close one that landed, move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `start` promotes a task to in_progress so the plan gate resolves its files, without spawning anything; `done` closes it against the commit its work landed in, writing status, completedAt, commit, outcome and verifiedBy in one write — or, with `--no-change --reason`, closes a task whose answer was that nothing needed to change; `reopen` puts a done task back to pending with the reason recorded; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `block` sets a task blocked with the reason beside the status; `note` appends a dated note, the one addition a started task takes; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
-argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] [--from-file PATH] | start <taskId> [--force --reason "<why>"] | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] [--override-verdict TEXT] [--from-return] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id], or --test <path> --caught <runId> | uncouple --test <path> | mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId> | unmute --test <path> | cancel <id> --reason "<why>"'
+argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] [--from-file PATH] [--fixes findingIds] | start <taskId> [--force --reason "<why>"] | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] [--override-verdict TEXT] [--from-return] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id], or --test <path> --caught <runId> | uncouple --test <path> | mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId> | unmute --test <path> | cancel <id> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
@@ -219,6 +219,17 @@ per add is the class of error the script exists to delete.
    not resolve) and re-run. `3` the index lock is held by a live run — stop; do not
    take it over. `4` the lock looks abandoned — confirm with the human
    (AskUserQuestion), then re-run the same add with `--takeover`.
+
+### `--fixes <findingId>[,<findingId>]` — a fix task the plan records as one
+
+A task added to fix review findings names them: `--fixes P3-R1,P3-R2` writes `task.fixes` and
+each finding's `fixTask`, in the write that adds the task. It refuses, writing nothing, a
+finding outside the new task's own phase and one that already names a fix task; no other verb
+takes the flag. Under `review.perTask: phase` this is what lets the task close `--intent
+not-asked --intent-basis "<why>"` instead of owing the phase review its answers — and only
+while each finding it names still names it: a `resolve-finding` that points one at another
+task, or a `move` taking the task away from its findings, ends it, and the landing then
+refuses the task until a phase review answers it.
 
 ### The task gate is derived, and the report says from what
 
@@ -586,6 +597,20 @@ What it writes — exactly the fields step 4 prescribes, and nothing besides:
   came back; `--intent-basis` alone, with no `--intent` beside it, is refused too.
   `/audit:phase signoff` and `/audit:status` (on a phase whose sign-off is due) name the
   done tasks that carry **no** answer — `not-asked` is an answer, so it is not among them.
+- **Under `review.perTask: phase` — the shipped default — the rule above is replaced.** No
+  reviewer runs per task, so a close that passes `--commit`, with or without
+  `--from-return`, records **`intentCheck.answer = "deferred"`** itself and **refuses every
+  `--intent` word**, `not-asked` included, writing nothing. `deferred` is a word only this
+  verb writes; `--intent` does not offer it. The phase review answers the task at sign-off
+  (below), and `/audit:phase signoff` and `close-phase.py` refuse while it has not. The one
+  exception is a **fix task the plan records as one**: a task `add --fixes` wrote `fixes` on,
+  each of whose findings still names it as `fixTask` in its own phase's review, may close
+  `--intent not-asked --intent-basis "<why>"`. A `--no-change` close keeps the rule above.
+  Which reading a task is held to is recorded on it: `start` writes the phase's
+  `reviewPerTask` (the config's value at the phase's first start) onto each task, a `move`
+  carries it along, and a close of a task nothing recorded it on takes its phase's, else the
+  config's now, and writes it there — so switching the config mid-phase changes nothing
+  for a phase already under way. Set `review.perTask: always` to keep the rule above.
 - **journal** → one `task.done` row carrying the SHA in its summary and `details`.
   It is deliberately **not** `task.complete`: that action and `task.commit` are derived
   by `hooks/journal-writes.py` from the write itself and step 4c forbids appending them
@@ -626,7 +651,9 @@ phase reaches `done` only through sign-off, which writes a review verdict and a 
 stamp beside the status); a `done` or `cancelled` task, named as such; a missing or
 non-SHA `--commit` (with no `--no-change`); a SHA git can be asked about and does not have; a
 `--commit` close with no reviewer return filed for the current start and no `--intent
-not-asked`, or with a typed `--intent` that differs from the filed answer; a `--from-return`
+not-asked`, or with a typed `--intent` that differs from the filed answer; under
+`review.perTask: phase`, any `--intent` word on a `--commit` close of a task that is not a
+recorded fix task; a `--from-return`
 close with no executor return filed for the current start; and a task that was
 **never started** — `pending` with no attempt recorded means no spawn was ever written
 down, so the close would lay a terminal state over a hole, which is also the shape
@@ -688,6 +715,21 @@ the close commit, so a clone receives the claim beside the gate row it can be co
 an executor return's optional `claims` text becomes its own paragraph of that commit's
 message. **What it cannot hold:** the task id and the role are the caller's word — a filing
 under the wrong role, or for a task nobody has filed for yet, is not refused.
+
+**A phase review files too, under `review.perTask: phase`:** `file-return <phaseId> --role
+reviewer --head <sha>`, the head the phase brief (`audit-lookup.py brief <phaseId> --role
+phase`) was computed at and prints. It writes `<evidence dir>/returns/<phaseId>/<head>.reviewer.json`
+once per head, so a review after fix tasks files beside the earlier one. It refuses, writing
+nothing and naming each entry: a return with no `tasks` entry for a task owed its answers (a
+task with a commit whose key reads `phase`, not a recorded fix task, whose commit no filed
+return answers yet); an entry missing a key of the reviewer's return format or one of the
+three answers, or giving `not-asked` with no basis; an entry naming a task outside the phase,
+a commit other than the one its task records, or a commit an earlier filed return already
+answers. `--head` on a task's return is refused, and a phase return without it is too.
+`/audit:phase signoff` reads every return filed for the phase, writes each entry whose
+`commit` is the one its task records now onto that task's `intentCheck`, and then refuses —
+under `--verdict passed` and `--verdict skipped` alike — while any task owed its answers lacks
+one; `close-phase.py` asks the same of the plan's record before it merges.
 
 ## Subcommand: `reopen <taskId> --reason "<why>"`
 

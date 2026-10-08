@@ -1066,6 +1066,23 @@ SCHEMA_EXEMPTIONS = {
         "`redFirst.at`'s own addition: every other timestamp here is derived "
         "from the plan's own dates, and a close that never happened has no date "
         "to derive one from.",
+    "intentCheck.return":
+        "the filed reviewer return an answer was read from. Same reason as the "
+        "block above, and a path to a return no reviewer filed would name a "
+        "file the fixture does not hold.",
+    "intentCheck.redFirst":
+        "the phase review's red-first grade for a task, written by sign-off. "
+        "Same reason as the block above.",
+    "intentCheck.redFirstBasis":
+        "the evidence behind that grade, verbatim from the review. Same reason "
+        "as the block above, and a fabricated basis would be a quoted sentence "
+        "nobody said.",
+    "intentCheck.inheritedTests":
+        "the phase review's inherited-test answer for a task. Same reason as "
+        "the block above.",
+    "intentCheck.inheritedTestsBasis":
+        "the gate commands that answer read. Same reason as "
+        "`intentCheck.redFirstBasis`.",
     # `task.outputs` AND THE WHOLE `decisions[]` BLOCK, on `task.redFirst`'s
     # argument rather than a trigger of their own: no rendered surface reads
     # either, and the fixture is what those surfaces are built from.
@@ -1243,6 +1260,21 @@ SCHEMA_EXEMPTIONS = {
     "phase.openChoices":
         "written beside phase.request by the same verb and read by the same "
         "brief, for the same reason: no rendered surface shows it.",
+    # `review.perTask`'s recorded value and the fix-task key, on
+    # `task.intentCheck`'s argument: they decide how a close and a landing are
+    # held, and no rendered surface reads either.
+    "phase.reviewPerTask":
+        "the config's review.perTask as it read at the phase's first start, "
+        "read by `done`, the step driver and the landing property - none of "
+        "them a rendered surface, and nothing in a generated fixture closes or "
+        "lands.",
+    "task.reviewPerTask":
+        "the same value copied onto the task at its first start, for the same "
+        "reason as the phase's.",
+    "task.fixes":
+        "the review findings a task was added to fix, written by `add --fixes` "
+        "beside each finding's fixTask; read only by `done` and the landing "
+        "property, which no rendered surface shows.",
     "review.noEvidenceReason":
         "written only for a `passed` sign-off that no gate run backs, and the demo's "
         "phases are signed off on runs its ledger carries - a reason beside a run "

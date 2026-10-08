@@ -391,18 +391,18 @@ L7:
   audit-journal -> _claude_home, _evidence_io, _journal_io, _output
   audit-lock -> _claude_home, _locks, _output
   audit-logs -> _claude_home, _gate_feed, _output
-  audit-lookup -> _areas, _claude_home, _evidence_io, _filed_returns, _journal_io, _loader, _manifest_io, _manifest_vocab, _output
+  audit-lookup -> _areas, _claude_home, _config_rules, _evidence_io, _filed_returns, _journal_io, _loader, _manifest_io, _manifest_vocab, _output
   audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _areas, _branch, _claude_home, _commit_trail, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _locks, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
+  audit-task -> _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _locks, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
-  close-phase -> _branch, _claude_home, _evidence_io, _journal_io, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _tree_stamp, _verdict_binding, _worktrees
+  close-phase -> _branch, _claude_home, _config_rules, _evidence_io, _filed_returns, _journal_io, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _tree_stamp, _verdict_binding, _worktrees
   commit-audit-state -> _claude_home, _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
   commit-manifest-index -> _claude_home, _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
   commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
-  drive-phase -> _claude_home, _evidence_io, _filed_returns, _loader, _manifest_io, _output, _status_facts
+  drive-phase -> _claude_home, _config_rules, _evidence_io, _filed_returns, _loader, _manifest_io, _output, _status_facts
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts

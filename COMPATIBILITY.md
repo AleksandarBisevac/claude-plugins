@@ -345,6 +345,26 @@ is still true of a nested key.
   as green there and the cost is paid by whoever clones. Set `"warn"` to keep the
   diagnosis and lose the refusal, or `"off"` to restore the previous behaviour
   exactly.
+
+  **`review.perTask` breaks this promise a second time, and ships in a minor release
+  by the maintainer's decision** — a recorded exception to the rule that a changed
+  default is a major. It ships as `"phase"`, which means a repository that has never
+  written the key no longer has a reviewer run per task: `audit-task.py done --commit`
+  records the task's intent as `deferred` and refuses every `--intent` word (a fix task
+  `add --fixes` recorded may still close `not-asked` with its basis); the phase review
+  answers each task at sign-off, in a `tasks` array it files with `file-return <phaseId>
+  --role reviewer --head <sha>`; and `/audit:phase signoff` — under `--verdict skipped`
+  as under `passed` — and `close-phase.py` refuse while a task with a commit lacks its
+  three answers bound to that commit. A phase already under way when the plugin is
+  upgraded reads the new default too, unless it recorded a `reviewPerTask` value, which
+  no older copy wrote — so its tasks closed by a per-task reviewer are owed the phase
+  review's answers before it lands. It was shipped as the default because a reviewer per
+  task is a cost paid on every task that a plain session does not pay
+  (`docs/research/pipeline-cost-design.md`, C14), and every answer the per-task review
+  gave is still given, bound to the same commit; what moves is when, before the merge
+  instead of before the commit. Set
+  `"always"` to restore the previous behaviour exactly, before upgrading if a phase is in
+  flight.
 - **When two keys can express the same thing, which one wins is written down.**
   `planGate` beats `enforce`, and that precedence does not change without a major
   release. A superseded key is kept and documented, never silently reinterpreted.
@@ -476,6 +496,16 @@ depending on an implementation:
   `--from-return` and `file-return` are additive. A pipeline that closed with a typed or a
   missing intent is a pipeline that now stops, and the repair is the filed review or the
   stated `not-asked`,
+- **signing off a phase as `skipped`, under `review.perTask: phase` — and it changed.**
+  `audit-task.py signoff --verdict skipped` used to sign off with neither a gate run nor a
+  reason. Under `review.perTask: phase` (the shipped default, above) it now **exits 2**,
+  writing nothing and naming each task, while a task of the phase with a commit lacks the
+  phase review's three answers bound to that commit, exactly as `--verdict passed` does; the
+  group form asks every member before writing any. `close-phase.py` asks the same of the
+  plan's record and **exits 1** before it merges or hands over the merge command. A phase
+  with no task whose key reads `phase` signs off and lands as before. The `tasks` array a
+  phase return carries, `intentCheck`'s `deferred`, `redFirst` and `inheritedTests` fields,
+  and the `reviewPerTask` and `fixes` fields are additive,
 - **the id `/audit:phase add` allocates when you do not pass `--id`.** It was the lowest free
   `P<n>` and is the **highest in use plus one**. The taken set is unchanged — live phases and
   every id a parked proposal reserves — and `--id` still overrides it. The old rule re-minted

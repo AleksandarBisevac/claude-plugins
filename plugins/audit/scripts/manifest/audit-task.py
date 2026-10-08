@@ -17,8 +17,8 @@ Usage:
                 [--risk low|med|high] [--blocked-by id,id] [--depends-on id,id]
                 [--description TEXT|-] [--tests-mode tdd|regression|gate-only]
                 [--tests-add TEXT ...] [--gate CMD ... | --gate-clear]
-                [--failing-from RUNID] [--dry-run] [--project-dir DIR]
-                [--takeover] [--json]
+                [--failing-from RUNID] [--fixes finding,finding] [--dry-run]
+                [--project-dir DIR] [--takeover] [--json]
   audit-task.py add --from-file PATH [manifest] [--project-dir DIR]
                 [--takeover] [--json]
   audit-task.py add-phase "<title>" [manifest] --outcome "<what success is>|-"
@@ -45,6 +45,8 @@ Usage:
                 [--from-return]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py file-return <taskId> --role executor|reviewer [manifest]
+                [--project-dir DIR] [--takeover] [--json]  < return.json
+  audit-task.py file-return <phaseId> --role reviewer --head <sha> [manifest]
                 [--project-dir DIR] [--takeover] [--json]  < return.json
   audit-task.py move <taskId> --to <phaseId> [manifest]
                 [--project-dir DIR] [--takeover] [--json]
@@ -382,7 +384,10 @@ import _id_shape              # noqa: E402  (the one answer to which id comes ne
 import _evidence_io           # noqa: E402  (read_rows: the runs a move leaves keyed
                               # to the old id, which `move` reports)
 import _filed_returns as _fr  # noqa: E402  (a filed return's path, shape and
-                              # write-once create, shared with the brief and the commit)
+                              # write-once create, shared with the brief and the commit;
+                              # and the landing property, shared with close-phase.py)
+import _config_rules          # noqa: E402  (review_per_task_mode: the one reading of
+                              # `review.perTask`, refused rather than defaulted)
 import _gate_derive           # noqa: E402  (is_shared_key, path_scoped_sibling,
                               # repointed: a TASK's own gate and a PHASE's derived
                               # one ask the same three questions, so both entry
@@ -2742,6 +2747,37 @@ def _build_task(task_id, title, args, phase, assembled, failing_row=None,
     return task, unnamed, gate_basis
 
 
+def _fixes_targets(assembled, phase, fixes):
+    """`(findings, None)` - the review findings `--fixes` names, each of the new
+    task's own phase and naming no task yet - or `(None, refusal)` naming every
+    one that is not. A finding of another phase would key an exception the task's
+    landing is never asked about, and one already naming a task belongs to it."""
+    if not fixes:
+        return [], None
+    own = dict((str(f.get("id")), f) for f in
+               ((phase.get("review") or {}).get("findings") or [])
+               if isinstance(f, dict))
+    found, bad = [], []
+    for fid in fixes:
+        entry = own.get(fid)
+        if entry is None:
+            elsewhere = [str(ph.get("id")) for ph, _i in _finding_hits(assembled, fid)]
+            bad.append("%s is %s" % (fid, "a finding of %s, not of %s"
+                                     % (", ".join(elsewhere), phase.get("id"))
+                                     if elsewhere else "no finding of %s"
+                                     % (phase.get("id"),)))
+        elif entry.get("fixTask"):
+            bad.append("%s already names %s as its fix task" % (fid,
+                                                                entry["fixTask"]))
+        else:
+            found.append(entry)
+    if bad:
+        return None, ("[audit-task] --fixes names only findings of the task's own "
+                      "phase that name no fix task yet: %s. Nothing written."
+                      % ("; ".join(bad),))
+    return found, None
+
+
 def _locked_add(args, project, config, mpath, title, out):
     """Everything between acquire and release: read, allocate, mutate, write,
     validate-from-disk, roll back on findings, journal, report."""
@@ -2801,11 +2837,23 @@ def _locked_add(args, project, config, mpath, title, out):
         if refusal:
             out(refusal)
             return E_USAGE
+    fixes = _split_csv(args.fixes)
+    targets, refusal = _fixes_targets(assembled, phase, fixes)
+    if refusal:
+        out(refusal)
+        return E_USAGE
 
     task_id = _allocate_id(assembled, phase_id, _mint_suffix(mpath, assembled))
     task, unnamed_add, gate_basis = _build_task(task_id, title, args, phase,
                                                 assembled, failing_row,
                                                 project)
+    if fixes:
+        # ONE WRITE, BOTH HALVES: the task's `fixes` and each finding's
+        # `fixTask`, which is what lets the task close `not-asked` under
+        # `review.perTask: phase` - and a link either half lacked would end it.
+        task["fixes"] = list(fixes)
+        for entry in targets:
+            entry["fixTask"] = task_id
     # THE STAT IS OF THE FILE THE SUFFIX POINTS AT, NOT OF THE ENTRY'S OWN
     # SPELLING. A schema-legal `a/b.py:12-34` is a real, existing `a/b.py`, and
     # `os.path.exists` asked of the raw string can only ever say no -- reporting
@@ -4066,6 +4114,13 @@ def _locked_start(args, project, config, mpath, tid, out):
             "records." % (tid, ", ".join(waiting)))
         return E_USAGE
 
+    # The PHASE's key, never the task's: a task moved in with its own keeps it,
+    # and the phase it joined still records what the config read at its start.
+    start_key, _source, refusal = _review_key_for(config, None, phase)
+    if refusal:
+        out(refusal)
+        return E_USAGE
+
     git_root = os.path.abspath(os.path.join(project,
                                             (config or {}).get("gitRoot") or "."))
     entry = _phase_entry(git_root, assembled.get("meta") or {}, phase)
@@ -4129,6 +4184,12 @@ def _locked_start(args, project, config, mpath, tid, out):
                       "kept": _claim_kept(claim) if contested else None}
 
         was = _start_task(node, now)
+        # `review.perTask`, ONCE PER PHASE AND KEPT BY THE TASK: the phase's first
+        # start records the live value, each task copies its phase's at its own
+        # first start, and a later start keeps what is there - so a key switched
+        # mid-phase, or a task moved to a phase that reads otherwise, keeps the
+        # reading its work began under.
+        _record_key(node, phase, start_key)
         if entry["state"] in ("cut", "adopt"):
             phase["branch"] = entry["branch"]
             if not phase.get("baseRef"):
@@ -4345,7 +4406,13 @@ def cmd_file_return(args, out):
         out("[audit-task] file-return needs a task id")
         return E_USAGE
     role = (args.role or "").strip()
+    head = (args.head or "").strip() or None
     refusal = _file_return_refusal(tid, role)
+    if refusal is None and head is not None:
+        refusal = (_file_return_refusal(head, role)
+                   or ("[audit-task] REFUSED: %s. Nothing written."
+                       % (_fr.head_problem(head),) if _fr.head_problem(head)
+                       else None))
     if refusal:
         out(refusal)
         return E_USAGE
@@ -4356,7 +4423,9 @@ def cmd_file_return(args, out):
         out("[audit-task] file-return reads the return as JSON on stdin, and "
             "what arrived does not parse (%s) -- nothing written" % (exc,))
         return E_USAGE
-    problems = _fr.return_problems(role, body)
+    # A PHASE return's shape is judged under the lock, against the phase it
+    # names: whether an entry is owed depends on the plan as it stands.
+    problems = [] if head is not None else _fr.return_problems(role, body)
     if problems:
         out("[audit-task] REFUSED: the %s return for %s does not have the shape "
             "its role declares -- nothing written:" % (role, tid))
@@ -4365,20 +4434,67 @@ def cmd_file_return(args, out):
         return E_USAGE
     return _under_lock(args, project, out,
                        lambda config, mpath: _locked_file_return(
-                           args, project, mpath, tid, role, text, out))
+                           args, project, mpath, tid, role, text, out,
+                           config=config, head=head, body=body))
 
 
-def _locked_file_return(args, project, mpath, tid, role, text, out):
-    """Write one return, once. The manifest is read for the task's current start
-    and never written."""
+def _phase_return_refusal(project, config, mpath, phase, role, head, body):
+    """`(path, None)` for a phase return that may be filed, or `(None, refusal)`:
+    the reviewer's role, a head, a readable record of the returns already filed,
+    and every entry `_fr.phase_return_problems` asks for."""
+    pid = str(phase.get("id"))
+    if role != "reviewer":
+        return None, ("[audit-task] %s is a PHASE, and a phase return is the "
+                      "phase reviewer's: --role reviewer. Nothing written." % (pid,))
+    if head is None:
+        return None, ("[audit-task] a phase return for %s needs --head <sha>, the "
+                      "head its brief was computed at (audit-lookup.py brief %s "
+                      "--role phase names it). Nothing written." % (pid, pid))
+    proj, cfg = _evidence_io.project_config_for(mpath, project)
+    evdir = _evidence_io.evidence_dir(proj, cfg)
+    filed = _fr.phase_returns(evdir, pid)
+    unread = [why for _rel, _body, why in filed if why]
+    if unread:
+        return None, ("[audit-task] REFUSED: a phase return already filed for %s "
+                      "cannot be read, so which commits it answers is unknown: %s. "
+                      "Nothing written." % (pid, "; ".join(unread)))
+    live, problem = _config_rules.review_per_task_mode(config)
+    if problem and any(_fr.review_key(t, phase, None)[1] == "config"
+                       for t in phase.get("tasks") or [] if isinstance(t, dict)):
+        return None, "[audit-task] REFUSED: %s. Nothing written." % (problem,)
+    problems = _fr.phase_return_problems(body, phase, live,
+                                         _fr.answered_entries(filed))
+    if problems:
+        return None, ("[audit-task] REFUSED: the phase return for %s does not "
+                      "answer what it owes -- nothing written:\n%s"
+                      % (pid, "\n".join("  " + p for p in problems)))
+    return os.path.join(evdir, *_fr.phase_return_rel(pid, head).split("/")), None
+
+
+def _locked_file_return(args, project, mpath, tid, role, text, out, config=None,
+                        head=None, body=None):
+    """Write one return, once. The manifest is read for the task's current start,
+    or for a phase return the tasks it owes, and never written."""
     try:
         assembled = _mio.load_manifest(mpath)
     except Exception as exc:
         out("[audit-task] cannot read/assemble manifest: %s" % exc)
         return E_USAGE
     kind, node, _phase = _find_target(assembled, tid)
+    if kind == "phase":
+        path, refusal = _phase_return_refusal(project, config, mpath, node, role,
+                                              head, body)
+        if refusal:
+            out(refusal)
+            return E_USAGE
+        return _file_once_report(args, project, path, tid, role, text, out,
+                                 {"head": head})
     if kind != "task":
         out("[audit-task] no task with id %r in %s" % (tid, mpath))
+        return E_USAGE
+    if head is not None:
+        out("[audit-task] --head keys a PHASE return, and %s is a task: its "
+            "return is keyed on its current start. Nothing written." % (tid,))
         return E_USAGE
     if node.get("status") in _mio.TERMINAL:
         out("[audit-task] %s is already %s -- a return filed after the close is "
@@ -4390,21 +4506,30 @@ def _locked_file_return(args, project, mpath, tid, role, text, out):
             "current start to file a return under -- /audit:task start %s "
             "first" % (tid, tid))
         return E_USAGE
+    return _file_once_report(args, project, path, tid, role, text, out,
+                             {"startedAt": node.get("startedAt")})
+
+
+def _file_once_report(args, project, path, tid, role, text, out, keyed):
+    """The exclusive create and its report, for a task's return and a phase's
+    alike; `keyed` is what the path was keyed on, for `--json`."""
     rel = _output.posix_rel(path, project)
     try:
         _fr.file_once(path, text)
     except FileExistsError:
         out("[audit-task] REFUSED: the %s return for %s is already filed for this "
-            "start (%s) -- it stays as filed. A re-spawn files after "
-            "/audit:task start re-stamps the start." % (role, tid, rel))
+            "%s (%s) -- it stays as filed. A re-spawn files after "
+            "/audit:task start re-stamps the start, and a phase review after "
+            "fix tasks files under the new head." % (
+                role, tid, "head" if "head" in keyed else "start", rel))
         return E_USAGE
     except OSError as exc:
         out("[audit-task] the return could not be written (%s) -- nothing "
             "filed" % (exc,))
         return E_INVALID
     if args.as_json:
-        result = {"ok": True, "id": tid, "role": role,
-                  "startedAt": node.get("startedAt"), "written": [rel]}
+        result = {"ok": True, "id": tid, "role": role, "written": [rel]}
+        result.update(keyed)
         result.update(project_basis_key(args))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
@@ -4767,7 +4892,38 @@ def _close_returns(project, mpath, node, from_return):
     return filed, None
 
 
-def _close_intent(args, tid, filed, no_change):
+# Where a task's `review.perTask` value was read, in the words a refusal says it.
+_KEY_SOURCES = {"task": "recorded on the task", "phase": "recorded on its phase",
+                "config": "the config's value, which no start recorded yet"}
+
+
+def _review_key_for(config, task, phase):
+    """`(key, source, refusal)` - `_fr.review_key` with the live config read only
+    where neither the task nor its phase records a key, and a config value
+    outside the vocabulary refused rather than read as the default."""
+    key, source = _fr.review_key(task, phase, None)
+    if source != "config":
+        return key, source, None
+    live, problem = _config_rules.review_per_task_mode(config)
+    if problem:
+        return None, source, ("[audit-task] REFUSED: %s. Nothing written."
+                              % (problem,))
+    return live, source, None
+
+
+def _record_key(task, phase, key):
+    """Write `key` onto `task` and onto `phase` where either records none; the
+    `changes` rows for what moved."""
+    rows = []
+    for node, kind in ((phase, "phase"), (task, "task")):
+        if not node.get(_fr.REVIEW_KEY_FIELD):
+            node[_fr.REVIEW_KEY_FIELD] = key
+            rows.append({"id": node.get("id"), "field": _fr.REVIEW_KEY_FIELD,
+                         "from": None, "to": key})
+    return rows
+
+
+def _close_intent(args, tid, filed, no_change, held, fix_task):
     """`(intent, basis, intent_return, refusal)` - the intent answer a close
     records, and the rule every close that passes `--commit` is held to.
 
@@ -4782,11 +4938,29 @@ def _close_intent(args, tid, filed, no_change):
       * with none filed, only `--intent not-asked` with its basis closes;
       * a `--no-change` close has no diff to bind and keeps the rule it had.
 
-    This is the seam a per-phase review setting reads: a close whose review is
-    carried to the phase would record its own word here instead.
+    UNDER `review.perTask: phase` THE CLOSE WRITES ITS OWN WORD, `deferred`, and
+    refuses every `--intent` word, `not-asked` included: the three answers are
+    the phase review's, and a word typed here would be one sign-off counts as
+    answered. The one exception is a fix task the plan records as one
+    (`_fr.is_fix_task`), which may close `not-asked` with its basis. A filed
+    per-task reviewer return is not read under this key either.
+    `held` is `(key, where it was read)`.
     """
     if no_change:
         return args.intent, args.intent_basis, None, None
+    key, source = held
+    if key == _fr.KEY_PHASE:
+        if args.intent is None:
+            return _fr.INTENT_DEFERRED, None, None, None
+        if args.intent == "not-asked" and fix_task:
+            return args.intent, args.intent_basis, None, None
+        return None, None, None, (
+            "[audit-task] REFUSED: %s's review.perTask reads `phase` (%s), so "
+            "its three review answers are the phase review's and --intent %s is "
+            "not this close's to give. Close it with no --intent, which records "
+            "`deferred`; sign-off writes the phase review's answers. Only a fix "
+            "task `add --fixes` recorded may close --intent not-asked with its "
+            "basis. Nothing written." % (tid, _KEY_SOURCES[source], args.intent))
     reviewer = filed.get("reviewer")
     if reviewer is not None:
         rel, body = reviewer
@@ -4953,10 +5127,14 @@ def _locked_done(args, project, config, mpath, tid, out):
         if refusal:
             out(refusal)
             return E_USAGE
-    filed, refusal = _close_returns(project, mpath, node, args.from_return)
+    key, key_source, refusal = _review_key_for(config, node, phase)
+    filed = {}
+    if refusal is None:
+        filed, refusal = _close_returns(project, mpath, node, args.from_return)
     if refusal is None:
         intent, intent_basis, intent_return, refusal = _close_intent(
-            args, tid, filed, no_change is not None)
+            args, tid, filed, no_change is not None, (key, key_source),
+            _fr.is_fix_task(node, phase))
     from_values = None
     if refusal is None and args.from_return:
         from_values, refusal = _from_return_values(filed, tid)
@@ -4993,6 +5171,9 @@ def _locked_done(args, project, config, mpath, tid, out):
                      intent, intent_basis=intent_basis,
                      no_change=no_change, red_first=red_first,
                      intent_return=intent_return)
+    # The key this close was held to, kept where nothing recorded one: a task
+    # blocked from `pending` reaches here with no `start` having written it.
+    _record_key(node, phase, key)
     phase_id = phase.get("id")
     # A bug this task fixes derives `fixed` (and its `fixedIn`) from this close, so
     # both are stored on the bug - in the index, which is where `bugs[]` lives.
@@ -5113,7 +5294,10 @@ def _locked_done(args, project, config, mpath, tid, out):
         out("  intentCheck: %s (commit %s)%s"
             % (intent_check["answer"], intent_check.get("commit") or "none",
                " -- basis: %s" % intent_check["basis"]
-               if intent_check.get("basis") else ""))
+               if intent_check.get("basis") else
+               " -- review.perTask reads phase: the phase review answers it, "
+               "and sign-off refuses until it does"
+               if intent_check["answer"] == _fr.INTENT_DEFERRED else ""))
     else:
         out("  intentCheck: NO ANSWER RECORDED -- pass --intent %s"
             % ("|".join(INTENT_ANSWERS),))
@@ -7819,6 +8003,68 @@ def phase_binding(project, mpath, manifest, phase, files, record):
         "phase %s declares no gate, so its sign-off rests on review alone" % (pid,))
 
 
+# --- the per-task answers a phase review carries -----------------------------------
+# Under `review.perTask: phase` no reviewer runs per task, so sign-off is where each
+# task's three answers reach its record: read off every phase return filed for the
+# phase, counted only where an entry names the commit its task records NOW, and
+# written onto `intentCheck` with that commit. Then the one property is asked of the
+# plan about to be written (`_fr.landing_refusals`), under either verdict - so a
+# `skipped` cannot sign off a phase over a task owed its answers.
+_CARRIED = ("answer", "redFirst", "redFirstBasis", "inheritedTests",
+            "inheritedTestsBasis")
+
+
+def _carry_answers(project, mpath, config, phase, now):
+    """`(lines, refusal)` - write each filed phase return's answers onto the task
+    whose current commit it names, record the key where none is, then ask the
+    landing property. `lines` says what was carried; `refusal` is the whole
+    refusal, or None. Mutates the assembled `phase` only; nothing is written
+    here."""
+    pid = str(phase.get("id"))
+    proj, cfg = _evidence_io.project_config_for(mpath, project)
+    filed = _fr.phase_returns(_evidence_io.evidence_dir(proj, cfg), pid)
+    unread = [why for _rel, _body, why in filed if why]
+    if unread:
+        return [], ("REFUSED: a phase return filed for %s cannot be read, so the "
+                    "answers it carries are unknown: %s. Nothing written."
+                    % (pid, "; ".join(unread)))
+    tasks = [t for t in phase.get("tasks") or [] if isinstance(t, dict)]
+    live, problem = None, None
+    if any(_fr.review_key(t, phase, None)[1] == "config" for t in tasks):
+        live, problem = _config_rules.review_per_task_mode(config)
+    if problem:
+        return [], "REFUSED: %s. Nothing written." % (problem,)
+    answered = _fr.answered_entries(filed)
+    lines = []
+    for task in tasks:
+        if not task.get("commit"):
+            continue
+        key, _source = _fr.review_key(task, phase, live)
+        _record_key(task, phase, key)
+        hit = answered.get((str(task.get("id")), task.get("commit")))
+        if key != _fr.KEY_PHASE or hit is None:
+            continue
+        rel, entry = hit
+        block = {"commit": task["commit"], "at": now, "return": rel}
+        block.update((k, entry[k]) for k in _CARRIED if k in entry)
+        task["intentCheck"] = block
+        lines.append("  %s: %s, red-first %s, inherited tests %s (from %s)"
+                     % (task.get("id"), entry.get("answer"),
+                        entry.get("redFirst"), entry.get("inheritedTests"), rel))
+    held = _fr.landing_refusals(phase, live)
+    if not held:
+        return lines, None
+    return lines, (
+        "REFUSED: review.perTask reads `phase` for task(s) of %s still owed their "
+        "review answers, so the phase does not sign off - under --verdict passed "
+        "or skipped alike. Nothing written:\n%s\n    Brief the phase reviewer "
+        "(audit-lookup.py <manifest> brief %s --role phase) and file its return "
+        "(audit-task.py file-return %s --role reviewer --head <the head its brief "
+        "names>), then sign off again."
+        % (pid, "\n".join("  %s: %s" % (tid, why) for tid, why in held), pid,
+           pid))
+
+
 def _locked_signoff(args, project, config, mpath, pid, summary, out):
     try:
         raw_index = _mio.read_json(mpath)
@@ -7835,6 +8081,10 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
         out("[audit-task] no phase %r in %s" % (pid, mpath))
         return E_USAGE
     refusal = _signoff_refusal(phase, pid)
+    if refusal:
+        out("[audit-task] " + refusal)
+        return E_USAGE
+    carried, refusal = _carry_answers(project, mpath, config, phase, _utc_now())
     if refusal:
         out("[audit-task] " + refusal)
         return E_USAGE
@@ -7917,6 +8167,7 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
         result = {"ok": True, "id": pid, "verdict": args.verdict, "summary": summary,
                   "effectiveStatus": effective, "awaiting": awaiting, "branch": branch,
                   "intentUnanswered": unanswered,
+                  "answersCarried": [line.strip() for line in carried],
                   "stored": settled, "written": written,
                   "warnings": _wg.collapse_machine(warnings, written_manifest)}
         result.update(jres)
@@ -7936,6 +8187,10 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
         out("  no intent answer recorded for %d done task(s): %s -- `intentCheck` "
             "is absent, which reads as no answer and never as agreement"
             % (len(unanswered), ", ".join(unanswered)))
+    if carried:
+        out("  the phase review's answers, written onto each task's intentCheck:")
+        for line in carried:
+            out(line)
     for line in _settled_lines(settled):
         out(line)
     for line in _wg.collapse(warnings, written_manifest):
@@ -9069,6 +9324,18 @@ def _locked_group(args, project, config, mpath, ids, summary, out):
             "branch and baseRef it grades. Nothing written."
             % (", ".join(unbound), "is" if len(unbound) == 1 else "are",
                args.branch, ",".join(ids), args.branch))
+        return E_USAGE
+    # EVERY MEMBER IS ASKED, before any is written: a group signs off whole or
+    # not at all, so one member owed its answers refuses them all.
+    now = _utc_now()
+    held = [refusal for refusal in
+            (_carry_answers(project, mpath, config, phase, now)[1]
+             for phase in plan["members"]) if refusal]
+    if held:
+        out("[audit-task] %s cannot be signed off together - every member is "
+            "asked:" % (", ".join(ids),))
+        for refusal in held:
+            out(refusal)
         return E_USAGE
     reason = (args.no_evidence_reason or "").strip()
     carrier = [ph for ph in plan["members"] if ph.get("id") == plan["gate"]][0]
@@ -10491,7 +10758,7 @@ VERB_FLAGS = {
     "add": ("phase", "skills", "model", "files", "outputs", "risk",
             "blocked_by", "depends_on", "description", "tests_mode",
             "tests_add", "gate", "gate_clear", "dry_run", "failing_from",
-            "from_file"),
+            "from_file", "fixes"),
     "add-phase": ("phase_id", "outcome", "description", "area", "review_skill",
                   "blocked_by", "gate", "gate_clear", "park"),
     "cancel": ("reason",),
@@ -10508,8 +10775,9 @@ VERB_FLAGS = {
              "intent_basis", "no_change", "reason", "override_verdict",
              "from_return"),
     # `file-return` takes the role and nothing that could name a path; the
-    # return itself arrives on stdin.
-    "file-return": ("role",),
+    # return itself arrives on stdin. A phase return adds the head its brief
+    # was computed at, which keys the file.
+    "file-return": ("role", "head"),
     "scope": ("files", "tests_mode", "tests_add", "gate", "gate_clear",
               "description", "risk", "blocked_by", "depends_on"),
     "retarget": ("gate", "gate_clear", "gate_drop", "gate_set", "area",
@@ -10816,6 +11084,16 @@ def build_parser():
     # `resolve-finding` only. The task whose commit settles the finding.
     p.add_argument("--fix-task", dest="fix_task", default=None, metavar="TASK",
                    help="resolve-finding: the task whose commit settles it")
+    # `add` only. The findings of the new task's own phase it is added to fix,
+    # written as `task.fixes` and each finding's `fixTask` in the same write.
+    p.add_argument("--fixes", action="append", default=None, metavar="FINDING",
+                   help="add: " + _list_help("review finding ids of the task's "
+                                             "own phase", "--fixes P3-R1,P3-R2",
+                                             empties=False))
+    # `file-return` only, for a PHASE return: the head the reviewer's brief was
+    # computed at, which keys the file.
+    p.add_argument("--head", default=None, metavar="SHA",
+                   help="file-return: a phase return's head, as its brief names it")
     # `bug-add` only. The three sentences of a bug report beside its
     # `--description`, one flag per field and spelled as the field. The title
     # stays the POSITIONAL, for `--rename`'s reason above: a `--title` flag

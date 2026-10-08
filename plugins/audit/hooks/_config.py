@@ -122,6 +122,17 @@ Config keys (all optional; defaults in DEFAULTS below):
         uses for its own key and for the same reason — zero, negative or
         garbled is a mistake nobody meant, and folding it into the default
         would make the mistake look like a decision.
+  review.perTask          str   — where a task's three review answers are
+        given. One of REVIEW_PER_TASK_MODES: "phase" (the default — no
+        reviewer per task; `done` records the intent as `deferred` and the
+        phase review answers each task at sign-off, which refuses while one
+        lacks its answers), "always" (a reviewer per task before its close),
+        or "signals" (a reviewer per task only where its red-first proof did
+        not come back `proved` or its return disagrees with the recorded gate).
+        Recorded on the phase at its first start and on each task at its own,
+        so the live value is read only while a phase records none. No hook
+        reads this; `_config_rules.review_per_task_mode` does, and refuses a
+        value outside the vocabulary rather than reading the default.
 
 This module also hosts the path/manifest helpers the hooks share (rel_path,
 within_root, matches_exempt, strip_line_suffix, in_progress_*).
@@ -328,6 +339,14 @@ DEFAULTS = {
     # task's own runtime — see executor_context_bound_hours below and the
     # "executor.maxHours" entry above for why 3.
     "executor": {"runsGate": "own-tests", "maxHours": 3},
+    # Where a task's three review answers - the intent binding, the red-first
+    # grade, the inherited-test question - are given: "phase" (shipped) carries
+    # them to the phase review at sign-off, "always" spawns a reviewer per task,
+    # "signals" spawns one only where a computed signal fires. Shipped "phase",
+    # which is a BEHAVIOUR CHANGE for a repository that sets nothing - see
+    # COMPATIBILITY.md, where it is recorded as one. No hook reads this; it is
+    # here for `ui`'s reason, and `_config_rules.review_per_task_mode` reads it.
+    "review": {"perTask": "phase"},
 }
 
 
@@ -3142,6 +3161,10 @@ def enforce_always(cfg):
 # reads); the two are pinned together by that validator's own selftest, the same
 # shape PLAN_GATE_TIERS/PLAN_GATE_MODES already use one section up.
 RUNS_GATE_MODES = ("never", "own-tests", "full")
+
+# `review.perTask`'s words. `_config_rules.py` mirrors this tuple as its own
+# REVIEW_PER_TASK_MODES and pins the two together, RUNS_GATE_MODES's shape.
+REVIEW_PER_TASK_MODES = ("always", "phase", "signals")
 
 
 def executor_gate_policy(cfg):

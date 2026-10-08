@@ -3472,8 +3472,10 @@ def _cases(check):
           "`findings` and not a field inside one. A discrepancy filed as a finding "
           "becomes a fix run editing code to match a description nobody checked; "
           "one left out of the return is simply lost - so the shape is what keeps "
-          "the two classes apart: %r" % (_iq_keys,),
-          _iq_keys == ["findings", "preExisting", "intent", "verdict"])
+          "the two classes apart - and `tasks`, the phase review's per-task "
+          "entries, is a top-level key of its own after them, never folded "
+          "into `intent`: %r" % (_iq_keys,),
+          _iq_keys == ["findings", "preExisting", "intent", "verdict", "tasks"])
     check("iq6b ...and the brief SAYS that, where the reviewer reads it - a key "
           "order nobody explains is a key order the next author collapses",
           "`intent` is not a finding" in _squash(_REV))
@@ -3597,16 +3599,16 @@ def _cases(check):
     _ih_nested = _return_nested_keys(_REV, "intent")
     check("ih6 ...reported as a sibling of `redFirst` INSIDE `intent`, with a "
           "basis beside the word and no new top-level key: `intent` is where this "
-          "brief already keeps an answer that is not a finding, and a fifth "
-          "top-level key is how the return shape gets collapsed by the next "
-          "author. BOTH SENTENCES, the prose and the TEMPLATE the reviewer "
+          "brief already keeps an answer that is not a finding, and a top-level "
+          "key beyond the phase review's `tasks` is how the return shape gets "
+          "collapsed by the next author. BOTH SENTENCES, the prose and the TEMPLATE the reviewer "
           "copies - pinning the prose alone left the template free to rename the "
           "field under it, which is how this case was first written and how it "
           "survived its own mutation: %r"
           % ((_ih_words, _return_top_keys(_REV), _ih_nested),),
           all(_ih_words.values())
           and _return_top_keys(_REV) == ["findings", "preExisting", "intent",
-                                         "verdict"]
+                                         "verdict", "tasks"]
           and "redFirst" in _ih_nested
           and "inheritedTests" in _ih_nested
           and "inheritedTestsBasis" in _ih_nested)
@@ -3618,7 +3620,7 @@ def _cases(check):
           % (("`inheritedTests`" in _iq_exec, "inheritedTests" in _iq_signoff),),
           "`inheritedTests`" in _iq_exec and "`findings`" in _iq_exec
           and "inheritedTests" not in _iq_signoff)
-    _ih_handed = ("| `tests.gate` | task |" in _REV,
+    _ih_handed = ("| `tests.gate` | task, and phase per owed task |" in _REV,
                   "`tests.gate` **commands themselves**" in _iq_exec)
     check("ih8 ...and the input the bound is made of is actually HANDED OVER: the "
           "brief lists `tests.gate` among what it is given and the spawn passes "
@@ -4226,8 +4228,75 @@ def _lock_recipe_cases(check):
         _harness.remove_tree(tmp)
 
 
+_PK_ENTRY = ('"tasks": [{"id": "<task id>",\n'
+             '           "commit": "<sha>",\n'
+             '           "answer": "<word>", "note": "n",\n'
+             '           "missing": ["<input>", ...],\n'
+             '           "redFirst": "<word>", "redFirstBasis": "b",\n'
+             '           "inheritedTests": "<word>",\n'
+             '           "inheritedTestsBasis": "b"}, ...]')
+_PK_VERB = ('PHASE_ENTRY_KEYS = ("id", "commit", "answer", "note", "missing",\n'
+            '                    "redFirst", "redFirstBasis", "inheritedTests",\n'
+            '                    "inheritedTestsBasis")\n')
+
+
+def _phase_key_cases(check):
+    """The keys of a phase review's `tasks` entry are one tuple: the filing
+    verb's `PHASE_ENTRY_KEYS`, and the return format the reviewer reads."""
+    live = M.phase_return_key_drift()
+    check("prk1 the reviewer's return format declares exactly the keys the "
+          "filing verb reads off a `tasks` entry, `commit` among them: %r"
+          % (live,),
+          live["problems"] == [] and "commit" in live["brief"]
+          and sorted(live["brief"]) == sorted(live["verb"]))
+    check("prk2 `red_first_vocabulary_drift` stays green over the reviewer "
+          "definition that carries the `tasks` entry - its `redFirst` names a "
+          "list rather than restating one: %r"
+          % (M.red_first_vocabulary_drift()["problems"],),
+          M.red_first_vocabulary_drift()["problems"] == [])
+
+    def tree(brief, verb):
+        tmp = tempfile.mkdtemp(prefix="qg-prk-")
+        _write(tmp, M.PLUGIN_REL + "/" + M.RED_FIRST_REVIEWER_BRIEF,
+               "## Return format\n\n{\"findings\": [],\n " + brief + "}\n")
+        _write(tmp, M.PLUGIN_REL + "/" + M.PHASE_RETURN_VERB, verb)
+        return tmp
+
+    out = {}
+    for name, brief, verb in (
+            ("allow", _PK_ENTRY, _PK_VERB),
+            ("brief-drops-commit", _PK_ENTRY.replace('"commit": "<sha>",', ""),
+             _PK_VERB),
+            ("verb-gains", _PK_ENTRY, _PK_VERB.replace(
+                '"inheritedTestsBasis")', '"inheritedTestsBasis", "extra")')),
+            ("no-entry", '"verdict": "clean"', _PK_VERB),
+            ("no-tuple", _PK_ENTRY, "KEYS = ()\n")):
+        tmp = tree(brief, verb)
+        try:
+            out[name] = M.phase_return_key_drift(tmp)["problems"]
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    # THE ALLOW CASE: the one a check widened into refusing every entry fails.
+    check("prk3 THE ALLOW CASE: a brief and a verb naming the same keys are "
+          "quiet: %r" % (out["allow"],), out["allow"] == [])
+    check("prk4 the reviewer's return format dropping `commit` from the entry is "
+          "reported by name: %r" % (out["brief-drops-commit"],),
+          len(out["brief-drops-commit"]) == 1
+          and "'commit'" in out["brief-drops-commit"][0])
+    check("prk5 the filing verb's tuple gaining a key the format lacks is "
+          "reported by name: %r" % (out["verb-gains"],),
+          len(out["verb-gains"]) == 1 and "'extra'" in out["verb-gains"][0])
+    check("prk6 a format with no `tasks` entry, and a verb with no tuple, are "
+          "each a problem and never a clean comparison against nothing: %r"
+          % ((out["no-entry"], out["no-tuple"]),),
+          len(out["no-entry"]) == 1 and len(out["no-tuple"]) == 1)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _harness.stage(check, "prk-block", _phase_key_cases)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

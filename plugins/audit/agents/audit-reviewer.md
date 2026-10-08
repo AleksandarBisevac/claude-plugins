@@ -25,16 +25,20 @@ that is **absent**: an answer whose input you were not given is `cannot-tell`, n
 substitute a default for a missing input — a basis you invented is worse than a gap you
 reported.
 
+In `mode: phase` the brief may list tasks **owed** their answers (the `review.perTask: phase`
+reading, below): each such task's section carries the inputs the table marks `task`, one set
+per task, and its commit SHA — `git show <sha> -- <files>` is that task's own diff.
+
 | Input | Mode | What it is |
 |---|---|---|
 | the diff | both | `git diff <ref> -- <files>` — the change you charge findings to |
-| `description` | task | what the task ASKED for, verbatim from the manifest |
+| `description` | task, and phase per owed task | what the task ASKED for, verbatim from the manifest |
 | `desiredOutcome` | both | the phase's stated goal |
-| `outcome` | task | the executor's CLAIM — `{technical, descriptive}`, unedited |
-| gate results | task | per-gate `pass` / `fail` / `could-not-run`, and the run the orchestrator recorded |
-| `testsAdded` | task | the tests the executor says it added |
-| `redFirst` | task | its own word for whether a new test was proved able to fail — when it sent one |
-| `tests.gate` | task | the task's own gate commands — the set that bounds the inherited-test question below |
+| `outcome` | task, and phase per owed task | the executor's CLAIM — `{technical, descriptive}`, unedited, inside its filed return |
+| gate results | task, and phase per owed task | per-gate `pass` / `fail` / `could-not-run`, and the run the orchestrator recorded |
+| `testsAdded` | task, and phase per owed task | the tests the executor says it added |
+| `redFirst` | task, and phase per owed task | its own word for whether a new test was proved able to fail — when it sent one |
+| `tests.gate` | task, and phase per owed task | the task's own gate commands — the set that bounds the inherited-test question below |
 | review skill | phase | the resolved skill name, when the project sets one |
 | derived gate basis | phase | `derive-phase-gate.py --brief`'s one line plus the runId the gate was recorded under — handed only when a derivation is already recorded for this phase (`phase.testGateDerived` present, e.g. a re-review after a gate). At a first sign-off nothing is recorded yet, so this input is absent; read it, never re-derive it |
 
@@ -58,6 +62,18 @@ sides cannot be triaged by anyone.
 In `mode: phase` you ask the same question against the phase's `desiredOutcome`. There is
 no single executor claim at sign-off, so `intent.note` says what the phase's diff does and
 `redFirst` is `not-attempted`.
+
+**Under `review.perTask: phase` no reviewer ran per task**, so the phase review carries what
+they would have returned. The brief's *Review answers owed per task* section lists each task
+owed its answers (`owed: <id>`), and for each one you ask all three questions of this
+document — the intent question above, *Can this test fail?* and *The tests this task did not
+write* — by the rules `mode: task` applies to one task: against that task's own diff, its
+description, its filed return and its own `tests.gate`. Each goes in its own entry of the
+`tasks` array in the return format below, with the commit the brief handed for that task. The
+phase-level `intent` keeps its meaning, an answer against `desiredOutcome`. The filing verb
+refuses a return that leaves out an owed task's entry, an entry missing one of the three
+answers, `not-asked` with no basis, or an entry whose `commit` is not the one its task
+records — and says which entries it owes, so file again with them.
 
 ## Can this test fail?
 
@@ -90,8 +106,10 @@ question is evidence, not reading the test:
 - `not-attempted` is for a `gate-only` task, which adds no test by design, and for a
   `regression` task that made no red run, because that mode orders none.
 - `not-proved` is **yours alone**: a declared reviewer-only grade for "nothing I was
-  handed shows a red". An executor never sends it and the record never holds it — an
-  executor that watched nothing fail has one of the three words above for why.
+  handed shows a red". An executor never sends it and `task.redFirst` never holds it — an
+  executor that watched nothing fail has one of the three words above for why. Under
+  `review.perTask: phase` sign-off records your grade, this one included, in the task's
+  `intentCheck.redFirst`, apart from the executor's word.
 
 The vocabulary is the schema's `redFirst.status` enum plus that one declared grade, and
 `red_first_vocabulary_drift()` in `plugins/audit/scripts/_refs.py` fails the build when
@@ -165,7 +183,10 @@ May:
 - in `mode: task`, ONE call of the filing verb for your own return —
   `audit-task.py file-return <taskId> --role reviewer`, the command your brief names. It
   takes no path: it derives the one file it writes, and it never replaces a return already
-  filed, so it cannot overwrite the executor's claim you were sent to check.
+  filed, so it cannot overwrite the executor's claim you were sent to check. In
+  `mode: phase`, when the brief lists tasks owed their answers, the same one call files
+  your phase return — `audit-task.py file-return <phaseId> --role reviewer --head <sha>`,
+  the head your brief names.
 
 Must not:
 
@@ -243,8 +264,22 @@ Your ENTIRE final message is ONLY this JSON object (no prose):
             "redFirstBasis": "the command and exit code that proves it, or what was absent",
             "inheritedTests": "none-found|flagged|not-asked",
             "inheritedTestsBasis": "the gate commands read and the files they selected, or what stopped you asking"},
- "verdict": "clean | findings"
+ "verdict": "clean | findings",
+ "tasks": [{"id": "<task id>",
+            "commit": "<the commit SHA the brief handed for this task>",
+            "answer": "<one word of intent.answer's list>",
+            "note": "what this task's diff does, said against its description and its claim",
+            "missing": ["<an input this task's entry was not handed>", ...],
+            "redFirst": "<one word of intent.redFirst's list>",
+            "redFirstBasis": "the command and exit code that proves it, or what was absent",
+            "inheritedTests": "<one word of intent.inheritedTests's list>",
+            "inheritedTestsBasis": "the gate commands read and the files they selected"}, ...]
 }
+
+`tasks` is `mode: phase`'s, one entry per task the brief lists as owed, and absent in
+`mode: task`. Each entry names a word list rather than repeating it, so each list is
+declared once; `phase_return_key_drift()` in `plugins/audit/scripts/_refs.py` fails the
+build when this entry's keys and the filing verb's `PHASE_ENTRY_KEYS` part ways.
 
 **`intent` is not a finding, and filing it as one loses it.** A `findings` entry names a
 file:line and a resolution an executor can apply. A divergence has no such resolution: the
@@ -269,5 +304,14 @@ reviewer`, the object on stdin. It checks the shape (`intent.answer` one of the 
 `verdict` one of its two, `findings` a list), exits 2 naming what is wrong and writes
 nothing, and otherwise writes your return once, to a path it derives from the task and its
 current start; a second filing in the same start is refused and the first stays as filed.
-Then hand back one line: what the command printed. In `mode: phase` you return the object
-as your final message, as before.
+Then hand back one line: what the command printed. In `mode: phase` with no task owed, you
+return the object as your final message, as before.
+
+**In `mode: phase` with tasks owed, the reader is the sign-off verb.** File the object with
+the command your brief names; the verb refuses, writing nothing, a return that leaves an owed
+task out or answers a commit its task no longer records. `/audit:phase signoff` then reads
+every phase return filed for the phase, takes an entry only while its `commit` is the commit
+its task records, and writes that entry's three answers onto the task's `intentCheck` with
+that commit. It refuses to sign off — and `close-phase.py` refuses to merge — while a task
+owed its answers lacks one, so an entry you leave out or guess is the one thing standing
+between that phase and its landing.

@@ -148,8 +148,188 @@ def _cases(check):
           and M.claims_from_return(root, {"id": "P1.1"}) == (None, None))
 
 
+_SHA = "0123456789abcdef0123456789abcdef01234567"
+_SHA2 = "fedcba9876543210fedcba9876543210fedcba98"
+
+
+def _answered(commit=_SHA, **over):
+    """An `intentCheck` carrying the three answers a phase review writes."""
+    block = {"answer": "matches", "commit": commit, "at": "z",
+             "redFirst": "proved", "redFirstBasis": "t.py exit 1",
+             "inheritedTests": "none-found", "inheritedTestsBasis": "t.py"}
+    block.update(over)
+    return block
+
+
+def _entry(tid="P1.1", commit=_SHA, **over):
+    """One `tasks` entry of a phase-mode reviewer return."""
+    entry = {"id": tid, "commit": commit, "answer": "matches", "note": "n",
+             "missing": [], "redFirst": "proved",
+             "redFirstBasis": "t.py exit 1, its own case",
+             "inheritedTests": "not-asked",
+             "inheritedTestsBasis": "the gate runs the whole suite"}
+    entry.update(over)
+    return entry
+
+
+def _phase_return(entries):
+    return {"findings": [], "preExisting": [],
+            "intent": {"answer": "matches", "note": "n", "missing": []},
+            "verdict": "clean", "tasks": entries}
+
+
+def _phase(tasks, key=None, findings=None):
+    phase = {"id": "P1", "tasks": tasks}
+    if key is not None:
+        phase["reviewPerTask"] = key
+    if findings is not None:
+        phase["review"] = {"findings": findings}
+    return phase
+
+
+def _held_cases(check):
+    """The per-task review's key, read once per phase and kept by the task, and
+    the one property a landing asks of the plan's record under `phase`."""
+    t = {"id": "P1.1", "commit": _SHA}
+    check("pk1 the key is the task's own when it records one, else its phase's, "
+          "else the live config's - and the answer names which it was",
+          M.review_key(dict(t, reviewPerTask="always"), _phase([], "phase"),
+                       "phase") == ("always", "task")
+          and M.review_key(t, _phase([], "always"), "phase") == ("always", "phase")
+          and M.review_key(t, _phase([]), "phase") == ("phase", "config"))
+    # The second direction: a key recorded nowhere is NOT read as `always`.
+    check("pk2 a key recorded nowhere reads the live config, never `always` by "
+          "default: %r" % (M.review_key(t, _phase([]), "phase"),),
+          M.review_key(t, _phase([]), "phase")[0] == "phase"
+          and M.review_key(t, _phase([]), "always")[0] == "always")
+
+    with open(os.path.join(_output.PLUGIN_ROOT, "schema",
+                           "audit-plan.schema.json"), "r", encoding="utf-8") as fh:
+        ic = json.load(fh)["$defs"]["intentCheck"]["properties"]
+    check("pk4 the reviewer-only grade is `_refs`'s, and the red-first and "
+          "inherited-test words a phase entry may carry are the plan schema's "
+          "`intentCheck` enums, so the filing verb holds no vocabulary of its "
+          "own: %r" % ((ic.get("redFirst"), ic.get("inheritedTests")),),
+          M.REVIEWER_ONLY_RED_FIRST == tuple(_refs.RED_FIRST_REVIEWER_ONLY)
+          and list(M.INHERITED_WORDS) == (ic.get("inheritedTests") or {})
+          .get("enum")
+          and list(M.RED_FIRST_WORDS + M.REVIEWER_ONLY_RED_FIRST)
+          == (ic.get("redFirst") or {}).get("enum")
+          and M.INTENT_DEFERRED in ((ic.get("answer") or {}).get("enum") or []))
+
+    fix = dict(t, fixes=["P1-R1"])
+    linked = [{"id": "P1-R1", "fixTask": "P1.1"}]
+    check("pk3 a task is a recorded fix task only while it carries `fixes` and "
+          "every finding it names, in its own phase's review, names it as "
+          "`fixTask` - the link alone is not the key, and a link moved away "
+          "ends it",
+          M.is_fix_task(fix, _phase([fix], findings=linked))
+          and not M.is_fix_task(t, _phase([t], findings=linked))
+          and not M.is_fix_task(fix, _phase([fix], findings=[
+              {"id": "P1-R1", "fixTask": "P1.9"}]))
+          and not M.is_fix_task(fix, _phase([fix], findings=[])))
+
+    ok = dict(t, reviewPerTask="phase", intentCheck=_answered())
+    deferred = dict(t, reviewPerTask="phase",
+                    intentCheck={"answer": "deferred", "commit": _SHA})
+    check("pp1 ALLOW: under `phase`, a task whose intentCheck carries the three "
+          "answers bound to its commit passes the property",
+          M.landing_refusals(_phase([ok]), "phase") == [])
+    check("pp2 a task closed `deferred` fails the property, named by id",
+          [r[0] for r in M.landing_refusals(_phase([deferred]), "phase")]
+          == ["P1.1"])
+    missing = []
+    for field in ("answer", "redFirst", "inheritedTests"):
+        block = _answered()
+        block.pop(field)
+        if not M.landing_refusals(_phase([dict(ok, intentCheck=block)]), "phase"):
+            missing.append(field)
+    check("pp3 each of the three answers removed alone fails the property: %r"
+          % (missing,), missing == [])
+    check("pp4 answers bound to another commit fail the property - the task's "
+          "own commit moved, or the answer's",
+          M.landing_refusals(_phase([dict(ok, commit=_SHA2)]), "phase")
+          and M.landing_refusals(_phase([dict(ok, intentCheck=_answered(
+              commit=_SHA2))]), "phase"))
+    check("pp5 an inherited-test `not-asked` needs its basis",
+          M.landing_refusals(_phase([dict(ok, intentCheck=_answered(
+              inheritedTests="not-asked", inheritedTestsBasis=""))]), "phase")
+          and not M.landing_refusals(_phase([dict(ok, intentCheck=_answered(
+              inheritedTests="not-asked", inheritedTestsBasis="whole suite"))]),
+              "phase"))
+    fixed = dict(fix, reviewPerTask="phase",
+                 intentCheck={"answer": "not-asked", "basis": "a fix task",
+                              "commit": _SHA})
+    check("pp6 ALLOW: a recorded fix task closed `not-asked` with its basis "
+          "passes; the same record on a task with no `fixes` fails",
+          M.landing_refusals(_phase([fixed], findings=linked), "phase") == []
+          and M.landing_refusals(_phase([dict(fixed, fixes=None)],
+                                        findings=linked), "phase"))
+    # The second direction: the property must not fire where G1 is off.
+    check("pp7 ALLOW: a task whose key reads `always` - its own, its phase's or "
+          "the live config's - and a task with no commit are not asked",
+          M.landing_refusals(_phase([dict(deferred, reviewPerTask="always")]),
+                             "phase") == []
+          and M.landing_refusals(_phase([{"id": "P1.1", "intentCheck": {}}]),
+                                 "phase") == []
+          and M.landing_refusals(_phase([dict(t, intentCheck={})]),
+                                 "always") == [])
+
+    # ---- the phase return ----------------------------------------------------
+    two = _phase([dict(t, reviewPerTask="phase"),
+                  {"id": "P1.2", "commit": _SHA2, "reviewPerTask": "phase"}])
+    good = _phase_return([_entry(), _entry("P1.2", _SHA2)])
+    check("ps1 ALLOW: a phase return with one whole entry per task owed an "
+          "answer has no problem: %r"
+          % (M.phase_return_problems(good, two, "phase", {}),),
+          M.phase_return_problems(good, two, "phase", {}) == [])
+    short = M.phase_return_problems(_phase_return([_entry()]), two, "phase", {})
+    check("ps2 a return lacking the entry of a task owed an answer is refused "
+          "naming that task: %r" % (short,),
+          any("P1.2" in p for p in short))
+    stray = M.phase_return_problems(_phase_return(
+        [_entry(), _entry("P1.2", _SHA2), _entry("P9.9")]), two, "phase", {})
+    moved = M.phase_return_problems(_phase_return(
+        [_entry(), _entry("P1.2", _SHA)]), two, "phase", {})
+    check("ps3 an entry naming a task outside the phase, or a commit other than "
+          "the one its task records, is named: %r" % ((stray, moved),),
+          any("P9.9" in p for p in stray) and any(_SHA[:12] in p for p in moved))
+    earlier = M.phase_return_problems(
+        good, two, "phase", {("P1.1", _SHA): ("returns/P1/x.reviewer.json", {})})
+    check("ps4 an entry for a commit an earlier filed return already answers is "
+          "refused, and the task it names is then not owed: %r" % (earlier,),
+          any("already answers" in p for p in earlier)
+          and M.phase_return_problems(
+              _phase_return([_entry("P1.2", _SHA2)]), two, "phase",
+              {("P1.1", _SHA): ("returns/P1/x.reviewer.json", {})}) == [])
+    lacking = []
+    for key in M.PHASE_ENTRY_KEYS:
+        entry = _entry()
+        entry.pop(key)
+        if not M.phase_return_problems(_phase_return(
+                [entry, _entry("P1.2", _SHA2)]), two, "phase", {}):
+            lacking.append(key)
+    check("ps5 every key of the entry is one whose absence is refused: %r"
+          % (lacking,), lacking == [])
+    bare = M.phase_return_problems(_phase_return(
+        [_entry(inheritedTestsBasis=""), _entry("P1.2", _SHA2)]), two, "phase",
+        {})
+    check("ps6 `not-asked` with no basis is refused", bare != [])
+    check("ps7 a return with no `tasks` array at all is refused as the old "
+          "definition's shape, naming the entries it owes",
+          any("P1.1" in p for p in M.phase_return_problems(
+              dict(good, tasks=None), two, "phase", {})))
+    check("ps8 the phase return's path is keyed on the head its brief was "
+          "computed at: %r" % (M.phase_return_rel("P1", _SHA),),
+          M.phase_return_rel("P1", _SHA)
+          == "returns/P1/%s.reviewer.json" % (_SHA,))
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _harness.stage(check, "fr-block", _cases)
+        _harness.stage(check, "pk-block", _held_cases)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

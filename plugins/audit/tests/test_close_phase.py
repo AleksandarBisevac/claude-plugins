@@ -957,6 +957,111 @@ def _main_tree_cases(check):
         _harness.remove_tree(root)
 
 
+_RA_ANSWERED = {"answer": "matches", "redFirst": "proved",
+                "redFirstBasis": "t.py exit 1", "inheritedTests": "not-asked",
+                "inheritedTestsBasis": "the gate runs the whole suite"}
+
+
+def _review_answer_fixture(name, task_fields):
+    """`(root, mpath, git, sha)` - a signed-off P1 on `audit/p1-demo` whose one
+    task records the work commit, with `task_fields` laid over it. `{sha}` in a
+    string value is replaced with that commit."""
+    root = _harness.fixture_root("closephase-%s" % (name,))
+    git = _fixture_git(root)
+    _init_fixture_repo(git)
+    mpath = _write_plan(root, {"developmentBranch": "main"},
+                        [_signed_phase("P1", "audit/p1-demo")])
+    git("add", "-A")
+    git("commit", "-q", "-m", "base")
+    git("checkout", "-q", "-b", "audit/p1-demo")
+    with open(os.path.join(root, "work.txt"), "w") as fh:
+        fh.write("work\n")
+    git("add", "work.txt")
+    git("commit", "-q", "-m", "work")
+    sha = git("rev-parse", "HEAD").stdout.decode().strip()
+    _set_review_record(mpath, sha, task_fields)
+    git("add", "-A")
+    git("commit", "-q", "-m", "plan")
+    return root, mpath, git, sha
+
+
+def _set_review_record(mpath, sha, task_fields):
+    with open(mpath, "r", encoding="utf-8") as fh:
+        plan = json.load(fh)
+    task = plan["phases"][0]["tasks"][0]
+    task["commit"] = sha
+    for key, value in task_fields.items():
+        task[key] = json.loads(json.dumps(value).replace("{sha}", sha))
+    if "phaseReview" in task:
+        plan["phases"][0]["review"] = task.pop("phaseReview")
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(plan, fh)
+
+
+def _review_answer_cases(check):
+    """`review.perTask: phase` asked at the plugin's own merge: the property
+    sign-off asks, read off the record as it stands, so a record changed after
+    sign-off is refused here too."""
+    answered = dict(_RA_ANSWERED, commit="{sha}")
+    cases = (
+        ("ra1", "deferred",
+         {"reviewPerTask": "phase",
+          "intentCheck": {"answer": "deferred", "commit": "{sha}"}}, False),
+        ("ra2", "answered", {"reviewPerTask": "phase", "intentCheck": answered},
+         True),
+        ("ra3", "commit-moved",
+         {"reviewPerTask": "phase", "intentCheck": answered,
+          "commit": "0000000000000000000000000000000000000000"}, False),
+        ("ra4", "answer-moved",
+         {"reviewPerTask": "phase",
+          "intentCheck": dict(answered,
+                              commit="0000000000000000000000000000000000000000")},
+         False),
+        ("ra5", "fix-relinked",
+         {"reviewPerTask": "phase", "fixes": ["P1-R1"],
+          "intentCheck": {"answer": "not-asked", "basis": "fix task",
+                          "commit": "{sha}"},
+          "phaseReview": {"status": "passed", "findings": [
+              {"id": "P1-R1", "severity": "low", "file": "work.txt",
+               "issue": "i", "resolution": "r", "fixTask": "P1.9"}]}}, False),
+        ("ra6", "fix-linked",
+         {"reviewPerTask": "phase", "fixes": ["P1-R1"],
+          "intentCheck": {"answer": "not-asked", "basis": "fix task",
+                          "commit": "{sha}"},
+          "phaseReview": {"status": "passed", "findings": [
+              {"id": "P1-R1", "severity": "low", "file": "work.txt",
+               "issue": "i", "resolution": "r", "fixTask": "P1.1"}]}}, True),
+        # The second direction: where G1 is off nothing is asked.
+        ("ra7", "always", {"reviewPerTask": "always"}, True),
+    )
+    labels = {
+        "ra1": "a task closed `deferred` whose answers no sign-off wrote is "
+               "refused at the merge",
+        "ra2": "ALLOW: the same task with its three answers bound to its commit "
+               "merges",
+        "ra3": "a task whose `commit` was changed by hand after sign-off is "
+               "refused - the property reads the record, not which verbs ran",
+        "ra4": "...and so is one whose `intentCheck.commit` was",
+        "ra5": "a fix task closed not-asked whose finding was pointed at another "
+               "task is refused",
+        "ra6": "ALLOW: the same fix task, its finding still naming it, merges",
+        "ra7": "ALLOW: a task whose key reads `always` merges with no phase "
+               "answers - a merge refusing every task would fail here",
+    }
+    for cid, name, fields, lands in cases:
+        root = None
+        try:
+            root, mpath, git, _sha = _review_answer_fixture(name, fields)
+            code, text = _close(mpath, root)
+            ok = (code == 0 and _landed(git)) if lands else (
+                code == 1 and not _landed(git) and "review.perTask" in text
+                and "P1.1" in text)
+            check("%s %s: exit %r, %r" % (cid, labels[cid], code, text[-240:]), ok)
+        finally:
+            if root:
+                _harness.remove_tree(root)
+
+
 # The trail's action name for a close made over its verdict's refusal, spelled
 # out: it is what a reader greps the journal for, so the suite pins the literal.
 _OVERRIDE_ACTION = "audit.verdict.close-overridden"
@@ -3191,6 +3296,7 @@ def _selftest():
         _parked_cases(check)
         _landed_cases(check)
         _main_tree_cases(check)
+        _harness.stage(check, "ra-block", _review_answer_cases)
         _override_cases(check)
         _landing_cases(check)
         _checked_out_cases(check)

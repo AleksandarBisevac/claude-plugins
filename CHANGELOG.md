@@ -14,8 +14,40 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `docs/audit/audit-plan.json` there. An absolute `manifestPath` is used as given, the way the
   hooks already read it. `audit-usage.py` asks the same resolver, so the three scripts behind the
   first-contact commands agree on which plan is the project's.
+- **`review.perTask` in `.claude/audit.config.json`: `always`, `phase` or `signals`.** It says
+  where a task's three review answers - does the diff do what the task asked, was its new test
+  seen red, would an inherited test pass with the behaviour deleted - are given: by a reviewer
+  per task (`always`), by the phase review at sign-off (`phase`), or per task only where the
+  red-first proof did not come back `proved` or the filed return disagrees with the recorded
+  gate (`signals`). `audit-task.py start` records the value on the phase at its first start and
+  on each task, so a key switched mid-phase changes nothing for a phase already under way. The
+  panel's Settings tab has a control for it. **Its default is `phase`, which changes behaviour
+  for a config that does not set the key** - see *Changed*.
+- **`audit-task.py add --fixes <findingId>[,<findingId>]`** writes `task.fixes` and each
+  finding's `fixTask` in the write that adds the task, refusing a finding of another phase or
+  one already naming a task. Under `phase` such a task may close `--intent not-asked` with its
+  basis.
+- **A phase review files its return:** `audit-task.py file-return <phaseId> --role reviewer
+  --head <sha>`, with a `tasks` array holding one entry per task owed its answers. The phase
+  reviewer's brief (`audit-lookup.py brief <phaseId> --role phase`) now prints the phase's
+  `openChoices`, the head it was computed at, the tasks owed their answers and the filing
+  command. `_refs.phase_return_key_drift()` holds the entry's keys in
+  `agents/audit-reviewer.md` equal to the ones the filing verb reads.
 
 ### Changed
+- **Without a `review.perTask` key, no reviewer runs per task any more.** The default is `phase`.
+  `audit-task.py done --commit <sha>` records the task's intent as `deferred` and refuses every
+  `--intent` word, writing nothing - `not-asked` included, except on a task `add --fixes`
+  recorded as a fix task. The step driver (`drive-phase.py`) dispatches no per-task reviewer
+  and still records each task's gate before its close. The phase review answers each task at
+  sign-off; `/audit:phase signoff` writes those answers onto each task's `intentCheck` and
+  **refuses, under `--verdict skipped` as under `passed`, while a task with a commit lacks them**,
+  and `close-phase.py` refuses to merge on the same reading of the plan's record. A phase
+  already under way when you upgrade reads the new default too. **To keep today's behaviour,
+  set `"review": {"perTask": "always"}`** in `.claude/audit.config.json` - before upgrading if a
+  phase is in flight. This ships in a minor release by the maintainer's decision;
+  `COMPATIBILITY.md` records it as a named exception to the promise that a new key never
+  changes behaviour for a config that does not set it.
 - **`/audit:status`, `/audit:report` and `/audit:usage` refuse when the config names a manifest
   they cannot use.** A `.claude/audit.config.json` that does not parse, or whose `manifestPath`
   names a file that does not exist, makes each of them exit 2 and print the same refusal

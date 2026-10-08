@@ -1137,6 +1137,14 @@
             "type": "string"
           }
         },
+        "reviewPerTask": {
+          "description": "The config's `review.perTask` as it read when this phase's first task started, written by `audit-task.py start` (or by the first `done` or sign-off, for a phase none of whose tasks ran `start`). Each task copies it at its own first start and keeps it. Once written, the live config is no longer read for this phase, so a key switched partway through does not change how the rest of the phase is reviewed. Absent means nothing recorded it yet, and the live config is read - never `always` by default.",
+          "enum": [
+            "always",
+            "phase",
+            "signals"
+          ]
+        },
         "testGate": {
           "type": "array",
           "description": "Commands (or 'key:project' entries resolved via meta.buildCommands) that must all pass at sign-off.",
@@ -1452,6 +1460,21 @@
         "intentCheck": {
           "$ref": "#/$defs/intentCheck",
           "description": "Whether the closed diff does what this task's `description` asked, which neither `testEvidence` nor `redFirst` can say: a gate proves the suite is green and says nothing about whether the green change is the change somebody wanted. Optional and absent by default — a manifest written before this block existed, a task closed by an older copy of the plugin, and a close whose reviewer call could not be made are one and the same state, and every surface must read absence as 'no answer', never as agreement."
+        },
+        "reviewPerTask": {
+          "description": "The `review.perTask` value this task's work began under, copied from its phase at its first `audit-task.py start` and kept by later starts and by a `move`; `done` and sign-off write it where neither the task nor its phase recorded one. `done`, the step driver and the landing property read this value first, then the phase's, then the live config's.",
+          "enum": [
+            "always",
+            "phase",
+            "signals"
+          ]
+        },
+        "fixes": {
+          "type": "array",
+          "description": "The ids of the review findings this task was added to fix, written by `audit-task.py add --fixes` in the write that adds the task, beside each finding's `fixTask`. Under `review.perTask: phase` a task carrying it, each of whose findings still names it as `fixTask` in its own phase's review, may close `--intent not-asked` with its basis; no other verb writes it.",
+          "items": {
+            "type": "string"
+          }
         },
         "outcome": {
           "$ref": "#/$defs/outcome"
@@ -1882,12 +1905,13 @@
       "description": "A GATE PROVES THE SUITE IS GREEN AND SAYS NOTHING ABOUT WHETHER THE GREEN CHANGE IS THE CHANGE SOMEBODY WANTED — the separate question this block answers, asked once per task rather than only at phase sign-off, because a claim can only be bound to the task that made it here. Optional and absent by default, and absent means 'no answer recorded', NEVER agreement: a manifest written before this block existed, a task closed by a copy of the plugin that predates it, and a close whose reviewer call could not be made are one and the same state, and a reader must not fold any of them into 'matches'. That is the failure mode this block exists against — an answer that is yes by default — so `answer` and `commit` are required together the way `redFirst`'s `status` and `basis` are: an answer with no commit beside it names nothing the diff it was measured against, and dropping the whole block is always safe. Written by the ORCHESTRATOR from the reviewer's returned `intent`, never inferred. additionalProperties stays permissive, this document's policy at every object level: the schema ships with the plugin, so an older copy must keep accepting a manifest a newer one wrote.",
       "properties": {
         "answer": {
-          "description": "'matches' means the diff does what `description` asked and the executor's claim describes the diff in front of the reviewer. 'diverges' means one of those two failed — the work missing its target, or the record missing the work — and is routed as a human action item rather than a fix run, because the wrong half may be the code, the description or the claim and only the operator can say which. 'cannot-tell' means an input the reviewer needed was not handed to it; a basis you invented is worse than a gap you reported, so this is the honest answer and not a softer 'matches'. 'not-asked' is the one word no reviewer gives: the orchestrator put no intent question on purpose (a change too small to review, a close with no diff), and it is written only beside `basis`, the reason, because a skip with no reason on the record reads exactly like a reviewer call that never came back. It is an ANSWER - a reader listing the done tasks with no answer leaves it out - and it is never agreement. THE ENUM MAY GAIN MEMBERS — COMPATIBILITY.md promises that a value it accepts keeps being accepted and deliberately does not promise the list is closed — so anything switching on this needs a default arm that names the word it did not recognise instead of folding it into 'matches'.",
+          "description": "'matches' means the diff does what `description` asked and the executor's claim describes the diff in front of the reviewer. 'diverges' means one of those two failed — the work missing its target, or the record missing the work — and is routed as a human action item rather than a fix run, because the wrong half may be the code, the description or the claim and only the operator can say which. 'cannot-tell' means an input the reviewer needed was not handed to it; a basis you invented is worse than a gap you reported, so this is the honest answer and not a softer 'matches'. 'not-asked' is the one word no reviewer gives: the orchestrator put no intent question on purpose (a change too small to review, a close with no diff), and it is written only beside `basis`, the reason, because a skip with no reason on the record reads exactly like a reviewer call that never came back. It is an ANSWER - a reader listing the done tasks with no answer leaves it out - and it is never agreement. 'deferred' is NOT an answer: `audit-task.py done` writes it, and no caller can type it, for a task whose key `review.perTask` reads 'phase', whose three answers the phase review gives at sign-off. Sign-off replaces it with that review's answer, and a phase does not land while one of its tasks still reads 'deferred'. THE ENUM MAY GAIN MEMBERS — COMPATIBILITY.md promises that a value it accepts keeps being accepted and deliberately does not promise the list is closed — so anything switching on this needs a default arm that names the word it did not recognise instead of folding it into 'matches'.",
           "enum": [
             "matches",
             "diverges",
             "cannot-tell",
-            "not-asked"
+            "not-asked",
+            "deferred"
           ]
         },
         "commit": {
@@ -1904,6 +1928,35 @@
         "basis": {
           "type": "string",
           "description": "Why the question was not put, verbatim - REQUIRED beside 'not-asked' (the writer refuses that word without it) and optional beside the other three, where it is the orchestrator's own note on the answer. Absent means no basis was given, never that one was not needed."
+        },
+        "return": {
+          "type": "string",
+          "description": "The filed reviewer return the answer was read from, below the evidence directory: a task-mode return under the task's start, or a phase-mode return under the phase and the head its brief was computed at. Absent when the answer came off a flag."
+        },
+        "redFirst": {
+          "description": "The phase review's red-first grade for this task, written by sign-off from the filed phase return's entry under `review.perTask: phase`. The executor's three words plus the reviewer-only 'not-proved' - the one place the record holds that grade; `task.redFirst` stays the executor's own word. Absent on a close no phase review answered.",
+          "enum": [
+            "proved",
+            "could-not-prove",
+            "not-attempted",
+            "not-proved"
+          ]
+        },
+        "redFirstBasis": {
+          "type": "string",
+          "description": "The command and exit code behind `redFirst`, or what was absent, verbatim from the review's entry."
+        },
+        "inheritedTests": {
+          "description": "The phase review's answer to whether a test this task's own gate selects would still pass with its behaviour deleted, written by sign-off under `review.perTask: phase`. 'not-asked' is written only beside `inheritedTestsBasis`.",
+          "enum": [
+            "none-found",
+            "flagged",
+            "not-asked"
+          ]
+        },
+        "inheritedTestsBasis": {
+          "type": "string",
+          "description": "The gate commands the review read and the files they selected, or what stopped it asking - REQUIRED beside an `inheritedTests` of 'not-asked'."
         }
       }
     },

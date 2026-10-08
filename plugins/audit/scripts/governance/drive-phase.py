@@ -49,7 +49,11 @@ WHERE THE TEXT COMES FROM. Every line the model is shown is rendered from
 `STEPS`, one entry per step, so the rule a step applies can be printed at that
 step rather than read from a reference document beforehand.
 
-WHERE THE PER-TASK REVIEWER IS DECIDED: `reviewer_due`, alone.
+WHERE THE PER-TASK REVIEWER IS DECIDED: `reviewer_due`, alone, from the task's
+`review.perTask` - `always` dispatches it, `phase` never does (the close records
+`deferred` and the phase review answers the task at sign-off, which refuses
+until it has), `signals` only where `signals_fired` names a signal. Under every
+key the recorded gate runs before the reviewer or the close.
 
 Usage:
   drive-phase.py next <phaseId> [manifest] [--project-dir DIR]
@@ -104,7 +108,9 @@ import _loader  # noqa: E402  (script_path: every verb resolved by basename, nev
 #                              for `stateDir`)
 import _manifest_io as _mio  # noqa: E402  (loader, phase resolver, TERMINAL)
 import _evidence_io as _evio  # noqa: E402  (project_config_for, evidence_dir)
-import _filed_returns as _fr  # noqa: E402  (where a filed return lives, and its read)
+import _filed_returns as _fr  # noqa: E402  (where a filed return lives, and its read;
+#                                            the per-task review key a task holds)
+import _config_rules  # noqa: E402  (review_per_task_mode: the config's reading now)
 import _status_facts  # noqa: E402  (ready_tasks: the one readiness rule)
 
 E_OK, E_STOPPED, E_USAGE = 0, 1, 2
@@ -312,10 +318,44 @@ def filed(ctx, task, role):
     return body, problem
 
 
-def reviewer_due(manifest, phase, task):
-    """Whether this task's reviewer is dispatched before its close. Every task's
-    is, today; the per-task review's config key, when there is one, is read
-    here and nowhere else."""
+def review_key(ctx, phase, task):
+    """`(key, problem)` - `review.perTask` as this task holds it: its own
+    recorded value, else its phase's, else the config's now, which is refused
+    rather than defaulted when it is outside the vocabulary."""
+    key, source = _fr.review_key(task, phase, None)
+    if source != "config":
+        return key, None
+    return _config_rules.review_per_task_mode(ctx["config"])
+
+
+def signals_fired(executor):
+    """The computed signals that call for a per-task reviewer under `signals`,
+    as clauses: a red-first proof that did not come back `proved`, and a filed
+    return whose gates disagree with the recorded run - which was green, or the
+    drive would have stopped at its decision. A gate the return names as
+    anything but `pass` is that disagreement; a return naming no gate claims
+    nothing to disagree with."""
+    fired = []
+    red = (executor or {}).get("redFirst") or {}
+    if red.get("status") != "proved":
+        fired.append("red-first %s" % (red.get("status") or "absent",))
+    gates = (executor or {}).get("gates") or {}
+    off = sorted(name for name, word in gates.items() if word != "pass")
+    if off:
+        fired.append("the return's gate(s) %s disagree with the recorded green"
+                     % (", ".join(off),))
+    return fired
+
+
+def reviewer_due(key, executor):
+    """Whether this task's reviewer is dispatched before its close - the one
+    place it is decided. `always` dispatches every task's; `phase` none, since
+    the phase review answers each task at sign-off; `signals` only where
+    `signals_fired` names a signal."""
+    if key == _fr.KEY_PHASE:
+        return False
+    if key == "signals":
+        return bool(signals_fired(executor))
     return True
 
 
@@ -483,25 +523,40 @@ def advance(ctx, state, manifest, phase, task):
         if _marked(state, "dispatched-executor", task):
             return decision(ctx, state, "no-executor-return", task, "")
         return dispatch(ctx, state, phase, task, "executor")
-    if reviewer_due(manifest, phase, task):
+    key, problem = review_key(ctx, phase, task)
+    if problem:
+        return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], problem)
+    due = reviewer_due(key, executor)
+    reviewer = None
+    if due:
         reviewer, problem = filed(ctx, task, "reviewer")
         if problem:
             return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], problem)
-        if reviewer is None:
-            if _marked(state, "dispatched-reviewer", task):
-                return decision(ctx, state, "no-reviewer-return", task, "")
-            code, out, err = record_gate(ctx, phase, task)
-            if code == 1:
-                said = [ln for ln in (out + err).splitlines() if "GATE" in ln]
-                return decision(ctx, state, "gate-red", task,
-                                (said[0].strip() if said else "exit 1")[:90])
-            if code != 0:
-                return relay_refusal(ctx, "run-test-gate.py", code, out + err)
-            ctx["did"].append("gate %s green" % (task["id"],))
-            ctx["did"].append(grade_stamp(ctx, executor.get("stamp")))
-            return dispatch(ctx, state, phase, task, "reviewer")
+        if reviewer is None and _marked(state, "dispatched-reviewer", task):
+            return decision(ctx, state, "no-reviewer-return", task, "")
+    # THE RECORDED GATE RUNS ONCE PER START, BEFORE THE REVIEWER OR THE CLOSE,
+    # whatever the key: a task whose review is carried to the phase still owes
+    # the measurement its close and its commit are bound to.
+    if (reviewer is None or not due) and not _marked(state, "gated", task):
+        code, out, err = record_gate(ctx, phase, task)
+        if code == 1:
+            said = [ln for ln in (out + err).splitlines() if "GATE" in ln]
+            return decision(ctx, state, "gate-red", task,
+                            (said[0].strip() if said else "exit 1")[:90])
+        if code != 0:
+            return relay_refusal(ctx, "run-test-gate.py", code, out + err)
+        _mark(state, "gated", task)
+        write_state(ctx, state)
+        ctx["did"].append("gate %s green" % (task["id"],))
+        ctx["did"].append(grade_stamp(ctx, executor.get("stamp")))
+    if due and reviewer is None:
+        return dispatch(ctx, state, phase, task, "reviewer")
     if task.get("risk") == "high" and not _marked(state, "confirmed", task):
         return decision(ctx, state, "high-risk", task, "")
+    if key == "signals" and not due:
+        return close_task(ctx, state, phase, task, intent_basis=(
+            "review.perTask signals: no signal fired - red-first proved and the "
+            "return's gates agree with the recorded green"))
     return close_task(ctx, state, phase, task)
 
 

@@ -74,15 +74,18 @@ def _plan(task_ids, gate):
                         "testGate": list(gate), "tasks": tasks}]}
 
 
-def _repo(prefix, task_ids=TASKS, gate=("true",)):
+def _repo(prefix, task_ids=TASKS, gate=("true",), per_task="always"):
     """A committed repository holding the plan, one source file per task, and
-    a `.gitignore` for the driver's and the briefs' state directory."""
+    a `.gitignore` for the driver's and the briefs' state directory. `per_task`
+    is `review.perTask`: `always` is the reviewer-per-task drive most cases here
+    are about, and the `dk` cases drive the other two readings."""
     root = os.path.realpath(_harness.fixture_root("drive-%s-" % (prefix,)))
     os.makedirs(os.path.join(root, "docs", "audit"))
     os.makedirs(os.path.join(root, ".claude"))
     os.makedirs(os.path.join(root, "src"))
     with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
-        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+        json.dump({"manifestPath": "docs/audit/audit-plan.json",
+                   "review": {"perTask": per_task}}, fh)
     with open(os.path.join(root, ".gitignore"), "w") as fh:
         fh.write(".claude/state/\n")
     for n in range(1, len(task_ids) + 1):
@@ -150,9 +153,10 @@ def _edit(root, task_id, text):
         fh.write(text)
 
 
-def _file_executor(root, mpath, task_id):
+def _file_executor(root, mpath, task_id, over=None):
     """Play the executor: change the task's file, stamp the tree, file the
-    return. Returns the filing verb's `(code, text)`."""
+    return, with `over` laid over its body. Returns the filing verb's
+    `(code, text)`."""
     _edit(root, task_id, "changed by %s\n" % (task_id,))
     code, stamp = _verb(root, "stamp-verification.py",
                         ["take", "--project", root, "--manifest", mpath,
@@ -163,6 +167,7 @@ def _file_executor(root, mpath, task_id):
             "redFirst": {"status": "not-attempted",
                          "basis": "gate-only: no test is owed"},
             "stamp": stamp.strip()}
+    body.update(over or {})
     if code != 0:
         return code, stamp
     return _verb(root, "audit-task.py",
@@ -198,7 +203,7 @@ def instruction(text):
     return ("none", None, None)
 
 
-def drive(M, root, mpath, on_dispatch=None, cap=40):
+def drive(M, root, mpath, on_dispatch=None, cap=40, returns=None):
     """Play the main loop until `done`, a stop, or `cap` calls.
 
     -> {"prints": [(code, text)], "steps": [instruction], "nexts", "dispatches"}
@@ -221,7 +226,7 @@ def drive(M, root, mpath, on_dispatch=None, cap=40):
                 dispatches += 1
                 _, role, tid = kind
                 if role == "executor":
-                    _file_executor(root, mpath, tid)
+                    _file_executor(root, mpath, tid, (returns or {}).get(tid))
                 else:
                     _file_reviewer(root, mpath, tid)
                 if on_dispatch is not None:
@@ -463,11 +468,66 @@ def _decide_cases(check):
           and blocked == 0 and status == "blocked")
 
 
+def _key_cases(check):
+    """`review.perTask` read by the driver, in `reviewer_due` alone: `phase`
+    dispatches no per-task reviewer and closes each task `deferred`, `signals`
+    dispatches exactly the reviewers its two conditions select."""
+    M, why = _load("drive_phase_keys")
+    if M is None:
+        check("dk1 the driver loads", False, why)
+        return
+    root, mpath = _repo("phase", per_task="phase")
+    run = drive(M, root, mpath)
+    tasks = tasks_of(mpath)
+    check("dk1 under `phase` the drive dispatches the executor of each task and "
+          "no reviewer, records each task's gate, and every task it closes "
+          "records `deferred` bound to its commit: %r"
+          % ((run["steps"], [(t, (tasks.get(t, {}).get("intentCheck") or {})
+                                .get("answer")) for t in TASKS]),),
+          run["steps"] == [("dispatch", "executor", t) for t in TASKS]
+          + [("done", None, None)]
+          and all(_ledger_has_green(root, mpath, t) for t in TASKS)
+          and all((tasks.get(t, {}).get("intentCheck") or {}).get("answer")
+                  == "deferred"
+                  and (tasks.get(t, {}).get("intentCheck") or {}).get("commit")
+                  == tasks.get(t, {}).get("commit") for t in TASKS))
+    mutant, _w = _load("drive_phase_keys_always_due")
+    mutant.reviewer_due = lambda *a, **k: True
+    root_m, mpath_m = _repo("phase-mut", task_ids=TASKS[:1], per_task="phase")
+    run_m = drive(mutant, root_m, mpath_m, cap=3)
+    check("dk1m RED TWIN: a driver whose `reviewer_due` answers yes under every "
+          "key dispatches a reviewer under `phase`, and dk1 catches it: %r"
+          % (run_m["steps"],),
+          ("dispatch", "reviewer", "P1.1") in run_m["steps"])
+
+    signals = {"P1.1": {"redFirst": {"status": "proved",
+                                     "basis": "t.py exit 1, its own case"}},
+               "P1.2": {},
+               "P1.3": {"redFirst": {"status": "proved",
+                                     "basis": "t.py exit 1, its own case"},
+                        "gates": {"true": "fail"}}}
+    root, mpath = _repo("signals", per_task="signals")
+    run = drive(M, root, mpath, returns=signals)
+    tasks = tasks_of(mpath)
+    reviewed = [s[2] for s in run["steps"] if s[:2] == ("dispatch", "reviewer")]
+    plain = (tasks.get("P1.1", {}).get("intentCheck") or {})
+    check("dk2 under `signals` a reviewer is dispatched exactly where a signal "
+          "fires - a red-first proof not `proved` (P1.2), a return whose gates "
+          "disagree with the recorded green (P1.3) - and the task with neither "
+          "closes `not-asked` with the signals named as its basis: %r"
+          % ((reviewed, plain),),
+          reviewed == ["P1.2", "P1.3"]
+          and plain.get("answer") == "not-asked"
+          and "signals" in (plain.get("basis") or "")
+          and all(tasks.get(t, {}).get("status") == "done" for t in TASKS))
+
+
 def _selftest():
     def body(check):
         _harness.stage(check, "dp-block", _drive_cases)
         _harness.stage(check, "dr-block", _refusal_cases)
         _harness.stage(check, "dd-block", _decide_cases)
+        _harness.stage(check, "dk-block", _key_cases)
     return _harness.run(body)
 
 

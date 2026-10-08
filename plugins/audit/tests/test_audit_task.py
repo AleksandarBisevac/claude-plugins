@@ -41,6 +41,7 @@ import _manifest_phases as _phases                 # noqa: E402  (the identity p
 import _gate_derive                                # noqa: E402  (the identity pin below: an alias, not a second body)
 import _panel_write                                # noqa: E402  (as audit-task imports it)
 import _locks as _lock_lib                         # noqa: E402  (its claim writer, which the command no longer re-exports)
+import _filed_returns as _fr                       # noqa: E402  (the word only a close writes)
 
 M = _loader.load_script("audit-task.py", modname="audit_task")
 
@@ -128,9 +129,13 @@ def _cases(check):
     def mk(name, manifest, sharded=False, git=False):
         proj = os.path.join(tmp, name)
         os.makedirs(os.path.join(proj, ".claude"), exist_ok=True)
+        # `always`: these cases are about the verbs' mechanics under a reviewer
+        # per task, which is what every close here was written against. The
+        # shipped `phase` reading has its own cases, the `hd` block.
         _panel_write._atomic_write_json(
             os.path.join(proj, ".claude", "audit.config.json"),
-            {"manifestPath": "docs/audit/audit-plan.json"})
+            {"manifestPath": "docs/audit/audit-plan.json",
+             "review": {"perTask": "always"}})
         mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
         os.makedirs(os.path.dirname(mpath), exist_ok=True)
         if sharded:
@@ -6724,6 +6729,7 @@ def _cases(check):
         _panel_write._atomic_write_json(
             os.path.join(projrd9, ".claude", "audit.config.json"),
             {"manifestPath": "docs/audit/audit-plan.json",
+             "review": {"perTask": "always"},
              "journal": {"enabled": False}})
         rd_ledger(projrd9, ["failed"])
         with open(mprd9, "rb") as _fh:
@@ -7841,6 +7847,50 @@ def _cases(check):
               == "matches [findings: 1 - 0 high, 1 med, 0 low; "
                  "0 with a recorded fix commit]"
               and (_gt_ph["P1"].get("review") or {}).get("outcome") == "matches")
+
+        # THE GROUP IS ASKED THE SAME PROPERTY, every member before any write:
+        # under `review.perTask: phase`, a member whose done task holds no phase
+        # review's answers refuses the whole group - and filed returns for each
+        # member's commits let it through.
+        gp_proj, gp_mp, gp_shas = gs_fixture("gs-held")
+        _panel_write._atomic_write_json(
+            os.path.join(gp_proj, ".claude", "audit.config.json"),
+            {"manifestPath": "docs/audit/audit-plan.json",
+             "review": {"perTask": "phase"}})
+        run(["signoff", "P1,P2", "--branch", "combined", "--bind",
+             "--project-dir", gp_proj])
+        _gp_record = ["signoff", "P1,P2", "--branch", "combined",
+                      "--verdict", "skipped", "--summary", "s",
+                      "--project-dir", gp_proj]
+        _gp_b0 = open(gp_mp, "rb").read()
+        _gp_held = run(_gp_record)
+        _gp_unwritten = open(gp_mp, "rb").read() == _gp_b0
+        for _gp_pid, _gp_tid in (("P1", "P1.1"), ("P2", "P2.1")):
+            _gp_body = {"findings": [], "preExisting": [],
+                        "intent": {"answer": "matches", "note": "n",
+                                   "missing": []}, "verdict": "clean",
+                        "tasks": [{"id": _gp_tid, "commit": gp_shas[_gp_tid],
+                                   "answer": "matches", "note": "n",
+                                   "missing": [], "redFirst": "not-attempted",
+                                   "redFirstBasis": "gate-only, no test added",
+                                   "inheritedTests": "not-asked",
+                                   "inheritedTestsBasis": "whole suite"}]}
+            _gp_real = sys.stdin
+            sys.stdin = io.StringIO(json.dumps(_gp_body))
+            try:
+                M.main(["file-return", _gp_pid, "--role", "reviewer", "--head",
+                        gp_shas["P2.1"], "--project-dir", gp_proj],
+                       out=lambda _line: None)
+            finally:
+                sys.stdin = _gp_real
+        _gp_pass = run(_gp_record)
+        check("gsp1 under `review.perTask: phase` a GROUP sign-off is refused, "
+              "writing nothing, while any member's task is owed its answers - and "
+              "signs off once each member's filed return answers its commit: %r"
+              % ((_gp_held[0], _gp_held[1][-200:], _gp_pass[0]),),
+              _gp_held[0] == 2 and "P1.1" in _gp_held[1]
+              and "P2.1" in _gp_held[1] and _gp_unwritten
+              and _gp_pass[0] == 0)
 
         # A BROKEN INSTALL IS REFUSED BEFORE THE WRITE, on the verbs that have no
         # pre-write validation of their own: sign-off, the group sign-off and
@@ -9132,9 +9182,12 @@ def _cases(check):
         check("ia6 the words `--intent` accepts are the schema enum's, in its order - "
               "a word the parser took and the schema does not list is a value the "
               "schema calls invalid, and one the schema lists and the parser does "
-              "not is an answer nobody can record: %r" % ((_ia_choices, _ia_enum),),
+              "not is an answer nobody can record - except `deferred`, which the "
+              "enum lists and only the close itself writes, so no caller can "
+              "type it: %r" % ((_ia_choices, _ia_enum),),
               _ia_choices == [list(M.INTENT_ANSWERS)]
-              and list(M.INTENT_ANSWERS) == _ia_enum)
+              and list(M.INTENT_ANSWERS) + [_fr.INTENT_DEFERRED] == _ia_enum
+              and _fr.INTENT_DEFERRED not in M.INTENT_ANSWERS)
 
         # ---- (nc) a close that changed nothing, on purpose -----------------------
         # `done` demanded a SHA, so a task whose correct answer was "nothing needs
@@ -12395,9 +12448,12 @@ def _return_cases(check):
     def project(name, started=_FR_START, attempts=1):
         proj = os.path.join(root, name)
         os.makedirs(os.path.join(proj, ".claude"))
+        # `always`, the reading these cases were written for: the rule on a
+        # close under a reviewer per task. `phase` is the `hd` block's.
         _panel_write._atomic_write_json(
             os.path.join(proj, ".claude", "audit.config.json"),
-            {"manifestPath": "docs/audit/audit-plan.json"})
+            {"manifestPath": "docs/audit/audit-plan.json",
+             "review": {"perTask": "always"}})
         mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
         os.makedirs(os.path.dirname(mpath))
         task = {"id": "P1.1", "title": "a", "status": "in_progress",
@@ -12630,6 +12686,514 @@ def _return_cases(check):
           and read(mpath) == before)
 
 
+_HD_SHA2 = "1111111111111111111111111111111111111111"
+_HD_SHA3 = "2222222222222222222222222222222222222222"
+_HD_HEAD = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+_HD_HEAD2 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+_HD_BASIS = ["--intent-basis", "a one-line typo"]
+
+
+def _hd_entry(tid, commit, **over):
+    """One `tasks` entry of a phase-mode reviewer return, whole."""
+    entry = {"id": tid, "commit": commit, "answer": "matches", "note": "n",
+             "missing": [], "redFirst": "proved",
+             "redFirstBasis": "t.py exit 1, its own case",
+             "inheritedTests": "not-asked",
+             "inheritedTestsBasis": "the gate runs the whole suite"}
+    entry.update(over)
+    return entry
+
+
+def _hd_return(entries):
+    return json.dumps({"findings": [], "preExisting": [],
+                       "intent": {"answer": "matches", "note": "n",
+                                  "missing": []},
+                       "verdict": "clean", "tasks": entries}) + "\n"
+
+
+def _held_cases(check):
+    """`review.perTask: phase` - the close that writes `deferred`, the key
+    recorded once per phase and kept by the task, `add --fixes`, the phase
+    return's filing, and sign-off's refusal while a task lacks its answers."""
+    import io
+    root = _harness.fixture_root("audit-task-hd-")
+
+    def tk(tid, status="in_progress", started=_FR_START, **over):
+        task = {"id": tid, "title": tid, "status": status,
+                "description": "do " + tid, "files": ["src/%s.ts" % (tid,)],
+                "tests": {"mode": "gate-only", "add": [],
+                          "expectRedFirst": False, "gate": ["test"]},
+                "attempts": 1 if started else 0, "maxAttempts": 3}
+        if started:
+            task["startedAt"] = started
+        task.update(over)
+        return task
+
+    def done_tk(tid, commit, key="phase", **over):
+        fields = {"status": "done", "commit": commit, "reviewPerTask": key,
+                  "completedAt": "2026-01-01T01:00:00Z",
+                  "intentCheck": {"answer": "deferred", "commit": commit,
+                                  "at": "2026-01-01T01:00:00Z"}}
+        fields.update(over)
+        return tk(tid, **fields)
+
+    def ph(pid, tasks, **over):
+        phase = {"id": pid, "title": pid, "status": "in_progress",
+                 "testGate": ["test"], "tasks": tasks}
+        phase.update(over)
+        return phase
+
+    def finding(fid, **over):
+        entry = {"id": fid, "severity": "low", "file": "src/a.ts",
+                 "issue": "i", "resolution": "r"}
+        entry.update(over)
+        return entry
+
+    def cfg(proj, key):
+        body = {"manifestPath": "docs/audit/audit-plan.json"}
+        if key is not None:
+            body["review"] = {"perTask": key}
+        _panel_write._atomic_write_json(
+            os.path.join(proj, ".claude", "audit.config.json"), body)
+
+    def project(name, phases, key=None):
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        cfg(proj, key)
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        index = {}
+        for phase in phases:
+            for task in phase["tasks"]:
+                for f in task["files"]:
+                    index.setdefault(f, []).append(task["id"])
+        _panel_write._atomic_write_json(mpath, {
+            "meta": {"version": 2, "buildCommands": {"test": "true"}},
+            "phases": phases, "fileIndex": index, "bugs": []})
+        return proj, mpath
+
+    def run(argv, stdin=""):
+        lines = []
+        real = sys.stdin
+        sys.stdin = io.StringIO(stdin)
+        try:
+            code = M.main(argv, out=lines.append)
+        finally:
+            sys.stdin = real
+        return code, "\n".join(str(x) for x in lines)
+
+    def verb(proj, *argv, **kw):
+        return run(list(argv) + ["--project-dir", proj], kw.get("stdin", ""))
+
+    def close(proj, tid, *extra, **kw):
+        return verb(proj, "done", tid, "--commit", kw.get("sha", _FR_SHA), *extra)
+
+    def read(path):
+        try:
+            with open(path, "rb") as fh:
+                return fh.read()
+        except OSError:
+            return None
+
+    def plan(mpath):
+        return _mio.load_manifest(mpath)
+
+    def task(mpath, tid):
+        return _mio.tasks_by_id(plan(mpath)).get(tid) or {}
+
+    def phase(mpath, pid):
+        return [p for p in plan(mpath)["phases"] if p.get("id") == pid][0]
+
+    def answer(mpath, tid):
+        return (task(mpath, tid).get("intentCheck") or {}).get("answer")
+
+    def returns(proj, pid):
+        return os.path.join(proj, "docs", "audit", "evidence", "returns", pid)
+
+    def file_phase(proj, pid, head, entries):
+        return verb(proj, "file-return", pid, "--role", "reviewer",
+                    "--head", head, stdin=_hd_return(entries))
+
+    def signoff(proj, pid, verdict="skipped", *extra):
+        return verb(proj, "signoff", pid, "--verdict", verdict, "--summary",
+                    "the phase did its work", *extra)
+
+    # ---- the close -------------------------------------------------------------
+    # No `review` key in the config: the shipped default, `phase`.
+    proj, mpath = project("close-refused", [ph("P1", [tk("P1.1")])])
+    run(["file-return", "P1.1", "--role", "executor", "--project-dir", proj],
+        _fr_executor())
+    before = read(mpath)
+    r1 = close(proj, "P1.1", "--from-return", "--intent", "not-asked",
+               *_HD_BASIS)
+    r2 = close(proj, "P1.1", "--intent", "not-asked", *_HD_BASIS)
+    r3 = close(proj, "P1.1", "--intent", "matches")
+    check("hd1 under the shipped `phase`, a close with a commit refuses every "
+          "--intent word - from the return with not-asked and its basis, plain "
+          "not-asked with its basis, plain matches - writing nothing: %r"
+          % ([(r[0], r[1][:90]) for r in (r1, r2, r3)],),
+          [r[0] for r in (r1, r2, r3)] == [M.E_USAGE] * 3
+          and all("review.perTask" in r[1] for r in (r1, r2, r3))
+          and read(mpath) == before)
+    r4 = close(proj, "P1.1")
+    t4, p4 = task(mpath, "P1.1"), phase(mpath, "P1")
+    check("hd2 ALLOW: the same task closed with no --intent closes, records "
+          "`deferred` bound to its commit, and records the key it took on the "
+          "task and on the phase that had none: %r"
+          % ((r4[0], t4.get("intentCheck"), t4.get("reviewPerTask"),
+              p4.get("reviewPerTask")),),
+          r4[0] == 0 and t4.get("status") == "done"
+          and t4.get("intentCheck", {}).get("answer") == "deferred"
+          and t4.get("intentCheck", {}).get("commit") == _FR_SHA
+          and t4.get("reviewPerTask") == "phase"
+          and p4.get("reviewPerTask") == "phase")
+    proj, mpath = project("close-nochange", [ph("P1", [tk("P1.1")])])
+    r5 = verb(proj, "done", "P1.1", "--no-change", "--reason", "already right",
+              "--intent", "not-asked", "--intent-basis", "no diff to bind")
+    check("hd3 ALLOW: a `--no-change` close with not-asked and its basis is "
+          "accepted under `phase` - without this half a close refusing every "
+          "not-asked would pass: %r" % ((r5[0], r5[1][:120]),),
+          r5[0] == 0 and answer(mpath, "P1.1") == "not-asked")
+    proj, mpath = project("close-always", [ph("P1", [tk("P1.1")])], "always")
+    r6 = close(proj, "P1.1", "--intent", "not-asked", *_HD_BASIS)
+    check("hd4 ALLOW: under `always` the plain close with not-asked and its "
+          "basis closes as it did before the key - without this half a rule "
+          "refusing it under every key would pass: %r" % ((r6[0], r6[1][:120]),),
+          r6[0] == 0 and answer(mpath, "P1.1") == "not-asked"
+          and task(mpath, "P1.1").get("reviewPerTask") == "always")
+
+    # ---- the fix-task exception and `add --fixes` -------------------------------
+    p1 = ph("P1", [tk("P1.1")], review={"findings": [
+        finding("P1-R1"), finding("P1-R2", fixTask="P1.1")]})
+    p2 = ph("P2", [tk("P2.1", status="pending", started=None)],
+            status="pending", review={"findings": [finding("P2-R1")]})
+    proj, mpath = project("fixes", [p1, p2])
+    before = read(mpath)
+    a1 = verb(proj, "add", "fix the other phase", "--phase", "P1",
+              "--files", "src/f.ts", "--fixes", "P2-R1")
+    a2 = verb(proj, "add", "fix a taken one", "--phase", "P1",
+              "--files", "src/f.ts", "--fixes", "P1-R2")
+    a3 = verb(proj, "scope", "P1.1", "--fixes", "P1-R1")
+    check("hd5 `add --fixes` naming another phase's finding, or one already "
+          "naming another task, is refused writing nothing, and every other "
+          "verb refuses the flag: %r" % ([(a[0], a[1][:100]) for a in (a1, a2, a3)],),
+          [a[0] for a in (a1, a2, a3)] == [M.E_USAGE] * 3
+          and "P2-R1" in a1[1] and "P1.1" in a2[1] and "--fixes" in a3[1]
+          and read(mpath) == before)
+    a4 = verb(proj, "add", "fix R1", "--phase", "P1", "--files", "src/f.ts",
+              "--fixes", "P1-R1")
+    fixer = [t for t in phase(mpath, "P1")["tasks"] if t.get("title") == "fix R1"]
+    fid = fixer[0]["id"] if fixer else None
+    linked = [f for f in phase(mpath, "P1")["review"]["findings"]
+              if f.get("id") == "P1-R1"]
+    check("hd6 ALLOW: `add --fixes` naming its own phase's free finding writes "
+          "`fixes` on the task and the finding's `fixTask`, in one write: %r"
+          % ((a4[0], fid, linked),),
+          a4[0] == 0 and fid and fixer[0].get("fixes") == ["P1-R1"]
+          and linked and linked[0].get("fixTask") == fid)
+    verb(proj, "start", fid)
+    r7 = close(proj, fid, "--intent", "not-asked", "--intent-basis", "fix task")
+    before = read(mpath)
+    r8 = close(proj, "P1.1", "--intent", "not-asked", "--intent-basis", "fix task")
+    check("hd7 under `phase`, the task `add --fixes` recorded closes not-asked "
+          "with its basis, and a task not recorded that way is refused the same "
+          "flags, writing nothing: %r" % ((r7[0], r7[1][:100], r8[0]),),
+          r7[0] == 0 and answer(mpath, fid) == "not-asked"
+          and r8[0] == M.E_USAGE and read(mpath) == before)
+
+    # Linked by `resolve-finding`, then reopened: the link is not the key.
+    proj, mpath = project("relinked", [ph("P1", [tk("P1.1")], review={
+        "findings": [finding("P1-R1")]})])
+    close(proj, "P1.1")
+    verb(proj, "resolve-finding", "P1-R1", "--fix-task", "P1.1")
+    verb(proj, "reopen", "P1.1", "--reason", "redo")
+    verb(proj, "start", "P1.1")
+    before = read(mpath)
+    r9 = close(proj, "P1.1", "--intent", "not-asked", *_HD_BASIS, sha=_HD_SHA2)
+    proj2, mpath2 = project("relinked-fixes", [ph("P1", [tk("P1.1")], review={
+        "findings": [finding("P1-R1")]})])
+    verb(proj2, "add", "fix R1", "--phase", "P1", "--files", "src/f.ts",
+         "--fixes", "P1-R1")
+    verb(proj2, "start", "P1.2")
+    close(proj2, "P1.2", "--intent", "not-asked", *_HD_BASIS)
+    verb(proj2, "reopen", "P1.2", "--reason", "redo")
+    verb(proj2, "start", "P1.2")
+    r10 = close(proj2, "P1.2", "--intent", "not-asked", *_HD_BASIS, sha=_HD_SHA2)
+    check("hd8 a task closed `deferred`, linked by resolve-finding, reopened, "
+          "restarted and closed not-asked is refused - it carries no `fixes` - "
+          "and the same sequence on a task `add --fixes` recorded closes: %r"
+          % ((r9[0], r9[1][:100], r10[0], r10[1][:100]),),
+          r9[0] == M.E_USAGE and read(mpath) == before
+          and r10[0] == 0 and answer(mpath2, "P1.2") == "not-asked")
+
+    # ---- the key, once per phase and kept by the task ---------------------------
+    proj, mpath = project("key-switch", [ph("P1", [
+        tk("P1.1", status="pending", started=None),
+        tk("P1.2", status="pending", started=None)], status="pending")], "phase")
+    s1 = verb(proj, "start", "P1.1")
+    keyed = (phase(mpath, "P1").get("reviewPerTask"),
+             task(mpath, "P1.1").get("reviewPerTask"))
+    cfg(proj, "always")
+    verb(proj, "start", "P1.2", "--force", "--reason", "parallel")
+    before = read(mpath)
+    r11 = close(proj, "P1.1", "--intent", "not-asked", *_HD_BASIS)
+    check("hd9 `start` records the key on the phase at its first start and on "
+          "the task; with the config then switched to `always`, a second task "
+          "still records `phase` and a plain not-asked close is still refused: %r"
+          % ((s1[0], keyed, task(mpath, "P1.2").get("reviewPerTask"), r11[0]),),
+          s1[0] == 0 and keyed == ("phase", "phase")
+          and task(mpath, "P1.2").get("reviewPerTask") == "phase"
+          and r11[0] == M.E_USAGE and read(mpath) == before)
+
+    # Started under `phase`, blocked, moved to a phase that recorded `always`.
+    p1 = ph("P1", [tk("P1.1", status="pending", started=None),
+                   tk("P1.2", status="pending", started=None)], status="pending")
+    p2 = ph("P2", [tk("P2.1", reviewPerTask="always")], reviewPerTask="always")
+    proj, mpath = project("moved", [p1, p2], "phase")
+    verb(proj, "start", "P1.1")
+    verb(proj, "block", "P1.1", "--reason", "waits")
+    verb(proj, "move", "P1.1", "--to", "P2")
+    moved = [t["id"] for t in phase(mpath, "P2")["tasks"] if t.get("title") == "P1.1"]
+    mid = moved[0] if moved else "missing"
+    before = read(mpath)
+    r12 = close(proj, mid, "--intent", "not-asked", *_HD_BASIS)
+    refused_moved = r12[0] == M.E_USAGE and read(mpath) == before
+    r13 = close(proj, mid)
+    verb(proj, "move", "P1.2", "--to", "P2")
+    moved2 = [t["id"] for t in phase(mpath, "P2")["tasks"] if t.get("title") == "P1.2"]
+    mid2 = moved2[0] if moved2 else "missing"
+    verb(proj, "start", mid2)
+    r14 = close(proj, mid2, "--intent", "not-asked", *_HD_BASIS)
+    check("hd10 a task started under `phase`, blocked and moved to a phase that "
+          "recorded `always` keeps `phase`: not-asked is refused and no --intent "
+          "closes `deferred`; a task moved there before its first start takes "
+          "`always` and closes not-asked: %r"
+          % ((mid, r12[0], r13[0], answer(mpath, mid), mid2, r14[0]),),
+          refused_moved and r13[0] == 0 and answer(mpath, mid) == "deferred"
+          and r14[0] == 0 and answer(mpath, mid2) == "not-asked")
+
+    # Blocked from `pending`: no `start` ever gave the task or its phase a key.
+    def unstarted(name, key):
+        return project(name, [ph("P1", [
+            tk("P1.1", status="pending", started=None),
+            tk("P1.2", status="pending", started=None)], status="pending")], key)
+    proj, mpath = unstarted("blocked-phase", "phase")
+    verb(proj, "block", "P1.1", "--reason", "waits")
+    before = read(mpath)
+    r15 = close(proj, "P1.1", "--intent", "not-asked", *_HD_BASIS)
+    refused_blocked = r15[0] == M.E_USAGE and read(mpath) == before
+    r16 = close(proj, "P1.1")
+    cfg(proj, "always")
+    verb(proj, "start", "P1.2")
+    proj2, mpath2 = unstarted("blocked-always", "always")
+    verb(proj2, "block", "P1.1", "--reason", "waits")
+    r17 = close(proj2, "P1.1", "--intent", "not-asked", *_HD_BASIS)
+    check("hd11 a task blocked from `pending` and closed under a config reading "
+          "`phase` is refused not-asked, closes `deferred` with no --intent and "
+          "records `phase` on itself and its phase, so a task started after the "
+          "config reads `always` still records `phase`; under `always` the same "
+          "first close records `always` and closes not-asked: %r"
+          % ((r15[0], r16[0], phase(mpath, "P1").get("reviewPerTask"),
+              task(mpath, "P1.2").get("reviewPerTask"), r17[0]),),
+          refused_blocked and r16[0] == 0
+          and answer(mpath, "P1.1") == "deferred"
+          and task(mpath, "P1.1").get("reviewPerTask") == "phase"
+          and phase(mpath, "P1").get("reviewPerTask") == "phase"
+          and task(mpath, "P1.2").get("reviewPerTask") == "phase"
+          and r17[0] == 0 and answer(mpath2, "P1.1") == "not-asked"
+          and phase(mpath2, "P1").get("reviewPerTask") == "always")
+
+    p1 = ph("P1", [tk("P1.1", status="pending", started=None),
+                   tk("P1.2", status="pending", started=None)], status="pending")
+    p2 = ph("P2", [tk("P2.1", status="pending", started=None)], status="pending")
+    p3 = ph("P3", [tk("P3.1", reviewPerTask="always")], reviewPerTask="always")
+    proj, mpath = project("blocked-moved", [p1, p2, p3], "phase")
+    verb(proj, "block", "P1.1", "--reason", "waits")
+    verb(proj, "move", "P1.1", "--to", "P2")
+    in2 = [t["id"] for t in phase(mpath, "P2")["tasks"] if t.get("title") == "P1.1"]
+    m2 = in2[0] if in2 else "missing"
+    before = read(mpath)
+    r18 = close(proj, m2, "--intent", "not-asked", *_HD_BASIS)
+    refused_m2 = r18[0] == M.E_USAGE and read(mpath) == before
+    r19 = close(proj, m2)
+    verb(proj, "block", "P1.2", "--reason", "waits")
+    verb(proj, "move", "P1.2", "--to", "P3")
+    in3 = [t["id"] for t in phase(mpath, "P3")["tasks"] if t.get("title") == "P1.2"]
+    m3 = in3[0] if in3 else "missing"
+    r20 = close(proj, m3, "--intent", "not-asked", *_HD_BASIS)
+    check("hd12 a task blocked from `pending` and moved into a phase none of "
+          "whose tasks has started is refused not-asked and closes `deferred`; "
+          "moved instead into a phase that recorded `always`, it closes "
+          "not-asked: %r" % ((m2, r18[0], r19[0], m3, r20[0]),),
+          refused_m2 and r19[0] == 0 and answer(mpath, m2) == "deferred"
+          and r20[0] == 0 and answer(mpath, m3) == "not-asked")
+
+    proj, mpath = project("terminal", [ph("P1", [done_tk("P1.1", _FR_SHA),
+                                                 tk("P1.2")])])
+    before = read(mpath)
+    c1 = verb(proj, "cancel", "P1.1", "--reason", "drop")
+    c2 = verb(proj, "block", "P1.1", "--reason", "wait")
+    check("hd13 `cancel` and `block` of a task closed `deferred` are refused, "
+          "writing nothing: %r" % ((c1[0], c2[0]),),
+          c1[0] == M.E_USAGE and c2[0] == M.E_USAGE and read(mpath) == before)
+
+    # ---- the phase return and sign-off -----------------------------------------
+    def two_done(name, key=None):
+        return project(name, [ph("P1", [done_tk("P1.1", _FR_SHA),
+                                        done_tk("P1.2", _HD_SHA2)],
+                                 reviewPerTask="phase")], key)
+
+    proj, mpath = two_done("file-short")
+    f1 = file_phase(proj, "P1", _HD_HEAD, [_hd_entry("P1.1", _FR_SHA)])
+    nothing = not os.path.exists(returns(proj, "P1"))
+    f2 = file_phase(proj, "P1", _HD_HEAD, [_hd_entry("P1.1", _FR_SHA),
+                                           _hd_entry("P1.2", _HD_SHA2)])
+    check("hd14 a phase return lacking the entry of one task owed an answer is "
+          "refused at filing, writing nothing and naming that task; with the "
+          "entry restored it files, keyed on the head: %r"
+          % ((f1[0], f1[1][:160], f2[0], f2[1][:120]),),
+          f1[0] == M.E_USAGE and "P1.2" in f1[1] and nothing
+          and f2[0] == 0
+          and os.path.isfile(os.path.join(returns(proj, "P1"),
+                                          "%s.reviewer.json" % (_HD_HEAD,))))
+    f3 = file_phase(proj, "P1", _HD_HEAD2, [_hd_entry("P1.1", _FR_SHA)])
+    proj2, mpath2 = two_done("file-commit")
+    f4 = file_phase(proj2, "P1", _HD_HEAD, [_hd_entry("P1.1", _HD_SHA3),
+                                            _hd_entry("P1.2", _HD_SHA2)])
+    check("hd15 an entry naming a commit other than its task records is refused "
+          "at filing, and so is a second entry for a commit an earlier return "
+          "answers - each writing nothing: %r"
+          % ((f3[0], f3[1][:160], f4[0], f4[1][:160]),),
+          f3[0] == M.E_USAGE and "already answers" in f3[1]
+          and not os.path.exists(os.path.join(
+              returns(proj, "P1"), "%s.reviewer.json" % (_HD_HEAD2,)))
+          and f4[0] == M.E_USAGE and "P1.1" in f4[1]
+          and not os.path.exists(returns(proj2, "P1")))
+
+    proj, mpath = two_done("signoff")
+    before = read(mpath)
+    g1 = signoff(proj, "P1", "skipped")
+    g2 = signoff(proj, "P1", "passed", "--no-evidence-reason", "no gate here")
+    check("hd16 under `phase`, sign-off of a phase with tasks owed an answer is "
+          "refused writing nothing and names them - under `--verdict skipped` as "
+          "under `passed`: %r" % ((g1[0], g1[1][:160], g2[0]),),
+          g1[0] == M.E_USAGE and "P1.1" in g1[1] and "P1.2" in g1[1]
+          and g2[0] == M.E_USAGE and read(mpath) == before)
+    file_phase(proj, "P1", _HD_HEAD, [_hd_entry("P1.1", _FR_SHA),
+                                      _hd_entry("P1.2", _HD_SHA2)])
+    g3 = signoff(proj, "P1", "skipped")
+    ic = task(mpath, "P1.1").get("intentCheck") or {}
+    check("hd17 ALLOW: once a filed phase return answers each task's commit, "
+          "`skipped` signs off and writes the three answers onto each task, bound "
+          "to its commit - without this half a sign-off refusing every `skipped` "
+          "would pass: %r" % ((g3[0], g3[1][:120], ic),),
+          g3[0] == 0 and ic.get("answer") == "matches"
+          and ic.get("commit") == _FR_SHA and ic.get("redFirst") == "proved"
+          and ic.get("inheritedTests") == "not-asked"
+          and ic.get("inheritedTestsBasis") and ic.get("return"))
+    proj, mpath = project("signoff-always", [ph("P1", [
+        done_tk("P1.1", _FR_SHA, key="always",
+                intentCheck={"answer": "not-asked", "basis": "typo",
+                             "commit": _FR_SHA})], reviewPerTask="always")])
+    g4 = signoff(proj, "P1", "skipped")
+    check("hd18 ALLOW: a phase with no task whose key reads `phase` signs off "
+          "`skipped` as it did before the key: %r" % ((g4[0], g4[1][:120]),),
+          g4[0] == 0)
+
+    missing = []
+    for field in ("answer", "redFirst", "inheritedTests"):
+        proj, mpath = two_done("signoff-drop-%s" % (field,))
+        file_phase(proj, "P1", _HD_HEAD, [_hd_entry("P1.1", _FR_SHA),
+                                          _hd_entry("P1.2", _HD_SHA2)])
+        path = os.path.join(returns(proj, "P1"), "%s.reviewer.json" % (_HD_HEAD,))
+        if read(path) is None:
+            missing.append("%s (no return was filed to edit)" % (field,))
+            continue
+        body = json.loads(read(path).decode("utf-8"))
+        body["tasks"][0].pop(field)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(body, fh)
+        before = read(mpath)
+        g5 = signoff(proj, "P1", "skipped")
+        if not (g5[0] == M.E_USAGE and "P1.1" in g5[1] and read(mpath) == before):
+            missing.append(field)
+    check("hd19 a filed return with one task's intent answer, red-first grade or "
+          "inherited-test answer removed by hand is refused at sign-off, naming "
+          "the task: %r" % (missing,), missing == [])
+
+    proj, mpath = two_done("recommitted")
+    file_phase(proj, "P1", _HD_HEAD, [_hd_entry("P1.1", _FR_SHA),
+                                      _hd_entry("P1.2", _HD_SHA2)])
+    verb(proj, "reopen", "P1.1", "--reason", "redo")
+    verb(proj, "start", "P1.1")
+    close(proj, "P1.1", sha=_HD_SHA3)
+    before = read(mpath)
+    g6 = signoff(proj, "P1", "skipped")
+    refused_again = g6[0] == M.E_USAGE and "P1.1" in g6[1] and read(mpath) == before
+    f5 = file_phase(proj, "P1", _HD_HEAD2, [_hd_entry("P1.1", _HD_SHA3)])
+    g7 = signoff(proj, "P1", "skipped")
+    check("hd20 a task answered in a filed phase return, then reopened, "
+          "recommitted and closed `deferred`, is refused at sign-off while the "
+          "earlier entry is still filed; a return answering its new commit lets "
+          "sign-off pass: %r" % ((g6[0], g6[1][:120], f5[0], f5[1][:120], g7[0]),),
+          refused_again and f5[0] == 0 and g7[0] == 0
+          and (task(mpath, "P1.1").get("intentCheck") or {}).get("commit")
+          == _HD_SHA3)
+
+    # A fix task whose finding `resolve-finding` points at another task loses
+    # the exception: sign-off refuses it until a phase return answers it.
+    projf, mpathf = project("fix-relinked-signoff", [ph("P1", [
+        done_tk("P1.1", _HD_SHA2, intentCheck={
+            "answer": "matches", "commit": _HD_SHA2, "redFirst": "proved",
+            "redFirstBasis": "b", "inheritedTests": "none-found"})],
+        review={"findings": [finding("P1-R1")]})])
+    verb(projf, "add", "fix R1", "--phase", "P1", "--files", "src/f.ts",
+         "--fixes", "P1-R1")
+    verb(projf, "start", "P1.2")
+    close(projf, "P1.2", "--intent", "not-asked", *_HD_BASIS)
+    file_phase(projf, "P1", _HD_HEAD, [_hd_entry("P1.1", _HD_SHA2)])
+    verb(projf, "resolve-finding", "P1-R1", "--fix-task", "P1.1")
+    before = read(mpathf)
+    g9 = signoff(projf, "P1", "skipped")
+    refused_relinked = (g9[0] == M.E_USAGE and "P1.2" in g9[1]
+                        and read(mpathf) == before)
+    f8 = file_phase(projf, "P1", _HD_HEAD2, [_hd_entry("P1.2", _FR_SHA)])
+    g10 = signoff(projf, "P1", "skipped")
+    check("hd22 a task `add --fixes` recorded, closed not-asked, whose finding "
+          "`resolve-finding` then points at another task, is refused at sign-off "
+          "naming it, and signs off once a filed phase return answers its "
+          "commit: %r" % ((g9[0], g9[1][-160:], f8[0], g10[0]),),
+          refused_relinked and f8[0] == 0
+          and g10[0] == 0)
+
+    # ...and so does a fix task moved away from its findings.
+    p1 = ph("P1", [tk("P1.1")], review={"findings": [finding("P1-R1")]})
+    p2 = ph("P2", [tk("P2.1", status="pending", started=None)],
+            status="pending")
+    projf, mpathf = project("fix-moved", [p1, p2])
+    verb(projf, "add", "fix R1", "--phase", "P1", "--files", "src/f.ts",
+         "--fixes", "P1-R1")
+    verb(projf, "move", "P1.2", "--to", "P2")
+    fm = [t["id"] for t in phase(mpathf, "P2")["tasks"] if t.get("title") == "fix R1"]
+    fmid = fm[0] if fm else "missing"
+    verb(projf, "start", fmid, "--force", "--reason", "fixture")
+    before = read(mpathf)
+    r21 = close(projf, fmid, "--intent", "not-asked", *_HD_BASIS)
+    check("hd23 a fix task moved to another phase, away from the findings it "
+          "names, is no longer a recorded fix task: its not-asked close is "
+          "refused, writing nothing: %r" % ((fmid, r21[0], r21[1][-140:]),),
+          fmid != "missing" and r21[0] == M.E_USAGE and read(mpathf) == before)
+
+    f6 = verb(proj, "file-return", "P1", "--role", "reviewer",
+              stdin=_hd_return([]))
+    f7 = verb(proj, "file-return", "P1.2", "--role", "reviewer", "--head",
+              _HD_HEAD, stdin=_hd_return([]))
+    check("hd21 a phase return needs `--head`, the head its brief was computed "
+          "at, and a task's return takes none: %r" % ((f6[0], f7[0]),),
+          f6[0] == M.E_USAGE and "--head" in f6[1]
+          and f7[0] == M.E_USAGE and "--head" in f7[1])
+
+
 def _batch_doc(**over):
     """A planning file in the shape `add --from-file` reads: the request as
     typed, its open choices, one phase and two tasks, the second waiting on the
@@ -12823,6 +13387,7 @@ def _selftest():
         _harness.stage(check, "sl-block", _success_line_cases)
         _harness.stage(check, "fr-block", _return_cases)
         _harness.stage(check, "fb-block", _batch_cases)
+        _harness.stage(check, "hd-block", _held_cases)
     return _harness.run(body)
 
 

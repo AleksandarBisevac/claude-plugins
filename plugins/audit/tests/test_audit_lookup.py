@@ -17,6 +17,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -823,6 +824,60 @@ def _brief_cases(check):
           % ((code5, said5[:160]),),
           code5 == refused and "P1.2" in said5
           and not os.path.exists(brief_file(proj3, "P1", "phase.md")))
+
+    # ---- the phase brief under `review.perTask` ------------------------------
+    choices = _bf_signed_phase()
+    choices["phases"][0]["openChoices"] = ["round half-even or half-up",
+                                           "  refund shipping too?"]
+    proj4, mpath4 = project("bf-phase-choices", choices)
+    brief(proj4, mpath4, "P1", "phase")
+    ptext4 = read(brief_file(proj4, "P1", "phase.md")) or ""
+    none_left = _bf_signed_phase()
+    none_left["phases"][0]["openChoices"] = []
+    proj5, mpath5 = project("bf-phase-nochoices", none_left)
+    brief(proj5, mpath5, "P1", "phase")
+    ptext5 = read(brief_file(proj5, "P1", "phase.md")) or ""
+    check("bf12 the phase brief prints each of `phase.openChoices` verbatim "
+          "beside the request, says an empty list is the planner's answer that "
+          "none was left, and says an absent one was never asked: %r"
+          % ([ln for ln in ptext4.splitlines() if "refund" in ln.lower()][:4],),
+          "- round half-even or half-up" in ptext4
+          and "-   refund shipping too?" in ptext4
+          and "left no choice open" in ptext5
+          and "phase.openChoices is absent" in ptext)
+
+    keyed = _bf_signed_phase()
+    keyed["phases"][0]["tasks"][2]["reviewPerTask"] = "always"
+    proj6, mpath6 = project("bf-phase-owed", keyed)
+    for argv in (["init", "-q"], ["config", "user.email", "t@t"],
+                 ["config", "user.name", "t"], ["add", "-A"],
+                 ["commit", "-qm", "fixture"]):
+        subprocess.run(["git", "-C", proj6] + argv, capture_output=True,
+                       timeout=60)
+    head = subprocess.run(["git", "-C", proj6, "rev-parse", "HEAD"],
+                          capture_output=True, timeout=60).stdout.decode().strip()
+    answered = os.path.join(proj6, "docs", "audit", "evidence", "returns", "P1",
+                            "%s.reviewer.json" % ("d" * 40,))
+    os.makedirs(os.path.dirname(answered))
+    with open(answered, "w", encoding="utf-8") as fh:
+        json.dump({"findings": [], "intent": {"answer": "matches"},
+                   "verdict": "clean",
+                   "tasks": [{"id": "P1.2", "commit": "b" * 40,
+                              "answer": "matches"}]}, fh)
+    code7, said7 = brief(proj6, mpath6, "P1", "phase")
+    ptext6 = read(brief_file(proj6, "P1", "phase.md")) or ""
+    owed = [ln for ln in ptext6.splitlines() if ln.startswith("owed:")]
+    check("bf13 under the shipped `review.perTask: phase` the phase brief names "
+          "the head it was computed at, lists exactly the tasks owed their "
+          "three answers - not the one a filed return already answers at its "
+          "commit, not the one whose key reads `always` - asks the three "
+          "questions, and names the filing command keyed on that head: %r"
+          % ((code7, owed, head),),
+          code7 == M.E_OK and len(head) == 40 and ("head: %s" % (head,)) in ptext6
+          and owed == ["owed: P1.1"]
+          and "file-return P1 --role reviewer --head %s" % (head,) in ptext6
+          and "inherited" in ptext6.lower() and "red-first" in ptext6.lower()
+          and "answered by returns/P1/" in ptext6)
 
     code6, said6 = brief(proj, mpath, "P1", "executor")
     check("bf11 a phase id asked for a task's role, or a task id for the "
