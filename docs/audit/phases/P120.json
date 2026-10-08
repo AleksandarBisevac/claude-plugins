@@ -1,7 +1,7 @@
 {
   "id": "P120",
   "title": "the report never scrolls sideways, whatever the plan holds",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Release blocker for 3.2.0, found by tools/verify.sh --release: BUG-22.",
   "desiredOutcome": "every leg of the release verification's rendered-plan check, this repository's own plan included, renders with no sideways scroll at any width it checks",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "1698de0a9e154cb4d26c6ef1162a7a8032ae8ec0",
+  "branch": "audit/p120-the-report-never-scrolls-sidew",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,7 +29,7 @@
     {
       "id": "P120.1",
       "title": "Fix BUG-22: the report scrolls sideways on a plan with long phase content",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix BUG-22. Rendered from this repository's own plan, the report scrolls sideways at 960-1152px (table.phases right@13685). The likely cause is long phase content in an element that does not wrap; the latest phases' summaries run to thousands of characters. Find the element with the browser checker, and fix the class rather than the instance: no text-bearing element of the report's phases table, or of any other table, may force the document wider than the viewport, whatever the content. Use the stylesheet's own wrapping rule, and read the refactoring-the-assembled-ui skill first. Add a regression case to the report checker's legs, or to the report's selftests: a phase carrying a very long summary and a very long unbroken token. That case must show the overflow red before the fix. Print the UI pin budget (tools/count-ui-pins.py) before starting. Do not run the screenshot or GIF capture; the orchestrator does that after landing. Run `node tools/check-report-interactive.mjs` on a fresh render of this repo's plan and of the demo, and report the exit codes.",
       "files": [
         "plugins/audit/scripts/ui/report-css",
@@ -62,17 +62,18 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T22:27:29Z",
       "completedAt": null,
       "verifiedBy": [],
       "bugId": "BUG-22"
     }
-  ]
+  ],
+  "startedAt": "2026-10-08T22:27:29Z"
 }
