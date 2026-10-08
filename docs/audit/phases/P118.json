@@ -21,7 +21,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P118-R1",
@@ -683,7 +683,7 @@
     ],
     "outcome": "[findings: 73 - 5 high, 28 med, 40 low; 73 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "The plugin pipeline's cost per task now sits under the user's 2x ceiling against plain Claude Code doing the same task, measured on the benchmark. A step driver runs every step that needs no judgement. Agents get computed briefs and file their results once through submit. Planning is one batch call, and sign-off is one step. The per-task review moves into the phase review (review.perTask defaults to phase, recorded as a named minor-release exception). No pipeline command makes the main loop read reference prose, and a CI ceiling holds the command bodies there.\n\nMeasured (docs/research/pipeline-cost-results.md, with every figure beside its tools/stream-cost.py command):\n- **Per task, like for like:** 1.29-1.44 times plain, against 4.70-5.64 before. The 2.0 ceiling is confirmed. The 1.25 ideal is met only against whole plain sessions (1.08-1.21).\n- **Whole feature:** 2.6-3.6 times arm A and 1.9-2.7 times arm B, against 9.3-10.3 and 6.0-6.7 before.\n- **Single-task probe:** 0.505 against 1.748.\n- **Phase overhead:** 0.60 and 0.75 against the 1.00 budget, and 1.15 in the session that stopped to ask the human. The design rule reads that as inconclusive.\n- **Quality:** unchanged, at 13/14 in every arm.\n\nThe next measured lever is the executor's prose hand-back (F567).\n\nThe guarantees were reviewed in ten rounds against the default phase key. The holds sit in the verbs:\n- signoff refuses an unsettled human answer;\n- close-phase refuses a landing whose copies lack the bound answers or the verdict, or that carries a human-only return the verdict did not read;\n- file-return refuses after a verdict.\n\nSeventy-three review findings were resolved by fix tasks P118.12-P118.24. Two of them replaced the place-based landing check with a read set: the sign-off records the returns it read, and close-phase refuses any human-only return outside that set wherever it sits; a human's settlement binds to the answer's content, not its name. Faults found along the way are in the internal plan (F560, F561, F563-F571), and harness faults are in the execution findings.",
   "tasks": [
     {
       "id": "P118.1",
@@ -2358,5 +2358,10 @@
       }
     }
   ],
-  "startedAt": "2026-10-07T21:17:01Z"
+  "startedAt": "2026-10-07T21:17:01Z",
+  "testEvidence": {
+    "runId": "2026-10-08T16:32:07Z.276113",
+    "status": "passed",
+    "at": "2026-10-08T16:32:07Z"
+  }
 }
