@@ -156,6 +156,7 @@ claude-plugins/                           # this repo (personal, public)
           record-risk-confirmation.py     # the high-risk gate answered BEFORE the run, bounded to named task ids and written to the trail
           record-outside-run.py           # a suite that ran where this plugin could not see it, so a gate run in the same window is not credited with its effects
           import-evidence.py              # a CI build's own evidence ledger file, brought in whole after its chain verifies - never rewrites a row, never re-chains; prints (never runs) the full-gate.py --learn-from command for each red full row it brought in
+          drive-phase.py                  # the step driver: `next <phase>` runs every due step that needs no judgement through the existing verbs, as subprocesses, and prints one instruction - dispatch, decide or done; a refused verb stops it with the verb's own words
           full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, then a coupling and a bug per named selection miss of a red run (the red still blocks), or the sentence and exit 0 when no meta.fullGate is declared; --learn-from <runId> runs nothing and learns from an imported row through the same function
           _runner_output.py               # every reading of what a test runner printed: its summary line (how many checks ran) and the lines naming a failing check
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs; the one POSIX sh (and its PATH) every plan command runs under, or a refusal - never cmd.exe
@@ -401,6 +402,7 @@ L7:
   commit-manifest-index -> _claude_home, _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
   commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
+  drive-phase -> _claude_home, _evidence_io, _filed_returns, _loader, _manifest_io, _output, _status_facts
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
@@ -3969,6 +3971,55 @@ is refused naming each ledger file `read_rows` could not read in full, the way `
 1 too; exit 0 means the learning ran, and when it filed nothing the lines above the summary say
 why. Learning twice files nothing new, by the own-miss rule above. Beside `--writer` it is a usage error, exit 2: a learning pass records no row for a
 writer to name.
+
+### `plugins/audit/scripts/governance/drive-phase.py`
+`drive-phase.py next <phaseId> [manifest] [--project-dir DIR] [--answer OPTION] [--reason TEXT]
+[--verbose]` — **the step driver.** One `next` reads the plan and the filed returns, performs
+every step of the phase's run that is due and needs no judgement, and prints exactly one
+instruction: `dispatch` (an agent type, the task, its model and the brief file `audit-lookup.py
+brief` wrote), `decide` (a named decision with its options), or `done`. The command body is the
+loop — run `next`, do what it prints, run `next` again — so a task costs the main loop four
+requests: dispatch the executor, `next`, dispatch the reviewer, `next`. `dp2` in
+`plugins/audit/tests/test_drive_phase.py` counts them over a drive of a fixture plan.
+
+**Every step is an existing verb, run as a subprocess.** An entry point may not import another,
+so each verb is resolved by basename through `_loader.script_path` and run: `audit-lock.py
+acquire` on every `next` (and `release` at `done`, only when this driver took the lock rather
+than being handed it), `audit-task.py start`, `audit-lookup.py brief --role`, `run-test-gate.py
+--task --record`, `stamp-verification.py compare --json`, `audit-task.py finding --findings-file -`
+for a reviewer's findings, `commit-task-work.py`, and `audit-task.py done --from-return`. A verb
+that exits non-zero stops the drive: the driver names the verb and prints its own words whole —
+the refusal and the remedy it gives — and exits 1 (`relay_refusal`). Nothing here re-decides
+what a verb decides.
+
+**The recorded gate stays before the reviewer.** The gate is recorded and the executor's stamp
+graded in the `next` that writes the reviewer's brief, so the reviewer reads the driver's run
+instead of making its own. A stale stamp prints the fields that moved (`moved_fields`, off the
+comparison's own `fields`), so nothing is left for the model to look up; a comparison git could
+not answer says so and never reads as unchanged.
+
+**One task at a time, in id order.** `next_task` takes the task in progress, else the first
+ready one. A recorded gate run while sibling executors edit the same tree measures their
+unfinished work, so the driver never has two tasks between dispatch and gate at once.
+
+**What the driver keeps.** `stateDir/drive/<phaseId>.json` holds what no verb records: which
+brief it handed out for which start (so an agent that filed nothing becomes a decision, never a
+silent second dispatch), whether it took the phase lock, the findings it already filed, and the
+decision it waits on. A decision is printed again on every `next` until `--answer` gives one of
+its options; an option it does not offer, or one that records a reason given none, is exit 2.
+`DECISIONS` lists them: a red recorded gate, an agent that filed no return, a high-risk commit, a
+commit with nothing in it, a reviewer answer only a human settles, and a phase with no ready task.
+
+**Where the text and the seams are.** Every line the model is shown is rendered from `STEPS`,
+one entry per step, whose `rule` lines print under its instruction when it has any. `reviewer_due` is the one place the
+per-task reviewer's dispatch is decided. `did_tasks` reads the driver's own did-line back, and is
+what `tools/stream-cost.py` reads a driver session's task cycle from, since the driver's `start`
+and `done` run in subprocesses the session's stream never shows.
+
+**Bounded output.** Every print that is not a stop stays inside `INSTRUCTION_BYTES`; `dp3` holds
+it over the fixture drive, and `--verbose` adds each verb's run above the instruction. The brief
+path is printed from the project root when it lies inside it (`project_relative`), so the size of
+a print does not grow with where the project sits on disk.
 
 ### `plugins/audit/scripts/governance/propose-gates.py`
 A plan proposal that reads what previous runs in THIS repository actually ran and what they

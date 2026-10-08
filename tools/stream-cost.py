@@ -103,8 +103,11 @@ them, so `done --help` closes nothing and a script path held in a shell variable
             verbs, or the request that opened it when none does
   cycle     from the first request that starts a task to the last that closes one
             before any request inside it plans; the tasks it holds are the operands of
-            its `done` calls. A session with no start has no cycle, and one with no
-            close after its start has a cycle that never closed: each says so
+            its `done` calls. A request that runs the step driver (`drive-phase.py`)
+            starts and closes the tasks its printed result says it started and
+            closed, because the driver calls `start` and `done` in subprocesses the
+            stream does not show. A session with no start has no cycle, and one with
+            no close after its start has a cycle that never closed: each says so
   after it  a fix task from each planning verb to the next close; the close from the
             lock release or the request after the landing, whichever comes first; and
             sign-off, the rest
@@ -145,6 +148,12 @@ import _output  # noqa: E402  (the anchor: install_path, safe_stdio)
 _output.install_path()
 
 import _usage_core  # noqa: E402  (the shipped price table and its resolver)
+import _loader  # noqa: E402  (load_script: the step driver's own did-line reader)
+
+# The step driver starts and closes a task in its own subprocesses, which the stream
+# never shows; what it shows is the driver's print, and the driver's own reader of
+# that print is the one place the words it uses are kept.
+_DRIVE = _loader.load_script("drive-phase.py", "stream_cost_drive_phase")
 
 MAIN = "main"
 STAGE_ORDER = ("orient", "plan", "main", "executor", "gate", "reviewer", "close")
@@ -222,6 +231,16 @@ def _text_bytes(value):
     return 0
 
 
+def _text_of(value):
+    """A content value's text: a string as it is, a list's text parts joined."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "\n".join(str(part.get("text") or "") for part in value
+                         if isinstance(part, dict))
+    return ""
+
+
 def _emitted_bytes(block):
     """Bytes a content block puts on the wire as model output."""
     kind = block.get("type")
@@ -271,6 +290,9 @@ def parse(events):
                        if isinstance(p, dict) and isinstance(p.get("path"), str)
                        and os.path.isabs(p.get("path"))))
     requests, order, agents, results, calls = {}, [], {}, {}, {}
+    # Bash calls that run the step driver: their results' text is kept, because
+    # the tasks the driver started and closed are named there and nowhere else.
+    driven = set()
     timeline, seen, unjoined, ends, inits = [], set(), 0, [], 0
     last_main, before_any = None, 0
     for event in events:
@@ -312,6 +334,10 @@ def parse(events):
                             "input": block.get("input") or {}}
                     req["tools"].append(tool)
                     calls[tool["id"]] = mid
+                    if tool["name"] == "Bash" and any(
+                            script == DRIVER_SCRIPT for script, _v, _o in
+                            script_calls(str(tool["input"].get("command") or ""))):
+                        driven.add(tool["id"])
                     if tool["name"] in AGENT_TOOLS:
                         agents[tool["id"]] = {
                             "type": tool["input"].get("subagent_type") or "?",
@@ -335,6 +361,8 @@ def parse(events):
                     results[tid] = {"bytes": _text_bytes(block.get("content")),
                                     "error": bool(block.get("is_error")),
                                     "launched": _launch_notice(block.get("content"))}
+                    if tid in driven:
+                        results[tid]["text"] = _text_of(block.get("content"))
                     timeline.append((stamp, "result", tid))
                 elif block.get("type") == "text" and not parent:
                     if last_main is None:
@@ -977,6 +1005,7 @@ TASK_SCRIPT = "audit-task.py"
 PLAN_VERBS = ("add", "add-phase")
 PLAN_SKILLS = ("audit:phase", "audit:task")
 LANDING_SCRIPT = "close-phase.py"
+DRIVER_SCRIPT = "drive-phase.py"
 LOCK_SCRIPT = "audit-lock.py"
 _VAR_RE = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?")
 # A shell assignment as a word after quote removal: its value may hold spaces.
@@ -1056,10 +1085,11 @@ def _calls_in(flat):
     return calls
 
 
-def request_marks(req):
+def request_marks(req, results=None):
     """What one main-loop request did that a span bound reads: whether it planned, the
     tasks it started and closed, whether it called a planning verb, landed the phase or
-    released the lock."""
+    released the lock. A step driver's call starts and closes what its result says it
+    did, read from `results` (tool id -> the parsed result)."""
     marks = {"plans": False, "adds": False, "starts": [], "dones": [], "lands": False,
              "releases": False}
     for tool in req["tools"]:
@@ -1072,7 +1102,12 @@ def request_marks(req):
         if tool["name"] != "Bash":
             continue
         for script, verb, operand in script_calls(data.get("command") or ""):
-            if script == TASK_SCRIPT and verb in PLAN_VERBS:
+            if script == DRIVER_SCRIPT:
+                did = _DRIVE.did_tasks(((results or {}).get(tool.get("id")) or {})
+                                       .get("text"))
+                marks["starts"].extend(did[_DRIVE.STARTED])
+                marks["dones"].extend(did[_DRIVE.CLOSED])
+            elif script == TASK_SCRIPT and verb in PLAN_VERBS:
                 marks["plans"] = marks["adds"] = True
             elif script == TASK_SCRIPT and verb in ("start", "done") and operand:
                 marks["starts" if verb == "start" else "dones"].append(operand)
@@ -1083,7 +1118,7 @@ def request_marks(req):
     return marks
 
 
-def find_spans(main):
+def find_spans(main, results=None):
     """The span of every visible main-loop request, by index, and what bounds them.
 
     The cycle opens at the first request that starts a task and closes at the last
@@ -1093,7 +1128,7 @@ def find_spans(main):
     cycle: a fix task runs from each planning verb to the next request that closes a
     task, the close starts at the lock release or after the landing, whichever comes
     first, and sign-off is the rest."""
-    marks = [request_marks(r) for r in main]
+    marks = [request_marks(r, results) for r in main]
     count = len(main)
     lo = next((i for i, m in enumerate(marks) if m["starts"]), None)
     found = {"marks": marks, "lo": lo, "hi": None, "why": None, "tasks": [],
@@ -1174,7 +1209,7 @@ def spans(reading):
     (an agent's is that of the main-loop request that dispatched it), and the bounds."""
     session = reading["session"]
     main = [r for r in reading["requests"] if r["context"] == MAIN and not r["reconstructed"]]
-    span, found = find_spans(main)
+    span, found = find_spans(main, session.get("results"))
     of_main = dict((r["id"], span[i]) for i, r in enumerate(main))
     agents = session["agents"]
     by_id = dict((r["id"], r) for r in reading["requests"])
@@ -2730,6 +2765,55 @@ def _span_cases(check):
     check("sp11 the longest gap is read per context between its own consecutive requests, "
           "with the request it followed, and a context of one request has none: %r" % (gaps,),
           gaps == {MAIN: (12.0, 2), "a": (1.5, 1), "b": None})
+    _driver_span_cases(check)
+
+
+_FX_DRIVE = 'python3 "%s/scripts/governance/drive-phase.py" next P1' % _FX_PLUGIN
+
+
+def _fx_driven(steps):
+    """A main-loop-only flow of Bash calls, each `(command, its printed result)`."""
+    flow, cr = [], 100
+    for n, (command, said) in enumerate(steps):
+        flow.append(("req", "d%d" % n, None, _FX_OPUS, cr, 10, "1h",
+                     [{"type": "tool_use", "id": "dc%d" % n, "name": "Bash",
+                       "input": {"command": command}}]))
+        flow.append(("res", "dc%d" % n, said, None))
+        cr += 10
+    reading = analyse(_fx_events(flow, result=False))
+    return reading, spans(reading)
+
+
+def _driver_span_cases(check):
+    # The prints are the driver's own shape: a did-line, then the instruction.
+    drive = [(_FX_DRIVE, "[drive-phase] P1: started P1.1\n"
+                         "dispatch audit:audit-executor P1.1 model=sonnet brief=/b/1"),
+             ("ls", "x"),
+             (_FX_DRIVE, "[drive-phase] P1: gate P1.1 green; stamp current\n"
+                         "dispatch audit:audit-reviewer P1.1 model=sonnet brief=/b/2"),
+             ("ls", "x"),
+             (_FX_DRIVE, "[drive-phase] P1: closed P1.1 at abc1234; started P1.2\n"
+                         "dispatch audit:audit-executor P1.2 model=sonnet brief=/b/3"),
+             (_FX_DRIVE, "[drive-phase] P1: closed P1.2 at def5678\n"
+                         "done P1: every task is closed; sign-off is next")]
+    _r, spread = _fx_driven(drive)
+    found = spread["found"]
+    check("sp12 a session that drives its tasks through the step driver, calling no "
+          "start or done itself, has a task cycle: from the request whose print says it "
+          "started a task to the last whose print says it closed one, holding the tasks "
+          "closed: %r" % ((found["lo"], found["hi"], found["tasks"]),),
+          (found["lo"], found["hi"], found["tasks"]) == (0, 5, ["P1.1", "P1.2"])
+          and _fx_numbers(spread, "cycle") == [1, 2, 3, 4, 5, 6])
+    echoed = [("echo '[drive-phase] P1: started P1.1'",
+               "[drive-phase] P1: started P1.1"),
+              ("cat notes.txt", "[drive-phase] P1: closed P1.1 at abc1234"),
+              (_FX_DRIVE, "decide gate-red P1.1: its recorded gate is red (GATE RED: x)")]
+    _r, spread_echo = _fx_driven(echoed)
+    check("sp13 THE OVER-FIRE TWIN: the driver's words in the result of a command that "
+          "does not run the driver start nothing, and a driver print with no did-line "
+          "starts nothing either - so no cycle: %r" % (spread_echo["found"]["why"],),
+          spread_echo["found"]["lo"] is None
+          and "no task cycle" in (spread_echo["found"]["why"] or ""))
 
 
 def _selftest():

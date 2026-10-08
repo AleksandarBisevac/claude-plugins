@@ -262,7 +262,7 @@
     {
       "id": "P118.4",
       "title": "planning is one batch call that saves the request and its open choices",
-      "status": "in_progress",
+      "status": "done",
       "description": "Design section 6, T9. audit-task add --from-file adds a phase and its tasks in one call, revalidates once, and refuses a malformed file or a missing dependency while writing nothing. The file carries the request's text verbatim and a list of its open choices. The add section of phase.md is verb-scoped. Cases are shown red first.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -301,18 +301,28 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6d776e64",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Design T9. audit-task add --from-file PATH adds a phase and its tasks in one call. The file is {request, openChoices, phase, tasks}, where tasks refer to each other by an optional key.\n\nbatch_problems reports every fault at once: unknown keys, missing fields, bad paths, and a dependency it cannot resolve, named before any write. Under one lock the batch allocates the ids, builds the tasks through the existing _build_task, writes once, re-reads, validates once, and rolls back on any finding. It journals one phase.add row and one task.add row per task, and prints one success line. Any other add flag beside --from-file is refused. openChoices is required and may be empty, so \"nothing was left open\" stays distinct from \"nobody asked\".\n\nThe schema's phase gains request and openChoices, which are written verbatim. The sign-off reviewer's brief from P118.3 reads phase.request. KNOWN_PHASE, the demo generator's SCHEMA_EXEMPTIONS, task.md's add hint, the usage block and the README row follow.\n\nphase.md's add section is rewritten around one Write of the file and one call, never a heredoc, and stays at 5712 bytes. Write is now an allowed tool.\n\nCases fb1-fb10 were proved red at HEAD, and the allow halves were shown red under over-fire mutations in a scratch copy.\n\nThe /audit:phase add total moves only from 244758 to 242335 bytes, because the entry still counts all of phase.md plus the four reference reads. Its 8000 target belongs to P118.9.",
+        "descriptive": "Planning a phase is now one file the model writes and one command that adds the phase and all its tasks at once, saving the original request and the choices it left open for the phase review to check."
       },
       "startedAt": "2026-10-07T23:51:51Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-08T00:36:28Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-08T00:29:15Z.bddcc2",
         "status": "passed",
         "at": "2026-10-08T00:29:15Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6d776e64",
+        "at": "2026-10-08T00:36:28Z",
+        "basis": "orchestrator check: batch verb with all-or-nothing writes and named refusals; request and open choices saved verbatim; followers updated; the byte ceiling is honestly deferred to its owner P118.9"
       }
     },
     {

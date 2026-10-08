@@ -772,6 +772,17 @@ LAYERS = (
      # suite to one coupled key or to none, and `_status_facts` (L2) for
      # `CLOSED_BUG`, so a miss an open bug already tracks is not filed twice.
      "full-gate",
+     # `drive-phase` is the step driver: one `next` runs every step of a phase's
+     # run that needs no judgement and prints the one instruction left for the
+     # main loop. It sits beside `full-gate` for the same reason - every verb it
+     # performs (`audit-task`, `audit-lookup`, `run-test-gate`,
+     # `stamp-verification`, `commit-task-work`, `audit-lock`) is an entry point
+     # it may not import, so each is resolved through `_loader.script_path` (L1)
+     # and run as a subprocess, and no edge to any of them appears here. It
+     # reads `_manifest_io` (L1) for the plan, `_filed_returns` (L0) for where a
+     # return is filed, `_evidence_io` (L2) for the project and the evidence
+     # directory, and `_status_facts` (L2) for the one readiness rule.
+     "drive-phase",
      # `propose-gates` folds the evidence ledger into a plan proposal instead
      # of leaving `/audit:init`'s recon read the tree alone: a candidate gate
      # command that has run before is classified by what it actually caught,
