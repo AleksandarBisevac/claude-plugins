@@ -6,6 +6,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-10-09
+
+This release is about what the pipeline costs per task, and that cost dropped sharply. A step
+driver (`drive-phase.py`) now runs the mechanical steps the main loop used to carry out by hand,
+agents are spawned with briefs computed for them and hand back a single line, and a phase is
+signed off in one call. The per-task review moved into the phase review: `review.perTask`
+defaults to `phase`, which changes behaviour for a config that does not set the key - see
+*Changed* and `COMPATIBILITY.md`. The measured figures, and what each one was measured against,
+are in `docs/research/pipeline-cost-results.md`.
+
 ### Added
 - **`drive-phase.py submit` ends on the hand-back instruction**: its last line tells the agent to hand back the filed line above it, or the refusal above it verbatim, as its whole reply, so the agents' prompts no longer state the hand-back.
 - **A clean phase review's sign-off can be sent with its dispatch.** The phase reviewer's dispatch also prints `next <phase> --answer sign-off --reason <the summary>` to send once the review files; when the triage would offer nothing but `sign-off` - a `clean` review, no finding open, no answer waiting on a human, no fix task after the review's head - that one call is taken as the triage's `sign-off` answer, so the sign-off steps run as they would after it.
