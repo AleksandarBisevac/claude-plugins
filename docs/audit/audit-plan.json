@@ -1621,7 +1621,8 @@
       "P118.8",
       "P118.9",
       "P119.3-g0k",
-      "P119.5-g0k"
+      "P119.5-g0k",
+      "P119.9-g0k"
     ],
     "plugins/audit/commands/audit.md": [
       "P1.6",
@@ -3238,7 +3239,8 @@
       "P118.24-v7t",
       "P119.2-g0k",
       "P119.5-g0k",
-      "P119.8-g0k"
+      "P119.8-g0k",
+      "P119.9-g0k"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -3622,7 +3624,8 @@
       "P118.8",
       "P118.14-v7t",
       "P119.5-g0k",
-      "P119.6-g0k"
+      "P119.6-g0k",
+      "P119.9-g0k"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -4519,7 +4522,8 @@
       "P118.8",
       "P118.14-v7t",
       "P119.5-g0k",
-      "P119.6-g0k"
+      "P119.6-g0k",
+      "P119.9-g0k"
     ],
     "plugins/audit/tests/test_audit_status.py": [
       "P25.2",
