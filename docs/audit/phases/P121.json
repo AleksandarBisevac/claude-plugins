@@ -786,12 +786,17 @@
       },
       "startedAt": "2026-10-09T08:39:08Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-09T10:10:54Z.ee1364",
+        "status": "passed",
+        "at": "2026-10-09T10:10:54Z"
+      }
     },
     {
       "id": "P121.15-eof",
       "title": "Windows: test_close_phase finishes inside the cap, through one shared stage runner",
-      "status": "pending",
+      "status": "in_progress",
       "description": "On windows-latest, CI round 3 is green except for one file: plugins/audit/tests/test_close_phase.py did not finish within the sweep's 300-second per-file cap. test_drive_phase.py and test_audit_task.py already run their stages concurrently in child processes and replay them in order. Each of those files carries its own copy of the runner (`_collect`, `_text`, `_run_stage`, `_run_stages`, `_flag_values`).\n\nDo two things:\n1. Move that runner into plugins/audit/tests/_harness.py, once, with its own selftest cases. Make test_drive_phase.py and test_audit_task.py call it and delete their copies.\n2. Give test_close_phase.py the same shape: profile it by process starts (the probes from P121.12 and P121.2 are in the scratchpad), and split its long blocks only where no later case reads a name an earlier one bound. Every case id and verdict must stay identical in all three files: diff the case lists before and after.\n\nDo not raise the cap. Show the effect with the slow-spawn simulation, red before and green after. The sweep and gate-parity must stay green.",
       "files": [
         "plugins/audit/tests/_harness.py",
@@ -821,16 +826,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-09T09:26:44Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-09T10:03:13Z.9865c9",
+        "status": "passed",
+        "at": "2026-10-09T10:03:13Z"
+      }
     }
   ],
   "startedAt": "2026-10-09T00:55:19Z"

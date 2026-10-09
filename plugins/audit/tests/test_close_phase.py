@@ -1061,8 +1061,6 @@ def _review_answer_cases(check):
         finally:
             if root:
                 _harness.remove_tree(root)
-    _post_verdict_remedy_cases(check)
-    _review_answer_parent_cases(check)
 
 
 def _post_verdict_remedy_cases(check):
@@ -1135,10 +1133,6 @@ def _review_answer_parent_cases(check):
         finally:
             if root:
                 _harness.remove_tree(root)
-    _tipless_tracked_cases(check)
-    _unversioned_plan_cases(check)
-    _worktree_close_cases(check)
-    _human_answer_landing_cases(check)
 
 
 def _human_answer_fixture(name, intent, signed, raw=None):
@@ -1223,7 +1217,6 @@ def _human_answer_landing_cases(check):
         finally:
             if root:
                 _harness.remove_tree(root)
-    _verdict_reach_cases(check)
 
 
 # --- what a recorded verdict could have read ------------------------------------
@@ -1713,7 +1706,6 @@ def _verdict_reach_layout_cases(check, fixture):
           "record, the signing checkout's, lands: exit %r, %r"
           % (code, text[-300:]),
           _reach_outcome(git, sha, code, text, True))
-    _same_checkout_reach_cases(check)
 
 
 def _same_root(name):
@@ -4812,38 +4804,41 @@ def _success_line_cases(check):
           and refused == _cli(rmpath, rroot, "--verbose"))
 
 
-def _selftest():
-    def body(check):
-        _takeover_cases(check)
-        _lock_cases(check)
-        _no_survivor_cases(check)
-        _landed_survivor_cases(check)
-        _cases(check)
-        _parked_cases(check)
-        _landed_cases(check)
-        _main_tree_cases(check)
-        _harness.stage(check, "ra-block", _review_answer_cases)
-        _harness.stage(check, "rs-block", _read_set_reach_cases)
-        _override_cases(check)
-        _landing_cases(check)
-        _checked_out_cases(check)
-        _symlink_cases(check)
-        _composed_cases(check)
-        _same_dir_cases(check)
-        _surviving_copy_cases(check)
-        _merged_head_cases(check)
-        _backfill_cases(check)
-        _backfill_direction_cases(check)
-        _recovery_cases(check)
-        _harness.stage(check, "lt-block", _landing_commit_cases)
-        _harness.stage(check, "cl-block", _crlf_trail_cases)
-        _harness.stage(check, "sl-block", _success_line_cases)
-    return _harness.run(body)
+# --- the stages, each in a process of its own ----------------------------------
+# A full run lasts as long as its longest block, at best, and the time goes to
+# process starts - every close is a fresh interpreter, every fixture a run of
+# `git` calls. The review-answer chain was one block that called the next at
+# its end; it is cut at each of those calls, where no later block reads a name
+# an earlier one bound, and every half is a row of its own placed right after
+# its caller's, so the replayed case order is the one a run in one process
+# gives. `_harness.stage_faults` reads that each block runs in exactly one row.
+STAGES = (("tk-block", "_takeover_cases"), ("lk-block", "_lock_cases"),
+          ("ns-block", "_no_survivor_cases"),
+          ("ls-block", "_landed_survivor_cases"), ("cp-block", "_cases"),
+          ("pk-block", "_parked_cases"), ("ld-block", "_landed_cases"),
+          ("mt-block", "_main_tree_cases"),
+          ("ra-block", "_review_answer_cases"),
+          ("pv-block", "_post_verdict_remedy_cases"),
+          ("rp-block", "_review_answer_parent_cases"),
+          ("tt-block", "_tipless_tracked_cases"),
+          ("uv-block", "_unversioned_plan_cases"),
+          ("wc-block", "_worktree_close_cases"),
+          ("hl-block", "_human_answer_landing_cases"),
+          ("vr-block", "_verdict_reach_cases"),
+          ("sc-block", "_same_checkout_reach_cases"),
+          ("rs-block", "_read_set_reach_cases"), ("ov-block", "_override_cases"),
+          ("la-block", "_landing_cases"), ("co-block", "_checked_out_cases"),
+          ("sy-block", "_symlink_cases"), ("cm-block", "_composed_cases"),
+          ("sd-block", "_same_dir_cases"),
+          ("sv-block", "_surviving_copy_cases"),
+          ("mh-block", "_merged_head_cases"), ("bf-block", "_backfill_cases"),
+          ("bd-block", "_backfill_direction_cases"),
+          ("rc-block", "_recovery_cases"),
+          ("lt-block", "_landing_commit_cases"),
+          ("cl-block", "_crlf_trail_cases"), ("sl-block", "_success_line_cases"))
 
 
 if __name__ == "__main__":
     safe_stdio()
-    if "--selftest" in sys.argv[1:]:
-        raise SystemExit(_selftest())
-    sys.stderr.write("usage: test_close_phase.py --selftest\n")
-    raise SystemExit(2)
+    raise SystemExit(_harness.staged_main(sys.argv[1:], STAGES, globals(),
+                                          "close-phase-stages-"))

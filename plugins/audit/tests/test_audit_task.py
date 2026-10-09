@@ -24,7 +24,7 @@ The `check(name, cond)` this file used was the 2-argument form, which the harnes
 `check(label, cond, detail="")` is a superset of - the call sites are unchanged.
 
 A FULL RUN DRIVES ITS STAGES SIDE BY SIDE, each block in a process of its own,
-the way `test_drive_phase.py` does. The time goes to the verb, not to Python: a
+through the runner every staged suite shares, `_harness.staged_main`. The time goes to the verb, not to Python: a
 case runs `audit-task.py` against a fresh fixture, many of them a real `git`
 repository, so a run is process starts and file writes from end to end - and
 run as one sequence it outlasted the sweep's per-file cap on the windows leg,
@@ -49,7 +49,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 import _journal_io                                 # noqa: E402  (the journal rows several slices read)
@@ -66,6 +65,11 @@ import _locks as _lock_lib                         # noqa: E402  (its claim writ
 import _filed_returns as _fr                       # noqa: E402  (the word only a close writes)
 
 M = _loader.load_script("audit-task.py", modname="audit_task")
+# What `_harness.staged_main` runs each block of a full run as, and the
+# prefix of the directory the blocks report into; `ps2`/`ps3` drive the
+# same runner directly.
+_SCRIPT = os.path.abspath(__file__)
+_STAGE_PREFIX = "audit-task-stages-"
 
 
 # --- cases --------------------------------------------------------------------
@@ -14827,7 +14831,7 @@ def _stage_runner_cases(check):
 
     def keep(label, cond, detail=""):
         seen.append(("%s" % (label,), bool(cond), str(detail)))
-    _run_stages(keep, ["no-such-block"])
+    _harness.run_stages(keep, _SCRIPT, ["no-such-block"], _STAGE_PREFIX)
     check("ps2 a block whose process writes no case is ONE failing case "
           "naming it, not a quiet zero: %r" % (seen,),
           len(seen) == 1 and not seen[0][1]
@@ -14835,8 +14839,9 @@ def _stage_runner_cases(check):
           and "no case at all" in seen[0][2])
 
     replayed, local = [], []
-    _run_stages(lambda label, cond, detail="": replayed.append(
-        (_harness.case_id("%s" % (label,)), bool(cond))), ["ub-block"])
+    _harness.run_stages(lambda label, cond, detail="": replayed.append(
+        (_harness.case_id("%s" % (label,)), bool(cond))), _SCRIPT, ["ub-block"],
+        _STAGE_PREFIX)
     _harness.stage(lambda label, cond, detail="": local.append(
         (_harness.case_id("%s" % (label,)), bool(cond))), "ub-block",
         _unblock_cases)
@@ -14856,135 +14861,7 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("ps-block", "_stage_runner_cases"))
 
 
-# --- the stages, each in a process of its own ----------------------------------
-# How many blocks run at once. The sweep around this file already runs other
-# suites on the remaining cores, so this stays well under the machine's count.
-STAGE_WORKERS = 6
-# Below the sweep's per-file cap, so a block that hangs is reported here by its
-# own label rather than as the whole file timing out.
-STAGE_TIMEOUT = 280
-
-
-def _collect(only, path):
-    """Child side of a full run: run the named blocks and write every case, and
-    the call site each case id came from, to `path` as JSON. Printing nothing is
-    the point - the parent prints the one report, so the tally and the
-    duplicate-id check cover every block together."""
-    cases, sites = [], {}
-
-    def check(label, cond, detail=""):
-        label = "%s" % (label,)
-        cases.append([label, bool(cond), str(detail)])
-        cid = _harness.case_id(label)
-        site = _harness._call_site(sys._getframe(1)) if cid is not None else None
-        if site is not None and list(site) not in sites.setdefault(cid, []):
-            sites[cid].append(list(site))
-    for label, fn in STAGES:
-        if not only or label in only:
-            _harness.stage(check, label, globals()[fn])
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump({"cases": cases, "sites": sites}, fh)
-    return 0
-
-
-def _text(stream):
-    """A captured stream as text: a timeout hands it back as bytes even when
-    the run asked for text."""
-    if isinstance(stream, bytes):
-        return stream.decode("utf-8", "replace")
-    return stream or ""
-
-
-def _run_stage(label, out_dir):
-    """`{label, report, out, err, why}` for one block run as a child; `report`
-    is None when the child wrote no cases, and `why` then says what it did.
-    The child's stdin is empty: blocks run side by side, and one that read the
-    terminal would hang every other's report behind it."""
-    path = os.path.join(out_dir, "%s.json" % (label,))
-    argv = [sys.executable, os.path.abspath(__file__), "--selftest",
-            "--stage", label, "--cases-to", path]
-    try:
-        done = subprocess.run(argv, capture_output=True, text=True,
-                              errors="replace", stdin=subprocess.DEVNULL,
-                              timeout=STAGE_TIMEOUT)
-    except subprocess.TimeoutExpired as exc:
-        return {"label": label, "report": None, "out": _text(exc.stdout),
-                "err": _text(exc.stderr),
-                "why": "did not finish within %ds" % (STAGE_TIMEOUT,)}
-    res = {"label": label, "report": None, "out": done.stdout,
-           "err": done.stderr, "why": ""}
-    try:
-        with open(path, encoding="utf-8") as fh:
-            report = json.load(fh)
-    except (OSError, ValueError) as exc:
-        res["why"] = "exit %d, no cases written (%s: %s); stderr ends: %s" % (
-            done.returncode, type(exc).__name__, exc, done.stderr[-2000:])
-        return res
-    if not report.get("cases"):
-        # A block that ran no case is not a block that passed.
-        res["why"] = "exit %d, the block reported no case at all" % (
-            done.returncode,)
-        return res
-    res["report"] = report
-    return res
-
-
-def _run_stages(check, labels):
-    """Run each block in its own process, then replay what each reported in
-    block order. A block that wrote no cases is ONE NAMED failing case, the way
-    `_harness.stage` reports a block that raised; a case id claimed from two
-    call sites in different blocks is still a duplicate, read off the sites the
-    children recorded."""
-    out_dir = _harness.fixture_root("audit-task-stages-")
-    with ThreadPoolExecutor(max_workers=min(STAGE_WORKERS, len(labels))) as pool:
-        results = list(pool.map(lambda lab: _run_stage(lab, out_dir), labels))
-    sites = {}
-    for res in results:
-        sys.stdout.write(res["out"])
-        sys.stderr.write(res["err"])
-        if res["report"] is None:
-            check("%s DID NOT REPORT - its process ended without writing its "
-                  "cases, so the cases in THIS block did not run; every other "
-                  "block did" % (res["label"],), False, res["why"])
-            continue
-        for label, ok, detail in res["report"]["cases"]:
-            check(label, ok, detail)
-        for cid, places in res["report"]["sites"].items():
-            sites.setdefault(cid, set()).update(tuple(p) for p in places)
-    for label, ok, detail in _harness.label_faults([], sites):
-        check(label, ok, detail)
-
-
-def _selftest(only=()):
-    """Every block, each in a process of its own, or only the ones `--stage
-    <label>` names, run in this process - a narrowed run for one block, which a
-    red-first proof in a throwaway tree can afford."""
-    unknown = [o for o in only if o not in dict(STAGES)]
-
-    def body(check):
-        if unknown:
-            check("--stage names a block of this suite: %r" % (unknown,), False)
-        if not only:
-            _run_stages(check, [label for label, _fn in STAGES])
-            return
-        # Each block staged, so one that raises still lets the others run.
-        for label, fn in STAGES:
-            if label in only:
-                _harness.stage(check, label, globals()[fn])
-    return _harness.run(body)
-
-
-def _flag_values(args, flag):
-    return [args[i + 1] for i, a in enumerate(args[:-1]) if a == flag]
-
-
 if __name__ == "__main__":
     safe_stdio()
-    if "--selftest" in sys.argv[1:]:
-        args = sys.argv[1:]
-        to = _flag_values(args, "--cases-to")
-        if to:
-            raise SystemExit(_collect(_flag_values(args, "--stage"), to[-1]))
-        raise SystemExit(_selftest(_flag_values(args, "--stage")))
-    sys.stderr.write("usage: test_audit_task.py --selftest [--stage LABEL ...]\n")
-    raise SystemExit(2)
+    raise SystemExit(_harness.staged_main(sys.argv[1:], STAGES, globals(),
+                                          _STAGE_PREFIX))

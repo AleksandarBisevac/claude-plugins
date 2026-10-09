@@ -648,6 +648,227 @@ def run(body):
     return 0 if passed == total and total else 1
 
 
+# --- blocks run side by side, each in a process of its own --------------------
+# A suite whose time goes to process starts - a verb run as a fresh interpreter,
+# a fixture built out of `git` calls - lasts as long as the sum of its blocks
+# when it runs them in one process, and the windows leg starts a process far
+# slower than the others. So such a suite names its blocks in a `STAGES` table
+# of `(label, function name)` rows and hands its `__main__` to `staged_main()`:
+# a full run starts one child per block, a few at a time, and replays every case
+# they report in `STAGES` order through one `run()`, so the case ids, their
+# order and their verdicts are those of a run in one process. `--stage LABEL`
+# still runs the named blocks in this process, for a red-first proof in a
+# throwaway tree.
+#
+# How many blocks run at once. The sweep around a suite already runs other
+# suites on the remaining cores, so this stays well under the machine's count.
+STAGE_WORKERS = 6
+# Below the sweep's per-file cap, so a block that hangs is reported by its own
+# label rather than as the whole file timing out.
+STAGE_TIMEOUT = 280
+
+
+def flag_values(args, flag):
+    """Every value given after `flag` in `args`, in order. A flag that ends the
+    list carries no value, and is not read as one."""
+    return [args[i + 1] for i, a in enumerate(args[:-1]) if a == flag]
+
+
+def stream_text(stream):
+    """A captured stream as text: a timeout hands it back as bytes even when
+    the run asked for text, and as None when nothing was captured."""
+    if isinstance(stream, bytes):
+        return stream.decode("utf-8", "replace")
+    return stream or ""
+
+
+def stage_reach(src, stages):
+    """`{"orphans", "doubled"}` over the case functions `src` defines - every
+    top-level `_..._cases` - read from `stages` down through the calls one case
+    function makes to another. An orphan runs in no stage; a doubled one runs in
+    two places, which is what a block lifted into a stage of its own while its
+    old caller still calls it reads as.
+
+    WHY THIS IS READ AND NOT TRUSTED. A long block is cut by lifting the call
+    that ends it into a `STAGES` row of its own, so each cut is two edits in two
+    places; leaving out the first runs the cases twice, leaving out the second
+    runs them never, and a full run that is green in both shapes says nothing."""
+    tree = ast.parse(src)
+    defs = dict((node.name, node) for node in tree.body
+                if isinstance(node, ast.FunctionDef)
+                and node.name.startswith("_") and node.name.endswith("_cases"))
+
+    def callees(name):
+        return [node.func.id for node in ast.walk(defs[name])
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id in defs and node.func.id != name]
+    runs = dict((name, 0) for name in defs)
+    todo = [fn for _label, fn in stages]
+    while todo:
+        name = todo.pop()
+        if name not in runs:
+            continue
+        runs[name] += 1
+        if runs[name] == 1:
+            todo.extend(callees(name))
+    return {"orphans": sorted(n for n, k in runs.items() if k == 0),
+            "doubled": sorted(n for n, k in runs.items() if k > 1)}
+
+
+def stage_faults(src, stages):
+    """Extra FAILING cases for a `STAGES` table that does not run every block of
+    `src` exactly once; empty when it does - so a clean suite's case list is the
+    one it had before it was staged."""
+    got = stage_reach(src, stages)
+    faults = []
+    if got["orphans"]:
+        faults.append(("STAGED BLOCKS NEVER RUN - no `STAGES` row reaches %r, so "
+                       "its cases are missing from a full run that still reads "
+                       "green" % (got["orphans"],), False, ""))
+    if got["doubled"]:
+        faults.append(("STAGED BLOCKS RUN TWICE - %r is both a `STAGES` row and "
+                       "called by a block that is one" % (got["doubled"],),
+                       False, ""))
+    return faults
+
+
+def collect_stages(stages, namespace, only, path):
+    """Child side of a full run: run the blocks of `stages` named in `only`
+    (every one when it is empty), looked up in the suite's `namespace`, and
+    write every case, and the call sites each case id came from, to `path` as
+    JSON. Printing nothing is the point - the parent prints the one report, so
+    the tally and the duplicate-id check cover every block together."""
+    cases, sites = [], {}
+
+    def check(label, cond, detail=""):
+        label = "%s" % (label,)
+        cases.append([label, bool(cond), str(detail)])
+        cid = case_id(label)
+        site = _call_site(sys._getframe(1)) if cid is not None else None
+        if site is not None and list(site) not in sites.setdefault(cid, []):
+            sites[cid].append(list(site))
+    for label, fn in stages:
+        if not only or label in only:
+            stage(check, label, namespace[fn])
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({"cases": cases, "sites": sites}, fh)
+    return 0
+
+
+def run_stage(script, label, out_dir, timeout=STAGE_TIMEOUT):
+    """`{label, report, out, err, why}` for one block of `script` run as a
+    child; `report` is None when the child wrote no cases, and `why` then says
+    what it did. The child's stdin is empty: blocks run side by side, and one
+    that read the terminal would hang every other's report behind it.
+
+    EACH CHILD GETS A TEMP DIRECTORY OF ITS OWN, under every name `tempfile`
+    reads. Blocks that ran one after another in one process could compare the
+    temp directory's listing before and after a call and call any new entry
+    theirs; run side by side, a sibling block's scratch directory lands in the
+    same listing mid-call and reads as a leak this block never made."""
+    import subprocess
+    path = os.path.join(out_dir, "%s.json" % (label,))
+    own_tmp = os.path.join(out_dir, "%s.tmp" % (label,))
+    os.makedirs(own_tmp)
+    env = dict(os.environ, TMPDIR=own_tmp, TEMP=own_tmp, TMP=own_tmp)
+    argv = [sys.executable, script, "--selftest", "--stage", label,
+            "--cases-to", path]
+    try:
+        done = subprocess.run(argv, capture_output=True, text=True,
+                              errors="replace", stdin=subprocess.DEVNULL,
+                              env=env, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        return {"label": label, "report": None, "out": stream_text(exc.stdout),
+                "err": stream_text(exc.stderr),
+                "why": "did not finish within %ds" % (timeout,)}
+    res = {"label": label, "report": None, "out": done.stdout,
+           "err": done.stderr, "why": ""}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            report = json.load(fh)
+    except (OSError, ValueError) as exc:
+        res["why"] = "exit %d, no cases written (%s: %s); stderr ends: %s" % (
+            done.returncode, type(exc).__name__, exc, done.stderr[-2000:])
+        return res
+    if not report.get("cases"):
+        # A block that ran no case is not a block that passed.
+        res["why"] = "exit %d, the block reported no case at all" % (
+            done.returncode,)
+        return res
+    res["report"] = report
+    return res
+
+
+def run_stages(check, script, labels, prefix, workers=STAGE_WORKERS,
+               timeout=STAGE_TIMEOUT):
+    """Run each of `labels` as a child of `script`, then replay what each
+    reported in `labels` order. A block that wrote no cases is ONE NAMED failing
+    case, the way `stage()` reports a block that raised; a case id claimed from
+    two call sites in different blocks is still a duplicate, read off the sites
+    the children recorded."""
+    from concurrent.futures import ThreadPoolExecutor
+    out_dir = fixture_root(prefix)
+    with ThreadPoolExecutor(max_workers=max(1, min(workers, len(labels)))) as pool:
+        results = list(pool.map(
+            lambda lab: run_stage(script, lab, out_dir, timeout), labels))
+    sites = {}
+    for res in results:
+        sys.stdout.write(res["out"])
+        sys.stderr.write(res["err"])
+        if res["report"] is None:
+            check("%s DID NOT REPORT - its process ended without writing its "
+                  "cases, so the cases in THIS block did not run; every other "
+                  "block did" % (res["label"],), False, res["why"])
+            continue
+        for label, ok, detail in res["report"]["cases"]:
+            check(label, ok, detail)
+        for cid, places in res["report"]["sites"].items():
+            sites.setdefault(cid, set()).update(tuple(p) for p in places)
+    for label, ok, detail in label_faults([], sites):
+        check(label, ok, detail)
+
+
+def staged_selftest(stages, namespace, prefix, only=()):
+    """Every block of `stages`, each in a process of its own, or only the ones
+    `only` names, run in this process - a narrowed run for one block, which a
+    red-first proof in a throwaway tree can afford. The exit code `run()`
+    gives."""
+    script = os.path.abspath(namespace["__file__"])
+    unknown = [o for o in only if o not in dict(stages)]
+
+    def body(check):
+        if unknown:
+            check("--stage names a block of this suite: %r" % (unknown,), False)
+        if not only:
+            with open(script, "r", encoding="utf-8") as fh:
+                src = fh.read()
+            run_stages(check, script, [label for label, _fn in stages], prefix)
+            for label, ok, detail in stage_faults(src, stages):
+                check(label, ok, detail)
+            return
+        # Each block staged, so one that raises still lets the others run.
+        for label, fn in stages:
+            if label in only:
+                stage(check, label, namespace[fn])
+    return run(body)
+
+
+def staged_main(argv, stages, namespace, prefix):
+    """A staged suite's whole command line: `--selftest`, narrowed by
+    `--stage LABEL ...`; a child's `--cases-to PATH`; anything else a usage
+    error. The exit code."""
+    if "--selftest" not in argv:
+        sys.stderr.write("usage: %s --selftest [--stage LABEL ...]\n"
+                         % (os.path.basename(namespace["__file__"]),))
+        return 2
+    to = flag_values(argv, "--cases-to")
+    if to:
+        return collect_stages(stages, namespace, flag_values(argv, "--stage"),
+                              to[-1])
+    return staged_selftest(stages, namespace, prefix,
+                           flag_values(argv, "--stage"))
+
+
 # --- selftest -----------------------------------------------------------------
 def _capture(fn, *args, **kwargs):
     """`(stdout_text, returned)` for a call that prints. Restores the stream in
@@ -1227,8 +1448,162 @@ def _cases(check):
         check("wp1 worktree_pair builds its fixture (%s)" % (_wp,), False)
 
 
+# A suite staged through `staged_main`, written into a fixture and run for real.
+# `a-block` sleeps first, so a runner that replayed blocks in the order they
+# FINISHED would print `y1` before `x1`; each block's label carries the temp
+# directory its process saw, which is how the cases read that each child had one
+# of its own.
+_STAGED_SUITE = '''import os, sys, tempfile, time
+sys.path.insert(0, %(tests)r)
+import _harness
+
+
+def _a_cases(check):
+    time.sleep(0.5)
+    check("x1 first of a", True)
+    check("x2 second of a tmp=" + tempfile.gettempdir(), True)
+
+
+def _b_cases(check):
+    check("y1 only of b tmp=" + tempfile.gettempdir(), True)
+%(more)s
+
+STAGES = (("a-block", "_a_cases"), ("b-block", "_b_cases")%(rows)s)
+
+if __name__ == "__main__":
+    raise SystemExit(_harness.staged_main(sys.argv[1:], STAGES, globals(),
+                                          "harness-staged-run-"))
+'''
+# The same suite with the faults a staged run must report: `z1` claimed from a
+# line in each of two blocks, a block slower than the timeout `sr11` hands it,
+# and a `_c_cases` no row reaches.
+_STAGED_FAULTS = {
+    "more": '''
+
+def _dup_cases(check):
+    check("z1 claimed here", True)
+
+
+def _dup_again_cases(check):
+    check("z1 and claimed here too", True)
+
+
+def _slow_cases(check):
+    time.sleep(3)
+    check("w1 too late to count", True)
+
+
+def _c_cases(check):
+    check("c1 never staged", True)
+''',
+    "rows": ', ("d-block", "_dup_cases"), ("e-block", "_dup_again_cases"), '
+            '("s-block", "_slow_cases")',
+}
+
+
+def _stage_runner_cases(check):
+    """The runner a staged suite hands its `__main__` to, driven over a fixture
+    suite run as a real command - replay order, isolation and every fault it
+    must name."""
+    import subprocess
+    check("sr1 flag_values reads every value after the flag, in order, and not "
+          "a flag that ends the list: %r"
+          % (flag_values(["--stage", "a", "--x", "--stage", "b", "--stage"],
+                         "--stage"),),
+          flag_values(["--stage", "a", "--x", "--stage", "b", "--stage"],
+                      "--stage") == ["a", "b"])
+    check("sr2 stream_text turns the bytes a timeout hands back into text, and "
+          "nothing captured into an empty string rather than None",
+          stream_text(b"caf\xc3\xa9") == u"caf\xe9" and stream_text(None) == ""
+          and stream_text("x") == "x")
+
+    twin = ("def _a_cases(check):\n    _b_cases(check)\n\n\n"
+            "def _b_cases(check):\n    pass\n\n\n"
+            "def _c_cases(check):\n    pass\n")
+    clean = stage_faults(twin, (("a", "_a_cases"), ("c", "_c_cases")))
+    lifted = stage_faults(twin, (("a", "_a_cases"), ("b", "_b_cases")))
+    check("sr3 stage_faults adds no case for a table running every block once - "
+          "a clean suite's case list is the one it had unstaged: %r" % (clean,),
+          clean == [])
+    check("sr3b ...and for a block lifted into a row while its caller still "
+          "calls it, and a block no row reaches, one failing case each naming "
+          "the block: %r" % (lifted,),
+          [(ok, "_b_cases" in lab, "_c_cases" in lab) for lab, ok, _d in lifted]
+          == [(False, False, True), (False, True, False)])
+
+    work = fixture_root("harness-staged-")
+    good = os.path.join(work, "good_suite.py")
+    bad = os.path.join(work, "bad_suite.py")
+    with open(good, "w", encoding="utf-8") as fh:
+        fh.write(_STAGED_SUITE % {"tests": TESTS_DIR, "more": "", "rows": ""})
+    with open(bad, "w", encoding="utf-8") as fh:
+        fh.write(_STAGED_SUITE % dict(_STAGED_FAULTS, tests=TESTS_DIR))
+
+    def suite(path, *args):
+        done = subprocess.run([sys.executable, path] + list(args),
+                              capture_output=True, text=True, errors="replace",
+                              stdin=subprocess.DEVNULL, timeout=120)
+        return done.returncode, done.stdout, done.stderr
+
+    code, out, _err = suite(good, "--selftest")
+    order = [line.split()[1] for line in out.splitlines()
+             if line.startswith(("PASS ", "FAIL "))]
+    check("sr4 a full run starts a child per block and replays their cases in "
+          "`STAGES` order, not the order the blocks finished in: exit %r, %r"
+          % (code, order),
+          code == 0 and order == ["x1", "x2", "y1"]
+          and out.rstrip().endswith("ALL PASS: 3/3 cases " + "passed"))
+    tmps = re.findall(r"tmp=(\S+)", out)
+    check("sr5 each child ran with a temp directory of its own, so a block "
+          "reading the temp listing cannot see a sibling's scratch: %r" % (tmps,),
+          len(tmps) == 2 and tmps[0] != tmps[1]
+          and tmps[0].endswith("a-block.tmp") and tmps[1].endswith("b-block.tmp"))
+    code, out, _err = suite(good, "--selftest", "--stage", "b-block")
+    order = [line.split()[1] for line in out.splitlines()
+             if line.startswith(("PASS ", "FAIL "))]
+    check("sr6 `--stage LABEL` runs the named block alone, in this process, for "
+          "a red-first proof: exit %r, %r" % (code, order),
+          code == 0 and order == ["y1"] and "b-block.tmp" not in out)
+    code, out, err = suite(good, "--no-such-flag")
+    check("sr7 anything but `--selftest` is a usage error, exit 2, naming the "
+          "suite: exit %r, %r" % (code, err),
+          code == 2 and "good_suite.py --selftest" in err and out == "")
+
+    code, out, _err = suite(bad, "--selftest")
+    check("sr8 a case id claimed from a line in each of two blocks is a "
+          "duplicate in the replayed run, read off the call sites the children "
+          "recorded: exit %r, %r" % (code, out[-600:]),
+          code == 1 and "DUPLICATE CASE ID `z1`" in out
+          and "bad_suite.py" in out)
+    check("sr9 ...and a block no `STAGES` row reaches fails the full run by "
+          "name, where a green tally over the other blocks would read complete: "
+          "%r" % (out[-600:],),
+          "STAGED BLOCKS NEVER RUN" in out and "['_c_cases']" in out)
+
+    seen = []
+
+    def keep(label, cond, detail=""):
+        seen.append(("%s" % (label,), bool(cond), str(detail)))
+    run_stages(keep, good, ["no-such-block"], "harness-staged-none-")
+    check("sr10 a block whose process writes no case is ONE failing case naming "
+          "it, not a quiet zero: %r" % (seen,),
+          len(seen) == 1 and not seen[0][1]
+          and seen[0][0].startswith("no-such-block DID NOT REPORT")
+          and "no case at all" in seen[0][2])
+    del seen[:]
+    run_stages(keep, bad, ["s-block"], "harness-staged-slow-", timeout=1)
+    check("sr11 a block that outlasts its timeout is ONE failing case naming "
+          "it and the timeout, not the whole file timing out: %r" % (seen,),
+          len(seen) == 1 and not seen[0][1]
+          and seen[0][0].startswith("s-block DID NOT REPORT")
+          and "did not finish within 1s" in seen[0][2])
+
+
 def _selftest():
-    return run(_cases)
+    def body(check):
+        _cases(check)
+        _stage_runner_cases(check)
+    return run(body)
 
 
 if __name__ == "__main__":
