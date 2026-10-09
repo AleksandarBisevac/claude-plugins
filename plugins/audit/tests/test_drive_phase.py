@@ -931,6 +931,24 @@ def _submit_cases(check):
           % ((code, text, red),),
           code == 0 and red.get("status") == "proved" and red.get("at")
           and "red-first proved" in text)
+    # A stub that read `--selftest` off the whole of argv answered the
+    # forwarded command's flag with its own pointer and exit 0.
+    if os.path.exists(path):
+        os.remove(path)
+    code, text = _submit(None, root, mpath, "P1.1", body,
+                         tail=["--", sys.executable, "tests/test_mine.py",
+                               "--selftest"])
+    filed = json.loads(_read(path).decode("utf-8")) if os.path.exists(path) else {}
+    red = filed.get("redFirst") or {}
+    check("ds7f a forwarded test command that carries `--selftest` after `--` "
+          "runs: submit files the helper's `proved` block, and the driver's own "
+          "pointer is not what answered: %r" % ((code, text, red),),
+          code == 0 and red.get("status") == "proved" and "has no inline" not in text)
+    code, text = _verb(root, DRIVER, ["--selftest"])
+    check("ds7g THE ALLOW TWIN: `--selftest` as the driver's own argument still "
+          "prints its pointer and exits 0: %r" % ((code, text),),
+          code == 0 and "has no inline --selftest" in text
+          and "test_drive_phase.py" in text)
 
     # The brief prints the manifest relative to the project; the agent's shell
     # may stand elsewhere.

@@ -196,9 +196,9 @@ def monthly_activity(manifest, rows, months=12):
 
 
 if __name__ == "__main__":
-    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
     safe_stdio()
-    if "--selftest" in sys.argv[1:]:
+    if selftest_requested(sys.argv[1:]):
         # Answers rather than falling through to the docstring dump, which would
         # exit 0 with no word about the flag. It deliberately does NOT print the
         # `N/M cases passed` contract - that literal is how

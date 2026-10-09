@@ -478,7 +478,7 @@
     {
       "id": "P122.7-z4y",
       "title": "a bug whose files are all test files materializes as a regression task, not tdd",
-      "status": "in_progress",
+      "status": "done",
       "description": "F602 (testbed, P1): BUG-1-u26 was a stale import in a test file; /audit:bug fix materialized it as tdd, red-first was impossible, the task was cancelled and re-added - one wasted executor. When a bug's fix task is materialized and every file the bug names is a test file (the project's test globs / the plugin's test-path reading), choose regression and write why into the task's note. Say it in commands/bug.md (which today promises a tdd task) and verbs-in-full.md. Blocked by the F601 task only because both edit audit-task.py.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -514,25 +514,43 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "872e07ca0db8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py add --bug <bugId>: _bug_fix_discipline(bug) picks regression with a note when every file the bug names is a test path (_filed_returns.is_test_path), tdd otherwise (including a bug naming no file); applied only when --tests-mode is absent; the same write sets bug.taskId and status in_progress. Cases bf1-bf7 (bf-block). bug.md step 3, verbs-in-full --bug section, task.md hint. test_audit_task 924/924, test__refs 334/334. Red-first: not proved by the helper - the installed 3.2.0 drive-phase intercepts a forwarded --selftest (F603, fixed in P122.8 for the repo copy only); the red command is wrapped in sh -c on the user's explicit permission (2026-10-10), so the helper runs it. Red observed in the preparation run: bf-block 0/6 before the fix, 6/6 after.",
+        "descriptive": "A bug whose files are all test files now becomes a regression task when its fix is planned; any other bug stays tdd."
       },
       "startedAt": "2026-10-09T21:54:42Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T23:07:06Z",
+      "verifiedBy": [
+        "test_audit_task bf1",
+        "test_audit_task bf2",
+        "test_audit_task bf3",
+        "test_audit_task bf4",
+        "test_audit_task bf5",
+        "test_audit_task bf6",
+        "test_audit_task bf7"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-09T23:07:05Z.b808f2",
         "status": "passed",
         "at": "2026-10-09T23:07:05Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "872e07ca0db8",
+        "at": "2026-10-09T23:07:06Z"
+      },
+      "redFirst": {
+        "at": "2026-10-09T22:58:46Z",
+        "basis": "`sh -c python3 plugins/audit/tests/test_audit_task.py --selftest --stage bf-block` in a throwaway tree at HEAD exited 1 with failing cases bf1 (house FAIL), bf7 (house FAIL), bf2 (house FAIL), bf3 (house FAIL), bf4 (house FAIL), bf5 (house FAIL), bf6 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 0/7 cases passed; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from <project>, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in <project>/node_modules and is not watched; the user's npm config (.npmrc in the home directory) dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
       "id": "P122.8-z4y",
       "title": "a script's own --selftest is read only from its own arguments, never from a command it forwards",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F603: every migrated selftest stub tests '\"--selftest\" in sys.argv[1:]', which matches the flag anywhere, including inside a test command a wrapper forwards after --. drive-phase answered the red helper's forwarded '<suite> --selftest' with its own pointer line and exit 0, so every Python red on this repo graded could-not-prove (P122.1-P122.3). One invariant: add _output.selftest_requested(argv) (true only for the script's own flag: before any '--', and not as an option value), make every stub call it, and add an AST lint in _output.py that fails a stub spelling 'in sys.argv' for --selftest, with a red-first allow case. The declared list is every stub at the time of planning (114 files, from grep -rl over scripts/); hooks/ carry the same stub but forward no command and cannot import _output, so they stay out. A file this misses is a scope widening.",
       "files": [
         "plugins/audit/scripts/_output.py",
@@ -711,16 +729,22 @@
         "P122.7-z4y"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-09T23:07:07Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-09T23:28:07Z.dbd653",
+        "status": "passed",
+        "at": "2026-10-09T23:28:07Z"
+      }
     },
     {
       "id": "P122.9-z4y",

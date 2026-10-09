@@ -165,6 +165,32 @@ def own_args(argv):
     return argv[:argv.index("--")] if "--" in argv else argv
 
 
+SELFTEST_FLAG = "--selftest"
+# Options that take no value: the flag right after one of these is still the
+# script's own. Every other long option is read as possibly taking the next
+# token, because a stub has no parser to ask.
+_VALUELESS_FLAGS = (VERBOSE_FLAG,) + LONG_FORM_FLAGS
+
+
+def selftest_requested(argv):
+    """True only when `--selftest` is this script's own flag.
+
+    A wrapper such as `drive-phase.py submit ... -- <suite> --selftest` forwards a
+    test command whose `--selftest` belongs to that command; a stub that looked for
+    the flag anywhere in argv answered it with its own pointer and exit 0, so the
+    forwarded suite never ran. So the flag counts only before the first `--`, and
+    not as the value of the option right before it: a long option other than the
+    valueless ones above is taken to consume the next token, since a stub has no
+    parser to ask. `argv` is the arguments without the program name.
+    """
+    head = own_args(argv)
+    return any(a == SELFTEST_FLAG
+               and (i == 0 or head[i - 1] in _VALUELESS_FLAGS
+                    or not head[i - 1].startswith("--")
+                    or "=" in head[i - 1])
+               for i, a in enumerate(head))
+
+
 def without_verbose(argv):
     """`(verbose, argv)` with `--verbose` taken out of the command's own arguments.
 
@@ -1857,6 +1883,51 @@ def truncated_evidence_violations(dirs=None):
     return sorted(violations)
 
 
+# --- selftest-flag check ------------------------------------------------------
+_SELFTEST_ARGV = ("a stub reads `--selftest` off sys.argv, which matches the flag "
+                  "inside a forwarded test command too; ask "
+                  "_output.selftest_requested(sys.argv[1:]) instead")
+
+
+def _mentions_sys_argv(node):
+    return any(isinstance(n, ast.Attribute) and n.attr == "argv"
+               and isinstance(n.value, ast.Name) and n.value.id == "sys"
+               for n in ast.walk(node))
+
+
+def selftest_argv_violations(dirs=None):
+    """(filename, line, what) for a stub that spells `"--selftest" in sys.argv`.
+
+    SCOPE: `scripts/` only. A stub is a file with no inline suite of its own - the
+    ones whose `--selftest` only points at `tests/` - and it must ask
+    `selftest_requested()`, because a wrapper forwards test commands and a flag
+    matched anywhere in argv answers theirs. A file that carries its own suite is
+    left alone: it forwards nothing. `hooks/` carries the same stub but cannot
+    import this module and forwards no command.
+
+    WHAT IT CANNOT SEE: argv reached through another name (`args = sys.argv`) or a
+    `from sys import argv`, and a comparison built from a variable holding the
+    flag. A clean result means "none of this spelling here".
+    """
+    dirs = dirs if dirs is not None else (SCRIPTS_DIR,)
+    violations = []
+    for d in dirs:
+        for name, path in lint_py_files(d):
+            if _carries_inline_selftest(path) is not False:
+                continue  # inline suite, or unreadable: reported elsewhere
+            with open(path, "r", encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), filename=name)
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Compare)
+                        and isinstance(node.left, ast.Constant)
+                        and node.left.value == SELFTEST_FLAG
+                        and any(isinstance(op, (ast.In, ast.NotIn))
+                                for op in node.ops)
+                        and any(_mentions_sys_argv(c) for c in node.comparators)):
+                    violations.append((name, node.lineno, _SELFTEST_ARGV))
+    return sorted(violations)
+
+
 # --- selftest coverage --------------------------------------------------------
 # THE RULE WAS TRANSITIONAL AND IS NOT ANY MORE. While the move from inline
 # `--selftest` blocks to `tests/` was under way it read "every `.py` under scripts/
@@ -3092,7 +3163,7 @@ def write_lf_lines(lines, stream=None):
 
 if __name__ == "__main__":
     safe_stdio()
-    if "--selftest" in sys.argv[1:]:
+    if selftest_requested(sys.argv[1:]):
         # Answers rather than falling through to the usage line, which would exit 2
         # with no word about the flag. It deliberately does NOT print the
         # `N/M cases passed` contract - that literal is how `selftest_coverage()`

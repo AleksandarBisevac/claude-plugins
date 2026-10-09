@@ -1039,9 +1039,9 @@ def check_submodules(rep, project, cfg, manifest, git_root):
 
 # --- cli ------------------------------------------------------------------------
 if __name__ == "__main__":
-    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
     safe_stdio()
-    if "--selftest" in sys.argv[1:]:
+    if selftest_requested(sys.argv[1:]):
         # Answers rather than exiting silently: `--selftest` is what every other
         # file here accepts, so nothing would tell a reader whether this one ran
         # nothing or has nothing. It deliberately does NOT print the

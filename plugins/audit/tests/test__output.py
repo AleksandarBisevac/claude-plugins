@@ -2724,6 +2724,7 @@ def _cases(check):
 
     _remove_tree_cases(check)
     _finding_code_cases(check)
+    _selftest_flag_cases(check)
     _success_line_cases(check)
 
 
@@ -3145,6 +3146,74 @@ def finding_sites(sources=None):
             if isinstance(code, ast.Constant) and isinstance(code.value, str):
                 codes.setdefault(code.value, []).append(where)
     return visited, uncoded, codes
+
+
+def _selftest_flag_cases(check):
+    import shutil
+    import tempfile
+    own = M.selftest_requested
+    check("sfl1 the flag alone, or among other flags and positionals, is the "
+          "script's own: %r" % ([own(["--selftest"]), own(["a", "--selftest"]),
+                                 own(["--verbose", "--selftest"]),
+                                 own(["--json", "--selftest"])],),
+          own(["--selftest"]) is True and own(["a", "--selftest"]) is True
+          and own(["--verbose", "--selftest"]) is True
+          and own(["--json", "--selftest"]) is True)
+    check("sfl2 ...and its absence, or a near miss, is not: %r"
+          % ([own([]), own(["--selftests"]), own(["--note=--selftest"])],),
+          own([]) is False and own(["--selftests"]) is False
+          and own(["--note=--selftest"]) is False)
+    check("sfl3 after the first `--` the flag belongs to the forwarded command "
+          "(the shape a red-first run hands a suite): %r"
+          % ([own(["red", "--", "t.py", "--selftest"]),
+              own(["--selftest", "--", "t.py"])],),
+          own(["red", "--", "t.py", "--selftest"]) is False
+          and own(["--selftest", "--", "t.py"]) is True)
+    check("sfl4 as the value of another option it is that option's text, not "
+          "this script's flag: %r"
+          % ([own(["--note", "--selftest"]), own(["--note", "x", "--selftest"])],),
+          own(["--note", "--selftest"]) is False
+          and own(["--note", "x", "--selftest"]) is True)
+    check("sfl5 a tuple, as a caller holding argv might pass: %r"
+          % (own(("--selftest",)),), own(("--selftest",)) is True)
+
+    stubs = tempfile.mkdtemp(prefix="audit-output-sf-")
+    try:
+        def _w(name, text):
+            with open(os.path.join(stubs, name), "w", encoding="utf-8") as fh:
+                fh.write(text)
+        _w("slice.py", "import sys\nif __name__ == '__main__':\n"
+                       "    if '--selftest' in sys.argv[1:]:\n        pass\n")
+        _w("whole.py", "import sys\nif __name__ == '__main__':\n"
+                       "    if '--selftest' in sys.argv:\n        pass\n")
+        _w("negated.py", "import sys\nif __name__ == '__main__':\n"
+                         "    if '--selftest' not in sys.argv[1:]:\n        pass\n")
+        _w("helper.py", "import sys\nfrom _output import selftest_requested\n"
+                        "if __name__ == '__main__':\n"
+                        "    if selftest_requested(sys.argv[1:]):\n        pass\n")
+        _w("other.py", "import sys\nif '--verbose' in sys.argv[1:]:\n    pass\n")
+        # The ALLOW case, and the mutation it is there for: a lint that fired on
+        # every `in sys.argv` for the flag would convict the files that really
+        # carry a suite and may read their own argv however they like.
+        _w("inline.py", "import sys\nif __name__ == '__main__':\n"
+                        "    if '--selftest' in sys.argv:\n"
+                        "        print('ALL PASS: 1/1 ' + %r)\n" % (M._CONTRACT,))
+        hits = M.selftest_argv_violations((stubs,))
+        named = dict((n, l) for n, l, _w3 in hits)
+        check("sfl6 a stub that reads the flag off `sys.argv` is reported by "
+              "file and line, sliced or whole, negated or not: %r"
+              % (sorted(named.items()),),
+              named.get("slice.py") == 3 and named.get("whole.py") == 3
+              and named.get("negated.py") == 3)
+        check("sfl7 ALLOW: the helper's spelling, an unrelated flag, and a file "
+              "that carries its own inline suite are silent: %r"
+              % (sorted(named),),
+              "helper.py" not in named and "other.py" not in named
+              and "inline.py" not in named and len(hits) == 3)
+    finally:
+        shutil.rmtree(stubs, ignore_errors=True)
+    check("sfl8 the real tree has no stub spelling the flag off `sys.argv`: %r"
+          % (M.selftest_argv_violations(),), M.selftest_argv_violations() == [])
 
 
 def _finding_code_cases(check):

@@ -312,9 +312,9 @@ def main(argv, out=print):
 
 
 if __name__ == "__main__":
-    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
     safe_stdio()
-    if "--selftest" in sys.argv[1:]:
+    if selftest_requested(sys.argv[1:]):
         print("record-risk-confirmation.py has no inline --selftest; its cases live "
               "in plugins/audit/tests/test_record_risk_confirmation.py - run that "
               "file instead.")

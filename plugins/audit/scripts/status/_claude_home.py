@@ -313,9 +313,9 @@ def attach_usage_hint(parser, env=None, version=None, plugin_root=None, cwd=None
 
 # --- cli ----------------------------------------------------------------------
 if __name__ == "__main__":
-    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
     safe_stdio()
-    if "--selftest" in sys.argv[1:]:
+    if selftest_requested(sys.argv[1:]):
         print("_claude_home.py has no inline --selftest; its cases live in "
               "plugins/audit/tests/test__claude_home.py - run that file instead.")
         sys.exit(0)

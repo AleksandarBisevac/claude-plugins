@@ -224,9 +224,9 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
     safe_stdio()
-    if "--selftest" in sys.argv[1:]:
+    if selftest_requested(sys.argv[1:]):
         # Answers rather than falling through to `main`, which would demand a
         # verb and exit 2. It deliberately does NOT print the `N/M cases passed`
         # contract - that literal is how `_output.selftest_coverage()` tells an

@@ -650,9 +650,9 @@ def main(argv, out=print):
 
 
 if __name__ == "__main__":
-    from _output import safe_stdio
+    from _output import safe_stdio, selftest_requested
     safe_stdio()
-    if "--selftest" in sys.argv[1:]:
+    if selftest_requested(sys.argv[1:]):
         print("full-gate.py: cases live in "
               "plugins/audit/tests/test_full_gate.py")
         raise SystemExit(0)

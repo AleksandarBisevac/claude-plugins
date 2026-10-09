@@ -2202,9 +2202,9 @@ def write_baseline(path, result, manifest, git_root):
 
 # --- cli ----------------------------------------------------------------------
 if __name__ == "__main__":
-    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
     safe_stdio()
-    if "--selftest" in sys.argv[1:]:
+    if selftest_requested(sys.argv[1:]):
         print("_invariants.py has no inline --selftest; its cases live in "
               "plugins/audit/tests/test__invariants.py - run that file instead.")
         sys.exit(0)

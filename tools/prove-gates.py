@@ -403,6 +403,8 @@ TABLE = (
  # block reads as compliant. The payload IS the anchor, so nothing here spells the
  # preamble a second time.
  ("path_preamble_violations", S + "_fmt.py", "after", INSTALL, INSTALL, OUT, "pp1"),
+ ("selftest_argv_violations", S + "_fmt.py", "after", INSTALL,
+  "\n_probe_flag = '--selftest' in sys.argv\n", OUT, "sfl8"),
  ("depth_sensitive_paths", S + "_fmt.py", "after", INSTALL,
   "\n_probe_dir = os.path.dirname(__file__)\n", OUT, "ds1"),
  ("house_style_violations", S + "_fmt.py", "after", INSTALL,
@@ -1327,6 +1329,12 @@ ALLOW = (
  # given day is the second hatch, and this is the row that fails if it closes.
  ("prose_number_claims", S + "_output.py", "replace",
   "        if _looks_historical(scope):", "        if False:", OUT, "pn4"),
+ # A file that carries its own inline suite forwards no command and may read its
+ # own argv however it likes. Weaken the skip and the lint convicts it; `sfl7`
+ # holds an inline fixture quiet.
+ ("selftest_argv_violations", S + "_output.py", "replace",
+  "            if _carries_inline_selftest(path) is not False:",
+  "            if False:", OUT, "sfl7"),
  # THIS LINT'S TWO NARROWINGS, EACH REMOVED. Both are the same shape - a guard
  # that convicts the very thing the house rule tells people to write - and both have
  # legitimate input in the real tree, which is what makes the rows mean something.
