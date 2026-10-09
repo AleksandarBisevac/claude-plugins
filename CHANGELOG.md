@@ -387,6 +387,21 @@ are in `docs/research/pipeline-cost-results.md`.
   checks it is gone before printing the line, and says so when a removal cannot complete instead
   of claiming one happened.
 
+- **A verb that writes a phase shard no longer copies `priority` into it (BUG-17).**
+  `audit-task.py start`, and every other verb that writes one phase shard, wrote the assembled
+  phase back whole, so the index-only `priority` field landed in the shard body, where nothing
+  reads it, and `validate-manifest.py` warned about it on every later run. Every writer that
+  turns an assembled phase into a shard body now goes through one function,
+  `_manifest_io.shard_body`, which leaves the index-only fields to the index. The panel's
+  write-back is one of those writers.
+
+- **The HTML report no longer scrolls sideways when a plan holds long free text (BUG-22).**
+  The carrier was a one-line evidence chip holding an accepted commit's reason. Plain-text chips
+  and wide detail cells now wrap, and title words are no longer split in the middle of a word.
+  `tools/check-report-interactive.mjs` now plants very long content into every rendered table of
+  every report it checks. What remains open is stated: a task title holding an unbroken token
+  longer than the window still widens the page.
+
 ## [3.1.0] - 2026-10-05
 
 ### Added
