@@ -632,6 +632,20 @@ def _cases(check):
               % (scope["breaches"],),
               len(scope["breaches"]) == 1 and "src/a.py" in scope["breaches"][0])
 
+        for name, mut in (("without a slash", _declare_dir),
+                          ("with a slash", _declare_dir_slash)):
+            scope = _check(_phase_answer(clean, mutate=mut), "commit-scope")
+            check("iv4a a declared DIRECTORY %s covers the file the commit "
+                  "staged under it - no breach, with the commit still examined: "
+                  "%r" % (name, scope["breaches"]),
+                  scope["breaches"] == [] and scope["examined"] == 2)
+        scope = _check(_phase_answer(clean, mutate=_declare_other_dir),
+                       "commit-scope")
+        check("iv4b ...and a directory the commit's file is NOT under still "
+              "breaches, so the first case is not a check that stopped looking: "
+              "%r" % (scope["breaches"],),
+              len(scope["breaches"]) == 1 and "src/a.py" in scope["breaches"][0])
+
         indexed = repos.get(index_in_task=True)
         scope = _check(_phase_answer(indexed), "commit-scope")
         check("iv7 staging the manifest INDEX in a task commit is its own breach "
@@ -1661,6 +1675,18 @@ def _is_found(node):
 # --- the in-memory mutations the both-directions cases use --------------------
 def _drop_file(manifest):
     manifest["phases"][0]["tasks"][0]["files"] = []
+
+
+def _declare_dir(manifest):
+    manifest["phases"][0]["tasks"][0]["files"] = ["src"]
+
+
+def _declare_dir_slash(manifest):
+    manifest["phases"][0]["tasks"][0]["files"] = ["src/"]
+
+
+def _declare_other_dir(manifest):
+    manifest["phases"][0]["tasks"][0]["files"] = ["docs/screenshots"]
 
 
 def _fake_sha(manifest):

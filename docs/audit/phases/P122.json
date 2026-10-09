@@ -29,7 +29,7 @@
     {
       "id": "P122.1",
       "title": "covers(): one coverage predicate, and the plan gate and every hook ask it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Add covers(entry, path) to _task_outputs.py (L1): strip a :line-range suffix, normalise backslashes, e = entry.rstrip('/'); True when path == e or path starts with e + '/'. A falsy entry covers nothing. output_covers reuses it for its directory arm. hooks/_config.covering_key answers through it (loaded via _load_scripts_module) and keeps its shape: the key that covers, or None, and None when the rule cannot be loaded (uncovered, the loud direction). guard-bash-writes.py and guard-secrets-read.py delete their inline copies and call covering_key; remind-tdd.py uses covering_key instead of an exact .get(rel). Cases: an entry with and without the slash covers a file under it; a sibling with a shared prefix (src vs src-old/a) is not covered; an exact file entry still covers only itself; the guards and the nudge agree with the plan gate on a slash-less directory. State the rule once in the schema's files description and manifest-conventions.md. Red-first each case against the old matcher.",
       "files": [
         "plugins/audit/scripts/manifest/_task_outputs.py",
@@ -72,25 +72,40 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "db88fc75f933",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added covers(entry,path) to _task_outputs.py (strips line range, normalises backslashes, rstrip('/'), exact or entry/ prefix; falsy covers nothing); output_covers reuses it for plain directory entries. _config.covering_key now answers through it via _load_scripts_module, None if unloadable. guard-bash-writes, guard-secrets-read inline prefix copies replaced by covering_key; remind-tdd uses covering_key instead of exact .get(rel). Added cases cv1-cv4 to test__task_outputs.py. Rule stated in schema files description and manifest-conventions.md. Full sweep green, ruff clean. Other listed test files unchanged. vermin/validate not run.",
+        "descriptive": "One shared covers() predicate now decides directory coverage for the plan gate, both guards and the TDD nudge."
       },
       "startedAt": "2026-10-09T19:32:58Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T19:48:21Z",
+      "verifiedBy": [
+        "test__task_outputs.py cv1 (covers matrix)",
+        "cv2 (covering_key via covers)",
+        "cv3 (guards keep no inline copy)",
+        "cv4 (remind-tdd uses covering_key)"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-09T19:48:20Z.cceea0",
         "status": "passed",
         "at": "2026-10-09T19:48:20Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "db88fc75f933",
+        "at": "2026-10-09T19:48:21Z"
+      },
+      "redFirst": {
+        "at": "2026-10-09T19:39:24Z",
+        "basis": "`sh -c python3 plugins/audit/tests/test__task_outputs.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 51/52 cases passed; 'covers' is not introduced by this task: HEAD already carries it in plugins/audit/scripts/manifest/_task_outputs.py, plugins/audit/hooks/_config.py, plugins/audit/hooks/require-plan.py, plugins/audit/hooks/guard-bash-writes.py, plugins/audit/hooks/guard-secrets-read.py, plugins/audit/hooks/remind-tdd.py, plugins/audit/reference/manifest-conventions.md; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from <project>, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in <project>/node_modules and is not watched; the user's npm config (.npmrc in the home directory) dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
       "id": "P122.2",
       "title": "commit-scope, staging, run-test-gate and scope widening read coverage through covers()",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F581's core. _invariants.commit_scope matches exact paths after stripping the slash, so a declared directory breaches every file committed under it, with or without the slash. Replace the membership test with covers(); _invariants._under and _scoped_commit.under_any/covering delegate to covers() rather than spelling the rule; run-test-gate._declared_by uses it; audit-task._narrowings accepts replacing src/a.py with src (or src/) as a widening, not a narrowing. Regression case: P120.1's exact shape (files declares docs/screenshots without a slash, commit stages docs/screenshots/areas.png) reports no breach; and a path outside the directory still breaches. Update README.md and reference/orchestrator.md where they say 'in the task's files'.",
       "files": [
         "plugins/audit/scripts/governance/_invariants.py",
@@ -103,7 +118,8 @@
         "plugins/audit/tests/test_run_test_gate.py",
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/README.md",
-        "plugins/audit/reference/orchestrator.md"
+        "plugins/audit/reference/orchestrator.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -130,25 +146,32 @@
         "P122.1"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-09T19:48:22Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-09T20:24:57Z.b1f614",
+        "status": "passed",
+        "at": "2026-10-09T20:24:57Z"
+      }
     },
     {
       "id": "P122.3",
       "title": "the red-first fix tree lays a declared directory over, not only files",
       "status": "pending",
-      "description": "F579, confirmed by reading: _lay_over skips any entry that is not a file, so a declared directory is never copied into the fix tree and HEAD's copy stays; _red_scope drops a declared test directory; _at_head compares ls-tree names exactly, so a dir/ spelling reads as new and is stubbed as an empty FILE; _one_declared and introduced never match a directory. Expand a declared directory to the files under it (reuse _tree_stamp._files_under, the git-pathspec reading scope_digest already uses) before these steps, and use covers() wherever a path is matched against an entry. Case: a task declaring a directory that holds the fix gets a red/green verdict, not could-not-prove; reproduce P120.2's shape (ui/report-css declared as a directory).",
+      "description": "F579, confirmed by reading: _lay_over skips any entry that is not a file, so a declared directory is never copied into the fix tree and HEAD's copy stays; _red_scope drops a declared test directory; _at_head compares ls-tree names exactly, so a dir/ spelling reads as new and is stubbed as an empty FILE; _one_declared and introduced never match a directory. Expand a declared directory to the files under it (reuse _tree_stamp._files_under, the git-pathspec reading scope_digest already uses) before these steps, and use covers() wherever a path is matched against an entry. Case: a task declaring a directory that holds the fix gets a red/green verdict, not could-not-prove; reproduce P120.2's shape (ui/report-css declared as a directory). Also (F602): the sandbox description the red helper stores in the committed shard (the said list: dependencies linked from the absolute project root, writes landing in its node_modules, the user npmrc in the home directory) must name paths relative to the project and spell no home shorthand - it put the machine path into P122.json and failed check-committed-pii. The new _task_outputs import changes the module map, so regenerate PLUGIN-BUILD-GUIDE.md fence with _deps.py --render.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
-        "plugins/audit/tests/test_stamp_verification.py"
+        "plugins/audit/tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -220,6 +243,54 @@
       "risk": "med",
       "blockedBy": [
         "P122.2"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P122.5-z4y",
+      "title": "the guards, the TDD nudge and the plan gate agree on a slash-less directory entry",
+      "status": "pending",
+      "description": "P122.1 landed covers() and routed covering_key, guard-bash-writes, guard-secrets-read and remind-tdd through it, but added cases only to test__task_outputs.py; the task's own requirement that the guards and the nudge agree with the plan gate on a slash-less directory has no case. Add, per hook, the case the old matcher fails: a task declaring a directory without a trailing slash covers a file under it (plan gate opens, the shell-write guards do not flag it, remind-tdd treats it as covered), a shared-prefix sibling is not covered, and covering_key returns None (uncovered) when _task_outputs cannot be loaded. Prove each case red against db88fc7^ (the pre-P122.1 matcher) before trusting it. Tests only.",
+      "files": [
+        "plugins/audit/tests/test_require_plan.py",
+        "plugins/audit/tests/test_guard_bash_writes.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_remind_tdd.py",
+        "plugins/audit/tests/test__config.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_require_plan.py: an in_progress task declaring src (no slash) opens the plan gate for src/a.py and not for src-old/a.py"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P122.1"
       ],
       "dependsOn": [],
       "attempts": 0,

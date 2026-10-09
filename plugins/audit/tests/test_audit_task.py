@@ -7568,6 +7568,19 @@ def _close_cases(check):
               _tw_none["basis"]
               and codeq == 0 and "standing in" not in txtq)
 
+        _nw = lambda was, now: M._narrowings(  # noqa: E731
+            [{"field": "files", "from": was, "to": now}])
+        check("nw1 replacing a file with the directory (with or without the "
+              "slash) that covers it is a widening, not a narrowing: %r"
+              % (_nw(["src/a.py"], ["src"]),),
+              _nw(["src/a.py"], ["src"]) == []
+              and _nw(["src/a.py"], ["src/"]) == [])
+        check("nw2 ...and replacing it with a directory that does NOT cover it, "
+              "or with a sibling sharing only a prefix, still narrows: %r"
+              % (_nw(["src/a.py"], ["docs"]),),
+              len(_nw(["src/a.py"], ["docs"])) == 1
+              and len(_nw(["src/a.py"], ["src-old"])) == 1)
+
         tw_here, tw_here_mp = mk("tw-on-disk", base_manifest())
         code, txt_disk = run(["scope", "P2.3", "--files",
                               ".claude/audit.config.json",

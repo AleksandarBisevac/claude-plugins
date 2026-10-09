@@ -1456,7 +1456,11 @@ def _narrowings(changes):
         if row["field"] in _FORWARD_ONLY:
             continue
         if row["field"] in _WIDENABLE:
-            dropped = [item for item in was if item not in now]
+            # A `files` entry replaced by a directory that covers it is a
+            # widening: the shared `covers` rule decides, not a second spelling.
+            dropped = [item for item in was if item not in now
+                       and not (row["field"] == "files"
+                                and any(_touts.covers(n, item) for n in now))]
             if dropped:
                 out.append("`%s` would drop %s"
                            % (row["field"], ", ".join(str(d) for d in dropped)))

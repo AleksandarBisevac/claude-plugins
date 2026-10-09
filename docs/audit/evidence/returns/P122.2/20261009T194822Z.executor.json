@@ -1,0 +1,26 @@
+{
+  "gates": {
+    "test__invariants --selftest": "pass",
+    "test_audit_task --selftest": "pass",
+    "test__scoped_commit --selftest": "pass",
+    "test_run_test_gate --selftest": "pass",
+    "test_verify_invariants --selftest": "pass",
+    "ruff (touched files)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-09T20:02:30Z",
+    "basis": "`python3 -c import sys,runpy;sys.argv=['plugins/audit/tests/test__invariants.py','--selftest'];runpy.run_path(sys.argv[0],run_name='__main__')` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: ModuleNotFoundError: No module named '_harness'; HEAD's own tests on HEAD's code are not green (ModuleNotFoundError: No module named '_harness') - the command is already red (or unreadable) at HEAD - narrow it to the task's cases; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main/node_modules and is not watched; the user's ~/.npmrc dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "_invariants.commit_scope now tests each declared entry with _task_outputs.covers; _invariants._under delegates to covers; _scoped_commit.covering uses covers (under_any goes through _under); run-test-gate._declared_by uses covers; audit-task._narrowings treats a files entry replaced by a covering directory as a widening. Added iv4a/iv4b (test__invariants) and nw1/nw2 (test_audit_task). README commit-scope row reworded; reference/orchestrator.md has no 'in the task files' phrase so left unchanged. Selftests all pass. Not run: full sweep, vermin, other gates.",
+    "descriptive": "A declared directory no longer yields a false commit-scope breach; coverage is answered by one shared covers() predicate."
+  },
+  "testsAdded": [
+    "test__invariants iv4a",
+    "test__invariants iv4b",
+    "test_audit_task nw1",
+    "test_audit_task nw2"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:03ad4464181417b6c3532ce0554b14fa081d933215d4a0727185153f43d674e9\",\"dirtyDigest\":\"sha256:323d28b1cf273e973ac1ffda230a3c6edd1646ad151afa9e44b14d1d53d7a695\",\"dirtyPaths\":{\"plugins/audit/README.md\":\"b5d08ffbae270a8b\",\"plugins/audit/scripts/governance/_invariants.py\":\"0f5b6b2c464683a8\",\"plugins/audit/scripts/governance/_scoped_commit.py\":\"9855d2c4a04dc895\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"740c2ca36600924a\",\"plugins/audit/scripts/manifest/audit-task.py\":\"e9b438a8b040c11c\",\"plugins/audit/tests/test__invariants.py\":\"dd623b89c7e1ca55\",\"plugins/audit/tests/test_audit_task.py\":\"dd3e114f65fcb984\"},\"head\":\"db88fc75\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/README.md\",\"plugins/audit/reference/orchestrator.md\",\"plugins/audit/scripts/governance/_invariants.py\",\"plugins/audit/scripts/governance/_scoped_commit.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test__invariants.py\",\"plugins/audit/tests/test__scoped_commit.py\",\"plugins/audit/tests/test_audit_task.py\",\"plugins/audit/tests/test_run_test_gate.py\",\"plugins/audit/tests/test_verify_invariants.py\"],\"scopeDigest\":\"sha256:77eac2735a1be5787b7eb9660683ba9c60963b212125cb3a8fe28882a97b50e4\",\"v\":2}"
+}

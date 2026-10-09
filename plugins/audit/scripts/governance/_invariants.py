@@ -99,6 +99,7 @@ import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR s
 import _manifest_rules as _rules  # noqa: E402  (the validator this re-runs on old states)
 import _manifest_crossrefs as _crossrefs  # noqa: E402  (FILEINDEX_PAIRING: the one finding a task commit cannot carry)
 import _status_facts  # noqa: E402  (gitRoot-relative file paths, already one implementation)
+import _task_outputs  # noqa: E402  (`covers`: the one rule for whether a declared path holds a file)
 import usage_ledger  # noqa: E402  (which model actually ran a task)
 
 # The one git runner in the tree for this family of questions, reused rather than
@@ -245,8 +246,9 @@ def _under(path, rel):
     `evidence/` and the list admits the rest of the repository one rename away.
     A falsy `rel` is False rather than a match on everything - an unresolved
     directory allows nothing, which is the direction that cannot invent a pass.
+    The rule itself is `_task_outputs.covers`, not spelled here.
     """
-    return bool(rel) and (path == rel or path.startswith(rel + "/"))
+    return _task_outputs.covers(rel, path)
 
 
 def _git_available(git_root):
@@ -381,15 +383,15 @@ def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
                         % (tid, sha[:12]))
             continue
         examined += 1
-        allowed = set()
+        allowed = []
         for name in (task.get("files") or []):
             rel = _strip_git_root(name, git_root_rel)
             if rel:
-                allowed.add(rel.strip("/"))
+                allowed.append(rel)
         staged = [ln.strip().replace("\\", "/")
                   for ln in out.splitlines() if ln.strip()]
         for path in staged:
-            if path in allowed:
+            if any(_task_outputs.covers(entry, path) for entry in allowed):
                 continue
             if phase_file_rel and path == phase_file_rel:
                 continue

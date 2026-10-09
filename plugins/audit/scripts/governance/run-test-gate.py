@@ -139,6 +139,7 @@ import _manifest_phases as _phases  # noqa: E402  (subject_of/is_suite_path/gate
 #                                  on, moved out from under a leading underscore here rather
 #                                  than copied; own_gate_entries: the entries `--own`
 #                                  runs, which the executor brief asks too)
+import _task_outputs as _touts  # noqa: E402  (`covers`: the one rule for whether a declared path holds a file)
 import _fmt  # noqa: E402  (human_duration: a recorded durationMs, in the one spelling
 #                           the terminal and the rendered report both print it in)
 import _loader  # noqa: E402  (load_hooks_config: logs_dir/ensure_local_dir, for --own's
@@ -312,7 +313,7 @@ def _declared_by(line, declared):
     for path in _ev.porcelain_paths(line):
         path = _norm(path)
         for entry in declared:
-            if path == entry or path.startswith(entry + "/"):
+            if _touts.covers(entry, path):
                 return True
     return False
 

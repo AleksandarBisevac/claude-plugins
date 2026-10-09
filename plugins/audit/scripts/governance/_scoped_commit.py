@@ -79,6 +79,7 @@ _output.install_path()
 
 import _evidence_io  # noqa: E402  (the one reader of a porcelain line's path)
 import _invariants  # noqa: E402  (`_under`: the one answer to "is this inside"; the trailer)
+import _task_outputs  # noqa: E402  (`covers`: the one rule for whether a declared path holds a file)
 import _journal_io  # noqa: E402  (the withdrawing row's append)
 
 
@@ -251,7 +252,7 @@ def covering(listed, paths):
     untracked.
     """
     return set(p for p in paths
-               if any(_invariants._under(entry, p) for entry in listed))
+               if any(_task_outputs.covers(p, entry) for entry in listed))
 
 
 def in_head(git_root, paths):
