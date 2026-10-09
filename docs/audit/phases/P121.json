@@ -1,7 +1,7 @@
 {
   "id": "P121",
   "title": "CI is green on Windows and Linux for the 3.2.0 release commit",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Release blocker for 3.2.0. CI run 37865326884 on release/v3.2.0 (4aaad089) failed selftests on windows-latest in eight files and one browser leg in manifest validation on Linux. Most of the work since 3.1.0 had never run on Windows.",
   "desiredOutcome": "the CI workflow passes on every job at the release commit, Windows selftests and the Linux manifest-validation browser legs included",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "ea5f05108c3102890ab0989ef4f76a88fcf75407",
+  "branch": "audit/p121-ci-is-green-on-windows-and-lin",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,7 +29,7 @@
     {
       "id": "P121.1",
       "title": "Windows: test__output rt3 holds on Windows",
-      "status": "pending",
+      "status": "in_progress",
       "description": "On windows-latest, plugins/audit/tests/test__output.py fails case rt3: 'a tree the plain removal could not take is removed by the fallback pass without changing the mode of a file OUTSIDE it that a link inside it points at: mode 666'. ",
       "files": [
         "plugins/audit/scripts/_output.py",
@@ -56,21 +56,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-09T00:55:19Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P121.2",
       "title": "Windows: test_audit_task finishes well inside the sweep cap",
-      "status": "pending",
+      "status": "in_progress",
       "description": "On windows-latest, plugins/audit/tests/test_audit_task.py did not finish within the sweep's 300-second per-file cap. Profile it first. Then run its stages concurrently in child processes and replay their results, the way tests/test_drive_phase.py has done since P119.7. Every case id and verdict must stay identical; diff the case lists before and after. Do not raise the cap. ",
       "files": [
         "plugins/audit/tests/test_audit_task.py"
@@ -96,21 +96,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-09T00:55:20Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P121.3",
       "title": "Windows: concurrent usage appends lose no row",
-      "status": "pending",
+      "status": "in_progress",
       "description": "On windows-latest, plugins/audit/tests/test_audit_usage.py fails case bw3: 'appenders for sessions outside the backfill set, running during a backfill, lose no row across repeated trials: appended 932, lost 97'. This may be a real data-loss bug on Windows, not a flaky test: a rename over an open file, or an append racing a rewrite without a lock. Find out which, and if it is real, fix the code. ",
       "files": [
         "plugins/audit/scripts/usage/usage_ledger.py",
@@ -139,21 +139,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-09T00:55:20Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P121.4",
       "title": "Windows: close-phase's symlink case holds on Windows",
-      "status": "pending",
+      "status": "in_progress",
       "description": "On windows-latest, plugins/audit/tests/test_close_phase.py fails case cr28: 'a declared symbolic link to a file that did not change lands BOUND'. It printed exit 1 and landed False, with 'REFUSED: does not land over its newest gate verdict'. ",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -180,21 +180,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-09T00:55:20Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P121.5",
       "title": "Windows: drive-phase prints and sign-off hold on Windows",
-      "status": "pending",
+      "status": "in_progress",
       "description": "On windows-latest, plugins/audit/tests/test_drive_phase.py fails three cases: dp3, where a success print of 400 bytes exceeds the 300-byte bound, likely because of Windows paths; and sg2 and gr1, the sign-off and commit sequences. ",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -221,21 +221,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-09T00:55:20Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P121.6",
       "title": "Windows: the panel launcher works on Windows",
-      "status": "pending",
+      "status": "in_progress",
       "description": "On windows-latest, plugins/audit/tests/test_panel_server.py fails cases ps1 and ps1b: `examples/panel.sh --detach` exits 2 with no output. The suite then raises FileNotFoundError for examples/acme-store/.claude/audit-panel.json. ps1 was added in P118, in commit 9372104d. ",
       "files": [
         "examples/panel.sh",
@@ -263,21 +263,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-09T00:55:21Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P121.7",
       "title": "Windows: stamp-verification prints on a legacy code page",
-      "status": "pending",
+      "status": "in_progress",
       "description": "On windows-latest, the blocks sd-deps and sb-new-file in plugins/audit/tests/test_stamp_verification.py raise UnicodeEncodeError: 'charmap' codec can't encode character U+25CF. Every other script calls safe_stdio(). Find where this path writes without it, or what it spawns that does. ",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -304,21 +304,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-09T00:55:21Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P121.8",
       "title": "Windows: measure-context counts the same bytes on Windows",
-      "status": "pending",
+      "status": "in_progress",
       "description": "On windows-latest, `tools/measure-context.py --selftest` fails case mc3 ('the entry's total is its body plus those files, to the byte') and case mc4 ('an agent loads its system prompt and every skill its frontmatter preloads'). The likely cause is CRLF line endings or path separators. ",
       "files": [
         "tools/measure-context.py"
@@ -344,21 +344,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-09T00:55:21Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P121.9",
       "title": "Linux: the hostile-row leg holds on this repo's plan in CI",
-      "status": "pending",
+      "status": "in_progress",
       "description": "In ubuntu CI, the 'The report is interactive' step of the manifest-validation job fails on the live-plan render of docs/audit/audit-plan.json: 'a very long summary and a very long unbroken token, planted in phases + data bugs, widen the document at no width: got 833px (826 -> 873)'. The same check passes on macOS. Render the plan and find the cell in the bugs data table that widens under Linux fonts; the reviewer's probes are in scratchpad/probe/. Fix the cause, or the check's assumption, without weakening what the check guards. ",
       "files": [
         "tools/check-report-interactive.mjs",
@@ -385,16 +385,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-09T00:55:22Z",
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-10-09T00:55:19Z"
 }
