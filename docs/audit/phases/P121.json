@@ -148,7 +148,12 @@
       },
       "startedAt": "2026-10-09T00:55:20Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-09T01:34:54Z.9ca8e7",
+        "status": "passed",
+        "at": "2026-10-09T01:34:54Z"
+      }
     },
     {
       "id": "P121.4",
@@ -189,7 +194,12 @@
       },
       "startedAt": "2026-10-09T00:55:20Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-09T01:27:37Z.ecdca2",
+        "status": "passed",
+        "at": "2026-10-09T01:27:37Z"
+      }
     },
     {
       "id": "P121.5",

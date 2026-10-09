@@ -2825,16 +2825,20 @@ def _symlink_refusal():
         _harness.remove_tree(probe)
 
 
-def _symlink_fixture(name, change_after):
+def _symlink_fixture(name, change_after, plain_links=False):
     """`(root, mpath, git)` - P1 declaring `link`, a committed symbolic link to
     `t.txt`, with its green recorded over the working tree: the recorder's
     digest follows the link and hashes `t.txt`'s bytes. `change_after` commits
-    a different `t.txt` after the green."""
+    a different `t.txt` after the green. `plain_links` sets the repository's
+    `core.symlinks` to false, the default of git on Windows, under which a
+    checkout writes a link as a plain file holding its target's path."""
     import _evidence_io as E
     import _tree_stamp as T
     root = _harness.fixture_root(name)
     git = _fixture_git(root)
     _init_fixture_repo(git)
+    if plain_links:
+        git("config", "core.symlinks", "false")
     phase = _signed_phase("P1", "audit/p1-demo")
     phase["testGate"] = ["test"]
     phase["tasks"][0]["files"] = ["link"]
@@ -2872,15 +2876,15 @@ def _symlink_cases(check):
     link's target text."""
     refused = _symlink_refusal()
     if refused is not None:
-        for label in ("cr28", "cr29"):
+        for label in ("cr28", "cr29", "cr30", "cr31"):
             _harness.skip(check, label, "os.symlink is refused here (%s)"
                           % (refused,), True)
         return
 
-    def run(name, change_after):
+    def run(name, change_after, plain_links=False):
         root = None
         try:
-            root, mpath, git = _symlink_fixture(name, change_after)
+            root, mpath, git = _symlink_fixture(name, change_after, plain_links)
             git("checkout", "-q", "main")
             code, text = _close(mpath, root, "--keep-branch")
             return code, text, _landed(git)
@@ -2897,6 +2901,21 @@ def _symlink_cases(check):
     check("cr29 SECOND DIRECTION: the same link whose TARGET changed after the "
           "green refuses as moved: exit %r, landed %r, %r"
           % (code, landed, text[:300]),
+          code == 1 and not landed
+          and "have changed since it was measured" in text)
+    # The same pair under `core.symlinks=false`: the tip's checkout writes the
+    # link as a plain file holding `t.txt`, so a tip that asked the file system
+    # whether `link` is a link hashed that path text and refused every green.
+    code, text, landed = run("closephase-symlink-plain", False, True)
+    check("cr30 a declared symbolic link lands BOUND where git checks links "
+          "out as plain files - the link is read from the tree's mode, not "
+          "from what the checkout wrote: exit %r, landed %r, %r"
+          % (code, landed, text[:400]),
+          code == 0 and landed and "gate: bound to run cr-0" in text)
+    code, text, landed = run("closephase-symlink-plain-moved", True, True)
+    check("cr31 SECOND DIRECTION: under the same setting, a link whose TARGET "
+          "changed after the green still refuses as moved: exit %r, landed "
+          "%r, %r" % (code, landed, text[:300]),
           code == 1 and not landed
           and "have changed since it was measured" in text)
 

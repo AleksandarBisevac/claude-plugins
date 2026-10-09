@@ -1759,11 +1759,13 @@ def _write_tip(git_root, branch, prefix, declared, scratch):
     paths = sorted(set(paths))
     staging = tempfile.mkdtemp(prefix="close-phase-tip-")
     try:
-        work_tree = _check_out(git_root, branch, paths, staging)
-        if work_tree is None:
+        checked = _check_out(git_root, branch, paths, staging)
+        if checked is None:
             return False
+        work_tree, leads = checked
         for path in paths:
-            raw = _checked_out_bytes(os.path.join(work_tree, path))
+            full = _leads_to(work_tree, leads, path)
+            raw = None if full is None else _checked_out_bytes(full)
             if raw is None:
                 # Listed and then not written out: the declared work at the
                 # tip is not established, which the digest must not read as
@@ -1783,10 +1785,11 @@ def _write_tip(git_root, branch, prefix, declared, scratch):
 
 
 def _check_out(git_root, branch, paths, staging):
-    """The work tree under `staging` holding `paths` (root-relative) checked
-    out from `branch`'s tip, every in-repository target of a symbolic link
-    among them checked out too, or None when git would not write them or a
-    link leads outside the tip.
+    """`(work tree, links)` - the work tree under `staging` holding `paths`
+    (root-relative) checked out from `branch`'s tip, every in-repository target
+    of a symbolic link among them checked out too, and `{link: target}` for
+    the links met - or None when git would not write them or a link leads
+    outside the tip.
 
     THE REPOSITORY'S OWN GIT, with the operator's config, under an index of its
     own: `read-tree` loads the tip into that index, so the attributes a checkout
@@ -1799,7 +1802,14 @@ def _check_out(git_root, branch, paths, staging):
     at the tip and in this work tree as well. A target outside the tip - an
     absolute path, or one climbing out of the repository - is not something the
     tip can vouch for, and answers None rather than bytes the digest would read
-    as moved."""
+    as moved.
+
+    A LINK IS KNOWN BY ITS MODE IN THE TIP'S TREE, and its target read from its
+    blob - never by asking the checked-out file whether it is a link. Under
+    `core.symlinks=false`, git's default on Windows, `checkout-index` writes a
+    link as a plain file holding its target's path, so a file-system question
+    would hash that path text and refuse every green the recorder took through
+    a real link."""
     code, out = _git_bytes(git_root, ["rev-parse", "--absolute-git-dir"])
     git_dir = out.decode("utf-8", "replace").strip() if code == 0 else ""
     if not git_dir:
@@ -1811,7 +1821,7 @@ def _check_out(git_root, branch, paths, staging):
     if not _git_ok(base + ["read-tree", "refs/heads/%s" % (branch,)], work_tree,
                    env, b""):
         return None
-    wanted, written = set(paths), set()
+    wanted, written, links = set(paths), set(), {}
     # Each round checks out what the last round's links lead to; a target
     # already written ends a chain, so a cycle of links ends too.
     while wanted - written:
@@ -1821,13 +1831,49 @@ def _check_out(git_root, branch, paths, staging):
                        b"".join(p.encode("utf-8") + b"\0" for p in batch)):
             return None
         written.update(batch)
+        texts = _link_texts(base, work_tree, env, batch)
+        if texts is None:
+            return None
         for path in batch:
-            target = _link_target(work_tree, path)
+            target = _link_target(path, texts.get(path))
             if target is False:
                 return None
             if target:
+                links[path] = target
                 wanted.add(target)
-    return work_tree
+    return work_tree, links
+
+
+def _link_texts(base, work_tree, env, paths):
+    """`{path: target text}` for the entries among `paths` the index (the
+    tip's tree, read in) records as symbolic links, mode 120000; None when git
+    would not say. The text is the link's blob, which git stores unconverted
+    whatever `core.symlinks` says."""
+    try:
+        listed = subprocess.run(
+            base + ["ls-files", "-s", "-z", "--"] + list(paths), cwd=work_tree,
+            env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    except Exception:
+        return None
+    if listed.returncode != 0:
+        return None
+    texts = {}
+    for entry in listed.stdout.decode("utf-8", "replace").split("\0"):
+        head, _tab, path = entry.partition("\t")
+        fields = head.split()
+        if not path or len(fields) < 2 or fields[0] != "120000":
+            continue
+        try:
+            blob = subprocess.run(base + ["cat-file", "blob", fields[1]],
+                                  cwd=work_tree, env=env,
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL)
+        except Exception:
+            return None
+        if blob.returncode != 0:
+            return None
+        texts[path] = blob.stdout.decode("utf-8", "replace")
+    return texts
 
 
 def _git_ok(argv, cwd, env, given):
@@ -1840,19 +1886,32 @@ def _git_ok(argv, cwd, env, given):
         return False
 
 
-def _link_target(work_tree, path):
-    """The root-relative path the link checked out at `path` leads to; None
-    when `path` is not a link, False when it leads outside the tip."""
-    full = os.path.join(work_tree, path)
-    if not os.path.islink(full):
+def _link_target(path, text):
+    """The root-relative path the link at `path`, holding `text`, leads to;
+    None when `path` is not a link (`text` None), False when it leads outside
+    the tip."""
+    if text is None:
         return None
-    text = os.readlink(full).replace("\\", "/")
+    text = text.replace("\\", "/")
     if os.path.isabs(text) or text.startswith("/"):
         return False
     target = posixpath.normpath(posixpath.join(posixpath.dirname(path), text))
     if target in (".", "..") or target.startswith("../"):
         return False
     return target
+
+
+def _leads_to(work_tree, links, path):
+    """The file under `work_tree` whose bytes reading `path` yields - the end
+    of its chain of links, or `path` itself - or None for a cycle of links,
+    which reading cannot resolve and the recorder could not have hashed."""
+    seen = set()
+    while path in links:
+        if path in seen:
+            return None
+        seen.add(path)
+        path = links[path]
+    return os.path.join(work_tree, path)
 
 
 def _checked_out_bytes(path):
