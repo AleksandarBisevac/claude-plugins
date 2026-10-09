@@ -1123,7 +1123,7 @@
     {
       "id": "P121.19-eof",
       "title": "the 3.2.0 notes carry the Windows fixes users will notice",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The 3.2.0 release notes do not yet carry this phase's user-facing fixes. Add entries under `## [3.2.0]`'s `### Fixed` in CHANGELOG.md for what a user would notice. Each entry is plain English, contains no number in prose, and cites no internal id. Read each task's outcome in docs/audit/phases/P121.json for the facts, and state only what the code holds.\n- Windows: cost records appended while a month is rewritten are no longer lost. Appends and the rewrite share a per-month lock. A failed carry is reported. A filesystem that refuses locks does not stall the metering hook.\n- Windows: the audit trail, evidence and ledgers are written with LF on every platform, and a phase lands on Windows with its landing record committed. A journal committed with CRLF by an older version still lands.\n- Windows: close-phase reads a committed symlink from git, so a link checked out as a plain file no longer refuses a phase whose gate was green. Declared paths are passed to git literally.\n- Windows: the panel launcher finds its own folder when given a backslash path.\n- Windows: the red-first helper reports native paths, and links dependencies as junctions when symlinks are not allowed.\n- Every text file in the repository checks out with LF on every platform, so a Windows checkout loads the same command and agent text.\nAdd test-only and CI-only changes only where a contributor would care, in one short entry at most.\nThen run `python3 -c \"import sys;sys.path.insert(0,'plugins/audit/scripts');import _deps;print(_deps.doc_prose_numbers())\"`; it must print nothing for CHANGELOG.md.",
       "files": [
         "CHANGELOG.md"
@@ -1149,16 +1149,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-09T10:59:07Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-09T11:08:59Z.b7a72c",
+        "status": "passed",
+        "at": "2026-10-09T11:08:59Z"
+      }
     }
   ],
   "startedAt": "2026-10-09T00:55:19Z"
