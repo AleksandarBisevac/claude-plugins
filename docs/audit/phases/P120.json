@@ -21,7 +21,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P120-R1",
@@ -62,7 +62,7 @@
     ],
     "outcome": "[findings: 4 - 1 high, 1 med, 2 low; 4 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "Release blocker for 3.2.0, found by tools/verify.sh --release: BUG-22, the report scrolling sideways on a plan with long free text. The carrier was a nowrap evidence chip holding an accepted commit's reason. Plain-text chips now wrap, and colspan detail cells wrap. A :has()-free rule keeps the full-run mark wrapping, so browsers without :has() keep the wrap they had. A bare-cell wrap rule was tried and removed: measured, it split ordinary title words mid-letter. tools/check-report-interactive.mjs now plants hostile content in every rendered table of every report it checks, opening closed disclosures to reach them, and fails on any title word split mid-letter above the narrow breakpoint. The phase review's high (the new leg failed on the scale demo) and med (the split words) were fixed by P120.2. Its lows and the residual (an unbroken token in a title still widens the page, closable only in the renderer) are recorded internally. The committed reports and screenshots are re-rendered with the fix.",
   "tasks": [
     {
       "id": "P120.1",
@@ -196,8 +196,8 @@
   ],
   "startedAt": "2026-10-08T22:27:29Z",
   "testEvidence": {
-    "runId": "2026-10-08T23:18:22Z.467307",
+    "runId": "2026-10-09T00:18:39Z.261c24",
     "status": "passed",
-    "at": "2026-10-08T23:18:22Z"
+    "at": "2026-10-09T00:18:39Z"
   }
 }
