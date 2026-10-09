@@ -991,7 +991,7 @@
     {
       "id": "P121.17-eof",
       "title": "CI bounds and the stall watch say and do what holds",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes P121-R4 and R9. (R4) ci.yml's comment says each timeout-minutes is at least twice the longest finished run, but Windows selftests in run 36840507574 took 23m31s against a 45-minute bound. Re-derive each bound from `gh run view <id> --json jobs` over the runs you name, set every bound to at least twice the longest, and make the comment name exactly those runs. (R9) capture-screenshots' stopStallWatch clears the interval but not the STALL_GRACE_MS timeout, so a stalled run that already unwound exits 1 thirty seconds later; keep and clear that handle. Show each red before and green after.",
       "files": [
         ".github/workflows/ci.yml",
@@ -1022,18 +1022,27 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0b304360",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes P121-R4 and R9.\n\nR4: every job's longest finished run was re-derived with `gh run view <id> --json jobs` over the 19 finished CI runs among the latest 20. The cancelled six-hour job is excluded.\n- selftests: 24m59s, so the bound rises from 45 to 60 minutes.\n- manifests: 9m50s, bound 30.\n- lint: 1m12s, bound 10.\n- plugin-validate: 0m21s, bound 10.\n\nThe ci.yml comment names those run IDs and the gh command, with one `longest <job>` line per job. tools/gate-parity.py's job_bound_evidence holds each timeout-minutes to at least twice its recorded figure, and reports a missing, unknown or duplicated line. New cases jb0-jb3; six mutations each go red.\n\nR9: watchForStall keeps the grace timer's handle. The stop function clears both timers and sets a stopped flag, so a tick still awaiting the browser close never arms the grace timer after the run stopped the watch. The clock, timers and exit are injectable, and watchForStall, STALL_MS and STALL_GRACE_MS are exported.\n\nNew vitest suite tools/ui-tests/stall-watch.test.mjs:\n- a stall that unwinds does not exit;\n- a stop during the tick's await does not exit;\n- a stall that never unwinds exits 1 once.\n\nAgainst HEAD's watchForStall, built in a scratch module and selected through STALL_WATCH_MODULE, the first two cases fail. With the fix's exit removed, the third fails. `npx vitest run` passes, 54 files.",
+        "descriptive": "Each CI time limit is now backed by a recorded measurement and checked against it, and a screenshot run that recovered on its own is no longer failed by a leftover timer."
       },
       "startedAt": "2026-10-09T10:23:31Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T10:58:43Z",
+      "verifiedBy": [
+        "tools/gate-parity.py",
+        "tools/ui-tests/stall-watch.test.mjs"
+      ],
       "testEvidence": {
         "runId": "2026-10-09T10:51:01Z.96cbd0",
         "status": "passed",
         "at": "2026-10-09T10:51:01Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "0b304360",
+        "at": "2026-10-09T10:58:43Z",
+        "basis": "orchestrator check: bounds re-derived from named runs and enforced by gate-parity; the stall-watch suite is red against HEAD and green after"
       }
     },
     {

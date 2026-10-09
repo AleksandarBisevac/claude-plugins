@@ -4018,56 +4018,178 @@ def _windows_cases(check):
           and os.stat(os.path.join(nm_j, "sentinel.txt")).st_nlink == 1
           and (payload_j.get("throwaway") or {}).get("removed") is True)
 
-def _cases(check):
-    _harness.stage(check, "sd-encoding", _encoding_cases)
-    _harness.stage(check, "sd-deps", _deps_cases)
-    _harness.stage(check, "sw-windows", _windows_cases)
-    _harness.stage(check, "sd-venv", _venv_cases)
-    _harness.stage(check, "sd-scan", _scan_cases)
-    _harness.stage(check, "sb-new-file", _new_file_cases)
-    _harness.stage(check, "sb-none-found", _none_found_cases)
-    _harness.stage(check, "sr-decisive", _decisive_cases)
-    _harness.stage(check, "sr-jest", _jest_cases)
-    _harness.stage(check, "sj-credit", _jest_credit_cases)
-    _harness.stage(check, "sr-crlf", _crlf_cases)
-    _harness.stage(check, "sr-listing", _listing_cases)
-    _harness.stage(check, "sr-leftover", _leftover_cases)
-    _harness.stage(check, "sr-holder", _holder_cases)
-    _harness.stage(check, "sv-take", _take_cases)
-    _harness.stage(check, "sv-compare", _compare_cases)
-    _harness.stage(check, "sv-shape", _shape_cases)
-    _harness.stage(check, "sv-recorder", _recorder_cases)
-    _harness.stage(check, "sv-recorder-dirty", _recorder_dirty_cases)
-    _harness.stage(check, "sr-red", _red_cases)
-    _harness.stage(check, "sr-tally", _tally_cases)
-    _harness.stage(check, "sr-introduces", _introduces_cases)
-    _harness.stage(check, "sr-process", _process_cases)
-    _harness.stage(check, "sr-own", _own_case_cases)
-    _harness.stage(check, "sr-label", _label_cases)
-    _harness.stage(check, "sr-label-id", _label_id_cases)
-    _harness.stage(check, "sr-runner", _runner_cases)
-    _harness.stage(check, "sr-specific", _specific_cases)
-    _harness.stage(check, "sr-wording", _wording_cases)
-    _harness.stage(check, "sr-exact", _exact_cases)
-    _harness.stage(check, "sr-command", _command_cases)
-    _harness.stage(check, "sr-mixed", _mixed_cases)
-    _harness.stage(check, "sr-green", _green_baseline_cases)
-    _harness.stage(check, "sr-wrapper", _wrapper_cases)
-    _harness.stage(check, "sr-pytest-command", _pytest_command_cases)
-    _harness.stage(check, "sr-unittest", _unittest_cases)
-    _harness.stage(check, "sr-red-baseline", _red_baseline_cases)
-    _harness.stage(check, "sr-baseline-units", _baseline_unit_cases)
-    _harness.stage(check, "sr-round5", _round5_cases)
-    _harness.stage(check, "sr-round5-units", _round5_unit_cases)
-    _harness.stage(check, "sr-every-run-isolated", _every_run_cases)
-    _harness.stage(check, "sr-reach", _reach_cases)
-    _harness.stage(check, "sr-located", _located_cases)
-    _harness.stage(check, "sr-moved", _moved_cases)
-    _harness.stage(check, "sr-binding", _binding_cases)
-    _harness.stage(check, "sr-env", _env_cases)
-    _harness.stage(check, "sr-final", _final_pass_cases)
-    _harness.stage(check, "sr-budget", _budget_cases)
-    _harness.stage(check, "sl-block", _success_line_cases)
+
+def _colon_name_refusal():
+    """Why a file named with a leading `:` cannot be made here, or None."""
+    probe = _harness.fixture_root("stamp-colon-probe-")
+    try:
+        open(os.path.join(probe, ":probe"), "w").close()
+        return None
+    except OSError as exc:
+        return "%s: %s" % (type(exc).__name__, exc)
+
+
+def _edge_cases(check):
+    """The junction, probe, root-spelling and pathspec edges of `red`."""
+    root_k, man_k, cmd_k = _deps_repo("stamp-red-unremovable-",
+                                      [("v is two", "v()", "2")])
+    lines = []
+    held = M.unlink_junctions
+    M.unlink_junctions = lambda path, plan, is_junction=None: (
+        "could not remove the junction %s: simulated" % (path,))
+    try:
+        code_k = M.main(["red", "--project", root_k, "--manifest", man_k,
+                         "--task", "P1.1", "--json", "--"] + cmd_k,
+                        out=lines.append)
+    finally:
+        M.unlink_junctions = held
+    try:
+        thrown = json.loads("\n".join(lines)).get("throwaway") or {}
+    except ValueError:
+        thrown = {}
+    holder = os.path.dirname(thrown.get("path") or "")
+    kept = bool(holder) and os.path.isdir(holder)
+    if kept:
+        _harness.remove_tree(holder)
+    subprocess.run(["git", "-C", root_k, "worktree", "prune"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # sw7 is the other direction: junctions that do come out leave
+    # `removed` true, so a removal skipped unconditionally is red there.
+    check("sw8 a junction the helper cannot remove skips the throwaway's "
+          "removal - git is not trusted to tell it from a directory - and is "
+          "reported: exit %r, removed %r, problem %r, throwaway still there %r"
+          % (code_k, thrown.get("removed"), thrown.get("problem"), kept),
+          code_k == M.E_LEFT_BEHIND and thrown.get("removed") is False
+          and "simulated" in (thrown.get("problem") or "") and kept)
+
+    asked = []
+
+    def counted(prefix=None):
+        asked.append(prefix)
+        raise OSError(28, "No space left on device")
+
+    probe = getattr(M, "_probe_link_kind")
+    try:
+        got = (probe("posix", counted), len(asked), probe("nt", counted),
+               len(asked), probe("nt"))
+    except (TypeError, OSError) as exc:
+        got = ("raised %s: %s" % (type(exc).__name__, exc),)
+    check("sw9 the link-kind probe makes nothing off Windows, where a symlink is "
+          "the only kind; on Windows a scratch directory that cannot be made "
+          "answers junctions instead of raising, and one that can is probed "
+          "(a working symlink stays a symlink): %r" % (got,),
+          got == (M.LINK_SYMLINK, 0, M.LINK_JUNCTION, 1, M.LINK_SYMLINK))
+
+    root_r, man_r, cmd_r = _deps_repo("stamp-red-root-", [("v is two", "v()", "2")],
+                                      deps=False)
+    real_root = os.path.realpath(root_r)
+    head_part, tail_part = real_root.replace(os.sep, "/").rsplit("/", 1)
+    spelled = "%s//%s/." % (head_part, tail_part)
+    git_held = M._git
+
+    def toplevel(where, args, **kw):
+        if args == ["rev-parse", "--show-toplevel"]:
+            return 0, spelled
+        return git_held(where, args, **kw)
+
+    M._git = toplevel
+    try:
+        args = M.build_parser().parse_args(
+            ["red", "--project", root_r, "--manifest", man_r, "--task", "P1.1"])
+        scope, problem = M._red_scope(args, cmd_r, time.time() + 60)
+    finally:
+        M._git = git_held
+    check("sw10 red's root is git's toplevel in this platform's own spelling - "
+          "handed one with doubled and forward separators and a trailing `.`, "
+          "the scope's root is the normalised path: %r -> %r (%r)"
+          % (spelled, scope and scope.get("root"), problem),
+          problem is None and scope.get("root") == real_root)
+
+    refused = _colon_name_refusal()
+    if refused is not None:
+        _harness.skip(check, "sw11", "a file name beginning with ':' cannot be "
+                      "made here (%s)" % (refused,), True)
+        return
+    root_c = _harness.fixture_root("stamp-colon-")
+    subprocess.run(["git", "init", "-q", root_c], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _write(os.path.join(root_c, ":colon_test.py"), "x = 1\n")
+    _write(os.path.join(root_c, "colon_test.py"), "x = 2\n")
+    _git(root_c, "add", "-A")
+    _git(root_c, "commit", "-q", "-m", "base")
+    _git(root_c, "rm", "-q", "colon_test.py")
+    _git(root_c, "commit", "-q", "-m", "only the colon name")
+    got_c = M._at_head(root_c, [":colon_test.py", "colon_test.py"],
+                       time.time() + 60)
+    check("sw11 a declared path beginning with ':' is asked of git literally: "
+          "HEAD holds it, and the name it would mean as pathspec magic, which "
+          "HEAD no longer holds, is not reported present: %r" % (got_c,),
+          got_c == (set([":colon_test.py"]), None))
+
+# Every block, in run order. `--stage LABEL` narrows a run to the blocks it
+# names, which is what lets a red-first proof in a throwaway tree fit its
+# deadline: the whole suite does not.
+STAGES = (
+    ("sd-encoding", "_encoding_cases"),
+    ("sd-deps", "_deps_cases"),
+    ("sw-windows", "_windows_cases"),
+    ("sw-edges", "_edge_cases"),
+    ("sd-venv", "_venv_cases"),
+    ("sd-scan", "_scan_cases"),
+    ("sb-new-file", "_new_file_cases"),
+    ("sb-none-found", "_none_found_cases"),
+    ("sr-decisive", "_decisive_cases"),
+    ("sr-jest", "_jest_cases"),
+    ("sj-credit", "_jest_credit_cases"),
+    ("sr-crlf", "_crlf_cases"),
+    ("sr-listing", "_listing_cases"),
+    ("sr-leftover", "_leftover_cases"),
+    ("sr-holder", "_holder_cases"),
+    ("sv-take", "_take_cases"),
+    ("sv-compare", "_compare_cases"),
+    ("sv-shape", "_shape_cases"),
+    ("sv-recorder", "_recorder_cases"),
+    ("sv-recorder-dirty", "_recorder_dirty_cases"),
+    ("sr-red", "_red_cases"),
+    ("sr-tally", "_tally_cases"),
+    ("sr-introduces", "_introduces_cases"),
+    ("sr-process", "_process_cases"),
+    ("sr-own", "_own_case_cases"),
+    ("sr-label", "_label_cases"),
+    ("sr-label-id", "_label_id_cases"),
+    ("sr-runner", "_runner_cases"),
+    ("sr-specific", "_specific_cases"),
+    ("sr-wording", "_wording_cases"),
+    ("sr-exact", "_exact_cases"),
+    ("sr-command", "_command_cases"),
+    ("sr-mixed", "_mixed_cases"),
+    ("sr-green", "_green_baseline_cases"),
+    ("sr-wrapper", "_wrapper_cases"),
+    ("sr-pytest-command", "_pytest_command_cases"),
+    ("sr-unittest", "_unittest_cases"),
+    ("sr-red-baseline", "_red_baseline_cases"),
+    ("sr-baseline-units", "_baseline_unit_cases"),
+    ("sr-round5", "_round5_cases"),
+    ("sr-round5-units", "_round5_unit_cases"),
+    ("sr-every-run-isolated", "_every_run_cases"),
+    ("sr-reach", "_reach_cases"),
+    ("sr-located", "_located_cases"),
+    ("sr-moved", "_moved_cases"),
+    ("sr-binding", "_binding_cases"),
+    ("sr-env", "_env_cases"),
+    ("sr-final", "_final_pass_cases"),
+    ("sr-budget", "_budget_cases"),
+    ("sl-block", "_success_line_cases"),
+)
+
+
+def _cases(check, only=()):
+    for label, fn in STAGES:
+        if not only or label in only:
+            _harness.stage(check, label, globals()[fn])
+    unknown = sorted(set(only) - set(label for label, _fn in STAGES))
+    if unknown:
+        check("--stage names a block of this suite: %r" % (unknown,), False)
 
 
 def _cli(argv, stdin_text=None):
@@ -4139,13 +4261,14 @@ def _success_line_cases(check):
           not_red[0] != M.E_PROVED and len(not_red[1].splitlines()) > 1)
 
 
-def _selftest():
-    return _harness.run(_cases)
+def _selftest(only=()):
+    return _harness.run(lambda check: _cases(check, only))
 
 
 if __name__ == "__main__":
     safe_stdio()
     if "--selftest" in sys.argv[1:]:
-        raise SystemExit(_selftest())
-    sys.stderr.write("usage: test_stamp_verification.py --selftest\n")
+        raise SystemExit(_selftest(_harness.flag_values(sys.argv[1:], "--stage")))
+    sys.stderr.write("usage: test_stamp_verification.py --selftest "
+                     "[--stage LABEL ...]\n")
     raise SystemExit(2)

@@ -1629,11 +1629,16 @@ def _commit_stamp(target, phase_id, project, parent):
 # scratch repository - never over that worktree, whose uncommitted bytes do not
 # land.
 
-def _git_bytes(git_root, args, env=None):
+def _git_bytes(git_root, args, env=None, literal=True):
     """`(code, stdout bytes)` of one git call - bytes, because a ledger is decoded
-    by its own strict rule, never by git's replacement of a bad byte."""
+    by its own strict rule, never by git's replacement of a bad byte. Every
+    path given is a file name, never a pattern, so `--literal-pathspecs` keeps a
+    name beginning with `:` from being read as pathspec magic. `literal=False`
+    is for a command that refuses that flag outright - `check-ignore` exits
+    128 on it."""
     try:
-        done = subprocess.run(["git", "-C", git_root] + list(args),
+        done = subprocess.run(["git"] + (["--literal-pathspecs"] if literal else [])
+                              + ["-C", git_root] + list(args),
                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                               env=env)
     except Exception:
@@ -1827,7 +1832,8 @@ def _check_out(git_root, branch, paths, staging):
     work_tree = os.path.join(staging, "tree")
     os.makedirs(work_tree)
     env = dict(os.environ, GIT_INDEX_FILE=os.path.join(staging, "index"))
-    base = ["git", "--git-dir=%s" % (git_dir,), "--work-tree=%s" % (work_tree,)]
+    base = ["git", "--literal-pathspecs", "--git-dir=%s" % (git_dir,),
+            "--work-tree=%s" % (work_tree,)]
     if not _git_ok(base + ["read-tree", "refs/heads/%s" % (branch,)], work_tree,
                    env, b""):
         return None
@@ -2707,7 +2713,8 @@ def plan_versioned(git_root, manifest_path, refs):
     rel = _tree_rel(holder or git_root, manifest_path)
     if rel is None:
         return False, "%s lies outside the git root" % (manifest_path,)
-    code, _out = _git_bytes(holder or git_root, ["check-ignore", "-q", "--", rel])
+    code, _out = _git_bytes(holder or git_root, ["check-ignore", "-q", "--", rel],
+                            literal=False)
     if code == 0:
         return False, "git ignores %s" % (rel,)
     if code != 1:

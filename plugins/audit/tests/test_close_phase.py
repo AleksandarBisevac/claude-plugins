@@ -2817,9 +2817,9 @@ def _symlink_refusal():
         _harness.remove_tree(probe)
 
 
-def _symlink_fixture(name, change_after, plain_links=False):
-    """`(root, mpath, git)` - P1 declaring `link`, a committed symbolic link to
-    `t.txt`, with its green recorded over the working tree: the recorder's
+def _symlink_fixture(name, change_after, plain_links=False, declared="link"):
+    """`(root, mpath, git)` - P1 declaring `declared`, a committed symbolic link
+    to `t.txt`, with its green recorded over the working tree: the recorder's
     digest follows the link and hashes `t.txt`'s bytes. `change_after` commits
     a different `t.txt` after the green. `plain_links` sets the repository's
     `core.symlinks` to false, the default of git on Windows, under which a
@@ -2833,17 +2833,17 @@ def _symlink_fixture(name, change_after, plain_links=False):
         git("config", "core.symlinks", "false")
     phase = _signed_phase("P1", "audit/p1-demo")
     phase["testGate"] = ["test"]
-    phase["tasks"][0]["files"] = ["link"]
+    phase["tasks"][0]["files"] = [declared]
     mpath = _write_plan(root, {"developmentBranch": "main"}, [phase])
     git("add", "-A")
     git("commit", "-q", "-m", "base")
     git("checkout", "-q", "-b", "audit/p1-demo")
     with open(os.path.join(root, "t.txt"), "wb") as fh:
         fh.write(b"the bytes the link leads to\n")
-    os.symlink("t.txt", os.path.join(root, "link"))
+    os.symlink("t.txt", os.path.join(root, declared))
     git("add", "-A")
     git("commit", "-q", "-m", "work")
-    digest = T.scope_digest(root, ["link"])[0]
+    digest = T.scope_digest(root, [declared])[0]
     ev = E.evidence_dir(root)
     os.makedirs(ev, exist_ok=True)
     with open(os.path.join(ev, "2026-09.cr.jsonl"), "w") as fh:
@@ -2873,10 +2873,11 @@ def _symlink_cases(check):
                           % (refused,), True)
         return
 
-    def run(name, change_after, plain_links=False):
+    def run(name, change_after, plain_links=False, declared="link"):
         root = None
         try:
-            root, mpath, git = _symlink_fixture(name, change_after, plain_links)
+            root, mpath, git = _symlink_fixture(name, change_after, plain_links,
+                                                declared)
             git("checkout", "-q", "main")
             code, text = _close(mpath, root, "--keep-branch")
             return code, text, _landed(git)
@@ -2910,6 +2911,33 @@ def _symlink_cases(check):
           "%r, %r" % (code, landed, text[:300]),
           code == 1 and not landed
           and "have changed since it was measured" in text)
+    # A declared name beginning with `:` is git's pathspec-magic prefix: read as
+    # a pathspec, `:colon-link` names `colon-link`, the link is not found at the
+    # tip and its digest is the link's text rather than the bytes it leads to.
+    refused = _colon_name_refusal()
+    if refused is not None:
+        _harness.skip(check, "cr32", "a file name beginning with ':' cannot be "
+                      "made here (%s)" % (refused,), True)
+        return
+    code, text, landed = run("closephase-symlink-colon", False, False,
+                             ":colon-link")
+    check("cr32 a declared link whose name begins with ':' lands BOUND - every "
+          "path is handed to git literally, never as pathspec magic: exit %r, "
+          "landed %r, %r" % (code, landed, text[:400]),
+          code == 0 and landed and "gate: bound to run cr-0" in text)
+
+
+def _colon_name_refusal():
+    """Why a file named with a leading `:` cannot be made here, or None."""
+    import tempfile
+    probe = tempfile.mkdtemp(prefix="closephase-colon-probe-")
+    try:
+        open(os.path.join(probe, ":probe"), "w").close()
+        return None
+    except OSError as exc:
+        return "%s: %s" % (type(exc).__name__, exc)
+    finally:
+        _harness.remove_tree(probe)
 
 
 def _override_rows(project):

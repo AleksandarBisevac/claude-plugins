@@ -698,9 +698,15 @@ def _git(root, args, timeout=120, strip=True):
     does not hold, and `_head_text`, which reads the blob, would disagree with
     the file the run read. A `.gitattributes` the repository commits still
     applies; that conversion is HEAD's own. No call here reads the shared tree's
-    status, so the pin changes nothing there."""
+    status, so the pin changes nothing there.
+
+    `--literal-pathspecs`, because every path handed to git here is a file
+    name a plan declared, never a pattern: a declared path beginning with `:`
+    would otherwise be read as pathspec magic and name a different file. A
+    command that refuses the flag outright (`check-ignore` exits 128 on it)
+    cannot be run through here."""
     try:
-        out = subprocess.run(["git", "-C", root, "-c",
+        out = subprocess.run(["git", "--literal-pathspecs", "-C", root, "-c",
                               "core.hooksPath=%s" % os.devnull,
                               "-c", "core.autocrlf=false"] + list(args),
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -1902,11 +1908,22 @@ def dependency_plan(source, root, deadline):
             "kind": _probe_link_kind() if linked else LINK_SYMLINK}, None
 
 
-def _probe_link_kind():
-    """`link_kind` asked in a scratch directory of its own, removed again."""
-    probe = tempfile.mkdtemp(prefix="stamp-link-probe-")
+def _probe_link_kind(platform=None, mkdtemp=None):
+    """`link_kind` asked in a scratch directory of its own, removed again - on
+    Windows only: anywhere else a symlink is the only kind, so nothing is
+    probed. A scratch directory that cannot be made answers `LINK_JUNCTION`,
+    the kind that needs no privilege, rather than a symlink that may be
+    refused on every entry."""
+    platform = os.name if platform is None else platform
+    if platform != "nt":
+        return LINK_SYMLINK
     try:
-        return link_kind(probe)
+        probe = (tempfile.mkdtemp if mkdtemp is None else mkdtemp)(
+            prefix="stamp-link-probe-")
+    except OSError:
+        return LINK_JUNCTION
+    try:
+        return link_kind(probe, platform)
     finally:
         shutil.rmtree(probe, ignore_errors=True)
 
@@ -2711,8 +2728,12 @@ def run_red(args, cmd, out):
             "head_js": state["head_js"], "path": path,
             "deadline": deadline, "deps": deps})
     finally:
-        unlink_junctions(path, deps)
-        removed = _remove_throwaway(root, holder, path)
+        # A junction left in the throwaway is one git's removal may descend
+        # through into the shared tree's dependencies: the removal is skipped
+        # and the junction named, rather than trusted to tell the two apart.
+        unremoved = unlink_junctions(path, deps)
+        removed = (False if unremoved is not None
+                   else _remove_throwaway(root, holder, path))
         if previous is not None:
             _proc_group.disarm_interrupt(previous)
     payload = {"verdict": verdict, "redFirst": block, "note": note,
@@ -2727,7 +2748,8 @@ def run_red(args, cmd, out):
                "environment": {"dropped": dropped, "naming": naming,
                                "set": ["%s=%s" % (k, env[k]) for k in
                                        ("PYTHONDONTWRITEBYTECODE",) if k in env]},
-               "throwaway": {"path": path, "head": head, "removed": removed},
+               "throwaway": {"path": path, "head": head, "removed": removed,
+                             "problem": unremoved},
                "run": {"argv": cmd, "exit": run["code"],
                        "outputTail": run["text"].splitlines()[-20:],
                        "second": None if run["second"] is None else
@@ -2751,7 +2773,10 @@ def run_red(args, cmd, out):
         out(note if block is None else "redFirst: %s" % (json.dumps(block),))
     if not removed:
         sys.stderr.write("ERROR: the throwaway tree at %s could not be removed; "
-                         "`git worktree list` names what is left\n" % (path,))
+                         "`git worktree list` names what is left\n%s"
+                         % (path, "" if unremoved is None else
+                            "  removal skipped, a junction still in it: %s\n"
+                            % (unremoved,)))
         return E_LEFT_BEHIND
     return exit_code
 
