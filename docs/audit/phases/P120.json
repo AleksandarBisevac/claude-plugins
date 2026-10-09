@@ -1,7 +1,7 @@
 {
   "id": "P120",
   "title": "the report never scrolls sideways, whatever the plan holds",
-  "status": "in_progress",
+  "status": "done",
   "description": "Release blocker for 3.2.0, found by tools/verify.sh --release: BUG-22.",
   "desiredOutcome": "every leg of the release verification's rendered-plan check, this repository's own plan included, renders with no sideways scroll at any width it checks",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "1698de0a9e154cb4d26c6ef1162a7a8032ae8ec0",
   "branch": "audit/p120-the-report-never-scrolls-sidew",
-  "mergedAt": null,
+  "mergedAt": "2026-10-09T00:19:00Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -199,5 +199,6 @@
     "runId": "2026-10-09T00:18:39Z.261c24",
     "status": "passed",
     "at": "2026-10-09T00:18:39Z"
-  }
+  },
+  "mergedHead": "a03391decd64334778d22b018506de7f4295b373"
 }
