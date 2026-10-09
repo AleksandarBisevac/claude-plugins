@@ -3,7 +3,7 @@
   "title": "One rule decides whether a declared path covers a file",
   "status": "in_progress",
   "description": "F581 (priority: 68 false commit-scope breaches on a real user's first sign-off), F579, F592. Today one files entry has several meanings: commit-scope matches exact paths after stripping the slash; the plan gate and two guard hooks treat an entry as a directory only with a trailing slash (the guards through drifted inline copies); remind-tdd matches exactly; staging and run-test-gate are separator-bounded; the red-first fix tree copies files only. Settled with the user 2026-10-09: one separator-bounded predicate, hosted at L1 in scripts/manifest/_task_outputs.py, reached by hooks through _config._load_scripts_module. The next version ships only once every open bug is fixed (user, 2026-10-09).",
-  "desiredOutcome": "Every reader of a task's files answers coverage through one shared predicate: an entry covers itself and everything under entry/, with or without a trailing slash; a declared directory never yields a false commit-scope breach, a false could-not-prove, or a done task whose work is uncommitted.",
+  "desiredOutcome": "Every reader of a task's files answers coverage through one shared predicate (an entry covers itself and everything under entry/, with or without a trailing slash), and the records a task's close and sign-off write are true: no false commit-scope breach or could-not-prove from a declared directory or a forwarded --selftest, no done task with its work uncommitted, findings carry their fix or disposition, and no committed record carries a machine path.",
   "testGate": [
     "selftests",
     "validate",
@@ -181,7 +181,7 @@
     {
       "id": "P122.3",
       "title": "the red-first fix tree lays a declared directory over, not only files",
-      "status": "in_progress",
+      "status": "done",
       "description": "F579, confirmed by reading: _lay_over skips any entry that is not a file, so a declared directory is never copied into the fix tree and HEAD's copy stays; _red_scope drops a declared test directory; _at_head compares ls-tree names exactly, so a dir/ spelling reads as new and is stubbed as an empty FILE; _one_declared and introduced never match a directory. Expand a declared directory to the files under it (reuse _tree_stamp._files_under, the git-pathspec reading scope_digest already uses) before these steps, and use covers() wherever a path is matched against an entry. Case: a task declaring a directory that holds the fix gets a red/green verdict, not could-not-prove; reproduce P120.2's shape (ui/report-css declared as a directory). Also (F602): the sandbox description the red helper stores in the committed shard (the said list: dependencies linked from the absolute project root, writes landing in its node_modules, the user npmrc in the home directory) must name paths relative to the project and spell no home shorthand - it put the machine path into P122.json and failed check-committed-pii. The new _task_outputs import changes the module map, so regenerate PLUGIN-BUILD-GUIDE.md fence with _deps.py --render.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -215,14 +215,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "57b43e5de32d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Reviewed the prepared diff (expand_declared/_declares_directory, covers() in _is_test_path, _red_scope re-split after expansion, cases sr205-207): found nothing to fix. Added F602: deps_clause now says 'linked from the project root' and 'the project's own <entries>' (no absolute path); _npmrc_state says 'the user's .npmrc in the home directory' (no ~). New cases sr208 (deps_clause names no source path, home or ~) and sr209 (_npmrc_state with a fake HOME holding .npmrc), stage sr-sandbox-words. Updated sd4 and sd5, which asserted the machine path in the note, to assert its absence. Regenerated the PLUGIN-BUILD-GUIDE.md module-map fence from _deps.py --render (1-line diff). test_stamp_verification selftest 232/232, test__deps 307/307, ruff clean. Not run: full sweep, vermin, other gates. The payload field dependencies.source still holds the absolute path (not part of the stored note).",
+        "descriptive": "A declared directory is laid over the fix tree and gets a red/green verdict; the stored sandbox description no longer carries the machine path or ~."
       },
       "startedAt": "2026-10-09T20:25:01Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T20:52:52Z",
+      "verifiedBy": [
+        "sr205",
+        "sr206",
+        "sr207",
+        "sr208",
+        "sr209"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-09T20:52:51Z.54983b",
@@ -234,12 +240,22 @@
           "at": "2026-10-09T20:44:45Z",
           "text": "Register renumbering: the fault this description calls F602 is F604 in the register (the monitoring session took F601/F602 concurrently). F601 mentioned in executor returns here is F603."
         }
-      ]
+      ],
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "57b43e5de32d",
+        "at": "2026-10-09T20:52:52Z"
+      },
+      "redFirst": {
+        "at": "2026-10-09T20:35:39Z",
+        "basis": "`python3 -c import runpy,sys; f='plugins/audit/tests/test_stamp_verification.py'; sys.argv=[f,'--'+'selftest']; runpy.run_path(f, run_name='__main__')` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: ModuleNotFoundError: No module named '_harness'; HEAD's own tests on HEAD's code are not green (ModuleNotFoundError: No module named '_harness') - the command is already red (or unreadable) at HEAD - narrow it to the task's cases; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from <project>, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in <project>/node_modules and is not watched; the user's npm config (.npmrc in the home directory) dropped (every run has a fresh home)",
+        "status": "could-not-prove"
+      }
     },
     {
       "id": "P122.4",
       "title": "done refuses while the task's work sits uncommitted, and start refuses a task with no files",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F592, twice on the testbed: a task with no declared files closed done while its work sat uncommitted, because commit-task-work stages only declared files. done --commit (_locked_done) checks nothing about the tree; only the --no-change path asks git porcelain, through _no_change_moves, which this should reuse rather than re-spell. Add: done refuses when the working tree holds changes (git status, untracked included, ignoring the journal and evidence directories and the manifest files) that are covered by the task's files but absent from --commit, or, when the task declares no files, any change no other in_progress task covers; the refusal names the paths and offers /audit:task scope to widen. start refuses a task whose files is empty unless it is --no-change shaped; say what to declare. Cases for: clean tree closes; a covered leftover refuses; an empty-files task with leftovers refuses; another in-progress task's files are not blamed. Update commands/task.md and README.md's done paragraph.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -272,16 +288,22 @@
         "P122.2"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-09T20:52:52Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-09T21:05:03Z.86c5f8",
+        "status": "passed",
+        "at": "2026-10-09T21:05:03Z"
+      }
     },
     {
       "id": "P122.5-z4y",
@@ -319,6 +341,307 @@
       "blockedBy": [
         "P122.1"
       ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P122.6-z4y",
+      "title": "closing a fix task records the fix on its findings, and sign-off records every open finding's disposition",
+      "status": "pending",
+      "description": "F601 (testbed, P1 sign-off): the drive's fix path (add --fixes, then the task's own done) never writes commit/status onto the finding; only resolve-finding does, and review_tally counts only findings with both fixTask and commit. P1's signed-off manifest says 0 fixed over six fixed findings, and a med finding left open on the owner's decision vanished with status null. Fix: done on a task whose fixes names findings writes commit and status fixed onto each, in the same write as the close (no second verb to remember); signoff over open findings records each one's disposition (accepted-open with the human's reason, or carried as a bug or parked task) and refuses a null status reaching a done phase. Update phase-signoff.md and the README's signoff row.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a phase where one finding is fixed through add --fixes and its task closed, and one is accepted open at sign-off: review_tally reads 1 with a recorded fix commit, and the open one carries status accepted-open with the reason"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P122.4"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P122.7-z4y",
+      "title": "a bug whose files are all test files materializes as a regression task, not tdd",
+      "status": "pending",
+      "description": "F602 (testbed, P1): BUG-1-u26 was a stale import in a test file; /audit:bug fix materialized it as tdd, red-first was impossible, the task was cancelled and re-added - one wasted executor. When a bug's fix task is materialized and every file the bug names is a test file (the project's test globs / the plugin's test-path reading), choose regression and write why into the task's note. Say it in commands/bug.md (which today promises a tdd task) and verbs-in-full.md. Blocked by the F601 task only because both edit audit-task.py.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/bug.md",
+        "plugins/audit/reference/verbs-in-full.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a fix task for a bug naming only tests/unit/x.test.ts is regression with a note saying why; a bug naming lib/x.ts is still tdd"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P122.6-z4y"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P122.8-z4y",
+      "title": "a script's own --selftest is read only from its own arguments, never from a command it forwards",
+      "status": "pending",
+      "description": "F603: every migrated selftest stub tests '\"--selftest\" in sys.argv[1:]', which matches the flag anywhere, including inside a test command a wrapper forwards after --. drive-phase answered the red helper's forwarded '<suite> --selftest' with its own pointer line and exit 0, so every Python red on this repo graded could-not-prove (P122.1-P122.3). One invariant: add _output.selftest_requested(argv) (true only for the script's own flag: before any '--', and not as an option value), make every stub call it, and add an AST lint in _output.py that fails a stub spelling 'in sys.argv' for --selftest, with a red-first allow case. The declared list is every stub at the time of planning (114 files, from grep -rl over scripts/); hooks/ carry the same stub but forward no command and cannot import _output, so they stay out. A file this misses is a scope widening.",
+      "files": [
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/_cli_fmt.py",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/scripts/_fmt.py",
+        "plugins/audit/scripts/_loader.py",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/scripts/_ui_theme.py",
+        "plugins/audit/scripts/config/_config_rules.py",
+        "plugins/audit/scripts/config/_help.py",
+        "plugins/audit/scripts/config/validate-config.py",
+        "plugins/audit/scripts/demo/_demo_cast.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/scripts/demo/gen-demo-usage.py",
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/scripts/git/manage-worktrees.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/scripts/governance/_policy.py",
+        "plugins/audit/scripts/governance/_proc_group.py",
+        "plugins/audit/scripts/governance/_runner_output.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/governance/_verdict_binding.py",
+        "plugins/audit/scripts/governance/commit-audit-state.py",
+        "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/full-gate.py",
+        "plugins/audit/scripts/governance/import-evidence.py",
+        "plugins/audit/scripts/governance/propose-gates.py",
+        "plugins/audit/scripts/governance/record-outside-run.py",
+        "plugins/audit/scripts/governance/record-risk-confirmation.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/verify-invariants.py",
+        "plugins/audit/scripts/manifest/_ado_conventions.py",
+        "plugins/audit/scripts/manifest/_ado_drift.py",
+        "plugins/audit/scripts/manifest/_ado_fields.py",
+        "plugins/audit/scripts/manifest/_ado_parent.py",
+        "plugins/audit/scripts/manifest/_ado_tracked.py",
+        "plugins/audit/scripts/manifest/_areas.py",
+        "plugins/audit/scripts/manifest/_branch.py",
+        "plugins/audit/scripts/manifest/_commit_trail.py",
+        "plugins/audit/scripts/manifest/_manifest_ado.py",
+        "plugins/audit/scripts/manifest/_manifest_crossrefs.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/scripts/manifest/_manifest_rules.py",
+        "plugins/audit/scripts/manifest/_manifest_typos.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/manifest/_priority.py",
+        "plugins/audit/scripts/manifest/_proposals.py",
+        "plugins/audit/scripts/manifest/_warning_groups.py",
+        "plugins/audit/scripts/manifest/ado-connect.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/manifest/check-ado-item.py",
+        "plugins/audit/scripts/manifest/explain-ado-drift.py",
+        "plugins/audit/scripts/manifest/fetch-ado-items.py",
+        "plugins/audit/scripts/manifest/materialize-proposal.py",
+        "plugins/audit/scripts/manifest/migrate-json-encoding.py",
+        "plugins/audit/scripts/manifest/read-ado-links.py",
+        "plugins/audit/scripts/manifest/repair-commits.py",
+        "plugins/audit/scripts/manifest/repair-tests-add.py",
+        "plugins/audit/scripts/manifest/resolve-ado-parent.py",
+        "plugins/audit/scripts/manifest/resolve-ado-tracked.py",
+        "plugins/audit/scripts/manifest/resolve-branch.py",
+        "plugins/audit/scripts/manifest/set-priority.py",
+        "plugins/audit/scripts/panel/_panel_composition.py",
+        "plugins/audit/scripts/panel/_panel_discovery.py",
+        "plugins/audit/scripts/panel/_panel_page.py",
+        "plugins/audit/scripts/panel/_panel_paths.py",
+        "plugins/audit/scripts/panel/_panel_policy.py",
+        "plugins/audit/scripts/panel/_panel_runstate.py",
+        "plugins/audit/scripts/panel/_panel_settings.py",
+        "plugins/audit/scripts/panel/_panel_state.py",
+        "plugins/audit/scripts/panel/_panel_ui.py",
+        "plugins/audit/scripts/panel/_panel_usage.py",
+        "plugins/audit/scripts/panel/_panel_viewer.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/scripts/report/_evidence_view.py",
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/scripts/report/_report_page.py",
+        "plugins/audit/scripts/report/_report_ui.py",
+        "plugins/audit/scripts/report/_report_usage.py",
+        "plugins/audit/scripts/report/_usage_detail.py",
+        "plugins/audit/scripts/report/_usage_load.py",
+        "plugins/audit/scripts/report/_usage_markdown.py",
+        "plugins/audit/scripts/report/_usage_overview.py",
+        "plugins/audit/scripts/report/_usage_viz.py",
+        "plugins/audit/scripts/status/_claude_home.py",
+        "plugins/audit/scripts/status/_doctor_ado.py",
+        "plugins/audit/scripts/status/_doctor_completions.py",
+        "plugins/audit/scripts/status/_doctor_hygiene.py",
+        "plugins/audit/scripts/status/_doctor_policy.py",
+        "plugins/audit/scripts/status/_doctor_report.py",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/scripts/status/_gate_feed.py",
+        "plugins/audit/scripts/status/_live_copy.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/status/audit-doctor.py",
+        "plugins/audit/scripts/status/audit-logs.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/scripts/status/audit-version.py",
+        "plugins/audit/scripts/usage/_usage_core.py",
+        "plugins/audit/scripts/usage/_usage_coverage.py",
+        "plugins/audit/scripts/usage/_usage_economics.py",
+        "plugins/audit/scripts/usage/_usage_routing.py",
+        "plugins/audit/scripts/usage/_usage_spend.py",
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/scripts/usage/usage_ledger.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: drive-phase given a forwarded test command that carries --selftest after -- runs that command (the red helper records red), and drive-phase --selftest alone still prints its pointer"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P122.7-z4y"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P122.9-z4y",
+      "title": "every string the plugin writes into a committed plan, journal or evidence row is scrubbed of machine paths at the write",
+      "status": "pending",
+      "description": "F604, the second recurrence of F538 (committed shards carrying machine paths): the red helper's sandbox description put the absolute project root and a home-shorthand npmrc path into P122's committed shard twice (P122.1 and P122.2 records), and check-committed-pii failed the next task gates until the orchestrator redacted them by hand. The writer already refuses a machine path in a --description (audit-task's prose-flag check through _journal_io.machine_path_shape), but text the plugin composes itself bypasses that door. Invariant: the save boundary (_manifest_io's shard/index writer, the journal append, the evidence append) passes every string value through _journal_io's existing redaction (redacted_free_text / redacted_text with the project root) so no caller can bypass it; check-committed-pii stays the backstop. Keep the layers legal (_deps.LAYERS); no new detector - reuse the ones the tool already imports. Red-first: the case in tests.add, plus a journal and an evidence row with the same shape.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/tests/test__manifest_io.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__manifest_io.py: a shard save carrying a red basis that names the real project root and a home-shorthand path writes <project> and <home> instead, and a plan without machine paths is written byte-identical"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
       "dependsOn": [],
       "attempts": 0,
       "maxAttempts": 3,

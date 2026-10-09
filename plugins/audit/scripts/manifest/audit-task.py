@@ -3928,6 +3928,17 @@ def _journal_start(project, config, mpath, task_id, phase_id, was, task,
 # than `/audit:run` therefore ran on its parent branch with no branch at all, which
 # measured most of this project's own phases, and nothing said so. The protocol
 # binds this verb now, so a phase cannot start its work outside it in silence.
+def _no_change_shaped(task):
+    """Whether a task with no declared files may start anyway: it does not
+    commit to writing code. A `tdd` or `regression` task commits to a change,
+    so with no `files` it has not said where; any other mode (gate-only, or no
+    `tests` object at all), or a task naming deliverables in `outputs`, is the
+    shape that can close --no-change."""
+    tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
+    return bool(task.get("outputs")) or tests.get("mode") not in (
+        "tdd", "regression")
+
+
 def _git_answer(git_root, *argv):
     """(returncode, stdout) of one git call, or (None, "") when git cannot run."""
     try:
@@ -4134,6 +4145,15 @@ def _locked_start(args, project, config, mpath, tid, out):
             "(/audit:status lists what is ready now), or start it anyway "
             "with --force --reason \"<why>\", which the task.start row "
             "records." % (tid, ", ".join(waiting)))
+        return E_USAGE
+
+    if status != "in_progress" and not node.get("files") \
+            and not _no_change_shaped(node):
+        out("[audit-task] %s declares no files, so nothing says what its work "
+            "is and `done` could not tell its changes from anyone else's - "
+            "nothing written. Declare them: /audit:task scope %s --files "
+            "<paths>. A task expected to close --no-change is not "
+            "`tdd` or `regression`, or names its deliverables in `outputs`." % (tid, tid))
         return E_USAGE
 
     # The PHASE's key, never the task's: a task moved in with its own keeps it,
@@ -4788,15 +4808,73 @@ def _no_change_moves(project, git_root, phase, task, plan=None, start_head=None)
                 commit = line[1:]
             elif commit and commit not in others:
                 moved.append("%s changed in commit %s" % (line, commit[:7]))
-    code, status = _git_answer(git_root, "status", "--porcelain",
-                               "--untracked-files=all", "--", *files)
-    if code == 0:
-        # `_git_answer` strips the output, so the first line may have lost the
-        # blank its status code opens with: the code is cut by shape, not width.
-        moved += ["%s has an uncommitted change"
-                  % (re.sub(r"^\s*\S{1,2} ", "", line).strip(),)
-                  for line in status.splitlines() if line.strip()]
+    moved += ["%s has an uncommitted change" % (path,)
+              for path in _porcelain_paths(git_root, files) or []]
     return moved, notes
+
+
+def _porcelain_paths(git_root, pathspec=()):
+    """The paths `git status --porcelain` lists, untracked files included, or
+    None when git could not be asked - which reads apart from `[]`, a tree
+    that is clean. A rename lists the path it became.
+
+    `_git_answer` strips the output, so the first line may have lost the blank
+    its status code opens with: the code is cut by shape, not width."""
+    argv = ["status", "--porcelain", "--untracked-files=all"]
+    code, status = _git_answer(git_root, *(argv + (["--"] + list(pathspec)
+                                                   if pathspec else [])))
+    if code != 0:
+        return None
+    return [re.sub(r"^\s*\S{1,2} ", "", line).strip().split(" -> ")[-1]
+            for line in status.splitlines() if line.strip()]
+
+
+def _bookkeeping_rels(project, config, mpath, raw_index, git_root):
+    """Git-root-relative entries a close's own bookkeeping owns: the journal and
+    evidence directories and the manifest's index and shards. A change there is
+    the plan's record, not a task's work, and `done` writes most of it itself."""
+    absolute = [_journal_io.journal_dir(project, config),
+                _evidence_io.evidence_dir(project, config), mpath]
+    base = os.path.dirname(os.path.abspath(mpath))
+    absolute += [os.path.join(base, stub["shard"])
+                 for stub in (raw_index.get("phases") or [])
+                 if isinstance(stub, dict) and isinstance(stub.get("shard"), str)]
+    rels = [_invariants._rel(path, git_root) for path in absolute]
+    return [rel for rel in rels if rel is not None]
+
+
+def _declared_rels(project, git_root, task):
+    """The task's `files`, line suffix dropped, relative to the git root; the
+    entries outside it are not returned (`_no_change_moves` names those)."""
+    rels = [_invariants._rel(os.path.join(project, entry), git_root)
+            for entry in sorted(set(_vocab._strip_line_suffix(f).strip()
+                                    for f in (task.get("files") or [])
+                                    if isinstance(f, str) and f.strip()))]
+    return [rel for rel in rels if rel is not None]
+
+
+def _uncommitted_leftovers(project, config, mpath, raw_index, git_root, plan,
+                           task):
+    """Paths the working tree still changes that `task`'s close would not carry.
+
+    A task that declares files owns the changes those files cover. A task that
+    declares none owns whatever no OTHER in_progress task covers - the commit
+    step stages declared files only, so its work is exactly what it left. The
+    plan's own bookkeeping is never counted. Empty when git cannot be asked: a
+    project outside git has no tree to leave work in."""
+    paths = _porcelain_paths(git_root)
+    if not paths:
+        return []
+    skip = _bookkeeping_rels(project, config, mpath, raw_index, git_root)
+    paths = [p for p in paths if not any(_touts.covers(s, p) for s in skip)]
+    mine = _declared_rels(project, git_root, task)
+    if mine:
+        return [p for p in paths if any(_touts.covers(f, p) for f in mine)]
+    others = [rel for t in _mio.tasks_by_id(plan).values()
+              if isinstance(t, dict) and t.get("id") != task.get("id")
+              and t.get("status") == "in_progress"
+              for rel in _declared_rels(project, git_root, t)]
+    return [p for p in paths if not any(_touts.covers(f, p) for f in others)]
 
 
 def _done_task(task, now, commit, descriptive, technical, verified, intent,
@@ -5306,6 +5384,21 @@ def _locked_done(args, project, config, mpath, tid, out):
         refusal, unverified = _commit_git_note(git_root, sha)
         if refusal:
             out(refusal)
+            return E_USAGE
+        left = _uncommitted_leftovers(project, config, mpath, raw_index,
+                                      git_root, assembled, node)
+        if left:
+            out("[audit-task] REFUSED: %s closes on %s, but the working tree "
+                "still holds changes that commit does not carry: %s. %s "
+                "Nothing written." % (
+                    tid, sha[:7], ", ".join(left),
+                    "Commit them into the task's work, or declare them: "
+                    "/audit:task scope %s --files <paths>." % (tid,)
+                    if node.get("files") else
+                    "This task declares no files, so the commit step staged "
+                    "none of them: declare what it changes with "
+                    "/audit:task scope %s --files <paths>, commit them, then "
+                    "close." % (tid,)))
             return E_USAGE
     key, key_source, refusal = _review_key_for(config, node, phase)
     filed = {}

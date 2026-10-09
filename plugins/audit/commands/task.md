@@ -58,13 +58,18 @@ abandoned - ask the human (AskUserQuestion), then re-run with `--takeover`.
 
 `T start <taskId>` promotes it (phase entry, branch and attempts included) without spawning. An
 unready task or another live session's claim is refused, naming why; `--force --reason "<why>"`
-is the human's recorded way past it.
+is the human's recorded way past it. A `tdd` or `regression` task that declares no `files` is
+refused too: nothing says what its work is. Declare them with `scope <taskId> --files a,b`.
 
 ## Subcommand: `done <taskId> --commit <sha>`
 
 `T done <taskId> --commit <sha> --from-return`, or `--no-change --reason "<why>"`. The drive
 closes its own tasks; this is for a close made by hand. A refusal names the run or answer it
-needs - relay it, never type an `--intent` word a reviewer did not file.
+needs - relay it, never type an `--intent` word a reviewer did not file. A `--commit` close is
+also refused, naming the paths, while the working tree still changes files that commit does
+not carry: those the task's `files` cover, or, for a task declaring none, any change no other
+`in_progress` task covers (the plan's journal, evidence and manifest files never count). Commit
+them or widen the task with `scope <taskId> --files a,b`.
 
 ## Subcommand: `reopen <taskId> --reason "<why>"`
 

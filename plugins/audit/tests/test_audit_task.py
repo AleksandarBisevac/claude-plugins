@@ -14576,6 +14576,176 @@ def _no_change_moved_cases(check):
         _harness.remove_tree(root)
 
 
+def _leftover_cases(check):
+    """`done --commit` is a claim that the task's work is in that commit. The
+    commit step stages declared files only, so a covered change left in the
+    tree - or any change at all of a task that declares none - is work the
+    close would record as landed while it sits outside it. `start` refuses a
+    task that names no files, so the second case cannot be made on purpose."""
+    import subprocess
+    root = _harness.fixture_root("audit-task-lo-")
+    env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+
+    def git(proj, *argv):
+        return subprocess.run(["git", "-C", proj] + list(argv), env=env,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    def write(proj, rel, text):
+        path = os.path.join(proj, *rel.split("/"))
+        if not os.path.isdir(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path))
+        with open(path, "w") as fh:
+            fh.write(text)
+
+    def task(tid, files, status="in_progress", **over):
+        node = {"id": tid, "title": tid, "status": status, "description": "d",
+                "files": files,
+                "tests": {"mode": "gate-only", "add": [],
+                          "expectRedFirst": False, "gate": ["test"]},
+                "attempts": 1, "maxAttempts": 3,
+                "startedAt": "2026-01-01T00:00:00Z"}
+        node.update(over)
+        return node
+
+    def project(name, tasks):
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        _panel_write._atomic_write_json(
+            os.path.join(proj, ".claude", "audit.config.json"),
+            {"manifestPath": "docs/audit/audit-plan.json",
+             "review": {"perTask": "phase"}})
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        _panel_write._atomic_write_json(mpath, {
+            "meta": {"version": 2, "buildCommands": {"test": "true"}},
+            "phases": [{"id": "P1", "title": "P1", "status": "in_progress",
+                        "testGate": ["test"], "tasks": tasks}],
+            "fileIndex": dict((f, [t["id"]]) for t in tasks
+                              for f in t["files"]), "bugs": []})
+        git(proj, "init", "-q", "-b", "main")
+        write(proj, "src/a.ts", "a\n")
+        write(proj, "src/b.ts", "b\n")
+        git(proj, "add", "-A")
+        git(proj, "commit", "-q", "-m", "base")
+        return proj, mpath
+
+    def close(proj, tid="P1.1"):
+        sha = git(proj, "rev-parse", "HEAD").stdout.decode().strip()
+        lines = []
+        code = M.main(["done", tid, "--commit", sha, "--project-dir", proj],
+                      out=lines.append)
+        return code, "\n".join(str(x) for x in lines)
+
+    def start(proj, tid):
+        lines = []
+        code = M.main(["start", tid, "--project-dir", proj], out=lines.append)
+        return code, "\n".join(str(x) for x in lines)
+
+    def read(path):
+        with open(path, "rb") as fh:
+            return fh.read()
+
+    try:
+        proj, mpath = project("clean", [task("P1.1", ["src/a.ts"])])
+        code, text = close(proj)
+        check("lo1 a clean tree closes: %r" % ((code, text[-700:]),), code == 0)
+
+        proj, mpath = project("covered", [task("P1.1", ["src/a.ts"])])
+        write(proj, "src/a.ts", "left over\n")
+        write(proj, "src/b.ts", "someone else's, not covered\n")
+        before = read(mpath)
+        code, text = close(proj)
+        check("lo2 a covered change left uncommitted refuses, names that path "
+              "and not the uncovered one, offers `scope`, writes nothing: %r"
+              % ((code, text[:300]),),
+              code == M.E_USAGE and text.count("src/a.ts") == 1
+              and "src/b.ts" not in text and "/audit:task scope" in text
+              and read(mpath) == before)
+
+        proj, mpath = project("untracked", [task("P1.1", ["src/"])])
+        write(proj, "src/new/deep.ts", "new\n")
+        code, text = close(proj)
+        check("lo3 an UNTRACKED file under a declared directory refuses: %r"
+              % ((code, text[:300]),),
+              code == M.E_USAGE and "src/new/deep.ts" in text)
+
+        proj, mpath = project("plan-only", [task("P1.1", ["src/a.ts"])])
+        write(proj, "docs/audit/journal/2026-01.jsonl", "{}\n")
+        write(proj, "docs/audit/evidence/e.json", "{}\n")
+        write(proj, "docs/audit/audit-plan.json.bak", "x")
+        code, text = close(proj)
+        # The bookkeeping directories are skipped even for a task declaring
+        # none; this is the allow case that fails if the skip is dropped.
+        proj2, _m = project("plan-only-nofiles",
+                            [task("P1.1", [], outputs=["docs/x.md"])])
+        write(proj2, "docs/audit/journal/2026-01.jsonl", "{}\n")
+        write(proj2, "docs/audit/evidence/e.json", "{}\n")
+        code2, text2 = close(proj2)
+        check("lo4 ALLOW: journal and evidence files alone never refuse a close, "
+              "for a task with files or without: %r"
+              % ((code, text[:200], code2, text2[:200]),),
+              code == 0 and code2 == 0)
+
+        proj, mpath = project("nofiles", [task("P1.1", [], outputs=["x.md"])])
+        write(proj, "src/a.ts", "left over\n")
+        before = read(mpath)
+        code, text = close(proj)
+        check("lo5 a task declaring no files refuses on ANY change nobody else "
+              "covers, naming it, and says the commit step staged none: %r"
+              % ((code, text[:300]),),
+              code == M.E_USAGE and "src/a.ts" in text
+              and "declares no files" in text and read(mpath) == before)
+
+        proj, mpath = project("others", [
+            task("P1.1", [], outputs=["x.md"]),
+            task("P1.2", ["src/b.ts"])])
+        write(proj, "src/b.ts", "the other task's work in flight\n")
+        code, text = close(proj)
+        proj2, _m = project("others-both", [
+            task("P1.1", [], outputs=["x.md"]),
+            task("P1.2", ["src/b.ts"])])
+        write(proj2, "src/b.ts", "the other task's work in flight\n")
+        write(proj2, "src/a.ts", "mine, uncommitted\n")
+        code2, text2 = close(proj2)
+        check("lo6 another in_progress task's files are not blamed (closes), "
+              "while a change nobody covers still is, naming only it: %r"
+              % ((code, text[:200], code2, text2[:300]),),
+              code == 0 and code2 == M.E_USAGE and "src/a.ts" in text2
+              and "src/b.ts" not in text2)
+
+        proj, mpath = project("pending-other", [
+            task("P1.1", [], outputs=["x.md"]),
+            task("P1.2", ["src/b.ts"], status="pending", attempts=0)])
+        write(proj, "src/b.ts", "a pending task's file is nobody's yet\n")
+        code, text = close(proj)
+        check("lo7 only IN_PROGRESS tasks shield a change: a pending task's "
+              "file is still refused: %r" % ((code, text[:200]),),
+              code == M.E_USAGE and "src/b.ts" in text)
+
+        proj, mpath = project("start-bare", [
+            task("P1.1", [], status="pending", attempts=0,
+                 tests={"mode": "tdd", "add": [], "expectRedFirst": True,
+                        "gate": ["test"]}),
+            task("P1.2", [], status="pending", attempts=0),
+            task("P1.3", [], status="pending", attempts=0,
+                 tests={"mode": "tdd", "add": [], "expectRedFirst": True,
+                        "gate": ["test"]}, outputs=["x.md"])])
+        before = read(mpath)
+        code, text = start(proj, "P1.1")
+        check("lo8 `start` refuses a tdd task with no files, "
+              "says what to declare, writes nothing: %r" % ((code, text[-400:]),),
+              code == M.E_USAGE and "/audit:task scope P1.1 --files" in text
+              and read(mpath) == before)
+        code2, _t = start(proj, "P1.2")
+        code3, _t = start(proj, "P1.3")
+        check("lo9 ALLOW: the same empty files starts when the task is "
+              "--no-change shaped (gate-only, or naming "
+              "`outputs` beside a test of its own): %r" % ((code2, code3, _t[-400:]),), code2 == 0 and code3 == 0)
+    finally:
+        _harness.remove_tree(root)
+
+
 def _no_change_layout_cases(check, project, git, write, close, read):
     """The two ways the check used to miss or over-reach: a git repository in a
     subdirectory of the project, whose task files are project-relative, and a
@@ -14870,6 +15040,7 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("fr-block", "_return_cases"), ("fb-block", "_batch_cases"),
           ("hd-block", "_held_cases"), ("ub-block", "_unblock_cases"),
           ("ncm-block", "_no_change_moved_cases"),
+          ("lo-block", "_leftover_cases"),
           ("io-block", "_index_only_cases"),
           ("ps-block", "_stage_runner_cases"))
 
