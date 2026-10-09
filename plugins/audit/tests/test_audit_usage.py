@@ -1398,7 +1398,7 @@ def _bw_settle_run(root, name, chunks):
             writer[0].flush()
         waits.append(1)
 
-    fake_time = types.SimpleNamespace(sleep=sleep)
+    fake_time = types.SimpleNamespace(sleep=sleep, monotonic=time.monotonic)
     try:
         code, _msg = _bw_with_seam(
             M.ul, "time", lambda _orig: fake_time,
