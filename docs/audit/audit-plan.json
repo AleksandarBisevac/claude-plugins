@@ -1246,7 +1246,8 @@
       "P118.21-v7t",
       "P118.22-v7t",
       "P118.23-v7t",
-      "P119.6-g0k"
+      "P119.6-g0k",
+      "P121.5"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1996,7 +1997,8 @@
       "P108.16-4gh",
       "P108.18-4gh",
       "P108.20-4gh",
-      "P118.6"
+      "P118.6",
+      "P121.5"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -2638,7 +2640,8 @@
       "P118.21-v7t",
       "P118.22-v7t",
       "P118.23-v7t",
-      "P121.4"
+      "P121.4",
+      "P121.5"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -2762,7 +2765,8 @@
       "P108.10-4gh",
       "P108.13-4gh",
       "P108.17-4gh",
-      "P108.19-4gh"
+      "P108.19-4gh",
+      "P121.5"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -3816,7 +3820,8 @@
       "P104.10-tog",
       "P104.11-tog",
       "P104.13-tog",
-      "P121.3"
+      "P121.3",
+      "P121.5"
     ],
     "plugins/audit/templates/audit-plan.starter.json": [
       "P1.5"
@@ -3883,7 +3888,8 @@
       "P108.16-4gh",
       "P108.18-4gh",
       "P108.20-4gh",
-      "P118.6"
+      "P118.6",
+      "P121.5"
     ],
     "plugins/audit/tests/test__deps.py": [
       "P32.5",
@@ -4033,7 +4039,8 @@
       "P81.7",
       "P81.14-j7p",
       "P81.16-j7p",
-      "P118.11-v7t"
+      "P118.11-v7t",
+      "P121.5"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
       "P32.7",
@@ -4115,7 +4122,8 @@
       "P108.10-4gh",
       "P108.13-4gh",
       "P108.17-4gh",
-      "P108.19-4gh"
+      "P108.19-4gh",
+      "P121.5"
     ],
     "plugins/audit/tests/test__locks.py": [
       "P22.11",
@@ -4760,7 +4768,8 @@
       "P118.21-v7t",
       "P118.22-v7t",
       "P118.23-v7t",
-      "P121.4"
+      "P121.4",
+      "P121.5"
     ],
     "plugins/audit/tests/test_commit_audit_state.py": [
       "P28.2",
@@ -5165,7 +5174,8 @@
       "P104.2",
       "P104.9-tog",
       "P104.13-tog",
-      "P121.3"
+      "P121.3",
+      "P121.5"
     ],
     "plugins/audit/tests/test_validate_config.py": [
       "P47.1"
@@ -6476,6 +6486,9 @@
     ],
     "plugins/audit/scripts/ui/shared": [
       "P120.1"
+    ],
+    "plugins/audit/scripts/evidence/_evidence_io.py": [
+      "P121.5"
     ]
   },
   "bugs": [
