@@ -1,0 +1,244 @@
+{
+  "id": "P122",
+  "title": "One rule decides whether a declared path covers a file",
+  "status": "in_progress",
+  "description": "F581 (priority: 68 false commit-scope breaches on a real user's first sign-off), F579, F592. Today one files entry has several meanings: commit-scope matches exact paths after stripping the slash; the plan gate and two guard hooks treat an entry as a directory only with a trailing slash (the guards through drifted inline copies); remind-tdd matches exactly; staging and run-test-gate are separator-bounded; the red-first fix tree copies files only. Settled with the user 2026-10-09: one separator-bounded predicate, hosted at L1 in scripts/manifest/_task_outputs.py, reached by hooks through _config._load_scripts_module. The next version ships only once every open bug is fixed (user, 2026-10-09).",
+  "desiredOutcome": "Every reader of a task's files answers coverage through one shared predicate: an entry covers itself and everything under entry/, with or without a trailing slash; a declared directory never yields a false commit-scope breach, a false could-not-prove, or a done task whose work is uncommitted.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": "99130da9c6babe7b1078f684b00d32fdfb6fae4f",
+  "branch": "audit/p122-one-rule-decides-whether-a-dec",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P122.1",
+      "title": "covers(): one coverage predicate, and the plan gate and every hook ask it",
+      "status": "in_progress",
+      "description": "Add covers(entry, path) to _task_outputs.py (L1): strip a :line-range suffix, normalise backslashes, e = entry.rstrip('/'); True when path == e or path starts with e + '/'. A falsy entry covers nothing. output_covers reuses it for its directory arm. hooks/_config.covering_key answers through it (loaded via _load_scripts_module) and keeps its shape: the key that covers, or None, and None when the rule cannot be loaded (uncovered, the loud direction). guard-bash-writes.py and guard-secrets-read.py delete their inline copies and call covering_key; remind-tdd.py uses covering_key instead of an exact .get(rel). Cases: an entry with and without the slash covers a file under it; a sibling with a shared prefix (src vs src-old/a) is not covered; an exact file entry still covers only itself; the guards and the nudge agree with the plan gate on a slash-less directory. State the rule once in the schema's files description and manifest-conventions.md. Red-first each case against the old matcher.",
+      "files": [
+        "plugins/audit/scripts/manifest/_task_outputs.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/hooks/remind-tdd.py",
+        "plugins/audit/tests/test__task_outputs.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/tests/test_require_plan.py",
+        "plugins/audit/tests/test_guard_bash_writes.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_remind_tdd.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/reference/manifest-conventions.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__task_outputs.py: covers() admits a file under a directory entry with and without the trailing slash, refuses a prefix sibling (src vs src-old/a), and the guards and remind-tdd agree with the plan gate on a slash-less directory"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-09T19:32:58Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-09T19:48:20Z.cceea0",
+        "status": "passed",
+        "at": "2026-10-09T19:48:20Z"
+      }
+    },
+    {
+      "id": "P122.2",
+      "title": "commit-scope, staging, run-test-gate and scope widening read coverage through covers()",
+      "status": "pending",
+      "description": "F581's core. _invariants.commit_scope matches exact paths after stripping the slash, so a declared directory breaches every file committed under it, with or without the slash. Replace the membership test with covers(); _invariants._under and _scoped_commit.under_any/covering delegate to covers() rather than spelling the rule; run-test-gate._declared_by uses it; audit-task._narrowings accepts replacing src/a.py with src (or src/) as a widening, not a narrowing. Regression case: P120.1's exact shape (files declares docs/screenshots without a slash, commit stages docs/screenshots/areas.png) reports no breach; and a path outside the directory still breaches. Update README.md and reference/orchestrator.md where they say 'in the task's files'.",
+      "files": [
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test__invariants.py",
+        "plugins/audit/tests/test_verify_invariants.py",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/README.md",
+        "plugins/audit/reference/orchestrator.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__invariants.py: commit_scope reports no breach when files declares docs/screenshots (no slash) and the commit staged docs/screenshots/areas.png, and still breaches a path outside it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P122.1"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P122.3",
+      "title": "the red-first fix tree lays a declared directory over, not only files",
+      "status": "pending",
+      "description": "F579, confirmed by reading: _lay_over skips any entry that is not a file, so a declared directory is never copied into the fix tree and HEAD's copy stays; _red_scope drops a declared test directory; _at_head compares ls-tree names exactly, so a dir/ spelling reads as new and is stubbed as an empty FILE; _one_declared and introduced never match a directory. Expand a declared directory to the files under it (reuse _tree_stamp._files_under, the git-pathspec reading scope_digest already uses) before these steps, and use covers() wherever a path is matched against an entry. Case: a task declaring a directory that holds the fix gets a red/green verdict, not could-not-prove; reproduce P120.2's shape (ui/report-css declared as a directory).",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: a task declaring a directory that holds its fix gets red-then-green from the fix tree, not could-not-prove"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P122.1"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P122.4",
+      "title": "done refuses while the task's work sits uncommitted, and start refuses a task with no files",
+      "status": "pending",
+      "description": "F592, twice on the testbed: a task with no declared files closed done while its work sat uncommitted, because commit-task-work stages only declared files. done --commit (_locked_done) checks nothing about the tree; only the --no-change path asks git porcelain, through _no_change_moves, which this should reuse rather than re-spell. Add: done refuses when the working tree holds changes (git status, untracked included, ignoring the journal and evidence directories and the manifest files) that are covered by the task's files but absent from --commit, or, when the task declares no files, any change no other in_progress task covers; the refusal names the paths and offers /audit:task scope to widen. start refuses a task whose files is empty unless it is --no-change shaped; say what to declare. Cases for: clean tree closes; a covered leftover refuses; an empty-files task with leftovers refuses; another in-progress task's files are not blamed. Update commands/task.md and README.md's done paragraph.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: done refuses, naming the paths, while a covered change or an empty-files task's leftover sits uncommitted; another in-progress task's files are not blamed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P122.2"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ],
+  "reviewPerTask": "phase",
+  "claim": {
+    "sessionId": "0a7c2fcc-df20-4990-96d6-d56b52648faf",
+    "branch": "audit/p122-one-rule-decides-whether-a-dec",
+    "at": "2026-10-09T19:32:58Z"
+  },
+  "startedAt": "2026-10-09T19:32:58Z"
+}

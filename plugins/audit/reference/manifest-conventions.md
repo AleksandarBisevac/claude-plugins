@@ -313,6 +313,13 @@ Rules:
   the task has started, `scope --description` refuses it, because the brief is what its
   attempts were judged against.
 
+## What a `files` entry covers
+
+An entry covers itself and everything under `entry/`, with or without a trailing slash
+(`src` and `src/` both cover `src/a.py`); a sibling that only shares a prefix (`src-old/a.py`)
+is not covered, and a `:line-range` suffix is ignored. One predicate, `_task_outputs.covers`,
+decides this for the plan gate, the shell and secret guards, and the TDD nudge.
+
 ## Task outputs (`task.outputs`)
 
 `files` is what a task **edits** and every entry owes a `fileIndex` row. `outputs` is what

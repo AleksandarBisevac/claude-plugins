@@ -29,6 +29,7 @@ WHAT IS PINNED, and why each one is here rather than trusted:
 
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
+import os
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -187,6 +188,40 @@ def _cases(check):
           "makes it cheap enough for a hook to load by path on every uncovered "
           "write: %r" % (_reaches,),
           _reaches == ["_output"], repr((_reaches, _broken)))
+    # --- covers(): the one coverage predicate for a `files` entry ---------------
+    for entry, path, want, why in (
+            ("src", "src/a.py", True, "a slash-less directory covers a file under it"),
+            ("src/", "src/a.py", True, "a slashed directory covers a file under it"),
+            ("src", "src-old/a.py", False, "a shared prefix is not a directory"),
+            ("src/", "src-old/a.py", False, "a shared prefix is not a directory (slashed)"),
+            ("src/a.py", "src/a.py", True, "a file entry covers itself"),
+            ("src/a.py", "src/a.py/b", True, "an entry covers whatever sits under it"),
+            ("src/a.py", "src/a.pyc", False, "a file entry covers only itself"),
+            ("src/a.py:12-20", "src/a.py", True, "a line range is stripped"),
+            ("src\\sub", "src/sub/x", True, "backslashes are normalised"),
+            ("", "src/a.py", False, "a falsy entry covers nothing"),
+            (None, "src/a.py", False, "None covers nothing")):
+        got = M.covers(entry, path)
+        check("cv1 covers(%r, %r) is %s: %s" % (entry, path, want, why),
+              got is want, repr(got))
+    import _config as _cfg
+    _fmap = {"src": [1], "docs/": [2], "pkg/a.py": [3]}
+    for rel, key in (("src/a.py", "src"), ("docs/x.md", "docs/"),
+                     ("pkg/a.py", "pkg/a.py"), ("src-old/a.py", None),
+                     ("pkg/a.pyc", None)):
+        got = _cfg.covering_key(_fmap, rel)
+        check("cv2 covering_key answers through covers(): %r -> %r" % (rel, key),
+              got == key, repr(got))
+    import _output as _o
+    for hook in ("guard-bash-writes.py", "guard-secrets-read.py"):
+        src = open(os.path.join(_o.HOOKS_DIR, hook), encoding="utf-8").read()
+        check("cv3 %s keeps no inline directory-prefix copy of the coverage "
+              "rule: it asks covering_key" % hook,
+              "for f in in_prog" not in src and "_config.covering_key" in src,
+              hook)
+    _tdd = open(os.path.join(_o.HOOKS_DIR, "remind-tdd.py"), encoding="utf-8").read()
+    check("cv4 remind-tdd asks covering_key rather than an exact .get(rel)",
+          "_config.covering_key" in _tdd and ").get(rel, [])" not in _tdd)
     check("tx3 `_deps` places it, so the import-graph lint has an opinion about "
           "it rather than reporting it unplaced",
           "_task_outputs" in [m for layer in _deps.LAYERS for m in layer],

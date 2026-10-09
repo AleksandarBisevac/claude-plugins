@@ -40,6 +40,7 @@ Stdlib only, Python 3.8 compatible.
 """
 import fnmatch
 import os
+import re
 import sys
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -151,6 +152,24 @@ def _segments_match(pat_segs, path_segs):
     return _segments_match(pat_segs[1:], path_segs[1:])
 
 
+def covers(entry, path):
+    """Whether a task's `files` entry covers the repository-relative `path`.
+
+    THE ONE RULE for a declared path: an entry covers itself and everything
+    under `entry/`, with or without a trailing slash. A `:line-range` suffix is
+    dropped and backslashes are read as separators. A falsy entry (or path)
+    covers nothing, and a sibling sharing only a prefix (`src` vs `src-old/a`)
+    is not under it.
+    """
+    if not entry or not path:
+        return False
+    e = re.sub(r":[0-9][0-9,-]*\Z", "", str(entry).replace("\\", "/")).rstrip("/")
+    p = str(path).replace("\\", "/")
+    if not e:
+        return False
+    return p == e or p.startswith(e + "/")
+
+
 def output_covers(pattern, rel):
     """Whether this `outputs` entry covers the repository-relative path `rel`.
 
@@ -168,6 +187,8 @@ def output_covers(pattern, rel):
     if not text or not target:
         return False
     if text.endswith("/"):
+        if not any(c in text for c in "*?["):
+            return covers(text, target)
         text += "**"
     return _segments_match([s for s in text.split("/") if s != ""],
                            [s for s in target.split("/") if s != ""])

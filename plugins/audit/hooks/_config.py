@@ -2800,19 +2800,23 @@ def in_progress_files(root, manifest_rel):
 def covering_key(file_map, rel):
     """The key of a rel-file -> [...] map that covers `rel`, or None.
 
-    The three forms a manifest `files` list is written in: the path itself,
-    the path as a directory, or a directory entry `rel` sits under. It lives
+    An entry covers itself and everything under `entry/`, with or without a
+    trailing slash — `_task_outputs.covers`, loaded by path because a hook may
+    not import `scripts/`. When that rule cannot be loaded nothing is covered
+    (the loud direction), never everything. It lives
     here rather than beside the one decision that asks it because the REFUSAL
     TEXT asks it too, over a different map — and a message that named a
     declaring task the gate would not in fact have been opened by is the same
     false claim in a new place. One matcher, so the two cannot disagree."""
-    if rel in file_map:
-        return rel
-    if (rel + "/") in file_map:
-        return rel + "/"
-    for f in file_map:
-        if f.endswith("/") and rel.startswith(f):
-            return f
+    rule = _load_scripts_module("_task_outputs", "_task_outputs.py")
+    if rule is None:
+        return None
+    try:
+        for f in file_map:
+            if rule.covers(f, rel):
+                return f
+    except Exception:
+        return None
     return None
 
 

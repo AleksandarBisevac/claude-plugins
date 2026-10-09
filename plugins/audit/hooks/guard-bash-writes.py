@@ -1910,8 +1910,7 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
             continue
         if in_prog is None:
             in_prog = _config.in_progress_files(root, manifest_rel)
-        if rel in in_prog or any(
-                rel.startswith(f) for f in in_prog if f.endswith("/")):
+        if _config.covering_key(dict.fromkeys(in_prog), rel) is not None:
             continue
         # THE SESSION'S FREE FILE, which the PreToolUse arm let a shell write
         # take unmeasured. Within `trivialLineThreshold` it is free here as it

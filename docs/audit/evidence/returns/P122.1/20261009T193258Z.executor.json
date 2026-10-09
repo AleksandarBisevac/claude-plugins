@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test__task_outputs.py --selftest": "pass",
+    "python3 tools/sweep-selftests.py": "pass",
+    "ruff check plugins/audit tools": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-09T19:39:24Z",
+    "basis": "`sh -c python3 plugins/audit/tests/test__task_outputs.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 51/52 cases passed; 'covers' is not introduced by this task: HEAD already carries it in plugins/audit/scripts/manifest/_task_outputs.py, plugins/audit/hooks/_config.py, plugins/audit/hooks/require-plan.py, plugins/audit/hooks/guard-bash-writes.py, plugins/audit/hooks/guard-secrets-read.py, plugins/audit/hooks/remind-tdd.py, plugins/audit/reference/manifest-conventions.md; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main/node_modules and is not watched; the user's ~/.npmrc dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "Added covers(entry,path) to _task_outputs.py (strips line range, normalises backslashes, rstrip('/'), exact or entry/ prefix; falsy covers nothing); output_covers reuses it for plain directory entries. _config.covering_key now answers through it via _load_scripts_module, None if unloadable. guard-bash-writes, guard-secrets-read inline prefix copies replaced by covering_key; remind-tdd uses covering_key instead of exact .get(rel). Added cases cv1-cv4 to test__task_outputs.py. Rule stated in schema files description and manifest-conventions.md. Full sweep green, ruff clean. Other listed test files unchanged. vermin/validate not run.",
+    "descriptive": "One shared covers() predicate now decides directory coverage for the plan gate, both guards and the TDD nudge."
+  },
+  "testsAdded": [
+    "test__task_outputs.py cv1 (covers matrix)",
+    "cv2 (covering_key via covers)",
+    "cv3 (guards keep no inline copy)",
+    "cv4 (remind-tdd uses covering_key)"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:26e9049370e4d20b115bb940023d5f4e233392999c27d4eaa7eedaf122f78bdd\",\"dirtyDigest\":\"sha256:8e25617f7676fc24e92e1be74b6c9170a89dca0430887c8be9b9732b3012705d\",\"dirtyPaths\":{\"plugins/audit/hooks/_config.py\":\"b13dd93ba01d4d88\",\"plugins/audit/hooks/guard-bash-writes.py\":\"7d704c6a962fa134\",\"plugins/audit/hooks/guard-secrets-read.py\":\"1ff59f16d9f1ddee\",\"plugins/audit/hooks/remind-tdd.py\":\"0a1001dca865555a\",\"plugins/audit/reference/manifest-conventions.md\":\"298fb4e6224b18d1\",\"plugins/audit/schema/audit-plan.schema.json\":\"ef0357094be785d1\",\"plugins/audit/scripts/manifest/_task_outputs.py\":\"c84faf2c4f200958\",\"plugins/audit/tests/test__task_outputs.py\":\"5eb8560de0afce14\"},\"head\":\"99130da9\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/guard-bash-writes.py\",\"plugins/audit/hooks/guard-secrets-read.py\",\"plugins/audit/hooks/remind-tdd.py\",\"plugins/audit/hooks/require-plan.py\",\"plugins/audit/reference/manifest-conventions.md\",\"plugins/audit/schema/audit-plan.schema.json\",\"plugins/audit/scripts/manifest/_task_outputs.py\",\"plugins/audit/tests/test__config.py\",\"plugins/audit/tests/test__task_outputs.py\",\"plugins/audit/tests/test_guard_bash_writes.py\",\"plugins/audit/tests/test_guard_secrets_read.py\",\"plugins/audit/tests/test_remind_tdd.py\",\"plugins/audit/tests/test_require_plan.py\"],\"scopeDigest\":\"sha256:49400c7d538120a5ab22219c9285ab69fe1e8d0c8917210e070d30d1ce94e737\",\"v\":2}"
+}

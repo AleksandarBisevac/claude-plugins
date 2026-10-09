@@ -263,8 +263,9 @@ def decide(data, *, cfg=None, state_dir=None, now=None):
     policy = tr.get("inProgressPolicy") or "skip-gate-only"
     if policy != "warn-always":
         manifest_rel = cfg.get("manifestPath") or _config.DEFAULTS["manifestPath"]
-        covering = _config.in_progress_task_map(plan_root,
-                                                 manifest_rel).get(rel, [])
+        tmap = _config.in_progress_task_map(plan_root, manifest_rel)
+        hit = _config.covering_key(tmap, rel)
+        covering = tmap.get(hit, []) if hit is not None else []
         if policy == "skip-all" and covering:
             return ("silent", "covered by in_progress task: %s" % rel)
         if policy == "skip-gate-only" and any(

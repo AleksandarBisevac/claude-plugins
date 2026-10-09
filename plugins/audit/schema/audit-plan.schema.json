@@ -1425,7 +1425,7 @@
         },
         "files": {
           "type": "array",
-          "description": "Repo-relative files this task touches (optional :line-range suffix). Union across a phase = its review scope.",
+          "description": "Repo-relative files this task touches (optional :line-range suffix). Union across a phase = its review scope. An entry covers itself and everything under `entry/`, with or without a trailing slash; a sibling sharing only a prefix (`src` vs `src-old/a`) is not covered.",
           "items": {
             "type": "string"
           }
