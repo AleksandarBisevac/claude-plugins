@@ -223,7 +223,11 @@ named `node_modules` or `.venv`, at any depth, whose parent directory exists
 at HEAD and holds no link into the tree (`dependency_plan`). A dependency
 directory is reproduced in the
 throwaway as a real directory of per-entry symlinks into the source, rebuilt
-after each reset, and never as one link to the whole directory: the cache
+after each reset, and never as one link to the whole directory. On Windows,
+where a symlink needs a privilege an ordinary account lacks, a refused probe
+symlink (`link_kind`) makes each directory entry a junction and each file a
+hard link, or a copy across volumes, and the basis names which kind was used.
+The cache
 entries a runner writes (`.cache`; `.vite`, where vitest 4.1.10 was seen on
 2026-10-06 to write `vitest/<hash>/results.json` after every run; and
 `.vite-temp`, which this repository's own `node_modules` holds) are left out of
@@ -261,7 +265,10 @@ THE LEAKS A LINK OPENS, each named and none left implicit:
     final `shutil.rmtree` both unlink a symlink rather than descend through
     it, or a cleanup would delete the shared tree's dependencies; the case
     that holds it keeps a sentinel file behind a link and asserts it survives
-    every reset and the removal.
+    every reset and the removal. A junction is not a link to `os.path.islink`,
+    so the helper removes its own junctions (`unlink_junctions`) before every
+    reset and before the removal, rather than trusting either to tell one from
+    a real directory.
 
 `.npmrc`. The jest and vitest binaries read none; npm, npx and pnpm, wrapping
 them, do. A TRACKED project `.npmrc` arrives with HEAD. An untracked one, and
@@ -1861,6 +1868,7 @@ def dependency_plan(source, root, deadline):
                      timeout=max(1, _left(deadline)))
     if code != 0:
         return None, "--deps-from %s is not inside a git repository: %s" % (source, top)
+    top = native_top(top)
     code, listing = _git(top, ["ls-files", "-z", "--others", "--ignored",
                                "--exclude-standard", "--directory"],
                          timeout=max(1, _left(deadline)), strip=False)
@@ -1888,14 +1896,97 @@ def dependency_plan(source, root, deadline):
     skipped += [(r, "it holds a link into the shared tree, through which HEAD's "
                     "run would read the working tree's implementation: %s"
                     % ("; ".join(into[r]),)) for r in placed if r in into]
-    return {"source": top, "linked": [r for r in placed if r not in into],
-            "skipped": skipped, "npmrc": _npmrc_state(root, deadline)}, None
+    linked = [r for r in placed if r not in into]
+    return {"source": top, "linked": linked,
+            "skipped": skipped, "npmrc": _npmrc_state(root, deadline),
+            "kind": _probe_link_kind() if linked else LINK_SYMLINK}, None
 
 
-def link_dependencies(path, plan):
+def _probe_link_kind():
+    """`link_kind` asked in a scratch directory of its own, removed again."""
+    probe = tempfile.mkdtemp(prefix="stamp-link-probe-")
+    try:
+        return link_kind(probe)
+    finally:
+        shutil.rmtree(probe, ignore_errors=True)
+
+
+# How an entry is linked. A symlink needs, on Windows, a privilege an ordinary
+# account and many CI runners lack, and without it every red run that needs a
+# dependency would end `could-not-prove` for a reason that is not the test's.
+# There a directory becomes a JUNCTION, which needs no privilege, and a file a
+# HARD LINK - or a copy, a hard link being refused across volumes. Elsewhere a
+# refused symlink stays the refusal it was.
+LINK_SYMLINK = "symlink"
+LINK_JUNCTION = "junction"
+LINK_WORDS = {
+    LINK_SYMLINK: "as symlinks",
+    LINK_JUNCTION: ("as directory junctions and hard links (a file on another "
+                    "volume copied), this account lacking the privilege a "
+                    "Windows symlink needs"),
+}
+# `lstat().st_reparse_tag` of a junction. Not read from `stat`, which declares
+# it on Windows builds only.
+_REPARSE_MOUNT_POINT = 0xA0000003
+
+
+def _make_junction(entry, target):
+    """A directory junction at `target` pointing at `entry` (Windows only)."""
+    import _winapi
+    _winapi.CreateJunction(entry, target)
+
+
+def _hard_link_or_copy(entry, target):
+    """A hard link, or a copy where the two paths sit on different volumes."""
+    try:
+        os.link(entry, target)
+    except OSError:
+        shutil.copy2(entry, target)
+
+
+LINK_OPS = {"symlink": os.symlink, "junction": _make_junction,
+            "file": _hard_link_or_copy}
+
+
+def link_kind(probe_dir, platform=None, symlink=None):
+    """`LINK_SYMLINK`, or `LINK_JUNCTION` when `platform` (default `os.name`)
+    is Windows and a directory symlink made under `probe_dir` was refused. The
+    probe is removed again; a refusal anywhere else is left for the real link
+    to report, so the POSIX path is the one it always was."""
+    platform = os.name if platform is None else platform
+    symlink = os.symlink if symlink is None else symlink
+    link = os.path.join(probe_dir, "probe-link")
+    try:
+        symlink(probe_dir, link, target_is_directory=True)
+    except OSError:
+        return LINK_JUNCTION if platform == "nt" else LINK_SYMLINK
+    try:
+        os.unlink(link)
+    except OSError:
+        try:
+            os.rmdir(link)
+        except OSError:
+            pass
+    return LINK_SYMLINK
+
+
+def link_entry(entry, target, kind, ops=None):
+    """Link the one dependency entry `entry` at `target`, by `kind`."""
+    ops = LINK_OPS if ops is None else ops
+    is_dir = os.path.isdir(entry)
+    if kind != LINK_JUNCTION:
+        ops["symlink"](entry, target, target_is_directory=is_dir)
+    elif is_dir:
+        ops["junction"](entry, target)
+    else:
+        ops["file"](entry, target)
+
+
+def link_dependencies(path, plan, ops=None):
     """Link each planned directory into the throwaway at `path`, entry by entry,
-    leaving out `DEP_CACHES` and anything HEAD already put there. Returns the
-    problem, or None."""
+    leaving out `DEP_CACHES` and anything HEAD already put there, by the plan's
+    link kind. Returns the problem, or None."""
+    kind = (plan or {}).get("kind") or LINK_SYMLINK
     for rel in (plan or {}).get("linked") or []:
         src = os.path.join(plan["source"], *rel.split("/"))
         dst = os.path.join(path, *rel.split("/"))
@@ -1906,11 +1997,49 @@ def link_dependencies(path, plan):
                 target = os.path.join(dst, name)
                 if name in DEP_CACHES or os.path.lexists(target):
                     continue
-                entry = os.path.join(src, name)
-                os.symlink(entry, target, target_is_directory=os.path.isdir(entry))
-        except OSError as exc:
-            return "could not link %s into the throwaway: %s" % (rel, exc)
+                link_entry(os.path.join(src, name), target, kind, ops)
+        except (OSError, ImportError, AttributeError) as exc:
+            return "could not link %s into the throwaway %s: %s" % (
+                rel, LINK_WORDS.get(kind, kind), exc)
     return None
+
+
+def _is_junction(path):
+    """Whether `path` is a directory junction; never true off Windows."""
+    try:
+        return getattr(os.lstat(path), "st_reparse_tag", 0) == _REPARSE_MOUNT_POINT
+    except OSError:
+        return False
+
+
+def unlink_junctions(path, plan, is_junction=None):
+    """Remove every junction this helper made in the throwaway at `path`,
+    BEFORE git's reset or removal reaches it: `os.path.islink` reads a
+    junction as no link at all, so the junction is taken out here rather than
+    trusting a cleanup to tell it from a real directory and not descend into
+    the shared tree's dependencies. Returns the problem, or None."""
+    is_junction = _is_junction if is_junction is None else is_junction
+    for rel in (plan or {}).get("linked") or []:
+        dst = os.path.join(path, *rel.split("/"))
+        for name in _listing(dst):
+            full = os.path.join(dst, name)
+            if not is_junction(full):
+                continue
+            try:
+                os.rmdir(full)
+            except OSError as exc:
+                try:
+                    os.unlink(full)
+                except OSError:
+                    return "could not remove the junction %s: %s" % (full, exc)
+    return None
+
+
+def native_top(text, pathmod=None):
+    """git's `--show-toplevel` in this platform's own spelling: on Windows git
+    answers with forward slashes, and a path joined onto that reads
+    `C:/x/repo\\node_modules` - a spelling no path the caller holds matches."""
+    return (os.path if pathmod is None else pathmod).normpath(text)
 
 
 def deps_clause(plan):
@@ -1920,10 +2049,12 @@ def deps_clause(plan):
         return ""
     src = plan["source"]
     if plan["linked"]:
-        said = ("dependencies linked from %s, entry by entry: %s - %s are not "
+        kind = plan.get("kind") or LINK_SYMLINK
+        said = ("dependencies linked from %s, entry by entry %s: %s - %s are not "
                 "linked and a new entry a runner makes beside the links stays in "
                 "the throwaway, but a write into a linked entry lands in %s and is "
-                "not watched" % (src, ", ".join(plan["linked"]), ", ".join(DEP_CACHES),
+                "not watched" % (src, LINK_WORDS.get(kind, kind),
+                                 ", ".join(plan["linked"]), ", ".join(DEP_CACHES),
                                  ", ".join(os.path.join(src, *r.split("/"))
                                            for r in plan["linked"])))
     else:
@@ -2393,7 +2524,7 @@ def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
         return {"code": None, "text": "", "seconds": 0.0,
                 "problem": "the run timed out: no time was left of the "
                            "%s-second deadline" % (timeout,)}, []
-    problem = _isolate(path, deadline)
+    problem = unlink_junctions(path, deps) or _isolate(path, deadline)
     if problem is not None:
         return {"code": None, "text": "", "problem": problem, "seconds": 0.0}, []
     copied = _lay_over(root, path, rels)
@@ -2454,6 +2585,7 @@ def _red_scope(args, cmd, deadline):
                       timeout=max(1, _left(deadline)))
     if code != 0:
         return None, "%s is not inside a git repository: %s" % (args.project, root)
+    root = native_top(root)
     named = _names_shared_tree(cmd, root, os.path.abspath(args.project))
     if named:
         return None, ("the command names the shared tree (%s); give its paths "
@@ -2579,6 +2711,7 @@ def run_red(args, cmd, out):
             "head_js": state["head_js"], "path": path,
             "deadline": deadline, "deps": deps})
     finally:
+        unlink_junctions(path, deps)
         removed = _remove_throwaway(root, holder, path)
         if previous is not None:
             _proc_group.disarm_interrupt(previous)

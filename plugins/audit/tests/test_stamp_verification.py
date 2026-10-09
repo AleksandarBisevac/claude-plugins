@@ -32,6 +32,7 @@ import io
 import json
 import ntpath
 import os
+import posixpath
 import shlex
 import signal
 import subprocess
@@ -3862,9 +3863,165 @@ def _scan_cases(check):
           and "timed out" in (late[1] or ""))
 
 
+
+# --- dependencies on Windows: no symlink privilege, and git's own spelling ---
+# CI's Windows runner holds the symlink privilege, so a refusal is simulated:
+# the probe is handed a symlink that raises, the junction maker is replaced by a
+# directory symlink standing in for it, and `_is_junction` by a check that knows
+# which stand-ins were made. What CANNOT be simulated off Windows is
+# `_winapi.CreateJunction` itself and how git and `shutil.rmtree` treat a real
+# junction - which is why the helper removes its own before either runs.
+def _refused(src, dst, target_is_directory=False):
+    raise OSError(1314, "A required privilege is not held by the client")
+
+
+def _windows_cases(check):
+    fn = getattr(M, "native_top", None)
+    nt = fn("C:/Users/runner/AppData/Local/Temp/repo", ntpath) if fn else None
+    check("sw1 git's forward-slashed --show-toplevel is respelled natively, so a "
+          "path joined onto it is the one a caller holding the Windows spelling "
+          "compares against (the comparison sd4 and sd5 make), and a POSIX path "
+          "is left as it is: %r" % (nt,),
+          fn is not None and nt == "C:\\Users\\runner\\AppData\\Local\\Temp\\repo"
+          and ntpath.join(nt, "node_modules")
+          == "C:\\Users\\runner\\AppData\\Local\\Temp\\repo\\node_modules"
+          and fn("/tmp/a/repo", posixpath) == "/tmp/a/repo")
+
+    root = _harness.fixture_root("stamp-sw-plan-")
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _write(os.path.join(root, ".gitignore"), "node_modules/\n")
+    _deps_dir(root)
+    seen = []
+    plan = None
+    if fn is not None:
+        M.native_top = lambda text, pathmod=None: seen.append(text) or fn(text, pathmod)
+        try:
+            plan, _p = M.dependency_plan(root, root, time.time() + 60)
+        finally:
+            M.native_top = fn
+    check("sw2 the dependency plan's source is git's toplevel passed through "
+          "native_top - the spelling every path in the basis is joined onto - "
+          "and the plan names the link kind it will use: seen=%r plan=%r"
+          % (seen, plan and {k: plan[k] for k in ("source", "kind")}),
+          len(seen) == 1 and plan is not None and plan["source"] == fn(seen[0])
+          and plan.get("kind") == getattr(M, "LINK_SYMLINK", None))
+
+    kind = getattr(M, "link_kind", None)
+    probe = _harness.fixture_root("stamp-sw-probe-")
+    got = ((kind(probe, "nt", _refused), kind(probe, "posix", _refused),
+            kind(probe, "nt")) if kind else None)
+    check("sw3 a refused symlink on Windows selects junctions; the same refusal "
+          "elsewhere keeps the symlink kind, whose own link then reports it as "
+          "before; and a symlink that works on Windows stays a symlink - the "
+          "probe leaves nothing behind: %r left=%r" % (got, os.listdir(probe)),
+          got == (getattr(M, "LINK_JUNCTION", None), getattr(M, "LINK_SYMLINK", 0),
+                  getattr(M, "LINK_SYMLINK", 0))
+          and os.listdir(probe) == [])
+
+    src_root = _harness.fixture_root("stamp-sw-src-")
+    nm = _deps_dir(src_root)
+    dst_root = _harness.fixture_root("stamp-sw-dst-")
+    made = {"junction": [], "file": []}
+
+    def stand_in(entry, target):
+        made["junction"].append(os.path.basename(entry))
+        os.symlink(entry, target, target_is_directory=True)
+
+    def as_file(entry, target):
+        made["file"].append(os.path.basename(entry))
+        M._hard_link_or_copy(entry, target)
+
+    problem = "link_dependencies takes no ops"
+    words = ""
+    sentinel = os.path.join(dst_root, "node_modules", "sentinel.txt")
+    if kind is not None:
+        jplan = {"source": src_root, "linked": ["node_modules"],
+                 "kind": M.LINK_JUNCTION}
+        problem = M.link_dependencies(dst_root, jplan,
+                                      {"symlink": _refused, "junction": stand_in,
+                                       "file": as_file})
+        words = M.deps_clause(dict(jplan, skipped=[], npmrc=["none"]))
+    check("sw4 with the junction kind every directory entry goes to the junction "
+          "maker and every file to a hard link, none to the refused symlink, the "
+          "cache directory linked by neither, and the basis names the kind: "
+          "problem=%r made=%r %s" % (problem, made, words[:300]),
+          problem is None and made == {"junction": [".bin", "fakejest"],
+                                       "file": ["sentinel.txt"]}
+          and os.path.isfile(sentinel)
+          and os.stat(sentinel).st_nlink == 2
+          and "junction" in words and "privilege" in words)
+
+    removed = None
+    if kind is not None:
+        stand_ins = set(os.path.join(dst_root, "node_modules", n)
+                        for n in made["junction"])
+        removed = M.unlink_junctions(dst_root, jplan,
+                                     lambda p: p in stand_ins)
+    dst_nm = os.path.join(dst_root, "node_modules")
+    left = sorted(os.listdir(dst_nm)) if os.path.isdir(dst_nm) else None
+    check("sw5 unlink_junctions removes each junction the helper made in the "
+          "throwaway and nothing behind it - the source's runner survives - "
+          "while a hard-linked file is left to git's reset: problem=%r left=%r"
+          % (removed, left),
+          kind is not None and removed is None and left == ["sentinel.txt"]
+          and os.path.isfile(os.path.join(nm, "fakejest", "jest.py")))
+
+    posix_left = None
+    if kind is not None:
+        other = _harness.fixture_root("stamp-sw-posix-")
+        M.link_dependencies(other, {"source": src_root, "linked": ["node_modules"],
+                                    "kind": M.LINK_SYMLINK})
+        M.unlink_junctions(other, {"linked": ["node_modules"]})
+        posix_left = sorted(os.listdir(os.path.join(other, "node_modules")))
+    check("sw6 THE ALLOW CASE for sw5: symlinks are never read as junctions, so "
+          "the POSIX path keeps every link for git's reset to unlink, exactly as "
+          "before: %r" % (posix_left,),
+          posix_left == [".bin", "fakejest", "sentinel.txt"])
+
+    root_j, man_j, cmd_j = _deps_repo("stamp-red-deps-junction-",
+                                      [("v is two", "v()", "2")])
+    jmade = []
+    lines = []
+    code_j = None
+    if kind is not None:
+        def j_stand_in(entry, target):
+            jmade.append(target)
+            os.symlink(entry, target, target_is_directory=True)
+
+        held = (M._probe_link_kind, M.LINK_OPS, M._is_junction)
+        M._probe_link_kind = lambda: M.LINK_JUNCTION
+        M.LINK_OPS = dict(held[1], junction=j_stand_in, symlink=_refused)
+        M._is_junction = lambda p: p in jmade and os.path.lexists(p)
+        try:
+            code_j = M.main(["red", "--project", root_j, "--manifest", man_j,
+                             "--task", "P1.1", "--json", "--"] + cmd_j,
+                            out=lines.append)
+        finally:
+            M._probe_link_kind, M.LINK_OPS, M._is_junction = held
+    try:
+        payload_j = json.loads("\n".join(lines))
+    except ValueError:
+        payload_j = {}
+    basis_j = _deps_basis(payload_j)
+    nm_j = os.path.join(root_j, "node_modules")
+    check("sw7 a red run on an account with no symlink privilege (simulated) still "
+          "proves through junctions and hard links, the basis naming the kind; "
+          "each junction was made and removed by the helper, the source's "
+          "runner and sentinel survive, and the sentinel's hard link went with "
+          "the throwaway: exit=%r made=%d nlink=%r %s"
+          % (code_j, len(jmade),
+             os.stat(os.path.join(nm_j, "sentinel.txt")).st_nlink, basis_j[:500]),
+          code_j == M.E_PROVED and "junction" in basis_j and len(jmade) >= 2
+          and not any(os.path.lexists(p) for p in jmade)
+          and os.path.isfile(os.path.join(nm_j, "fakejest", "jest.py"))
+          and os.stat(os.path.join(nm_j, "sentinel.txt")).st_nlink == 1
+          and (payload_j.get("throwaway") or {}).get("removed") is True)
+
 def _cases(check):
     _harness.stage(check, "sd-encoding", _encoding_cases)
     _harness.stage(check, "sd-deps", _deps_cases)
+    _harness.stage(check, "sw-windows", _windows_cases)
     _harness.stage(check, "sd-venv", _venv_cases)
     _harness.stage(check, "sd-scan", _scan_cases)
     _harness.stage(check, "sb-new-file", _new_file_cases)

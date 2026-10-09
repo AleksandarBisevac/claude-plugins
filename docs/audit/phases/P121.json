@@ -585,7 +585,7 @@
     {
       "id": "P121.11-eof",
       "title": "Windows: the journal's newline cases leave nothing behind",
-      "status": "in_progress",
+      "status": "done",
       "description": "On windows-latest the sweep reports test__journal_io.py 'wrote outside the fixtures it makes for itself: working directory: left behind: jio-nl-hqe6eu52' - the nl-block added in P121.5 creates a jio-nl-* directory in the working directory, or fails to remove it on Windows (an open handle, a read-only file, a git object). Make every nl case build its scratch space under tempfile.mkdtemp and remove it in finally with the house remove_tree, and show the leak under a simulation. This is CI round 2 on windows-latest; the job log was saved outside the repository for the executor (grep the file name). You cannot run Windows here. Find the root cause, reproduce the Windows condition locally where you can (a CRLF checkout via `git -c core.autocrlf=true` into a scratch clone, no symlink privilege, a slow process start), show it red before the fix and green after, and say plainly what could not be simulated. Fix the class, not only the named case; a platform skip only with the house's idiom and a stated reason.",
       "files": [
         "plugins/audit/tests/test__journal_io.py"
@@ -613,18 +613,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c50157bf",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Root cause: nl6 runs `git init` and a commit inside its mkdtemp fixture. Git writes its loose objects read-only, and Windows refuses to unlink a read-only file. So the block's `shutil.rmtree(tmp, ignore_errors=True)` silently left `.git/objects/**` behind, and the sweep reported the leftover jio-nl-* directory.\n\nFix, in the test file only:\n- every `shutil.rmtree(..., ignore_errors=True)` cleanup now calls `_harness.remove_tree`, the house function with a read-only fallback;\n- the nl block's cleanup runs under a Windows-unlink emulation on every platform.\n\nNew cases:\n- nl7: the emulation bites, so a bare rmtree under it leaves a file.\n- nl8: the git-holding fixture is removed under the Windows rule.\n- nl9: an AST check that no `finally` in the file removes a fixture with a bare rmtree, and that it finds more than one remove_tree.\n\nProbe (scratchpad P121.11-eof/probe.py, which emulates the read-only unlink rule):\n- HEAD leaks jio-nl-*, in the shape of the CI log line;\n- the fix leaks nothing.\n\nScratch mutations:\n- the nl cleanup reverted turns nl8 and nl9 red;\n- another cleanup reverted turns nl9 red;\n- the emulation made a pass-through turns nl7 red.\n\nNot simulated: a real Windows read-only attribute, sharing violations, antivirus locks.",
+        "descriptive": "The journal tests now clean up their temporary git folders on Windows too, and a check keeps every cleanup in that file on the safe removal path."
       },
       "startedAt": "2026-10-09T08:12:56Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T08:48:32Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__journal_io.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-09T08:40:23Z.b5371d",
         "status": "passed",
         "at": "2026-10-09T08:40:23Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c50157bf",
+        "at": "2026-10-09T08:48:32Z",
+        "basis": "orchestrator check: read-only-unlink emulation reproduces the CI leak on HEAD and none after; three mutations each red"
       }
     },
     {
