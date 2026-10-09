@@ -242,6 +242,53 @@ def tree_source(root):
             "names": sorted(names)}
 
 
+# --- line endings ------------------------------------------------------------------
+# Every size above is a count of the bytes a checkout wrote, and a checkout under
+# core.autocrlf=true writes CRLF for any text file whose attributes do not say eol=lf:
+# one extra byte per line, enough to carry an entry over its ceiling on windows-latest
+# alone. So the measurement is only platform-free while every tracked text file
+# resolves to eol=lf, and this asks git - not a list of extensions - which do not.
+def parse_ls_files_eol(raw):
+    """`[(index_eol, attributes, path)]` from `git ls-files --eol -z` output. The
+    attribute column may hold spaces (`text=auto eol=lf`); the path follows a tab."""
+    rows = []
+    for entry in raw.decode("utf-8", "replace").split("\0"):
+        if "\t" not in entry:
+            continue
+        head, path = entry.split("\t", 1)
+        fields = head.split()
+        index_eol = fields[0][len("i/"):] if fields and fields[0].startswith("i/") else ""
+        attrs = head[head.index("attr/") + len("attr/"):].strip() if "attr/" in head else ""
+        rows.append((index_eol, attrs, path))
+    return rows
+
+
+def _checks_out_unchanged(attrs):
+    """True when a checkout writes this file's bytes as the index holds them: eol=lf
+    pins the ending, and -text turns conversion off altogether."""
+    words = attrs.split()
+    return "eol=lf" in words or "-text" in words
+
+
+def unpinned_text_files(rows):
+    """The paths git holds as text whose attributes leave the checkout's line endings
+    to core.autocrlf. A file git detected as binary (`-text` in the index column) is
+    never converted, so it is never one of them."""
+    return sorted(path for index_eol, attrs, path in rows
+                  if index_eol != "-text" and not _checks_out_unchanged(attrs))
+
+
+def tracked_eol(root):
+    """`(rows, problem)` for the repository at `root`; `problem` names why git could
+    not answer, and then `rows` is None rather than an empty, all-clear list."""
+    proc = subprocess.run(["git", "-C", root, "ls-files", "--eol", "-z"],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if proc.returncode != 0:
+        return None, "git ls-files --eol exited %d: %s" % (
+            proc.returncode, proc.stderr.decode("utf-8", "replace").strip())
+    return parse_ls_files_eol(proc.stdout), None
+
+
 # --- reading one markdown file ----------------------------------------------------
 def split_frontmatter(data):
     """(fields, body bytes). Only the keys this tool reads are parsed, and only in the
@@ -1006,6 +1053,76 @@ def _cases(check):
           and [b[0] for b in gone] == ["executor", "reviewer"])
 
     _gate_cases(check, shipped)
+    _eol_cases(check)
+
+
+def _eol_fixture(root, attributes):
+    """`(rows, problem)` of a scratch repository holding a markdown file, a JSON file,
+    a shell script and a binary image, under `attributes`."""
+    for rel, data in ((".gitattributes", attributes.encode("ascii")),
+                      ("a.md", b"# a\n\nprose\n"), ("d.json", b"{\"k\": 1}\n"),
+                      ("b.sh", b"echo b\n"), ("img.png", b"\x89PNG\r\n\x1a\n\x00\x00\x01")):
+        with open(os.path.join(root, rel), "wb") as fh:
+            fh.write(data)
+    for args in (["init", "-q"], ["-c", "core.autocrlf=false", "add", "-A"]):
+        proc = subprocess.run(["git", "-C", root] + args, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE)
+        if proc.returncode != 0:
+            return None, "git %s exited %d" % (" ".join(args), proc.returncode)
+    return tracked_eol(root)
+
+
+def _eol_cases(check):
+    import tempfile
+    from _suite import remove_tree
+    raw = (b"i/lf    w/lf    attr/text=auto eol=lf \tdocs/a b.md\0"
+           b"i/-text w/-text attr/text=auto eol=lf \timg.png\0"
+           b"i/lf    w/crlf  attr/                 \tplan.json\0"
+           b"i/lf    w/lf    attr/text eol=crlf    \twin.bat\0")
+    rows = parse_ls_files_eol(raw)
+    check("mc30 a `git ls-files --eol -z` record keeps an attribute column holding a "
+          "space and a path holding one, and the text files whose checkout is left to "
+          "core.autocrlf - no attribute, or one pinning CRLF - are named, the binary "
+          "and the eol=lf ones are not: %r" % ((rows, unpinned_text_files(rows)),),
+          rows[0] == ("lf", "text=auto eol=lf", "docs/a b.md")
+          and rows[2] == ("lf", "", "plan.json")
+          and unpinned_text_files(rows) == ["plan.json", "win.bat"])
+    narrow_dir = tempfile.mkdtemp(prefix="measure-context-eol-")
+    wide_dir = tempfile.mkdtemp(prefix="measure-context-eol-")
+    try:
+        # The rule this tree carried before every text type was pinned: one extension.
+        narrow, narrow_problem = _eol_fixture(narrow_dir, "*.sh text eol=lf\n")
+        wide, wide_problem = _eol_fixture(wide_dir, "* text=auto eol=lf\n")
+    finally:
+        remove_tree(narrow_dir)
+        remove_tree(wide_dir)
+    # THE RED TWIN: a per-extension pin leaves markdown and JSON to autocrlf, which is
+    # the windows-latest checkout that grew the shipped prose past its ceilings.
+    check("mc31 THE RED TWIN: under a pin that names one extension, the markdown, the "
+          "JSON and the attributes file itself are named as checking out to whatever "
+          "core.autocrlf says, and the binary image is not: %r"
+          % ((narrow, narrow_problem),),
+          narrow_problem is None
+          and unpinned_text_files(narrow) == [".gitattributes", "a.md", "d.json"])
+    # THE ALLOW TWIN, for the over-fire direction: a check that named every text file,
+    # or every file, regardless of attributes goes red here.
+    check("mc32 THE ALLOW TWIN: under `* text=auto eol=lf` nothing is named, though git "
+          "still holds every text file and detects the image as binary: %r"
+          % ((wide, wide_problem),),
+          wide_problem is None and unpinned_text_files(wide) == []
+          and sorted(r[2] for r in wide if r[0] != "-text")
+          == [".gitattributes", "a.md", "b.sh", "d.json"]
+          and [r[2] for r in wide if r[0] == "-text"] == ["img.png"])
+    real, problem = tracked_eol(REPO)
+    text = [r[2] for r in real or [] if r[0] != "-text"]
+    check("mc33 every text file this repository tracks checks out with LF on every "
+          "platform - its attributes say eol=lf - so a windows checkout measures the "
+          "bytes a POSIX one does; the census is not empty and holds the shipped "
+          "markdown and the committed JSON: unpinned=%r (%s)"
+          % (unpinned_text_files(real or []), problem or "%d text files" % len(text)),
+          problem is None and unpinned_text_files(real) == []
+          and any(p.endswith(".md") for p in text)
+          and any(p.endswith(".json") for p in text))
 
 
 def _fx_lean(root):
