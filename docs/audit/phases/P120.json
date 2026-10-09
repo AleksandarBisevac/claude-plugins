@@ -1,7 +1,7 @@
 {
   "id": "P120",
   "title": "the report never scrolls sideways, whatever the plan holds",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Release blocker for 3.2.0, found by tools/verify.sh --release: BUG-22.",
   "desiredOutcome": "every leg of the release verification's rendered-plan check, this repository's own plan included, renders with no sideways scroll at any width it checks",
   "testGate": [
@@ -15,21 +15,59 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "1698de0a9e154cb4d26c6ef1162a7a8032ae8ec0",
+  "branch": "audit/p120-the-report-never-scrolls-sidew",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P120-R1",
+        "severity": "high",
+        "file": "tools/check-report-interactive.mjs hostile-content leg",
+        "issue": "The painted-rows expectation plants into every phases/data table, including a proposal table inside a closed details.prop, so `node tools/check-report-interactive.mjs docs/demo-large.html` exits 1. CI and verify.sh run that leg.",
+        "resolution": "fixed in P120.2-byv (908a9cf5): Plant only into rendered tables, or open each enclosing details for the measurement and restore it. Name skipped tables. Keep `painted` strict over what was planted. Re-run on all three shipped reports and the live plan.",
+        "fixTask": "P120.2-byv",
+        "commit": "908a9cf5"
+      },
+      {
+        "id": "P120-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/ui/report-css/tables.css bare-cell rule",
+        "issue": "Above 52rem, `td:not([class]):not(:has(*)){overflow-wrap:anywhere}` starves the title column, so ordinary words split mid-letter at 833-900px on all three shipped reports (76 in demo-large). The comment claims that happens only below the breakpoint.",
+        "resolution": "fixed in P120.2-byv (908a9cf5): Stop starving free-text columns: a min-width floor, or scoping to the long-text columns. Correct the comment. Add a checker assertion that no visible title word splits mid-letter above 52rem, and prove it red against the current rule.",
+        "fixTask": "P120.2-byv",
+        "commit": "908a9cf5"
+      },
+      {
+        "id": "P120-R3",
+        "severity": "low",
+        "file": "plugins/audit/tests/test__report_html.py css2",
+        "issue": "No check binds the accepted-commit mark, BUG-22's carrier, to the renderer's markup.",
+        "resolution": "fixed in P120.2-byv (908a9cf5): Render _tev_phase_marks with an acceptedCommits entry in css2 and assert its span is bare text.",
+        "fixTask": "P120.2-byv",
+        "commit": "908a9cf5"
+      },
+      {
+        "id": "P120-R4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/ui/report-css/badges.css",
+        "issue": "Without :has(), the full-run mark loses the wrap it had in every browser.",
+        "resolution": "fixed in P120.2-byv (908a9cf5): Keep `.ptev[data-fullrun]{white-space:normal}` beside the :has rule, or document the fallback.",
+        "fixTask": "P120.2-byv",
+        "commit": "908a9cf5"
+      }
+    ],
+    "outcome": "[findings: 4 - 1 high, 1 med, 2 low; 4 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "Release blocker for 3.2.0, found by tools/verify.sh --release: BUG-22, the report scrolling sideways on a plan with long free text. The carrier was a nowrap evidence chip holding an accepted commit's reason. Plain-text chips now wrap, and colspan detail cells wrap. A :has()-free rule keeps the full-run mark wrapping, so browsers without :has() keep the wrap they had. A bare-cell wrap rule was tried and removed: measured, it split ordinary title words mid-letter. tools/check-report-interactive.mjs now plants hostile content in every rendered table of every report it checks, opening closed disclosures to reach them, and fails on any title word split mid-letter above the narrow breakpoint. The phase review's high (the new leg failed on the scale demo) and med (the split words) were fixed by P120.2. Its lows and the residual (an unbroken token in a title still widens the page, closable only in the renderer) are recorded internally. The committed reports and screenshots are re-rendered with the fix.",
   "tasks": [
     {
       "id": "P120.1",
       "title": "Fix BUG-22: the report scrolls sideways on a plan with long phase content",
-      "status": "pending",
+      "status": "done",
       "description": "Fix BUG-22. Rendered from this repository's own plan, the report scrolls sideways at 960-1152px (table.phases right@13685). The likely cause is long phase content in an element that does not wrap; the latest phases' summaries run to thousands of characters. Find the element with the browser checker, and fix the class rather than the instance: no text-bearing element of the report's phases table, or of any other table, may force the document wider than the viewport, whatever the content. Use the stylesheet's own wrapping rule, and read the refactoring-the-assembled-ui skill first. Add a regression case to the report checker's legs, or to the report's selftests: a phase carrying a very long summary and a very long unbroken token. That case must show the overflow red before the fix. Print the UI pin budget (tools/count-ui-pins.py) before starting. Do not run the screenshot or GIF capture; the orchestrator does that after landing. Run `node tools/check-report-interactive.mjs` on a fresh render of this repo's plan and of the demo, and report the exit codes.",
       "files": [
         "plugins/audit/scripts/ui/report-css",
@@ -37,7 +75,13 @@
         "plugins/audit/scripts/ui/shared",
         "tools/check-report-interactive.mjs",
         "plugins/audit/tests/test_render_report.py",
-        "plugins/audit/scripts/report/render-report.py"
+        "plugins/audit/scripts/report/render-report.py",
+        "plugins/audit/tests/test__report_html.py",
+        "examples/acme-store/acme-store-audit.html",
+        "examples/acme-store/acme-store-audit.md",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots"
       ],
       "tests": {
         "mode": "tdd",
@@ -62,17 +106,98 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7132ead8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes BUG-22. Rendered from this repository's own plan, the report scrolled sideways at 833-1512px. The cause was not the phase summary. It was a `span.ptev` evidence chip with `white-space:nowrap` whose text is an accepted commit's free-text reason (`accepted <sha>: <reason>`), so one unbreakable line widened table.phases.\n\nThe fix is three rules, covering the class:\n- tables.css: `:where(table.phases,table.data) td[colspan]{overflow-wrap:anywhere}` at every width.\n- tables.css: plain-text cells (`td:not([class]):not(:has(*))`) wrap, above the 52rem breakpoint only. Below it the table already scrolls inside its own frame, and wrapping there split words mid-letter when measured.\n- badges.css: `.ptev:not(:has(*)){white-space:normal}` lets a plain-text chip wrap, while chips built from pills or counts keep nowrap. The redundant `.ptev[data-fullrun]` rule is removed.\n\nPin css2's label and clauses now say this, and they tie the full-run claim to the rendered markup.\n\nRegression cases live in tools/check-report-interactive.mjs, so every report it checks is covered:\n- For each phases/data table, it plants copies of the table's first row carrying a very long summary and an unbroken token, plus a plain-text chip and a token chip. At every width on the ladder, it compares the page's scroll width with and without them.\n- A second check fails if the planted rows never painted or never wrapped.\n\nRed-first: the helper's verdict is could-not-prove, because playwright is missing in its throwaway tree (verbatim in the return). The orchestrator re-ran the executor's probe, scratchpad P120.1/mut.py: exit 0, with each of the three rules removed on its own turning the case red, and a detached or unpainted planting turning the second check red. A css2 mutation probe turns the pin red three ways.\n\nFollowers re-rendered in the same commit, so the committed pages carry the fix: examples/report.sh, docs/index.html as its byte copy, docs/demo-large.html, and the screenshots.\n\nFresh renders of this repo's plan and the demo pass the browser checker.",
+        "descriptive": "The report no longer scrolls sideways on a plan with long free text, at any width, and the browser check now plants hostile content in every report it checks to keep it that way."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": [],
-      "bugId": "BUG-22"
+      "startedAt": "2026-10-08T22:27:29Z",
+      "completedAt": "2026-10-08T23:10:31Z",
+      "verifiedBy": [
+        "tools/check-report-interactive.mjs",
+        "plugins/audit/tests/test__report_html.py"
+      ],
+      "bugId": "BUG-22",
+      "testEvidence": {
+        "runId": "2026-10-08T23:10:16Z.0c1853",
+        "status": "passed",
+        "at": "2026-10-08T23:10:16Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7132ead8",
+        "at": "2026-10-08T23:10:31Z",
+        "basis": "orchestrator check: cause located (a nowrap evidence chip), class fixed with three rules; probe re-run, each rule removed turns the case red; followers re-rendered"
+      }
+    },
+    {
+      "id": "P120.2-byv",
+      "title": "the BUG-22 fix passes every shipped report and splits no title word",
+      "status": "done",
+      "description": "Fixes the P120 review's findings R1-R4 on the BUG-22 fix. (1) The hostile-content leg plants only into tables that are rendered, or opens each enclosing details for the measurement and restores it; it names skipped tables, and `painted` stays strict over what was planted. The checker must exit 0 on examples/acme-store/acme-store-audit.html, docs/index.html, docs/demo-large.html and a fresh render of this repo's plan. (2) The bare-cell wrap rule no longer starves free-text columns above 52rem. A new checker assertion holds that no visible task or bug title word splits mid-letter at any ladder rung above 52rem (hyphen breaks excluded), shown red against the current rule, and the comment says what the rule costs and where. (3) css2 binds the accepted-commit mark: it renders _tev_phase_marks with an acceptedCommits entry and asserts the span is bare text. (4) The full-run mark keeps a :has()-free wrap rule, or the fallback is documented. Re-render the followers is the orchestrator's job; do not capture.",
+      "files": [
+        "plugins/audit/scripts/ui/report-css",
+        "tools/check-report-interactive.mjs",
+        "plugins/audit/tests/test__report_html.py",
+        "examples/acme-store/acme-store-audit.html",
+        "examples/acme-store/acme-store-audit.md",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "908a9cf5",
+      "outcome": {
+        "technical": "Fixes P120-R1 to R4 on the BUG-22 fix.\n\nR1: check-report-interactive's hostile leg (10b) opens each shut details ancestor before planting, marks it, and shuts it again afterwards. It skips a table that is still not rendered, or that has no body row or prose cell, and names each skip in a note. `painted` stays strict over what was planted. On demo-large the proposal table is now planted and painted.\n\nR2: the bare-cell `overflow-wrap:anywhere` rule is removed rather than re-tuned. Over all four reports:\n- min-width floors either overflowed or still split words;\n- with no rule, real content was clean.\nNew leg 10a fails on any visible bare-text title word that changes line between two letters or digits at a ladder rung above 832px. A break after a hyphen, slash or colon does not count. 10a was red on all three shipped reports before the fix; the reviewer also saw it go red with the old rule injected (316 splits at 833px). Residual, stated in tables.css and recorded internally: an unbroken token longer than the window in a title still widens the page; only a renderer change can close that.\n\nR3: css2 renders _tev_phase_marks with an acceptedCommits entry and asserts the accepted span is bare text.\n\nR4: `.ptev[data-fullrun]{white-space:normal}` is restored beside the :has rule, with the fallback documented, and pinned by css3.\n\nFollowers re-rendered in the same commit:\n- examples/report.sh;\n- docs/index.html, as its byte copy;\n- docs/demo-large.html;\n- the screenshots.\n\nThe checker exits 0 on all three shipped reports (reviewer: 183/183/189 checks).\n\nRed-first: could-not-prove by the helper. The fix run reported css3 failing, which an archive export does not reproduce; that is suspected to be the helper not copying a declared directory, recorded internally. The checker leg also needs playwright, which the throwaway lacks.\n\nMutation probe (scratchpad P120.2/mut.py), re-run by the orchestrator on demo-large: exit 0, all seven rows as expected.\n\nReview round 2: lows only, recorded internally.",
+        "descriptive": "The report fix now passes every published report, no longer breaks ordinary words in task titles, and keeps working in browsers without newer CSS selectors."
+      },
+      "startedAt": "2026-10-08T23:18:13Z",
+      "completedAt": "2026-10-09T00:10:57Z",
+      "verifiedBy": [
+        "tools/check-report-interactive.mjs",
+        "plugins/audit/tests/test__report_html.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-09T00:10:41Z.5a5653",
+        "status": "passed",
+        "at": "2026-10-09T00:10:41Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "908a9cf5",
+        "at": "2026-10-09T00:10:57Z",
+        "basis": "orchestrator check: all four review findings answered; checker green on the three shipped reports; probe re-run 7/7; review round 2 lows only"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-10-08T22:27:29Z",
+  "testEvidence": {
+    "runId": "2026-10-09T00:18:39Z.261c24",
+    "status": "passed",
+    "at": "2026-10-09T00:18:39Z"
+  }
 }

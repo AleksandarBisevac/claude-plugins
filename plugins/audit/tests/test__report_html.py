@@ -1063,16 +1063,52 @@ def _cases(check):
           '[data-tev="ledger-unreadable"]' in _amber
           and '[data-tev="dangling"]' in _amber
           and _rcss.count('[data-tev="ledger-unreadable"]') == 1)
-    # The full-run line is ONE sentence in ONE `.ptev` span, and `.ptev` does
-    # not wrap - so the phase cell's narrowest width was the whole sentence, and
-    # a narrow viewport scrolled sideways. The rule that lets it wrap is pinned
-    # here as text; that the page no longer scrolls is
-    # tools/check-report-interactive.mjs's to say, in a real browser.
-    check("css2 CONSTRUCT: the full-run mark alone may wrap - every other "
-          "`.ptev` mark stays on one line, and the full-run one does not",
+    # A `.ptev` mark that is bare text is a sentence of any length, and on one
+    # unbreakable line it sets the phase cell's narrowest width to that length,
+    # so a narrow viewport scrolls sideways. The rule that lets it wrap is pinned
+    # here as text, and so is the fact that BOTH sentence marks the renderer
+    # emits are bare text - the full-run line and an accepted commit's reason.
+    # The bare-text rule reaches them by having no child element, so a child
+    # added to either would silently put it back on one line. That the page no
+    # longer scrolls is tools/check-report-interactive.mjs's to say, in a real
+    # browser.
+    def _bare_mark(markup, opener):
+        """The text of the `.ptev` span whose opening tag holds `opener`, up to
+        its first closing tag - so a child element shows up as a `<` inside."""
+        rest = markup[markup.index(opener):]
+        rest = rest[rest.index(">") + 1:]
+        return rest[:rest.index("</span>")]
+    _pm_full = M._tev_phase_marks({"own": None, "rollup": [], "fullRun": _fr_whole})
+    _pm_full_span = _bare_mark(_pm_full, "data-fullrun=")
+    _pm_acc = M._tev_phase_marks({"rollup": [], "fullRun": None, "own": {
+        "key": "passed", "label": "Passed",
+        "acceptedCommits": [{"commit": "0123456789abcdef",
+                             "reason": "orchestrator bookkeeping, no task's work"}]}})
+    _pm_acc_span = _bare_mark(_pm_acc, "title=\"a commit on the group")
+    _pm_rollup = M._tev_phase_marks({"own": None, "fullRun": None,
+                                     "rollup": [("passed", "Passed", 2)]})
+    check("css2 CONSTRUCT: a `.ptev` mark that is bare text may wrap, and one "
+          "built from pills or counts keeps nowrap - the full-run mark and the "
+          "accepted-commit mark are bare text, the tasks rollup is built from "
+          "counts: %r / %r / %r"
+          % (_pm_full_span[:60], _pm_acc_span[:60], _pm_rollup[:80]),
           ".ptev{margin-left:var(--sp-2);font-size:.76rem;color:var(--muted);"
           "white-space:nowrap}" in _rcss
-          and _rcss.count(".ptev[data-fullrun]{white-space:normal") == 1)
+          and _rcss.count(".ptev:not(:has(*)){white-space:normal}") == 1
+          and ".tevn{" in _rcss and "white-space:nowrap}" in
+          _rcss[_rcss.index(".tevn{"):_rcss.index("}", _rcss.index(".tevn{")) + 1]
+          and "<" not in _pm_full_span and _pm_full_span.strip() != ""
+          and "<" not in _pm_acc_span
+          and _pm_acc_span.startswith("accepted 0123456789ab: orchestrator")
+          and '<span class="tevn"' in _pm_rollup)
+    # The full-run mark is the one sentence mark with an attribute of its own,
+    # so it keeps a rule that needs no `:has()`: a browser that drops the
+    # bare-text rule still wraps the longest sentence the renderer writes. An
+    # accepted commit's mark carries no such hook, which the stylesheet says
+    # beside the rule.
+    check("css3 CONSTRUCT: the full-run mark wraps without `:has()` - its own "
+          "attribute rule is present exactly once",
+          _rcss.count(".ptev[data-fullrun]{white-space:normal}") == 1)
 
     # --- _tev_step_rows(): why a could-not-run step has no verdict -------------
     # A step that measured cleanly stays exactly as it was - no basis was ever

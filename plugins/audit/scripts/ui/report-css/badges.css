@@ -89,8 +89,18 @@
    "sign-off" and "tasks" — because they are two measurements, and this only has
    to keep them from running together. */
 .ptev{margin-left:var(--sp-2);font-size:.76rem;color:var(--muted);white-space:nowrap}
-/* The full-run mark is one whole sentence, and on one unbreakable line it set the
-   phase cell's narrowest width to that sentence - so a narrow window scrolled the
-   page sideways. It alone may wrap; the short marks above stay on one line. */
+/* A mark that is BARE TEXT may wrap, whatever it says. On one unbreakable line
+   a sentence sets the phase cell's narrowest width to its own length, and a
+   narrow window scrolls the page sideways. A mark built from child atoms - a
+   verdict pill, a count - is as long as its atoms, and those carry their own
+   nowrap; a mark with no child element is a sentence (the full-run line, an
+   accepted commit's reason), and its length is the plan's to decide. */
+.ptev:not(:has(*)){white-space:normal}
+/* The full-run mark is the one sentence mark with an attribute of its own, so
+   it keeps a rule that needs no `:has()`: a browser that drops the selector
+   above still wraps it. An accepted commit's mark has no such hook, so in that
+   browser it stays on one line - the reason it carries can then widen the page,
+   which is the fallback this sheet accepts rather than inventing a hook the
+   renderer does not emit. */
 .ptev[data-fullrun]{white-space:normal}
 .tevcell{line-height:1.8}

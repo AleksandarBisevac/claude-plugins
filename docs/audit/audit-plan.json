@@ -756,7 +756,7 @@
     {
       "id": "P120",
       "title": "the report never scrolls sideways, whatever the plan holds",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P120.json"
     }
   ],
@@ -1334,7 +1334,9 @@
       "P80.15-rtb",
       "P109.1",
       "P104.4",
-      "P104.11-tog"
+      "P104.11-tog",
+      "P120.1",
+      "P120.2-byv"
     ],
     "docs/design/audit-concurrency-report.md": [
       "P60.3"
@@ -1370,10 +1372,14 @@
       "P80.15-rtb",
       "P109.1",
       "P104.4",
-      "P104.11-tog"
+      "P104.11-tog",
+      "P120.1",
+      "P120.2-byv"
     ],
     "docs/screenshots": [
-      "P53.9"
+      "P53.9",
+      "P120.1",
+      "P120.2-byv"
     ],
     "docs/screenshots/captured-at.json": [
       "P63.9",
@@ -1414,7 +1420,9 @@
       "P80.15-rtb",
       "P109.1",
       "P104.4",
-      "P104.11-tog"
+      "P104.11-tog",
+      "P120.1",
+      "P120.2-byv"
     ],
     "examples/acme-store/acme-store-audit.md": [
       "P13.3",
@@ -1425,7 +1433,9 @@
       "P63.6",
       "P80.15-rtb",
       "P104.4",
-      "P104.11-tog"
+      "P104.11-tog",
+      "P120.1",
+      "P120.2-byv"
     ],
     "examples/acme-store/audit-plan.json": [
       "P50.3",
@@ -4386,7 +4396,9 @@
       "P63.6",
       "P71.2-zso",
       "P80.7",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P120.1",
+      "P120.2-byv"
     ],
     "plugins/audit/tests/test__report_md.py": [
       "P63.6",
@@ -5267,7 +5279,8 @@
       "P80.20-rtb",
       "P80.15-rtb",
       "P92.4",
-      "P120.1"
+      "P120.1",
+      "P120.2-byv"
     ],
     "tools/gate-parity.py": [
       "P19.2",
@@ -6433,7 +6446,8 @@
       "P119.1"
     ],
     "plugins/audit/scripts/ui/report-css": [
-      "P120.1"
+      "P120.1",
+      "P120.2-byv"
     ],
     "plugins/audit/scripts/ui/shared": [
       "P120.1"
@@ -6924,7 +6938,7 @@
     {
       "id": "BUG-22",
       "title": "the report scrolls sideways on this repo's own plan at a narrow width",
-      "status": "in_progress",
+      "status": "fixed",
       "severity": "med",
       "reportedAt": "2026-10-08T22:26:59Z",
       "reportedBy": null,
@@ -6934,7 +6948,7 @@
       "actual": "the document scrolls sideways by about 12700px at 960px, widest table.phases",
       "files": [],
       "taskId": "P120.1",
-      "fixedIn": null,
+      "fixedIn": "7132ead8",
       "notes": null
     }
   ],
