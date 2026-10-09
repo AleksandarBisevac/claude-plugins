@@ -168,17 +168,93 @@ const DEMO_AUTHOR = 'dev@example.com';
 const RUNSTATUS_URL = '**/api/runstatus';
 
 const problems = [];
-const note = (m) => console.log(`  ${m}`);
-const fail = (m) => { problems.push(m); console.log(`  FAIL ${m}`); };
+
+/**
+ * The last line this run printed, and when: what the stall watch in main() reads.
+ *
+ * Every step reports through note() or fail(), the extracted stages included
+ * (they are handed these two through `stageCtx`), so a run that has printed
+ * nothing for minutes is stuck inside one step. The line printed last names the
+ * step that FINISHED; the stuck one is whatever comes after it.
+ */
+const lastLine = { line: '(nothing printed yet)', at: Date.now(), doing: null };
+const markProgress = (m) => {
+  lastLine.line = m; lastLine.at = Date.now(); lastLine.doing = null;
+};
+/**
+ * Name the call about to be made, for a stall to report. Prints nothing and is
+ * not progress: it only sharpens "after <line>" into "inside <label>" where a
+ * step's calls are worth telling apart.
+ * @param {string} label
+ * @returns {void}
+ */
+const during = (label) => { lastLine.doing = label; };
+const note = (m) => { markProgress(m); console.log(`  ${m}`); };
+const fail = (m) => { markProgress(m); problems.push(m); console.log(`  FAIL ${m}`); };
+
+/**
+ * How long the run may print nothing before main() declares it stuck, and how
+ * long a synchronous child process may run.
+ *
+ * Playwright bounds its ACTIONS (click, fill, waitForSelector) at 30s by default
+ * and `page.evaluate` not at all, and nearly every in-page call here is an
+ * evaluate — several of them awaiting the panel's own `api()` fetch, which has no
+ * timeout either. A CI runner once stopped printing inside a step whose only
+ * unbounded waits are such evaluates, and the job sat for six hours until GitHub
+ * cancelled it, with the last line printed as the only clue to where. A bound on
+ * each call would be one more thing every new call had to
+ * remember; a bound on SILENCE covers every await in the file, present and
+ * future, and names the step by the line before it.
+ *
+ * Five minutes, against a longest silence of 32.5s across everything that 2026-10-09
+ * ubuntu run did before it hung — the whole report leg and the panel leg up to the
+ * stuck step (measured once, from that job log's timestamps; the gap was the
+ * focus-traversal sweep). A step that legitimately goes quiet for longer than
+ * this should print a progress line, not raise the bound.
+ *
+ * Child processes run synchronously (`execFileSync`, `spawnSync`), which blocks
+ * the event loop the stall watch runs on, so each of those carries the same
+ * budget as its own timeout.
+ */
+const STALL_MS = 5 * 60 * 1000;
+/** How often the stall watch looks. */
+const STALL_POLL_MS = 5000;
+/**
+ * After a stall closes the browser, how long the run gets to unwind through its
+ * own `finally` before the watch cleans up and exits by itself. A stuck await
+ * that is not a browser call (nothing here should be, but nothing stops one
+ * being written) would otherwise survive the browser closing.
+ */
+const STALL_GRACE_MS = 30000;
+/** How long the diagnostic probe of a stuck run's panel server may take. */
+const PROBE_MS = 5000;
 
 // --- reading a CSV the report exported -----------------------------------------
 // --- child processes and the static server -------------------------------------
 
 
+/**
+ * Run a Python child to completion -> its stdout.
+ *
+ * Bounded by STALL_MS: this call is synchronous, so while it runs the stall watch
+ * cannot, and a child that never exits would hang the run with nothing printed.
+ * @param {string[]} args the script (or `-c`) and its arguments
+ * @param {Object<string, string>} [env] variables laid over this process's own
+ * @returns {string}
+ */
 function py(args, env = {}) {
-  return execFileSync(PY, args, {
-    cwd: REPO, encoding: 'utf8', env: { ...process.env, ...env },
-  });
+  try {
+    return execFileSync(PY, args, {
+      cwd: REPO, encoding: 'utf8', env: { ...process.env, ...env },
+      timeout: STALL_MS,
+    });
+  } catch (err) {
+    if (err && err.code === 'ETIMEDOUT') {
+      throw new Error(`${PY} ${path.basename(String(args[0]))} did not finish within `
+        + `${STALL_MS / 1000}s and was killed`);
+    }
+    throw err;
+  }
 }
 
 /**
@@ -247,6 +323,75 @@ async function startPanel(project, env = {}) {
     await new Promise((r) => setTimeout(r, 100));
   }
   throw new Error('panel did not start (no pidfile at ' + pidfile + ')');
+}
+
+// --- a run that stops printing --------------------------------------------------
+
+/**
+ * Does a panel server still answer a fresh request? -> one sentence saying so.
+ *
+ * A stalled step is usually an in-page `api()` fetch to this server, so which
+ * side stopped is the first thing the failure has to say. An answer here clears
+ * the server as a whole and not a single request of its, which may still be the
+ * stuck one; the sentence says only the former.
+ * @param {{url: string}} running a panel startPanel() returned
+ * @returns {Promise<string>}
+ */
+async function probePanel(running) {
+  const started = Date.now();
+  const u = new URL(running.url);
+  try {
+    // The token rides the query string, which the server's guard accepts in
+    // place of the header the page sends.
+    const r = await fetch(new URL(`/api/runstatus${u.search}`, u),
+                          { signal: AbortSignal.timeout(PROBE_MS) });
+    return `the panel on ${u.host} answered a fresh GET /api/runstatus with HTTP `
+         + `${r.status} in ${Date.now() - started}ms, so it is not wedged as a whole`;
+  } catch (err) {
+    return `the panel on ${u.host} did not answer a fresh GET /api/runstatus within `
+         + `${PROBE_MS / 1000}s (${String((err && err.message) || err).split('\n')[0]})`;
+  }
+}
+
+/**
+ * Fail a run that has printed nothing for STALL_MS, naming where, and end it.
+ *
+ * The stuck await is almost always a browser call, so closing the browser makes
+ * it throw and the run unwinds through main()'s own `finally`, reporting like any
+ * other failure. If the process is still alive STALL_GRACE_MS later, the watch
+ * runs the clean-up itself and exits 1.
+ *
+ * Neither timer is unref'd, and that is the point rather than an oversight: a run
+ * stuck on a promise nothing will ever settle, with no other handle left open,
+ * lets node EXIT 0 — a hang reported as a pass. A live timer keeps the process up
+ * until this says what happened.
+ * @param {() => Array<({url: string}|null)>} panels the panel servers running now
+ * @param {import('playwright').Browser} browser
+ * @param {() => Promise<void>} cleanUp main()'s clean-up; safe to call twice
+ * @returns {() => void} stops the watch
+ */
+function watchForStall(panels, browser, cleanUp) {
+  const timer = setInterval(async () => {
+    const quiet = Date.now() - lastLine.at;
+    if (quiet < STALL_MS) return;
+    clearInterval(timer);
+    const after = lastLine.line;
+    const inside = lastLine.doing ? `, inside "${lastLine.doing}"` : '';
+    const probes = await Promise.all(panels().filter(Boolean).map(probePanel));
+    fail(`stalled: nothing was printed for ${Math.round(quiet / 1000)}s (the bound `
+       + `is ${STALL_MS / 1000}s) after "${after}"${inside}, so the step that `
+       + `follows that line never finished; ${probes.length ? probes.join('; ')
+         : 'no panel server was running'}. The browser is being closed so the `
+       + 'stuck call throws and the run ends here.');
+    await browser.close().catch(() => {});
+    setTimeout(async () => {
+      console.error(`capture-screenshots: still running ${STALL_GRACE_MS / 1000}s `
+        + 'after the stall closed the browser; cleaning up and exiting 1');
+      await cleanUp().catch(() => {});
+      process.exit(1);
+    }, STALL_GRACE_MS);
+  }, STALL_POLL_MS);
+  return () => clearInterval(timer);
 }
 
 /**
@@ -2919,19 +3064,24 @@ async function assertConfirmFlowWorks(page) {
   // updating the form's own from-values and dissolving the very staleness
   // this leg exists to produce. So the hand-off is drained BEFORE the form
   // goes stale, exactly as the model-combo step opens.
+  during('composition (moved manifest): reading /api/runstatus to freeze it');
   const frozenRun = await page.evaluate(() => api('GET', '/api/runstatus'));
   await page.route(RUNSTATUS_URL, (r) => r.fulfill({
     status: 200, contentType: 'application/json',
     body: JSON.stringify(frozenRun) }));
+  during('composition (moved manifest): draining the poll hand-off '
+       + '(pollRunStatus, then refreshFromDisk)');
   await page.evaluate(async () => { await pollRunStatus(); await refreshFromDisk(); });
   await page.waitForTimeout(300);
   const OTHER = NEW === 'opus' ? 'sonnet' : 'opus';
   const THIRD = 'haiku-3';
   await modelInput.fill(THIRD);
   await page.waitForTimeout(200);
+  during('composition (moved manifest): the out-of-band PUT /api/composition');
   await page.evaluate(async (o) => api('PUT', '/api/composition',
     { meta: {}, phases: {}, tasks: { [o.id]: { model: o.v } } }), { id: target.id, v: OTHER });
   await page.waitForTimeout(300);
+  during('composition (moved manifest): Save, then its confirm dialog');
   await saveBtn.click();
   await awaitConfirmDialog(page);
   await page.locator('dialog.confirm [data-cfgo]').click();
@@ -6367,7 +6517,8 @@ function paintedIdentityProblem() {
   const painted = scratchPath();
   const checker = path.join(REPO, 'tools', 'check-committed-pii.py');
   const r = spawnSync(PY, [checker, '--scan-text'],
-                      { cwd: REPO, input: `${painted}\n`, encoding: 'utf8' });
+                      { cwd: REPO, input: `${painted}\n`, encoding: 'utf8',
+                        timeout: STALL_MS });
   // stdout is kept on EVERY exit code: this tool exits 1 by design when it finds
   // something and writes the finding to stdout, so a runner that read only stderr
   // on a non-zero exit would throw away the answer it asked for.
@@ -6720,6 +6871,29 @@ async function main() {
   // move there. A capture taken on a host that WAS choosing overlay will move by
   // those 15px — which is the drift this removes, not one it introduces.
   const browser = await chromium.launch({ args: ['--disable-features=OverlayScrollbar'] });
+
+  // Everything the run started, put back. A function rather than the `finally`
+  // body because a stalled run can reach it from the stall watch as well, and it
+  // runs once whichever gets there first.
+  let cleanedUp = false;
+  const cleanUp = async () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    await browser.close();
+    if (panel) {
+      try { py([resolveScript('panel-server.py'), '--project',
+                path.join(work, 'big'), '--stop']); } catch { /* best effort */ }
+      try { panel.proc.kill('SIGTERM'); } catch { /* already gone */ }
+    }
+    if (polPanel) {
+      try { py([resolveScript('panel-server.py'), '--project',
+                polPanel.project, '--stop']); } catch { /* best effort */ }
+      try { polPanel.proc.kill('SIGTERM'); } catch { /* already gone */ }
+    }
+    for (const s of servers) s.close();
+    rmSync(work, { recursive: true, force: true });
+  };
+  const stopStallWatch = watchForStall(() => [panel, polPanel], browser, cleanUp);
 
   try {
     // ---- report shots, from the committed example -------------------------------
@@ -8136,19 +8310,8 @@ async function main() {
       await ctx.close();
     }
   } finally {
-    await browser.close();
-    if (panel) {
-      try { py([resolveScript('panel-server.py'), '--project',
-                path.join(work, 'big'), '--stop']); } catch { /* best effort */ }
-      try { panel.proc.kill('SIGTERM'); } catch { /* already gone */ }
-    }
-    if (polPanel) {
-      try { py([resolveScript('panel-server.py'), '--project',
-                polPanel.project, '--stop']); } catch { /* best effort */ }
-      try { polPanel.proc.kill('SIGTERM'); } catch { /* already gone */ }
-    }
-    for (const s of servers) s.close();
-    rmSync(work, { recursive: true, force: true });
+    stopStallWatch();
+    await cleanUp();
   }
 
   // The liveness verdict for the panel leg. Reported here rather than inside the

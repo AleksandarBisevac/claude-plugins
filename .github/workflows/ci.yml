@@ -13,9 +13,17 @@ on:
   #     gh workflow run ci.yml --ref main
   workflow_dispatch:
 
+# EVERY JOB CARRIES timeout-minutes, and tools/gate-parity.py fails the build on
+# a job that does not (`untimed_jobs`). GitHub's own default is six hours, and the
+# 2026-10-09 ubuntu run spent all six of them on a screenshot check that had
+# stopped printing, then reported "cancelled" rather than naming a step. Each
+# bound is at least twice the longest finished run of that job in the runs of
+# 2026-10-01, 2026-10-05 and 2026-10-09 (`gh run view <id> --json jobs` prints
+# them), so a slow runner does not trip it and a hang costs minutes.
 jobs:
   selftests:
     name: selftests (${{ matrix.os }})
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -442,6 +450,7 @@ jobs:
 
   manifests:
     name: manifest validation
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -956,6 +965,7 @@ jobs:
 
   lint:
     name: lint (ruff + vermin 3.8 floor)
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -1090,6 +1100,7 @@ jobs:
 
   plugin-validate:
     name: claude plugin validate
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

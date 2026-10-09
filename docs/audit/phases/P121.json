@@ -796,7 +796,7 @@
     {
       "id": "P121.15-eof",
       "title": "Windows: test_close_phase finishes inside the cap, through one shared stage runner",
-      "status": "in_progress",
+      "status": "done",
       "description": "On windows-latest, CI round 3 is green except for one file: plugins/audit/tests/test_close_phase.py did not finish within the sweep's 300-second per-file cap. test_drive_phase.py and test_audit_task.py already run their stages concurrently in child processes and replay them in order. Each of those files carries its own copy of the runner (`_collect`, `_text`, `_run_stage`, `_run_stages`, `_flag_values`).\n\nDo two things:\n1. Move that runner into plugins/audit/tests/_harness.py, once, with its own selftest cases. Make test_drive_phase.py and test_audit_task.py call it and delete their copies.\n2. Give test_close_phase.py the same shape: profile it by process starts (the probes from P121.12 and P121.2 are in the scratchpad), and split its long blocks only where no later case reads a name an earlier one bound. Every case id and verdict must stay identical in all three files: diff the case lists before and after.\n\nDo not raise the cap. Show the effect with the slow-spawn simulation, red before and green after. The sweep and gate-parity must stay green.",
       "files": [
         "plugins/audit/tests/_harness.py",
@@ -828,18 +828,27 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6bca9000",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The stage runner now lives once, in tests/_harness.py, in a new section \"blocks run side by side\": flag_values, stream_text, stage_reach, stage_faults, collect_stages, run_stage, run_stages, staged_selftest and staged_main. test_drive_phase.py and test_audit_task.py lost their copies; their __main__ calls `_harness.staged_main`.\n\nEach child gets its own TMPDIR/TEMP/TMP and stdin=DEVNULL. That also stops cr22, which reads the temp-dir listing, from seeing a sibling block's directories.\n\nA full run reports a failing case from stage_faults only when a STAGES table leaves a block out or runs one twice. A clean suite's case list is therefore unchanged.\n\ntest_close_phase.py, profiled by process starts (6482 in total): _review_answer_cases took 1866, because it ended by calling the next block, in a chain down to _verdict_reach. The chain is cut at each bare tail call into its own STAGES row, placed after its caller. Inner calls that pass a fixture were left alone. The largest stage is now about 900 starts.\n\nCase ids and verdicts are identical in all three files: 250, 131 and 898, diffed.\n\nSlow-spawn simulation at 0.05 s per start:\n- HEAD timed out at 300 s, twice, about 25 minutes apart;\n- the fix took 79.6 s and 77.2 s.\nAt 0.08 s per start the fix took 111.9 s (measured once). A plain local run went from 107 s to 40 s.\n\nNew harness cases sr1-sr11 sit inline in _harness.py's selftest (78/78). test__harness.py was not created: _harness lives in tests/, outside selftest_coverage's scope.\n\nMutation table (scratchpad P121.15-eof/probe/mutations.py, on a temp copy): all 12 mutations killed, including the over-fire one and a tail call put back, which shows as \"STAGED BLOCKS RUN TWICE\".",
+        "descriptive": "The merge step's test file now runs its parts in parallel and finishes well inside the time limit on a slow runner, and the three big test files share one runner instead of three copies."
       },
       "startedAt": "2026-10-09T09:26:44Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T10:11:04Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/_harness.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-09T10:03:13Z.9865c9",
         "status": "passed",
         "at": "2026-10-09T10:03:13Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6bca9000",
+        "at": "2026-10-09T10:11:04Z",
+        "basis": "orchestrator check: chain of tail calls cut into stages; identical case lists in all three files; slow-spawn simulation HEAD timed out twice, fix under 80 s; 12 mutations killed"
       }
     }
   ],

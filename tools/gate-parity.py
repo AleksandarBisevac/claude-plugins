@@ -2716,6 +2716,110 @@ def failmode_table_verdict(repo=None):
     return got["findings"]
 
 
+# --- every CI job carries a time bound -------------------------------------------
+# A job with no `timeout-minutes` gets GitHub's default of six hours, and a gate
+# that hangs spends all of it: the run ends "cancelled", naming no step, and the
+# head it was testing waits that long for any verdict at all. A bound is a key on
+# the job, so whether one is there is a fact this file can read off the workflow
+# rather than a habit a reviewer has to remember. Only the JOB-level key counts: a
+# step-level `timeout-minutes` bounds that one step and leaves the rest of the job
+# at the default.
+_JOB_TIMEOUT_KEY = "timeout-minutes"
+
+
+def _key_line(line):
+    """(indent, key, value) for a `key: value` line, or None for anything else -
+    a blank, a comment, a list item, or a line inside a block scalar that does not
+    read as a key."""
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#") or stripped.startswith("-"):
+        return None
+    match = re.match(r"(\s*)([A-Za-z0-9_-]+):(?:\s+(.*?))?\s*$", line)
+    if not match:
+        return None
+    value = (match.group(3) or "").split(" #")[0].strip()
+    return len(match.group(1)), match.group(2), value
+
+
+def untimed_jobs(text):
+    """{"findings": [(job, why)], "jobs": n, "problem": str|None} for a workflow.
+
+    A finding is a job under the top-level `jobs:` whose own keys carry no
+    `timeout-minutes`, or carry one that is not a positive whole number of
+    minutes (an expression is reported too: what it resolves to is not
+    readable here). `jobs` counts the jobs read, so an empty finding list over
+    zero jobs cannot pass for a clean workflow; a text with no `jobs:` block at
+    all is a `problem`, not an empty verdict.
+
+    Indentation is read, not assumed: the first job sets the depth of a job id,
+    and each job's first key sets the depth of that job's own keys, so a key
+    nested deeper - a step's `timeout-minutes` among them - is never taken for
+    the job's.
+    """
+    lines = text.splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        if re.match(r"jobs:\s*(#.*)?$", line):
+            start = i + 1
+            break
+    if start is None:
+        return {"findings": [], "jobs": 0,
+                "problem": "no top-level `jobs:` block, so no job could be read"}
+    jobs = []          # [(job id, {key: value} at that job's own depth)]
+    job_depth = None
+    key_depth = None
+    for line in lines[start:]:
+        if line.strip() and not line.startswith((" ", "\t", "#")):
+            break                                   # the next top-level key
+        got = _key_line(line)
+        if got is None:
+            continue
+        indent, key, value = got
+        if job_depth is None:
+            job_depth = indent
+        if indent == job_depth:
+            jobs.append((key, {}))
+            key_depth = None
+            continue
+        if not jobs or indent < job_depth:
+            continue
+        if key_depth is None:
+            key_depth = indent
+        if indent == key_depth:
+            jobs[-1][1][key] = value
+    findings = []
+    for job, keys in jobs:
+        if _JOB_TIMEOUT_KEY not in keys:
+            findings.append((job, "no job-level %s, so a hang runs to GitHub's "
+                                  "six-hour default" % _JOB_TIMEOUT_KEY))
+            continue
+        value = keys[_JOB_TIMEOUT_KEY]
+        if not re.match(r"[0-9]+$", value) or int(value) <= 0:
+            findings.append((job, "%s is %r, not a positive whole number of "
+                                  "minutes this check can read"
+                                  % (_JOB_TIMEOUT_KEY, value)))
+    if not jobs:
+        return {"findings": [], "jobs": 0,
+                "problem": "the `jobs:` block names no job"}
+    return {"findings": findings, "jobs": len(jobs), "problem": None}
+
+
+def job_timeout_verdict(repo=None):
+    """`untimed_jobs()` over ci.yml as [(job, why)], with an unreadable workflow
+    or one with no jobs in it AS a finding - a question nobody could ask must not
+    reach `render()` as an empty list."""
+    path = os.path.join(repo or REPO, CI_REL)
+    try:
+        with io.open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except (IOError, OSError) as exc:
+        return [("ci.yml", "could not be read: %s" % (exc,))]
+    got = untimed_jobs(text)
+    if got["problem"] is not None:
+        return [("ci.yml", got["problem"])]
+    return got["findings"]
+
+
 def parity(repo=None):
     """{"missing", "stale_exemptions", "failmodes", "counts"} for the tree.
 
@@ -2731,6 +2835,8 @@ def parity(repo=None):
     targets = report_target_verdict(repo)
     # ...and asked again for the sweep, whose flags are its legs.
     legs = sweep_leg_verdict(repo)
+    # ...and of the workflow alone: does every job end in minutes when it hangs.
+    timeouts = job_timeout_verdict(repo)
     raw = read_sides(repo)
     read = {}
     unreadable = []
@@ -2744,7 +2850,8 @@ def parity(repo=None):
         # NOT an empty verdict. A side nothing could read is not a side that agrees.
         return {"missing": [], "stale_exemptions": unreadable,
                 "failmodes": failmodes, "report_targets": targets,
-                "sweep_legs": legs, "counts": counts}
+                "sweep_legs": legs, "job_timeouts": timeouts,
+                "counts": counts}
     result = compare(read)
     result["counts"] = counts
     # ...and the question `compare()` cannot ask: is each row's REASON still true of
@@ -2765,6 +2872,7 @@ def parity(repo=None):
     result["failmodes"] = failmodes
     result["report_targets"] = targets
     result["sweep_legs"] = legs
+    result["job_timeouts"] = timeouts
     return result
 
 
@@ -2826,7 +2934,7 @@ def render(result, stream=None):
     out = stream if stream is not None else sys.stdout
     bad = (result["missing"] + result["stale_exemptions"]
            + result["failmodes"] + result["report_targets"]
-           + result.get("sweep_legs", []))
+           + result.get("sweep_legs", []) + result.get("job_timeouts", []))
     out.write("gate parity: %s\n"
               % (", ".join("%d in %s" % (result["counts"].get(label, 0), label)
                            for label, _rel in SIDES),))
@@ -2845,12 +2953,14 @@ def render(result, stream=None):
                       % (side, leg, note))
         else:
             out.write("  sweep leg question (%s / %s): %s\n" % (leg, side, note))
+    for job, note in result.get("job_timeouts", []):
+        out.write("  CI job with no time bound (%s): %s\n" % (job, note))
     if not bad:
         out.write("  every side names the same gates, every declared exemption "
                   "is still real, SECURITY.md's fail modes are the ones "
                   "hooks.json registers, both runners hand the report "
-                  "checker the same documents, and both run the same legs of "
-                  "the sweep\n")
+                  "checker the same documents, both run the same legs of "
+                  "the sweep, and every CI job carries a time bound\n")
     return 1 if bad else 0
 
 
@@ -4254,6 +4364,68 @@ def _cases(check):
           and _fm_tableless is not None
           and len(_fm_absent_verdict) == 1
           and _fm_absent_verdict[0][1] == _fm_absent["problem"])
+
+    with io.open(os.path.join(REPO, CI_REL), encoding="utf-8") as fh:
+        _jt_live = untimed_jobs(fh.read())
+    check("jt0 THE LIVE CLAIM: every job in ci.yml carries a job-level time "
+          "bound, over %d job(s) read - the count is what keeps an empty finding "
+          "list over a workflow nobody parsed from reading as clean: %r"
+          % (_jt_live["jobs"], _jt_live),
+          _jt_live["problem"] is None and _jt_live["findings"] == []
+          and _jt_live["jobs"] > 0 and job_timeout_verdict() == [])
+
+    # The fixture's bound sits on a STEP of the untimed job: a reader that took
+    # any `timeout-minutes` inside a job's block for the job's own passes it.
+    _jt_wf = ("name: ci\non:\n  push:\njobs:\n"
+              "  timed:\n    name: timed\n    timeout-minutes: 30\n"
+              "    runs-on: ubuntu-latest\n    steps:\n      - run: |\n"
+              "          echo hi\n"
+              "  untimed:\n    name: untimed\n    runs-on: ubuntu-latest\n"
+              "    steps:\n      - name: one step\n        timeout-minutes: 5\n"
+              "        run: echo hi\n")
+    _jt_red = untimed_jobs(_jt_wf)
+    check("jt1 a job with no job-level bound IS reported, by name, and a bound on "
+          "one of its STEPS does not count for the job, while its timed sibling "
+          "is not reported: %r" % (_jt_red,),
+          _jt_red["problem"] is None and _jt_red["jobs"] == 2
+          and [job for job, _why in _jt_red["findings"]] == ["untimed"])
+
+    # The over-fire direction: a reader that reported every job, or that read
+    # the first job's key depth as every job's, fails this one.
+    _jt_ok = untimed_jobs(_jt_wf.replace(
+        "  untimed:\n    name: untimed\n",
+        "  untimed:\n    name: untimed\n    timeout-minutes: 10\n"))
+    check("jt2 ...and the same workflow with that job bounded is clean, over both "
+          "jobs: %r" % (_jt_ok,),
+          _jt_ok == {"findings": [], "jobs": 2, "problem": None})
+
+    _jt_zero = untimed_jobs(_jt_wf.replace("timeout-minutes: 30",
+                                           "timeout-minutes: 0"))
+    _jt_expr = untimed_jobs(_jt_wf.replace(
+        "timeout-minutes: 30", "timeout-minutes: ${{ inputs.minutes }}"))
+    check("jt3 a bound of zero, or one written as an expression this cannot "
+          "resolve, is reported rather than taken on trust: %r / %r"
+          % (_jt_zero["findings"], _jt_expr["findings"]),
+          [job for job, _w in _jt_zero["findings"]] == ["timed", "untimed"]
+          and [job for job, _w in _jt_expr["findings"]] == ["timed", "untimed"])
+
+    _jt_none = untimed_jobs("name: ci\non:\n  push:\n")
+    _jt_absent = job_timeout_verdict(os.path.join(REPO, "no-such-repo-dir"))
+    _jt_tree = tempfile.mkdtemp(prefix="gate-parity-jt-")
+    try:
+        os.makedirs(os.path.dirname(os.path.join(_jt_tree, CI_REL)))
+        with io.open(os.path.join(_jt_tree, CI_REL), "w", encoding="utf-8") as fh:
+            fh.write("name: ci\non:\n  push:\n")
+        _jt_jobless = job_timeout_verdict(_jt_tree)
+    finally:
+        shutil.rmtree(_jt_tree, ignore_errors=True)
+    check("jt4 a workflow with no `jobs:` block, and a tree with no workflow at "
+          "all, are NAMED problems - and the verdict raises each to a finding, "
+          "so `parity()` cannot come back clean over a file nobody read: "
+          "%r / %r / %r" % (_jt_none, _jt_jobless, _jt_absent),
+          _jt_none["problem"] is not None and _jt_none["jobs"] == 0
+          and _jt_jobless == [("ci.yml", _jt_none["problem"])]
+          and len(_jt_absent) == 1 and "could not be read" in _jt_absent[0][1])
 
 
 def _selftest():
