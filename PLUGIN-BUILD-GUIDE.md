@@ -427,7 +427,7 @@ L7:
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
   run-test-gate -> _claude_home, _evidence_io, _fmt, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _task_outputs, _tree_stamp
   set-priority -> _claude_home, _manifest_io, _output, _panel_write, _priority, _warning_groups
-  stamp-verification -> _claude_home, _evidence_io, _locks, _manifest_io, _output, _proc_group, _runner_output, _tree_stamp, _worktrees
+  stamp-verification -> _claude_home, _evidence_io, _locks, _manifest_io, _output, _proc_group, _runner_output, _task_outputs, _tree_stamp, _worktrees
   validate-config -> _config_rules, _output
   validate-manifest -> _evidence_io, _manifest_io, _manifest_rules, _output, _warning_groups
   verify-invariants -> _claude_home, _invariants, _manifest_io, _output

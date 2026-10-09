@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "test_stamp_verification selftest": "pass (232/232)",
+    "test__deps selftest": "pass (307/307)",
+    "ruff check governance + test file": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-09T20:35:39Z",
+    "basis": "`python3 -c import runpy,sys; f='plugins/audit/tests/test_stamp_verification.py'; sys.argv=[f,'--'+'selftest']; runpy.run_path(f, run_name='__main__')` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: ModuleNotFoundError: No module named '_harness'; HEAD's own tests on HEAD's code are not green (ModuleNotFoundError: No module named '_harness') - the command is already red (or unreadable) at HEAD - narrow it to the task's cases; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main/node_modules and is not watched; the user's ~/.npmrc dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "Reviewed the prepared diff (expand_declared/_declares_directory, covers() in _is_test_path, _red_scope re-split after expansion, cases sr205-207): found nothing to fix. Added F602: deps_clause now says 'linked from the project root' and 'the project's own <entries>' (no absolute path); _npmrc_state says 'the user's .npmrc in the home directory' (no ~). New cases sr208 (deps_clause names no source path, home or ~) and sr209 (_npmrc_state with a fake HOME holding .npmrc), stage sr-sandbox-words. Updated sd4 and sd5, which asserted the machine path in the note, to assert its absence. Regenerated the PLUGIN-BUILD-GUIDE.md module-map fence from _deps.py --render (1-line diff). test_stamp_verification selftest 232/232, test__deps 307/307, ruff clean. Not run: full sweep, vermin, other gates. The payload field dependencies.source still holds the absolute path (not part of the stored note).",
+    "descriptive": "A declared directory is laid over the fix tree and gets a red/green verdict; the stored sandbox description no longer carries the machine path or ~."
+  },
+  "testsAdded": [
+    "sr205",
+    "sr206",
+    "sr207",
+    "sr208",
+    "sr209"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:e9e67f575b239182a5860753eed198eeb2fdfefbd3a984650ac33bea49f3f594\",\"dirtyDigest\":\"sha256:e18ba1b481e104fff343b397c49a5086acf528162f18a55f3bbb685ddb87acaa\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"6235f3ec4a38c1c1\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"db84d7b02dcc76d9\",\"plugins/audit/tests/test_stamp_verification.py\":\"fd322eacb78dab80\"},\"head\":\"98c31c81\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:cb967ff92b7974fb8cb2e12761dcba69dc1ea34525e92db1e1a2d9db92d47b24\",\"v\":2}"
+}

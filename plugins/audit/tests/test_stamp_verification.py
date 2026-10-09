@@ -447,7 +447,10 @@ def _red_repo(prefix, wt_test, extra=None, files=None, head_test=None):
     _write(os.path.join(root, "tests", "test_mine.py"), wt_test)
     _write(os.path.join(root, "notes.txt"), "a sibling's uncommitted work\n")
     for rel, text in (extra or {}).items():
-        _write(os.path.join(root, *rel.split("/")), text)
+        dst = os.path.join(root, *rel.split("/"))
+        if not os.path.isdir(os.path.dirname(dst)):
+            os.makedirs(os.path.dirname(dst))
+        _write(dst, text)
     manifest = json.loads(json.dumps(MANIFEST))
     task = manifest["phases"][0]["tasks"][0]
     task["files"] = files or ["src/mine.py", "tests/test_mine.py"]
@@ -803,6 +806,66 @@ def _introduces_cases(check):
           "to import, so it stays could-not-prove: exit=%r %r"
           % (code_k, (got_k.get("redFirst") or {}).get("basis", "")[-160:]),
           code_k == M.E_CANNOT_PROVE)
+
+
+def _directory_scope_cases(check):
+    """A declared DIRECTORY holding the fix is laid over the fix tree like the
+    files under it (the shape of a task declaring `ui/report-css`)."""
+    py = sys.executable
+    for n, spelling in (("sr205", "src"), ("sr206", "src/")):
+        root, man = _red_repo(n + "-dir-", _red_test("import mine", "mine.v == 2"),
+                              files=[spelling, "tests/test_mine.py"])
+        code, got = _red(root, man, [py, "tests/test_mine.py"])
+        block = got.get("redFirst") or {}
+        check("%s a task declaring the DIRECTORY %r that holds its fix gets a "
+              "red from HEAD and a green from the fix tree, not could-not-prove "
+              "- the directory's files are laid over, not skipped: exit=%r %r"
+              % (n, spelling, code, block),
+              code == M.E_PROVED and block.get("status") == "proved")
+    # The deny twin: a declared directory that does NOT hold the fix must stay
+    # unproved, so a layer-over that copied the whole tree would be caught.
+    root_o, man_o = _red_repo("sr207-dir-other-",
+                              _red_test("import mine", "mine.v == 2"),
+                              extra={"docs/readme.txt": "unrelated\n"},
+                              files=["docs", "tests/test_mine.py"])
+    code_o, got_o = _red(root_o, man_o, [py, "tests/test_mine.py"])
+    check("sr207 a declared directory that does not hold the fix is not "
+          "credited with it: the fix tree stays at HEAD's code and the red is "
+          "not proved: exit=%r %r" % (code_o, got_o.get("redFirst")),
+          code_o != M.E_PROVED
+          and (got_o.get("redFirst") or {}).get("status") != "proved")
+
+
+def _sandbox_words_cases(check):
+    """The sandbox description lands in the committed shard, so it names the
+    project root and the home directory by role, never by machine path."""
+    home = os.path.expanduser("~")
+    plan = {"source": os.path.join(home, "work", "proj"), "linked": ["node_modules"],
+            "kind": M.LINK_SYMLINK, "skipped": [],
+            "npmrc": ["the user's .npmrc in the home directory dropped"]}
+    words = M.deps_clause(plan)
+    check("sr208 the sandbox description names no absolute project path, no home "
+          "directory and spells no ~ shorthand, yet still names the linked "
+          "entry: %s" % (words[:400],),
+          plan["source"] not in words and home not in words and "~" not in words
+          and "node_modules" in words and "project root" in words)
+    fake_home = tempfile.mkdtemp(prefix="sr209-home-")
+    saved = dict((k, os.environ.get(k)) for k in ("HOME", "USERPROFILE"))
+    try:
+        _write(os.path.join(fake_home, ".npmrc"), "fund=false\n")
+        os.environ["HOME"] = os.environ["USERPROFILE"] = fake_home
+        said = M._npmrc_state(fake_home, time.time() + 30)
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        M.shutil.rmtree(fake_home, ignore_errors=True)
+    check("sr209 the sentence about a user .npmrc spells no ~ and no machine "
+          "path: %r" % (said,),
+          any("home directory" in w and "dropped" in w for w in said)
+          and not any("~" in w or fake_home in w for w in said))
 
 
 def _process_cases(check):
@@ -3695,8 +3758,8 @@ def _deps_cases(check):
           "dropped, with NPM_CONFIG_USERCONFIG dropped from the environment: "
           "exit=%r dropped=%r %s" % (code_g, dropped, note[:800]),
           code_g == M.E_NOT_RED and "linked" in note
-          and any(os.path.join(r, "node_modules") in note
-                  for r in (root_g, os.path.realpath(root_g)))
+          and "the project's own node_modules" in note
+          and not any(r in note for r in (root_g, os.path.realpath(root_g)))
           and ".cache" in note and ".npmrc" in note and "dropped" in note
           and "not linked: scratch/node_modules (its parent directory is not at "
               "HEAD)" in note
@@ -3716,8 +3779,9 @@ def _deps_cases(check):
           "same run is could-not-prove: without=%r with=%r %s"
           % (code_n, code_f, _deps_basis(payload_f)[:600]),
           code_n == M.E_CANNOT_PROVE and code_f == M.E_PROVED
-          and any(s in _deps_basis(payload_f)
-                  for s in (source, os.path.realpath(source))))
+          and "linked from the project root" in _deps_basis(payload_f)
+          and not any(s in _deps_basis(payload_f)
+                      for s in (source, os.path.realpath(source))))
 
 
 # A unittest suite and an in-repo `.venv` git ignores, whose site-packages
@@ -4153,6 +4217,8 @@ STAGES = (
     ("sr-red", "_red_cases"),
     ("sr-tally", "_tally_cases"),
     ("sr-introduces", "_introduces_cases"),
+    ("sr-directory", "_directory_scope_cases"),
+    ("sr-sandbox-words", "_sandbox_words_cases"),
     ("sr-process", "_process_cases"),
     ("sr-own", "_own_case_cases"),
     ("sr-label", "_label_cases"),

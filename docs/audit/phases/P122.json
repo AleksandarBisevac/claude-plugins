@@ -105,7 +105,7 @@
     {
       "id": "P122.2",
       "title": "commit-scope, staging, run-test-gate and scope widening read coverage through covers()",
-      "status": "in_progress",
+      "status": "done",
       "description": "F581's core. _invariants.commit_scope matches exact paths after stripping the slash, so a declared directory breaches every file committed under it, with or without the slash. Replace the membership test with covers(); _invariants._under and _scoped_commit.under_any/covering delegate to covers() rather than spelling the rule; run-test-gate._declared_by uses it; audit-task._narrowings accepts replacing src/a.py with src (or src/) as a widening, not a narrowing. Regression case: P120.1's exact shape (files declares docs/screenshots without a slash, commit stages docs/screenshots/areas.png) reports no breach; and a path outside the directory still breaches. Update README.md and reference/orchestrator.md where they say 'in the task's files'.",
       "files": [
         "plugins/audit/scripts/governance/_invariants.py",
@@ -148,25 +148,40 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "98c31c8199d3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_invariants.commit_scope now tests each declared entry with _task_outputs.covers; _invariants._under delegates to covers; _scoped_commit.covering uses covers (under_any goes through _under); run-test-gate._declared_by uses covers; audit-task._narrowings treats a files entry replaced by a covering directory as a widening. Added iv4a/iv4b (test__invariants) and nw1/nw2 (test_audit_task). README commit-scope row reworded; reference/orchestrator.md has no 'in the task files' phrase so left unchanged. Selftests all pass. Not run: full sweep, vermin, other gates.",
+        "descriptive": "A declared directory no longer yields a false commit-scope breach; coverage is answered by one shared covers() predicate."
       },
       "startedAt": "2026-10-09T19:48:22Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T20:25:00Z",
+      "verifiedBy": [
+        "test__invariants iv4a",
+        "test__invariants iv4b",
+        "test_audit_task nw1",
+        "test_audit_task nw2"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-09T20:24:57Z.b1f614",
         "status": "passed",
         "at": "2026-10-09T20:24:57Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "98c31c8199d3",
+        "at": "2026-10-09T20:25:00Z"
+      },
+      "redFirst": {
+        "at": "2026-10-09T20:02:30Z",
+        "basis": "`python3 -c import sys,runpy;sys.argv=['plugins/audit/tests/test__invariants.py','--selftest'];runpy.run_path(sys.argv[0],run_name='__main__')` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: ModuleNotFoundError: No module named '_harness'; HEAD's own tests on HEAD's code are not green (ModuleNotFoundError: No module named '_harness') - the command is already red (or unreadable) at HEAD - narrow it to the task's cases; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from <project>, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in <project>/node_modules and is not watched; the user's npm config (.npmrc in the home directory) dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
       "id": "P122.3",
       "title": "the red-first fix tree lays a declared directory over, not only files",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F579, confirmed by reading: _lay_over skips any entry that is not a file, so a declared directory is never copied into the fix tree and HEAD's copy stays; _red_scope drops a declared test directory; _at_head compares ls-tree names exactly, so a dir/ spelling reads as new and is stubbed as an empty FILE; _one_declared and introduced never match a directory. Expand a declared directory to the files under it (reuse _tree_stamp._files_under, the git-pathspec reading scope_digest already uses) before these steps, and use covers() wherever a path is matched against an entry. Case: a task declaring a directory that holds the fix gets a red/green verdict, not could-not-prove; reproduce P120.2's shape (ui/report-css declared as a directory). Also (F602): the sandbox description the red helper stores in the committed shard (the said list: dependencies linked from the absolute project root, writes landing in its node_modules, the user npmrc in the home directory) must name paths relative to the project and spell no home shorthand - it put the machine path into P122.json and failed check-committed-pii. The new _task_outputs import changes the module map, so regenerate PLUGIN-BUILD-GUIDE.md fence with _deps.py --render.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -198,16 +213,28 @@
         "P122.1"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-09T20:25:01Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-09T20:52:51Z.54983b",
+        "status": "passed",
+        "at": "2026-10-09T20:52:51Z"
+      },
+      "notes": [
+        {
+          "at": "2026-10-09T20:44:45Z",
+          "text": "Register renumbering: the fault this description calls F602 is F604 in the register (the monitoring session took F601/F602 concurrently). F601 mentioned in executor returns here is F603."
+        }
+      ]
     },
     {
       "id": "P122.4",

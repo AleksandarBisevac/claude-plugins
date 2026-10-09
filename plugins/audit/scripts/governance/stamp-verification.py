@@ -334,6 +334,7 @@ _output.install_path()
 import _tree_stamp  # noqa: E402  (the ONE tree identity, shared with run-test-gate)
 import _evidence_io  # noqa: E402  (recorded_paths: what the recorder writes, left out)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader: single file OR shards)
+import _task_outputs  # noqa: E402  (covers: the one rule for a declared path)
 import _proc_group  # noqa: E402  (a child tree stopped whole; a stop signal as an exception)
 import _locks  # noqa: E402  (pid_alive: whether a leftover throwaway's owner still runs)
 import _worktrees  # noqa: E402  (git's worktree list read, and two spellings of one tree compared)
@@ -618,8 +619,41 @@ def find_task(manifest, task_id):
 
 def _is_test_path(rel, named):
     parts = rel.replace("\\", "/").split("/")
-    return (rel in named or any(p in _TEST_DIRS for p in parts[:-1])
+    return (any(_task_outputs.covers(n, rel) for n in named)
+            or any(p in _TEST_DIRS for p in parts[:-1])
             or bool(_TEST_NAME.match(parts[-1])))
+
+
+def _declares_directory(task):
+    """Whether any declared entry could name a directory: one without a file
+    extension, or spelled with a trailing slash. Decided from the spelling, for
+    it runs before git has been asked where the tree is."""
+    return any(isinstance(f, str) and (f.endswith(("/", "\\"))
+                                       or "." not in posixpath.basename(f))
+               for f in (task.get("files") or []))
+
+
+def expand_declared(root, files):
+    """The declared `files` with each DIRECTORY replaced by the files under it.
+
+    A directory has no bytes to copy, so `_lay_over` skipped it and HEAD's copy
+    of the fix stayed in the fix tree. The members are what git lists
+    (`_tree_stamp._files_under`, the reading `scope_digest` already uses), so
+    both agree on which files a directory means. An entry that is a file, is
+    absent from the working tree, or that git will not list stays as declared;
+    the result keeps declared order, without repeats."""
+    out = []
+    for entry in files or []:
+        if not isinstance(entry, str):
+            continue
+        bare = entry.replace("\\", "/").rstrip("/")
+        under = None
+        if bare and os.path.isdir(os.path.join(root, *bare.split("/"))):
+            under = _tree_stamp._files_under(root, bare)
+        for item in (under if under else [entry]):
+            if item not in out:
+                out.append(item)
+    return out
 
 
 def split_scope(task):
@@ -1858,7 +1892,8 @@ def _npmrc_state(root, deadline):
     elif os.path.isfile(os.path.join(root, ".npmrc")):
         said.append("the project's untracked .npmrc dropped")
     if os.path.isfile(os.path.join(os.path.expanduser("~"), ".npmrc")):
-        said.append("the user's ~/.npmrc dropped (every run has a fresh home)")
+        said.append("the user's .npmrc in the home directory dropped (every run "
+                    "has a fresh home)")
     return said or ["no .npmrc to carry or drop"]
 
 
@@ -2064,18 +2099,16 @@ def deps_clause(plan):
     write back through, what was skipped and what became of each `.npmrc`."""
     if plan is None:
         return ""
-    src = plan["source"]
     if plan["linked"]:
         kind = plan.get("kind") or LINK_SYMLINK
-        said = ("dependencies linked from %s, entry by entry %s: %s - %s are not "
-                "linked and a new entry a runner makes beside the links stays in "
-                "the throwaway, but a write into a linked entry lands in %s and is "
-                "not watched" % (src, LINK_WORDS.get(kind, kind),
-                                 ", ".join(plan["linked"]), ", ".join(DEP_CACHES),
-                                 ", ".join(os.path.join(src, *r.split("/"))
-                                           for r in plan["linked"])))
+        said = ("dependencies linked from the project root, entry by entry %s: %s "
+                "- %s are not linked and a new entry a runner makes beside the "
+                "links stays in the throwaway, but a write into a linked entry "
+                "lands in the project's own %s and is not watched"
+                % (LINK_WORDS.get(kind, kind), ", ".join(plan["linked"]),
+                   ", ".join(DEP_CACHES), ", ".join(plan["linked"])))
     else:
-        said = "no ignored dependency directory linked from %s" % (src,)
+        said = "no ignored dependency directory linked from the project root"
     if plan["skipped"]:
         said += "; not linked: %s" % ("; ".join("%s (%s)" % s for s in plan["skipped"]),)
     return "; %s; %s" % (said, "; ".join(plan["npmrc"]))
@@ -2595,7 +2628,7 @@ def _red_scope(args, cmd, deadline):
     if problem is not None:
         return None, problem
     implementation, tests = split_scope(task)
-    if not tests:
+    if not tests and not _declares_directory(task):
         return None, ("task %s declares no test file, so a throwaway at HEAD "
                       "would prove nothing about this task's test" % (args.task,))
     code, root = _git(os.path.abspath(args.project), ["rev-parse", "--show-toplevel"],
@@ -2603,6 +2636,11 @@ def _red_scope(args, cmd, deadline):
     if code != 0:
         return None, "%s is not inside a git repository: %s" % (args.project, root)
     root = native_top(root)
+    implementation, tests = split_scope(dict(
+        task, files=expand_declared(root, task.get("files"))))
+    if not tests:
+        return None, ("task %s declares no test file, so a throwaway at HEAD "
+                      "would prove nothing about this task's test" % (args.task,))
     named = _names_shared_tree(cmd, root, os.path.abspath(args.project))
     if named:
         return None, ("the command names the shared tree (%s); give its paths "
