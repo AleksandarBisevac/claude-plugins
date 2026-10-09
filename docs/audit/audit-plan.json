@@ -805,7 +805,8 @@
     ".gitattributes": [
       "BF2.1",
       "P36.13",
-      "P94.4"
+      "P94.4",
+      "P121.10-eof"
     ],
     ".github/workflows/ci.yml": [
       "P2.5",
@@ -3001,7 +3002,8 @@
       "P118.2",
       "P118.11-v7t",
       "P118.7",
-      "P121.7"
+      "P121.7",
+      "P121.13-eof"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -4124,7 +4126,8 @@
       "P108.13-4gh",
       "P108.17-4gh",
       "P108.19-4gh",
-      "P121.5"
+      "P121.5",
+      "P121.11-eof"
     ],
     "plugins/audit/tests/test__locks.py": [
       "P22.11",
@@ -4408,7 +4411,8 @@
       "P118.9",
       "P118.6",
       "P118.8",
-      "P118.13-v7t"
+      "P118.13-v7t",
+      "P121.10-eof"
     ],
     "plugins/audit/tests/test__report_html.py": [
       "P25.1",
@@ -5162,7 +5166,8 @@
       "P118.2",
       "P118.11-v7t",
       "P118.7",
-      "P121.7"
+      "P121.7",
+      "P121.13-eof"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
@@ -6359,7 +6364,8 @@
       "P118.7",
       "P118.14-v7t",
       "P119.1",
-      "P121.8"
+      "P121.8",
+      "P121.10-eof"
     ],
     "tools/stream-cost.py": [
       "P117.1",
@@ -6424,7 +6430,8 @@
       "P119.3-g0k",
       "P119.4-g0k",
       "P119.7-g0k",
-      "P121.5"
+      "P121.5",
+      "P121.12-eof"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6"
