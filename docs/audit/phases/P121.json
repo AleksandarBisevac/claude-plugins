@@ -65,7 +65,12 @@
       },
       "startedAt": "2026-10-09T00:55:19Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-09T01:50:49Z.ce347e",
+        "status": "passed",
+        "at": "2026-10-09T01:50:49Z"
+      }
     },
     {
       "id": "P121.2",
@@ -105,12 +110,17 @@
       },
       "startedAt": "2026-10-09T00:55:20Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-09T01:59:41Z.28bb44",
+        "status": "passed",
+        "at": "2026-10-09T01:59:41Z"
+      }
     },
     {
       "id": "P121.3",
       "title": "Windows: concurrent usage appends lose no row",
-      "status": "in_progress",
+      "status": "done",
       "description": "On windows-latest, plugins/audit/tests/test_audit_usage.py fails case bw3: 'appenders for sessions outside the backfill set, running during a backfill, lose no row across repeated trials: appended 932, lost 97'. This may be a real data-loss bug on Windows, not a flaky test: a rename over an open file, or an append racing a rewrite without a lock. Find out which, and if it is real, fix the code. ",
       "files": [
         "plugins/audit/scripts/usage/usage_ledger.py",
@@ -141,18 +151,27 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3122cb9c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "This was real data loss on Windows, not a flaky test. Windows refuses os.replace onto a file any handle holds open, so the backfill's month rewrite was refused on its first try. HEAD's retry then drained, closed, and wrote the whole month to a temp file before the swap, and any row an appender wrote in that window was erased. A retry refused again failed the month.\n\nFix, in usage_ledger.py: a per-month OS lock (fcntl.flock on POSIX, msvcrt.locking on Windows) on `<month>.jsonl.lock`, which is never deleted and is not selected by any `.jsonl` reader.\n- append_rows opens, writes and closes under the lock. If the lock is not free within MONTH_LOCK_WAIT_S, it appends anyway: a row at risk rather than a row dropped for certain.\n- rewrite_month holds the lock for the last drain, the temp write and the replace. It retries a refused replace under the lock, then settles for writers that take no lock. If it cannot get the lock, it returns False and leaves the old file standing.\n- New functions: month_lock_path, lock_month, unlock_month, _append_locked and _replace_retrying. _write_rows is removed.\n- audit-usage.py's docstring and comment are updated.\n\nDecision, reversing an earlier design pin: case bw7 (\"append_rows still takes no lock\", named in the done task P107.3's verifiedBy) is removed, because a lock-free append cannot be made safe on Windows. `tools/bench-hooks.py --gate` passes. tw4 expects the lock file. nm1's writer appends directly, so it still tests writers that take no lock.\n\nNew cases:\n- bw14 reproduces the Windows sequence deterministically.\n- bw15 and lk1-lk3 cover the lock itself.\n\nRed-first: proved (bw14 red at HEAD).\n\nMutations, in a copied tree, each red on its cases:\n- no lock on append;\n- append gives up when the lock is busy;\n- append never unlocks;\n- rewrite takes no lock;\n- rewrite never unlocks.\n\nThe Windows-replace probe (scratchpad P121.3/probe_windows_replace.py) lost 24, 52, 46, 19 and 11 rows over five trials on a HEAD export, and none on the working tree.\n\nNot run on Windows. The build guide still says the metering hook appends without a lock; that line is carried by the next task in this phase.",
+        "descriptive": "Cost records written while the monthly ledger is being rewritten are no longer lost on Windows; appends and the rewrite share a per-month lock."
       },
       "startedAt": "2026-10-09T00:55:20Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T01:35:05Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_usage.py",
+        "plugins/audit/tests/test_usage_ledger.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-09T01:34:54Z.9ca8e7",
         "status": "passed",
         "at": "2026-10-09T01:34:54Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "3122cb9c",
+        "at": "2026-10-09T01:35:05Z",
+        "basis": "orchestrator check: real data loss reproduced by a Windows-replace probe on HEAD, none after; bw14 proved red; lock mutations each red"
       }
     },
     {
@@ -216,7 +235,18 @@
       "description": "On windows-latest, plugins/audit/tests/test_drive_phase.py fails three cases: dp3, where a success print of 400 bytes exceeds the 300-byte bound, likely because of Windows paths; and sg2 and gr1, the sign-off and commit sequences. ",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/tests/test_drive_phase.py"
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/tests/test_usage_ledger.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/_evidence_io.py"
       ],
       "tests": {
         "mode": "regression",
@@ -290,7 +320,12 @@
       },
       "startedAt": "2026-10-09T00:55:21Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-09T02:07:01Z.d2707a",
+        "status": "passed",
+        "at": "2026-10-09T02:07:01Z"
+      }
     },
     {
       "id": "P121.7",
@@ -331,7 +366,12 @@
       },
       "startedAt": "2026-10-09T00:55:21Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-09T02:14:22Z.b54883",
+        "status": "passed",
+        "at": "2026-10-09T02:14:22Z"
+      }
     },
     {
       "id": "P121.8",
@@ -371,7 +411,12 @@
       },
       "startedAt": "2026-10-09T00:55:21Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-09T02:21:42Z.5a9820",
+        "status": "passed",
+        "at": "2026-10-09T02:21:42Z"
+      }
     },
     {
       "id": "P121.9",
@@ -412,7 +457,12 @@
       },
       "startedAt": "2026-10-09T00:55:22Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-09T02:29:01Z.d2291e",
+        "status": "passed",
+        "at": "2026-10-09T02:29:01Z"
+      }
     }
   ],
   "startedAt": "2026-10-09T00:55:19Z"

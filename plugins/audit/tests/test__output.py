@@ -2928,7 +2928,18 @@ def _remove_tree_link_cases(check):
         outside = os.path.join(outside_dir, "precious")
         with open(outside, "w") as fh:
             fh.write("not part of the tree being removed\n")
-        os.chmod(outside, 0o640)
+        # READ-ONLY, and compared against its own mode as read back rather
+        # than a literal. Windows keeps one permission fact per file, the
+        # read-only attribute, so a mode with the owner-write bit set reads
+        # back as 666 whatever the other bits said; a writable target would
+        # then look the same before and after a chmod through the link. The
+        # owner-write bit is the one fact both platforms keep, and the
+        # fallback's own chmod sets it.
+        os.chmod(outside, stat.S_IREAD)
+        before = stat.S_IMODE(os.stat(outside).st_mode)
+        check("rt3a the link target is read-only before the removal, so a "
+              "chmod through the link would show on every platform: mode %o"
+              % (before,), not before & stat.S_IWRITE)
         top = _refusing_tree()
         inner = os.path.join(top, "objects")
         os.chmod(inner, 0o755)
@@ -2948,9 +2959,9 @@ def _remove_tree_link_cases(check):
         mode = stat.S_IMODE(os.stat(outside).st_mode)
         check("rt3 RED-FIRST: a tree the plain removal could not take (%r) is "
               "removed by the fallback pass (%r) without changing the mode of "
-              "a file OUTSIDE it that a link inside it points at: mode %o"
-              % (forced, gone, mode),
-              forced and gone is True and mode == 0o640
+              "a file OUTSIDE it that a link inside it points at: mode %o, "
+              "was %o" % (forced, gone, mode, before),
+              forced and gone is True and mode == before
               and os.path.exists(outside))
     finally:
         if top:
