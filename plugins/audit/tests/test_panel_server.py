@@ -1293,13 +1293,41 @@ else:
 '''
 
 
+def _panel_sh_tree(root, src):
+    """Lay out the repo shape `examples/panel.sh` resolves against under `root`
+    - the real script beside a stub server that records the URL it is handed -
+    and return the copied script's path."""
+    os.makedirs(os.path.join(root, "examples", "acme-store", ".claude"))
+    server_dir = os.path.join(root, "plugins", "audit", "scripts", "panel")
+    os.makedirs(server_dir)
+    script = os.path.join(root, "examples", "panel.sh")
+    shutil.copy(src, script)
+    with open(os.path.join(server_dir, "panel-server.py"), "w",
+              encoding="utf-8") as fh:
+        fh.write(_STUB_PANEL_SERVER)
+    return script
+
+
+def _panel_sh_run(sh, script, args, cwd=None):
+    res = subprocess.run([sh, script, "--detach"] + list(args), cwd=cwd,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                         timeout=60)
+    return (res.returncode, res.stdout.decode("utf-8", "replace"),
+            res.stderr.decode("utf-8", "replace"))
+
+
 def _panel_sh_detach_cases(check):
     """`examples/panel.sh --detach` promises a URL. `--status` prints it
     redacted, and a URL without its token is refused by the page, so the
     launcher has to say where the full URL is - and print it in full only under
     `--no-open`, where nobody else will open it. Driven as a real `sh` run of
     the real script, copied beside a stub server that records the URL it is
-    handed, so the claim is about what the script PRINTS."""
+    handed, so the claim is about what the script PRINTS.
+
+    The script is handed its own path the way the platform spells it, so on
+    Windows `$0` carries backslashes and no slash; every message carries the
+    script's stderr, because a launcher that resolved the wrong directory exits
+    with its only explanation there."""
     sh = shutil.which("sh")
     src = os.path.join(M._output.REPO_ROOT, "examples", "panel.sh")
     if not sh or not shutil.which("nohup") or not os.path.isfile(src):
@@ -1309,41 +1337,63 @@ def _panel_sh_detach_cases(check):
         return
     tmp = tempfile.mkdtemp(prefix="panel-sh-")
     try:
-        os.makedirs(os.path.join(tmp, "examples", "acme-store", ".claude"))
-        server_dir = os.path.join(tmp, "plugins", "audit", "scripts", "panel")
-        os.makedirs(server_dir)
-        shutil.copy(src, os.path.join(tmp, "examples", "panel.sh"))
-        with open(os.path.join(server_dir, "panel-server.py"), "w",
-                  encoding="utf-8") as fh:
-            fh.write(_STUB_PANEL_SERVER)
+        script = _panel_sh_tree(tmp, src)
+        pidfile = os.path.join(tmp, "examples", "acme-store", ".claude",
+                               "audit-panel.json")
         secret = "ps1SecretTokenXq"
         live = "http://127.0.0.1:1/?t=" + secret
 
-        def run(*args, **kw):
-            res = subprocess.run(
-                [sh, os.path.join(tmp, "examples", "panel.sh"), "--detach"]
-                + list(args) + [kw.get("last", live)],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
-            return res.returncode, res.stdout.decode("utf-8", "replace")
-
-        rc, out = run("--no-open")
+        rc, out, err = _panel_sh_run(sh, script, ["--no-open", live])
         check("ps1 panel.sh --detach --no-open prints the full URL, token and "
-              "all, exactly once, so the page it names opens: rc %r, %r"
-              % (rc, out), rc == 0 and out.count(live) == 1)
-        rc2, out2 = run()
+              "all, exactly once, so the page it names opens: rc %r, %r, "
+              "stderr %r" % (rc, out, err), rc == 0 and out.count(live) == 1)
+        rc2, out2, err2 = _panel_sh_run(sh, script, [live])
+        # The script builds the pidfile path with `/` on every platform, so the
+        # tail is matched in that spelling rather than os.path.join's.
         check("ps1b ...and plain --detach, whose browser was handed the URL, "
               "prints no token and names the pidfile the full URL is in: "
-              "rc %r, %r" % (rc2, out2),
+              "rc %r, %r, stderr %r" % (rc2, out2, err2),
               rc2 == 0 and secret not in out2
-              and os.path.join("acme-store", ".claude", "audit-panel.json") in out2)
-        os.remove(os.path.join(tmp, "examples", "acme-store", ".claude",
-                               "audit-panel.json"))
-        rc3, out3 = run(last="FAIL")
+              and "acme-store/.claude/audit-panel.json" in out2)
+        if os.path.exists(pidfile):
+            os.remove(pidfile)
+        rc3, out3, err3 = _panel_sh_run(sh, script, ["FAIL"])
         check("ps1c ...and a plain --detach whose launch never came up does "
               "NOT say a browser was opened - it says the launch did not come "
-              "up: rc %r, %r" % (rc3, out3),
+              "up: rc %r, %r, stderr %r" % (rc3, out3, err3),
               rc3 == 0 and "browser was opened" not in out3
               and "did not come up" in out3)
+        _panel_sh_backslash_case(check, sh, src, live)
+    finally:
+        _harness.remove_tree(tmp)
+
+
+def _panel_sh_backslash_case(check, sh, src, live):
+    """The Windows spelling of `$0`, reproduced where a file name may hold a
+    backslash: the script is run as `x\\examples\\panel.sh` from a cwd whose
+    `x/` holds the real layout, so only a launcher that reads `\\` as a
+    separator finds its stub server. Read as a bare name, `$0` resolves the
+    repo one level ABOVE that cwd, which here is a directory of this fixture,
+    so the wrong reading writes nothing outside it. Windows cannot name such a
+    file, and there `ps1` above already hands the script a backslashed path."""
+    if os.name == "nt":
+        check("ps1d panel.sh run as a backslash-separated `$0` finds its own "
+              "tree (covered by ps1 on Windows, whose temp paths are "
+              "backslash-separated)", True)
+        return
+    tmp = tempfile.mkdtemp(prefix="panel-sh-bs-")
+    try:
+        cwd = os.path.join(tmp, "cwd")
+        _panel_sh_tree(os.path.join(cwd, "x"), src)
+        spelled = "x\\examples\\panel.sh"
+        shutil.copy(src, os.path.join(cwd, spelled))
+        rc, out, err = _panel_sh_run(sh, spelled, ["--no-open", live], cwd=cwd)
+        check("ps1d panel.sh run as %r - the separator a Windows caller hands "
+              "Git's sh - resolves its own tree and prints the URL its stub "
+              "server recorded: rc %r, %r, stderr %r" % (spelled, rc, out, err),
+              rc == 0 and out.count(live) == 1
+              and os.path.isfile(os.path.join(cwd, "x", "examples", "acme-store",
+                                              ".claude", "audit-panel.json")))
     finally:
         _harness.remove_tree(tmp)
 

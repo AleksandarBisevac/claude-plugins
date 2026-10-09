@@ -29,7 +29,7 @@
     {
       "id": "P121.1",
       "title": "Windows: test__output rt3 holds on Windows",
-      "status": "in_progress",
+      "status": "done",
       "description": "On windows-latest, plugins/audit/tests/test__output.py fails case rt3: 'a tree the plain removal could not take is removed by the fallback pass without changing the mode of a file OUTSIDE it that a link inside it points at: mode 666'. ",
       "files": [
         "plugins/audit/scripts/_output.py",
@@ -58,18 +58,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "42229d9b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The fault was in rt3's fixture, not in _output.remove_tree. rt3 set the link target to 0o640 and compared the mode afterwards with that literal. On Windows, os.chmod keeps only the read-only attribute, so 0o640 reads back as 0o666 and the check could never pass. A writable target also reads the same before and after a chmod through the link, so on Windows the case could not catch the defect it exists for.\n\nThe target is now read-only (stat.S_IREAD) and is compared with its own mode as read back. The owner-write bit is the one permission fact both platforms keep, and remove_tree's fallback chmod (0o700) sets it. A new case, rt3a, asserts the target has no owner-write bit before the removal, so a return to a writable fixture goes red instead of leaving rt3 unable to fail. rt3's message now prints both modes.\n\nOnly the test file changed.\n\nThe red was observed by simulation, not on Windows: scratchpad P121.1/probe.py emulates Windows chmod.\n- HEAD's rt3 is red with the real remove_tree, matching CI's \"mode 666\".\n- The fixed file is green.\n- A link-following remove_tree mutant is red with the fixed file, on POSIX and on emulated Windows.\n\nThe helper could not run: macOS has no red to observe.",
+        "descriptive": "A test that checks safe folder removal now works on Windows, where file permissions are reduced to read-only or writable."
       },
       "startedAt": "2026-10-09T00:55:19Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T02:29:11Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__output.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-09T01:50:49Z.ce347e",
         "status": "passed",
         "at": "2026-10-09T01:50:49Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "42229d9b",
+        "at": "2026-10-09T02:29:11Z",
+        "basis": "orchestrator check: Windows chmod emulation shows HEAD red and the fix green; a link-following mutant stays red on both platforms"
       }
     },
     {

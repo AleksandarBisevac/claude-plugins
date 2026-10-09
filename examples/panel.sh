@@ -27,8 +27,12 @@
 # the manifest only when you save a change in the UI.
 set -e
 
-case "$0" in
-  */*) here=${0%/*} ;;
+# Separators are normalized first: a Windows caller (`sh C:\...\panel.sh`)
+# hands Git's sh a $0 with backslashes and no slash at all, which read as "run
+# from the cwd" and resolved every path below against the wrong directory.
+self=$(printf '%s\n' "$0" | tr '\\' '/')
+case "$self" in
+  */*) here=${self%/*} ;;
   *)   here=. ;;
 esac
 root=$(cd "$here/.." && pwd)
