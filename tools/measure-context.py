@@ -254,7 +254,14 @@ def split_frontmatter(data):
     if end < 0:
         return {}, data
     head, rest = text[3:end], text[end + 4:]
-    body = rest[1:] if rest.startswith("\n") else rest
+    # The closing delimiter's own line ending belongs to the frontmatter, whichever of
+    # the two a checkout wrote; only what follows it is the body.
+    if rest.startswith("\r\n"):
+        body = rest[2:]
+    elif rest.startswith("\n"):
+        body = rest[1:]
+    else:
+        body = rest
     fields, key = {}, None
     for line in head.splitlines():
         item = re.match(r"^\s+-\s+(.*)$", line)
@@ -703,7 +710,9 @@ def _fx_write(root, rel, text):
     path = os.path.join(root, rel.replace("/", os.sep))
     if not os.path.isdir(os.path.dirname(path)):
         os.makedirs(os.path.dirname(path))
-    with open(path, "w", encoding="utf-8") as fh:
+    # newline="" writes the bytes the size below counts: a text-mode default turns
+    # every "\n" into "\r\n" on Windows, and the reader measures the file in binary.
+    with open(path, "w", encoding="utf-8", newline="") as fh:
         fh.write(text)
     return len(text.encode("utf-8"))
 
@@ -786,6 +795,22 @@ def _cases(check):
               "the skill counted by its body: %r" % (parts,),
               parts == [("system prompt", "agents/audit-executor.md", sizes["executor body"]),
                         ("preloaded skill", "skills/house-style/SKILL.md", sizes["skill body"])])
+        on_disk = os.path.getsize(os.path.join(scratch, "commands", "run.md"))
+        written = len(("---\ndescription: 'Run one task.'\nargument-hint: '<id>'\n---\n"
+                       ).encode("utf-8")) + sizes["run body"]
+        check("mc28 the fixture writes the bytes it reports: a file with line endings is "
+              "the same size on disk as the text handed to it - a text-mode write turns "
+              "each newline into two bytes on Windows, which every byte case above would "
+              "then read as a miscount (%d on disk, %d written)" % (on_disk, written),
+              on_disk == written)
+        crlf = split_frontmatter(b"---\r\ndescription: 'Run.'\r\n---\r\n\r\nbody\r\n")
+        lf = split_frontmatter(b"---\ndescription: 'Run.'\n---\n\nbody\n")
+        check("mc29 a CRLF checkout's frontmatter parses as an LF one does, and its closing "
+              "line ending is not counted in the body - while a blank line that opens the "
+              "body is, in both, so stripping every leading newline goes red here: %r"
+              % ((crlf, lf),),
+              crlf == ({"description": "Run."}, b"\r\nbody\r\n")
+              and lf == ({"description": "Run."}, b"\nbody\n"))
 
         lst = measured["listing"]
         want = (len("audit:run" + "Run one task.")

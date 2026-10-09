@@ -346,7 +346,7 @@
     {
       "id": "P121.7",
       "title": "Windows: stamp-verification prints on a legacy code page",
-      "status": "in_progress",
+      "status": "done",
       "description": "On windows-latest, the blocks sd-deps and sb-new-file in plugins/audit/tests/test_stamp_verification.py raise UnicodeEncodeError: 'charmap' codec can't encode character U+25CF. Every other script calls safe_stdio(). Find where this path writes without it, or what it spawns that does. ",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -375,18 +375,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8c26a941",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The fault was in the test's fixture code, and stamp-verification.py is unchanged. `_write()` opened files without naming an encoding, so Windows used cp1252. The fake jest runner `_FAKE_JEST`, which `_write()` writes to disk, held a literal U+25CF bullet and a U+203A separator, although its comment claimed ASCII. Writing that runner file raised UnicodeEncodeError before the sd-deps and sb-new-file stages ran any case.\n\nFix, in the test file only:\n- the runner's source is ASCII, and builds the two characters with chr() at run time, so its output is unchanged;\n- `_write` always writes UTF-8.\n\nNew stage sd-encoding:\n- sd10: both fake runners' sources are pure ASCII;\n- sd11: `_write` writes UTF-8 bytes, and a raise during the write is reported as sd11's own failure.\n\nEvery other non-ASCII string and every write without an encoding in both files is accounted for.\n\nProbe (scratchpad P121.7/, with every unnamed-encoding open defaulting to cp1252):\n- a HEAD copy gives 0/2 with CI's exact message;\n- the working tree gives 8/8;\n- swapping in HEAD's runner turns sd10 red;\n- swapping in HEAD's `_write` turns sd11 red.\n\nThe suite passes 216/216, plain and under PYTHONIOENCODING=cp1252. The full sweep passes 316/316.\n\nRed-first: could-not-prove. The fix and its cases share the declared test file, so the helper cannot produce a run without the fix.",
+        "descriptive": "The proof tool's tests no longer crash on a Windows code page; test fixtures are written as UTF-8 and the fake test runner's source is plain ASCII."
       },
       "startedAt": "2026-10-09T00:55:21Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T02:29:12Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-09T02:14:22Z.b54883",
         "status": "passed",
         "at": "2026-10-09T02:14:22Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8c26a941",
+        "at": "2026-10-09T02:29:12Z",
+        "basis": "orchestrator check: cp1252 probe on HEAD gives CI's exact error, the fix passes; sd10 and sd11 each red under HEAD's half"
       }
     },
     {
