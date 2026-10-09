@@ -567,7 +567,12 @@
       },
       "startedAt": "2026-10-09T08:12:56Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-09T08:32:53Z.1b34f1",
+        "status": "passed",
+        "at": "2026-10-09T08:32:53Z"
+      }
     },
     {
       "id": "P121.11-eof",
@@ -687,6 +692,52 @@
         "descriptive": null
       },
       "startedAt": "2026-10-09T08:12:57Z",
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P121.14-eof",
+      "title": "Linux CI: the screenshot preconditions step no longer hangs, and a hang fails fast",
+      "status": "pending",
+      "description": "In CI on ubuntu, the manifest-validation job's step \"Screenshot preconditions\" (`node tools/capture-screenshots.mjs --check`) hung for six hours, until GitHub cancelled the job. Its last output was the line \"composition: confirmed -> Saved · 1 change to the manifest · logged\". The next step in tools/capture-screenshots.mjs freezes /api/runstatus, PUTs /api/composition out of band, clicks Save and waits for the confirm dialog, and nothing more was printed. The same check passes on macOS, including in this phase's local gates. The head under test carries this phase's first nine fixes: the per-month usage lock in usage_ledger, the LF journal and evidence writers, close-phase's raw read, panel.sh's path normalisation, and the parallel stage runners.\n\nReproduce it on Linux locally: Docker works on this machine. Use the Playwright image matching CI's Chromium, or ubuntu with CI's own install steps from .github/workflows/ci.yml, against a copy of this worktree. Find the root cause, which may be a server-side deadlock, a lock held across requests, or a client wait with no timeout. Fix it, and make the failure fast in future:\n- the capture tool's waits get bounded timeouts that fail with a named step;\n- each CI job gets a timeout-minutes, so a hang costs minutes, not six hours.\n\nShow the hang reproduced in the container before the fix and the step passing after. tools/gate-parity.py and the ci.yml pins are the places a CI change must stay consistent with. If the cause lies in a file outside this task's list, stop and name it.",
+      "files": [
+        "tools/capture-screenshots.mjs",
+        ".github/workflows/ci.yml",
+        "tools/gate-parity.py",
+        "plugins/audit/scripts/panel/panel-server.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/scripts/governance/_journal_io.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
     }
