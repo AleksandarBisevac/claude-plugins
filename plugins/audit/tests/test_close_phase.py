@@ -3279,6 +3279,56 @@ def _head_merged_at(git, rel="docs/audit/audit-plan.json"):
             if p.get("id") == "P1"][0]
 
 
+def _crlf_trail_pending(name, committed, appended):
+    """What `pending_beyond_stamp` says of a journal committed as `committed`
+    bytes, the working copy then holding `appended` bytes after it - with the
+    plan itself committed and unchanged, so the journal is all it can name."""
+    root = _harness.fixture_root(name)
+    try:
+        git = _fixture_git(root)
+        _init_fixture_repo(git)
+        mpath = _write_plan(root, {"developmentBranch": "main"},
+                            [_signed_phase("P1", "audit/p1-demo")])
+        jdir = os.path.join(root, "docs", "audit", "journal")
+        os.makedirs(jdir)
+        jpath = os.path.join(jdir, "2026-10.s1.jsonl")
+        with open(jpath, "wb") as fh:
+            fh.write(committed)
+        git("add", "-A")
+        git("commit", "-q", "-m", "base")
+        with open(jpath, "wb") as fh:
+            fh.write(appended)
+        return M.pending_beyond_stamp(mpath, "P1", root, root)
+    finally:
+        _harness.remove_tree(root)
+
+
+def _crlf_trail_cases(check):
+    """A journal whose committed rows end in CRLF - a plugin on Windows wrote
+    it through a text-mode handle - and the LF row this landing appends after
+    them: still read as an extension of HEAD, so the stamp is committed."""
+    def row(phase):
+        return json.dumps({"action": "phase.landed",
+                           "details": {"phaseId": phase}}).encode("utf-8")
+    earlier = row("P0") + b"\r\n" + row("P0") + b"\r\n"
+    found = _crlf_trail_pending("closephase-crlf-trail", earlier,
+                                earlier + row("P1") + b"\n")
+    check("cl1 a journal committed with CRLF rows, extended by one LF row about "
+          "this phase, is nothing beyond the stamp: %r" % (found,), found == [])
+    found = _crlf_trail_pending("closephase-crlf-foreign", earlier,
+                                earlier + row("P2") + b"\n")
+    check("cl2 THE OVER-FIRE TWIN: over the same CRLF trail, a row about another "
+          "phase is still named - folding line endings swallows no row: %r"
+          % (found,),
+          len(found) == 1 and "other than phase P1" in found[0])
+    lf = row("P0") + b"\n"
+    found = _crlf_trail_pending("closephase-crlf-checkout", lf,
+                                row("P0") + b"\r\n" + row("P1") + b"\r\n")
+    check("cl3 a checkout holding CRLF over an LF blob, as `core.autocrlf` "
+          "leaves one, extended by a row about this phase, is nothing beyond "
+          "the stamp either: %r" % (found,), found == [])
+
+
 def _landing_commit_cases(check):
     """The landing commits the stamp it writes into the parent's tree: the
     phase's `mergedAt` and its stored `done` are in the parent's HEAD, not left
@@ -4786,6 +4836,7 @@ def _selftest():
         _backfill_direction_cases(check)
         _recovery_cases(check)
         _harness.stage(check, "lt-block", _landing_commit_cases)
+        _harness.stage(check, "cl-block", _crlf_trail_cases)
         _harness.stage(check, "sl-block", _success_line_cases)
     return _harness.run(body)
 

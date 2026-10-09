@@ -1894,7 +1894,9 @@ def _append(project, entry, config=None):
         row["prev"] = (tail[-1].get("hash") if tail
                        else genesis_prev(os.path.basename(path)))
         row["hash"] = row_hash(row)
-        with open(path, "a", encoding="utf-8") as fh:
+        # LF on every platform: the trail is committed, so its bytes are the
+        # same on every machine that writes it.
+        with open(path, "a", encoding="utf-8", newline="\n") as fh:
             fh.write(canonical(row) + "\n")
     finally:
         _release(lock)
@@ -2575,7 +2577,7 @@ def write_merged(path, text, grade=None, dry_run=False):
                                    prefix=os.path.basename(dest) + ".",
                                    suffix=".merged")
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
                 fh.write(text)
             if os.path.isfile(dest):
                 os.chmod(tmp, stat.S_IMODE(os.stat(dest).st_mode))

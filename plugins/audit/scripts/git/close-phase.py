@@ -1508,7 +1508,15 @@ def _unstamped(text, phase_id):
 def _foreign_rows(head_text, text, phase_id):
     """Why the rows `text` holds past `head_text` are not all this phase's, or
     None when they are. The trail is append-only, so anything but an extension
-    of what HEAD holds is somebody else's change too."""
+    of what HEAD holds is somebody else's change too.
+
+    LINE ENDINGS ARE NOT ROWS. A plugin on Windows once wrote the trail through
+    a text-mode handle, so a committed blob can end its rows in CRLF while the
+    rows appended since end in LF; and a checkout with `core.autocrlf` holds
+    CRLF over an LF blob. Both sides are compared with CRLF folded to LF, so
+    either shape is still read as the extension it is."""
+    head_text = head_text.replace("\r\n", "\n")
+    text = text.replace("\r\n", "\n")
     if not text.startswith(head_text):
         return "it no longer begins with what HEAD holds"
     for line in text[len(head_text):].splitlines():
@@ -1574,8 +1582,10 @@ def pending_beyond_stamp(target, phase_id, project, tree):
                 continue
             hcode, head = _git_text(tree, ["show", "HEAD:%s" % (changed,)])
             try:
+                # Raw, as `git show` hands HEAD's side over: a text-mode read
+                # would fold CRLF on this side only.
                 with open(os.path.join(tree, *changed.split("/")), "r",
-                          encoding="utf-8") as fh:
+                          encoding="utf-8", newline="") as fh:
                     now = fh.read()
             except OSError:
                 found.append("%s is changed and cannot be read" % (changed,))

@@ -83,7 +83,7 @@
     {
       "id": "P121.2",
       "title": "Windows: test_audit_task finishes well inside the sweep cap",
-      "status": "in_progress",
+      "status": "done",
       "description": "On windows-latest, plugins/audit/tests/test_audit_task.py did not finish within the sweep's 300-second per-file cap. Profile it first. Then run its stages concurrently in child processes and replay their results, the way tests/test_drive_phase.py has done since P119.7. Every case id and verdict must stay identical; diff the case lists before and after. Do not raise the cap. ",
       "files": [
         "plugins/audit/tests/test_audit_task.py"
@@ -111,18 +111,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "adb25982",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Profile first: at-block (786 cases, 93.9 s) dominated, and the time goes to process starts, about 7,200 per full run. The full HEAD run took 222 s on a loaded machine.\n\nat-block is split into seven slices (at1-block to at7-block), cut only at group boundaries where an AST data-flow check showed no later group reads a name an earlier group bound. Shared opening helpers moved unchanged to `_at_kit(tmp)`. Imports were hoisted to module level, which removed five local-before-assignment reads.\n\nThe full run now starts every stage as a child (`--stage X --cases-to f.json`), at most six at once, with a 280 s timeout per child. It replays the cases in STAGES order through one `_harness.run` and runs label_faults over the merged call sites. A child that reports nothing is one named failure. `--stage` without `--cases-to` still runs in process, so the red helper's narrowed runs are unchanged.\n\nNew ps-block:\n- ps1: every `_at_kit` caller is in STAGES.\n- ps1b: a missing slice is named.\n- ps2: a silent block is one named failure.\n- ps3: a replayed stage matches the same stage run in process.\n\nAll 894 original case ids and verdicts are identical and in the same order.\n\nTwo runs, about 25 minutes apart: 28.5 s and 28.0 s, against 222 s before.\n\nWindows simulation (scratchpad P121.2/probe, a delay added to every process start): HEAD hit the 300 s cap, and the fixed copy finished in 141 s.\n\nEach of four mutations turned its own case red.\n\nThe runner helpers are copies of test_drive_phase.py's. Moving them into tests/_harness.py is the better structure and is recorded internally.",
+        "descriptive": "The largest test file now runs its parts in parallel, about eight times faster, with exactly the same tests and results, so the Windows run stays inside its time limit."
       },
       "startedAt": "2026-10-09T00:55:20Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T02:29:14Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-09T01:59:41Z.28bb44",
         "status": "passed",
         "at": "2026-10-09T01:59:41Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "adb25982",
+        "at": "2026-10-09T02:29:14Z",
+        "basis": "orchestrator check: profile-led split; identical case ids and verdicts; slow-spawn Windows simulation HEAD timed out, fix 141 s"
       }
     },
     {
@@ -286,7 +294,12 @@
       },
       "startedAt": "2026-10-09T00:55:20Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-09T02:36:39Z.e603fc",
+        "status": "passed",
+        "at": "2026-10-09T02:36:39Z"
+      }
     },
     {
       "id": "P121.6",

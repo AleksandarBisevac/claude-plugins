@@ -4968,9 +4968,17 @@ drawing, no ANSI, no emoji) so the command file can print it verbatim without pa
 to reformat a JSON rollup. With `--by phase|task|model|author|agent|day|hour|session|branch|
 attr` it prints one focused table; without it, the full dashboard. `--backfill` re-reads every
 transcript for the project from offset 0 and rebuilds the ledger — idempotent, and the only
-path that rewrites rather than only appending. The lock it takes excludes only another backfill:
-the metering hook appends with no lock, so each month's rewrite carries the rows appended to it
-during the rebuild (`usage_ledger.rewrite_month`), a month with no file yet included. `--json`'s payload also
+path that rewrites rather than only appending. Its own lock excludes only another backfill;
+each month's replace is then made under that month's lock (`usage_ledger.lock_month`), which
+the metering hook's append also takes across its open-write-close - so no appender is mid-write
+or holding the file open when the file is swapped, and the rows appended to it during the
+rebuild are carried into the new file (`usage_ledger.rewrite_month`), a month with no file yet
+included. An append that cannot have the lock within its wait writes anyway, as does a copy of
+the hook older than the lock; the rewrite still carries those rows through the descriptor it
+holds on the retired file, except on a platform that refuses to replace an open file, where a
+row such a writer lands between the last drain and the replace can be lost. An append writes LF
+line endings on every platform; a rewrite goes through `_manifest_io.atomic_write_text`, which
+writes the platform's own, and every reader splits on either. `--json`'s payload also
 carries `planCost` (since P56.6): `_usage_economics.plan_cost_claim`, read against BOTH ledgers
 this command's project has — the usage ledger already loaded for everything else, and
 `_evidence_io.read_rows(project)` for the gate-scope and gate-reuse comparisons, which live in

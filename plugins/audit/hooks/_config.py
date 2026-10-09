@@ -3298,7 +3298,9 @@ def atomic_write_text(path, text):
     os.makedirs(d, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        # LF on every platform: a JSONL feed rewritten here keeps the line
+        # endings its appender wrote.
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
         os.replace(tmp, target)
     finally:
@@ -3483,7 +3485,7 @@ def append_gate_event(logs_dir, event):
             if val is not None:
                 row[key] = str(val)[:200]
         row.update(_command_facts(event))
-        with open(path, "a", encoding="utf-8") as fh:
+        with open(path, "a", encoding="utf-8", newline="\n") as fh:
             fh.write(json.dumps(row, sort_keys=True, separators=(",", ":"),
                                 ensure_ascii=True) + "\n")
         try:

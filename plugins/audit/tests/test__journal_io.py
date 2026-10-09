@@ -2839,6 +2839,140 @@ def _gone_cases(check):
     _details_key_cases(check)
     _free_text_cases(check)
     _stale_lock_cases(check)
+    _harness.stage(check, "nl-block", _line_ending_cases)
+
+
+# --- nl: every trail and ledger writer writes LF, whatever the platform ---------
+# The trail is committed and hash-chained, so its bytes must be the same on every
+# machine that appends to it. A text-mode handle opened without `newline` writes
+# the platform's line separator, which on Windows is CRLF; the cases below put
+# that default in place on any platform and read back the bytes each writer
+# left. The cases cover the journal, the evidence ledger, the usage ledger and
+# the gate-events feed together because the property is one rule over all of
+# their writers, not one per module.
+def _under_crlf_default(fn):
+    """`fn()` with every text-mode open that names no `newline` writing CRLF for
+    LF - Windows' default - on this platform too; both spellings of `open` are
+    put back afterwards, raise or not."""
+    import builtins
+    import io
+    real = io.open
+
+    def crlf_open(file, mode="r", buffering=-1, encoding=None, errors=None,
+                  newline=None, closefd=True, opener=None):
+        if "b" not in mode and newline is None and any(c in mode for c in "wax+"):
+            newline = "\r\n"
+        return real(file, mode, buffering, encoding, errors, newline, closefd,
+                    opener)
+    builtins.open, io.open = crlf_open, crlf_open
+    try:
+        return fn()
+    finally:
+        builtins.open, io.open = real, real
+
+
+def _bytes_of(path):
+    with open(str(path), "rb") as fh:
+        return fh.read()
+
+
+def _line_ending_cases(check):
+    import _config
+    import _evidence_io
+    import usage_ledger
+    tmp = tempfile.mkdtemp(prefix="jio-nl-")
+    try:
+        probe = os.path.join(tmp, "probe.txt")
+
+        def plain_write():
+            with open(probe, "w", encoding="utf-8") as fh:
+                fh.write("a\nb\n")
+        _under_crlf_default(plain_write)
+        check("nl0 THE SIMULATION BITES: under it, a text-mode write naming no "
+              "newline writes CRLF - without this every case below could pass "
+              "over a patch that changed nothing: %r" % (_bytes_of(probe),),
+              _bytes_of(probe) == b"a\r\nb\r\n")
+
+        proj = _anchor_project(tmp, "journal")
+        path = _under_crlf_default(lambda: M.append(
+            proj, {"action": "task.start", "target": "P1.1",
+                   "actor": {"sessionId": "s1"}}))
+        raw = _bytes_of(path) if path else b""
+        check("nl1 the journal's appender writes LF under a CRLF default: %r"
+              % (raw[-40:],),
+              raw.endswith(b"\n") and b"\r" not in raw and raw.count(b"\n") == 1)
+
+        merged = os.path.join(tmp, "merged.jsonl")
+        _under_crlf_default(lambda: M.write_merged(merged, '{"a":1}\n{"b":2}\n'))
+        check("nl2 ...and so does the merge's rewrite of a journal file: %r"
+              % (_bytes_of(merged),),
+              _bytes_of(merged) == b'{"a":1}\n{"b":2}\n')
+
+        eproj = _anchor_project(tmp, "evidence")
+        epath = _under_crlf_default(lambda: _evidence_io.append_row(
+            eproj, {"ts": "2026-09-01T00:00:00Z", "taskId": "P1.1"},
+            writer="ci-1"))
+        eraw = _bytes_of(epath)
+        check("nl3 the evidence ledger's appender writes LF under a CRLF "
+              "default: %r" % (eraw[-40:],),
+              eraw.endswith(b"\n") and b"\r" not in eraw
+              and eraw.count(b"\n") == 1)
+
+        udir = os.path.join(tmp, "usage")
+        n = _under_crlf_default(lambda: usage_ledger.append_rows(
+            udir, [{"ts": "2026-09-01T09", "out": 5},
+                   {"ts": "2026-09-01T10", "out": 6}]))
+        uraw = _bytes_of(os.path.join(udir, "2026-09.jsonl"))
+        check("nl4 the usage ledger's appender writes LF under a CRLF default: "
+              "%r rows, %r" % (n, uraw[-40:]),
+              n == 2 and b"\r" not in uraw and uraw.count(b"\n") == 2)
+
+        gdir = os.path.join(tmp, "logs")
+        _under_crlf_default(lambda: _config.append_gate_event(
+            gdir, {"event": "deny", "file": "src/a.ts"}))
+        graw = _bytes_of(os.path.join(gdir, _config.GATE_EVENTS_FILE))
+        rewritten = os.path.join(tmp, "rewritten.jsonl")
+        _under_crlf_default(lambda: _config.atomic_write_text(
+            rewritten, '{"a":1}\n{"b":2}\n'))
+        check("nl5 the gate-events feed's appender, and the rewrite that trims "
+              "it, write LF under a CRLF default: %r / %r"
+              % (graw[-30:], _bytes_of(rewritten)),
+              graw.endswith(b"\n") and b"\r" not in graw
+              and _bytes_of(rewritten) == b'{"a":1}\n{"b":2}\n')
+
+        # A trail a plugin wrote through a text-mode handle on Windows: its rows
+        # are committed ending in CRLF. A row appended since ends in LF, and the
+        # chain must still verify - `row_hash` hashes each row's canonical JSON,
+        # never the line it was read from, and the git anchor's committed prefix
+        # is still a byte prefix of the working copy.
+        old = _anchor_project(tmp, "old-windows")
+        git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+               "-c", "commit.gpgsign=false", "-C", old]
+        subprocess.run(git + ["init", "-q"], check=True, capture_output=True)
+        first = M.append(old, {"action": "task.start", "target": "P1.1",
+                               "actor": {"sessionId": "s1"}})
+        M.append(old, {"action": "task.done", "target": "P1.1",
+                       "actor": {"sessionId": "s1"}})
+        lf = _bytes_of(first)
+        with open(first, "wb") as fh:
+            fh.write(lf.replace(b"\n", b"\r\n"))
+        subprocess.run(git + ["add", "-A"], check=True, capture_output=True)
+        subprocess.run(git + ["commit", "-qm", "crlf trail"], check=True,
+                       capture_output=True)
+        M.append(old, {"action": "task.start", "target": "P1.2",
+                       "actor": {"sessionId": "s1"}})
+        mixed = _bytes_of(first)
+        res = M.verify(old)
+        check("nl6 a trail committed with CRLF rows by an older plugin on "
+              "Windows still verifies after an LF row is appended to it - two "
+              "CRLF rows then one LF row, chained and anchored: %r rows, %r, "
+              "unanchored %r" % (res.get("rows"), res.get("findings"),
+                                 res.get("unanchored")),
+              mixed.count(b"\r\n") == 2 and mixed.count(b"\n") == 3
+              and res["ok"] and res["rows"] == 3 and not res["findings"]
+              and not res.get("unanchored"))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 # --- sl: a stale lock is broken by exactly one waiter ---------------------------

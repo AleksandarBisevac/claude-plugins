@@ -990,7 +990,8 @@ def _append_locked(path, rows):
     written = 0
     lock = lock_month(path)
     try:
-        with open(path, "a", encoding="utf-8") as fh:
+        # LF on every platform, as the journal's appender writes it.
+        with open(path, "a", encoding="utf-8", newline="\n") as fh:
             for row in rows:
                 fh.write(_row_line(row))
                 written += 1
