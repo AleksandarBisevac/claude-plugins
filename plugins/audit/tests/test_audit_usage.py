@@ -1157,6 +1157,37 @@ def _bw_append_across_replace(ledger, sid, probe):
     return wrapper, fired
 
 
+def _bw_append_at_refused_retry(ledger, sid, probe):
+    """An `os.replace` seam that refuses the month's first replace the way
+    Windows refuses to replace a file a handle holds open, then, at the retry,
+    has another thread append a row through `append_rows` - the metering hook
+    landing after the rewrite's last read of the old file and before the swap.
+    An append not held off until the swap writes into the file the swap
+    erases. -> (wrapper, state); `state["thread"]` is joined by the caller."""
+    import threading
+    state = {"calls": 0, "thread": None}
+    target = os.path.join(ledger, "%s.jsonl" % _BW_MONTH)
+
+    def append():
+        M.ul.append_rows(ledger, [_bw_probe(sid, probe)])
+
+    def wrapper(original):
+        def replace(src, dst, *a, **kw):
+            if os.path.abspath(dst) != os.path.abspath(target):
+                return original(src, dst, *a, **kw)
+            state["calls"] += 1
+            if state["calls"] == 1:
+                raise PermissionError(13, "Access is denied (emulated)", dst)
+            if state["thread"] is None:
+                state["thread"] = threading.Thread(target=append)
+                state["thread"].start()
+                # Long enough for an append that is not held off to land.
+                state["thread"].join(0.5)
+            return original(src, dst, *a, **kw)
+        return replace
+    return wrapper, state
+
+
 _BW_APPENDER = r"""
 import json, os, sys, time
 sys.path.insert(0, sys.argv[1])
@@ -1221,8 +1252,6 @@ def _bw_foreign_trial(root, appenders, old_rows):
 
 
 def _backfill_window_cases(check):
-    import ast
-    import inspect
     root = _harness.fixture_root("audit-usage-bw-")
 
     # A row another session appends after the read and before the rewrite.
@@ -1299,19 +1328,30 @@ def _backfill_window_cases(check):
           % (len(before), len(_snapshot(ledger))),
           code2 == 0 and _snapshot(ledger) == before)
 
-    # The Stop hook runs this every turn, so it stays lock-free. Read the
-    # function rather than trust its docstring: any name carrying "lock", or an
-    # OS locking module, in its body is a lock on that path.
-    tree = ast.parse(inspect.getsource(M.ul.append_rows).lstrip())
-    names = sorted({n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
-                   | {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
-                   | {a.name for n in ast.walk(tree)
-                      if isinstance(n, (ast.Import, ast.ImportFrom))
-                      for a in n.names})
-    lockish = [n for n in names if "lock" in n.lower() or n in ("fcntl", "msvcrt",
-                                                               "flock", "lockf")]
-    check("bw7 append_rows still takes no lock: %r" % (lockish,),
-          bool(names) and not lockish)
+    # Where the platform refuses to replace an open file, the rewrite retries
+    # after its last read of the old file; an append between that read and the
+    # swap must wait for the swap rather than land in the file it erases.
+    r14 = os.path.join(root, "bw14")
+    os.makedirs(r14)
+    project, ledger, args = _bw_fixture(r14, 20)
+    wrapper, state = _bw_append_at_refused_retry(ledger, "S-OTHER", "retry-row")
+    code, _msg = _bw_with_seam(os, "replace", wrapper,
+                               lambda: M.backfill(args, project, ledger, None, None))
+    if state["thread"] is not None:
+        state["thread"].join(30)
+    check("bw14 a row appended while a refused replace is retried survives the "
+          "replace: calls=%d count=%d code=%r"
+          % (state["calls"], _bw_probes(ledger).count("retry-row"), code),
+          code == 0 and state["calls"] == 2 and state["thread"] is not None
+          and not state["thread"].is_alive()
+          and _bw_probes(ledger).count("retry-row") == 1)
+    # The lock a rewrite takes is given back: one left held would stall every
+    # later append for the whole of its wait.
+    target = os.path.join(ledger, "%s.jsonl" % _BW_MONTH)
+    held = M.ul.lock_month(target, wait_s=0)
+    M.ul.unlock_month(held)
+    check("bw15 after the backfill the month's lock is free again: %r"
+          % (held is not None,), held is not None)
 
     _bw_settle_cases(check, root)
     _bw_failed_rewrite_cases(check, root)

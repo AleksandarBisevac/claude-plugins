@@ -158,7 +158,7 @@
     {
       "id": "P121.4",
       "title": "Windows: close-phase's symlink case holds on Windows",
-      "status": "in_progress",
+      "status": "done",
       "description": "On windows-latest, plugins/audit/tests/test_close_phase.py fails case cr28: 'a declared symbolic link to a file that did not change lands BOUND'. It printed exit 1 and landed False, with 'REFUSED: does not land over its newest gate verdict'. ",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -187,18 +187,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "18a6b6aa",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Cause: before landing, close-phase checks the branch tip out into a scratch work tree and fingerprints the declared files against the gate's recorded fingerprint. The recorder reads a symlink through to its target's bytes. `_check_out` decided whether a file was a link by asking the checked-out file. Under core.symlinks=false, git's Windows default, checkout-index writes a link as a plain file holding the target's path text, so the tip's fingerprint hashed that text and the phase was refused as moved (cr28 on windows-latest).\n\nFix: a link is identified by its mode in the tip's tree and read from git, not from the filesystem.\n- `_link_texts()` takes the mode-120000 entries from `git ls-files -s -z` and reads each link's target with `git cat-file blob`.\n- `_check_out` returns `(work_tree, links)`.\n- `_leads_to()` follows a chain of links to the file whose bytes reading the link yields.\n- `_write_tip` reads that file.\n- A cycle of links leaves the check unestablished, so the phase is refused as unanswerable, because the recorder cannot read a cycle either.\n\nCases, reproduced on macOS by setting `core.symlinks false` in the fixture repo:\n- cr30: an unchanged link target lands bound;\n- cr31: a target changed after the green still refuses as moved (the second direction);\n- the skip list for hosts that refuse os.symlink covers cr28-cr31.\n\nRed-first: proved (cr30 red at HEAD, 246/247).\n\nProbe (scratchpad P121.4/probe.py): HEAD MISMATCH, working tree MATCH.\n\nObserved, recorded internally: cr22 counts close-phase-tip-* directories in the shared system TMPDIR, so it can flake when the suite runs outside the sweep beside another process.",
+        "descriptive": "Merging a phase that contains a symbolic link no longer fails on Windows, where git writes links as plain files."
       },
       "startedAt": "2026-10-09T00:55:20Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T01:35:05Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_close_phase.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-09T01:27:37Z.ecdca2",
         "status": "passed",
         "at": "2026-10-09T01:27:37Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "18a6b6aa",
+        "at": "2026-10-09T01:35:05Z",
+        "basis": "orchestrator check: link identified by tree mode and read from git; core.symlinks=false reproduces the Windows refusal; cr30 proved red, cr31 second direction"
       }
     },
     {

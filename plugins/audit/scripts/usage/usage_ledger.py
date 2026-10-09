@@ -101,6 +101,16 @@ import subprocess
 import sys
 import time
 
+# The month lock's two halves: one of these exists on every platform this runs on.
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
+
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
 # `_output.py` instead of counting `dirname()` calls, so it does not encode how deep
@@ -721,8 +731,12 @@ def append_rows(ledger_dir, rows):
     """Append rows to their monthly ledger files.
 
     Rows are small (<~400 bytes) and each is written with a single O_APPEND write,
-    which is what lets parallel worktrees meter concurrently with no lock. Only
-    `--backfill` (which rewrites) ever takes one."""
+    so appenders never interleave with one another. Each month's open-write-close
+    is made under that month's lock (`lock_month`), which is what a rewrite takes
+    around its replace: where the platform refuses to replace a file some handle
+    holds open, an append racing the replace would otherwise land in the file the
+    replace retires. A lock not had within its wait is appended through anyway -
+    a row written at risk beats a row dropped for certain."""
     if not rows:
         return 0
     by_month = {}
@@ -735,14 +749,7 @@ def append_rows(ledger_dir, rows):
         return 0
     for month, group in by_month.items():
         path = os.path.join(ledger_dir, "%s.jsonl" % month)
-        try:
-            with open(path, "a", encoding="utf-8") as fh:
-                for row in group:
-                    fh.write(json.dumps(row, separators=(",", ":"),
-                                        sort_keys=True) + "\n")
-                    written += 1
-        except Exception:
-            continue
+        written += _append_locked(path, group)
     return written
 
 
@@ -902,17 +909,101 @@ def read_ledger(ledger_dir, since=None, until=None):
 # taken as final, and how many quiet-checks a busy writer may extend it by.
 TAIL_SETTLE_S = 0.02
 TAIL_MAX_POLLS = 50
+# How long a month's lock is waited for, polled at what interval; and how often
+# a replace refused while the lock is held is retried, how far apart.
+MONTH_LOCK_WAIT_S = 10.0
+MONTH_LOCK_POLL_S = 0.005
+REPLACE_RETRIES = 50
+REPLACE_RETRY_S = 0.02
+
+
+# --- month lock ---
+
+def month_lock_path(month_path):
+    """The lock file beside a monthly file. It is never removed: unlinking a
+    lock file someone is waiting on hands the next taker a second inode, and
+    two holders. Its name does not end in `.jsonl`, the suffix every reader of
+    the ledger directory selects on, so it is never read as rows."""
+    return month_path + ".lock"
+
+
+def _try_lock(fd):
+    """One non-blocking attempt; raises OSError while another holder has it.
+    On a platform with neither module there is nothing to take, and that is
+    the lock-free behaviour this file had before the lock existed."""
+    if msvcrt is not None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+    elif fcntl is not None:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def lock_month(month_path, wait_s=None):
+    """Take the month's exclusive lock -> the descriptor holding it, or None
+    when it was not had within `wait_s` (or the lock file cannot be opened).
+
+    An OS lock rather than a lock FILE's existence: the kernel releases it when
+    its holder dies, so a killed backfill never leaves appenders waiting on a
+    lock nobody holds."""
+    wait_s = MONTH_LOCK_WAIT_S if wait_s is None else wait_s
+    try:
+        fd = os.open(month_lock_path(month_path),
+                     os.O_RDWR | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o666)
+    except OSError:
+        return None
+    # Polls are counted rather than a clock read, so the wait is bounded by
+    # the same `time.sleep` the rest of the rewrite runs on.
+    for _ in range(max(1, int(wait_s / MONTH_LOCK_POLL_S))):
+        try:
+            _try_lock(fd)
+            return fd
+        except OSError:
+            time.sleep(MONTH_LOCK_POLL_S)
+    try:
+        _try_lock(fd)
+        return fd
+    except OSError:
+        os.close(fd)
+        return None
+
+
+def unlock_month(fd):
+    if fd is None:
+        return
+    try:
+        if msvcrt is not None:
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        elif fcntl is not None:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
+def _append_locked(path, rows):
+    """Append `rows` to `path` under its month lock -> how many were written.
+    The file is opened and closed inside the lock, so no handle an appender
+    holds is open when a rewrite holding the lock replaces the file. A write
+    that fails part-way counts what it wrote; the caller compares the count."""
+    written = 0
+    lock = lock_month(path)
+    try:
+        with open(path, "a", encoding="utf-8") as fh:
+            for row in rows:
+                fh.write(_row_line(row))
+                written += 1
+    except Exception:
+        pass
+    finally:
+        unlock_month(lock)
+    return written
 
 
 def _row_line(row):
     """One ledger row as the line every writer of a monthly file spells it."""
     return json.dumps(row, separators=(",", ":"), sort_keys=True) + "\n"
-
-
-def _write_rows(path, mode, rows):
-    with open(path, mode, encoding="utf-8") as fh:
-        for row in rows:
-            fh.write(_row_line(row))
 
 
 def _parse_rows(data, drop):
@@ -996,12 +1087,20 @@ def _close_tail(tail):
 def rewrite_month(ledger_dir, month, rows, tail=None):
     """Replace one monthly file atomically. Used only by `--backfill`.
 
-    The metering hook appends without a lock, so a row it appends after the
-    backfill read the file would be erased by the replace. With `tail` (from
-    `open_month`) the rows appended to the old file since that read, of sessions
-    the backfill did not re-read, are carried: into the new file before the
-    replace, and - through the descriptor still open on the retired file - from
-    a writer that opened the path before the replace and wrote after it.
+    The replace is made under the month's lock (`lock_month`), which every
+    `append_rows` holds across its open-write-close: while it is held no such
+    appender is mid-append and none holds the file open, so the last drain
+    before the replace sees every row those appenders wrote, and a platform
+    that refuses to replace a file some handle holds open is not refused by
+    them. The lock is taken after the rows are read and released right after
+    the replace, so appenders wait only for the write and the swap.
+
+    With `tail` (from `open_month`) the rows appended to the old file since
+    that read, of sessions the backfill did not re-read, are carried: into the
+    new file before the replace, and - through the descriptor still open on the
+    retired file - from a writer that does not take the lock (a copy of this
+    file older than the lock), opened the path before the replace and wrote
+    after it.
 
     A month with no file yet is created empty and held the same way: a writer
     that creates the path while the month is being rebuilt would otherwise write
@@ -1010,35 +1109,58 @@ def rewrite_month(ledger_dir, month, rows, tail=None):
     reader sees the month as it was.
 
     Where the platform refuses to replace a file that is open, the descriptor is
-    drained and closed and the replace retried once; there the carry is complete
-    up to that last read, and a row written between it and the replace is lost.
+    drained and closed and the replace retried, still under the lock, until a
+    reader holding the file lets it go or the retries run out. There a writer
+    that does not take the lock can still lose a row written between the last
+    drain and the replace; one that takes it cannot.
 
     -> True when the file was replaced and every carried row was appended;
-    False when it was not replaced (the old file stands, no temp file is left)
-    or when rows carried after the replace could not be appended."""
+    False when it was not replaced (the lock not had, or the replace refused
+    throughout; the old file stands, no temp file is left) or when rows carried
+    after the replace could not be appended."""
     path = os.path.join(ledger_dir, "%s.jsonl" % month)
+    lock = None
     try:
         ensure_ledger_dir(ledger_dir)
         if tail is not None and tail.get("fh") is None:
             tail["fh"] = os.fdopen(os.open(path, os.O_RDONLY | os.O_CREAT
                                            | getattr(os, "O_BINARY", 0), 0o666),
                                    "rb")
+        lock = lock_month(path)
+        if lock is None:
+            return False
         rows = list(rows) + (_drain(tail)[0] if tail is not None else [])
         try:
             _replace_rows(path, rows)
         except PermissionError:
-            if tail is None:
-                raise
-            rows += _drain(tail, final=True)[0]
-            _close_tail(tail)
-            _replace_rows(path, rows)
+            if tail is not None:
+                rows += _drain(tail, final=True)[0]
+                _close_tail(tail)
+            _replace_retrying(path, rows)
+        unlock_month(lock)
+        lock = None
         if tail is not None and tail.get("fh") is not None:
-            _write_rows(path, "a", _settle(tail))
+            carried = _settle(tail)
+            if _append_locked(path, carried) != len(carried):
+                return False
         return True
     except Exception:
         return False
     finally:
+        unlock_month(lock)
         _close_tail(tail)
+
+
+def _replace_retrying(path, rows):
+    """`_replace_rows`, retried while the platform refuses it - a reader holding
+    the file open is the one left to wait for once the lock is held. The last
+    refusal propagates."""
+    for _ in range(REPLACE_RETRIES - 1):
+        try:
+            return _replace_rows(path, rows)
+        except PermissionError:
+            time.sleep(REPLACE_RETRY_S)
+    return _replace_rows(path, rows)
 
 
 def _replace_rows(path, rows):
