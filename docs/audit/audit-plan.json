@@ -823,7 +823,8 @@
       "P103.8",
       "P112.1-uce",
       "P118.9",
-      "P121.14-eof"
+      "P121.14-eof",
+      "P121.17-eof"
     ],
     ".gitignore": [
       "P4.4",
@@ -1924,7 +1925,8 @@
       "P107.5-gwk",
       "P112.2-uce",
       "P112.8-uce",
-      "P118.9"
+      "P118.9",
+      "P121.16-eof"
     ],
     "plugins/audit/commands/version.md": [
       "P67.2",
@@ -2643,7 +2645,8 @@
       "P118.22-v7t",
       "P118.23-v7t",
       "P121.4",
-      "P121.5"
+      "P121.5",
+      "P121.18-eof"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -3005,7 +3008,8 @@
       "P118.11-v7t",
       "P118.7",
       "P121.7",
-      "P121.13-eof"
+      "P121.13-eof",
+      "P121.18-eof"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -3829,7 +3833,8 @@
       "P104.13-tog",
       "P121.3",
       "P121.5",
-      "P121.14-eof"
+      "P121.14-eof",
+      "P121.16-eof"
     ],
     "plugins/audit/templates/audit-plan.starter.json": [
       "P1.5"
@@ -4733,7 +4738,8 @@
       "P112.4-uce",
       "P112.6-uce",
       "P112.8-uce",
-      "P121.3"
+      "P121.3",
+      "P121.16-eof"
     ],
     "plugins/audit/tests/test_audit_version.py": [
       "P67.1",
@@ -4781,7 +4787,8 @@
       "P118.23-v7t",
       "P121.4",
       "P121.5",
-      "P121.15-eof"
+      "P121.15-eof",
+      "P121.18-eof"
     ],
     "plugins/audit/tests/test_commit_audit_state.py": [
       "P28.2",
@@ -5174,7 +5181,8 @@
       "P118.11-v7t",
       "P118.7",
       "P121.7",
-      "P121.13-eof"
+      "P121.13-eof",
+      "P121.18-eof"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
@@ -5188,7 +5196,8 @@
       "P104.9-tog",
       "P104.13-tog",
       "P121.3",
-      "P121.5"
+      "P121.5",
+      "P121.16-eof"
     ],
     "plugins/audit/tests/test_validate_config.py": [
       "P47.1"
@@ -5255,7 +5264,8 @@
       "P80.23-rtb",
       "P103.8",
       "P112.1-uce",
-      "P121.14-eof"
+      "P121.14-eof",
+      "P121.17-eof"
     ],
     "tools/check-committed-pii.py": [
       "P51.4",
@@ -5346,7 +5356,8 @@
       "P112.2-uce",
       "P117.1",
       "P118.9",
-      "P121.14-eof"
+      "P121.14-eof",
+      "P121.17-eof"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
