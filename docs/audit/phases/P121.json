@@ -745,7 +745,7 @@
     {
       "id": "P121.14-eof",
       "title": "Linux CI: the screenshot preconditions step no longer hangs, and a hang fails fast",
-      "status": "in_progress",
+      "status": "done",
       "description": "In CI on ubuntu, the manifest-validation job's step \"Screenshot preconditions\" (`node tools/capture-screenshots.mjs --check`) hung for six hours, until GitHub cancelled the job. Its last output was the line \"composition: confirmed -> Saved · 1 change to the manifest · logged\". The next step in tools/capture-screenshots.mjs freezes /api/runstatus, PUTs /api/composition out of band, clicks Save and waits for the confirm dialog, and nothing more was printed. The same check passes on macOS, including in this phase's local gates. The head under test carries this phase's first nine fixes: the per-month usage lock in usage_ledger, the LF journal and evidence writers, close-phase's raw read, panel.sh's path normalisation, and the parallel stage runners.\n\nReproduce it on Linux locally: Docker works on this machine. Use the Playwright image matching CI's Chromium, or ubuntu with CI's own install steps from .github/workflows/ci.yml, against a copy of this worktree. Find the root cause, which may be a server-side deadlock, a lock held across requests, or a client wait with no timeout. Fix it, and make the failure fast in future:\n- the capture tool's waits get bounded timeouts that fail with a named step;\n- each CI job gets a timeout-minutes, so a hang costs minutes, not six hours.\n\nShow the hang reproduced in the container before the fix and the step passing after. tools/gate-parity.py and the ci.yml pins are the places a CI change must stay consistent with. If the cause lies in a file outside this task's list, stop and name it.",
       "files": [
         "tools/capture-screenshots.mjs",
@@ -779,18 +779,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9d83a88d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The CI hang (round 2's screenshot step, six hours of silence after \"composition: confirmed\") did not reproduce. Four Linux container runs of the same code passed: Playwright noble image, arm64 and amd64, root and non-root, and the manifests job's own steps under CI=true. CI round 3 also passed the step on GitHub. So the hang is intermittent and its root cause is unknown, recorded internally. By the log, the run stopped inside a step whose only unbounded waits are page.evaluate calls that await the panel's api() fetch.\n\nA hang now fails fast, wherever it happens.\n\ntools/capture-screenshots.mjs:\n- note() and fail() record the last line printed.\n- during() names the call about to be made.\n- watchForStall() fails the run after STALL_MS of silence (5 minutes). It names the last line and the current step, probes each panel server, and closes the browser so the stuck call throws. If the process is still alive after a grace period, it exits 1. Its timers are not unref'd, so a stuck promise cannot exit 0.\n- The synchronous child calls are bounded too.\n\nci.yml: timeout-minutes on every job (selftests 45, manifests 30, lint 10, plugin-validate 10), each at least twice the longest finished run in three named CI runs.\n\ntools/gate-parity.py enforces this: untimed_jobs and job_timeout_verdict make a job with no positive job-level bound a finding. New cases jt0-jt4. Six mutations each go red, the over-fire one included.\n\nInduced-hang pair in the container (scratchpad P121.14-eof):\n- HEAD's tool: silent until killed at 900 s.\n- The new tool: fails at 301 s, naming the step, with the panel still answering HTTP 200.\n- The new tool on a healthy full run: passes.",
+        "descriptive": "A stuck screenshot check now fails within minutes and says where it stopped, every CI job has a time limit, and a check enforces that limit."
       },
       "startedAt": "2026-10-09T08:39:08Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T10:11:05Z",
+      "verifiedBy": [
+        "tools/gate-parity.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-09T10:10:54Z.ee1364",
         "status": "passed",
         "at": "2026-10-09T10:10:54Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9d83a88d",
+        "at": "2026-10-09T10:11:05Z",
+        "basis": "orchestrator check: natural hang not reproduced (four container runs; CI round 3 also passed the step); induced hang fails fast with a named step; gate-parity enforces job bounds; mutations red"
       }
     },
     {
