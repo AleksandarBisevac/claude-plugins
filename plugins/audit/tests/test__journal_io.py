@@ -1031,7 +1031,7 @@ def _cases(check):
               "different answers and must not print the same way",
               M.verify(os.path.join(tmp, "empty"))["exists"] is False)
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
     # --- the row shape --------------------------------------------------------
     row = M._normalise({"action": "config.write", "target": ".claude/x.json"})
@@ -1199,7 +1199,7 @@ def _cases(check):
               and _rrows2[3]["prev"] == _rhashes[-1],
               repr(_rver2["findings"]))
     finally:
-        shutil.rmtree(_rtmp, ignore_errors=True)
+        _harness.remove_tree(_rtmp)
 
     # --- the cascade moved onto `changes`, and old cancel rows did not --------
     # A phase cancel closes the work still open inside it and handed those ids
@@ -1294,7 +1294,7 @@ def _cases(check):
               and _crows2[1]["prev"] == _chash,
               repr(_cver2["findings"]))
     finally:
-        shutil.rmtree(_ctmp, ignore_errors=True)
+        _harness.remove_tree(_ctmp)
 
     # --- `summary` got a bound, and a cut one says so ------------------------
     # `details` is bounded three ways -- an allow-list, a clip per value, a cap
@@ -1419,7 +1419,7 @@ def _cases(check):
               and _srows2[1]["summary"] == _snow,
               repr(_sver2["findings"]))
     finally:
-        shutil.rmtree(_stmp, ignore_errors=True)
+        _harness.remove_tree(_stmp)
 
     # --- ...and so did a `details` value -------------------------------------
     # `summary` got a bound AND a marker above. `_clip` had the bound and no
@@ -1582,7 +1582,7 @@ def _cases(check):
               and _vrows2[1]["details"]["reason"].endswith(M.VALUE_TRUNCATED),
               repr(_vver2["findings"]))
     finally:
-        shutil.rmtree(_vtmp, ignore_errors=True)
+        _harness.remove_tree(_vtmp)
 
     # --- mu/av/sa: a divergence, its merge, and the session a file belongs to --
     def _merge_cases(check):
@@ -2404,7 +2404,7 @@ def _cases(check):
                       and _an_none["finding"] is None
                       and _an_none["warning"] is None)
             finally:
-                shutil.rmtree(_an_dir, ignore_errors=True)
+                _harness.remove_tree(_an_dir)
 
             # --- sa: the session a writer id cannot name ---------------------
             _sa_actor = {"sessionId": "payload-id-aaaa", "via": "hook"}
@@ -2482,7 +2482,7 @@ def _cases(check):
                   and M.writer_of("nonsense") == "",
                   repr(M.writer_of("2026-05.a.b.c.jsonl")))
         finally:
-            shutil.rmtree(mtmp, ignore_errors=True)
+            _harness.remove_tree(mtmp)
 
     with_env(None, lambda: _merge_cases(check))
     _gone_cases(check)
@@ -2823,7 +2823,7 @@ def _gone_cases(check):
               "evidence: %r" % (_gw11["findings"],),
               _gw11["ok"] is True and _gw11["findings"] == [])
     finally:
-        shutil.rmtree(_tmp, ignore_errors=True)
+        _harness.remove_tree(_tmp)
 
     _gw12 = M.gone_finding("docs/audit/journal/2026-01.a.jsonl")
     check("gw12 the finding NAMES the file and carries both commands that "
@@ -2839,6 +2839,212 @@ def _gone_cases(check):
     _details_key_cases(check)
     _free_text_cases(check)
     _stale_lock_cases(check)
+    _harness.stage(check, "nl-block", _line_ending_cases)
+
+
+# --- nl: every trail and ledger writer writes LF, whatever the platform ---------
+# The trail is committed and hash-chained, so its bytes must be the same on every
+# machine that appends to it. A text-mode handle opened without `newline` writes
+# the platform's line separator, which on Windows is CRLF; the cases below put
+# that default in place on any platform and read back the bytes each writer
+# left. The cases cover the journal, the evidence ledger, the usage ledger and
+# the gate-events feed together because the property is one rule over all of
+# their writers, not one per module.
+def _under_crlf_default(fn):
+    """`fn()` with every text-mode open that names no `newline` writing CRLF for
+    LF - Windows' default - on this platform too; both spellings of `open` are
+    put back afterwards, raise or not."""
+    import builtins
+    import io
+    real = io.open
+
+    def crlf_open(file, mode="r", buffering=-1, encoding=None, errors=None,
+                  newline=None, closefd=True, opener=None):
+        if "b" not in mode and newline is None and any(c in mode for c in "wax+"):
+            newline = "\r\n"
+        return real(file, mode, buffering, encoding, errors, newline, closefd,
+                    opener)
+    builtins.open, io.open = crlf_open, crlf_open
+    try:
+        return fn()
+    finally:
+        builtins.open, io.open = real, real
+
+
+def _bytes_of(path):
+    with open(str(path), "rb") as fh:
+        return fh.read()
+
+
+def _line_ending_cases(check):
+    import _config
+    import _evidence_io
+    import usage_ledger
+    tmp = tempfile.mkdtemp(prefix="jio-nl-")
+    try:
+        probe = os.path.join(tmp, "probe.txt")
+
+        def plain_write():
+            with open(probe, "w", encoding="utf-8") as fh:
+                fh.write("a\nb\n")
+        _under_crlf_default(plain_write)
+        check("nl0 THE SIMULATION BITES: under it, a text-mode write naming no "
+              "newline writes CRLF - without this every case below could pass "
+              "over a patch that changed nothing: %r" % (_bytes_of(probe),),
+              _bytes_of(probe) == b"a\r\nb\r\n")
+
+        proj = _anchor_project(tmp, "journal")
+        path = _under_crlf_default(lambda: M.append(
+            proj, {"action": "task.start", "target": "P1.1",
+                   "actor": {"sessionId": "s1"}}))
+        raw = _bytes_of(path) if path else b""
+        check("nl1 the journal's appender writes LF under a CRLF default: %r"
+              % (raw[-40:],),
+              raw.endswith(b"\n") and b"\r" not in raw and raw.count(b"\n") == 1)
+
+        merged = os.path.join(tmp, "merged.jsonl")
+        _under_crlf_default(lambda: M.write_merged(merged, '{"a":1}\n{"b":2}\n'))
+        check("nl2 ...and so does the merge's rewrite of a journal file: %r"
+              % (_bytes_of(merged),),
+              _bytes_of(merged) == b'{"a":1}\n{"b":2}\n')
+
+        eproj = _anchor_project(tmp, "evidence")
+        epath = _under_crlf_default(lambda: _evidence_io.append_row(
+            eproj, {"ts": "2026-09-01T00:00:00Z", "taskId": "P1.1"},
+            writer="ci-1"))
+        eraw = _bytes_of(epath)
+        check("nl3 the evidence ledger's appender writes LF under a CRLF "
+              "default: %r" % (eraw[-40:],),
+              eraw.endswith(b"\n") and b"\r" not in eraw
+              and eraw.count(b"\n") == 1)
+
+        udir = os.path.join(tmp, "usage")
+        n = _under_crlf_default(lambda: usage_ledger.append_rows(
+            udir, [{"ts": "2026-09-01T09", "out": 5},
+                   {"ts": "2026-09-01T10", "out": 6}]))
+        uraw = _bytes_of(os.path.join(udir, "2026-09.jsonl"))
+        check("nl4 the usage ledger's appender writes LF under a CRLF default: "
+              "%r rows, %r" % (n, uraw[-40:]),
+              n == 2 and b"\r" not in uraw and uraw.count(b"\n") == 2)
+
+        gdir = os.path.join(tmp, "logs")
+        _under_crlf_default(lambda: _config.append_gate_event(
+            gdir, {"event": "deny", "file": "src/a.ts"}))
+        graw = _bytes_of(os.path.join(gdir, _config.GATE_EVENTS_FILE))
+        rewritten = os.path.join(tmp, "rewritten.jsonl")
+        _under_crlf_default(lambda: _config.atomic_write_text(
+            rewritten, '{"a":1}\n{"b":2}\n'))
+        check("nl5 the gate-events feed's appender, and the rewrite that trims "
+              "it, write LF under a CRLF default: %r / %r"
+              % (graw[-30:], _bytes_of(rewritten)),
+              graw.endswith(b"\n") and b"\r" not in graw
+              and _bytes_of(rewritten) == b'{"a":1}\n{"b":2}\n')
+
+        # A trail a plugin wrote through a text-mode handle on Windows: its rows
+        # are committed ending in CRLF. A row appended since ends in LF, and the
+        # chain must still verify - `row_hash` hashes each row's canonical JSON,
+        # never the line it was read from, and the git anchor's committed prefix
+        # is still a byte prefix of the working copy.
+        old = _anchor_project(tmp, "old-windows")
+        git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+               "-c", "commit.gpgsign=false", "-C", old]
+        subprocess.run(git + ["init", "-q"], check=True, capture_output=True)
+        first = M.append(old, {"action": "task.start", "target": "P1.1",
+                               "actor": {"sessionId": "s1"}})
+        M.append(old, {"action": "task.done", "target": "P1.1",
+                       "actor": {"sessionId": "s1"}})
+        lf = _bytes_of(first)
+        with open(first, "wb") as fh:
+            fh.write(lf.replace(b"\n", b"\r\n"))
+        subprocess.run(git + ["add", "-A"], check=True, capture_output=True)
+        subprocess.run(git + ["commit", "-qm", "crlf trail"], check=True,
+                       capture_output=True)
+        M.append(old, {"action": "task.start", "target": "P1.2",
+                       "actor": {"sessionId": "s1"}})
+        mixed = _bytes_of(first)
+        res = M.verify(old)
+        check("nl6 a trail committed with CRLF rows by an older plugin on "
+              "Windows still verifies after an LF row is appended to it - two "
+              "CRLF rows then one LF row, chained and anchored: %r rows, %r, "
+              "unanchored %r" % (res.get("rows"), res.get("findings"),
+                                 res.get("unanchored")),
+              mixed.count(b"\r\n") == 2 and mixed.count(b"\n") == 3
+              and res["ok"] and res["rows"] == 3 and not res["findings"]
+              and not res.get("unanchored"))
+
+        # The simulation has to bite before nl8 can mean anything: a plain
+        # rmtree under it leaves a read-only file behind and says nothing.
+        bite = os.path.join(tmp, "bite")
+        os.makedirs(os.path.join(bite, "objects"))
+        loose = os.path.join(bite, "objects", "loose")
+        with open(loose, "w") as fh:
+            fh.write("x")
+        os.chmod(loose, 0o444)
+        _under_windows_unlink(lambda: shutil.rmtree(bite, ignore_errors=True))
+        check("nl7 THE SIMULATION BITES: under it, a plain rmtree with "
+              "ignore_errors leaves a read-only file behind and raises nothing "
+              "- the shape git's loose objects have, and what leaked this "
+              "block's directory into the working directory on Windows: %r"
+              % (os.path.exists(loose),),
+              os.path.exists(loose))
+    finally:
+        # The fixture holds a git repository (nl6), whose loose objects git
+        # writes read-only; Windows refuses to unlink those, so the removal is
+        # made under that rule here on every platform. A removal that fails
+        # under it is retried without it, so a red nl8 never also leaks.
+        gone = _under_windows_unlink(lambda: _harness.remove_tree(tmp))
+        if not gone:
+            _harness.remove_tree(tmp)
+    check("nl8 the block's fixture, a git repository inside it, is removed "
+          "under Windows' read-only unlink rule - nothing is left in the "
+          "directory TMPDIR names: %r" % (gone,),
+          gone is True and not os.path.lexists(tmp))
+    rmtree_calls = _cleanup_calls(__file__, "shutil", "rmtree")
+    removals = _cleanup_calls(__file__, "_harness", "remove_tree")
+    check("nl9 ...and no `finally` in this file removes a fixture by a bare "
+          "rmtree: every cleanup goes through the house remove_tree, which "
+          "takes a read-only tree too - bare at lines %r, house at %r"
+          % (rmtree_calls, removals),
+          rmtree_calls == [] and len(removals) > 1)
+
+
+def _under_windows_unlink(fn):
+    """`fn()` with `os.unlink`/`os.remove` refusing a file whose owner-write bit
+    is clear, as Windows does for its read-only attribute - POSIX unlinks
+    through the directory's write bit instead, which is why a leak of a git
+    fixture is invisible off Windows. Both are put back afterwards, raise or
+    not."""
+    import stat
+    real_unlink, real_remove = os.unlink, os.remove
+
+    def refusing(path, *args, **kwargs):
+        dir_fd = kwargs.get("dir_fd")
+        st = (os.lstat(path, dir_fd=dir_fd) if dir_fd is not None
+              else os.lstat(path))
+        if not stat.S_ISLNK(st.st_mode) and not st.st_mode & stat.S_IWUSR:
+            raise PermissionError(errno.EACCES, "read-only (emulated)", path)
+        return real_unlink(path, *args, **kwargs)
+    os.unlink, os.remove = refusing, refusing
+    try:
+        return fn()
+    finally:
+        os.unlink, os.remove = real_unlink, real_remove
+
+
+def _cleanup_calls(path, owner, attr):
+    """Line numbers of every `<owner>.<attr>(...)` call inside a `finally` body
+    in the source at `path` - the place a fixture is removed, which is narrower
+    than every call on purpose: nl7 runs a bare rmtree to show it leaks."""
+    with open(path, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    finals = [stmt for node in ast.walk(tree) if isinstance(node, ast.Try)
+              for stmt in node.finalbody]
+    return sorted(set(node.lineno for stmt in finals for node in ast.walk(stmt)
+                      if isinstance(node, ast.Call)
+                      and isinstance(node.func, ast.Attribute)
+                      and node.func.attr == attr
+                      and isinstance(node.func.value, ast.Name)
+                      and node.func.value.id == owner))
 
 
 # --- sl: a stale lock is broken by exactly one waiter ---------------------------
@@ -3203,7 +3409,7 @@ def _stale_lock_cases(check):
               _ki[0][0] == "interrupted"
               and not [n for n in _ki[5] if n != "interrupted.jsonl.lock.break"])
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 def _worktree_writer_cases(check):
@@ -3823,7 +4029,7 @@ def _free_text_cases(check):
               and all(rows.get(r[0]) is r for r in shared)
               and all(rows[r[0]][1].pattern == r[1].pattern for r in shared))
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
     _shape_parity_cases(check)
 
 
@@ -4017,7 +4223,7 @@ def _shape_parity_cases(check):
                                                           "x"))
               == M.OUTSIDE_TOKEN)
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 def _selftest():

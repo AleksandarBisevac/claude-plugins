@@ -32,6 +32,7 @@ import io
 import json
 import ntpath
 import os
+import posixpath
 import shlex
 import signal
 import subprocess
@@ -62,7 +63,10 @@ def _git(repo, *args):
 
 
 def _write(path, text):
-    with open(path, "w") as fh:
+    """`text` at `path` as UTF-8, whatever the locale: windows-latest's default
+    is cp1252, which has no code for a jest bullet, and Python reads a source
+    file it runs as UTF-8 either way."""
+    with open(path, "w", encoding="utf-8") as fh:
         fh.write(text)
 
 
@@ -3366,11 +3370,14 @@ def _jest_credit_cases(check):
 # `No tests found, exiting with code 1`, exit 0 only under --passWithNoTests.
 # A test is `test('<title>', () => { expect(<v() | int>).toBe(<int>); });`
 # inside one `describe`, and `v()` is the value `src/mine.py` assigns. Its
-# source is ASCII and its output is written as UTF-8 bytes, so the sweep's
-# cp1252 pass reads the same bullets.
+# source is ASCII - the bullet and the chain separator are built with `chr()`
+# when the runner runs - so a locale that cannot encode them still
+# writes the file, and its output is written as UTF-8 bytes, so the sweep's
+# cp1252 pass reads the same bullets. `sd10` holds the source to ASCII.
 _FAKE_JEST = r'''import os, re, sys
 TEST = re.compile(r"test\('([^']+)', \(\) => \{ expect\((v\(\)|\d+)\)\.toBe\((\d+)\); \}\);")
 DESCRIBE = re.compile(r"describe\('([^']+)'")
+BULLET, CHAIN = chr(0x25CF), chr(0x203A)
 def value(word):
     if word != "v()":
         return int(word)
@@ -3393,7 +3400,7 @@ for rel in targets:
         text = fh.read()
     if not text.strip():
         suites_bad += 1
-        out += [" FAIL  %s" % (rel,), "  ● Test suite failed to run", "",
+        out += [" FAIL  %s" % (rel,), "  %s Test suite failed to run" % (BULLET,), "",
                 "    Your test suite must contain at least one test.", ""]
         continue
     outer = DESCRIBE.search(text).group(1)
@@ -3403,7 +3410,7 @@ for rel in targets:
             passed += 1
             continue
         failed += 1
-        block += ["  ● %s › %s" % (outer, title), "",
+        block += ["  %s %s %s %s" % (BULLET, outer, CHAIN, title), "",
                   "    expect(received).toBe(expected) // Object.is equality", "",
                   "    Expected: %s" % (want,), "    Received: %s" % (value(got),), ""]
     if block:
@@ -3778,6 +3785,41 @@ def _venv_cases(check):
           and deps_o.get("skipped") == [])
 
 
+def _encoding_cases(check):
+    """The fake runners are files this suite writes and then runs, so their
+    source has to survive a locale that cannot encode a jest bullet - the
+    windows-latest default is cp1252 - and so does every fixture `_write`
+    lays down."""
+    loud = dict((name, sorted(set(c for c in src if ord(c) > 127)))
+                for name, src in (("_FAKE_JEST", _FAKE_JEST),
+                                  ("_FAKE_PYTEST", _FAKE_PYTEST)))
+    check("sd10 the fake runners' sources are ASCII, the bullet and the chain "
+          "separator built when the runner runs - a literal one cannot be "
+          "written under a locale with no code for it, which raised while the "
+          "sd-deps and sb-new-file fixtures were being built: %r" % (loud,),
+          loud == {"_FAKE_JEST": [], "_FAKE_PYTEST": []}
+          and "chr(0x25CF)" in _FAKE_JEST)
+    root = _harness.fixture_root("stamp-encoding-")
+    try:
+        # No newline: text mode writes one as CRLF on windows, which is no
+        # question about encoding.
+        text = "  %s mine %s v is two" % (chr(0x25CF), chr(0x203A))
+        path = os.path.join(root, "out.txt")
+        try:
+            _write(path, text)
+            with open(path, "rb") as fh:
+                got = fh.read()
+        except UnicodeError as exc:
+            got = "raised %r" % (exc,)
+    finally:
+        _harness.remove_tree(root)
+    check("sd11 `_write` lays text down as UTF-8 whatever the locale, so a "
+          "fixture holding a character the locale lacks is written rather than "
+          "raised on, in the bytes the helper reads back - this can go red only "
+          "where the locale is not UTF-8, which is the windows leg: %r" % (got,),
+          got == text.encode("utf-8"))
+
+
 def _scan(source, rels, roots, deadline):
     """`workspace_links` under the deadline, or the exception it raised named."""
     try:
@@ -3821,54 +3863,333 @@ def _scan_cases(check):
           and "timed out" in (late[1] or ""))
 
 
-def _cases(check):
-    _harness.stage(check, "sd-deps", _deps_cases)
-    _harness.stage(check, "sd-venv", _venv_cases)
-    _harness.stage(check, "sd-scan", _scan_cases)
-    _harness.stage(check, "sb-new-file", _new_file_cases)
-    _harness.stage(check, "sb-none-found", _none_found_cases)
-    _harness.stage(check, "sr-decisive", _decisive_cases)
-    _harness.stage(check, "sr-jest", _jest_cases)
-    _harness.stage(check, "sj-credit", _jest_credit_cases)
-    _harness.stage(check, "sr-crlf", _crlf_cases)
-    _harness.stage(check, "sr-listing", _listing_cases)
-    _harness.stage(check, "sr-leftover", _leftover_cases)
-    _harness.stage(check, "sr-holder", _holder_cases)
-    _harness.stage(check, "sv-take", _take_cases)
-    _harness.stage(check, "sv-compare", _compare_cases)
-    _harness.stage(check, "sv-shape", _shape_cases)
-    _harness.stage(check, "sv-recorder", _recorder_cases)
-    _harness.stage(check, "sv-recorder-dirty", _recorder_dirty_cases)
-    _harness.stage(check, "sr-red", _red_cases)
-    _harness.stage(check, "sr-tally", _tally_cases)
-    _harness.stage(check, "sr-introduces", _introduces_cases)
-    _harness.stage(check, "sr-process", _process_cases)
-    _harness.stage(check, "sr-own", _own_case_cases)
-    _harness.stage(check, "sr-label", _label_cases)
-    _harness.stage(check, "sr-label-id", _label_id_cases)
-    _harness.stage(check, "sr-runner", _runner_cases)
-    _harness.stage(check, "sr-specific", _specific_cases)
-    _harness.stage(check, "sr-wording", _wording_cases)
-    _harness.stage(check, "sr-exact", _exact_cases)
-    _harness.stage(check, "sr-command", _command_cases)
-    _harness.stage(check, "sr-mixed", _mixed_cases)
-    _harness.stage(check, "sr-green", _green_baseline_cases)
-    _harness.stage(check, "sr-wrapper", _wrapper_cases)
-    _harness.stage(check, "sr-pytest-command", _pytest_command_cases)
-    _harness.stage(check, "sr-unittest", _unittest_cases)
-    _harness.stage(check, "sr-red-baseline", _red_baseline_cases)
-    _harness.stage(check, "sr-baseline-units", _baseline_unit_cases)
-    _harness.stage(check, "sr-round5", _round5_cases)
-    _harness.stage(check, "sr-round5-units", _round5_unit_cases)
-    _harness.stage(check, "sr-every-run-isolated", _every_run_cases)
-    _harness.stage(check, "sr-reach", _reach_cases)
-    _harness.stage(check, "sr-located", _located_cases)
-    _harness.stage(check, "sr-moved", _moved_cases)
-    _harness.stage(check, "sr-binding", _binding_cases)
-    _harness.stage(check, "sr-env", _env_cases)
-    _harness.stage(check, "sr-final", _final_pass_cases)
-    _harness.stage(check, "sr-budget", _budget_cases)
-    _harness.stage(check, "sl-block", _success_line_cases)
+
+# --- dependencies on Windows: no symlink privilege, and git's own spelling ---
+# CI's Windows runner holds the symlink privilege, so a refusal is simulated:
+# the probe is handed a symlink that raises, the junction maker is replaced by a
+# directory symlink standing in for it, and `_is_junction` by a check that knows
+# which stand-ins were made. What CANNOT be simulated off Windows is
+# `_winapi.CreateJunction` itself and how git and `shutil.rmtree` treat a real
+# junction - which is why the helper removes its own before either runs.
+def _refused(src, dst, target_is_directory=False):
+    raise OSError(1314, "A required privilege is not held by the client")
+
+
+def _windows_cases(check):
+    fn = getattr(M, "native_top", None)
+    nt = fn("C:/Users/runner/AppData/Local/Temp/repo", ntpath) if fn else None
+    check("sw1 git's forward-slashed --show-toplevel is respelled natively, so a "
+          "path joined onto it is the one a caller holding the Windows spelling "
+          "compares against (the comparison sd4 and sd5 make), and a POSIX path "
+          "is left as it is: %r" % (nt,),
+          fn is not None and nt == "C:\\Users\\runner\\AppData\\Local\\Temp\\repo"
+          and ntpath.join(nt, "node_modules")
+          == "C:\\Users\\runner\\AppData\\Local\\Temp\\repo\\node_modules"
+          and fn("/tmp/a/repo", posixpath) == "/tmp/a/repo")
+
+    root = _harness.fixture_root("stamp-sw-plan-")
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _write(os.path.join(root, ".gitignore"), "node_modules/\n")
+    _deps_dir(root)
+    seen = []
+    plan = None
+    if fn is not None:
+        M.native_top = lambda text, pathmod=None: seen.append(text) or fn(text, pathmod)
+        try:
+            plan, _p = M.dependency_plan(root, root, time.time() + 60)
+        finally:
+            M.native_top = fn
+    check("sw2 the dependency plan's source is git's toplevel passed through "
+          "native_top - the spelling every path in the basis is joined onto - "
+          "and the plan names the link kind it will use: seen=%r plan=%r"
+          % (seen, plan and {k: plan[k] for k in ("source", "kind")}),
+          len(seen) == 1 and plan is not None and plan["source"] == fn(seen[0])
+          and plan.get("kind") == getattr(M, "LINK_SYMLINK", None))
+
+    kind = getattr(M, "link_kind", None)
+    probe = _harness.fixture_root("stamp-sw-probe-")
+    got = ((kind(probe, "nt", _refused), kind(probe, "posix", _refused),
+            kind(probe, "nt")) if kind else None)
+    check("sw3 a refused symlink on Windows selects junctions; the same refusal "
+          "elsewhere keeps the symlink kind, whose own link then reports it as "
+          "before; and a symlink that works on Windows stays a symlink - the "
+          "probe leaves nothing behind: %r left=%r" % (got, os.listdir(probe)),
+          got == (getattr(M, "LINK_JUNCTION", None), getattr(M, "LINK_SYMLINK", 0),
+                  getattr(M, "LINK_SYMLINK", 0))
+          and os.listdir(probe) == [])
+
+    src_root = _harness.fixture_root("stamp-sw-src-")
+    nm = _deps_dir(src_root)
+    dst_root = _harness.fixture_root("stamp-sw-dst-")
+    made = {"junction": [], "file": []}
+
+    def stand_in(entry, target):
+        made["junction"].append(os.path.basename(entry))
+        os.symlink(entry, target, target_is_directory=True)
+
+    def as_file(entry, target):
+        made["file"].append(os.path.basename(entry))
+        M._hard_link_or_copy(entry, target)
+
+    problem = "link_dependencies takes no ops"
+    words = ""
+    sentinel = os.path.join(dst_root, "node_modules", "sentinel.txt")
+    if kind is not None:
+        jplan = {"source": src_root, "linked": ["node_modules"],
+                 "kind": M.LINK_JUNCTION}
+        problem = M.link_dependencies(dst_root, jplan,
+                                      {"symlink": _refused, "junction": stand_in,
+                                       "file": as_file})
+        words = M.deps_clause(dict(jplan, skipped=[], npmrc=["none"]))
+    check("sw4 with the junction kind every directory entry goes to the junction "
+          "maker and every file to a hard link, none to the refused symlink, the "
+          "cache directory linked by neither, and the basis names the kind: "
+          "problem=%r made=%r %s" % (problem, made, words[:300]),
+          problem is None and made == {"junction": [".bin", "fakejest"],
+                                       "file": ["sentinel.txt"]}
+          and os.path.isfile(sentinel)
+          and os.stat(sentinel).st_nlink == 2
+          and "junction" in words and "privilege" in words)
+
+    removed = None
+    if kind is not None:
+        stand_ins = set(os.path.join(dst_root, "node_modules", n)
+                        for n in made["junction"])
+        removed = M.unlink_junctions(dst_root, jplan,
+                                     lambda p: p in stand_ins)
+    dst_nm = os.path.join(dst_root, "node_modules")
+    left = sorted(os.listdir(dst_nm)) if os.path.isdir(dst_nm) else None
+    check("sw5 unlink_junctions removes each junction the helper made in the "
+          "throwaway and nothing behind it - the source's runner survives - "
+          "while a hard-linked file is left to git's reset: problem=%r left=%r"
+          % (removed, left),
+          kind is not None and removed is None and left == ["sentinel.txt"]
+          and os.path.isfile(os.path.join(nm, "fakejest", "jest.py")))
+
+    posix_left = None
+    if kind is not None:
+        other = _harness.fixture_root("stamp-sw-posix-")
+        M.link_dependencies(other, {"source": src_root, "linked": ["node_modules"],
+                                    "kind": M.LINK_SYMLINK})
+        M.unlink_junctions(other, {"linked": ["node_modules"]})
+        posix_left = sorted(os.listdir(os.path.join(other, "node_modules")))
+    check("sw6 THE ALLOW CASE for sw5: symlinks are never read as junctions, so "
+          "the POSIX path keeps every link for git's reset to unlink, exactly as "
+          "before: %r" % (posix_left,),
+          posix_left == [".bin", "fakejest", "sentinel.txt"])
+
+    root_j, man_j, cmd_j = _deps_repo("stamp-red-deps-junction-",
+                                      [("v is two", "v()", "2")])
+    jmade = []
+    lines = []
+    code_j = None
+    if kind is not None:
+        def j_stand_in(entry, target):
+            jmade.append(target)
+            os.symlink(entry, target, target_is_directory=True)
+
+        held = (M._probe_link_kind, M.LINK_OPS, M._is_junction)
+        M._probe_link_kind = lambda: M.LINK_JUNCTION
+        M.LINK_OPS = dict(held[1], junction=j_stand_in, symlink=_refused)
+        M._is_junction = lambda p: p in jmade and os.path.lexists(p)
+        try:
+            code_j = M.main(["red", "--project", root_j, "--manifest", man_j,
+                             "--task", "P1.1", "--json", "--"] + cmd_j,
+                            out=lines.append)
+        finally:
+            M._probe_link_kind, M.LINK_OPS, M._is_junction = held
+    try:
+        payload_j = json.loads("\n".join(lines))
+    except ValueError:
+        payload_j = {}
+    basis_j = _deps_basis(payload_j)
+    nm_j = os.path.join(root_j, "node_modules")
+    check("sw7 a red run on an account with no symlink privilege (simulated) still "
+          "proves through junctions and hard links, the basis naming the kind; "
+          "each junction was made and removed by the helper, the source's "
+          "runner and sentinel survive, and the sentinel's hard link went with "
+          "the throwaway: exit=%r made=%d nlink=%r %s"
+          % (code_j, len(jmade),
+             os.stat(os.path.join(nm_j, "sentinel.txt")).st_nlink, basis_j[:500]),
+          code_j == M.E_PROVED and "junction" in basis_j and len(jmade) >= 2
+          and not any(os.path.lexists(p) for p in jmade)
+          and os.path.isfile(os.path.join(nm_j, "fakejest", "jest.py"))
+          and os.stat(os.path.join(nm_j, "sentinel.txt")).st_nlink == 1
+          and (payload_j.get("throwaway") or {}).get("removed") is True)
+
+
+def _colon_name_refusal():
+    """Why a file named with a leading `:` cannot be made here, or None."""
+    probe = _harness.fixture_root("stamp-colon-probe-")
+    try:
+        open(os.path.join(probe, ":probe"), "w").close()
+        return None
+    except OSError as exc:
+        return "%s: %s" % (type(exc).__name__, exc)
+
+
+def _edge_cases(check):
+    """The junction, probe, root-spelling and pathspec edges of `red`."""
+    root_k, man_k, cmd_k = _deps_repo("stamp-red-unremovable-",
+                                      [("v is two", "v()", "2")])
+    lines = []
+    held = M.unlink_junctions
+    M.unlink_junctions = lambda path, plan, is_junction=None: (
+        "could not remove the junction %s: simulated" % (path,))
+    try:
+        code_k = M.main(["red", "--project", root_k, "--manifest", man_k,
+                         "--task", "P1.1", "--json", "--"] + cmd_k,
+                        out=lines.append)
+    finally:
+        M.unlink_junctions = held
+    try:
+        thrown = json.loads("\n".join(lines)).get("throwaway") or {}
+    except ValueError:
+        thrown = {}
+    holder = os.path.dirname(thrown.get("path") or "")
+    kept = bool(holder) and os.path.isdir(holder)
+    if kept:
+        _harness.remove_tree(holder)
+    subprocess.run(["git", "-C", root_k, "worktree", "prune"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # sw7 is the other direction: junctions that do come out leave
+    # `removed` true, so a removal skipped unconditionally is red there.
+    check("sw8 a junction the helper cannot remove skips the throwaway's "
+          "removal - git is not trusted to tell it from a directory - and is "
+          "reported: exit %r, removed %r, problem %r, throwaway still there %r"
+          % (code_k, thrown.get("removed"), thrown.get("problem"), kept),
+          code_k == M.E_LEFT_BEHIND and thrown.get("removed") is False
+          and "simulated" in (thrown.get("problem") or "") and kept)
+
+    asked = []
+
+    def counted(prefix=None):
+        asked.append(prefix)
+        raise OSError(28, "No space left on device")
+
+    probe = getattr(M, "_probe_link_kind")
+    try:
+        got = (probe("posix", counted), len(asked), probe("nt", counted),
+               len(asked), probe("nt"))
+    except (TypeError, OSError) as exc:
+        got = ("raised %s: %s" % (type(exc).__name__, exc),)
+    check("sw9 the link-kind probe makes nothing off Windows, where a symlink is "
+          "the only kind; on Windows a scratch directory that cannot be made "
+          "answers junctions instead of raising, and one that can is probed "
+          "(a working symlink stays a symlink): %r" % (got,),
+          got == (M.LINK_SYMLINK, 0, M.LINK_JUNCTION, 1, M.LINK_SYMLINK))
+
+    root_r, man_r, cmd_r = _deps_repo("stamp-red-root-", [("v is two", "v()", "2")],
+                                      deps=False)
+    real_root = os.path.realpath(root_r)
+    head_part, tail_part = real_root.replace(os.sep, "/").rsplit("/", 1)
+    spelled = "%s//%s/." % (head_part, tail_part)
+    git_held = M._git
+
+    def toplevel(where, args, **kw):
+        if args == ["rev-parse", "--show-toplevel"]:
+            return 0, spelled
+        return git_held(where, args, **kw)
+
+    M._git = toplevel
+    try:
+        args = M.build_parser().parse_args(
+            ["red", "--project", root_r, "--manifest", man_r, "--task", "P1.1"])
+        scope, problem = M._red_scope(args, cmd_r, time.time() + 60)
+    finally:
+        M._git = git_held
+    check("sw10 red's root is git's toplevel in this platform's own spelling - "
+          "handed one with doubled and forward separators and a trailing `.`, "
+          "the scope's root is the normalised path: %r -> %r (%r)"
+          % (spelled, scope and scope.get("root"), problem),
+          problem is None and scope.get("root") == real_root)
+
+    refused = _colon_name_refusal()
+    if refused is not None:
+        _harness.skip(check, "sw11", "a file name beginning with ':' cannot be "
+                      "made here (%s)" % (refused,), True)
+        return
+    root_c = _harness.fixture_root("stamp-colon-")
+    subprocess.run(["git", "init", "-q", root_c], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _write(os.path.join(root_c, ":colon_test.py"), "x = 1\n")
+    _write(os.path.join(root_c, "colon_test.py"), "x = 2\n")
+    _git(root_c, "add", "-A")
+    _git(root_c, "commit", "-q", "-m", "base")
+    _git(root_c, "rm", "-q", "colon_test.py")
+    _git(root_c, "commit", "-q", "-m", "only the colon name")
+    got_c = M._at_head(root_c, [":colon_test.py", "colon_test.py"],
+                       time.time() + 60)
+    check("sw11 a declared path beginning with ':' is asked of git literally: "
+          "HEAD holds it, and the name it would mean as pathspec magic, which "
+          "HEAD no longer holds, is not reported present: %r" % (got_c,),
+          got_c == (set([":colon_test.py"]), None))
+
+# Every block, in run order. `--stage LABEL` narrows a run to the blocks it
+# names, which is what lets a red-first proof in a throwaway tree fit its
+# deadline: the whole suite does not.
+STAGES = (
+    ("sd-encoding", "_encoding_cases"),
+    ("sd-deps", "_deps_cases"),
+    ("sw-windows", "_windows_cases"),
+    ("sw-edges", "_edge_cases"),
+    ("sd-venv", "_venv_cases"),
+    ("sd-scan", "_scan_cases"),
+    ("sb-new-file", "_new_file_cases"),
+    ("sb-none-found", "_none_found_cases"),
+    ("sr-decisive", "_decisive_cases"),
+    ("sr-jest", "_jest_cases"),
+    ("sj-credit", "_jest_credit_cases"),
+    ("sr-crlf", "_crlf_cases"),
+    ("sr-listing", "_listing_cases"),
+    ("sr-leftover", "_leftover_cases"),
+    ("sr-holder", "_holder_cases"),
+    ("sv-take", "_take_cases"),
+    ("sv-compare", "_compare_cases"),
+    ("sv-shape", "_shape_cases"),
+    ("sv-recorder", "_recorder_cases"),
+    ("sv-recorder-dirty", "_recorder_dirty_cases"),
+    ("sr-red", "_red_cases"),
+    ("sr-tally", "_tally_cases"),
+    ("sr-introduces", "_introduces_cases"),
+    ("sr-process", "_process_cases"),
+    ("sr-own", "_own_case_cases"),
+    ("sr-label", "_label_cases"),
+    ("sr-label-id", "_label_id_cases"),
+    ("sr-runner", "_runner_cases"),
+    ("sr-specific", "_specific_cases"),
+    ("sr-wording", "_wording_cases"),
+    ("sr-exact", "_exact_cases"),
+    ("sr-command", "_command_cases"),
+    ("sr-mixed", "_mixed_cases"),
+    ("sr-green", "_green_baseline_cases"),
+    ("sr-wrapper", "_wrapper_cases"),
+    ("sr-pytest-command", "_pytest_command_cases"),
+    ("sr-unittest", "_unittest_cases"),
+    ("sr-red-baseline", "_red_baseline_cases"),
+    ("sr-baseline-units", "_baseline_unit_cases"),
+    ("sr-round5", "_round5_cases"),
+    ("sr-round5-units", "_round5_unit_cases"),
+    ("sr-every-run-isolated", "_every_run_cases"),
+    ("sr-reach", "_reach_cases"),
+    ("sr-located", "_located_cases"),
+    ("sr-moved", "_moved_cases"),
+    ("sr-binding", "_binding_cases"),
+    ("sr-env", "_env_cases"),
+    ("sr-final", "_final_pass_cases"),
+    ("sr-budget", "_budget_cases"),
+    ("sl-block", "_success_line_cases"),
+)
+
+
+def _cases(check, only=()):
+    for label, fn in STAGES:
+        if not only or label in only:
+            _harness.stage(check, label, globals()[fn])
+    unknown = sorted(set(only) - set(label for label, _fn in STAGES))
+    if unknown:
+        check("--stage names a block of this suite: %r" % (unknown,), False)
 
 
 def _cli(argv, stdin_text=None):
@@ -3940,13 +4261,14 @@ def _success_line_cases(check):
           not_red[0] != M.E_PROVED and len(not_red[1].splitlines()) > 1)
 
 
-def _selftest():
-    return _harness.run(_cases)
+def _selftest(only=()):
+    return _harness.run(lambda check: _cases(check, only))
 
 
 if __name__ == "__main__":
     safe_stdio()
     if "--selftest" in sys.argv[1:]:
-        raise SystemExit(_selftest())
-    sys.stderr.write("usage: test_stamp_verification.py --selftest\n")
+        raise SystemExit(_selftest(_harness.flag_values(sys.argv[1:], "--stage")))
+    sys.stderr.write("usage: test_stamp_verification.py --selftest "
+                     "[--stage LABEL ...]\n")
     raise SystemExit(2)

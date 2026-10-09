@@ -37,6 +37,7 @@ import os
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402
 from _output import safe_stdio                     # noqa: E402
 import usage_ledger as M                           # noqa: E402
 
@@ -773,19 +774,21 @@ def _cases(check):
         _tw_left = sorted(os.listdir(_tw)) + sorted(
             os.listdir(os.path.join(_tw, ".cursors")))
         check("tw4 ...and leave no temp file of their own behind - only the "
-              "planted pair, the two targets and the ignore marker: %r"
-              % (_tw_left,),
+              "planted pair, the two targets, the month's lock file and the "
+              "ignore marker: %r" % (_tw_left,),
               _tw_left == sorted([".cursors", ".gitignore", "2026-08.jsonl",
-                                  "2026-08.jsonl.tmp"])
+                                  "2026-08.jsonl.lock", "2026-08.jsonl.tmp"])
               + sorted(["s-tw.json", "s-tw.json.tmp"]))
     finally:
         shutil.rmtree(_tw_tmp, ignore_errors=True)
 
     # --- nm: a month with no file is held like every other month ------------
-    # The metering hook appends with no lock. When the month file does not
-    # exist yet, a hook that creates it while the backfill is rebuilding that
-    # month writes into a file the replace then retires - so the rewrite must
-    # hold a descriptor on the file it would otherwise never have seen.
+    # A writer that does not take the month's lock - a copy of this file from
+    # before it had one - can still create the month file while the backfill
+    # is rebuilding that month, writing into a file the replace then retires;
+    # so the rewrite must hold a descriptor on the file it would otherwise
+    # never have seen. `append_rows` itself waits for the lock (lk1), so the
+    # writer here appends directly.
     _nm_tmp = tempfile.mkdtemp(prefix="ledger-new-month-")
     try:
         _nm = os.path.join(_nm_tmp, "ledger")
@@ -801,7 +804,10 @@ def _cases(check):
             # before the replace: it creates the file, or appends to the one
             # the rewrite created.
             if not _nm_fired:
-                _nm_fired.append(M.append_rows(_nm, [_nm_hook]))
+                with open(os.path.join(_nm, "2026-09.jsonl"), "a",
+                          encoding="utf-8") as fh:
+                    fh.write(M._row_line(_nm_hook))
+                _nm_fired.append(1)
             return _nm_real(path, rows)
         M._replace_rows = _nm_replace
         try:
@@ -831,6 +837,211 @@ def _cases(check):
               and os.path.isfile(os.path.join(_nm2, "2026-09.jsonl")))
     finally:
         shutil.rmtree(_nm_tmp, ignore_errors=True)
+
+    # --- lk: an append waits for the month's lock, and never for ever -------
+    # A rewrite holds the month's lock across its replace; an append made then
+    # must land after the swap, not in the file the swap erases. Threads stand
+    # in for processes: the lock is per open file, so two in one process
+    # exclude each other as two processes do.
+    import threading
+    _lk_tmp = tempfile.mkdtemp(prefix="ledger-lock-")
+    _lk_wait = M.MONTH_LOCK_WAIT_S
+    try:
+        _lk_path = os.path.join(_lk_tmp, "2026-09.jsonl")
+        _lk_row = {"ts": "2026-09-01T09", "out": 3, "probeId": "lk"}
+
+        def _lk_count():
+            try:
+                with open(_lk_path, encoding="utf-8") as fh:
+                    return sum(1 for line in fh if '"lk"' in line)
+            except OSError:
+                return 0
+
+        _lk_res = []
+        _lk_held = M.lock_month(_lk_path)
+        _lk_thread = threading.Thread(
+            target=lambda: _lk_res.append(M.append_rows(_lk_tmp, [_lk_row])))
+        _lk_thread.start()
+        _lk_thread.join(0.3)
+        _lk_during = (_lk_thread.is_alive(), _lk_count())
+        M.unlock_month(_lk_held)
+        _lk_thread.join(30)
+        check("lk1 an append made while the month's lock is held waits for it, "
+              "then writes its row once: held=%r after=%d result=%r"
+              % (_lk_during, _lk_count(), _lk_res),
+              _lk_held is not None and _lk_during == (True, 0)
+              and _lk_count() == 1 and _lk_res == [1])
+
+        # The other direction: a wait that ends in a dropped row trades a row
+        # at risk for a row certainly lost. The lock is never released here.
+        M.MONTH_LOCK_WAIT_S = 0.05
+        _lk_held = M.lock_month(_lk_path, wait_s=0)
+        _lk_n = M.append_rows(_lk_tmp, [_lk_row])
+        M.unlock_month(_lk_held)
+        check("lk2 ...and an append whose lock is not had within the wait "
+              "writes its row anyway: written=%r rows=%d" % (_lk_n, _lk_count()),
+              _lk_held is not None and _lk_n == 1 and _lk_count() == 2)
+        M.MONTH_LOCK_WAIT_S = _lk_wait
+
+        # An append that kept its lock would stall every later one for the
+        # whole wait; the lock must be free the moment it returns.
+        _lk_after = M.lock_month(_lk_path, wait_s=0)
+        M.unlock_month(_lk_after)
+        check("lk3 ...and the lock is free again once append_rows returns",
+              _lk_after is not None)
+    finally:
+        M.MONTH_LOCK_WAIT_S = _lk_wait
+        shutil.rmtree(_lk_tmp, ignore_errors=True)
+
+    # --- lf: a count is rows known on disk, and a refused lock costs nothing --
+    import errno
+    import time as _time
+    _lf_tmp = tempfile.mkdtemp(prefix="ledger-lockfail-")
+    _lf_open, _lf_try = vars(M).get("open"), M._try_lock
+    _lf_shadowed = "open" in vars(M)
+
+    def _lf_restore():
+        M._try_lock = _lf_try
+        if _lf_shadowed:
+            M.open = _lf_open
+        elif "open" in vars(M):
+            del M.open
+
+    class _LfLostOnClose(object):
+        """A handle whose writes sit in a buffer the close fails to flush -
+        a full disk met at the flush, not at any write."""
+        def __init__(self, *_a, **_k):
+            self.buf = []
+
+        def write(self, text):
+            self.buf.append(text)
+            return len(text)
+
+        def close(self):
+            raise OSError(errno.ENOSPC, "No space left on device (emulated)")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            self.close()
+
+    def _lf_rows(path, probe):
+        try:
+            with open(path, encoding="utf-8") as fh:
+                return sum(1 for line in fh if '"%s"' % probe in line)
+        except OSError:
+            return 0
+
+    try:
+        _lf_row = {"ts": "2026-09-01T09", "out": 3, "probeId": "lf-close"}
+        _lf_path = os.path.join(_lf_tmp, "2026-09.jsonl")
+        M.open = _LfLostOnClose
+        try:
+            _lf_n = M.append_rows(_lf_tmp, [_lf_row, dict(_lf_row, out=4)])
+        finally:
+            _lf_restore()
+        check("lf1 append_rows whose close fails reports no row written - the "
+              "buffered rows never reached the disk: written=%r on disk=%d"
+              % (_lf_n, _lf_rows(_lf_path, "lf-close")),
+              _lf_n == 0 and _lf_rows(_lf_path, "lf-close") == 0)
+
+        # The carry: a writer that does not take the lock opens the month
+        # before the replace and writes after it, so the rewrite must append
+        # that row to the new file - through a close that fails here (lf2)
+        # and one that succeeds (lf3, the twin a rewrite reporting failure
+        # unconditionally would turn red).
+        def _lf_carry(name, failing):
+            led = os.path.join(_lf_tmp, name)
+            os.makedirs(led)
+            month = os.path.join(led, "2026-09.jsonl")
+            with open(month, "w", encoding="utf-8") as fh:
+                fh.write(M._row_line({"ts": "2026-09-01T08", "sessionId": "S-BF",
+                                      "out": 1}))
+            keep, tail = M.open_month(led, "2026-09", {"S-BF"})
+            real = M._replace_rows
+
+            def replace(path, rows):
+                late = open(path, "a", encoding="utf-8")
+                try:
+                    return real(path, rows)
+                finally:
+                    late.write(M._row_line({"ts": "2026-09-01T09",
+                                            "sessionId": "S-OTHER",
+                                            "probeId": "lf-carry"}))
+                    late.close()
+                    if failing:
+                        M.open = _LfLostOnClose
+            M._replace_rows = replace
+            try:
+                ok = M.rewrite_month(led, "2026-09", keep, tail=tail)
+            finally:
+                M._replace_rows = real
+                _lf_restore()
+            return ok, _lf_rows(month, "lf-carry")
+
+        if os.name == "nt":
+            _harness.skip(check, "lf2 the carry through a failing close",
+                          "this platform refuses to replace an open file, so "
+                          "nothing is carried after the replace", True)
+            _harness.skip(check, "lf3 the carry through a close that holds",
+                          "as lf2", True)
+        else:
+            _lf_ok, _lf_on = _lf_carry("lf2", True)
+            check("lf2 a rewrite whose carried row is lost on close reports "
+                  "failure rather than success: ok=%r on disk=%d"
+                  % (_lf_ok, _lf_on), _lf_ok is False and _lf_on == 0)
+            _lf_ok, _lf_on = _lf_carry("lf3", False)
+            check("lf3 ...and the same carry through a close that holds "
+                  "reports success with the row written once: ok=%r on disk=%d"
+                  % (_lf_ok, _lf_on), _lf_ok is True and _lf_on == 1)
+
+        # A filesystem that refuses the lock outright: waiting cannot change
+        # that, and the wait is the metering hook's whole budget.
+        def _lf_refuse(_fd):
+            raise OSError(errno.ENOTSUP, "Operation not supported (emulated)")
+        M._try_lock = _lf_refuse
+        try:
+            _lf_t0 = _time.monotonic()
+            _lf_n = M.append_rows(_lf_tmp, [dict(_lf_row, probeId="lf-notsup")])
+            _lf_spent = _time.monotonic() - _lf_t0
+            _lf_given = M.lock_month(_lf_path, wait_s=0)
+            _lf_rew = M.rewrite_month(_lf_tmp, "2026-08",
+                                      [{"ts": "2026-08-01T09", "out": 2}])
+        finally:
+            _lf_restore()
+        check("lf4 a lock the filesystem refuses (ENOTSUP) is not waited for: "
+              "append_rows writes its row at once - written=%r spent=%.2fs of "
+              "a %.1fs wait, on disk=%d"
+              % (_lf_n, _lf_spent, M.MONTH_LOCK_WAIT_S,
+                 _lf_rows(_lf_path, "lf-notsup")),
+              _lf_n == 1 and _lf_spent < M.MONTH_LOCK_WAIT_S / 4
+              and _lf_rows(_lf_path, "lf-notsup") == 1)
+        check("lf5 ...lock_month names it unavailable rather than contended, "
+              "and a rewrite goes on lock-free there: lock=%r rewrite=%r"
+              % (_lf_given, _lf_rew),
+              _lf_given == M.LOCK_UNAVAILABLE and _lf_rew is True)
+
+        # The wait's basis, read off the code rather than restated: above the
+        # longest a rewrite holds the lock through its replace retries, and
+        # well under the timeout that kills the metering hook.
+        with open(os.path.join(_output.HOOKS_DIR, "hooks.json"),
+                  encoding="utf-8") as fh:
+            _lf_hooks = json.load(fh)
+        _lf_timeouts = [h.get("timeout")
+                        for groups in _lf_hooks.get("hooks", {}).values()
+                        for group in groups for h in group.get("hooks", [])
+                        if "meter-usage.py" in h.get("command", "")]
+        _lf_retry = M.REPLACE_RETRIES * M.REPLACE_RETRY_S
+        check("lf6 the lock wait outlasts a rewrite's replace retries and stays "
+              "under half of every metering hook timeout: wait=%r retries=%r "
+              "timeouts=%r" % (M.MONTH_LOCK_WAIT_S, _lf_retry, _lf_timeouts),
+              bool(_lf_timeouts) and all(isinstance(t, (int, float))
+                                         for t in _lf_timeouts)
+              and _lf_retry < M.MONTH_LOCK_WAIT_S <= min(_lf_timeouts) / 2.0)
+    finally:
+        _lf_restore()
+        shutil.rmtree(_lf_tmp, ignore_errors=True)
 
     # --- rx: the re-export this module exists to keep serving ---------------
     # Nothing imports `usage_ledger` by name: every consumer loads it BY PATH and

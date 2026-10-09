@@ -762,7 +762,7 @@
     {
       "id": "P121",
       "title": "CI is green on Windows and Linux for the 3.2.0 release commit",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P121.json"
     }
   ],
@@ -805,7 +805,8 @@
     ".gitattributes": [
       "BF2.1",
       "P36.13",
-      "P94.4"
+      "P94.4",
+      "P121.10-eof"
     ],
     ".github/workflows/ci.yml": [
       "P2.5",
@@ -821,7 +822,9 @@
       "P109.9",
       "P103.8",
       "P112.1-uce",
-      "P118.9"
+      "P118.9",
+      "P121.14-eof",
+      "P121.17-eof"
     ],
     ".gitignore": [
       "P4.4",
@@ -987,7 +990,8 @@
       "P119.4-g0k",
       "P119.6-g0k",
       "P119.9-g0k",
-      "P119.10-g0k"
+      "P119.10-g0k",
+      "P121.19-eof"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1246,7 +1250,8 @@
       "P118.21-v7t",
       "P118.22-v7t",
       "P118.23-v7t",
-      "P119.6-g0k"
+      "P119.6-g0k",
+      "P121.5"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1921,7 +1926,8 @@
       "P107.5-gwk",
       "P112.2-uce",
       "P112.8-uce",
-      "P118.9"
+      "P118.9",
+      "P121.16-eof"
     ],
     "plugins/audit/commands/version.md": [
       "P67.2",
@@ -1996,7 +2002,8 @@
       "P108.16-4gh",
       "P108.18-4gh",
       "P108.20-4gh",
-      "P118.6"
+      "P118.6",
+      "P121.5"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -2638,7 +2645,9 @@
       "P118.21-v7t",
       "P118.22-v7t",
       "P118.23-v7t",
-      "P121.4"
+      "P121.4",
+      "P121.5",
+      "P121.18-eof"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -2707,7 +2716,8 @@
       "P81.7",
       "P81.14-j7p",
       "P81.16-j7p",
-      "P118.11-v7t"
+      "P118.11-v7t",
+      "P121.5"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -2762,7 +2772,9 @@
       "P108.10-4gh",
       "P108.13-4gh",
       "P108.17-4gh",
-      "P108.19-4gh"
+      "P108.19-4gh",
+      "P121.5",
+      "P121.14-eof"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -2996,7 +3008,9 @@
       "P118.2",
       "P118.11-v7t",
       "P118.7",
-      "P121.7"
+      "P121.7",
+      "P121.13-eof",
+      "P121.18-eof"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -3412,7 +3426,8 @@
       "P105.4",
       "P105.8-m32",
       "P108.10-4gh",
-      "P119.8-g0k"
+      "P119.8-g0k",
+      "P121.14-eof"
     ],
     "plugins/audit/scripts/panel/panel-server.py": [
       "P10.2",
@@ -3437,7 +3452,8 @@
       "P105.8-m32",
       "P104.17-tog",
       "P115.3-4yc",
-      "P121.6"
+      "P121.6",
+      "P121.14-eof"
     ],
     "plugins/audit/scripts/report/_evidence_view.py": [
       "P32.7",
@@ -3816,7 +3832,10 @@
       "P104.10-tog",
       "P104.11-tog",
       "P104.13-tog",
-      "P121.3"
+      "P121.3",
+      "P121.5",
+      "P121.14-eof",
+      "P121.16-eof"
     ],
     "plugins/audit/templates/audit-plan.starter.json": [
       "P1.5"
@@ -3883,7 +3902,8 @@
       "P108.16-4gh",
       "P108.18-4gh",
       "P108.20-4gh",
-      "P118.6"
+      "P118.6",
+      "P121.5"
     ],
     "plugins/audit/tests/test__deps.py": [
       "P32.5",
@@ -4033,7 +4053,8 @@
       "P81.7",
       "P81.14-j7p",
       "P81.16-j7p",
-      "P118.11-v7t"
+      "P118.11-v7t",
+      "P121.5"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
       "P32.7",
@@ -4115,7 +4136,9 @@
       "P108.10-4gh",
       "P108.13-4gh",
       "P108.17-4gh",
-      "P108.19-4gh"
+      "P108.19-4gh",
+      "P121.5",
+      "P121.11-eof"
     ],
     "plugins/audit/tests/test__locks.py": [
       "P22.11",
@@ -4399,7 +4422,8 @@
       "P118.9",
       "P118.6",
       "P118.8",
-      "P118.13-v7t"
+      "P118.13-v7t",
+      "P121.10-eof"
     ],
     "plugins/audit/tests/test__report_html.py": [
       "P25.1",
@@ -4694,7 +4718,8 @@
       "P119.5-g0k",
       "P119.8-g0k",
       "P119.9-g0k",
-      "P121.2"
+      "P121.2",
+      "P121.15-eof"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -4714,7 +4739,8 @@
       "P112.4-uce",
       "P112.6-uce",
       "P112.8-uce",
-      "P121.3"
+      "P121.3",
+      "P121.16-eof"
     ],
     "plugins/audit/tests/test_audit_version.py": [
       "P67.1",
@@ -4760,7 +4786,10 @@
       "P118.21-v7t",
       "P118.22-v7t",
       "P118.23-v7t",
-      "P121.4"
+      "P121.4",
+      "P121.5",
+      "P121.15-eof",
+      "P121.18-eof"
     ],
     "plugins/audit/tests/test_commit_audit_state.py": [
       "P28.2",
@@ -5152,7 +5181,9 @@
       "P118.2",
       "P118.11-v7t",
       "P118.7",
-      "P121.7"
+      "P121.7",
+      "P121.13-eof",
+      "P121.18-eof"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
@@ -5165,7 +5196,9 @@
       "P104.2",
       "P104.9-tog",
       "P104.13-tog",
-      "P121.3"
+      "P121.3",
+      "P121.5",
+      "P121.16-eof"
     ],
     "plugins/audit/tests/test_validate_config.py": [
       "P47.1"
@@ -5231,7 +5264,9 @@
       "P80.20-rtb",
       "P80.23-rtb",
       "P103.8",
-      "P112.1-uce"
+      "P112.1-uce",
+      "P121.14-eof",
+      "P121.17-eof"
     ],
     "tools/check-committed-pii.py": [
       "P51.4",
@@ -5321,7 +5356,9 @@
       "P107.4",
       "P112.2-uce",
       "P117.1",
-      "P118.9"
+      "P118.9",
+      "P121.14-eof",
+      "P121.17-eof"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -5527,7 +5564,8 @@
       "P92.6-a1x",
       "P109.3",
       "P103.6",
-      "P100.3-zxo"
+      "P100.3-zxo",
+      "P121.15-eof"
     ],
     "plugins/audit/scripts/status/_claude_home.py": [
       "P77.2",
@@ -6348,7 +6386,8 @@
       "P118.7",
       "P118.14-v7t",
       "P119.1",
-      "P121.8"
+      "P121.8",
+      "P121.10-eof"
     ],
     "tools/stream-cost.py": [
       "P117.1",
@@ -6413,7 +6452,9 @@
       "P119.3-g0k",
       "P119.4-g0k",
       "P119.7-g0k",
-      "P121.5"
+      "P121.5",
+      "P121.12-eof",
+      "P121.15-eof"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6"
@@ -6476,6 +6517,12 @@
     ],
     "plugins/audit/scripts/ui/shared": [
       "P120.1"
+    ],
+    "plugins/audit/tests/test__harness.py": [
+      "P121.15-eof"
+    ],
+    "tools/ui-tests/stall-watch.test.mjs": [
+      "P121.17-eof"
     ]
   },
   "bugs": [

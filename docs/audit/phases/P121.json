@@ -1,7 +1,7 @@
 {
   "id": "P121",
   "title": "CI is green on Windows and Linux for the 3.2.0 release commit",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Release blocker for 3.2.0. CI run 37865326884 on release/v3.2.0 (4aaad089) failed selftests on windows-latest in eight files and one browser leg in manifest validation on Linux. Most of the work since 3.1.0 had never run on Windows.",
   "desiredOutcome": "the CI workflow passes on every job at the release commit, Windows selftests and the Linux manifest-validation browser legs included",
   "testGate": [
@@ -15,21 +15,111 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "ea5f05108c3102890ab0989ef4f76a88fcf75407",
+  "branch": "audit/p121-ci-is-green-on-windows-and-lin",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P121-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/usage/usage_ledger.py _append_locked / rewrite_month",
+        "issue": "_append_locked counts buffered writes and swallows a failure on flush or close, so rewrite_month's carry check reports success after the carried rows were lost (probe: ENOSPC on close -> True, row not on disk). Base returned False.",
+        "resolution": "fixed in P121.16-eof (96509be9): Count rows only after the handle closed without raising; a failed carry returns False. Add the close-raises case.",
+        "fixTask": "P121.16-eof",
+        "commit": "96509be9"
+      },
+      {
+        "id": "P121-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/usage/usage_ledger.py lock_month; hooks.json timeout",
+        "issue": "lock_month retries on every OSError, so on a filesystem refusing flock every append waits MONTH_LOCK_WAIT_S (10 s), the metering hook's own timeout, and metering records nothing. The poll-count bound stretches on old Windows Pythons.",
+        "resolution": "fixed in P121.16-eof (96509be9): Retry only on contention errnos, go unlocked at once otherwise, wait well below the hook's timeout, bound by time.monotonic(). Add an ENOTSUP case.",
+        "fixTask": "P121.16-eof",
+        "commit": "96509be9"
+      },
+      {
+        "id": "P121-R3",
+        "severity": "med",
+        "file": "plugins/audit/commands/usage.md",
+        "issue": "The shipped /audit:usage doc still says the metering hook appends without a lock and describes the pre-lock loss.",
+        "resolution": "fixed in P121.16-eof (96509be9): Match the build guide's audit-usage section.",
+        "fixTask": "P121.16-eof",
+        "commit": "96509be9"
+      },
+      {
+        "id": "P121-R4",
+        "severity": "med",
+        "file": ".github/workflows/ci.yml",
+        "issue": "The comment says each bound is at least twice the longest finished run, but a 2026-10-01 Windows selftests run took 23m31s against a 45-minute bound.",
+        "resolution": "fixed in P121.17-eof (0b304360): Raise the selftests bound to cover twice that, or name the runs actually measured.",
+        "fixTask": "P121.17-eof",
+        "commit": "0b304360"
+      },
+      {
+        "id": "P121-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py run_red finally",
+        "issue": "unlink_junctions' result is discarded, so an unremovable junction goes unreported and the throwaway removal proceeds over it.",
+        "resolution": "fixed in P121.18-eof (82174ff4): Skip the removal and report it when unlink_junctions returns a problem.",
+        "fixTask": "P121.18-eof",
+        "commit": "82174ff4"
+      },
+      {
+        "id": "P121-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py _probe_link_kind",
+        "issue": "Probes on POSIX where only symlinks are possible, adding a mkdtemp failure path.",
+        "resolution": "fixed in P121.18-eof (82174ff4): Return the symlink kind without probing off Windows, or fall back on a mkdtemp error.",
+        "fixTask": "P121.18-eof",
+        "commit": "82174ff4"
+      },
+      {
+        "id": "P121-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py _red_scope native_top",
+        "issue": "No case covers native_top at red's root.",
+        "resolution": "fixed in P121.18-eof (82174ff4): Add a case with a forward-slash toplevel.",
+        "fixTask": "P121.18-eof",
+        "commit": "82174ff4"
+      },
+      {
+        "id": "P121-R8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py _link_texts",
+        "issue": "Declared paths go to git ls-files as pathspecs; a path starting with ':' is read as magic and refuses the landing as unanswerable.",
+        "resolution": "fixed in P121.18-eof (82174ff4): Pass --literal-pathspecs.",
+        "fixTask": "P121.18-eof",
+        "commit": "82174ff4"
+      },
+      {
+        "id": "P121-R9",
+        "severity": "low",
+        "file": "tools/capture-screenshots.mjs watchForStall",
+        "issue": "stopStallWatch clears the interval but not the grace timeout, which can exit 1 after a run already ended.",
+        "resolution": "fixed in P121.17-eof (0b304360): Clear the grace timer too.",
+        "fixTask": "P121.17-eof",
+        "commit": "0b304360"
+      },
+      {
+        "id": "P121-R10",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_audit_task.py rv13 under the staged runner",
+        "issue": "rv13 (four contending processes) failed once under heavy load in a staged run; passed alone and unloaded.",
+        "resolution": "Watch on windows-latest; isolate the lock-contention block if it recurs."
+      }
+    ],
+    "outcome": "[findings: 10 - 0 high, 4 med, 6 low; 9 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "Release blocker for 3.2.0: CI is made green on every job.\n\nMost of the work since 3.1.0 had never run on Windows. CI found eight failing test files there, and one Linux browser leg. Three later rounds narrowed that to zero: round 4 (run 37916029700) was green on every job.\n\nUser-facing fixes:\n- Usage rows appended during a month rewrite are no longer lost on Windows. A per-month lock covers appends and the rewrite. A failed carry is reported, and a filesystem that refuses locks no longer stalls the metering hook.\n- The trail, evidence and ledgers are written with LF on every platform. close-phase reads the journal raw and folds CRLF, so a Windows landing commits its stamp.\n- close-phase reads committed symlinks from git and passes paths to git literally.\n- The panel launcher handles a backslash path.\n- The red helper reports native paths and links dependencies as junctions when symlinks are not allowed.\n- `* text=auto eol=lf` makes every checkout LF, with a lint that names any text file that loses the pin.\n\nTest and CI changes:\n- Three long suites run their stages concurrently through one shared runner in tests/_harness.py, with identical case lists.\n- A silent screenshot check fails within minutes, naming the step.\n- Every CI job has a time bound derived from named runs and enforced by gate-parity.\n\nThe phase review's four med findings were fixed by P121.16 and P121.17, and its lows by P121.17 and P121.18. One low is left to watch: a lock-contention case flaked once under heavy local load.\n\nThe six-hour Linux hang seen once in CI was not reproduced in four container runs. It is recorded internally with a stall watch now in place. Faults found along the way are in the internal plan (F582-F587).",
   "tasks": [
     {
       "id": "P121.1",
       "title": "Windows: test__output rt3 holds on Windows",
-      "status": "pending",
+      "status": "done",
       "description": "On windows-latest, plugins/audit/tests/test__output.py fails case rt3: 'a tree the plain removal could not take is removed by the fallback pass without changing the mode of a file OUTSIDE it that a link inside it points at: mode 666'. ",
       "files": [
         "plugins/audit/scripts/_output.py",
@@ -56,21 +146,34 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "42229d9b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The fault was in rt3's fixture, not in _output.remove_tree. rt3 set the link target to 0o640 and compared the mode afterwards with that literal. On Windows, os.chmod keeps only the read-only attribute, so 0o640 reads back as 0o666 and the check could never pass. A writable target also reads the same before and after a chmod through the link, so on Windows the case could not catch the defect it exists for.\n\nThe target is now read-only (stat.S_IREAD) and is compared with its own mode as read back. The owner-write bit is the one permission fact both platforms keep, and remove_tree's fallback chmod (0o700) sets it. A new case, rt3a, asserts the target has no owner-write bit before the removal, so a return to a writable fixture goes red instead of leaving rt3 unable to fail. rt3's message now prints both modes.\n\nOnly the test file changed.\n\nThe red was observed by simulation, not on Windows: scratchpad P121.1/probe.py emulates Windows chmod.\n- HEAD's rt3 is red with the real remove_tree, matching CI's \"mode 666\".\n- The fixed file is green.\n- A link-following remove_tree mutant is red with the fixed file, on POSIX and on emulated Windows.\n\nThe helper could not run: macOS has no red to observe.",
+        "descriptive": "A test that checks safe folder removal now works on Windows, where file permissions are reduced to read-only or writable."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-09T00:55:19Z",
+      "completedAt": "2026-10-09T02:29:11Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__output.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-09T01:50:49Z.ce347e",
+        "status": "passed",
+        "at": "2026-10-09T01:50:49Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "42229d9b",
+        "at": "2026-10-09T02:29:11Z",
+        "basis": "orchestrator check: Windows chmod emulation shows HEAD red and the fix green; a link-following mutant stays red on both platforms"
+      }
     },
     {
       "id": "P121.2",
       "title": "Windows: test_audit_task finishes well inside the sweep cap",
-      "status": "pending",
+      "status": "done",
       "description": "On windows-latest, plugins/audit/tests/test_audit_task.py did not finish within the sweep's 300-second per-file cap. Profile it first. Then run its stages concurrently in child processes and replay their results, the way tests/test_drive_phase.py has done since P119.7. Every case id and verdict must stay identical; diff the case lists before and after. Do not raise the cap. ",
       "files": [
         "plugins/audit/tests/test_audit_task.py"
@@ -96,21 +199,34 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "adb25982",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Profile first: at-block (786 cases, 93.9 s) dominated, and the time goes to process starts, about 7,200 per full run. The full HEAD run took 222 s on a loaded machine.\n\nat-block is split into seven slices (at1-block to at7-block), cut only at group boundaries where an AST data-flow check showed no later group reads a name an earlier group bound. Shared opening helpers moved unchanged to `_at_kit(tmp)`. Imports were hoisted to module level, which removed five local-before-assignment reads.\n\nThe full run now starts every stage as a child (`--stage X --cases-to f.json`), at most six at once, with a 280 s timeout per child. It replays the cases in STAGES order through one `_harness.run` and runs label_faults over the merged call sites. A child that reports nothing is one named failure. `--stage` without `--cases-to` still runs in process, so the red helper's narrowed runs are unchanged.\n\nNew ps-block:\n- ps1: every `_at_kit` caller is in STAGES.\n- ps1b: a missing slice is named.\n- ps2: a silent block is one named failure.\n- ps3: a replayed stage matches the same stage run in process.\n\nAll 894 original case ids and verdicts are identical and in the same order.\n\nTwo runs, about 25 minutes apart: 28.5 s and 28.0 s, against 222 s before.\n\nWindows simulation (scratchpad P121.2/probe, a delay added to every process start): HEAD hit the 300 s cap, and the fixed copy finished in 141 s.\n\nEach of four mutations turned its own case red.\n\nThe runner helpers are copies of test_drive_phase.py's. Moving them into tests/_harness.py is the better structure and is recorded internally.",
+        "descriptive": "The largest test file now runs its parts in parallel, about eight times faster, with exactly the same tests and results, so the Windows run stays inside its time limit."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-09T00:55:20Z",
+      "completedAt": "2026-10-09T02:29:14Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-09T01:59:41Z.28bb44",
+        "status": "passed",
+        "at": "2026-10-09T01:59:41Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "adb25982",
+        "at": "2026-10-09T02:29:14Z",
+        "basis": "orchestrator check: profile-led split; identical case ids and verdicts; slow-spawn Windows simulation HEAD timed out, fix 141 s"
+      }
     },
     {
       "id": "P121.3",
       "title": "Windows: concurrent usage appends lose no row",
-      "status": "pending",
+      "status": "done",
       "description": "On windows-latest, plugins/audit/tests/test_audit_usage.py fails case bw3: 'appenders for sessions outside the backfill set, running during a backfill, lose no row across repeated trials: appended 932, lost 97'. This may be a real data-loss bug on Windows, not a flaky test: a rename over an open file, or an append racing a rewrite without a lock. Find out which, and if it is real, fix the code. ",
       "files": [
         "plugins/audit/scripts/usage/usage_ledger.py",
@@ -139,21 +255,35 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3122cb9c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "This was real data loss on Windows, not a flaky test. Windows refuses os.replace onto a file any handle holds open, so the backfill's month rewrite was refused on its first try. HEAD's retry then drained, closed, and wrote the whole month to a temp file before the swap, and any row an appender wrote in that window was erased. A retry refused again failed the month.\n\nFix, in usage_ledger.py: a per-month OS lock (fcntl.flock on POSIX, msvcrt.locking on Windows) on `<month>.jsonl.lock`, which is never deleted and is not selected by any `.jsonl` reader.\n- append_rows opens, writes and closes under the lock. If the lock is not free within MONTH_LOCK_WAIT_S, it appends anyway: a row at risk rather than a row dropped for certain.\n- rewrite_month holds the lock for the last drain, the temp write and the replace. It retries a refused replace under the lock, then settles for writers that take no lock. If it cannot get the lock, it returns False and leaves the old file standing.\n- New functions: month_lock_path, lock_month, unlock_month, _append_locked and _replace_retrying. _write_rows is removed.\n- audit-usage.py's docstring and comment are updated.\n\nDecision, reversing an earlier design pin: case bw7 (\"append_rows still takes no lock\", named in the done task P107.3's verifiedBy) is removed, because a lock-free append cannot be made safe on Windows. `tools/bench-hooks.py --gate` passes. tw4 expects the lock file. nm1's writer appends directly, so it still tests writers that take no lock.\n\nNew cases:\n- bw14 reproduces the Windows sequence deterministically.\n- bw15 and lk1-lk3 cover the lock itself.\n\nRed-first: proved (bw14 red at HEAD).\n\nMutations, in a copied tree, each red on its cases:\n- no lock on append;\n- append gives up when the lock is busy;\n- append never unlocks;\n- rewrite takes no lock;\n- rewrite never unlocks.\n\nThe Windows-replace probe (scratchpad P121.3/probe_windows_replace.py) lost 24, 52, 46, 19 and 11 rows over five trials on a HEAD export, and none on the working tree.\n\nNot run on Windows. The build guide still says the metering hook appends without a lock; that line is carried by the next task in this phase.",
+        "descriptive": "Cost records written while the monthly ledger is being rewritten are no longer lost on Windows; appends and the rewrite share a per-month lock."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-09T00:55:20Z",
+      "completedAt": "2026-10-09T01:35:05Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_usage.py",
+        "plugins/audit/tests/test_usage_ledger.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-09T01:34:54Z.9ca8e7",
+        "status": "passed",
+        "at": "2026-10-09T01:34:54Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "3122cb9c",
+        "at": "2026-10-09T01:35:05Z",
+        "basis": "orchestrator check: real data loss reproduced by a Windows-replace probe on HEAD, none after; bw14 proved red; lock mutations each red"
+      }
     },
     {
       "id": "P121.4",
       "title": "Windows: close-phase's symlink case holds on Windows",
-      "status": "pending",
+      "status": "done",
       "description": "On windows-latest, plugins/audit/tests/test_close_phase.py fails case cr28: 'a declared symbolic link to a file that did not change lands BOUND'. It printed exit 1 and landed False, with 'REFUSED: does not land over its newest gate verdict'. ",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -180,25 +310,49 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "18a6b6aa",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Cause: before landing, close-phase checks the branch tip out into a scratch work tree and fingerprints the declared files against the gate's recorded fingerprint. The recorder reads a symlink through to its target's bytes. `_check_out` decided whether a file was a link by asking the checked-out file. Under core.symlinks=false, git's Windows default, checkout-index writes a link as a plain file holding the target's path text, so the tip's fingerprint hashed that text and the phase was refused as moved (cr28 on windows-latest).\n\nFix: a link is identified by its mode in the tip's tree and read from git, not from the filesystem.\n- `_link_texts()` takes the mode-120000 entries from `git ls-files -s -z` and reads each link's target with `git cat-file blob`.\n- `_check_out` returns `(work_tree, links)`.\n- `_leads_to()` follows a chain of links to the file whose bytes reading the link yields.\n- `_write_tip` reads that file.\n- A cycle of links leaves the check unestablished, so the phase is refused as unanswerable, because the recorder cannot read a cycle either.\n\nCases, reproduced on macOS by setting `core.symlinks false` in the fixture repo:\n- cr30: an unchanged link target lands bound;\n- cr31: a target changed after the green still refuses as moved (the second direction);\n- the skip list for hosts that refuse os.symlink covers cr28-cr31.\n\nRed-first: proved (cr30 red at HEAD, 246/247).\n\nProbe (scratchpad P121.4/probe.py): HEAD MISMATCH, working tree MATCH.\n\nObserved, recorded internally: cr22 counts close-phase-tip-* directories in the shared system TMPDIR, so it can flake when the suite runs outside the sweep beside another process.",
+        "descriptive": "Merging a phase that contains a symbolic link no longer fails on Windows, where git writes links as plain files."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-09T00:55:20Z",
+      "completedAt": "2026-10-09T01:35:05Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_close_phase.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-09T01:27:37Z.ecdca2",
+        "status": "passed",
+        "at": "2026-10-09T01:27:37Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "18a6b6aa",
+        "at": "2026-10-09T01:35:05Z",
+        "basis": "orchestrator check: link identified by tree mode and read from git; core.symlinks=false reproduces the Windows refusal; cr30 proved red, cr31 second direction"
+      }
     },
     {
       "id": "P121.5",
       "title": "Windows: drive-phase prints and sign-off hold on Windows",
-      "status": "pending",
+      "status": "done",
       "description": "On windows-latest, plugins/audit/tests/test_drive_phase.py fails three cases: dp3, where a success print of 400 bytes exceeds the 300-byte bound, likely because of Windows paths; and sg2 and gr1, the sign-off and commit sequences. ",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/tests/test_drive_phase.py"
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/tests/test_usage_ledger.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/_evidence_io.py"
       ],
       "tests": {
         "mode": "regression",
@@ -221,21 +375,36 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e1351426",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Root cause of dp3, sg2 and gr1 on Windows: the journal was appended in text mode, so Windows wrote CRLF into the committed blob. close-phase's pending_beyond_stamp read the working journal in text mode, which folded CRLF to LF, and compared it with `git show HEAD:`, which keeps CRLF. _foreign_rows then concluded the journal no longer began with HEAD's, and the landing stamp was skipped. That left sg2 and gr1 dirty, and grew dp3's final print to 400 bytes. A sitecustomize that gives text-mode writes the Windows newline reproduced all three on macOS, with CI's exact sizes.\n\n(b) Every trail and ledger append now writes LF on every platform:\n- _journal_io's appender and write_merged;\n- _evidence_io.append_row;\n- usage_ledger._append_locked;\n- hooks/_config's append_gate_event and atomic_write_text.\n\nThe hash chain hashes each row's canonical JSON before it is written, so line endings never enter it. Readers split lines and accept CRLF, so old CRLF rows still verify. nl6 checks this end to end on a real repo.\n\n(a) close-phase reads the journal with newline=\"\" and folds CRLF to LF on both sides before the prefix check. A core.autocrlf checkout (CRLF over an LF blob) therefore still lands; cl3 pins that.\n\nCases:\n- nl0: the simulation really writes CRLF.\n- nl1-nl5: each writer writes LF under it.\n- nl6: an old CRLF trail still verifies.\n- cl1: a CRLF-committed journal lands.\n- cl2: the over-fire twin, where another phase's row is still named.\n- cl3: an autocrlf checkout lands.\n\nRed-first: proved for close-phase (cl1, cl2). For the journal, the helper's fix run missed _evidence_io.py, which was declared at a wrong path, now corrected. Scratch mutations turned nl1-nl5, cl3 and cl2 red.\n\nUnder the Windows-newline simulation the driver suite passes 128/128, and the full sweep passes 316/316. `tools/bench-hooks.py --gate` passes, because hooks import _config.\n\nThe build guide's audit-usage section now describes the per-month lock and the line endings.\n\nSame class, left and recorded internally: _manifest_io.atomic_write_text and the demo generators' committed .jsonl writers.",
+        "descriptive": "The audit trail and ledgers are written the same way on every platform, and merging a phase on Windows now commits its final record instead of leaving it behind."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-09T00:55:20Z",
+      "completedAt": "2026-10-09T02:36:39Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test__journal_io.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-09T02:36:39Z.e603fc",
+        "status": "passed",
+        "at": "2026-10-09T02:36:39Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "e1351426",
+        "at": "2026-10-09T02:36:39Z",
+        "basis": "orchestrator check: root cause reproduced by a Windows-newline simulation with CI's exact values; fix green under it; cl1/cl2 proved red; mutations red"
+      }
     },
     {
       "id": "P121.6",
       "title": "Windows: the panel launcher works on Windows",
-      "status": "pending",
+      "status": "done",
       "description": "On windows-latest, plugins/audit/tests/test_panel_server.py fails cases ps1 and ps1b: `examples/panel.sh --detach` exits 2 with no output. The suite then raises FileNotFoundError for examples/acme-store/.claude/audit-panel.json. ps1 was added in P118, in commit 9372104d. ",
       "files": [
         "examples/panel.sh",
@@ -263,21 +432,34 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "37af6535",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Cause: the Windows suite hands sh a script path built with os.path.join. `$0` then holds backslashes and no `/`, so examples/panel.sh's `case \"$0\" in */*)` fell through to here=., and the script looked for its repo one level above the working directory. panel-server.py was not there, and `--status` exited 2 under `set -e`. The test never printed stderr, so CI showed `rc 2, ''`.\n\nFix: panel.sh turns backslashes into slashes before finding its own directory, with a comment saying why.\n\ntest_panel_server.py:\n- shared helpers _panel_sh_tree and _panel_sh_run;\n- every ps1 message carries the script's stderr;\n- ps1b looks for the `/`-spelled path the script prints;\n- the unguarded os.remove that crashed the suite now runs only when the pidfile exists;\n- new regression case ps1d runs the script through a backslash-named path on POSIX, and is covered by ps1 on Windows.\n\nRed-first: proved (ps1d red on HEAD's panel.sh, 101/102). The probe (scratchpad P121.6/probe.sh) shows HEAD rc=2 and the worktree rc=0.\n\nNot checked on Windows: whether Git-for-Windows sh rewrites the URL argument.\n\nSame class outside this task's files, recorded internally: examples/report.sh and plugins/audit/hooks/py-launch.sh use the same `case \"$0\" in */*)`.",
+        "descriptive": "The panel launcher script finds its own folder when Windows hands it a path with backslashes."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-09T00:55:21Z",
+      "completedAt": "2026-10-09T02:29:11Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_panel_server.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-09T02:07:01Z.d2707a",
+        "status": "passed",
+        "at": "2026-10-09T02:07:01Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "37af6535",
+        "at": "2026-10-09T02:29:11Z",
+        "basis": "orchestrator check: ps1d proved red on HEAD's launcher; probe HEAD rc=2, worktree rc=0"
+      }
     },
     {
       "id": "P121.7",
       "title": "Windows: stamp-verification prints on a legacy code page",
-      "status": "pending",
+      "status": "done",
       "description": "On windows-latest, the blocks sd-deps and sb-new-file in plugins/audit/tests/test_stamp_verification.py raise UnicodeEncodeError: 'charmap' codec can't encode character U+25CF. Every other script calls safe_stdio(). Find where this path writes without it, or what it spawns that does. ",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -304,21 +486,34 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8c26a941",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The fault was in the test's fixture code, and stamp-verification.py is unchanged. `_write()` opened files without naming an encoding, so Windows used cp1252. The fake jest runner `_FAKE_JEST`, which `_write()` writes to disk, held a literal U+25CF bullet and a U+203A separator, although its comment claimed ASCII. Writing that runner file raised UnicodeEncodeError before the sd-deps and sb-new-file stages ran any case.\n\nFix, in the test file only:\n- the runner's source is ASCII, and builds the two characters with chr() at run time, so its output is unchanged;\n- `_write` always writes UTF-8.\n\nNew stage sd-encoding:\n- sd10: both fake runners' sources are pure ASCII;\n- sd11: `_write` writes UTF-8 bytes, and a raise during the write is reported as sd11's own failure.\n\nEvery other non-ASCII string and every write without an encoding in both files is accounted for.\n\nProbe (scratchpad P121.7/, with every unnamed-encoding open defaulting to cp1252):\n- a HEAD copy gives 0/2 with CI's exact message;\n- the working tree gives 8/8;\n- swapping in HEAD's runner turns sd10 red;\n- swapping in HEAD's `_write` turns sd11 red.\n\nThe suite passes 216/216, plain and under PYTHONIOENCODING=cp1252. The full sweep passes 316/316.\n\nRed-first: could-not-prove. The fix and its cases share the declared test file, so the helper cannot produce a run without the fix.",
+        "descriptive": "The proof tool's tests no longer crash on a Windows code page; test fixtures are written as UTF-8 and the fake test runner's source is plain ASCII."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-09T00:55:21Z",
+      "completedAt": "2026-10-09T02:29:12Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-09T02:14:22Z.b54883",
+        "status": "passed",
+        "at": "2026-10-09T02:14:22Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8c26a941",
+        "at": "2026-10-09T02:29:12Z",
+        "basis": "orchestrator check: cp1252 probe on HEAD gives CI's exact error, the fix passes; sd10 and sd11 each red under HEAD's half"
+      }
     },
     {
       "id": "P121.8",
       "title": "Windows: measure-context counts the same bytes on Windows",
-      "status": "pending",
+      "status": "done",
       "description": "On windows-latest, `tools/measure-context.py --selftest` fails case mc3 ('the entry's total is its body plus those files, to the byte') and case mc4 ('an agent loads its system prompt and every skill its frontmatter preloads'). The likely cause is CRLF line endings or path separators. ",
       "files": [
         "tools/measure-context.py"
@@ -344,21 +539,34 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e9345970",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Root cause: the selftest's fixture writer _fx_write opened files in text mode. On Windows that writes every `\\n` as `\\r\\n`, but the writer returned the length of the LF text, while the tool reads files in binary. Every fixture size came out short by one byte per newline, which turned mc3 and mc4 red; mc15, mc16, mc20 and mc22 share the same writer.\n\nWhat changed in tools/measure-context.py:\n- _fx_write opens with newline=\"\", so the bytes on disk are the bytes it counts.\n- split_frontmatter now charges the closing delimiter's line ending, `\\r\\n` or `\\n`, to the frontmatter rather than to the body. Before, a CRLF checkout's body started with a stray `\\r\\n`.\n- The tool still measures the bytes actually on disk, and does not normalise CRLF.\n\nNew cases:\n- mc28: a fixture file's size on disk equals the size of the text it was given.\n- mc29: CRLF and LF frontmatter split the same way, and a blank line that opens the body still counts.\n\nWindows behaviour was simulated with a text-mode write that turns `\\n` into `\\r\\n` (scratchpad P121.8/probe.py --windows), on scratch copies:\n- HEAD: 21/27, with mc3, mc4, mc15, mc16, mc20 and mc22 red.\n- Fixed: 29/29, plain and simulated.\n- Mutants: restoring the text-mode write turns mc28 red; restoring the LF-only split, or stripping every leading newline, turns mc29 red.\n\nRed-first: the helper refused, because the task declares no test file (the cases are inline in tools/).",
+        "descriptive": "The context-size tool counts the same bytes on Windows, where text files get CRLF line endings."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-09T00:55:21Z",
+      "completedAt": "2026-10-09T02:29:12Z",
+      "verifiedBy": [
+        "tools/measure-context.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-09T02:21:42Z.5a9820",
+        "status": "passed",
+        "at": "2026-10-09T02:21:42Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "e9345970",
+        "at": "2026-10-09T02:29:12Z",
+        "basis": "orchestrator check: CRLF-write simulation turns HEAD red and the fix green; mc28 and mc29 each red under their mutant"
+      }
     },
     {
       "id": "P121.9",
       "title": "Linux: the hostile-row leg holds on this repo's plan in CI",
-      "status": "pending",
+      "status": "done",
       "description": "In ubuntu CI, the 'The report is interactive' step of the manifest-validation job fails on the live-plan render of docs/audit/audit-plan.json: 'a very long summary and a very long unbroken token, planted in phases + data bugs, widen the document at no width: got 833px (826 -> 873)'. The same check passes on macOS. Render the plan and find the cell in the bugs data table that widens under Linux fonts; the reviewer's probes are in scratchpad/probe/. Fix the cause, or the check's assumption, without weakening what the check guards. ",
       "files": [
         "tools/check-report-interactive.mjs",
@@ -385,16 +593,589 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "54cd0a30",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Cause: section 10b planted the long summary into every bare cell of the bugs table, including status, severity and ADO, whose real values are a pill, a single word or a dash. At 833px, the first width above the 52rem breakpoint, the eight-column bugs table is already at its minimum width with real content. One ordinary planted word widened those columns under Linux's wider fonts. A Verdana stand-in reproduced CI's shape: 833 -> 877, against CI's 826 -> 873.\n\nDecision: fix the check's assumption, not the CSS. The renderer never puts a paragraph in a status, severity or count column. A cell is planted if it is full-width, or if it is a bare-text cell in a column where the rendered plan itself holds words separated by spaces. The token, the chips and the widening assertion are unchanged. Tables with no prose cell are named as skipped in the notes. The cost in coverage: two data tables per shipped report that hold only numbers or single words are no longer planted.\n\nProbe (scratchpad P121.9/measure.mjs; old or new planting, mac or wide font):\n- live plan and demo-large: old+wide red, new+wide green;\n- acme and index: green in all four combinations;\n- with the new planting, colspan cells not breaking turns it red, and data cells set nowrap turns it red.\n\nSeparate, and already recorded internally: the live bugs table has no width to spare at 833px on Linux, so a real title word longer than the current widest would widen the page.",
+        "descriptive": "The report check stops failing on Linux fonts over an ordinary word placed in a status column, and still fails when long text can widen the page."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-09T00:55:22Z",
+      "completedAt": "2026-10-09T02:29:13Z",
+      "verifiedBy": [
+        "tools/check-report-interactive.mjs"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-09T02:29:01Z.d2291e",
+        "status": "passed",
+        "at": "2026-10-09T02:29:01Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "54cd0a30",
+        "at": "2026-10-09T02:29:13Z",
+        "basis": "orchestrator check: wide-font stand-in turns the old planting red and the new green; two CSS breakages still red"
+      }
+    },
+    {
+      "id": "P121.10-eof",
+      "title": "Windows: shipped text files check out with LF everywhere",
+      "status": "done",
+      "description": "On windows-latest the CRLF checkout inflates every shipped .md file: tools/measure-context.py mc19/mc24 measure the reviewer at 7126 against its 7000 ceiling and /audit:phase at 4028 against 4000 (6995 and 3962 on LF), and test_audit_task.py fb15 fails on the same gate. .gitattributes already pins ui assets, _ui_theme.py, *.sh and *.yml to LF, each with its reason. Extend the pin, with its reason, to every text file the plugin ships or the pipeline commits byte-for-byte: at least *.md, *.json and *.jsonl (the committed journal, evidence and manifest), and decide whether a repo-wide `* text=auto eol=lf` is the cleaner rule. Confirm `git add --renormalize .` changes no indexed content, and that a scratch clone made with core.autocrlf=true now checks these files out LF and measure-context --gate passes there. Add a lint or case so a newly shipped text type that is not pinned is caught, if the repo has a natural home for it (test__refs or measure-context). This is CI round 2 on windows-latest; the job log was saved outside the repository for the executor (grep the file name). You cannot run Windows here. Find the root cause, reproduce the Windows condition locally where you can (a CRLF checkout via `git -c core.autocrlf=true` into a scratch clone, no symlink privilege, a slow process start), show it red before the fix and green after, and say plainly what could not be simulated. Fix the class, not only the named case; a platform skip only with the house's idiom and a stated reason.",
+      "files": [
+        ".gitattributes",
+        "tools/measure-context.py",
+        "plugins/audit/tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "72435dd1",
+      "outcome": {
+        "technical": "Root cause: .gitattributes pinned only ui/**, _ui_theme.py, *.sh and *.yml. Under core.autocrlf=true, git's Windows default, every other text file checked out with CR bytes. That put the reviewer at 7126 against its 7000 ceiling and /audit:phase at 4028 against 4000 (6995 and 3962 on LF). test_audit_task fb15 runs the same gate.\n\nFix: a repo-wide `* text=auto eol=lf`, with its reason in a comment. The four existing rules and their reasons are kept. text=auto leaves binary detection to git, so the PNG images and the GIF are untouched. Renormalizing a copy of the index changed no indexed content: every text file was already LF in the index.\n\nNew lint in tools/measure-context.py (section \"line endings\"). It asks git (`ls-files --eol -z`) which tracked text files resolve to neither eol=lf nor -text, and states a problem when git cannot answer. Cases:\n- mc30: the parser and the decision.\n- mc31 (red twin): a repo pinning only *.sh is caught.\n- mc32 (allow twin): `* text=auto eol=lf` names nothing and sees the PNG as binary.\n- mc33: the real repository has no unpinned text file, and the check is not empty.\n\nProbe (scratchpad P121.10-eof/probe.sh): a core.autocrlf=true clone of HEAD reproduces CI's exact figures and the gate breach. With the new attributes, no file checks out CRLF and the gate passes. HEAD's attributes turn mc33 red. Mutations of the decision function are red both ways.",
+        "descriptive": "Every text file in the repository now checks out with the same line endings on every platform, so Windows users get exactly the files Linux and macOS users get, and a check catches any file that loses the rule."
+      },
+      "startedAt": "2026-10-09T08:12:56Z",
+      "completedAt": "2026-10-09T08:48:32Z",
+      "verifiedBy": [
+        "tools/measure-context.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-09T08:32:53Z.1b34f1",
+        "status": "passed",
+        "at": "2026-10-09T08:32:53Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "72435dd1",
+        "at": "2026-10-09T08:48:32Z",
+        "basis": "orchestrator check: an autocrlf clone reproduces CI's exact figures, and the new attributes clear them; lint red/green both ways"
+      }
+    },
+    {
+      "id": "P121.11-eof",
+      "title": "Windows: the journal's newline cases leave nothing behind",
+      "status": "done",
+      "description": "On windows-latest the sweep reports test__journal_io.py 'wrote outside the fixtures it makes for itself: working directory: left behind: jio-nl-hqe6eu52' - the nl-block added in P121.5 creates a jio-nl-* directory in the working directory, or fails to remove it on Windows (an open handle, a read-only file, a git object). Make every nl case build its scratch space under tempfile.mkdtemp and remove it in finally with the house remove_tree, and show the leak under a simulation. This is CI round 2 on windows-latest; the job log was saved outside the repository for the executor (grep the file name). You cannot run Windows here. Find the root cause, reproduce the Windows condition locally where you can (a CRLF checkout via `git -c core.autocrlf=true` into a scratch clone, no symlink privilege, a slow process start), show it red before the fix and green after, and say plainly what could not be simulated. Fix the class, not only the named case; a platform skip only with the house's idiom and a stated reason.",
+      "files": [
+        "plugins/audit/tests/test__journal_io.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "c50157bf",
+      "outcome": {
+        "technical": "Root cause: nl6 runs `git init` and a commit inside its mkdtemp fixture. Git writes its loose objects read-only, and Windows refuses to unlink a read-only file. So the block's `shutil.rmtree(tmp, ignore_errors=True)` silently left `.git/objects/**` behind, and the sweep reported the leftover jio-nl-* directory.\n\nFix, in the test file only:\n- every `shutil.rmtree(..., ignore_errors=True)` cleanup now calls `_harness.remove_tree`, the house function with a read-only fallback;\n- the nl block's cleanup runs under a Windows-unlink emulation on every platform.\n\nNew cases:\n- nl7: the emulation bites, so a bare rmtree under it leaves a file.\n- nl8: the git-holding fixture is removed under the Windows rule.\n- nl9: an AST check that no `finally` in the file removes a fixture with a bare rmtree, and that it finds more than one remove_tree.\n\nProbe (scratchpad P121.11-eof/probe.py, which emulates the read-only unlink rule):\n- HEAD leaks jio-nl-*, in the shape of the CI log line;\n- the fix leaks nothing.\n\nScratch mutations:\n- the nl cleanup reverted turns nl8 and nl9 red;\n- another cleanup reverted turns nl9 red;\n- the emulation made a pass-through turns nl7 red.\n\nNot simulated: a real Windows read-only attribute, sharing violations, antivirus locks.",
+        "descriptive": "The journal tests now clean up their temporary git folders on Windows too, and a check keeps every cleanup in that file on the safe removal path."
+      },
+      "startedAt": "2026-10-09T08:12:56Z",
+      "completedAt": "2026-10-09T08:48:32Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__journal_io.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-09T08:40:23Z.b5371d",
+        "status": "passed",
+        "at": "2026-10-09T08:40:23Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c50157bf",
+        "at": "2026-10-09T08:48:32Z",
+        "basis": "orchestrator check: read-only-unlink emulation reproduces the CI leak on HEAD and none after; three mutations each red"
+      }
+    },
+    {
+      "id": "P121.12-eof",
+      "title": "Windows: the driver suite finishes inside the cap on a slow runner",
+      "status": "done",
+      "description": "On windows-latest plugins/audit/tests/test_drive_phase.py still did not finish within the 300s per-file cap, although P119.7 made its stages run in parallel (about 71s on macOS). Windows starts processes far slower and the runner has few cores. Profile which stages dominate (gb-block was the longest), split the long ones further where an AST/data-flow check shows nothing crosses, or cut process starts a case does not need, keeping every case id and verdict identical (diff before/after). The P121.2 change to test_audit_task.py is the precedent for splitting. Do not raise the cap. Show the effect with the slow-spawn simulation in P121.2's slow-spawn simulation. This is CI round 2 on windows-latest; the job log was saved outside the repository for the executor (grep the file name). You cannot run Windows here. Find the root cause, reproduce the Windows condition locally where you can (a CRLF checkout via `git -c core.autocrlf=true` into a scratch clone, no symlink privilege, a slow process start), show it red before the fix and green after, and say plainly what could not be simulated. Fix the class, not only the named case; a platform skip only with the house's idiom and a stated reason.",
+      "files": [
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "c21111cb",
+      "outcome": {
+        "technical": "Profiled by process starts, which does not depend on machine load. At HEAD, gb-block ran 2135 of the file's 10416 starts and sg-block 1936. gb-block was also scheduled late, so on six workers HEAD's critical path was 3008 starts. Most starts are git calls made by the verbs.\n\nChanges:\n- Blocks are split only where no later case reads a name an earlier one bound. Seven blocks a parent called as its last statement became their own STAGES rows. Three functions were cut in two: advance sign-off into refused and allowed halves, decline-coverage into coverage and reuse-gate halves, and the stale gate into gate and re-accept halves.\n- The largest stage is now 1136 starts, and the critical path on six workers is 1920. The total is unchanged.\n- The `_repo` fixture writes its git identity into the config `init` wrote, instead of running `git config` three times.\n- The docstring states the rule for where a block may be cut.\n\nNew cases:\n- sb1: every `_..._cases` function runs in exactly one stage (read from the AST).\n- sb1m: its red twin.\n- fx1: git reads the hand-written identity back.\n\nCase ids and verdicts: HEAD 128/128, fixed 131/131. Only the three new cases are appended.\n\nSlow-spawn simulation (each start sleeps):\n- 0.08 s per start: HEAD timed out at 300 s; fixed 201 s.\n- 0.05 s per start: HEAD timed out once and took 255 s once; fixed 150-154 s.\n- CPU-bound variant: 196 s to 131 s, measured once.\n\nMutations turn sb1 and fx1 red.\n\nNot simulated: Windows itself and the runner's real core count. CI's log shows two sweep workers there.\n\nThe bigger lever, the verbs' own git rev-parse calls, is recorded internally.",
+        "descriptive": "The driver's test file splits its longest parts so it finishes in time on a slow runner, with exactly the same tests and results."
+      },
+      "startedAt": "2026-10-09T08:12:57Z",
+      "completedAt": "2026-10-09T09:05:57Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-09T09:05:56Z.c7e17e",
+        "status": "passed",
+        "at": "2026-10-09T09:05:56Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c21111cb",
+        "at": "2026-10-09T09:05:57Z",
+        "basis": "orchestrator check: profiled by process starts; critical path cut by roughly a third; slow-spawn simulation HEAD timed out, fix finished; ids identical"
+      }
+    },
+    {
+      "id": "P121.13-eof",
+      "title": "Windows: the red helper links dependencies without symlink privilege",
+      "status": "done",
+      "description": "On windows-latest plugins/audit/tests/test_stamp_verification.py fails sd4 (the allow case with dependencies linked) and sd5 (--deps-from proves the red from another checkout's node_modules: without=3 with=0 expected, Windows got otherwise). The helper links node_modules into its throwaway tree; on Windows os.symlink needs a privilege CI and most users lack. Use a directory junction on Windows (or a fallback the helper already has), name the link kind in the note, and keep POSIX behaviour unchanged. This is a real user-facing defect on Windows, not only a test problem. This is CI round 2 on windows-latest; the job log was saved outside the repository for the executor (grep the file name). You cannot run Windows here. Find the root cause, reproduce the Windows condition locally where you can (a CRLF checkout via `git -c core.autocrlf=true` into a scratch clone, no symlink privilege, a slow process start), show it red before the fix and green after, and say plainly what could not be simulated. Fix the class, not only the named case; a platform skip only with the house's idiom and a stated reason.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "530a0703",
+      "outcome": {
+        "technical": "Root cause, corrected from the task's guess: on windows-latest the links were made. sd4 and sd5 failed because dependency_plan took git's `rev-parse --show-toplevel` output, which uses forward slashes on Windows, as a filesystem path. The basis then named a mixed-separator path that matched neither expected path.\n\nFix, in stamp-verification.py:\n- native_top() normalises git's toplevel, at both --show-toplevel sites (dependency_plan and red's root). POSIX is unchanged.\n- The privilege defect the task named is fixed as a class too. dependency_plan records a link kind, which link_kind() picks by probing one directory symlink. A refusal on Windows selects directory junctions plus hard links, with a copy across volumes. POSIX keeps symlinks.\n- Linking is split into link_entry and link_dependencies, with an injectable ops table.\n- deps_clause names the link kind in the basis.\n- unlink_junctions removes the helper's own junctions, detected by reparse tag, before every reset and before the throwaway is removed.\n- The docstring's section 4 describes the new linking.\n\nNew stage sw-windows, sw1-sw7:\n- the privilege refusal is simulated with OSError 1314;\n- sw7 is an end-to-end red run under it, which proves the red, names junctions in the basis, and removes every stand-in while the source survives.\n\nRed-first: the helper refused, because three runs of this suite do not fit its 565 s deadline. The probe (scratchpad P121.13-eof/probe.py) on HEAD's code turns sw1-sw7 red, and the fix turns them green. Five mutations each go red, the over-fire one included.\n\nNot simulated off Windows: real junction creation and removal. Known gap: dropping native_top on red's root is caught by no case.",
+        "descriptive": "The red-first proof tool reports Windows paths correctly, and on a Windows account without symlink rights it links dependencies another way instead of failing."
+      },
+      "startedAt": "2026-10-09T08:12:57Z",
+      "completedAt": "2026-10-09T08:48:33Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-09T08:48:21Z.ea8fdf",
+        "status": "passed",
+        "at": "2026-10-09T08:48:21Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "530a0703",
+        "at": "2026-10-09T08:48:33Z",
+        "basis": "orchestrator check: real cause (git's forward-slash toplevel) found from the CI log; probe red on HEAD, green after; five mutations red"
+      }
+    },
+    {
+      "id": "P121.14-eof",
+      "title": "Linux CI: the screenshot preconditions step no longer hangs, and a hang fails fast",
+      "status": "done",
+      "description": "In CI on ubuntu, the manifest-validation job's step \"Screenshot preconditions\" (`node tools/capture-screenshots.mjs --check`) hung for six hours, until GitHub cancelled the job. Its last output was the line \"composition: confirmed -> Saved · 1 change to the manifest · logged\". The next step in tools/capture-screenshots.mjs freezes /api/runstatus, PUTs /api/composition out of band, clicks Save and waits for the confirm dialog, and nothing more was printed. The same check passes on macOS, including in this phase's local gates. The head under test carries this phase's first nine fixes: the per-month usage lock in usage_ledger, the LF journal and evidence writers, close-phase's raw read, panel.sh's path normalisation, and the parallel stage runners.\n\nReproduce it on Linux locally: Docker works on this machine. Use the Playwright image matching CI's Chromium, or ubuntu with CI's own install steps from .github/workflows/ci.yml, against a copy of this worktree. Find the root cause, which may be a server-side deadlock, a lock held across requests, or a client wait with no timeout. Fix it, and make the failure fast in future:\n- the capture tool's waits get bounded timeouts that fail with a named step;\n- each CI job gets a timeout-minutes, so a hang costs minutes, not six hours.\n\nShow the hang reproduced in the container before the fix and the step passing after. tools/gate-parity.py and the ci.yml pins are the places a CI change must stay consistent with. If the cause lies in a file outside this task's list, stop and name it.",
+      "files": [
+        "tools/capture-screenshots.mjs",
+        ".github/workflows/ci.yml",
+        "tools/gate-parity.py",
+        "plugins/audit/scripts/panel/panel-server.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/scripts/governance/_journal_io.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "9d83a88d",
+      "outcome": {
+        "technical": "The CI hang (round 2's screenshot step, six hours of silence after \"composition: confirmed\") did not reproduce. Four Linux container runs of the same code passed: Playwright noble image, arm64 and amd64, root and non-root, and the manifests job's own steps under CI=true. CI round 3 also passed the step on GitHub. So the hang is intermittent and its root cause is unknown, recorded internally. By the log, the run stopped inside a step whose only unbounded waits are page.evaluate calls that await the panel's api() fetch.\n\nA hang now fails fast, wherever it happens.\n\ntools/capture-screenshots.mjs:\n- note() and fail() record the last line printed.\n- during() names the call about to be made.\n- watchForStall() fails the run after STALL_MS of silence (5 minutes). It names the last line and the current step, probes each panel server, and closes the browser so the stuck call throws. If the process is still alive after a grace period, it exits 1. Its timers are not unref'd, so a stuck promise cannot exit 0.\n- The synchronous child calls are bounded too.\n\nci.yml: timeout-minutes on every job (selftests 45, manifests 30, lint 10, plugin-validate 10), each at least twice the longest finished run in three named CI runs.\n\ntools/gate-parity.py enforces this: untimed_jobs and job_timeout_verdict make a job with no positive job-level bound a finding. New cases jt0-jt4. Six mutations each go red, the over-fire one included.\n\nInduced-hang pair in the container (scratchpad P121.14-eof):\n- HEAD's tool: silent until killed at 900 s.\n- The new tool: fails at 301 s, naming the step, with the panel still answering HTTP 200.\n- The new tool on a healthy full run: passes.",
+        "descriptive": "A stuck screenshot check now fails within minutes and says where it stopped, every CI job has a time limit, and a check enforces that limit."
+      },
+      "startedAt": "2026-10-09T08:39:08Z",
+      "completedAt": "2026-10-09T10:11:05Z",
+      "verifiedBy": [
+        "tools/gate-parity.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-09T10:10:54Z.ee1364",
+        "status": "passed",
+        "at": "2026-10-09T10:10:54Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9d83a88d",
+        "at": "2026-10-09T10:11:05Z",
+        "basis": "orchestrator check: natural hang not reproduced (four container runs; CI round 3 also passed the step); induced hang fails fast with a named step; gate-parity enforces job bounds; mutations red"
+      }
+    },
+    {
+      "id": "P121.15-eof",
+      "title": "Windows: test_close_phase finishes inside the cap, through one shared stage runner",
+      "status": "done",
+      "description": "On windows-latest, CI round 3 is green except for one file: plugins/audit/tests/test_close_phase.py did not finish within the sweep's 300-second per-file cap. test_drive_phase.py and test_audit_task.py already run their stages concurrently in child processes and replay them in order. Each of those files carries its own copy of the runner (`_collect`, `_text`, `_run_stage`, `_run_stages`, `_flag_values`).\n\nDo two things:\n1. Move that runner into plugins/audit/tests/_harness.py, once, with its own selftest cases. Make test_drive_phase.py and test_audit_task.py call it and delete their copies.\n2. Give test_close_phase.py the same shape: profile it by process starts (the probes from P121.12 and P121.2 are in the scratchpad), and split its long blocks only where no later case reads a name an earlier one bound. Every case id and verdict must stay identical in all three files: diff the case lists before and after.\n\nDo not raise the cap. Show the effect with the slow-spawn simulation, red before and green after. The sweep and gate-parity must stay green.",
+      "files": [
+        "plugins/audit/tests/_harness.py",
+        "plugins/audit/tests/test__harness.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "6bca9000",
+      "outcome": {
+        "technical": "The stage runner now lives once, in tests/_harness.py, in a new section \"blocks run side by side\": flag_values, stream_text, stage_reach, stage_faults, collect_stages, run_stage, run_stages, staged_selftest and staged_main. test_drive_phase.py and test_audit_task.py lost their copies; their __main__ calls `_harness.staged_main`.\n\nEach child gets its own TMPDIR/TEMP/TMP and stdin=DEVNULL. That also stops cr22, which reads the temp-dir listing, from seeing a sibling block's directories.\n\nA full run reports a failing case from stage_faults only when a STAGES table leaves a block out or runs one twice. A clean suite's case list is therefore unchanged.\n\ntest_close_phase.py, profiled by process starts (6482 in total): _review_answer_cases took 1866, because it ended by calling the next block, in a chain down to _verdict_reach. The chain is cut at each bare tail call into its own STAGES row, placed after its caller. Inner calls that pass a fixture were left alone. The largest stage is now about 900 starts.\n\nCase ids and verdicts are identical in all three files: 250, 131 and 898, diffed.\n\nSlow-spawn simulation at 0.05 s per start:\n- HEAD timed out at 300 s, twice, about 25 minutes apart;\n- the fix took 79.6 s and 77.2 s.\nAt 0.08 s per start the fix took 111.9 s (measured once). A plain local run went from 107 s to 40 s.\n\nNew harness cases sr1-sr11 sit inline in _harness.py's selftest (78/78). test__harness.py was not created: _harness lives in tests/, outside selftest_coverage's scope.\n\nMutation table (scratchpad P121.15-eof/probe/mutations.py, on a temp copy): all 12 mutations killed, including the over-fire one and a tail call put back, which shows as \"STAGED BLOCKS RUN TWICE\".",
+        "descriptive": "The merge step's test file now runs its parts in parallel and finishes well inside the time limit on a slow runner, and the three big test files share one runner instead of three copies."
+      },
+      "startedAt": "2026-10-09T09:26:44Z",
+      "completedAt": "2026-10-09T10:11:04Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/_harness.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-09T10:03:13Z.9865c9",
+        "status": "passed",
+        "at": "2026-10-09T10:03:13Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6bca9000",
+        "at": "2026-10-09T10:11:04Z",
+        "basis": "orchestrator check: chain of tail calls cut into stages; identical case lists in all three files; slow-spawn simulation HEAD timed out twice, fix under 80 s; 12 mutations killed"
+      }
+    },
+    {
+      "id": "P121.16-eof",
+      "title": "the usage ledger never reports a lost carry as written, and a refused lock never stalls the hook",
+      "status": "done",
+      "description": "Fixes P121-R1 to R3 from the phase review. (R1) _append_locked counts each buffered write and swallows a failure on flush or close. So rewrite_month's carry check reports success after the carried rows were lost: a probe with ENOSPC raised on close returned True with the row not on disk, where base returned False. Count rows only after the handle has closed without raising, so that a failed carry returns False. Fix append_rows' count the same way, since the old flaw was the same. Add a case where close raises. (R2) lock_month retries on every OSError, so on a filesystem that refuses flock (ENOTSUP or ENOLCK) every append waits MONTH_LOCK_WAIT_S. That is 10 s, the metering hook's own timeout (hooks.json), so the hook is killed before it records anything. Retry only on contention errnos (EWOULDBLOCK/EAGAIN for flock, EACCES/EDEADLOCK for msvcrt), and go unlocked at once on any other errno. Bound the wait with time.monotonic() at a value well below the hook's timeout, and state the basis for the value. Add a case where _try_lock raises ENOTSUP, asserting that append_rows returns quickly with the row written. (R3) commands/usage.md, the shipped /audit:usage doc, still says the metering hook appends without a lock and describes the loss as it was before the lock. Make it match PLUGIN-BUILD-GUIDE.md's audit-usage section. Deliver a mutation probe.",
+      "files": [
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/tests/test_usage_ledger.py",
+        "plugins/audit/tests/test_audit_usage.py",
+        "plugins/audit/commands/usage.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "96509be9",
+      "outcome": {
+        "technical": "Fixes P121-R1 to R3.\n\nR1: _append_locked returns len(rows) only after its `with` block has closed the handle without raising, and 0 on any exception. append_rows sums those counts. rewrite_month's carry check therefore returns False when the carried rows were lost on close.\n\nR2: lock_month waits only on contention errnos (_CONTENDED: EWOULDBLOCK, EAGAIN, EACCES, and EDEADLOCK/EDEADLK where defined). On any other errno it returns the sentinel LOCK_UNAVAILABLE at once.\n- The wait is bounded by time.monotonic().\n- unlock_month ignores the sentinel.\n- rewrite_month proceeds lock-free on LOCK_UNAVAILABLE, as every appender on that filesystem does, and still returns False when another writer holds the lock.\n- MONTH_LOCK_WAIT_S is now 3.0. Case lf6 pins it above REPLACE_RETRIES*REPLACE_RETRY_S and at most half of every meter-usage timeout, read from hooks/hooks.json.\n\nR3: commands/usage.md now matches the build guide. Only writers that skip the lock can still lose a row.\n\nCases lf1-lf6; lf2 and lf3 are skipped on Windows, where nothing is carried after a replace.\n\nRed-first: proved (lf1 red at HEAD).\n\nMutation probe (scratchpad P121.16-eof/mutations.py): seven mutations, each red on its expected cases.",
+        "descriptive": "The cost ledger no longer claims a record was saved when saving it failed, and a disk that cannot lock files no longer makes the cost hook wait until it is killed."
+      },
+      "startedAt": "2026-10-09T10:23:30Z",
+      "completedAt": "2026-10-09T10:58:42Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_usage_ledger.py",
+        "plugins/audit/tests/test_audit_usage.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-09T10:43:29Z.18bc27",
+        "status": "passed",
+        "at": "2026-10-09T10:43:29Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "96509be9",
+        "at": "2026-10-09T10:58:42Z",
+        "basis": "orchestrator check: close-failure and refused-lock cases red at HEAD, green after; the wait pinned by the hook's own timeout; seven mutations red"
+      }
+    },
+    {
+      "id": "P121.17-eof",
+      "title": "CI bounds and the stall watch say and do what holds",
+      "status": "done",
+      "description": "Fixes P121-R4 and R9. (R4) ci.yml's comment says each timeout-minutes is at least twice the longest finished run, but Windows selftests in run 36840507574 took 23m31s against a 45-minute bound. Re-derive each bound from `gh run view <id> --json jobs` over the runs you name, set every bound to at least twice the longest, and make the comment name exactly those runs. (R9) capture-screenshots' stopStallWatch clears the interval but not the STALL_GRACE_MS timeout, so a stalled run that already unwound exits 1 thirty seconds later; keep and clear that handle. Show each red before and green after.",
+      "files": [
+        ".github/workflows/ci.yml",
+        "tools/capture-screenshots.mjs",
+        "tools/gate-parity.py",
+        "tools/ui-tests/stall-watch.test.mjs"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "0b304360",
+      "outcome": {
+        "technical": "Fixes P121-R4 and R9.\n\nR4: every job's longest finished run was re-derived with `gh run view <id> --json jobs` over the 19 finished CI runs among the latest 20. The cancelled six-hour job is excluded.\n- selftests: 24m59s, so the bound rises from 45 to 60 minutes.\n- manifests: 9m50s, bound 30.\n- lint: 1m12s, bound 10.\n- plugin-validate: 0m21s, bound 10.\n\nThe ci.yml comment names those run IDs and the gh command, with one `longest <job>` line per job. tools/gate-parity.py's job_bound_evidence holds each timeout-minutes to at least twice its recorded figure, and reports a missing, unknown or duplicated line. New cases jb0-jb3; six mutations each go red.\n\nR9: watchForStall keeps the grace timer's handle. The stop function clears both timers and sets a stopped flag, so a tick still awaiting the browser close never arms the grace timer after the run stopped the watch. The clock, timers and exit are injectable, and watchForStall, STALL_MS and STALL_GRACE_MS are exported.\n\nNew vitest suite tools/ui-tests/stall-watch.test.mjs:\n- a stall that unwinds does not exit;\n- a stop during the tick's await does not exit;\n- a stall that never unwinds exits 1 once.\n\nAgainst HEAD's watchForStall, built in a scratch module and selected through STALL_WATCH_MODULE, the first two cases fail. With the fix's exit removed, the third fails. `npx vitest run` passes, 54 files.",
+        "descriptive": "Each CI time limit is now backed by a recorded measurement and checked against it, and a screenshot run that recovered on its own is no longer failed by a leftover timer."
+      },
+      "startedAt": "2026-10-09T10:23:31Z",
+      "completedAt": "2026-10-09T10:58:43Z",
+      "verifiedBy": [
+        "tools/gate-parity.py",
+        "tools/ui-tests/stall-watch.test.mjs"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-09T10:51:01Z.96cbd0",
+        "status": "passed",
+        "at": "2026-10-09T10:51:01Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "0b304360",
+        "at": "2026-10-09T10:58:43Z",
+        "basis": "orchestrator check: bounds re-derived from named runs and enforced by gate-parity; the stall-watch suite is red against HEAD and green after"
+      }
+    },
+    {
+      "id": "P121.18-eof",
+      "title": "the red helper's junction and root-path edges are reported and pinned",
+      "status": "done",
+      "description": "Fixes P121-R5 to R8. (R5) run_red's finally discards unlink_junctions' result, so an unremovable junction goes unreported and the throwaway removal proceeds over it: skip the removal and report it. (R6) _probe_link_kind probes on POSIX where only symlinks are possible and adds a mkdtemp failure path: return the symlink kind without probing when os.name != 'nt', and fall back on a mkdtemp error. (R7) no case covers native_top at red's root: add one with a forward-slash toplevel. (R8) close-phase _link_texts passes declared paths to `git ls-files` as pathspecs, so a path beginning with ':' is read as magic and refuses the landing: pass --literal-pathspecs (or GIT_LITERAL_PATHSPECS=1), with a case. Each new case red first.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "82174ff4",
+      "outcome": {
+        "technical": "Fixes P121-R5 to R8.\n\nR5: run_red's finally keeps unlink_junctions' result. A junction it could not remove skips the throwaway removal, is reported in the payload and on stderr, and exits E_LEFT_BEHIND.\n\nR6: _probe_link_kind returns the symlink kind without probing off Windows. If mkdtemp raises, it falls back to the junction kind, the one that needs no privilege.\n\nR7: sw10 feeds _red_scope a forward-slash, doubled-separator toplevel and asserts the real path.\n\nR8: close-phase passes --literal-pathspecs on _link_texts and, by default, on _git_bytes. `git check-ignore` refuses that flag (exit 128, reproduced), so it opts out, and the docstrings say why. stamp-verification's _git passes the flag too.\n\nNew cases:\n- cr32: a declared link named `:colon-link` lands bound.\n- sw8-sw11: a new sw-edges stage.\ncr32 and sw11 are skipped where a filename starting with ':' cannot be created, found by probing rather than by platform name.\n\ntest_stamp_verification.py's _cases became a STAGES table, and its main accepts `--stage`, so a red proof of one stage fits the helper's deadline.\n\nRed-first: proved for cr32. For sw8-sw11 the helper's verdict was could-not-prove, because HEAD's copy of the file has no --stage. Mutation probe (scratchpad P121.18-eof/probe.py): five mutations, each red on its own case.\n\nSweep: 316/316.",
+        "descriptive": "The proof tool no longer deletes a folder over a link it could not remove, skips a needless probe on macOS and Linux, and the merge step now handles file names that start with a colon."
+      },
+      "startedAt": "2026-10-09T10:23:31Z",
+      "completedAt": "2026-10-09T10:58:43Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-09T10:58:33Z.ce5187",
+        "status": "passed",
+        "at": "2026-10-09T10:58:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "82174ff4",
+        "at": "2026-10-09T10:58:43Z",
+        "basis": "orchestrator check: cr32 proved red; five mutations red; check-ignore's refusal of the literal flag found and handled"
+      }
+    },
+    {
+      "id": "P121.19-eof",
+      "title": "the 3.2.0 notes carry the Windows fixes users will notice",
+      "status": "done",
+      "description": "The 3.2.0 release notes do not yet carry this phase's user-facing fixes. Add entries under `## [3.2.0]`'s `### Fixed` in CHANGELOG.md for what a user would notice. Each entry is plain English, contains no number in prose, and cites no internal id. Read each task's outcome in docs/audit/phases/P121.json for the facts, and state only what the code holds.\n- Windows: cost records appended while a month is rewritten are no longer lost. Appends and the rewrite share a per-month lock. A failed carry is reported. A filesystem that refuses locks does not stall the metering hook.\n- Windows: the audit trail, evidence and ledgers are written with LF on every platform, and a phase lands on Windows with its landing record committed. A journal committed with CRLF by an older version still lands.\n- Windows: close-phase reads a committed symlink from git, so a link checked out as a plain file no longer refuses a phase whose gate was green. Declared paths are passed to git literally.\n- Windows: the panel launcher finds its own folder when given a backslash path.\n- Windows: the red-first helper reports native paths, and links dependencies as junctions when symlinks are not allowed.\n- Every text file in the repository checks out with LF on every platform, so a Windows checkout loads the same command and agent text.\nAdd test-only and CI-only changes only where a contributor would care, in one short entry at most.\nThen run `python3 -c \"import sys;sys.path.insert(0,'plugins/audit/scripts');import _deps;print(_deps.doc_prose_numbers())\"`; it must print nothing for CHANGELOG.md.",
+      "files": [
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "b707af36",
+      "outcome": {
+        "technical": "Seven bullets added under `## [3.2.0]` / `### Fixed`, after the report-scrolling bullet:\n- Windows backfill: a per-month lock keeps cost records from being lost. A failed carry is reported, and backfill exits non-zero. A refused or busy lock does not stall the metering hook.\n- The trail, evidence and ledgers are written with LF, and a Windows landing commits its record. A journal committed with CRLF still lands and verifies.\n- close-phase reads committed symlinks from git and passes paths to git literally.\n- examples/panel.sh works when launched through a backslash path.\n- The red-first helper reports native paths, and uses junctions or hard links when symlinks are not allowed.\n- A repo-wide `* text=auto eol=lf` rule, and the measure-context lint that holds it.\n- One contributor bullet covering the Windows suites, the shared stage runner, the CI job bounds and the stall watch.\n\nEach claim was checked against the code lines named in the return. `_deps.doc_prose_numbers()` prints nothing.",
+        "descriptive": "The 3.2.0 release notes now list the Windows fixes users will notice, in plain English."
+      },
+      "startedAt": "2026-10-09T10:59:07Z",
+      "completedAt": "2026-10-09T11:09:00Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-09T11:08:59Z.b7a72c",
+        "status": "passed",
+        "at": "2026-10-09T11:08:59Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b707af36",
+        "at": "2026-10-09T11:09:00Z",
+        "basis": "orchestrator check: each bullet traced to a code line; prose-number lint clean"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-10-09T00:55:19Z",
+  "testEvidence": {
+    "runId": "2026-10-09T11:16:42Z.b6af00",
+    "status": "passed",
+    "at": "2026-10-09T11:16:42Z"
+  }
 }

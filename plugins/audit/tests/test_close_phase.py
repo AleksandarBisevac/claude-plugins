@@ -1061,8 +1061,6 @@ def _review_answer_cases(check):
         finally:
             if root:
                 _harness.remove_tree(root)
-    _post_verdict_remedy_cases(check)
-    _review_answer_parent_cases(check)
 
 
 def _post_verdict_remedy_cases(check):
@@ -1135,10 +1133,6 @@ def _review_answer_parent_cases(check):
         finally:
             if root:
                 _harness.remove_tree(root)
-    _tipless_tracked_cases(check)
-    _unversioned_plan_cases(check)
-    _worktree_close_cases(check)
-    _human_answer_landing_cases(check)
 
 
 def _human_answer_fixture(name, intent, signed, raw=None):
@@ -1223,7 +1217,6 @@ def _human_answer_landing_cases(check):
         finally:
             if root:
                 _harness.remove_tree(root)
-    _verdict_reach_cases(check)
 
 
 # --- what a recorded verdict could have read ------------------------------------
@@ -1713,7 +1706,6 @@ def _verdict_reach_layout_cases(check, fixture):
           "record, the signing checkout's, lands: exit %r, %r"
           % (code, text[-300:]),
           _reach_outcome(git, sha, code, text, True))
-    _same_checkout_reach_cases(check)
 
 
 def _same_root(name):
@@ -2825,29 +2817,33 @@ def _symlink_refusal():
         _harness.remove_tree(probe)
 
 
-def _symlink_fixture(name, change_after):
-    """`(root, mpath, git)` - P1 declaring `link`, a committed symbolic link to
-    `t.txt`, with its green recorded over the working tree: the recorder's
+def _symlink_fixture(name, change_after, plain_links=False, declared="link"):
+    """`(root, mpath, git)` - P1 declaring `declared`, a committed symbolic link
+    to `t.txt`, with its green recorded over the working tree: the recorder's
     digest follows the link and hashes `t.txt`'s bytes. `change_after` commits
-    a different `t.txt` after the green."""
+    a different `t.txt` after the green. `plain_links` sets the repository's
+    `core.symlinks` to false, the default of git on Windows, under which a
+    checkout writes a link as a plain file holding its target's path."""
     import _evidence_io as E
     import _tree_stamp as T
     root = _harness.fixture_root(name)
     git = _fixture_git(root)
     _init_fixture_repo(git)
+    if plain_links:
+        git("config", "core.symlinks", "false")
     phase = _signed_phase("P1", "audit/p1-demo")
     phase["testGate"] = ["test"]
-    phase["tasks"][0]["files"] = ["link"]
+    phase["tasks"][0]["files"] = [declared]
     mpath = _write_plan(root, {"developmentBranch": "main"}, [phase])
     git("add", "-A")
     git("commit", "-q", "-m", "base")
     git("checkout", "-q", "-b", "audit/p1-demo")
     with open(os.path.join(root, "t.txt"), "wb") as fh:
         fh.write(b"the bytes the link leads to\n")
-    os.symlink("t.txt", os.path.join(root, "link"))
+    os.symlink("t.txt", os.path.join(root, declared))
     git("add", "-A")
     git("commit", "-q", "-m", "work")
-    digest = T.scope_digest(root, ["link"])[0]
+    digest = T.scope_digest(root, [declared])[0]
     ev = E.evidence_dir(root)
     os.makedirs(ev, exist_ok=True)
     with open(os.path.join(ev, "2026-09.cr.jsonl"), "w") as fh:
@@ -2872,15 +2868,16 @@ def _symlink_cases(check):
     link's target text."""
     refused = _symlink_refusal()
     if refused is not None:
-        for label in ("cr28", "cr29"):
+        for label in ("cr28", "cr29", "cr30", "cr31"):
             _harness.skip(check, label, "os.symlink is refused here (%s)"
                           % (refused,), True)
         return
 
-    def run(name, change_after):
+    def run(name, change_after, plain_links=False, declared="link"):
         root = None
         try:
-            root, mpath, git = _symlink_fixture(name, change_after)
+            root, mpath, git = _symlink_fixture(name, change_after, plain_links,
+                                                declared)
             git("checkout", "-q", "main")
             code, text = _close(mpath, root, "--keep-branch")
             return code, text, _landed(git)
@@ -2899,6 +2896,48 @@ def _symlink_cases(check):
           % (code, landed, text[:300]),
           code == 1 and not landed
           and "have changed since it was measured" in text)
+    # The same pair under `core.symlinks=false`: the tip's checkout writes the
+    # link as a plain file holding `t.txt`, so a tip that asked the file system
+    # whether `link` is a link hashed that path text and refused every green.
+    code, text, landed = run("closephase-symlink-plain", False, True)
+    check("cr30 a declared symbolic link lands BOUND where git checks links "
+          "out as plain files - the link is read from the tree's mode, not "
+          "from what the checkout wrote: exit %r, landed %r, %r"
+          % (code, landed, text[:400]),
+          code == 0 and landed and "gate: bound to run cr-0" in text)
+    code, text, landed = run("closephase-symlink-plain-moved", True, True)
+    check("cr31 SECOND DIRECTION: under the same setting, a link whose TARGET "
+          "changed after the green still refuses as moved: exit %r, landed "
+          "%r, %r" % (code, landed, text[:300]),
+          code == 1 and not landed
+          and "have changed since it was measured" in text)
+    # A declared name beginning with `:` is git's pathspec-magic prefix: read as
+    # a pathspec, `:colon-link` names `colon-link`, the link is not found at the
+    # tip and its digest is the link's text rather than the bytes it leads to.
+    refused = _colon_name_refusal()
+    if refused is not None:
+        _harness.skip(check, "cr32", "a file name beginning with ':' cannot be "
+                      "made here (%s)" % (refused,), True)
+        return
+    code, text, landed = run("closephase-symlink-colon", False, False,
+                             ":colon-link")
+    check("cr32 a declared link whose name begins with ':' lands BOUND - every "
+          "path is handed to git literally, never as pathspec magic: exit %r, "
+          "landed %r, %r" % (code, landed, text[:400]),
+          code == 0 and landed and "gate: bound to run cr-0" in text)
+
+
+def _colon_name_refusal():
+    """Why a file named with a leading `:` cannot be made here, or None."""
+    import tempfile
+    probe = tempfile.mkdtemp(prefix="closephase-colon-probe-")
+    try:
+        open(os.path.join(probe, ":probe"), "w").close()
+        return None
+    except OSError as exc:
+        return "%s: %s" % (type(exc).__name__, exc)
+    finally:
+        _harness.remove_tree(probe)
 
 
 def _override_rows(project):
@@ -3258,6 +3297,56 @@ def _head_merged_at(git, rel="docs/audit/audit-plan.json"):
         return None
     return [p.get("mergedAt") for p in json.loads(done.stdout.decode())["phases"]
             if p.get("id") == "P1"][0]
+
+
+def _crlf_trail_pending(name, committed, appended):
+    """What `pending_beyond_stamp` says of a journal committed as `committed`
+    bytes, the working copy then holding `appended` bytes after it - with the
+    plan itself committed and unchanged, so the journal is all it can name."""
+    root = _harness.fixture_root(name)
+    try:
+        git = _fixture_git(root)
+        _init_fixture_repo(git)
+        mpath = _write_plan(root, {"developmentBranch": "main"},
+                            [_signed_phase("P1", "audit/p1-demo")])
+        jdir = os.path.join(root, "docs", "audit", "journal")
+        os.makedirs(jdir)
+        jpath = os.path.join(jdir, "2026-10.s1.jsonl")
+        with open(jpath, "wb") as fh:
+            fh.write(committed)
+        git("add", "-A")
+        git("commit", "-q", "-m", "base")
+        with open(jpath, "wb") as fh:
+            fh.write(appended)
+        return M.pending_beyond_stamp(mpath, "P1", root, root)
+    finally:
+        _harness.remove_tree(root)
+
+
+def _crlf_trail_cases(check):
+    """A journal whose committed rows end in CRLF - a plugin on Windows wrote
+    it through a text-mode handle - and the LF row this landing appends after
+    them: still read as an extension of HEAD, so the stamp is committed."""
+    def row(phase):
+        return json.dumps({"action": "phase.landed",
+                           "details": {"phaseId": phase}}).encode("utf-8")
+    earlier = row("P0") + b"\r\n" + row("P0") + b"\r\n"
+    found = _crlf_trail_pending("closephase-crlf-trail", earlier,
+                                earlier + row("P1") + b"\n")
+    check("cl1 a journal committed with CRLF rows, extended by one LF row about "
+          "this phase, is nothing beyond the stamp: %r" % (found,), found == [])
+    found = _crlf_trail_pending("closephase-crlf-foreign", earlier,
+                                earlier + row("P2") + b"\n")
+    check("cl2 THE OVER-FIRE TWIN: over the same CRLF trail, a row about another "
+          "phase is still named - folding line endings swallows no row: %r"
+          % (found,),
+          len(found) == 1 and "other than phase P1" in found[0])
+    lf = row("P0") + b"\n"
+    found = _crlf_trail_pending("closephase-crlf-checkout", lf,
+                                row("P0") + b"\r\n" + row("P1") + b"\r\n")
+    check("cl3 a checkout holding CRLF over an LF blob, as `core.autocrlf` "
+          "leaves one, extended by a row about this phase, is nothing beyond "
+          "the stamp either: %r" % (found,), found == [])
 
 
 def _landing_commit_cases(check):
@@ -4743,37 +4832,41 @@ def _success_line_cases(check):
           and refused == _cli(rmpath, rroot, "--verbose"))
 
 
-def _selftest():
-    def body(check):
-        _takeover_cases(check)
-        _lock_cases(check)
-        _no_survivor_cases(check)
-        _landed_survivor_cases(check)
-        _cases(check)
-        _parked_cases(check)
-        _landed_cases(check)
-        _main_tree_cases(check)
-        _harness.stage(check, "ra-block", _review_answer_cases)
-        _harness.stage(check, "rs-block", _read_set_reach_cases)
-        _override_cases(check)
-        _landing_cases(check)
-        _checked_out_cases(check)
-        _symlink_cases(check)
-        _composed_cases(check)
-        _same_dir_cases(check)
-        _surviving_copy_cases(check)
-        _merged_head_cases(check)
-        _backfill_cases(check)
-        _backfill_direction_cases(check)
-        _recovery_cases(check)
-        _harness.stage(check, "lt-block", _landing_commit_cases)
-        _harness.stage(check, "sl-block", _success_line_cases)
-    return _harness.run(body)
+# --- the stages, each in a process of its own ----------------------------------
+# A full run lasts as long as its longest block, at best, and the time goes to
+# process starts - every close is a fresh interpreter, every fixture a run of
+# `git` calls. The review-answer chain was one block that called the next at
+# its end; it is cut at each of those calls, where no later block reads a name
+# an earlier one bound, and every half is a row of its own placed right after
+# its caller's, so the replayed case order is the one a run in one process
+# gives. `_harness.stage_faults` reads that each block runs in exactly one row.
+STAGES = (("tk-block", "_takeover_cases"), ("lk-block", "_lock_cases"),
+          ("ns-block", "_no_survivor_cases"),
+          ("ls-block", "_landed_survivor_cases"), ("cp-block", "_cases"),
+          ("pk-block", "_parked_cases"), ("ld-block", "_landed_cases"),
+          ("mt-block", "_main_tree_cases"),
+          ("ra-block", "_review_answer_cases"),
+          ("pv-block", "_post_verdict_remedy_cases"),
+          ("rp-block", "_review_answer_parent_cases"),
+          ("tt-block", "_tipless_tracked_cases"),
+          ("uv-block", "_unversioned_plan_cases"),
+          ("wc-block", "_worktree_close_cases"),
+          ("hl-block", "_human_answer_landing_cases"),
+          ("vr-block", "_verdict_reach_cases"),
+          ("sc-block", "_same_checkout_reach_cases"),
+          ("rs-block", "_read_set_reach_cases"), ("ov-block", "_override_cases"),
+          ("la-block", "_landing_cases"), ("co-block", "_checked_out_cases"),
+          ("sy-block", "_symlink_cases"), ("cm-block", "_composed_cases"),
+          ("sd-block", "_same_dir_cases"),
+          ("sv-block", "_surviving_copy_cases"),
+          ("mh-block", "_merged_head_cases"), ("bf-block", "_backfill_cases"),
+          ("bd-block", "_backfill_direction_cases"),
+          ("rc-block", "_recovery_cases"),
+          ("lt-block", "_landing_commit_cases"),
+          ("cl-block", "_crlf_trail_cases"), ("sl-block", "_success_line_cases"))
 
 
 if __name__ == "__main__":
     safe_stdio()
-    if "--selftest" in sys.argv[1:]:
-        raise SystemExit(_selftest())
-    sys.stderr.write("usage: test_close_phase.py --selftest\n")
-    raise SystemExit(2)
+    raise SystemExit(_harness.staged_main(sys.argv[1:], STAGES, globals(),
+                                          "close-phase-stages-"))

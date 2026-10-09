@@ -2398,6 +2398,16 @@ expect('...nor the panel inside it', onPaper.panel, true);
 //     phase row gets the free-text evidence chip that once carried such a
 //     reason.
 //
+//     A prose cell is a full-width cell, or a bare-text cell in a column where
+//     the rendered plan itself puts words separated by spaces (a title). A
+//     column that only ever holds one word, a number or a pill - a severity,
+//     a count, a status - is not given a paragraph, because the renderer never
+//     emits one there and the question would stop being about long content:
+//     an ordinary word planted in a column whose widest value is a dash grows
+//     that column's narrowest width by the word, and on a runner whose fonts
+//     are wider the bugs table has no slack left at the first unframed rung,
+//     so the row widened the page with nothing in it longer than a word.
+//
 //     A bare-text cell (a title) gets the summary and NOT the token, and that
 //     is a known gap rather than an oversight. The only rule that breaks a
 //     token there is one that lets the cell break anywhere, and that lowers
@@ -2441,7 +2451,16 @@ expect('...nor the panel inside it', onPaper.panel, true);
       row.removeAttribute('hidden');
       row.style.display = '';
       row.setAttribute('data-hostile-row', '');
-      const cells = [...row.cells].filter((c) => !c.className || c.colSpan > 1);
+      const isBare = (c) => !c.className && !c.children.length && c.colSpan === 1;
+      const proseCols = new Set();
+      for (const r of body.rows) {
+        if ([...r.cells].some((c) => c.colSpan > 1)) continue;
+        for (const c of r.cells) {
+          if (isBare(c) && /\S\s+\S/.test(c.textContent)) proseCols.add(c.cellIndex);
+        }
+      }
+      const cells = [...row.cells].filter((c) => c.colSpan > 1
+        || (isBare(c) && proseCols.has(c.cellIndex)));
       for (const cell of cells) {
         // A phase with no desired outcome and no summary renders no .pmeta,
         // and that is the one block this row exists to fill.

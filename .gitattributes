@@ -1,3 +1,19 @@
+# EVERY text file checks out LF, on every platform, whatever core.autocrlf says. The
+# plugin is installed by cloning this repository, so the bytes a checkout writes ARE
+# the shipped product: a command's or an agent's markdown is prose a model reads and
+# pays for by the byte, and a CRLF checkout (windows-latest, Git for Windows'
+# default autocrlf) grew every line of it by one, pushing the reviewer's start and
+# the phase run form over the ceilings `tools/measure-context.py --gate` holds. The
+# pipeline also commits JSON and JSONL byte for byte (the manifest, the journal, the
+# evidence), and selftests pin other files byte for byte, so a per-extension list
+# was the wrong unit: each type below joined it only after a Windows run had failed
+# on it. `text=auto` leaves git's own binary detection in
+# charge, so images stay untouched. `measure-context.py`'s selftest asks git which
+# tracked text file does not resolve to eol=lf and fails naming it.
+* text=auto eol=lf
+# The rules below came first and are narrower; each keeps the reason it was added,
+# and each sets `text` outright rather than leaving the file to git's detection.
+#
 # plugins/audit/scripts/ui/* are byte-precise build inputs: _panel_ui.py and
 # _report_ui.py load them with io.open(..., encoding="utf-8", newline="") —
 # deliberately no newline translation, because the assembled UI_HTML/_CSS/

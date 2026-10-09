@@ -33,11 +33,13 @@ Read-only: this never takes the audit lock and never touches the manifest. The o
 `--backfill`, which rewrites the monthly ledger files and takes the shared `usage` lock for the
 duration — the same claim, in the same place, that `audit-lock.py status` and `/audit:doctor`
 report. That lock excludes only another backfill. The metering hook runs on every turn and never
-takes it: it appends without a lock, so a backfill re-reads each month file just before replacing
-it, and after the replace reads the rows appended to the old file since — through a descriptor it
-held across the replace — and keeps those of sessions it did not re-read. A project with no git
-repository has no lock scheme at all; there the backfill says so in its own output rather than
-inventing a guard nothing else can see.
+takes it. What it takes instead is the month's own lock, across each append's open, write and
+close; the backfill takes that same lock only around each month's last read and replace. So while
+a month is swapped no appender is mid-write or holding the file open, appending goes on through the
+rebuild, and the rows appended since the backfill read the month are carried into the new file —
+those of sessions it did not re-read. A project with no git repository has no lock scheme at
+all; there the backfill says so in its own output rather than inventing a guard nothing else can
+see.
 
 What that still leaves open, stated rather than implied closed:
 
@@ -49,11 +51,15 @@ What that still leaves open, stated rather than implied closed:
   every session it reads from the transcripts. The session running the backfill is exposed only
   through a subagent of its own finishing in the window: its own `Stop` metering runs when the
   turn ends, after the backfill has finished.
-- **A writer that opened the month file before the replace and writes after the backfill stopped
-  watching the old file.** The backfill keeps reading it until a short settle period passes with
-  no byte added and no half-written line waiting, with a bounded number of re-checks.
-- **A platform that refuses to replace an open file.** There the backfill reads the old file one
-  last time, closes it and replaces it; a row written between that read and the replace is lost.
+- **A writer that does not take the month's lock** — an append that could not have it within its
+  wait and wrote anyway, a filesystem that refuses locks altogether, or a copy of the hook older
+  than the lock. If it opened the month file before the replace and writes after it, the backfill
+  reads that row through a descriptor it held across the replace, until a short settle period
+  passes with no byte added and no half-written line waiting, with a bounded number of re-checks.
+  A row such a writer lands after that is lost. On a platform that refuses to replace an open
+  file there is no descriptor to read after the replace: the backfill reads the old file one last
+  time, closes it and replaces it, so a row such a writer lands between that read and the replace
+  is lost. An append that takes the lock is never lost this way.
 
 A month with no file yet is created empty before its rebuild and held the same way, so a row the
 hook appends while the backfill writes that month is carried like any other.

@@ -22,9 +22,10 @@ With `--by`, one focused table. Without it, the full dashboard.
 `--backfill` re-reads every transcript for this project from offset 0 and rebuilds
 the affected monthly files. It is the repair path for a lost cursor or a drifted
 ledger, and it is idempotent — running it twice leaves identical totals. It is also
-the ONLY path that rewrites, and the lock it takes excludes only another backfill:
-the metering hook appends with no lock, so each month's rewrite carries the rows
-appended to it during the rebuild (`usage_ledger.rewrite_month`).
+the ONLY path that rewrites, and the backfill lock it takes excludes only another
+backfill. The metering hook appends under a per-month lock that a rewrite holds
+only across its replace, so appending goes on during the rebuild and each month's
+rewrite carries the rows appended to it meanwhile (`usage_ledger.rewrite_month`).
 
 Exit codes: 0 ok - 1 a backfill left a month file not rewritten cleanly -
 2 usage error / unreadable ledger.
@@ -893,9 +894,10 @@ def backfill(args, project, ledger_dir, manifest, pricing):
         months |= {ul.bucket_month(r.get("ts")) for r in existing
                    if r.get("sessionId") in sessions}
         # Each month is re-read just before its rewrite, through a descriptor
-        # the rewrite keeps: the metering hook appends with no lock, and a row
-        # it appended after the read above would otherwise be erased by the
-        # replace. The read above only decides WHICH months to rebuild.
+        # the rewrite keeps: the metering hook goes on appending during the
+        # rebuild, and a row it appended after the read above would otherwise
+        # be erased by the replace. The read above only decides WHICH months
+        # to rebuild.
         for month in sorted(m for m in months if m and m != "unknown"):
             keep, tail = ul.open_month(ledger_dir, month, sessions)
             add = [r for r in fresh if ul.bucket_month(r.get("ts")) == month]

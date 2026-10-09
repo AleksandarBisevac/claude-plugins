@@ -1230,7 +1230,8 @@ def append_row(project, row, session_id=None, config=None, writer=None):
                     % (os.path.basename(path), exc))
         tail = [r for r in rows if not r.get("_unparseable")]
         linked = chain_onto(row, tail, os.path.basename(path))
-        with open(path, "a", encoding="utf-8") as fh:
+        # LF on every platform, as the journal's appender writes it.
+        with open(path, "a", encoding="utf-8", newline="\n") as fh:
             fh.write(_journal_io.canonical(linked) + "\n")
     finally:
         _journal_io._release(lock)

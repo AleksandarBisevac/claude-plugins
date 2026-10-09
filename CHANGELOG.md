@@ -402,6 +402,45 @@ are in `docs/research/pipeline-cost-results.md`.
   every report it checks. What remains open is stated: a task title holding an unbroken token
   longer than the window still widens the page.
 
+- **Windows: cost records appended while `--backfill` rewrites a month are no longer lost.**
+  Windows refuses to replace a file another process holds open, and the rewrite's retry erased
+  any row the metering hook appended in the meantime. Appends and the rewrite now share a
+  per-month lock file beside the month's ledger (`usage_ledger.lock_month`). A rewrite that
+  cannot carry the rows appended during it reports that month as failed instead of as written,
+  and `--backfill` exits non-zero naming it. A filesystem that refuses locks outright does not
+  stall the metering hook: the append goes ahead without the lock, and a busy lock is waited on
+  only for a bounded time (`MONTH_LOCK_WAIT_S`).
+- **Windows: the audit trail, the evidence rows and the cost ledgers are written with LF on
+  every platform, and a phase lands on Windows with its landing record committed.** These files
+  were appended in text mode, so Windows wrote CRLF into the committed journal, and
+  `close-phase` then judged the journal changed and skipped the landing record. A journal an
+  older version committed with CRLF still lands, and its hash chain still verifies.
+- **Windows: `close-phase` reads a committed symlink from git.** Under git's Windows default a
+  symlink is checked out as a plain file holding the target's path, so the landing check
+  fingerprinted that text and refused a phase whose gate had been green as moved. Links are now
+  identified by their mode in the committed tree and followed to the file they name. Declared
+  paths are passed to git literally (`--literal-pathspecs`), so a file whose name starts with
+  `:` is not read as a pathspec.
+- **Windows: `examples/panel.sh` finds its own folder when launched through a backslash path.**
+  It used to fall back to the working directory, miss `panel-server.py` and exit with an error.
+- **Windows: the red-first helper reports native paths, and links dependencies as directory
+  junctions when symlinks are not allowed.** It took git's forward-slash top-level path as a
+  filesystem path, so the basis it printed named a path in mixed separators. Without symlink
+  privilege it now uses junctions and hard links, copying across volumes, names the link kind in
+  the basis, and removes its own junctions before removing the throwaway tree, reporting any it
+  could not remove.
+- **Every text file in the repository checks out with LF on every platform.** Only a few paths
+  were pinned before, so a Windows checkout with git's default line-ending conversion loaded the
+  plugin's command and agent text with CR bytes. A repo-wide `* text=auto eol=lf` rule in
+  `.gitattributes` now pins them, binary files untouched, and `tools/measure-context.py` fails
+  naming any tracked text file that would not check out with LF.
+- **For contributors: the selftest sweep and CI hold on Windows.** Suites that wrote CRLF
+  fixtures, assumed POSIX file modes, wrote without naming an encoding, or left read-only git
+  objects behind were fixed; the slowest suites run their blocks side by side through one stage
+  runner in `plugins/audit/tests/_harness.py`; every CI job has a time bound that
+  `tools/gate-parity.py` checks; and the screenshot gate fails with the last step it reached
+  instead of hanging silently.
+
 ## [3.1.0] - 2026-10-05
 
 ### Added
