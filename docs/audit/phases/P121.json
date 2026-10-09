@@ -247,7 +247,7 @@
     {
       "id": "P121.5",
       "title": "Windows: drive-phase prints and sign-off hold on Windows",
-      "status": "in_progress",
+      "status": "done",
       "description": "On windows-latest, plugins/audit/tests/test_drive_phase.py fails three cases: dp3, where a success print of 400 bytes exceeds the 300-byte bound, likely because of Windows paths; and sg2 and gr1, the sign-off and commit sequences. ",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -287,18 +287,28 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e1351426",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Root cause of dp3, sg2 and gr1 on Windows: the journal was appended in text mode, so Windows wrote CRLF into the committed blob. close-phase's pending_beyond_stamp read the working journal in text mode, which folded CRLF to LF, and compared it with `git show HEAD:`, which keeps CRLF. _foreign_rows then concluded the journal no longer began with HEAD's, and the landing stamp was skipped. That left sg2 and gr1 dirty, and grew dp3's final print to 400 bytes. A sitecustomize that gives text-mode writes the Windows newline reproduced all three on macOS, with CI's exact sizes.\n\n(b) Every trail and ledger append now writes LF on every platform:\n- _journal_io's appender and write_merged;\n- _evidence_io.append_row;\n- usage_ledger._append_locked;\n- hooks/_config's append_gate_event and atomic_write_text.\n\nThe hash chain hashes each row's canonical JSON before it is written, so line endings never enter it. Readers split lines and accept CRLF, so old CRLF rows still verify. nl6 checks this end to end on a real repo.\n\n(a) close-phase reads the journal with newline=\"\" and folds CRLF to LF on both sides before the prefix check. A core.autocrlf checkout (CRLF over an LF blob) therefore still lands; cl3 pins that.\n\nCases:\n- nl0: the simulation really writes CRLF.\n- nl1-nl5: each writer writes LF under it.\n- nl6: an old CRLF trail still verifies.\n- cl1: a CRLF-committed journal lands.\n- cl2: the over-fire twin, where another phase's row is still named.\n- cl3: an autocrlf checkout lands.\n\nRed-first: proved for close-phase (cl1, cl2). For the journal, the helper's fix run missed _evidence_io.py, which was declared at a wrong path, now corrected. Scratch mutations turned nl1-nl5, cl3 and cl2 red.\n\nUnder the Windows-newline simulation the driver suite passes 128/128, and the full sweep passes 316/316. `tools/bench-hooks.py --gate` passes, because hooks import _config.\n\nThe build guide's audit-usage section now describes the per-month lock and the line endings.\n\nSame class, left and recorded internally: _manifest_io.atomic_write_text and the demo generators' committed .jsonl writers.",
+        "descriptive": "The audit trail and ledgers are written the same way on every platform, and merging a phase on Windows now commits its final record instead of leaving it behind."
       },
       "startedAt": "2026-10-09T00:55:20Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T02:36:39Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test__journal_io.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-09T02:36:39Z.e603fc",
         "status": "passed",
         "at": "2026-10-09T02:36:39Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "e1351426",
+        "at": "2026-10-09T02:36:39Z",
+        "basis": "orchestrator check: root cause reproduced by a Windows-newline simulation with CI's exact values; fix green under it; cl1/cl2 proved red; mutations red"
       }
     },
     {
