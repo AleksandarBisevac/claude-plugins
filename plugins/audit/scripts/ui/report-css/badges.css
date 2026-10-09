@@ -96,4 +96,11 @@
    nowrap; a mark with no child element is a sentence (the full-run line, an
    accepted commit's reason), and its length is the plan's to decide. */
 .ptev:not(:has(*)){white-space:normal}
+/* The full-run mark is the one sentence mark with an attribute of its own, so
+   it keeps a rule that needs no `:has()`: a browser that drops the selector
+   above still wraps it. An accepted commit's mark has no such hook, so in that
+   browser it stays on one line - the reason it carries can then widen the page,
+   which is the fallback this sheet accepts rather than inventing a hook the
+   renderer does not emit. */
+.ptev[data-fullrun]{white-space:normal}
 .tevcell{line-height:1.8}

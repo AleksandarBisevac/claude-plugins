@@ -2316,15 +2316,95 @@ expect('...nor the panel inside it', onPaper.panel, true);
   await page.waitForTimeout(200);
 }
 
+// 10a. No ordinary title word is split mid-letter where the table is not framed.
+//     A cell that may break anywhere has a narrowest width of about one
+//     letter, and the table's column algorithm will happily take it there: a
+//     wrap rule meant for an unbroken token once squeezed the task title column
+//     to a few dozen pixels and set "Deduplicate" as two lines on every shipped
+//     report. The ladder cannot see that - nothing left the frame - so the
+//     question is asked of the words themselves: in every visible bare-text
+//     cell (a task or bug title, a severity), at every rung wider than the
+//     breakpoint below which the tables scroll in their own frame, does any
+//     word change line BETWEEN TWO LETTERS? A break after a hyphen, a slash or
+//     a colon is a break the browser offers in ordinary wrapping, and is not
+//     what this asks about.
+//     Task rows are opened for it and closed again, because the resting layout
+//     the ladder measures shows none of their titles.
+{
+  const FRAMED_BELOW = 832;
+  const shut = await page.evaluate(() =>
+    [...document.querySelectorAll('tr.task')].every((r) => r.offsetParent === null));
+  if (shut) { await page.click('#audit-expand'); await page.waitForTimeout(250); }
+  const split = [];
+  let measured = 0;
+  let cellsInDom = 0;
+  for (const w of RESPONSIVE_LADDER.filter((x) => x > FRAMED_BELOW)) {
+    await page.setViewportSize({ width: w, height: 945 });
+    await page.waitForTimeout(60);
+    const m = await page.evaluate(() => {
+      const bare = [...document.querySelectorAll(
+        'table.phases td:not([class]), table.data td:not([class])')]
+        .filter((td) => !td.children.length);
+      const out = [];
+      let n = 0;
+      for (const td of bare) {
+        if (!td.checkVisibility()) continue;
+        const tn = td.firstChild;
+        if (!tn || tn.nodeType !== 3) continue;
+        const lineOf = (i) => {
+          const r = document.createRange();
+          r.setStart(tn, i); r.setEnd(tn, i + 1);
+          const box = r.getClientRects()[0];
+          return box ? Math.round(box.top) : null;
+        };
+        for (const word of tn.data.matchAll(/\S+/g)) {
+          n += 1;
+          for (let k = 1; k < word[0].length; k += 1) {
+            const a = lineOf(word.index + k - 1), b = lineOf(word.index + k);
+            if (a === null || b === null || a === b) continue;
+            if (/[\p{L}\p{N}]/u.test(word[0][k - 1]) && /[\p{L}\p{N}]/u.test(word[0][k])) {
+              out.push(`${td.closest('table').className} "${word[0]}"`);
+            }
+            break;
+          }
+        }
+      }
+      return { out, n, inDom: bare.length };
+    });
+    measured += m.n;
+    cellsInDom = Math.max(cellsInDom, m.inDom);
+    for (const s of m.out) split.push(`${w}px ${s}`);
+  }
+  if (shut) { await page.click('#audit-expand'); await page.waitForTimeout(250); }
+  await page.setViewportSize({ width: 1512, height: 945 });
+  await page.waitForTimeout(200);
+  // A page that HAS bare-text cells and measured no word in them looked at
+  // nothing, and must not read as "no word was split".
+  const verdict = cellsInDom && !measured ? 'measured no word'
+    : (split.slice(0, 6).join(', ') + (split.length > 6 ? ` (+${split.length - 6} more)` : '')) || 'none';
+  expect(`no visible title word splits mid-letter wider than ${FRAMED_BELOW}px `
+    + `(${measured} word-rungs read)`, verdict, 'none');
+}
+
 // 10b. Content no fixture carries. The ladder above measures the plan it was
 //     handed, so it can only ever be as hostile as that plan's prose - and the
 //     demo's is short. A plan whose phases record paragraphs of summary, and an
 //     accepted-commit reason as long as an essay, pushed this table far past the
-//     viewport while every committed fixture stayed green. So the hostile content is PUT INTO the rendered page: one row per
-//     table, cloned from the table's own first body row so it wears the markup
-//     the renderer really emits, every prose cell of it filled with a very long
-//     summary and a very long unbroken token, and the phase row also given the
-//     free-text evidence chip that once carried such a reason. Each width either
+//     viewport while every committed fixture stayed green. So the hostile
+//     content is PUT INTO the rendered page: one row per table, cloned from the
+//     table's own first body row so it wears the markup the renderer really
+//     emits. Every prose cell of it gets a very long summary; the full-width
+//     cells and the evidence marks also get a very long unbroken token, and the
+//     phase row gets the free-text evidence chip that once carried such a
+//     reason.
+//
+//     A bare-text cell (a title) gets the summary and NOT the token, and that
+//     is a known gap rather than an oversight. The only rule that breaks a
+//     token there is one that lets the cell break anywhere, and that lowers
+//     its narrowest width to a letter - the column algorithm then starves it
+//     and splits ordinary words, which 10a above exists to catch. Breaking a
+//     token without that cost needs the renderer to put break opportunities
+//     inside long tokens; the stylesheet cannot. Each width either
 //     side of a breakpoint is then asked one question: did that row make the
 //     DOCUMENT any wider than it already was? Compared to the page's own width
 //     before the row went in, so a plan that already overflows is accused of
@@ -2340,11 +2420,22 @@ expect('...nor the panel inside it', onPaper.panel, true);
     `sentence ${i} of a summary that runs on far past any measure a reader keeps`).join(', ');
   const planted = await page.evaluate(({ token, prose }) => {
     const made = [];
+    const skipped = [];
     for (const table of document.querySelectorAll('table.phases, table.data')) {
+      // A table inside a shut disclosure is laid out by nobody, so a row put
+      // there could neither widen the page nor be seen. Its disclosures are
+      // opened for the measurement and shut again afterwards; a table that is
+      // still not rendered after that is named as skipped, never planted.
+      for (let d = table.closest('details:not([open])'); d;
+        d = d.parentElement && d.parentElement.closest('details:not([open])')) {
+        d.open = true;
+        d.setAttribute('data-hostile-opened', '');
+      }
+      if (!table.checkVisibility()) { skipped.push(`${table.className} (not rendered)`); continue; }
       const body = table.tBodies[0];
       const proto = body && ([...body.rows].find((r) => r.classList.contains('phase'))
         || body.rows[0]);
-      if (!proto) continue;
+      if (!proto) { skipped.push(`${table.className} (no body row)`); continue; }
       const row = proto.cloneNode(true);
       row.removeAttribute('id');
       row.removeAttribute('hidden');
@@ -2371,14 +2462,16 @@ expect('...nor the panel inside it', onPaper.panel, true);
           unbroken.textContent = token;
           meta.before(unbroken);
         } else {
-          cell.textContent = `${prose} ${token}`;
+          // The token goes only where the stylesheet can break it without
+          // starving a column - see the gap named above.
+          cell.textContent = cell.colSpan > 1 ? `${prose} ${token}` : prose;
         }
       }
-      if (!cells.length) continue;
+      if (!cells.length) { skipped.push(`${table.className} (no prose cell)`); continue; }
       proto.after(row);
       made.push(table.className);
     }
-    return made;
+    return { made, skipped };
   }, { token: LONG_TOKEN, prose: LONG_PROSE });
   const widened = [];
   let narrowest = null;
@@ -2403,13 +2496,20 @@ expect('...nor the panel inside it', onPaper.panel, true);
   }
   await page.evaluate(() => {
     for (const r of document.querySelectorAll('[data-hostile-row]')) r.remove();
+    for (const d of document.querySelectorAll('[data-hostile-opened]')) {
+      d.open = false;
+      d.removeAttribute('data-hostile-opened');
+    }
   });
+  if (planted.skipped.length) {
+    notes.push(`ok   (the hostile row skipped ${planted.skipped.join(', ')})`);
+  }
   await page.setViewportSize({ width: 1512, height: 945 });
   await page.waitForTimeout(200);
-  expect(`a very long summary and a very long unbroken token, planted in ${planted.join(' + ') || 'no table'}, `
+  expect(`a very long summary and a very long unbroken token, planted in ${planted.made.join(' + ') || 'no table'}, `
     + 'widen the document at no width', widened.join(', ') || 'none', 'none');
   expect('...and the planted rows were really on the page, wrapped, at the narrowest width',
-    planted.length > 0 && narrowest !== null && narrowest.painted, true);
+    planted.made.length > 0 && narrowest !== null && narrowest.painted, true);
 }
 
 // --- the full-run line: the third place's verdict, as a reader gets it -------

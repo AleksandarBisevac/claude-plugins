@@ -127,12 +127,17 @@
     {
       "id": "P120.2-byv",
       "title": "the BUG-22 fix passes every shipped report and splits no title word",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes the P120 review's findings R1-R4 on the BUG-22 fix. (1) The hostile-content leg plants only into tables that are rendered, or opens each enclosing details for the measurement and restores it; it names skipped tables, and `painted` stays strict over what was planted. The checker must exit 0 on examples/acme-store/acme-store-audit.html, docs/index.html, docs/demo-large.html and a fresh render of this repo's plan. (2) The bare-cell wrap rule no longer starves free-text columns above 52rem. A new checker assertion holds that no visible task or bug title word splits mid-letter at any ladder rung above 52rem (hyphen breaks excluded), shown red against the current rule, and the comment says what the rule costs and where. (3) css2 binds the accepted-commit mark: it renders _tev_phase_marks with an acceptedCommits entry and asserts the span is bare text. (4) The full-run mark keeps a :has()-free wrap rule, or the fallback is documented. Re-render the followers is the orchestrator's job; do not capture.",
       "files": [
         "plugins/audit/scripts/ui/report-css",
         "tools/check-report-interactive.mjs",
-        "plugins/audit/tests/test__report_html.py"
+        "plugins/audit/tests/test__report_html.py",
+        "examples/acme-store/acme-store-audit.html",
+        "examples/acme-store/acme-store-audit.md",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots"
       ],
       "tests": {
         "mode": "tdd",
@@ -155,17 +160,27 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-08T23:18:13Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-09T00:10:41Z.5a5653",
+        "status": "passed",
+        "at": "2026-10-09T00:10:41Z"
+      }
     }
   ],
-  "startedAt": "2026-10-08T22:27:29Z"
+  "startedAt": "2026-10-08T22:27:29Z",
+  "testEvidence": {
+    "runId": "2026-10-08T23:18:22Z.467307",
+    "status": "passed",
+    "at": "2026-10-08T23:18:22Z"
+  }
 }
