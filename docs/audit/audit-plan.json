@@ -6519,6 +6519,9 @@
     ],
     "plugins/audit/tests/test__harness.py": [
       "P121.15-eof"
+    ],
+    "tools/ui-tests/stall-watch.test.mjs": [
+      "P121.17-eof"
     ]
   },
   "bugs": [
