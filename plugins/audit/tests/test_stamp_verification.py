@@ -62,7 +62,10 @@ def _git(repo, *args):
 
 
 def _write(path, text):
-    with open(path, "w") as fh:
+    """`text` at `path` as UTF-8, whatever the locale: windows-latest's default
+    is cp1252, which has no code for a jest bullet, and Python reads a source
+    file it runs as UTF-8 either way."""
+    with open(path, "w", encoding="utf-8") as fh:
         fh.write(text)
 
 
@@ -3366,11 +3369,14 @@ def _jest_credit_cases(check):
 # `No tests found, exiting with code 1`, exit 0 only under --passWithNoTests.
 # A test is `test('<title>', () => { expect(<v() | int>).toBe(<int>); });`
 # inside one `describe`, and `v()` is the value `src/mine.py` assigns. Its
-# source is ASCII and its output is written as UTF-8 bytes, so the sweep's
-# cp1252 pass reads the same bullets.
+# source is ASCII - the bullet and the chain separator are built with `chr()`
+# when the runner runs - so a locale that cannot encode them still
+# writes the file, and its output is written as UTF-8 bytes, so the sweep's
+# cp1252 pass reads the same bullets. `sd10` holds the source to ASCII.
 _FAKE_JEST = r'''import os, re, sys
 TEST = re.compile(r"test\('([^']+)', \(\) => \{ expect\((v\(\)|\d+)\)\.toBe\((\d+)\); \}\);")
 DESCRIBE = re.compile(r"describe\('([^']+)'")
+BULLET, CHAIN = chr(0x25CF), chr(0x203A)
 def value(word):
     if word != "v()":
         return int(word)
@@ -3393,7 +3399,7 @@ for rel in targets:
         text = fh.read()
     if not text.strip():
         suites_bad += 1
-        out += [" FAIL  %s" % (rel,), "  ● Test suite failed to run", "",
+        out += [" FAIL  %s" % (rel,), "  %s Test suite failed to run" % (BULLET,), "",
                 "    Your test suite must contain at least one test.", ""]
         continue
     outer = DESCRIBE.search(text).group(1)
@@ -3403,7 +3409,7 @@ for rel in targets:
             passed += 1
             continue
         failed += 1
-        block += ["  ● %s › %s" % (outer, title), "",
+        block += ["  %s %s %s %s" % (BULLET, outer, CHAIN, title), "",
                   "    expect(received).toBe(expected) // Object.is equality", "",
                   "    Expected: %s" % (want,), "    Received: %s" % (value(got),), ""]
     if block:
@@ -3778,6 +3784,41 @@ def _venv_cases(check):
           and deps_o.get("skipped") == [])
 
 
+def _encoding_cases(check):
+    """The fake runners are files this suite writes and then runs, so their
+    source has to survive a locale that cannot encode a jest bullet - the
+    windows-latest default is cp1252 - and so does every fixture `_write`
+    lays down."""
+    loud = dict((name, sorted(set(c for c in src if ord(c) > 127)))
+                for name, src in (("_FAKE_JEST", _FAKE_JEST),
+                                  ("_FAKE_PYTEST", _FAKE_PYTEST)))
+    check("sd10 the fake runners' sources are ASCII, the bullet and the chain "
+          "separator built when the runner runs - a literal one cannot be "
+          "written under a locale with no code for it, which raised while the "
+          "sd-deps and sb-new-file fixtures were being built: %r" % (loud,),
+          loud == {"_FAKE_JEST": [], "_FAKE_PYTEST": []}
+          and "chr(0x25CF)" in _FAKE_JEST)
+    root = _harness.fixture_root("stamp-encoding-")
+    try:
+        # No newline: text mode writes one as CRLF on windows, which is no
+        # question about encoding.
+        text = "  %s mine %s v is two" % (chr(0x25CF), chr(0x203A))
+        path = os.path.join(root, "out.txt")
+        try:
+            _write(path, text)
+            with open(path, "rb") as fh:
+                got = fh.read()
+        except UnicodeError as exc:
+            got = "raised %r" % (exc,)
+    finally:
+        _harness.remove_tree(root)
+    check("sd11 `_write` lays text down as UTF-8 whatever the locale, so a "
+          "fixture holding a character the locale lacks is written rather than "
+          "raised on, in the bytes the helper reads back - this can go red only "
+          "where the locale is not UTF-8, which is the windows leg: %r" % (got,),
+          got == text.encode("utf-8"))
+
+
 def _scan(source, rels, roots, deadline):
     """`workspace_links` under the deadline, or the exception it raised named."""
     try:
@@ -3822,6 +3863,7 @@ def _scan_cases(check):
 
 
 def _cases(check):
+    _harness.stage(check, "sd-encoding", _encoding_cases)
     _harness.stage(check, "sd-deps", _deps_cases)
     _harness.stage(check, "sd-venv", _venv_cases)
     _harness.stage(check, "sd-scan", _scan_cases)

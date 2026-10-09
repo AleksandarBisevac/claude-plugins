@@ -291,7 +291,7 @@
     {
       "id": "P121.6",
       "title": "Windows: the panel launcher works on Windows",
-      "status": "in_progress",
+      "status": "done",
       "description": "On windows-latest, plugins/audit/tests/test_panel_server.py fails cases ps1 and ps1b: `examples/panel.sh --detach` exits 2 with no output. The suite then raises FileNotFoundError for examples/acme-store/.claude/audit-panel.json. ps1 was added in P118, in commit 9372104d. ",
       "files": [
         "examples/panel.sh",
@@ -321,18 +321,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "37af6535",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Cause: the Windows suite hands sh a script path built with os.path.join. `$0` then holds backslashes and no `/`, so examples/panel.sh's `case \"$0\" in */*)` fell through to here=., and the script looked for its repo one level above the working directory. panel-server.py was not there, and `--status` exited 2 under `set -e`. The test never printed stderr, so CI showed `rc 2, ''`.\n\nFix: panel.sh turns backslashes into slashes before finding its own directory, with a comment saying why.\n\ntest_panel_server.py:\n- shared helpers _panel_sh_tree and _panel_sh_run;\n- every ps1 message carries the script's stderr;\n- ps1b looks for the `/`-spelled path the script prints;\n- the unguarded os.remove that crashed the suite now runs only when the pidfile exists;\n- new regression case ps1d runs the script through a backslash-named path on POSIX, and is covered by ps1 on Windows.\n\nRed-first: proved (ps1d red on HEAD's panel.sh, 101/102). The probe (scratchpad P121.6/probe.sh) shows HEAD rc=2 and the worktree rc=0.\n\nNot checked on Windows: whether Git-for-Windows sh rewrites the URL argument.\n\nSame class outside this task's files, recorded internally: examples/report.sh and plugins/audit/hooks/py-launch.sh use the same `case \"$0\" in */*)`.",
+        "descriptive": "The panel launcher script finds its own folder when Windows hands it a path with backslashes."
       },
       "startedAt": "2026-10-09T00:55:21Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T02:29:11Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_panel_server.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-09T02:07:01Z.d2707a",
         "status": "passed",
         "at": "2026-10-09T02:07:01Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "37af6535",
+        "at": "2026-10-09T02:29:11Z",
+        "basis": "orchestrator check: ps1d proved red on HEAD's launcher; probe HEAD rc=2, worktree rc=0"
       }
     },
     {
