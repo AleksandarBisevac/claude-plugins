@@ -638,7 +638,7 @@
     {
       "id": "P121.12-eof",
       "title": "Windows: the driver suite finishes inside the cap on a slow runner",
-      "status": "in_progress",
+      "status": "done",
       "description": "On windows-latest plugins/audit/tests/test_drive_phase.py still did not finish within the 300s per-file cap, although P119.7 made its stages run in parallel (about 71s on macOS). Windows starts processes far slower and the runner has few cores. Profile which stages dominate (gb-block was the longest), split the long ones further where an AST/data-flow check shows nothing crosses, or cut process starts a case does not need, keeping every case id and verdict identical (diff before/after). The P121.2 change to test_audit_task.py is the precedent for splitting. Do not raise the cap. Show the effect with the slow-spawn simulation in P121.2's slow-spawn simulation. This is CI round 2 on windows-latest; the job log was saved outside the repository for the executor (grep the file name). You cannot run Windows here. Find the root cause, reproduce the Windows condition locally where you can (a CRLF checkout via `git -c core.autocrlf=true` into a scratch clone, no symlink privilege, a slow process start), show it red before the fix and green after, and say plainly what could not be simulated. Fix the class, not only the named case; a platform skip only with the house's idiom and a stated reason.",
       "files": [
         "plugins/audit/tests/test_drive_phase.py"
@@ -666,18 +666,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c21111cb",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Profiled by process starts, which does not depend on machine load. At HEAD, gb-block ran 2135 of the file's 10416 starts and sg-block 1936. gb-block was also scheduled late, so on six workers HEAD's critical path was 3008 starts. Most starts are git calls made by the verbs.\n\nChanges:\n- Blocks are split only where no later case reads a name an earlier one bound. Seven blocks a parent called as its last statement became their own STAGES rows. Three functions were cut in two: advance sign-off into refused and allowed halves, decline-coverage into coverage and reuse-gate halves, and the stale gate into gate and re-accept halves.\n- The largest stage is now 1136 starts, and the critical path on six workers is 1920. The total is unchanged.\n- The `_repo` fixture writes its git identity into the config `init` wrote, instead of running `git config` three times.\n- The docstring states the rule for where a block may be cut.\n\nNew cases:\n- sb1: every `_..._cases` function runs in exactly one stage (read from the AST).\n- sb1m: its red twin.\n- fx1: git reads the hand-written identity back.\n\nCase ids and verdicts: HEAD 128/128, fixed 131/131. Only the three new cases are appended.\n\nSlow-spawn simulation (each start sleeps):\n- 0.08 s per start: HEAD timed out at 300 s; fixed 201 s.\n- 0.05 s per start: HEAD timed out once and took 255 s once; fixed 150-154 s.\n- CPU-bound variant: 196 s to 131 s, measured once.\n\nMutations turn sb1 and fx1 red.\n\nNot simulated: Windows itself and the runner's real core count. CI's log shows two sweep workers there.\n\nThe bigger lever, the verbs' own git rev-parse calls, is recorded internally.",
+        "descriptive": "The driver's test file splits its longest parts so it finishes in time on a slow runner, with exactly the same tests and results."
       },
       "startedAt": "2026-10-09T08:12:57Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T09:05:57Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-09T09:05:56Z.c7e17e",
         "status": "passed",
         "at": "2026-10-09T09:05:56Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c21111cb",
+        "at": "2026-10-09T09:05:57Z",
+        "basis": "orchestrator check: profiled by process starts; critical path cut by roughly a third; slow-spawn simulation HEAD timed out, fix finished; ids identical"
       }
     },
     {
@@ -777,6 +785,50 @@
         "descriptive": null
       },
       "startedAt": "2026-10-09T08:39:08Z",
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P121.15-eof",
+      "title": "Windows: test_close_phase finishes inside the cap, through one shared stage runner",
+      "status": "pending",
+      "description": "On windows-latest, CI round 3 is green except for one file: plugins/audit/tests/test_close_phase.py did not finish within the sweep's 300-second per-file cap. test_drive_phase.py and test_audit_task.py already run their stages concurrently in child processes and replay them in order. Each of those files carries its own copy of the runner (`_collect`, `_text`, `_run_stage`, `_run_stages`, `_flag_values`).\n\nDo two things:\n1. Move that runner into plugins/audit/tests/_harness.py, once, with its own selftest cases. Make test_drive_phase.py and test_audit_task.py call it and delete their copies.\n2. Give test_close_phase.py the same shape: profile it by process starts (the probes from P121.12 and P121.2 are in the scratchpad), and split its long blocks only where no later case reads a name an earlier one bound. Every case id and verdict must stay identical in all three files: diff the case lists before and after.\n\nDo not raise the cap. Show the effect with the slow-spawn simulation, red before and green after. The sweep and gate-parity must stay green.",
+      "files": [
+        "plugins/audit/tests/_harness.py",
+        "plugins/audit/tests/test__harness.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
     }
