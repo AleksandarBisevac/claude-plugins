@@ -21,7 +21,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P121-R1",
@@ -114,7 +114,7 @@
     ],
     "outcome": "[findings: 10 - 0 high, 4 med, 6 low; 9 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "Release blocker for 3.2.0: CI is made green on every job.\n\nMost of the work since 3.1.0 had never run on Windows. CI found eight failing test files there, and one Linux browser leg. Three later rounds narrowed that to zero: round 4 (run 37916029700) was green on every job.\n\nUser-facing fixes:\n- Usage rows appended during a month rewrite are no longer lost on Windows. A per-month lock covers appends and the rewrite. A failed carry is reported, and a filesystem that refuses locks no longer stalls the metering hook.\n- The trail, evidence and ledgers are written with LF on every platform. close-phase reads the journal raw and folds CRLF, so a Windows landing commits its stamp.\n- close-phase reads committed symlinks from git and passes paths to git literally.\n- The panel launcher handles a backslash path.\n- The red helper reports native paths and links dependencies as junctions when symlinks are not allowed.\n- `* text=auto eol=lf` makes every checkout LF, with a lint that names any text file that loses the pin.\n\nTest and CI changes:\n- Three long suites run their stages concurrently through one shared runner in tests/_harness.py, with identical case lists.\n- A silent screenshot check fails within minutes, naming the step.\n- Every CI job has a time bound derived from named runs and enforced by gate-parity.\n\nThe phase review's four med findings were fixed by P121.16 and P121.17, and its lows by P121.17 and P121.18. One low is left to watch: a lock-contention case flaked once under heavy local load.\n\nThe six-hour Linux hang seen once in CI was not reproduced in four container runs. It is recorded internally with a stall watch now in place. Faults found along the way are in the internal plan (F582-F587).",
   "tasks": [
     {
       "id": "P121.1",
@@ -1172,5 +1172,10 @@
       }
     }
   ],
-  "startedAt": "2026-10-09T00:55:19Z"
+  "startedAt": "2026-10-09T00:55:19Z",
+  "testEvidence": {
+    "runId": "2026-10-09T11:16:42Z.b6af00",
+    "status": "passed",
+    "at": "2026-10-09T11:16:42Z"
+  }
 }
