@@ -113,10 +113,17 @@ def _cases(check):
                  "files": ["src/tdd/mod.ts"], "tests": {"mode": "tdd"}},
                 {"id": "P0.4", "title": "n", "status": "in_progress",
                  "files": ["src/nomode/mod.ts"]},
+                {"id": "P0.5", "title": "s", "status": "in_progress",
+                 "files": ["src/dirdecl"], "tests": {"mode": "gate-only"}},
             ]}],
         }), encoding="utf-8")
         _expect("d1 gate-only in_progress coverage", "silent",
                 payload("src/covered/mod.ts", "tdd-session-d"))
+        # a directory declared without a trailing slash covers what is under it
+        _expect("d1b slash-less directory entry covers a file under it",
+                "silent", payload("src/dirdecl/mod.ts", "tdd-session-d1b"))
+        _expect("d1c ...a shared-prefix sibling is not covered", "warn",
+                payload("src/dirdecl-old/mod.ts", "tdd-session-d1c"))
         # warn-always ignores that coverage
         cfg_wa = dict(cfg)
         cfg_wa["tddReminder"] = dict(_config.DEFAULTS["tddReminder"],

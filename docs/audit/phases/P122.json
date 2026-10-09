@@ -255,7 +255,7 @@
     {
       "id": "P122.4",
       "title": "done refuses while the task's work sits uncommitted, and start refuses a task with no files",
-      "status": "in_progress",
+      "status": "done",
       "description": "F592, twice on the testbed: a task with no declared files closed done while its work sat uncommitted, because commit-task-work stages only declared files. done --commit (_locked_done) checks nothing about the tree; only the --no-change path asks git porcelain, through _no_change_moves, which this should reuse rather than re-spell. Add: done refuses when the working tree holds changes (git status, untracked included, ignoring the journal and evidence directories and the manifest files) that are covered by the task's files but absent from --commit, or, when the task declares no files, any change no other in_progress task covers; the refusal names the paths and offers /audit:task scope to widen. start refuses a task whose files is empty unless it is --no-change shaped; say what to declare. Cases for: clean tree closes; a covered leftover refuses; an empty-files task with leftovers refuses; another in-progress task's files are not blamed. Update commands/task.md and README.md's done paragraph.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -290,25 +290,45 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d3e851232295",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Reviewed the applied diff as my own: _porcelain_paths, _bookkeeping_rels, _declared_rels, _uncommitted_leftovers (via _touts.covers), _no_change_shaped; _locked_done --commit refuses leftovers naming paths and offering /audit:task scope; _locked_start refuses empty-files tdd/regression task unless it names outputs. Kept the prep reading of 'unless --no-change shaped': not tdd/regression, or has outputs. _narrowings (P122.2, ~line 1426) coexists; no conflict. Ran python3 plugins/audit/tests/test_audit_task.py --selftest: exit 0, 909/909 passed incl. lo1-lo9; ruff check plugins/audit tools: all passed. task.md and README done/start text updated.",
+        "descriptive": "done now refuses while the task's work is uncommitted; start refuses empty-files tdd/regression tasks."
       },
       "startedAt": "2026-10-09T20:52:52Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T21:05:04Z",
+      "verifiedBy": [
+        "lo1",
+        "lo2",
+        "lo3",
+        "lo4",
+        "lo5",
+        "lo6",
+        "lo7",
+        "lo8",
+        "lo9"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-09T21:05:03Z.86c5f8",
         "status": "passed",
         "at": "2026-10-09T21:05:03Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "d3e851232295",
+        "at": "2026-10-09T21:05:04Z"
+      },
+      "redFirst": {
+        "at": "2026-10-09T20:56:37Z",
+        "basis": "`sh -c python3 plugins/audit/tests/test_audit_task.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases lo2 (house FAIL), lo3 (house FAIL), lo5 (house FAIL), lo6 (house FAIL), lo7 (house FAIL), lo8 (house FAIL), but none is the task's own (lo2 a covered change left uncommitted refuses, names that path and not the uncovered one, offers `scope`, writes nothing: (0, 'WARNING: you are standing in <tmp>/audit-red-itv557lc/tree, and this writes the plan under <tmp>/audit-red-itv557lc/task-tmp-cq48gpcd/audit-task-stages-v6d_nkn4/lo-block.tmp/audit-task-lo-cyzvfi6h/covered -'): the runner locates it in no declared test file; lo3 an UNTRACKED file under a declared directory refuses: (0, 'WARNING: you are standing in <tmp>/audit-red-itv557lc/tree, and this writes the plan under <tmp>/audit-red-itv557lc/task-tmp-cq48gpcd/audit-task-stages-v6d_nkn4/lo-block.tmp/audit-task-lo-cyzvfi6h/untracked'): the runner locates it in no declared test file; lo5 a task declaring no files refuses on ANY change nobody else covers, naming it, and says the commit step staged none: (0, 'WARNING: you are standing in <tmp>/audit-red-itv557lc/tree, and this writes the plan under <tmp>/audit-red-itv557lc/task-tmp-cq48gpcd/audit-task-stages-v6d_nkn4/lo-block.tmp/audit-task-lo-cyzvfi6h/nofiles -'): the runner locates it in no declared test file; lo6 another in_progress task's files are not blamed (closes), while a change nobody covers still is, naming only it: (0, 'WARNING: you are standing in <tmp>/audit-red-itv557lc/tree, and this writes the plan under <tmp>/audit-red', 0, 'WARNING: you are standing in <tmp>/audit-red-itv557lc/tree, and this writes the plan under <tmp>/audit-red-itv557lc/task-tmp-cq48gpcd/audit-task-stages-v6d_nkn4/lo-block.tmp/audit-task-lo-cyzvfi6h/others-bo'): the runner locates it in no declared test file; lo7 only IN_PROGRESS tasks shield a change: a pending task's file is still refused: (0, 'WARNING: you are standing in <tmp>/audit-red-itv557lc/tree, and this writes the plan under <tmp>/audit-red'): the runner locates it in no declared test file; lo8 `start` refuses a tdd task with no files, says what to declare, writes nothing: (0, 'ARNING: task P1.3: tests.mode is \\'tdd\\' with expectRedFirst and no tests.add - a red-first task naming no case cannot be shown to have gone red. Name it with `/audit:task scope P1.3 --tests-add \"<case>\"`, or use mode \\'regression\\' or \\'gate-only\\' if no new test is owed\\n  written: docs/audit/audit-plan.json\\n  branch audit/p1-p1 cut from main at 3fc463be4893 -- phase P1\\'s edits and commits happen there'): the runner locates it in no declared test file) - a case is the task's only when the runner locates it in a declared test file (plugins/audit/tests/test_audit_task.py) whose named class defines it, with no identical def in HEAD's test files - SELFTEST FAILED: 903/909 cases passed; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from <project>, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in <project>/node_modules and is not watched; the user's npm config (.npmrc in the home directory) dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
       "id": "P122.5-z4y",
       "title": "the guards, the TDD nudge and the plan gate agree on a slash-less directory entry",
-      "status": "pending",
+      "status": "in_progress",
       "description": "P122.1 landed covers() and routed covering_key, guard-bash-writes, guard-secrets-read and remind-tdd through it, but added cases only to test__task_outputs.py; the task's own requirement that the guards and the nudge agree with the plan gate on a slash-less directory has no case. Add, per hook, the case the old matcher fails: a task declaring a directory without a trailing slash covers a file under it (plan gate opens, the shell-write guards do not flag it, remind-tdd treats it as covered), a shared-prefix sibling is not covered, and covering_key returns None (uncovered) when _task_outputs cannot be loaded. Prove each case red against db88fc7^ (the pre-P122.1 matcher) before trusting it. Tests only.",
       "files": [
         "plugins/audit/tests/test_require_plan.py",
@@ -342,16 +362,22 @@
         "P122.1"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-09T21:05:04Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-09T21:23:15Z.172377",
+        "status": "passed",
+        "at": "2026-10-09T21:23:15Z"
+      }
     },
     {
       "id": "P122.6-z4y",
@@ -362,7 +388,12 @@
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/reference/phase-signoff.md",
-        "plugins/audit/README.md"
+        "plugins/audit/README.md",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/tests/test_drive_phase.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -611,14 +642,20 @@
       "id": "P122.9-z4y",
       "title": "every string the plugin writes into a committed plan, journal or evidence row is scrubbed of machine paths at the write",
       "status": "pending",
-      "description": "F604, the second recurrence of F538 (committed shards carrying machine paths): the red helper's sandbox description put the absolute project root and a home-shorthand npmrc path into P122's committed shard twice (P122.1 and P122.2 records), and check-committed-pii failed the next task gates until the orchestrator redacted them by hand. The writer already refuses a machine path in a --description (audit-task's prose-flag check through _journal_io.machine_path_shape), but text the plugin composes itself bypasses that door. Invariant: the save boundary (_manifest_io's shard/index writer, the journal append, the evidence append) passes every string value through _journal_io's existing redaction (redacted_free_text / redacted_text with the project root) so no caller can bypass it; check-committed-pii stays the backstop. Keep the layers legal (_deps.LAYERS); no new detector - reuse the ones the tool already imports. Red-first: the case in tests.add, plus a journal and an evidence row with the same shape.",
+      "description": "F604, the second recurrence of F538 (committed shards carrying machine paths): the red helper's sandbox description put the absolute project root and a home-shorthand npmrc path into P122's committed shard twice (P122.1 and P122.2 records), and check-committed-pii failed the next task gates until the orchestrator redacted them by hand. The writer already refuses a machine path in a --description (audit-task's prose-flag check through _journal_io.machine_path_shape), but text the plugin composes itself bypasses that door. Invariant: the save boundary (_manifest_io's shard/index writer, the journal append, the evidence append) passes every string value through _journal_io's existing redaction (redacted_free_text / redacted_text with the project root) so no caller can bypass it; check-committed-pii stays the backstop. Keep the layers legal (_deps.LAYERS); no new detector - reuse the ones the tool already imports. Red-first: the case in tests.add, plus a journal and an evidence row with the same shape. Layer decision (2026-10-09): _manifest_io and _journal_io are both L1 and may not import each other, so the detectors and redaction (machine_path_shape, redacted_free_text and their patterns) move into a new L0 module scripts/_machine_paths.py that both import; _journal_io keeps re-exporting the names the tool and other callers use. Use the existing tokens (repo-relative, <outside-repo>); do not invent <project>/<home>. Measured cost: about 50 ms to scrub the largest shard (P118, ~199 KB) against ~1 ms to save it - add a cheap pre-reject (a string with none of the characters a machine path needs is skipped) and re-measure twice with a gap.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_io.py",
         "plugins/audit/tests/test__manifest_io.py",
         "plugins/audit/scripts/governance/_journal_io.py",
         "plugins/audit/tests/test__journal_io.py",
         "plugins/audit/scripts/governance/_evidence_io.py",
-        "plugins/audit/tests/test__evidence_io.py"
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/_machine_paths.py",
+        "plugins/audit/tests/test__machine_paths.py",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__output.py",
+        "tools/check-committed-pii.py"
       ],
       "tests": {
         "mode": "tdd",

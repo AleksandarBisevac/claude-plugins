@@ -3474,6 +3474,16 @@ def _cases(check):
           "three - the interpreter arm refused it while the manifest said it "
           "was the work in progress, which is a refusal the plan contradicts",
           _agree(_covered, cfg) == ["allow"], repr(_agree(_covered, cfg)))
+    _plan(True, ["src/gated-dir"])
+    check("we4b a task declaring a directory WITHOUT a trailing slash covers a "
+          "file under it in all three spellings",
+          _agree("src/gated-dir/a.ts", cfg) == ["allow"],
+          repr(_agree("src/gated-dir/a.ts", cfg)))
+    check("we4c ...and a sibling sharing only its prefix is still denied in "
+          "all three",
+          _agree("src/gated-dir-old/a.ts", cfg) == ["block"],
+          repr(_agree("src/gated-dir-old/a.ts", cfg)))
+    _plan(True, [_covered])
     cfg_ask44 = _config._deep_merge(_config.DEFAULTS, {"planGate": "ask"})
     check("we5 planGate:'ask' asks in all three spellings, and still allows the "
           "covered file - the tier is read by one function for all of them",

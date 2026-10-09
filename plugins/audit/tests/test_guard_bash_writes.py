@@ -341,11 +341,20 @@ def _cases(check):
         "phases": [{"id": "P0", "title": "p", "status": "in_progress", "tasks": [
             {"id": "P0.1", "title": "t", "status": "in_progress",
              "files": ["src/covered/mod.ts"], "tests": {"mode": "gate-only"}},
+            {"id": "P0.2", "title": "d", "status": "in_progress",
+             "files": ["src/dirdecl"], "tests": {"mode": "gate-only"}},
         ]}],
     }), encoding="utf-8")
     seed("bw-d")
     _expect("d1 in_progress-covered file silent", "silent",
           payload("Bash", sid="bw-d"), dirty=["src/covered/mod.ts"])
+    seed("bw-d2")
+    _expect("d2 a file under a slash-less directory entry is covered: silent",
+          "silent", payload("Bash", sid="bw-d2"), dirty=["src/dirdecl/mod.ts"])
+    seed("bw-d3")
+    _expect("d3 ...a sibling sharing only the prefix is not covered: warned",
+          "warn", payload("Bash", sid="bw-d3"),
+          dirty=["src/dirdecl-old/mod.ts"])
 
     # (e) two new files → one warn naming both; disabled config → silent
     s = "bw-e"

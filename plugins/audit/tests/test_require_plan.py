@@ -464,6 +464,21 @@ def _cases(check):
     check_graded("k4 a covered file is allowed even at the deny tier", "allow",
                  payload("Edit", "src/graded/covered.ts", new_string=big,
                          sid="selftest-k4"))
+    # A directory declared WITHOUT a trailing slash opens the gate for what is
+    # under it and not for a sibling sharing only the prefix; the old matcher
+    # opened neither.
+    write_manifest({"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+            {"id": "P1.1", "title": "t", "status": "in_progress",
+             "files": ["src/dirdecl"]}]}]})
+    check_graded("k4b a slash-less directory entry opens the gate for a file "
+                 "under it", "allow",
+                 payload("Edit", "src/dirdecl/a.ts", new_string=big,
+                         sid="selftest-k4b"))
+    check_graded("k4c ...and not for a sibling sharing only its prefix",
+                 "block",
+                 payload("Edit", "src/dirdecl-old/a.ts", new_string=big,
+                         sid="selftest-k4c"))
     check_graded("k5 an exempt glob is allowed at the deny tier", "allow",
                  payload("Write", "README.md", content=big, sid="selftest-k5"))
 

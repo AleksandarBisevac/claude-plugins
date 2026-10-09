@@ -2312,6 +2312,30 @@ def _cases(check):
     check("ls1 `strip_line_suffix` drops only a trailing `:<digit range>` - a drive "
           "letter and a colon inside a name are part of the path: %r" % (_ls_got,),
           [g for _e, g in _ls_got] == [w for _e, w in _ls])
+    # covering_key asks the one coverage rule (`_task_outputs.covers`): a
+    # slash-less directory entry covers what is under it, a shared-prefix sibling
+    # is not covered, and when the rule cannot be loaded NOTHING is covered - the
+    # last case is the direction a fallback to the old inline matcher would break
+    # (an exact entry was covered without loading anything).
+    _ck_map = {"src/dirdecl": [1], "pkg/a.py": [2]}
+    check("ck1 covering_key: a slash-less directory entry covers a file under it",
+          M.covering_key(_ck_map, "src/dirdecl/mod.ts") == "src/dirdecl",
+          repr(M.covering_key(_ck_map, "src/dirdecl/mod.ts")))
+    check("ck2 covering_key: a shared-prefix sibling of a slash-less directory "
+          "entry is not covered",
+          M.covering_key(_ck_map, "src/dirdecl-old/mod.ts") is None,
+          repr(M.covering_key(_ck_map, "src/dirdecl-old/mod.ts")))
+    _ck_real = M._load_scripts_module
+    M._load_scripts_module = lambda name, filename: None
+    try:
+        _ck_dir = M.covering_key(_ck_map, "src/dirdecl/mod.ts")
+        _ck_file = M.covering_key(_ck_map, "pkg/a.py")
+    finally:
+        M._load_scripts_module = _ck_real
+    check("ck3 covering_key returns None - uncovered, the loud direction - for "
+          "a directory entry AND an exact entry when the coverage rule cannot "
+          "be loaded: %r" % ((_ck_dir, _ck_file),),
+          _ck_dir is None and _ck_file is None)
 
 
 def _selftest():

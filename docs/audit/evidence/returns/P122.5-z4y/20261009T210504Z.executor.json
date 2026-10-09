@@ -1,0 +1,32 @@
+{
+  "gates": {
+    "test__config selftest": "pass",
+    "test_require_plan selftest": "pass",
+    "test_guard_bash_writes selftest": "pass",
+    "test_remind_tdd selftest": "pass",
+    "test_guard_secrets_read selftest": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task, expectRedFirst false. I did not run a red myself; the prep run in an isolated worktree overlaid pre-P122.1 hook files and saw ck1, ck3, k4b, d2, d1b, we4b red (orchestrator note). Sibling and shared-prefix cases (ck2, k4c, d3, d1c, we4c) pass on both trees by design.",
+    "at": "prep run, not by me"
+  },
+  "outcome": {
+    "technical": "Reviewed the already-applied diff (tests only, 5 files). Added cases ck1-3 (test__config), k4b/k4c (test_require_plan), d2/d3 (test_guard_bash_writes), d1b/d1c (test_remind_tdd), we4b/we4c (test_guard_secrets_read). Ran each file with python3 <file> --selftest from plugins/audit/tests: all exit 0; the case tallies were 293/293, 205/205, 221/221, 36/36 and 689/689. No hook files touched.",
+    "descriptive": "Locks the P122.1 slash-less directory agreement across plan gate, shell-write guard, TDD nudge, secrets guard and covering_key fail-closed."
+  },
+  "testsAdded": [
+    "ck1",
+    "ck2",
+    "ck3",
+    "k4b",
+    "k4c",
+    "d2",
+    "d3",
+    "d1b",
+    "d1c",
+    "we4b",
+    "we4c"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:976de83a8c7e2ec951aeb3e38425048c2ee4376e7a33afc0b9d09bae9d7032bc\",\"dirtyDigest\":\"sha256:ad926d96b9b10187300fc792ad8c75a7f508739e433e323f937d0cd482d73002\",\"dirtyPaths\":{\"plugins/audit/tests/test__config.py\":\"69de4201b577c842\",\"plugins/audit/tests/test_guard_bash_writes.py\":\"c72e0b35bd7cc26d\",\"plugins/audit/tests/test_guard_secrets_read.py\":\"27e7da247b712cb6\",\"plugins/audit/tests/test_remind_tdd.py\":\"12078a82ebbf603c\",\"plugins/audit/tests/test_require_plan.py\":\"882e232593dfb759\"},\"head\":\"d3e85123\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/test__config.py\",\"plugins/audit/tests/test_guard_bash_writes.py\",\"plugins/audit/tests/test_guard_secrets_read.py\",\"plugins/audit/tests/test_remind_tdd.py\",\"plugins/audit/tests/test_require_plan.py\"],\"scopeDigest\":\"sha256:332138f5cc4f1ae0cfedaf650adc20605a07b4a7d6391860f45f402cd2f669eb\",\"v\":2}"
+}
