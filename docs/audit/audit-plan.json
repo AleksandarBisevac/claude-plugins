@@ -762,7 +762,7 @@
     {
       "id": "P121",
       "title": "CI is green on Windows and Linux for the 3.2.0 release commit",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P121.json"
     }
   ],
