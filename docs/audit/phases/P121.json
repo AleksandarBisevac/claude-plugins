@@ -1123,7 +1123,7 @@
     {
       "id": "P121.19-eof",
       "title": "the 3.2.0 notes carry the Windows fixes users will notice",
-      "status": "in_progress",
+      "status": "done",
       "description": "The 3.2.0 release notes do not yet carry this phase's user-facing fixes. Add entries under `## [3.2.0]`'s `### Fixed` in CHANGELOG.md for what a user would notice. Each entry is plain English, contains no number in prose, and cites no internal id. Read each task's outcome in docs/audit/phases/P121.json for the facts, and state only what the code holds.\n- Windows: cost records appended while a month is rewritten are no longer lost. Appends and the rewrite share a per-month lock. A failed carry is reported. A filesystem that refuses locks does not stall the metering hook.\n- Windows: the audit trail, evidence and ledgers are written with LF on every platform, and a phase lands on Windows with its landing record committed. A journal committed with CRLF by an older version still lands.\n- Windows: close-phase reads a committed symlink from git, so a link checked out as a plain file no longer refuses a phase whose gate was green. Declared paths are passed to git literally.\n- Windows: the panel launcher finds its own folder when given a backslash path.\n- Windows: the red-first helper reports native paths, and links dependencies as junctions when symlinks are not allowed.\n- Every text file in the repository checks out with LF on every platform, so a Windows checkout loads the same command and agent text.\nAdd test-only and CI-only changes only where a contributor would care, in one short entry at most.\nThen run `python3 -c \"import sys;sys.path.insert(0,'plugins/audit/scripts');import _deps;print(_deps.doc_prose_numbers())\"`; it must print nothing for CHANGELOG.md.",
       "files": [
         "CHANGELOG.md"
@@ -1151,18 +1151,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b707af36",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Seven bullets added under `## [3.2.0]` / `### Fixed`, after the report-scrolling bullet:\n- Windows backfill: a per-month lock keeps cost records from being lost. A failed carry is reported, and backfill exits non-zero. A refused or busy lock does not stall the metering hook.\n- The trail, evidence and ledgers are written with LF, and a Windows landing commits its record. A journal committed with CRLF still lands and verifies.\n- close-phase reads committed symlinks from git and passes paths to git literally.\n- examples/panel.sh works when launched through a backslash path.\n- The red-first helper reports native paths, and uses junctions or hard links when symlinks are not allowed.\n- A repo-wide `* text=auto eol=lf` rule, and the measure-context lint that holds it.\n- One contributor bullet covering the Windows suites, the shared stage runner, the CI job bounds and the stall watch.\n\nEach claim was checked against the code lines named in the return. `_deps.doc_prose_numbers()` prints nothing.",
+        "descriptive": "The 3.2.0 release notes now list the Windows fixes users will notice, in plain English."
       },
       "startedAt": "2026-10-09T10:59:07Z",
-      "completedAt": null,
+      "completedAt": "2026-10-09T11:09:00Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-09T11:08:59Z.b7a72c",
         "status": "passed",
         "at": "2026-10-09T11:08:59Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b707af36",
+        "at": "2026-10-09T11:09:00Z",
+        "basis": "orchestrator check: each bullet traced to a code line; prose-number lint clean"
       }
     }
   ],
