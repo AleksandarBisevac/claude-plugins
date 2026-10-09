@@ -758,6 +758,12 @@
       "title": "the report never scrolls sideways, whatever the plan holds",
       "status": "done",
       "shard": "phases/P120.json"
+    },
+    {
+      "id": "P121",
+      "title": "CI is green on Windows and Linux for the 3.2.0 release commit",
+      "status": "pending",
+      "shard": "phases/P121.json"
     }
   ],
   "fileIndex": {
@@ -2488,7 +2494,8 @@
       "P100.3-zxo",
       "P102.13-ptn",
       "P102.14-ptn",
-      "P118.2"
+      "P118.2",
+      "P121.1"
     ],
     "plugins/audit/scripts/_refs.py": [
       "P23.1",
@@ -2630,7 +2637,8 @@
       "P118.20-v7t",
       "P118.21-v7t",
       "P118.22-v7t",
-      "P118.23-v7t"
+      "P118.23-v7t",
+      "P121.4"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -2987,7 +2995,8 @@
       "P102.14-ptn",
       "P118.2",
       "P118.11-v7t",
-      "P118.7"
+      "P118.7",
+      "P121.7"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -3427,7 +3436,8 @@
       "P105.9-m32",
       "P105.8-m32",
       "P104.17-tog",
-      "P115.3-4yc"
+      "P115.3-4yc",
+      "P121.6"
     ],
     "plugins/audit/scripts/report/_evidence_view.py": [
       "P32.7",
@@ -3789,7 +3799,8 @@
       "P112.2-uce",
       "P112.4-uce",
       "P112.6-uce",
-      "P112.8-uce"
+      "P112.8-uce",
+      "P121.3"
     ],
     "plugins/audit/scripts/usage/usage_ledger.py": [
       "P14.1",
@@ -3804,7 +3815,8 @@
       "P104.9-tog",
       "P104.10-tog",
       "P104.11-tog",
-      "P104.13-tog"
+      "P104.13-tog",
+      "P121.3"
     ],
     "plugins/audit/templates/audit-plan.starter.json": [
       "P1.5"
@@ -4254,7 +4266,8 @@
       "P115.3-4yc",
       "P118.2",
       "P118.3",
-      "P118.5"
+      "P118.5",
+      "P121.1"
     ],
     "plugins/audit/tests/test__panel_composition.py": [
       "P18.7",
@@ -4680,7 +4693,8 @@
       "P119.2-g0k",
       "P119.5-g0k",
       "P119.8-g0k",
-      "P119.9-g0k"
+      "P119.9-g0k",
+      "P121.2"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -4699,7 +4713,8 @@
       "P112.2-uce",
       "P112.4-uce",
       "P112.6-uce",
-      "P112.8-uce"
+      "P112.8-uce",
+      "P121.3"
     ],
     "plugins/audit/tests/test_audit_version.py": [
       "P67.1",
@@ -4744,7 +4759,8 @@
       "P118.20-v7t",
       "P118.21-v7t",
       "P118.22-v7t",
-      "P118.23-v7t"
+      "P118.23-v7t",
+      "P121.4"
     ],
     "plugins/audit/tests/test_commit_audit_state.py": [
       "P28.2",
@@ -4974,7 +4990,8 @@
       "P94.1",
       "P105.6",
       "P105.9-m32",
-      "P115.3-4yc"
+      "P115.3-4yc",
+      "P121.6"
     ],
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6",
@@ -5134,7 +5151,8 @@
       "P102.14-ptn",
       "P118.2",
       "P118.11-v7t",
-      "P118.7"
+      "P118.7",
+      "P121.7"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
@@ -5146,7 +5164,8 @@
       "P107.5-gwk",
       "P104.2",
       "P104.9-tog",
-      "P104.13-tog"
+      "P104.13-tog",
+      "P121.3"
     ],
     "plugins/audit/tests/test_validate_config.py": [
       "P47.1"
@@ -5280,7 +5299,8 @@
       "P80.15-rtb",
       "P92.4",
       "P120.1",
-      "P120.2-byv"
+      "P120.2-byv",
+      "P121.9"
     ],
     "tools/gate-parity.py": [
       "P19.2",
@@ -6232,7 +6252,8 @@
       "P105.10-m32"
     ],
     "examples/panel.sh": [
-      "P105.9-m32"
+      "P105.9-m32",
+      "P121.6"
     ],
     "tools/ui-tests/policy-shape.test.mjs": [
       "P105.8-m32"
@@ -6326,7 +6347,8 @@
       "P118.9",
       "P118.7",
       "P118.14-v7t",
-      "P119.1"
+      "P119.1",
+      "P121.8"
     ],
     "tools/stream-cost.py": [
       "P117.1",
@@ -6373,7 +6395,8 @@
       "P118.20-v7t",
       "P118.23-v7t",
       "P119.3-g0k",
-      "P119.4-g0k"
+      "P119.4-g0k",
+      "P121.5"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -6389,7 +6412,8 @@
       "P118.23-v7t",
       "P119.3-g0k",
       "P119.4-g0k",
-      "P119.7-g0k"
+      "P119.7-g0k",
+      "P121.5"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6"
@@ -6447,7 +6471,8 @@
     ],
     "plugins/audit/scripts/ui/report-css": [
       "P120.1",
-      "P120.2-byv"
+      "P120.2-byv",
+      "P121.9"
     ],
     "plugins/audit/scripts/ui/shared": [
       "P120.1"
