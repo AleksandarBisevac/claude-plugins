@@ -6486,9 +6486,6 @@
     ],
     "plugins/audit/scripts/ui/shared": [
       "P120.1"
-    ],
-    "plugins/audit/scripts/evidence/_evidence_io.py": [
-      "P121.5"
     ]
   },
   "bugs": [
