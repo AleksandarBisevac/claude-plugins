@@ -5448,6 +5448,10 @@ def _locked_done(args, project, config, mpath, tid, out):
     # blocked from `pending` reaches here with no `start` having written it.
     _record_key(node, phase, key)
     phase_id = phase.get("id")
+    # THE FIX IS RECORDED ON ITS FINDINGS IN THIS WRITE: `add --fixes` named them
+    # and no other verb has to be remembered afterwards.
+    if sha:
+        record_fix_on_findings(phase, tid, sha)
     # A bug this task fixes derives `fixed` (and its `fixedIn`) from this close, so
     # both are stored on the bug - in the index, which is where `bugs[]` lives.
     settled = _settle(assembled, set(
@@ -5682,6 +5686,8 @@ def _unresolve_findings(assembled, tid):
             was = findings[i]
             entry = dict(was)
             entry.pop("commit", None)
+            if entry.get("status") == "fixed":
+                entry.pop("status")
             asked = _FIXED_PREFIX.sub("", (was.get("resolution") or "").strip())
             entry["resolution"] = asked or was.get("resolution")
             findings[i] = entry
@@ -8693,6 +8699,11 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
             out("    or pass --no-evidence-reason \"<why no gate run backs this "
                 "verdict>\", which is recorded on the review")
             return E_USAGE
+    settled, refusal = finding_dispositions(args, assembled, [phase])
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    apply_dispositions(phase, settled)
     review = phase.get("review") if isinstance(phase.get("review"), dict) else {}
     review = dict(review, status=args.verdict)
     if args.review_outcome:
@@ -8871,6 +8882,144 @@ def outcome_with_tally(text, findings):
     if tally is None:
         return base if (base or text is not None) else None
     return "%s %s" % (base, tally) if base else tally
+
+
+def _fixed_entry(was, fix, sha):
+    """`was` as a finding the task `fix` settled in `sha`: the task, the commit
+    and `status: fixed` together, so the three never disagree, and the resolution
+    prefixed with where the fix is (a second fix replaces the first prefix)."""
+    asked = _FIXED_PREFIX.sub("", (was.get("resolution") or "").strip())
+    head = "fixed in %s (%s)" % (fix, sha[:12])
+    return dict(was, fixTask=fix, commit=sha, status="fixed",
+                resolution="%s: %s" % (head, asked) if asked else head)
+
+
+def record_fix_on_findings(phase, tid, sha):
+    """Write `sha` and `status: fixed` onto every finding of `phase` that names
+    task `tid` as its fix, and re-derive the outcome's tally - mutating the
+    phase's review in place. Returns the journal-shaped changes (empty when no
+    finding names the task).
+
+    `done` calls this inside its own write, so a fix closed through the drive
+    (`add --fixes`, then `done`) is recorded on the finding with no second verb to
+    remember; `resolve-finding` stays the way to settle a finding by a task
+    `add --fixes` never linked."""
+    review = phase.get("review") if isinstance(phase.get("review"), dict) else None
+    listed = review.get("findings") if review else None
+    if not isinstance(listed, list):
+        return []
+    findings, changes = list(listed), []
+    for i, was in enumerate(listed):
+        if not (isinstance(was, dict) and was.get("fixTask") == tid) \
+                or (was.get("commit") == sha and was.get("status") == "fixed"):
+            continue
+        findings[i] = _fixed_entry(was, tid, sha)
+        changes.append({"id": was.get("id"), "field": "commit",
+                        "from": was.get("commit"), "to": sha})
+    if not changes:
+        return []
+    was_outcome = review.get("outcome")
+    review = dict(review, findings=findings,
+                  outcome=outcome_with_tally(was_outcome, findings))
+    changes.append({"id": phase.get("id"), "field": "review.outcome",
+                    "from": _journal_outcome(was_outcome),
+                    "to": _journal_outcome(review["outcome"])})
+    phase["review"] = review
+    return changes
+
+
+# A finding is SETTLED when it names a status from this table or a fix commit; an
+# entry that is neither is open, and a sign-off must say what became of it.
+SETTLED_STATUS = ("fixed", "accepted-open", "carried")
+
+
+def open_findings(phase):
+    """The findings of `phase`'s review that are neither fixed nor carrying a
+    recorded disposition. Legacy string findings have no field to hold one and
+    are not counted."""
+    review = phase.get("review") if isinstance(phase.get("review"), dict) else {}
+    return [f for f in (review.get("findings") or [])
+            if isinstance(f, dict) and f.get("status") not in SETTLED_STATUS
+            and not (f.get("fixTask") and f.get("commit"))]
+
+
+def _disposition_pairs(values, flag):
+    """`({id: text}, refusal)` for repeated `ID=TEXT` flag values."""
+    pairs = {}
+    for raw in (values or []):
+        fid, sep, text = str(raw).partition("=")
+        if not (sep and fid.strip() and text.strip()):
+            return None, ("[audit-task] %s takes <findingId>=<text>, got %r"
+                          % (flag, raw))
+        pairs[fid.strip()] = text.strip()
+    return pairs, None
+
+
+def finding_dispositions(args, assembled, phases):
+    """`(settled, None)` - `{phaseId: [(index, entry)]}` for the open findings of
+    `phases` that `--accept-open` / `--carried` name - or `(None, refusal)`.
+
+    A SIGN-OFF OVER AN OPEN FINDING MUST SAY WHAT BECAME OF IT. `accepted-open`
+    carries the human's reason; `carried` names the bug or task that now holds
+    it, which must exist in this plan. A finding left with no word is the state
+    that vanished from the record at sign-off, so it is refused, naming each.
+    Every id a flag names must be an open finding of these phases."""
+    accepted, bad = _disposition_pairs(getattr(args, "accept_open", None),
+                                       "--accept-open")
+    if bad:
+        return None, bad
+    carried, bad = _disposition_pairs(getattr(args, "carried", None), "--carried")
+    if bad:
+        return None, bad
+    both = sorted(set(accepted) & set(carried))
+    if both:
+        return None, ("[audit-task] %s named by both --accept-open and --carried"
+                      % (", ".join(both),))
+    known = set(_mio.tasks_by_id(assembled)) | set(
+        str(b.get("id")) for b in (assembled.get("bugs") or [])
+        if isinstance(b, dict))
+    open_ids = {}
+    for ph in phases:
+        for f in open_findings(ph):
+            open_ids[str(f.get("id"))] = (ph, f)
+    stray = sorted(fid for fid in set(accepted) | set(carried)
+                   if fid not in open_ids)
+    if stray:
+        return None, ("[audit-task] --accept-open/--carried name %s, which "
+                      "is not an open finding of %s"
+                      % (", ".join(stray), ", ".join(str(p.get("id"))
+                                                     for p in phases)))
+    missing = sorted(fid for fid in carried if carried[fid] not in known)
+    if missing:
+        return None, ("[audit-task] --carried %s names no bug or task of this "
+                      "plan: %s" % (", ".join(missing),
+                                    ", ".join(carried[m] for m in missing)))
+    left = [fid for fid in open_ids if fid not in accepted and fid not in carried]
+    if left:
+        return None, ("[audit-task] REFUSED: %s is an open finding with no "
+                      "recorded disposition, and a signed-off phase may not "
+                      "leave one unsaid. Fix it (add --fixes, then done), or "
+                      "say what became of it: --accept-open <id>=\"<the "
+                      "human's reason>\" or --carried <id>=<bug or task id>. "
+                      "Nothing written." % (", ".join(sorted(left)),))
+    settled = {}
+    for fid, (ph, f) in sorted(open_ids.items()):
+        entry = dict(f, status="accepted-open", acceptedReason=accepted[fid]) \
+            if fid in accepted else dict(f, status="carried", carriedTo=carried[fid])
+        settled.setdefault(str(ph.get("id")), []).append((f, entry))
+    return settled, None
+
+
+def apply_dispositions(phase, settled):
+    """Replace each open entry of `phase`'s review by its settled copy, in place,
+    keeping the list's order."""
+    swaps = settled.get(str(phase.get("id"))) or []
+    if not swaps:
+        return
+    review = dict(phase["review"])
+    review["findings"] = [next((new for old, new in swaps if old is f), f)
+                          for f in review["findings"]]
+    phase["review"] = review
 
 
 def _next_finding_id(pid, review):
@@ -9237,10 +9386,7 @@ def _locked_resolve_finding(args, project, config, mpath, fid, fix, commit, out)
     was = findings[index]
     if was.get("fixTask") == fix and was.get("commit") == sha:
         return _unchanged(args, out, fid)
-    asked = _FIXED_PREFIX.sub("", (was.get("resolution") or "").strip())
-    head = "fixed in %s (%s)" % (fix, sha[:12])
-    entry = dict(was, fixTask=fix, commit=sha,
-                 resolution="%s: %s" % (head, asked) if asked else head)
+    entry = _fixed_entry(was, fix, sha)
     findings[index] = entry
     review["findings"] = findings
     was_outcome = review.get("outcome")
@@ -9947,7 +10093,12 @@ def _locked_group(args, project, config, mpath, ids, summary, out):
                 "verdict>\", which is recorded on every member's review")
             return E_USAGE
         pointer = _evidence_io.pointer_for(row) if row else None
+    settled, refusal = finding_dispositions(args, assembled, plan["members"])
+    if refusal:
+        out(refusal)
+        return E_USAGE
     for phase in plan["members"]:
+        apply_dispositions(phase, settled)
         review = phase.get("review") if isinstance(phase.get("review"), dict) else {}
         review = dict(review, status=args.verdict)
         if args.review_outcome:
@@ -11396,7 +11547,8 @@ VERB_FLAGS = {
     # `--accept <sha> --reason` takes a commit no member records into a group's
     # review, recorded with why.
     "signoff": ("verdict", "summary", "review_outcome", "branch", "plan", "bind",
-                "no_evidence_reason", "accept", "reason"),
+                "no_evidence_reason", "accept", "reason", "accept_open",
+                "carried"),
     # `settle` stores what the derivations already answer, over the whole plan, so
     # there is nothing for a flag to choose - an empty row, for `start`'s reason.
     "settle": (),
@@ -11546,6 +11698,14 @@ def build_parser():
                         "taken into its review; needs --reason")
     p.add_argument("--bind", action="store_true", default=False,
                    help="signoff: record a group's branch and baseRef, nothing else")
+    p.add_argument("--accept-open", dest="accept_open", action="append",
+                   default=None, metavar="FINDING=REASON",
+                   help="signoff: leave an open finding open, on the human's "
+                        "recorded reason (repeatable)")
+    p.add_argument("--carried", action="append", default=None,
+                   metavar="FINDING=ID",
+                   help="signoff: an open finding now carried by this bug or "
+                        "task of the plan (repeatable)")
     p.add_argument("--no-evidence-reason", dest="no_evidence_reason", default=None,
                    metavar="TEXT", help=_PROSE_HELP)
     # add-phase only. `--id` rather than a positional: the title is the

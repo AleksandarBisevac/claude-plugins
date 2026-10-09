@@ -72,7 +72,16 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    `[findings: …]` tally **derived** from the list, so never type a count into the outcome: a
    typed tally at its end is replaced. Its last clause counts only the findings whose fix task
    and commit `resolve-finding` recorded — a fix written into a resolution's prose by hand is
-   not one of them, and the clause says nothing about it. A later typo in the outcome or the
+   not one of them, and the clause says nothing about it. **A fix task `add --fixes` linked
+   records itself:** `audit-task.py done` writes the task's commit and `status: fixed` onto each
+   finding it fixes in the same write as the close, so the drive's fix path needs no second verb
+   (`resolve-finding` writes the same `fixed` status for a task `add --fixes` never linked, and
+   `reopen` takes both back off). **Sign-off then says what became of every finding still open.**
+   A finding with neither a fix commit nor a recorded status refuses the sign-off, naming it;
+   settle it with `signoff --accept-open <findingId>="<the human's reason>"` (status
+   `accepted-open`, the reason kept on the finding) or `--carried <findingId>=<bug or task id>`
+   (status `carried`, the id must exist in the plan), both repeatable. A status of `null` never
+   reaches a done phase. A later typo in the outcome or the
    summary is `audit-task.py correct <phaseId> --review-outcome TEXT --summary TEXT`, which
    rewrites the text with a `review.correct` row and reads no `--verdict`.
    **Nothing refuses a hand edit of the shard** — the validator's shape warning is the only

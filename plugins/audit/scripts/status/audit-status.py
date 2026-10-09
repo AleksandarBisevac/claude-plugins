@@ -1180,6 +1180,11 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None):
             if unanswered:
                 out.append("       no intent answer: %s"
                            % _clip(", ".join(unanswered), 70))
+        # A finding sign-off left open on purpose, with the reason or the
+        # destination it was recorded with - on every phase that holds one,
+        # signed off or not, since the signed-off phase is where it lives.
+        for left in _status_facts.findings_left_open(ph):
+            out.append("       left open: %s" % _clip(_one_line(left), 120))
         for r in all_rows.get(pe.get("id")) or []:
             out.append(fmt_row(r))
 

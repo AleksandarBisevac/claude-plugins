@@ -1428,6 +1428,9 @@ def _advance_refused_cases(check):
     check("sq3m RED TWIN: a driver that applies the advance answer over an open "
           "finding signs the phase off, and sq3's count catches it: %r"
           % ((ran_m, signed_m),),
+          # The driver hands the verb the answer's reason as the disposition,
+          # so the verb's own refusal is not the defence here: sq3's refusal
+          # in the driver is the only line that stops this sign-off.
           ran_m == 1 and signed_m)
     if getattr(mutant, "advance_admissible", None) is not None:
         mutant.advance_admissible = lambda phase: True

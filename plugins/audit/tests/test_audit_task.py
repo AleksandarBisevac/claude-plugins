@@ -7966,6 +7966,7 @@ def _group_cases(check):
                         "--verdict", "skipped", "--summary", "s",
                         "--review-outcome", "matches [findings: 7 - 7 high, 0 med, "
                         "0 low; 7 with a recorded fix commit]",
+                        "--accept-open", "P2-R1=left open for this case",
                         "--project-dir", gt_proj])
         _gt_ph = dict((p["id"], p) for p in _mio.load_manifest(gt_mp)["phases"])
         check("gs6t the GROUP sign-off derives each member's tally from its own "
@@ -14996,6 +14997,165 @@ def _unstaged(source, stages):
     return [name for name in builders if name not in staged]
 
 
+def _finding_disposition_cases(check):
+    """A fix closed through the drive records itself on its finding, and a
+    sign-off says what became of every finding still open. `add --fixes` then
+    `done` was the whole fix path, and it wrote no commit onto the finding - so a
+    signed-off phase read zero fixed over fixed findings, and an open one left
+    with no word vanished from the record."""
+    import io
+    root = _harness.fixture_root("audit-task-fd-")
+
+    def tk(tid, status="in_progress", **over):
+        task = {"id": tid, "title": tid, "status": status,
+                "description": "do " + tid, "files": ["src/%s.ts" % (tid,)],
+                "tests": {"mode": "gate-only", "add": [],
+                          "expectRedFirst": False, "gate": ["test"]},
+                "attempts": 1, "maxAttempts": 3, "startedAt": _FR_START}
+        task.update(over)
+        return task
+
+    def finding(fid, **over):
+        entry = {"id": fid, "severity": "med", "file": "src/a.ts",
+                 "issue": "i", "resolution": "r"}
+        entry.update(over)
+        return entry
+
+    def project(name, findings):
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        _panel_write._atomic_write_json(
+            os.path.join(proj, ".claude", "audit.config.json"),
+            {"manifestPath": "docs/audit/audit-plan.json"})
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        _panel_write._atomic_write_json(mpath, {
+            "meta": {"version": 2, "buildCommands": {"test": "true"}},
+            "phases": [{"id": "P1", "title": "P1", "status": "in_progress",
+                        "testGate": ["test"],
+                        "tasks": [tk("P1.1", status="cancelled")],
+                        "review": {"findings": findings}}],
+            "fileIndex": {"src/P1.1.ts": ["P1.1"]}, "bugs": []})
+        return proj, mpath
+
+    def verb(proj, *argv):
+        lines, real = [], sys.stdin
+        sys.stdin = io.StringIO("")
+        try:
+            code = M.main(list(argv) + ["--project-dir", proj], out=lines.append)
+        finally:
+            sys.stdin = real
+        return code, "\n".join(str(x) for x in lines)
+
+    def read(path):
+        with open(path, "rb") as fh:
+            return fh.read()
+
+    def phase(mpath):
+        return _mio.load_manifest(mpath)["phases"][0]
+
+    def entry(mpath, fid):
+        return [f for f in phase(mpath)["review"]["findings"]
+                if f.get("id") == fid][0]
+
+    def fix_through_drive(proj, mpath, fid):
+        """add --fixes, start, close: the drive's whole fix path."""
+        verb(proj, "add", "fix " + fid, "--phase", "P1", "--files",
+             "src/f.ts", "--fixes", fid)
+        fixer = entry(mpath, fid).get("fixTask")
+        verb(proj, "start", fixer)
+        code, text = verb(proj, "done", fixer, "--commit", _FR_SHA,
+                          "--intent", "not-asked", *_HD_BASIS)
+        return fixer, code, text
+
+    def signoff(proj, *extra):
+        return verb(proj, "signoff", "P1", "--verdict", "skipped", "--summary",
+                    "the phase did its work", "--review-outcome", "reviewed",
+                    *extra)
+
+    try:
+        proj, mpath = project("drive", [finding("P1-R1"), finding("P1-R2")])
+        fixer, code, text = fix_through_drive(proj, mpath, "P1-R1")
+        fixed, left = entry(mpath, "P1-R1"), entry(mpath, "P1-R2")
+        check("fd1 closing the task `add --fixes` linked writes the commit and "
+              "`status: fixed` onto its finding in the close itself, and leaves "
+              "the other finding without either: %r" % ((code, fixed, left),),
+              code == 0 and fixed.get("commit") == _FR_SHA
+              and fixed.get("status") == "fixed"
+              and fixed.get("fixTask") == fixer
+              and left.get("commit") is None and left.get("status") is None)
+
+        before = read(mpath)
+        code, text = signoff(proj)
+        check("fd2 sign-off over an open finding with no disposition is refused "
+              "naming that finding and not the fixed one, and writes nothing: %r"
+              % ((code, text[-600:]),),
+              code == M.E_USAGE and "P1-R2" in text and "P1-R1" not in text
+              and "--accept-open" in text and read(mpath) == before)
+
+        code, text = signoff(proj, "--accept-open", "P1-R2=owner: ship now")
+        left = entry(mpath, "P1-R2")
+        outcome = phase(mpath)["review"].get("outcome") or ""
+        check("fd3 ALLOW: with the open finding accepted on a reason, sign-off "
+              "records `accepted-open` and the reason on it, and the tally reads "
+              "one recorded fix commit: %r" % ((code, left, outcome),),
+              code == 0 and left.get("status") == "accepted-open"
+              and left.get("acceptedReason") == "owner: ship now"
+              and entry(mpath, "P1-R1").get("status") == "fixed"
+              and outcome.endswith("1 with a recorded fix commit]")
+              and outcome.count("[findings:") == 1)
+
+        # The other direction of the refusal: it must not fire when nothing is
+        # open, or every sign-off over fixed findings would be refused.
+        proj, mpath = project("allfixed", [finding("P1-R1")])
+        fix_through_drive(proj, mpath, "P1-R1")
+        code, text = signoff(proj)
+        check("fd4 ALLOW: a sign-off whose every finding was fixed needs no "
+              "disposition flag: %r" % ((code, text[:160]),), code == 0)
+
+        proj, mpath = project("carried", [finding("P1-R1")])
+        before = read(mpath)
+        code, text = signoff(proj, "--carried", "P1-R1=BUG-404")
+        refused = (code, read(mpath) == before)
+        code2, text2 = signoff(proj, "--carried", "P1-R1=P1.1")
+        carried = entry(mpath, "P1-R1")
+        check("fd5 `--carried` naming nothing in the plan is refused writing "
+              "nothing, and one naming a task records `carried` and where: %r"
+              % ((refused, code2, carried),),
+              refused == (M.E_USAGE, True) and "BUG-404" in text
+              and code2 == 0 and carried.get("status") == "carried"
+              and carried.get("carriedTo") == "P1.1")
+
+        proj, mpath = project("stray", [finding("P1-R1")])
+        fix_through_drive(proj, mpath, "P1-R1")
+        before = read(mpath)
+        code, text = signoff(proj, "--accept-open", "P1-R1=why",
+                             "--accept-open", "P1-R9=why")
+        check("fd6 `--accept-open` naming a fixed or unknown finding is refused "
+              "by name, writing nothing: %r" % ((code, text[:200]),),
+              code == M.E_USAGE and "P1-R1" in text and "P1-R9" in text
+              and read(mpath) == before)
+
+        proj, mpath = project("reopen", [finding("P1-R1")])
+        fixer, _c, _t = fix_through_drive(proj, mpath, "P1-R1")
+        verb(proj, "reopen", fixer, "--reason", "wrong fix")
+        back = entry(mpath, "P1-R1")
+        check("fd7 re-opening the fix task takes the commit AND the `fixed` "
+              "status back off the finding: %r" % (back,),
+              back.get("commit") is None and back.get("status") is None
+              and back.get("fixTask") == fixer)
+
+        proj, mpath = project("resolve", [finding("P1-R1"), finding("P1-R2")])
+        fixer, _c, _t = fix_through_drive(proj, mpath, "P1-R1")
+        verb(proj, "resolve-finding", "P1-R2", "--fix-task", fixer)
+        check("fd8 `resolve-finding` writes the same `fixed` status the close "
+              "does: %r" % (entry(mpath, "P1-R2"),),
+              entry(mpath, "P1-R2").get("status") == "fixed"
+              and entry(mpath, "P1-R2").get("commit") == _FR_SHA)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def _stage_runner_cases(check):
     """The full run's machinery: every slice is staged, a block whose process
     reports nothing is a named failure, and a replayed block reads exactly as
@@ -15042,6 +15202,7 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("ncm-block", "_no_change_moved_cases"),
           ("lo-block", "_leftover_cases"),
           ("io-block", "_index_only_cases"),
+          ("fd-block", "_finding_disposition_cases"),
           ("ps-block", "_stage_runner_cases"))
 
 

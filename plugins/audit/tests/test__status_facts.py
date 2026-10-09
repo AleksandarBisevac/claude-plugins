@@ -2032,9 +2032,32 @@ def _intent_unanswered_cases(check):
           and "P1.5" not in listed and "P1.6" not in listed)
 
 
+def _left_open_cases(check):
+    """Findings a sign-off left open on purpose stay visible, with the reason or
+    the destination; fixed and unsettled ones are not this list's subject."""
+    phase = {"id": "P1", "review": {"findings": [
+        {"id": "P1-R1", "status": "fixed", "commit": "abc"},
+        {"id": "P1-R2", "status": "accepted-open", "acceptedReason": "owner said ship"},
+        {"id": "P1-R3", "status": "carried", "carriedTo": "BUG-4"},
+        {"id": "P1-R4"}, "legacy text finding",
+        {"id": "P1-R5", "status": "accepted-open"}]}}
+    listed = M.findings_left_open(phase)
+    check("lf1 accepted-open findings are listed with their reason and carried "
+          "ones with where they went: %r" % (listed,),
+          listed[:2] == ["P1-R2 accepted-open: owner said ship",
+                         "P1-R3 carried to BUG-4"])
+    check("lf2 THE ALLOW TWIN: a fixed finding, an unsettled one and a legacy "
+          "string are not listed, and a disposition missing its reason says so: "
+          "%r" % (listed,),
+          len(listed) == 3 and not any("R1" in l or "R4" in l for l in listed)
+          and listed[2] == "P1-R5 accepted-open: no reason recorded"
+          and M.findings_left_open({"id": "P2"}) == [])
+
+
 def _selftest():
     def body(check):
         _harness.stage(check, "iu", _intent_unanswered_cases)
+        _harness.stage(check, "lf", _left_open_cases)
         _cases(check)
         _derived_status_cases(check)
         _graded_by_cases(check)

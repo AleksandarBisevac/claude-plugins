@@ -328,7 +328,7 @@
     {
       "id": "P122.5-z4y",
       "title": "the guards, the TDD nudge and the plan gate agree on a slash-less directory entry",
-      "status": "in_progress",
+      "status": "done",
       "description": "P122.1 landed covers() and routed covering_key, guard-bash-writes, guard-secrets-read and remind-tdd through it, but added cases only to test__task_outputs.py; the task's own requirement that the guards and the nudge agree with the plan gate on a slash-less directory has no case. Add, per hook, the case the old matcher fails: a task declaring a directory without a trailing slash covers a file under it (plan gate opens, the shell-write guards do not flag it, remind-tdd treats it as covered), a shared-prefix sibling is not covered, and covering_key returns None (uncovered) when _task_outputs cannot be loaded. Prove each case red against db88fc7^ (the pre-P122.1 matcher) before trusting it. Tests only.",
       "files": [
         "plugins/audit/tests/test_require_plan.py",
@@ -364,25 +364,47 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c8a9da650aee",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Reviewed the already-applied diff (tests only, 5 files). Added cases ck1-3 (test__config), k4b/k4c (test_require_plan), d2/d3 (test_guard_bash_writes), d1b/d1c (test_remind_tdd), we4b/we4c (test_guard_secrets_read). Ran each file with python3 <file> --selftest from plugins/audit/tests: all exit 0; the case tallies were 293/293, 205/205, 221/221, 36/36 and 689/689. No hook files touched.",
+        "descriptive": "Locks the P122.1 slash-less directory agreement across plan gate, shell-write guard, TDD nudge, secrets guard and covering_key fail-closed."
       },
       "startedAt": "2026-10-09T21:05:04Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T21:23:16Z",
+      "verifiedBy": [
+        "ck1",
+        "ck2",
+        "ck3",
+        "k4b",
+        "k4c",
+        "d2",
+        "d3",
+        "d1b",
+        "d1c",
+        "we4b",
+        "we4c"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-09T21:23:15Z.172377",
         "status": "passed",
         "at": "2026-10-09T21:23:15Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "c8a9da650aee",
+        "at": "2026-10-09T21:23:16Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task, expectRedFirst false. I did not run a red myself; the prep run in an isolated worktree overlaid pre-P122.1 hook files and saw ck1, ck3, k4b, d2, d1b, we4b red (orchestrator note). Sibling and shared-prefix cases (ck2, k4c, d3, d1c, we4c) pass on both trees by design.",
+        "at": "prep run, not by me"
       }
     },
     {
       "id": "P122.6-z4y",
       "title": "closing a fix task records the fix on its findings, and sign-off records every open finding's disposition",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F601 (testbed, P1 sign-off): the drive's fix path (add --fixes, then the task's own done) never writes commit/status onto the finding; only resolve-finding does, and review_tally counts only findings with both fixTask and commit. P1's signed-off manifest says 0 fixed over six fixed findings, and a med finding left open on the owner's decision vanished with status null. Fix: done on a task whose fixes names findings writes commit and status fixed onto each, in the same write as the close (no second verb to remember); signoff over open findings records each one's disposition (accepted-open with the human's reason, or carried as a bug or parked task) and refuses a null status reaching a done phase. Update phase-signoff.md and the README's signoff row.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -393,7 +415,10 @@
         "plugins/audit/commands/task.md",
         "plugins/audit/scripts/status/_status_facts.py",
         "plugins/audit/tests/test__status_facts.py",
-        "plugins/audit/tests/test_drive_phase.py"
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -420,16 +445,22 @@
         "P122.4"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-09T21:23:17Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-09T21:54:40Z.23e91d",
+        "status": "passed",
+        "at": "2026-10-09T21:54:40Z"
+      }
     },
     {
       "id": "P122.7-z4y",
@@ -600,7 +631,40 @@
         "plugins/audit/scripts/usage/_usage_routing.py",
         "plugins/audit/scripts/usage/_usage_spend.py",
         "plugins/audit/scripts/usage/audit-usage.py",
-        "plugins/audit/scripts/usage/usage_ledger.py"
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/scripts/governance/audit-journal.py",
+        "plugins/audit/scripts/governance/audit-lock.py",
+        "plugins/audit/scripts/manifest/validate-manifest.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/scripts/report/_report_md.py",
+        "tools/prove-gates.py",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/demo-gate.gif",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/mobile.png",
+        "docs/screenshots/overview.png",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
       ],
       "tests": {
         "mode": "tdd",
@@ -655,7 +719,21 @@
         "plugins/audit/scripts/_deps.py",
         "PLUGIN-BUILD-GUIDE.md",
         "plugins/audit/tests/test__output.py",
-        "tools/check-committed-pii.py"
+        "tools/check-committed-pii.py",
+        "plugins/audit/scripts/manifest/_ado_connect.py",
+        "plugins/audit/scripts/status/_doctor_ado.py",
+        "plugins/audit/scripts/status/_doctor_hygiene.py",
+        "plugins/audit/scripts/status/_doctor_completions.py",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/scripts/status/_gate_feed.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/tests/test__panel_write.py",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/tests/test__invariants.py",
+        "plugins/audit/scripts/governance/derive-phase-gate.py"
       ],
       "tests": {
         "mode": "tdd",

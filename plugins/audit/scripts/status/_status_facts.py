@@ -751,6 +751,32 @@ def intent_unanswered(phase):
             and _intent_word(t) in (None, _fr.INTENT_DEFERRED)]
 
 
+def findings_left_open(phase):
+    """One line per review finding of `phase` that sign-off left open on purpose:
+    `<id> accepted-open: <the human's reason>` or `<id> carried to <id>`.
+
+    A FINDING SETTLED BY A DISPOSITION IS NOT A FIXED ONE. Sign-off records
+    `accepted-open` with the reason, or `carried` with the bug or task now
+    holding it; a surface that listed only unsettled findings would drop both
+    the moment they were recorded, which is the vanishing this record exists to
+    stop. A disposition with its reason or destination missing is said as that
+    rather than filled in."""
+    review = phase.get("review") if isinstance(phase, dict) else None
+    if not isinstance(review, dict):
+        return []
+    lines = []
+    for f in (review.get("findings") or []):
+        if not isinstance(f, dict):
+            continue
+        if f.get("status") == "accepted-open":
+            lines.append("%s accepted-open: %s" % (
+                f.get("id"), f.get("acceptedReason") or "no reason recorded"))
+        elif f.get("status") == "carried":
+            lines.append("%s carried to %s" % (
+                f.get("id"), f.get("carriedTo") or "no destination recorded"))
+    return lines
+
+
 def _intent_word(task):
     """The answer `task`'s `intentCheck` records, or None for none."""
     block = task.get("intentCheck")

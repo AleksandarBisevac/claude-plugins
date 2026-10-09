@@ -1558,6 +1558,13 @@ def run_signoff(ctx, state, phase):
     summary = signoff_summary(state, phase, head)
     args = ["signoff", phase["id"], ctx["manifest"], "--project-dir",
             ctx["project"], "--verdict", "passed", "--summary", summary]
+    # THE HUMAN'S WORDS ARE THE DISPOSITION. A `sign-off` answered over a
+    # finding no fix task names is the human accepting it open, and the verb
+    # refuses a sign-off that leaves one unsaid, so each is recorded with the
+    # reason the answer carried.
+    for finding in open_findings(phase):
+        if finding.get("status") not in ("accepted-open", "carried"):
+            args += ["--accept-open", "%s=%s" % (finding["id"], summary)]
     mark = state.get("phaseReview") or {}
     if mark.get("head"):
         args += ["--review-outcome", "phase review filed at head %s"

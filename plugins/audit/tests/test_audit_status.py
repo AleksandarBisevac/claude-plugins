@@ -293,6 +293,22 @@ def _cases(_record):
           "though its done tasks carry no answer either - the list is the question "
           "sign-off still owes, and that phase has answered it: %r" % (_ni_rows,),
           not [r for r in _ni_rows if "P2." in r])
+    # fo: a finding sign-off left open on purpose is named on its phase, where it
+    # was accepted or carried - the record that used to vanish at sign-off.
+    _fo = copy.deepcopy(_sd)
+    _fo["phases"][1]["review"]["findings"] = [
+        {"id": "P2-R1", "status": "accepted-open", "acceptedReason": "owner decided"},
+        {"id": "P2-R2", "status": "carried", "carriedTo": "BUG-3"},
+        {"id": "P2-R3", "status": "fixed", "fixTask": "P2.1", "commit": "abc"}]
+    _fo_txt = M.render_status(_fo, M.rollup(_fo, [], []))
+    _fo_rows = [ln.strip() for ln in _fo_txt.splitlines()
+                if "left open:" in ln]
+    check("fo1 a phase names each finding sign-off left open, with the reason or "
+          "the destination, and not the fixed one: %r" % (_fo_rows,),
+          _fo_rows == ["left open: P2-R1 accepted-open: owner decided",
+                       "left open: P2-R2 carried to BUG-3"])
+    check("fo2 SECOND DIRECTION: a phase with no such finding prints no such "
+          "line: %r" % (_fo_rows,), not [r for r in _fo_rows if "P1" in r])
     _txt_ca = M.render_status(m_ca, M.rollup(m_ca, [], []))
     _ca_row = [ln for ln in _txt_ca.splitlines()
                if ln.strip().startswith(_ca_phase["id"] + " ")]
