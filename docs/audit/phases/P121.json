@@ -526,6 +526,169 @@
         "at": "2026-10-09T02:29:13Z",
         "basis": "orchestrator check: wide-font stand-in turns the old planting red and the new green; two CSS breakages still red"
       }
+    },
+    {
+      "id": "P121.10-eof",
+      "title": "Windows: shipped text files check out with LF everywhere",
+      "status": "pending",
+      "description": "On windows-latest the CRLF checkout inflates every shipped .md file: tools/measure-context.py mc19/mc24 measure the reviewer at 7126 against its 7000 ceiling and /audit:phase at 4028 against 4000 (6995 and 3962 on LF), and test_audit_task.py fb15 fails on the same gate. .gitattributes already pins ui assets, _ui_theme.py, *.sh and *.yml to LF, each with its reason. Extend the pin, with its reason, to every text file the plugin ships or the pipeline commits byte-for-byte: at least *.md, *.json and *.jsonl (the committed journal, evidence and manifest), and decide whether a repo-wide `* text=auto eol=lf` is the cleaner rule. Confirm `git add --renormalize .` changes no indexed content, and that a scratch clone made with core.autocrlf=true now checks these files out LF and measure-context --gate passes there. Add a lint or case so a newly shipped text type that is not pinned is caught, if the repo has a natural home for it (test__refs or measure-context). This is CI round 2 on windows-latest; the job log is saved at /private/tmp/claude-501/-Users-aleksandarbisevac-Desktop-personal-claude-plugins/6c881c24-c1fd-461f-8c48-abb0170e0a5a/scratchpad/ci-37875405209-windows.log (grep the file name). You cannot run Windows here. Find the root cause, reproduce the Windows condition locally where you can (a CRLF checkout via `git -c core.autocrlf=true` into a scratch clone, no symlink privilege, a slow process start), show it red before the fix and green after, and say plainly what could not be simulated. Fix the class, not only the named case; a platform skip only with the house's idiom and a stated reason.",
+      "files": [
+        ".gitattributes",
+        "tools/measure-context.py",
+        "plugins/audit/tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P121.11-eof",
+      "title": "Windows: the journal's newline cases leave nothing behind",
+      "status": "pending",
+      "description": "On windows-latest the sweep reports test__journal_io.py 'wrote outside the fixtures it makes for itself: working directory: left behind: jio-nl-hqe6eu52' - the nl-block added in P121.5 creates a jio-nl-* directory in the working directory, or fails to remove it on Windows (an open handle, a read-only file, a git object). Make every nl case build its scratch space under tempfile.mkdtemp and remove it in finally with the house remove_tree, and show the leak under a simulation. This is CI round 2 on windows-latest; the job log is saved at /private/tmp/claude-501/-Users-aleksandarbisevac-Desktop-personal-claude-plugins/6c881c24-c1fd-461f-8c48-abb0170e0a5a/scratchpad/ci-37875405209-windows.log (grep the file name). You cannot run Windows here. Find the root cause, reproduce the Windows condition locally where you can (a CRLF checkout via `git -c core.autocrlf=true` into a scratch clone, no symlink privilege, a slow process start), show it red before the fix and green after, and say plainly what could not be simulated. Fix the class, not only the named case; a platform skip only with the house's idiom and a stated reason.",
+      "files": [
+        "plugins/audit/tests/test__journal_io.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P121.12-eof",
+      "title": "Windows: the driver suite finishes inside the cap on a slow runner",
+      "status": "pending",
+      "description": "On windows-latest plugins/audit/tests/test_drive_phase.py still did not finish within the 300s per-file cap, although P119.7 made its stages run in parallel (about 71s on macOS). Windows starts processes far slower and the runner has few cores. Profile which stages dominate (gb-block was the longest), split the long ones further where an AST/data-flow check shows nothing crosses, or cut process starts a case does not need, keeping every case id and verdict identical (diff before/after). The P121.2 change to test_audit_task.py is the precedent for splitting. Do not raise the cap. Show the effect with the slow-spawn simulation in scratchpad/P121.2/probe/slowspawn. This is CI round 2 on windows-latest; the job log is saved at /private/tmp/claude-501/-Users-aleksandarbisevac-Desktop-personal-claude-plugins/6c881c24-c1fd-461f-8c48-abb0170e0a5a/scratchpad/ci-37875405209-windows.log (grep the file name). You cannot run Windows here. Find the root cause, reproduce the Windows condition locally where you can (a CRLF checkout via `git -c core.autocrlf=true` into a scratch clone, no symlink privilege, a slow process start), show it red before the fix and green after, and say plainly what could not be simulated. Fix the class, not only the named case; a platform skip only with the house's idiom and a stated reason.",
+      "files": [
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P121.13-eof",
+      "title": "Windows: the red helper links dependencies without symlink privilege",
+      "status": "pending",
+      "description": "On windows-latest plugins/audit/tests/test_stamp_verification.py fails sd4 (the allow case with dependencies linked) and sd5 (--deps-from proves the red from another checkout's node_modules: without=3 with=0 expected, Windows got otherwise). The helper links node_modules into its throwaway tree; on Windows os.symlink needs a privilege CI and most users lack. Use a directory junction on Windows (or a fallback the helper already has), name the link kind in the note, and keep POSIX behaviour unchanged. This is a real user-facing defect on Windows, not only a test problem. This is CI round 2 on windows-latest; the job log is saved at /private/tmp/claude-501/-Users-aleksandarbisevac-Desktop-personal-claude-plugins/6c881c24-c1fd-461f-8c48-abb0170e0a5a/scratchpad/ci-37875405209-windows.log (grep the file name). You cannot run Windows here. Find the root cause, reproduce the Windows condition locally where you can (a CRLF checkout via `git -c core.autocrlf=true` into a scratch clone, no symlink privilege, a slow process start), show it red before the fix and green after, and say plainly what could not be simulated. Fix the class, not only the named case; a platform skip only with the house's idiom and a stated reason.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-09T00:55:19Z"
