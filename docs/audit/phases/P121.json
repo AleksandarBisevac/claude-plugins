@@ -453,7 +453,7 @@
     {
       "id": "P121.9",
       "title": "Linux: the hostile-row leg holds on this repo's plan in CI",
-      "status": "in_progress",
+      "status": "done",
       "description": "In ubuntu CI, the 'The report is interactive' step of the manifest-validation job fails on the live-plan render of docs/audit/audit-plan.json: 'a very long summary and a very long unbroken token, planted in phases + data bugs, widen the document at no width: got 833px (826 -> 873)'. The same check passes on macOS. Render the plan and find the cell in the bugs data table that widens under Linux fonts; the reviewer's probes are in scratchpad/probe/. Fix the cause, or the check's assumption, without weakening what the check guards. ",
       "files": [
         "tools/check-report-interactive.mjs",
@@ -482,18 +482,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "54cd0a30",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Cause: section 10b planted the long summary into every bare cell of the bugs table, including status, severity and ADO, whose real values are a pill, a single word or a dash. At 833px, the first width above the 52rem breakpoint, the eight-column bugs table is already at its minimum width with real content. One ordinary planted word widened those columns under Linux's wider fonts. A Verdana stand-in reproduced CI's shape: 833 -> 877, against CI's 826 -> 873.\n\nDecision: fix the check's assumption, not the CSS. The renderer never puts a paragraph in a status, severity or count column. A cell is planted if it is full-width, or if it is a bare-text cell in a column where the rendered plan itself holds words separated by spaces. The token, the chips and the widening assertion are unchanged. Tables with no prose cell are named as skipped in the notes. The cost in coverage: two data tables per shipped report that hold only numbers or single words are no longer planted.\n\nProbe (scratchpad P121.9/measure.mjs; old or new planting, mac or wide font):\n- live plan and demo-large: old+wide red, new+wide green;\n- acme and index: green in all four combinations;\n- with the new planting, colspan cells not breaking turns it red, and data cells set nowrap turns it red.\n\nSeparate, and already recorded internally: the live bugs table has no width to spare at 833px on Linux, so a real title word longer than the current widest would widen the page.",
+        "descriptive": "The report check stops failing on Linux fonts over an ordinary word placed in a status column, and still fails when long text can widen the page."
       },
       "startedAt": "2026-10-09T00:55:22Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T02:29:13Z",
+      "verifiedBy": [
+        "tools/check-report-interactive.mjs"
+      ],
       "testEvidence": {
         "runId": "2026-10-09T02:29:01Z.d2291e",
         "status": "passed",
         "at": "2026-10-09T02:29:01Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "54cd0a30",
+        "at": "2026-10-09T02:29:13Z",
+        "basis": "orchestrator check: wide-font stand-in turns the old planting red and the new green; two CSS breakages still red"
       }
     }
   ],

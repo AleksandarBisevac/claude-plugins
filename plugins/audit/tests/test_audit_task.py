@@ -14,24 +14,45 @@ NOTHING IN THIS SUITE HAD TO CHANGE MEANING TO MOVE. The AST scan for the six
 shapes the guide forbids carrying literally came back empty: no `globals()` and no
 `vars()` (nothing is stubbed - the lock cases drive a real subprocess and the
 journal cases read the real rows), no `__file__`, no path built off the suite's own
-directory, and no `split(a)[1].split(b)[0]`. Every fixture lives under one
-`tempfile.mkdtemp(prefix="audit-task-selftest-")` removed in a single `finally`,
-including the two `git init` repositories the k-group needs. It loads no sibling
-through `_loader`, so no `KNOWN_LAYER_DEBT` entry moved with it.
+directory, and no `split(a)[1].split(b)[0]`. It loads no sibling through
+`_loader`, so no `KNOWN_LAYER_DEBT` entry moved with it. Each slice of the
+add-and-close cases builds its fixtures under its own
+`tempfile.mkdtemp(prefix="audit-task-selftest-")`, removed in that slice's
+`finally`, and gets its helpers from `_at_kit()`.
 
 The `check(name, cond)` this file used was the 2-argument form, which the harness's
 `check(label, cond, detail="")` is a superset of - the call sites are unchanged.
 
+A FULL RUN DRIVES ITS STAGES SIDE BY SIDE, each block in a process of its own,
+the way `test_drive_phase.py` does. The time goes to the verb, not to Python: a
+case runs `audit-task.py` against a fresh fixture, many of them a real `git`
+repository, so a run is process starts and file writes from end to end - and
+run as one sequence it outlasted the sweep's per-file cap on the windows leg,
+where both cost the most. The add-and-close cases were one function; they are
+slices now (the `at` labels in `STAGES`), cut only where no later group reads a name an earlier group
+bound outside `_at_kit()`, so each slice runs alone. The parent replays every
+case the children report, in block order, through one `_harness.run`, so the
+case ids, their order and their verdicts are those of a run in one process -
+`ps3` holds that for a block. `--stage` still runs the named blocks in this
+process, for a red-first proof in a throwaway tree.
+
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import contextlib
+import io
 import json
 import os
 import pathlib
+import re
+import shutil
+import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _journal_io                                 # noqa: E402  (the journal rows several slices read)
 import _output                                     # noqa: E402  (SCRIPTS_DIR, to read a sibling's source)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
@@ -75,15 +96,21 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # dg (a gate-only task's `files` arm narrows only to a suite path, and
 # a new phase's gate puts `meta.phaseGate.always` first and drops only what
 # `meta.phaseGate.exclude` names), pg (the same phase-gate derivation,
-# driven through `add-phase` itself), ff (`add --failing-from <runId>`
+# driven through `add-phase` itself), ps (the full run's stages: every
+# slice staged, a silent block named, a replayed block read as run here),
+# ff (`add --failing-from <runId>`
 # gates a fix task on the suites a red sign-off run's own steps NAMED as
 # failing).
-def _cases(check):
-    import contextlib
-    import io
-    import shutil
-    import subprocess
+def _at_kit(tmp):
+    """The helpers every slice of the add-and-close cases builds on, each
+    bound to `tmp`, the slice's own scratch directory.
 
+    ONE DEFINITION, HANDED TO EVERY SLICE. These cases were one function
+    whose opening lines defined the fixtures and whose later groups defined
+    a few more that groups after them reused; the slices run in separate
+    processes, so each one asks for the same set here rather than carrying
+    a copy. A helper only one slice uses stays in that slice.
+    """
     def run(argv):
         lines = []
         code = M.main(argv, out=lines.append)
@@ -125,7 +152,6 @@ def _cases(check):
             "bugs": [],
         }
 
-    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
 
     def mk(name, manifest, sharded=False, git=False):
         proj = os.path.join(tmp, name)
@@ -173,6 +199,85 @@ def _cases(check):
         except Exception:
             return None
 
+    oldcwd = os.getcwd()
+    oldenv = os.environ.get("CLAUDE_PROJECT_DIR")
+
+    def _pin(cwd, env):
+        os.chdir(cwd)
+        if env is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = env
+
+    def _unpin():
+        os.chdir(oldcwd)
+        if oldenv is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = oldenv
+
+    _PD_SHA = "0123456789abcdef0123456789abcdef01234567"
+
+    def pd_fixture(last=False):
+        fx = base_manifest()
+        if last:
+            # ...so the task closed below is the LAST open one in P2, which
+            # is the phase question this verb had to settle.
+            fx["phases"][1]["tasks"][1]["status"] = "done"
+        fx["phases"][1]["tasks"].append(
+            {"id": "P2.4", "title": "running", "status": "in_progress",
+             "description": "", "files": ["src/fresh.ts"],
+             "tests": {"mode": "gate-only", "add": [],
+                       "expectRedFirst": False, "gate": ["test"]},
+             "model": "sonnet", "skills": [], "risk": "low",
+             "blockedBy": [], "dependsOn": [], "attempts": 1,
+             "maxAttempts": 3, "commit": None,
+             # A HALF THAT IS ALREADY WRITTEN, on purpose: step 4's
+             # test-failure arm puts the last red gate's reason here and the
+             # retry brief quotes it back, so `pd2` can ask whether a close
+             # that mentions neither half leaves it standing.
+             "outcome": {"technical": "attempt 1: gate red on t_checkout",
+                         "descriptive": None},
+             "startedAt": "2026-01-01T00:00:00Z", "completedAt": None,
+             "verifiedBy": []})
+        fx["fileIndex"]["src/fresh.ts"] = ["P2.4"]
+        return fx
+
+    def pd_repo(name, manifest):
+        """A fixture whose project really IS a git repository with a commit.
+
+        A REAL REPO RATHER THAN A STUB, for `test__commit_trail.py`'s reason
+        one module over: the question this verb asks is whether git resolves
+        a SHA, and a fake answer to it would be the suite agreeing with the
+        code about a third party neither of them asked.
+        """
+        proj, mpath = mk(name, manifest, git=True)
+        for argv in (["config", "user.email", "t@example.com"],
+                     ["config", "user.name", "Test User"],
+                     ["add", "-A"], ["commit", "-qm", "seed"]):
+            subprocess.run(["git", "-C", proj] + argv,
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+        head = subprocess.run(["git", "-C", proj, "rev-parse", "HEAD"],
+                              stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL)
+        return proj, mpath, head.stdout.decode("utf-8", "replace").strip()
+
+    def git(proj, *a):
+        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                   GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+        subprocess.run(["git", "-C", proj] + list(a), check=True, env=env,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    return (run, run_on_stdin, base_manifest, mk, mk_empty, task_in, _pin, _unpin,
+            _PD_SHA, pd_fixture, pd_repo, git)
+
+
+def _add_cases(check):
+    """add, ids, the template, fileIndex, the layouts, the lock, cancel."""
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, run_on_stdin, base_manifest, mk, mk_empty, task_in, _pin, _unpin,
+     _PD_SHA, pd_fixture, pd_repo, git) = _at_kit(tmp)
     try:
         # ---- (a) add + phase resolution -----------------------------------
         proj, mpath = mk("a-single", base_manifest())
@@ -1099,23 +1204,6 @@ def _cases(check):
         # come out untouched.
         projn_home, _mnh = mk("n-home", base_manifest())
         projn_foreign, mpn = mk("n-foreign", base_manifest())
-        oldcwd = os.getcwd()
-        oldenv = os.environ.get("CLAUDE_PROJECT_DIR")
-
-        def _pin(cwd, env):
-            os.chdir(cwd)
-            if env is None:
-                os.environ.pop("CLAUDE_PROJECT_DIR", None)
-            else:
-                os.environ["CLAUDE_PROJECT_DIR"] = env
-
-        def _unpin():
-            os.chdir(oldcwd)
-            if oldenv is None:
-                os.environ.pop("CLAUDE_PROJECT_DIR", None)
-            else:
-                os.environ["CLAUDE_PROJECT_DIR"] = oldenv
-
         try:
             _pin(projn_home, projn_home)
             code, txt = run(["add", "Foreign add", mpn, "--phase", "P2"])
@@ -1410,6 +1498,16 @@ def _cases(check):
               and det_cw.get("reason") == "whole area shelved"
               and det_cw.get("phaseId") == "P2")
 
+    finally:
+        _harness.remove_tree(tmp)
+
+
+def _reshape_cases(check):
+    """add-phase, scope, retarget and the gates a task carries."""
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, run_on_stdin, base_manifest, mk, mk_empty, task_in, _pin, _unpin,
+     _PD_SHA, pd_fixture, pd_repo, git) = _at_kit(tmp)
+    try:
         # ---- (p) add-phase: one more phase in a plan that already exists ------
         # Nothing appended to `phases[]` except the ADO pull: init writes a
         # whole plan, materialize MOVES one that was already written, and `add`
@@ -2168,7 +2266,6 @@ def _cases(check):
             m["phases"][2]["testGate"] = ["test", "coverage"]
             return m
         gs_proj, gs_mp = mk("p-gate-drop-set", _gs_manifest())
-        import _journal_io
 
         def gs_gate():
             return _mio.load_manifest(gs_mp)["phases"][2].get("testGate")
@@ -3967,6 +4064,16 @@ def _cases(check):
                    for ph in _mio.load_manifest(pf_mp)["phases"]
                    if ph.get("id") == "P3"] == [["make check ; true"]])
 
+    finally:
+        _harness.remove_tree(tmp)
+
+
+def _flag_cases(check):
+    """a flag a verb does not read is a usage error."""
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, run_on_stdin, base_manifest, mk, mk_empty, task_in, _pin, _unpin,
+     _PD_SHA, pd_fixture, pd_repo, git) = _at_kit(tmp)
+    try:
         # ---- (vf) a flag a verb does not read is a usage error -----------------
         # ONE PARSER SERVES EVERY VERB. Driven across the grid before the fix,
         # half the (verb, flag) pairs were ACCEPTED, wrote nothing and reported
@@ -3976,7 +4083,6 @@ def _cases(check):
         # `--rename` was born ignored by four verbs, which is what makes it a
         # class rather than three incidents.
         import ast
-        import re
         # ONE RUNNING TASK IN THE FIXTURE, because `done` is the only verb here
         # whose base call needs a target it can legally close. Without it every
         # `done` row of the grid below would exit 2 for a reason of its own and
@@ -4481,6 +4587,16 @@ def _cases(check):
               % (sorted(_vf_common),),
               _vf_common == set(M.UNIVERSAL_FLAGS))
 
+    finally:
+        _harness.remove_tree(tmp)
+
+
+def _start_cases(check):
+    """start, the phase claim it takes, and a held lock."""
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, run_on_stdin, base_manifest, mk, mk_empty, task_in, _pin, _unpin,
+     _PD_SHA, pd_fixture, pd_repo, git) = _at_kit(tmp)
+    try:
         # ---- (pr) `start`: the promotion the plan gate reads ------------------
         # THE DEFECT, driven: `add` writes `status: "pending"`, and
         # `hooks/_config.in_progress_task_map` - what `require-plan.py` resolves
@@ -6205,6 +6321,16 @@ def _cases(check):
                 else:
                     os.environ[_k] = _v
 
+    finally:
+        _harness.remove_tree(tmp)
+
+
+def _close_cases(check):
+    """done, the gate add derives, the tree a write lands in, sign-off."""
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, run_on_stdin, base_manifest, mk, mk_empty, task_in, _pin, _unpin,
+     _PD_SHA, pd_fixture, pd_repo, git) = _at_kit(tmp)
+    try:
         # ---- (pd) `done`: the close, and the SHA that makes it a record -------
         # THE LOSS, from this repository and not from a scenario. With no verb
         # for the close, the orchestrator hand-wrote a task's completion into the
@@ -6214,53 +6340,6 @@ def _cases(check):
         # subjects - rebuilt afterwards out of `git log`. `start` gave the
         # promotion a verb (the `pr` group above) and left the close a hand edit,
         # which is the half that still has to be true a month later.
-        _PD_SHA = "0123456789abcdef0123456789abcdef01234567"
-
-        def pd_fixture(last=False):
-            fx = base_manifest()
-            if last:
-                # ...so the task closed below is the LAST open one in P2, which
-                # is the phase question this verb had to settle.
-                fx["phases"][1]["tasks"][1]["status"] = "done"
-            fx["phases"][1]["tasks"].append(
-                {"id": "P2.4", "title": "running", "status": "in_progress",
-                 "description": "", "files": ["src/fresh.ts"],
-                 "tests": {"mode": "gate-only", "add": [],
-                           "expectRedFirst": False, "gate": ["test"]},
-                 "model": "sonnet", "skills": [], "risk": "low",
-                 "blockedBy": [], "dependsOn": [], "attempts": 1,
-                 "maxAttempts": 3, "commit": None,
-                 # A HALF THAT IS ALREADY WRITTEN, on purpose: step 4's
-                 # test-failure arm puts the last red gate's reason here and the
-                 # retry brief quotes it back, so `pd2` can ask whether a close
-                 # that mentions neither half leaves it standing.
-                 "outcome": {"technical": "attempt 1: gate red on t_checkout",
-                             "descriptive": None},
-                 "startedAt": "2026-01-01T00:00:00Z", "completedAt": None,
-                 "verifiedBy": []})
-            fx["fileIndex"]["src/fresh.ts"] = ["P2.4"]
-            return fx
-
-        def pd_repo(name, manifest):
-            """A fixture whose project really IS a git repository with a commit.
-
-            A REAL REPO RATHER THAN A STUB, for `test__commit_trail.py`'s reason
-            one module over: the question this verb asks is whether git resolves
-            a SHA, and a fake answer to it would be the suite agreeing with the
-            code about a third party neither of them asked.
-            """
-            proj, mpath = mk(name, manifest, git=True)
-            for argv in (["config", "user.email", "t@example.com"],
-                         ["config", "user.name", "Test User"],
-                         ["add", "-A"], ["commit", "-qm", "seed"]):
-                subprocess.run(["git", "-C", proj] + argv,
-                               stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL)
-            head = subprocess.run(["git", "-C", proj, "rev-parse", "HEAD"],
-                                  stdout=subprocess.PIPE,
-                                  stderr=subprocess.DEVNULL)
-            return proj, mpath, head.stdout.decode("utf-8", "replace").strip()
-
         projpd, mppd = mk("dn-close", pd_fixture())
         codepd, txtpd = run(["done", "P2.4", "--project-dir", projpd,
                              "--commit", _PD_SHA,
@@ -7586,7 +7665,6 @@ def _cases(check):
             code, _txt = run([])
             check("u2 bare invocation is a usage error", code == 2)
         # ---- (so) sign-off recorded by a verb; the status derived from it ------
-        import _journal_io
         signable = base_manifest()
         signable["phases"][1]["tasks"][1]["status"] = "done"   # P2: every task done
         signable["phases"][1]["claim"] = {"sessionId": "s", "at": "t"}
@@ -7682,6 +7760,16 @@ def _cases(check):
               and _ss_stub.get("status") == "done"
               and _ss_body.get("status") == "done")
 
+    finally:
+        _harness.remove_tree(tmp)
+
+
+def _group_cases(check):
+    """a group of phases signed off on one branch."""
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, run_on_stdin, base_manifest, mk, mk_empty, task_in, _pin, _unpin,
+     _PD_SHA, pd_fixture, pd_repo, git) = _at_kit(tmp)
+    try:
         # ---- (gs) a GROUP of phases built on one branch, signed off together ----
         # A real repository: the group's review is scoped from its tasks' commits,
         # and whether each commit is on the branch is git's answer, not a fixture's.
@@ -8657,6 +8745,16 @@ def _cases(check):
               sorted((r.get("details") or {}).get("phaseId") for r in _b_bind)
               == ["P1", "P2"] and len(_b_ptr) == 1)
 
+    finally:
+        _harness.remove_tree(tmp)
+
+
+def _record_cases(check):
+    """re-open, branch suffixes, notes, findings, move, couple."""
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, run_on_stdin, base_manifest, mk, mk_empty, task_in, _pin, _unpin,
+     _PD_SHA, pd_fixture, pd_repo, git) = _at_kit(tmp)
+    try:
         # ---- (sv) a close stores its bug's derived status; settle stores the rest
         # A linked bug derives `fixed` and its `fixedIn` from its fix task's close,
         # and `bugs[]` lives in the INDEX, so the close writes the index here and
@@ -8859,12 +8957,6 @@ def _cases(check):
               "undo: %s" % (txt,), code == 2 and "not done" in txt)
 
         # ---- (bs) the branch suffix: ids two branches cannot both mint --------
-        def git(proj, *a):
-            env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
-                       GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
-            subprocess.run(["git", "-C", proj] + list(a), check=True, env=env,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
         import _id_shape
         projb, mpathb = mk("bs-branch", base_manifest(), git=True)
         git(projb, "checkout", "-q", "-b", "main")
@@ -8912,7 +9004,6 @@ def _cases(check):
         # ---- (pk) a phase on a side branch: warned once, or parked ------------
         # A branch of its own, so "the first time on this branch" is not already
         # spent by bs2's add-phase on feature/x.
-        import _journal_io
         git(projb, "checkout", "-q", "-b", "feature/y")
         sfy = _id_shape.branch_suffix("feature/y", base_manifest())
         phases_before = [p["id"] for p in _mio.load_manifest(mpathb)["phases"]]
@@ -14704,33 +14795,196 @@ def _index_only_cases(check):
           and _mio.tasks_by_id(raw)["P2.1"].get("status") == "in_progress")
 
 
-STAGES = (("at-block", "_cases"), ("sl-block", "_success_line_cases"),
+def _unstaged(source, stages):
+    """Names of the functions in `source` that build on `_at_kit` and that no
+    entry of `stages` runs - a slice nothing stages is a block of cases that
+    silently stops running, with every tally still green."""
+    import ast
+    staged = {fn for _label, fn in stages}
+    builders = sorted(
+        node.name for node in ast.parse(source).body
+        if isinstance(node, ast.FunctionDef)
+        and any(isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name)
+                and sub.func.id == "_at_kit" for sub in ast.walk(node)))
+    return [name for name in builders if name not in staged]
+
+
+def _stage_runner_cases(check):
+    """The full run's machinery: every slice is staged, a block whose process
+    reports nothing is a named failure, and a replayed block reads exactly as
+    the same block run in this process."""
+    src = _harness.module_source(sys.modules[__name__])
+    real = _unstaged(src, STAGES)
+    dropped = _unstaged(src, [s for s in STAGES if s[1] != "_flag_cases"])
+    check("ps1 every slice built on `_at_kit` is a stage of the full run: %r"
+          % (real,), real == [])
+    # The second direction: the same predicate over a stage list missing one
+    # slice must name exactly that slice, or `ps1` is green by reading nothing.
+    check("ps1b ...and a stage list that drops one slice is named for it: %r"
+          % (dropped,), dropped == ["_flag_cases"])
+
+    seen = []
+
+    def keep(label, cond, detail=""):
+        seen.append(("%s" % (label,), bool(cond), str(detail)))
+    _run_stages(keep, ["no-such-block"])
+    check("ps2 a block whose process writes no case is ONE failing case "
+          "naming it, not a quiet zero: %r" % (seen,),
+          len(seen) == 1 and not seen[0][1]
+          and seen[0][0].startswith("no-such-block DID NOT REPORT")
+          and "no case at all" in seen[0][2])
+
+    replayed, local = [], []
+    _run_stages(lambda label, cond, detail="": replayed.append(
+        (_harness.case_id("%s" % (label,)), bool(cond))), ["ub-block"])
+    _harness.stage(lambda label, cond, detail="": local.append(
+        (_harness.case_id("%s" % (label,)), bool(cond))), "ub-block",
+        _unblock_cases)
+    check("ps3 a block replayed from its own process reports the same case "
+          "ids and verdicts, in order, as the block run here: %r"
+          % ((replayed, local),), replayed == local and len(local) > 1)
+
+
+STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
+          ("at3-block", "_flag_cases"), ("at4-block", "_start_cases"),
+          ("at5-block", "_close_cases"), ("at6-block", "_group_cases"),
+          ("at7-block", "_record_cases"), ("sl-block", "_success_line_cases"),
           ("fr-block", "_return_cases"), ("fb-block", "_batch_cases"),
           ("hd-block", "_held_cases"), ("ub-block", "_unblock_cases"),
           ("ncm-block", "_no_change_moved_cases"),
-          ("io-block", "_index_only_cases"))
+          ("io-block", "_index_only_cases"),
+          ("ps-block", "_stage_runner_cases"))
+
+
+# --- the stages, each in a process of its own ----------------------------------
+# How many blocks run at once. The sweep around this file already runs other
+# suites on the remaining cores, so this stays well under the machine's count.
+STAGE_WORKERS = 6
+# Below the sweep's per-file cap, so a block that hangs is reported here by its
+# own label rather than as the whole file timing out.
+STAGE_TIMEOUT = 280
+
+
+def _collect(only, path):
+    """Child side of a full run: run the named blocks and write every case, and
+    the call site each case id came from, to `path` as JSON. Printing nothing is
+    the point - the parent prints the one report, so the tally and the
+    duplicate-id check cover every block together."""
+    cases, sites = [], {}
+
+    def check(label, cond, detail=""):
+        label = "%s" % (label,)
+        cases.append([label, bool(cond), str(detail)])
+        cid = _harness.case_id(label)
+        site = _harness._call_site(sys._getframe(1)) if cid is not None else None
+        if site is not None and list(site) not in sites.setdefault(cid, []):
+            sites[cid].append(list(site))
+    for label, fn in STAGES:
+        if not only or label in only:
+            _harness.stage(check, label, globals()[fn])
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({"cases": cases, "sites": sites}, fh)
+    return 0
+
+
+def _text(stream):
+    """A captured stream as text: a timeout hands it back as bytes even when
+    the run asked for text."""
+    if isinstance(stream, bytes):
+        return stream.decode("utf-8", "replace")
+    return stream or ""
+
+
+def _run_stage(label, out_dir):
+    """`{label, report, out, err, why}` for one block run as a child; `report`
+    is None when the child wrote no cases, and `why` then says what it did.
+    The child's stdin is empty: blocks run side by side, and one that read the
+    terminal would hang every other's report behind it."""
+    path = os.path.join(out_dir, "%s.json" % (label,))
+    argv = [sys.executable, os.path.abspath(__file__), "--selftest",
+            "--stage", label, "--cases-to", path]
+    try:
+        done = subprocess.run(argv, capture_output=True, text=True,
+                              errors="replace", stdin=subprocess.DEVNULL,
+                              timeout=STAGE_TIMEOUT)
+    except subprocess.TimeoutExpired as exc:
+        return {"label": label, "report": None, "out": _text(exc.stdout),
+                "err": _text(exc.stderr),
+                "why": "did not finish within %ds" % (STAGE_TIMEOUT,)}
+    res = {"label": label, "report": None, "out": done.stdout,
+           "err": done.stderr, "why": ""}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            report = json.load(fh)
+    except (OSError, ValueError) as exc:
+        res["why"] = "exit %d, no cases written (%s: %s); stderr ends: %s" % (
+            done.returncode, type(exc).__name__, exc, done.stderr[-2000:])
+        return res
+    if not report.get("cases"):
+        # A block that ran no case is not a block that passed.
+        res["why"] = "exit %d, the block reported no case at all" % (
+            done.returncode,)
+        return res
+    res["report"] = report
+    return res
+
+
+def _run_stages(check, labels):
+    """Run each block in its own process, then replay what each reported in
+    block order. A block that wrote no cases is ONE NAMED failing case, the way
+    `_harness.stage` reports a block that raised; a case id claimed from two
+    call sites in different blocks is still a duplicate, read off the sites the
+    children recorded."""
+    out_dir = _harness.fixture_root("audit-task-stages-")
+    with ThreadPoolExecutor(max_workers=min(STAGE_WORKERS, len(labels))) as pool:
+        results = list(pool.map(lambda lab: _run_stage(lab, out_dir), labels))
+    sites = {}
+    for res in results:
+        sys.stdout.write(res["out"])
+        sys.stderr.write(res["err"])
+        if res["report"] is None:
+            check("%s DID NOT REPORT - its process ended without writing its "
+                  "cases, so the cases in THIS block did not run; every other "
+                  "block did" % (res["label"],), False, res["why"])
+            continue
+        for label, ok, detail in res["report"]["cases"]:
+            check(label, ok, detail)
+        for cid, places in res["report"]["sites"].items():
+            sites.setdefault(cid, set()).update(tuple(p) for p in places)
+    for label, ok, detail in _harness.label_faults([], sites):
+        check(label, ok, detail)
 
 
 def _selftest(only=()):
-    """Every block, or only the ones `--stage <label>` names - a narrowed run a
+    """Every block, each in a process of its own, or only the ones `--stage
+    <label>` names, run in this process - a narrowed run for one block, which a
     red-first proof in a throwaway tree can afford."""
     unknown = [o for o in only if o not in dict(STAGES)]
 
     def body(check):
         if unknown:
             check("--stage names a block of this suite: %r" % (unknown,), False)
-        # Each block staged, so one that raises still lets the other run.
+        if not only:
+            _run_stages(check, [label for label, _fn in STAGES])
+            return
+        # Each block staged, so one that raises still lets the others run.
         for label, fn in STAGES:
-            if not only or label in only:
+            if label in only:
                 _harness.stage(check, label, globals()[fn])
     return _harness.run(body)
+
+
+def _flag_values(args, flag):
+    return [args[i + 1] for i, a in enumerate(args[:-1]) if a == flag]
 
 
 if __name__ == "__main__":
     safe_stdio()
     if "--selftest" in sys.argv[1:]:
         args = sys.argv[1:]
-        raise SystemExit(_selftest([args[i + 1] for i, a in enumerate(args[:-1])
-                                    if a == "--stage"]))
+        to = _flag_values(args, "--cases-to")
+        if to:
+            raise SystemExit(_collect(_flag_values(args, "--stage"), to[-1]))
+        raise SystemExit(_selftest(_flag_values(args, "--stage")))
     sys.stderr.write("usage: test_audit_task.py --selftest [--stage LABEL ...]\n")
     raise SystemExit(2)
