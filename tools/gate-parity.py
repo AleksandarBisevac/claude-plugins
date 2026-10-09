@@ -2763,7 +2763,7 @@ def untimed_jobs(text):
             start = i + 1
             break
     if start is None:
-        return {"findings": [], "jobs": 0,
+        return {"findings": [], "jobs": 0, "bounds": {}, "names": [],
                 "problem": "no top-level `jobs:` block, so no job could be read"}
     jobs = []          # [(job id, {key: value} at that job's own depth)]
     job_depth = None
@@ -2788,6 +2788,7 @@ def untimed_jobs(text):
         if indent == key_depth:
             jobs[-1][1][key] = value
     findings = []
+    bounds = {}
     for job, keys in jobs:
         if _JOB_TIMEOUT_KEY not in keys:
             findings.append((job, "no job-level %s, so a hang runs to GitHub's "
@@ -2798,10 +2799,68 @@ def untimed_jobs(text):
             findings.append((job, "%s is %r, not a positive whole number of "
                                   "minutes this check can read"
                                   % (_JOB_TIMEOUT_KEY, value)))
+            continue
+        bounds[job] = int(value)
     if not jobs:
-        return {"findings": [], "jobs": 0,
+        return {"findings": [], "jobs": 0, "bounds": {}, "names": [],
                 "problem": "the `jobs:` block names no job"}
-    return {"findings": findings, "jobs": len(jobs), "problem": None}
+    return {"findings": findings, "jobs": len(jobs), "bounds": bounds,
+            "names": [job for job, _keys in jobs], "problem": None}
+
+
+# --- ...and every bound is twice the longest run it was measured against ------
+# A bound set by feel is either too tight - a slow runner fails a green job - or
+# so loose it is the six hours again under another number. So the workflow
+# carries, as comment lines, the longest finished run of each job over the runs
+# its comment names, and each bound must be at least twice that. The figures are
+# written by whoever measured them (`gh run view` prints them; nothing here can
+# ask GitHub, and a selftest that did would fail offline); what this holds is
+# that the bound and the measurement written beside it agree, which is the claim
+# the comment makes and the one that was once false by half.
+_LONGEST_LINE = re.compile(
+    r"^\s*#\s+longest\s+([A-Za-z0-9_-]+):\s+([0-9]+)m([0-9]{2})s\b", re.M)
+BOUND_FACTOR = 2
+
+
+def job_bound_evidence(text):
+    """[(job, why)] for every job whose bound is not backed by a `longest` line.
+
+    A job with a readable bound needs exactly one `# longest <job>: <m>m<ss>s`
+    line, and `timeout-minutes` must be at least BOUND_FACTOR times it. A line
+    naming a job the workflow does not have is reported too: it is a
+    measurement of nothing, and it would let a renamed job keep a figure that
+    no longer describes it. Jobs with no readable bound are `untimed_jobs`'
+    findings and are not repeated here.
+    """
+    got = untimed_jobs(text)
+    if got["problem"] is not None:
+        return []
+    longest = {}
+    findings = []
+    for match in _LONGEST_LINE.finditer(text):
+        job = match.group(1)
+        secs = int(match.group(2)) * 60 + int(match.group(3))
+        if job in longest:
+            findings.append((job, "two `longest` lines, so which measurement the "
+                                  "bound answers to cannot be read"))
+        longest[job] = secs
+    for job in sorted(set(longest) - set(got["names"])):
+        findings.append((job, "a `longest` line names a job this workflow "
+                              "does not have"))
+    for job, minutes in sorted(got["bounds"].items()):
+        if job not in longest:
+            findings.append((job, "%s is %d with no `# longest %s: <m>m<ss>s` "
+                                  "line, so nothing says what it was measured "
+                                  "against" % (_JOB_TIMEOUT_KEY, minutes, job)))
+            continue
+        need = BOUND_FACTOR * longest[job]
+        if minutes * 60 < need:
+            findings.append((job, "%s is %d, under %d times its longest recorded "
+                                  "run of %dm%02ds (%dm%02ds needed)"
+                                  % (_JOB_TIMEOUT_KEY, minutes, BOUND_FACTOR,
+                                     longest[job] // 60, longest[job] % 60,
+                                     need // 60, need % 60)))
+    return findings
 
 
 def job_timeout_verdict(repo=None):
@@ -2817,7 +2876,7 @@ def job_timeout_verdict(repo=None):
     got = untimed_jobs(text)
     if got["problem"] is not None:
         return [("ci.yml", got["problem"])]
-    return got["findings"]
+    return got["findings"] + job_bound_evidence(text)
 
 
 def parity(repo=None):
@@ -2960,7 +3019,8 @@ def render(result, stream=None):
                   "is still real, SECURITY.md's fail modes are the ones "
                   "hooks.json registers, both runners hand the report "
                   "checker the same documents, both run the same legs of "
-                  "the sweep, and every CI job carries a time bound\n")
+                  "the sweep, and every CI job carries a time bound at least "
+                  "twice its longest recorded run\n")
     return 1 if bad else 0
 
 
@@ -4397,7 +4457,8 @@ def _cases(check):
         "  untimed:\n    name: untimed\n    timeout-minutes: 10\n"))
     check("jt2 ...and the same workflow with that job bounded is clean, over both "
           "jobs: %r" % (_jt_ok,),
-          _jt_ok == {"findings": [], "jobs": 2, "problem": None})
+          (_jt_ok["findings"], _jt_ok["jobs"], _jt_ok["problem"]) == ([], 2, None)
+          and _jt_ok["bounds"] == {"timed": 30, "untimed": 10})
 
     _jt_zero = untimed_jobs(_jt_wf.replace("timeout-minutes: 30",
                                            "timeout-minutes: 0"))
@@ -4408,6 +4469,56 @@ def _cases(check):
           % (_jt_zero["findings"], _jt_expr["findings"]),
           [job for job, _w in _jt_zero["findings"]] == ["timed", "untimed"]
           and [job for job, _w in _jt_expr["findings"]] == ["timed", "untimed"])
+
+    with io.open(os.path.join(REPO, CI_REL), encoding="utf-8") as fh:
+        _jb_live_text = fh.read()
+    _jb_live = job_bound_evidence(_jb_live_text)
+    _jb_lines = _LONGEST_LINE.findall(_jb_live_text)
+    check("jb0 THE LIVE CLAIM: every bounded job in ci.yml carries one `longest` "
+          "line and a bound at least %d times it, over %d such line(s) read: %r"
+          % (BOUND_FACTOR, len(_jb_lines), _jb_live),
+          _jb_live == [] and len(_jb_lines) == _jt_live["jobs"])
+
+    # A fixture whose bound is just under, at, and just over twice its figure:
+    # 49m58s needed for 24m59s, so 49 is red and 50 is green - a factor read as
+    # 1, or a comparison against minutes instead of seconds, moves the line.
+    _jb_wf = ("name: ci\njobs:\n"
+              "  one:\n    timeout-minutes: %s\n    runs-on: x\n"
+              "  two:\n    timeout-minutes: 10\n    runs-on: x\n")
+    _jb_rows = "# measured\n#   longest one: 24m59s (run 1)\n#   longest two: 1m12s (run 1)\n"
+    _jb_under = job_bound_evidence(_jb_rows + _jb_wf % "49")
+    _jb_over = job_bound_evidence(_jb_rows + _jb_wf % "50")
+    check("jb1 a bound under twice its recorded longest run IS reported, naming "
+          "the job and the minutes it needed, and the same job one minute over "
+          "is clean - the direction a check firing on every bound fails: %r / %r"
+          % (_jb_under, _jb_over),
+          [job for job, _w in _jb_under] == ["one"]
+          and "49m58s needed" in _jb_under[0][1] and _jb_over == [])
+
+    _jb_bare = job_bound_evidence(_jb_wf % "50")
+    _jb_ghost = job_bound_evidence(_jb_rows + "#   longest gone: 1m00s (run 1)\n"
+                                   + _jb_wf % "50")
+    _jb_twice = job_bound_evidence(_jb_rows + "#   longest one: 1m00s (run 2)\n"
+                                   + _jb_wf % "50")
+    check("jb2 a bound with no `longest` line is reported (a figure set by feel "
+          "is the defect), as is a line for a job the workflow does not have and "
+          "a job measured twice: %r / %r / %r" % (_jb_bare, _jb_ghost, _jb_twice),
+          [job for job, _w in _jb_bare] == ["one", "two"]
+          and [job for job, _w in _jb_ghost] == ["gone"]
+          and [job for job, _w in _jb_twice] == ["one"])
+
+    _jb_tree = tempfile.mkdtemp(prefix="gate-parity-jb-")
+    try:
+        os.makedirs(os.path.dirname(os.path.join(_jb_tree, CI_REL)))
+        with io.open(os.path.join(_jb_tree, CI_REL), "w", encoding="utf-8") as fh:
+            fh.write(_jb_rows + _jb_wf % "49")
+        _jb_verdict = job_timeout_verdict(_jb_tree)
+    finally:
+        shutil.rmtree(_jb_tree, ignore_errors=True)
+    check("jb3 ...and the verdict `parity()` renders carries that finding, so an "
+          "under-twice bound fails the command and not only this function: %r"
+          % (_jb_verdict,),
+          [job for job, _w in _jb_verdict] == ["one"])
 
     _jt_none = untimed_jobs("name: ci\non:\n  push:\n")
     _jt_absent = job_timeout_verdict(os.path.join(REPO, "no-such-repo-dir"))

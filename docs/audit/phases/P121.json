@@ -934,7 +934,7 @@
     {
       "id": "P121.16-eof",
       "title": "the usage ledger never reports a lost carry as written, and a refused lock never stalls the hook",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes P121-R1 to R3 from the phase review. (R1) _append_locked counts each buffered write and swallows a failure on flush or close. So rewrite_month's carry check reports success after the carried rows were lost: a probe with ENOSPC raised on close returned True with the row not on disk, where base returned False. Count rows only after the handle has closed without raising, so that a failed carry returns False. Fix append_rows' count the same way, since the old flaw was the same. Add a case where close raises. (R2) lock_month retries on every OSError, so on a filesystem that refuses flock (ENOTSUP or ENOLCK) every append waits MONTH_LOCK_WAIT_S. That is 10 s, the metering hook's own timeout (hooks.json), so the hook is killed before it records anything. Retry only on contention errnos (EWOULDBLOCK/EAGAIN for flock, EACCES/EDEADLOCK for msvcrt), and go unlocked at once on any other errno. Bound the wait with time.monotonic() at a value well below the hook's timeout, and state the basis for the value. Add a case where _try_lock raises ENOTSUP, asserting that append_rows returns quickly with the row written. (R3) commands/usage.md, the shipped /audit:usage doc, still says the metering hook appends without a lock and describes the loss as it was before the lock. Make it match PLUGIN-BUILD-GUIDE.md's audit-usage section. Deliver a mutation probe.",
       "files": [
         "plugins/audit/scripts/usage/usage_ledger.py",
@@ -965,18 +965,27 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "96509be9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes P121-R1 to R3.\n\nR1: _append_locked returns len(rows) only after its `with` block has closed the handle without raising, and 0 on any exception. append_rows sums those counts. rewrite_month's carry check therefore returns False when the carried rows were lost on close.\n\nR2: lock_month waits only on contention errnos (_CONTENDED: EWOULDBLOCK, EAGAIN, EACCES, and EDEADLOCK/EDEADLK where defined). On any other errno it returns the sentinel LOCK_UNAVAILABLE at once.\n- The wait is bounded by time.monotonic().\n- unlock_month ignores the sentinel.\n- rewrite_month proceeds lock-free on LOCK_UNAVAILABLE, as every appender on that filesystem does, and still returns False when another writer holds the lock.\n- MONTH_LOCK_WAIT_S is now 3.0. Case lf6 pins it above REPLACE_RETRIES*REPLACE_RETRY_S and at most half of every meter-usage timeout, read from hooks/hooks.json.\n\nR3: commands/usage.md now matches the build guide. Only writers that skip the lock can still lose a row.\n\nCases lf1-lf6; lf2 and lf3 are skipped on Windows, where nothing is carried after a replace.\n\nRed-first: proved (lf1 red at HEAD).\n\nMutation probe (scratchpad P121.16-eof/mutations.py): seven mutations, each red on its expected cases.",
+        "descriptive": "The cost ledger no longer claims a record was saved when saving it failed, and a disk that cannot lock files no longer makes the cost hook wait until it is killed."
       },
       "startedAt": "2026-10-09T10:23:30Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T10:58:42Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_usage_ledger.py",
+        "plugins/audit/tests/test_audit_usage.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-09T10:43:29Z.18bc27",
         "status": "passed",
         "at": "2026-10-09T10:43:29Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "96509be9",
+        "at": "2026-10-09T10:58:42Z",
+        "basis": "orchestrator check: close-failure and refused-lock cases red at HEAD, green after; the wait pinned by the hook's own timeout; seven mutations red"
       }
     },
     {

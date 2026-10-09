@@ -216,7 +216,7 @@ const fail = (m) => { markProgress(m); problems.push(m); console.log(`  FAIL ${m
  * the event loop the stall watch runs on, so each of those carries the same
  * budget as its own timeout.
  */
-const STALL_MS = 5 * 60 * 1000;
+export const STALL_MS = 5 * 60 * 1000;
 /** How often the stall watch looks. */
 const STALL_POLL_MS = 5000;
 /**
@@ -225,7 +225,7 @@ const STALL_POLL_MS = 5000;
  * that is not a browser call (nothing here should be, but nothing stops one
  * being written) would otherwise survive the browser closing.
  */
-const STALL_GRACE_MS = 30000;
+export const STALL_GRACE_MS = 30000;
 /** How long the diagnostic probe of a stuck run's panel server may take. */
 const PROBE_MS = 5000;
 
@@ -365,16 +365,34 @@ async function probePanel(running) {
  * stuck on a promise nothing will ever settle, with no other handle left open,
  * lets node EXIT 0 — a hang reported as a pass. A live timer keeps the process up
  * until this says what happened.
+ *
+ * STOPPING CLEARS BOTH TIMERS, and stops a tick that is still mid-await from
+ * arming the second. The grace timer exists for a run that did NOT unwind; one
+ * that did reaches main()'s `finally`, which stops the watch — and a grace timer
+ * left armed there would exit 1 thirty seconds into whatever main() does next,
+ * or exit 1 a run that had already said everything it had to say.
  * @param {() => Array<({url: string}|null)>} panels the panel servers running now
- * @param {import('playwright').Browser} browser
+ * @param {{close: () => Promise<void>}} browser
  * @param {() => Promise<void>} cleanUp main()'s clean-up; safe to call twice
- * @returns {() => void} stops the watch
+ * @param {{now?: () => number, setInterval?: Function, clearInterval?: Function,
+ *          setTimeout?: Function, clearTimeout?: Function,
+ *          exit?: (code: number) => void}} [env] the clock, the timers and the
+ *   exit, injectable so a test can drive a stall without waiting five minutes
+ * @returns {() => void} stops the watch: both timers, and any tick in flight
  */
-function watchForStall(panels, browser, cleanUp) {
-  const timer = setInterval(async () => {
-    const quiet = Date.now() - lastLine.at;
-    if (quiet < STALL_MS) return;
-    clearInterval(timer);
+export function watchForStall(panels, browser, cleanUp, env = {}) {
+  const now = env.now || Date.now;
+  const every = env.setInterval || setInterval;
+  const stopEvery = env.clearInterval || clearInterval;
+  const later = env.setTimeout || setTimeout;
+  const stopLater = env.clearTimeout || clearTimeout;
+  const exit = env.exit || ((code) => process.exit(code));
+  let stopped = false;
+  let grace = null;
+  const timer = every(async () => {
+    const quiet = now() - lastLine.at;
+    if (stopped || quiet < STALL_MS) return;
+    stopEvery(timer);
     const after = lastLine.line;
     const inside = lastLine.doing ? `, inside "${lastLine.doing}"` : '';
     const probes = await Promise.all(panels().filter(Boolean).map(probePanel));
@@ -384,14 +402,21 @@ function watchForStall(panels, browser, cleanUp) {
          : 'no panel server was running'}. The browser is being closed so the `
        + 'stuck call throws and the run ends here.');
     await browser.close().catch(() => {});
-    setTimeout(async () => {
+    // Stopped while the probes or the close were awaited: the run unwound on its
+    // own, and arming the grace timer now would outlive the watch.
+    if (stopped) return;
+    grace = later(async () => {
       console.error(`capture-screenshots: still running ${STALL_GRACE_MS / 1000}s `
         + 'after the stall closed the browser; cleaning up and exiting 1');
       await cleanUp().catch(() => {});
-      process.exit(1);
+      exit(1);
     }, STALL_GRACE_MS);
   }, STALL_POLL_MS);
-  return () => clearInterval(timer);
+  return () => {
+    stopped = true;
+    stopEvery(timer);
+    if (grace !== null) stopLater(grace);
+  };
 }
 
 /**

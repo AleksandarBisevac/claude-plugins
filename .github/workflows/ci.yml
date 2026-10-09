@@ -16,14 +16,27 @@ on:
 # EVERY JOB CARRIES timeout-minutes, and tools/gate-parity.py fails the build on
 # a job that does not (`untimed_jobs`). GitHub's own default is six hours, and the
 # 2026-10-09 ubuntu run spent all six of them on a screenshot check that had
-# stopped printing, then reported "cancelled" rather than naming a step. Each
-# bound is at least twice the longest finished run of that job in the runs of
-# 2026-10-01, 2026-10-05 and 2026-10-09 (`gh run view <id> --json jobs` prints
-# them), so a slow runner does not trip it and a hang costs minutes.
+# stopped printing, then reported "cancelled" rather than naming a step.
+#
+# Each bound is at least twice the longest FINISHED run of that job - success or
+# failure; a cancelled job measures the cancel, not the job - over exactly these
+# ci.yml runs: 36359867833 36391135043 36547161113 36548305100 36558328327
+# 36562329762 36564652372 36567393696 36644744636 36646625966 36647089531
+# 36834328047 36840507574 36843208550 37295270255 37300625644 37865326884
+# 37875405209 37909130041. Each job's longest, re-derived per run with
+#   gh run view <id> --json jobs --jq '.jobs[] | [.name, .conclusion, .startedAt, .completedAt]'
+# is recorded below, and gate-parity.py (`job_bound_evidence`) fails the build
+# when a job has no such line or its bound is under twice the figure:
+#   longest selftests: 24m59s (run 36646625966, windows-latest)
+#   longest manifests: 9m50s (run 37865326884)
+#   longest lint: 1m12s (run 36547161113)
+#   longest plugin-validate: 0m21s (run 36547161113)
+# When a job grows, re-measure and rewrite its line; a bound left under twice the
+# figure is what the check refuses.
 jobs:
   selftests:
     name: selftests (${{ matrix.os }})
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
