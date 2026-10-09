@@ -1,7 +1,7 @@
 {
   "id": "P121",
   "title": "CI is green on Windows and Linux for the 3.2.0 release commit",
-  "status": "in_progress",
+  "status": "done",
   "description": "Release blocker for 3.2.0. CI run 37865326884 on release/v3.2.0 (4aaad089) failed selftests on windows-latest in eight files and one browser leg in manifest validation on Linux. Most of the work since 3.1.0 had never run on Windows.",
   "desiredOutcome": "the CI workflow passes on every job at the release commit, Windows selftests and the Linux manifest-validation browser legs included",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "ea5f05108c3102890ab0989ef4f76a88fcf75407",
   "branch": "audit/p121-ci-is-green-on-windows-and-lin",
-  "mergedAt": null,
+  "mergedAt": "2026-10-09T11:17:21Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -1177,5 +1177,6 @@
     "runId": "2026-10-09T11:16:42Z.b6af00",
     "status": "passed",
     "at": "2026-10-09T11:16:42Z"
-  }
+  },
+  "mergedHead": "c7144ed1f6cce46edca7c141eb8cd523ea87bb1e"
 }
