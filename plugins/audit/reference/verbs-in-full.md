@@ -337,6 +337,17 @@ while each finding it names still names it: a `resolve-finding` that points one 
 task, or a `move` taking the task away from its findings, ends it, and the landing then
 refuses the task until a phase review answers it.
 
+#### `--bug <bugId>` — the fix task of a bug, with the discipline its files imply
+
+`add --bug BUG-3` materializes the task that fixes an open bug: it writes `task.bugId`, and in
+the same write the bug's `taskId` and `status: in_progress`, because the validator refuses a link
+that is not reciprocal. A bug the plan lacks, or one already `fixed`/`wontfix`/`not_a_bug`, is
+refused, writing nothing. When `--tests-mode` is absent the mode follows from the files the BUG
+names (not `--files`): if every one is a test path (the reading `_filed_returns.is_test_path`
+holds, the one the red-first helper grades with) the task is `regression` and a note on the task
+says why, since a defect in a test file cannot be shown red first; otherwise, and for a bug
+naming no file, it is `tdd`. An explicit `--tests-mode` is the caller's answer and is kept.
+
 #### The task gate is derived, and the report says from what
 
 **With no `--gate`, `tests.gate` is derived from the task being added** — it is not a

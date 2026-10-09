@@ -1,0 +1,26 @@
+{
+  "gates": {
+    "test_audit_task": "pass",
+    "test__refs": "pass",
+    "ruff": "pass"
+  },
+  "outcome": {
+    "descriptive": "A bug whose files are all test files now becomes a regression task when its fix is planned; any other bug stays tdd.",
+    "technical": "audit-task.py add --bug <bugId>: _bug_fix_discipline(bug) picks regression with a note when every file the bug names is a test path (_filed_returns.is_test_path), tdd otherwise (including a bug naming no file); applied only when --tests-mode is absent; the same write sets bug.taskId and status in_progress. Cases bf1-bf7 (bf-block). bug.md step 3, verbs-in-full --bug section, task.md hint. test_audit_task 924/924, test__refs 334/334. Red-first: not proved by the helper - the installed 3.2.0 drive-phase intercepts a forwarded --selftest (F603, fixed in P122.8 for the repo copy only); the red command is wrapped in sh -c on the user's explicit permission (2026-10-10), so the helper runs it. Red observed in the preparation run: bf-block 0/6 before the fix, 6/6 after."
+  },
+  "testsAdded": [
+    "test_audit_task bf1",
+    "test_audit_task bf2",
+    "test_audit_task bf3",
+    "test_audit_task bf4",
+    "test_audit_task bf5",
+    "test_audit_task bf6",
+    "test_audit_task bf7"
+  ],
+  "redFirst": {
+    "at": "2026-10-09T22:58:46Z",
+    "basis": "`sh -c python3 plugins/audit/tests/test_audit_task.py --selftest --stage bf-block` in a throwaway tree at HEAD exited 1 with failing cases bf1 (house FAIL), bf7 (house FAIL), bf2 (house FAIL), bf3 (house FAIL), bf4 (house FAIL), bf5 (house FAIL), bf6 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 0/7 cases passed; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main/node_modules and is not watched; the user's ~/.npmrc dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:d66cc2d4300759d4faf188b29c9bb96350279475ca5e69f00269afc74044ad9e\",\"dirtyDigest\":\"sha256:460b5552ce256482b01a60a8f2c00396cd6c4eaa9bca58c2416dc92dfceaaa19\",\"dirtyPaths\":{\"plugins/audit/commands/bug.md\":\"b3f5b9ed703c8a81\",\"plugins/audit/commands/task.md\":\"afce3a2afc716bf2\",\"plugins/audit/reference/verbs-in-full.md\":\"1ce4a71be3a67100\",\"plugins/audit/scripts/manifest/audit-task.py\":\"cc1b7500547121af\",\"plugins/audit/tests/test_audit_task.py\":\"2c879398c787d373\"},\"head\":\"c425bbd7\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/commands/bug.md\",\"plugins/audit/commands/task.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:2a340ef09d0982ae78e49bcc49b17828194145d0b91522c42e08f8ae7a272113\",\"v\":2}"
+}

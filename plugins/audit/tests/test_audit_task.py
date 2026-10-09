@@ -15156,6 +15156,124 @@ def _finding_disposition_cases(check):
         shutil.rmtree(root, ignore_errors=True)
 
 
+def _bug_fix_discipline_cases(check):
+    """`add --bug` reads the discipline off the files the bug names. A bug in a
+    test file cannot be shown red first -- the fixed test passes at HEAD, and the
+    suite "could not run, now runs" is what the gate already proves -- so the fix
+    task is regression and says why; a bug in product code stays tdd."""
+    import io
+    root = _harness.fixture_root("audit-task-bf-")
+
+    def project(name, bug_files):
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        _panel_write._atomic_write_json(
+            os.path.join(proj, ".claude", "audit.config.json"),
+            {"manifestPath": "docs/audit/audit-plan.json"})
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        _panel_write._atomic_write_json(mpath, {
+            "meta": {"version": 2, "buildCommands": {"test": "true"}},
+            "phases": [{"id": "P1", "title": "P1", "status": "in_progress",
+                        "testGate": ["test"], "tasks": []}],
+            "fileIndex": {}, "bugs": [{
+                "id": "BUG-1", "title": "b", "status": "open",
+                "severity": "low", "reportedAt": "2026-01-01T00:00:00Z",
+                "reportedBy": None, "description": "d", "repro": None,
+                "expected": None, "actual": None, "files": list(bug_files),
+                "taskId": None, "fixedIn": None, "notes": None}]})
+        return proj, mpath
+
+    def verb(proj, *argv):
+        lines, real = [], sys.stdin
+        sys.stdin = io.StringIO("")
+        try:
+            code = M.main(list(argv) + ["--project-dir", proj], out=lines.append)
+        finally:
+            sys.stdin = real
+        return code, "\n".join(str(x) for x in lines)
+
+    def fix(proj, files, *extra):
+        return verb(proj, "add", "Fix BUG-1", "--phase", "P1", "--bug", "BUG-1",
+                    "--files", ",".join(files), *extra)
+
+    def task(mpath):
+        tasks = _mio.load_manifest(mpath)["phases"][0]["tasks"]
+        return tasks[0] if tasks else None
+
+    def notes(t):
+        return " ".join(str(n.get("text")) for n in (t.get("notes") or []))
+
+    try:
+        spec = "tests/unit/x.test.ts"
+        proj, mpath = project("only-test", [spec])
+        code, text = fix(proj, [spec])
+        t = task(mpath) or {}
+        check("bf1 a bug naming only a test file materializes a regression task "
+              "that is not red-first, carries the bug, and says why in a note: "
+              "%r" % ((code, t.get("tests"), t.get("bugId"), notes(t)),),
+              code == 0 and (t.get("tests") or {}).get("mode") == "regression"
+              and (t.get("tests") or {}).get("expectRedFirst") is False
+              and t.get("bugId") == "BUG-1"
+              and "test file" in notes(t) and spec in notes(t))
+
+        bug = (_mio.load_manifest(mpath).get("bugs") or [{}])[0]
+        check("bf7 the same write sets the reciprocal half on the bug: its "
+              "taskId names the new task and its status is in_progress: %r"
+              % ((bug.get("taskId"), bug.get("status"), t.get("id")),),
+              bool(t.get("id")) and bug.get("taskId") == t.get("id")
+              and bug.get("status") == "in_progress")
+
+        # ALLOW twin: the guard that fires on everything would pass bf1 too.
+        proj, mpath = project("product", ["lib/x.ts"])
+        code, text = fix(proj, ["lib/x.ts"], "--tests-add",
+                         "tests/x.test.ts: repro")
+        t = task(mpath) or {}
+        check("bf2 ALLOW: a bug naming lib/x.ts is still a tdd task, red-first, "
+              "with no regression note: %r"
+              % ((code, t.get("tests"), notes(t)),),
+              code == 0 and (t.get("tests") or {}).get("mode") == "tdd"
+              and (t.get("tests") or {}).get("expectRedFirst") is True
+              and "regression" not in notes(t))
+
+        proj, mpath = project("mixed", [spec, "lib/x.ts"])
+        code, text = fix(proj, [spec, "lib/x.ts"], "--tests-add",
+                         "tests/x.test.ts: repro")
+        check("bf3 ALLOW: one product file among the test files keeps tdd: %r"
+              % ((code, (task(mpath) or {}).get("tests")),),
+              code == 0 and ((task(mpath) or {}).get("tests") or {}).get(
+                  "mode") == "tdd")
+
+        # `all([])` is True: a bug naming no file must not read as all-tests.
+        proj, mpath = project("nofiles", [])
+        code, text = verb(proj, "add", "Fix BUG-1", "--phase", "P1", "--bug",
+                          "BUG-1", "--tests-add", "tests/x.test.ts: repro")
+        check("bf4 ALLOW: a bug naming no file is tdd, not vacuously all-test: "
+              "%r" % ((code, (task(mpath) or {}).get("tests")),),
+              code == 0 and ((task(mpath) or {}).get("tests") or {}).get(
+                  "mode") == "tdd")
+
+        proj, mpath = project("explicit", [spec])
+        code, text = fix(proj, [spec], "--tests-mode", "tdd", "--tests-add",
+                         "%s: repro" % (spec,))
+        t = task(mpath) or {}
+        check("bf5 an explicit --tests-mode is the caller's answer and the "
+              "default does not overrule it: %r" % ((code, t.get("tests")),),
+              code == 0 and (t.get("tests") or {}).get("mode") == "tdd"
+              and "regression" not in notes(t))
+
+        proj, mpath = project("nobug", [spec])
+        before = open(mpath, "rb").read()
+        code, text = verb(proj, "add", "Fix", "--phase", "P1", "--bug",
+                          "BUG-9", "--files", spec)
+        check("bf6 --bug naming no bug of the plan is refused by name, writing "
+              "nothing: %r" % ((code, text[:200]),),
+              code == M.E_USAGE and "BUG-9" in text
+              and open(mpath, "rb").read() == before)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def _stage_runner_cases(check):
     """The full run's machinery: every slice is staged, a block whose process
     reports nothing is a named failure, and a replayed block reads exactly as
@@ -15203,6 +15321,7 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("lo-block", "_leftover_cases"),
           ("io-block", "_index_only_cases"),
           ("fd-block", "_finding_disposition_cases"),
+          ("bf-block", "_bug_fix_discipline_cases"),
           ("ps-block", "_stage_runner_cases"))
 
 

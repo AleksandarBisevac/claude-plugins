@@ -7,7 +7,7 @@ allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 # /audit:bug — bug tracking on the audit manifest
 
 Bugs live in the manifest's top-level `bugs[]`, OUTSIDE phases — a reported bug is not
-yet a plan. `fix` materializes a bug into a **tdd task** (red-first repro test) that
+yet a plan. `fix` materializes a bug into a **tdd task** (red-first repro test) — or a **regression task** when every file the bug names is a test file — that
 `/audit:run` executes; the orchestrator flips the bug to `fixed` when that task commits.
 Bug lifecycle: `open → triaged → in_progress (materialized) → fixed | wontfix | not_a_bug`.
 
@@ -80,8 +80,15 @@ Default filter: everything NOT `fixed`/`wontfix`/`not_a_bug`. `list all` shows e
    - id from the allocator, never by hand: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" next-id task --phase <phaseId> <manifestPath>`
      (it counts reserved ids and carries the branch suffix); title `Fix <bugId>: <bug title>`.
    - `description` embedding the bug's repro / expected / actual verbatim.
-   - `files` = bug's `files`; `bugId: "<bugId>"`.
-   - `tests: {mode: "tdd", add: ["<testFile>: repro that FAILS on current code — <expected> vs <actual>"], expectRedFirst: true, gate: [<phase testGate>]}`.
+   - `files` = bug's `files`; `bugId: "<bugId>"`. Write the task with
+     `audit-task.py add "Fix <bugId>: <title>" --phase <phaseId> --bug <bugId> --files <bug files> ...`:
+     `--bug` sets `bugId`, links the bug back (`taskId`, `status: in_progress`) and **chooses the
+     discipline from the bug's files** — omit `--tests-mode` to take it.
+   - **The discipline follows from the files.** When every file the bug names is a test path, the
+     task is `regression` and carries a note saying why (the defect is in the test, so a red-first
+     run at HEAD passes with the fixed test); otherwise it is `tdd`. Pass `--tests-mode` only to
+     overrule that on a reason.
+   - For a `tdd` task: `tests: {mode: "tdd", add: ["<testFile>: repro that FAILS on current code — <expected> vs <actual>"], expectRedFirst: true, gate: [<phase testGate>]}`.
      **`<testFile>` is a real repo-relative path you substitute, and it has to come
      first.** The leading path is what joins the task's `files` and the `fileIndex`,
      so an entry that opens with prose puts nothing there — the case file stays
@@ -90,7 +97,7 @@ Default filter: everything NOT `fixed`/`wontfix`/`not_a_bug`. `list all` shows e
      not exist yet.
    - `risk`: bug severity high → `high`, med → `med`, else `low`.
    - `model`: `sonnet` (or stronger for `risk: "high"`).
-4. **Update the bug**: `status: "in_progress"`, `taskId: <new task id>`.
+4. **Update the bug**: `status: "in_progress"`, `taskId: <new task id>` (`add --bug` already wrote both).
 5. Extend `fileIndex` with the task's files. Revalidate.
 
    **A mute on this bug does not hold in this task's gate.** If `meta.muted` quarantines a suite

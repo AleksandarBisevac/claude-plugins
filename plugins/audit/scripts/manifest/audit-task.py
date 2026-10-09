@@ -17,7 +17,8 @@ Usage:
                 [--risk low|med|high] [--blocked-by id,id] [--depends-on id,id]
                 [--description TEXT|-] [--tests-mode tdd|regression|gate-only]
                 [--tests-add TEXT ...] [--gate CMD ... | --gate-clear]
-                [--failing-from RUNID] [--fixes finding,finding] [--dry-run]
+                [--failing-from RUNID] [--fixes finding,finding]
+                [--bug BUGID] [--dry-run]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py add --from-file PATH|- [manifest] [--project-dir DIR]
                 [--takeover] [--json]
@@ -2760,6 +2761,41 @@ def _build_task(task_id, title, args, phase, assembled, failing_row=None,
     return task, unnamed, gate_basis
 
 
+def _bug_fix_discipline(bug):
+    """`(mode, note)` for the task that fixes `bug`: `regression` and the reason
+    when EVERY file the bug names is a test path, else `tdd` and no note.
+
+    A defect in a test file cannot be shown red first -- the corrected test
+    passes at HEAD, and "the suite could not run, now it runs" is what the gate
+    already proves -- so a tdd task there is cancelled and re-added. A bug naming
+    no file is tdd: `all([])` is True and would read "nothing named" as "only
+    tests". The test-path reading is `_filed_returns.is_test_path`, the one the
+    red-first helper grades with.
+    """
+    files = [str(f) for f in (bug.get("files") or []) if str(f).strip()]
+    paths = [_vocab._strip_line_suffix(f) for f in files]
+    if not paths or not all(_fr.is_test_path(p) for p in paths):
+        return "tdd", None
+    return "regression", (
+        "regression, not tdd: every file %s names is a test file (%s), so the "
+        "defect is in the test itself and a red-first run at HEAD would pass "
+        "with the fixed test; the gate proves it by the suite running"
+        % (bug.get("id"), ", ".join(paths)))
+
+
+def _bug_for_add(assembled, bug_id):
+    """`(bug, refusal)` -- the open bug `add --bug` names, or why it cannot."""
+    bug = next((b for b in (assembled.get("bugs") or [])
+                if isinstance(b, dict) and b.get("id") == bug_id), None)
+    if bug is None:
+        return None, ("[audit-task] --bug %s names no bug of this plan. "
+                      "Nothing written." % (bug_id,))
+    if bug.get("status") in ("fixed", "wontfix", "not_a_bug"):
+        return None, ("[audit-task] --bug %s is %s; a closed bug takes no fix "
+                      "task. Nothing written." % (bug_id, bug.get("status")))
+    return bug, None
+
+
 def _fixes_targets(assembled, phase, fixes):
     """`(findings, None)` - the review findings `--fixes` names, each of the new
     task's own phase and naming no task yet - or `(None, refusal)` naming every
@@ -2856,10 +2892,30 @@ def _locked_add(args, project, config, mpath, title, out):
         out(refusal)
         return E_USAGE
 
+    bug_note = None
+    if args.bug:
+        bug, refusal = _bug_for_add(assembled, args.bug)
+        if refusal:
+            out(refusal)
+            return E_USAGE
+        if args.tests_mode is None:
+            # The caller's own --tests-mode is an answer; only the default
+            # follows from the bug's files.
+            args = argparse.Namespace(**vars(args))
+            args.tests_mode, bug_note = _bug_fix_discipline(bug)
+
     task_id = _allocate_id(assembled, phase_id, _mint_suffix(mpath, assembled))
     task, unnamed_add, gate_basis = _build_task(task_id, title, args, phase,
                                                 assembled, failing_row,
                                                 project)
+    if args.bug:
+        # RECIPROCAL, in this one write: the validator refuses a task naming a
+        # bug whose taskId does not name the task back.
+        task["bugId"] = args.bug
+        bug["status"] = "in_progress"
+        bug["taskId"] = task_id
+    if bug_note:
+        task["notes"] = [{"at": _utc_now(), "text": bug_note}]
     if fixes:
         # ONE WRITE, BOTH HALVES: the task's `fixes` and each finding's
         # `fixTask`, which is what lets the task close `not-asked` under
@@ -2896,7 +2952,8 @@ def _locked_add(args, project, config, mpath, title, out):
     snap = _snapshot(_write_paths(project, mpath, raw_index, phase_id))
     try:
         written = _write_add(project, mpath, raw_index, assembled, phase_id,
-                             bool(task["files"]))
+                             bool(task["files"]),
+                             index_fields=("bugs",) if args.bug else ())
     except Exception as exc:
         _restore(snap)
         out("[audit-task] write failed -- manifest restored: %s" % exc)
@@ -11507,7 +11564,7 @@ VERB_FLAGS = {
     "add": ("phase", "skills", "model", "files", "outputs", "risk",
             "blocked_by", "depends_on", "description", "tests_mode",
             "tests_add", "gate", "gate_clear", "dry_run", "failing_from",
-            "from_file", "fixes"),
+            "from_file", "fixes", "bug"),
     "add-phase": ("phase_id", "outcome", "description", "area", "review_skill",
                   "blocked_by", "gate", "gate_clear", "park"),
     "cancel": ("reason",),
@@ -11871,7 +11928,8 @@ def build_parser():
                    help="mute: the last UTC calendar day the mute holds, "
                         "inclusive")
     p.add_argument("--bug", default=None, metavar="BUGID",
-                   help="mute: the bugs[] id tracking the failure it hides")
+                   help="mute: the bugs[] id tracking the failure it hides; "
+                        "add: the open bug this task fixes")
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--json", action="store_true", dest="as_json")
     return _claude_home.attach_usage_hint(p)
