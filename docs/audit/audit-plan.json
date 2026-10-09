@@ -4712,7 +4712,8 @@
       "P119.5-g0k",
       "P119.8-g0k",
       "P119.9-g0k",
-      "P121.2"
+      "P121.2",
+      "P121.15-eof"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -4779,7 +4780,8 @@
       "P118.22-v7t",
       "P118.23-v7t",
       "P121.4",
-      "P121.5"
+      "P121.5",
+      "P121.15-eof"
     ],
     "plugins/audit/tests/test_commit_audit_state.py": [
       "P28.2",
@@ -5550,7 +5552,8 @@
       "P92.6-a1x",
       "P109.3",
       "P103.6",
-      "P100.3-zxo"
+      "P100.3-zxo",
+      "P121.15-eof"
     ],
     "plugins/audit/scripts/status/_claude_home.py": [
       "P77.2",
@@ -6438,7 +6441,8 @@
       "P119.4-g0k",
       "P119.7-g0k",
       "P121.5",
-      "P121.12-eof"
+      "P121.12-eof",
+      "P121.15-eof"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6"
@@ -6501,6 +6505,9 @@
     ],
     "plugins/audit/scripts/ui/shared": [
       "P120.1"
+    ],
+    "plugins/audit/tests/test__harness.py": [
+      "P121.15-eof"
     ]
   },
   "bugs": [
