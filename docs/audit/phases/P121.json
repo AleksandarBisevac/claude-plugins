@@ -530,7 +530,7 @@
     {
       "id": "P121.10-eof",
       "title": "Windows: shipped text files check out with LF everywhere",
-      "status": "in_progress",
+      "status": "done",
       "description": "On windows-latest the CRLF checkout inflates every shipped .md file: tools/measure-context.py mc19/mc24 measure the reviewer at 7126 against its 7000 ceiling and /audit:phase at 4028 against 4000 (6995 and 3962 on LF), and test_audit_task.py fb15 fails on the same gate. .gitattributes already pins ui assets, _ui_theme.py, *.sh and *.yml to LF, each with its reason. Extend the pin, with its reason, to every text file the plugin ships or the pipeline commits byte-for-byte: at least *.md, *.json and *.jsonl (the committed journal, evidence and manifest), and decide whether a repo-wide `* text=auto eol=lf` is the cleaner rule. Confirm `git add --renormalize .` changes no indexed content, and that a scratch clone made with core.autocrlf=true now checks these files out LF and measure-context --gate passes there. Add a lint or case so a newly shipped text type that is not pinned is caught, if the repo has a natural home for it (test__refs or measure-context). This is CI round 2 on windows-latest; the job log was saved outside the repository for the executor (grep the file name). You cannot run Windows here. Find the root cause, reproduce the Windows condition locally where you can (a CRLF checkout via `git -c core.autocrlf=true` into a scratch clone, no symlink privilege, a slow process start), show it red before the fix and green after, and say plainly what could not be simulated. Fix the class, not only the named case; a platform skip only with the house's idiom and a stated reason.",
       "files": [
         ".gitattributes",
@@ -560,18 +560,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "72435dd1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Root cause: .gitattributes pinned only ui/**, _ui_theme.py, *.sh and *.yml. Under core.autocrlf=true, git's Windows default, every other text file checked out with CR bytes. That put the reviewer at 7126 against its 7000 ceiling and /audit:phase at 4028 against 4000 (6995 and 3962 on LF). test_audit_task fb15 runs the same gate.\n\nFix: a repo-wide `* text=auto eol=lf`, with its reason in a comment. The four existing rules and their reasons are kept. text=auto leaves binary detection to git, so the PNG images and the GIF are untouched. Renormalizing a copy of the index changed no indexed content: every text file was already LF in the index.\n\nNew lint in tools/measure-context.py (section \"line endings\"). It asks git (`ls-files --eol -z`) which tracked text files resolve to neither eol=lf nor -text, and states a problem when git cannot answer. Cases:\n- mc30: the parser and the decision.\n- mc31 (red twin): a repo pinning only *.sh is caught.\n- mc32 (allow twin): `* text=auto eol=lf` names nothing and sees the PNG as binary.\n- mc33: the real repository has no unpinned text file, and the check is not empty.\n\nProbe (scratchpad P121.10-eof/probe.sh): a core.autocrlf=true clone of HEAD reproduces CI's exact figures and the gate breach. With the new attributes, no file checks out CRLF and the gate passes. HEAD's attributes turn mc33 red. Mutations of the decision function are red both ways.",
+        "descriptive": "Every text file in the repository now checks out with the same line endings on every platform, so Windows users get exactly the files Linux and macOS users get, and a check catches any file that loses the rule."
       },
       "startedAt": "2026-10-09T08:12:56Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T08:48:32Z",
+      "verifiedBy": [
+        "tools/measure-context.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-09T08:32:53Z.1b34f1",
         "status": "passed",
         "at": "2026-10-09T08:32:53Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "72435dd1",
+        "at": "2026-10-09T08:48:32Z",
+        "basis": "orchestrator check: an autocrlf clone reproduces CI's exact figures, and the new attributes clear them; lint red/green both ways"
       }
     },
     {

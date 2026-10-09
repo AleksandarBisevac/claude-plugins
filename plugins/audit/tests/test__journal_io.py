@@ -1031,7 +1031,7 @@ def _cases(check):
               "different answers and must not print the same way",
               M.verify(os.path.join(tmp, "empty"))["exists"] is False)
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
     # --- the row shape --------------------------------------------------------
     row = M._normalise({"action": "config.write", "target": ".claude/x.json"})
@@ -1199,7 +1199,7 @@ def _cases(check):
               and _rrows2[3]["prev"] == _rhashes[-1],
               repr(_rver2["findings"]))
     finally:
-        shutil.rmtree(_rtmp, ignore_errors=True)
+        _harness.remove_tree(_rtmp)
 
     # --- the cascade moved onto `changes`, and old cancel rows did not --------
     # A phase cancel closes the work still open inside it and handed those ids
@@ -1294,7 +1294,7 @@ def _cases(check):
               and _crows2[1]["prev"] == _chash,
               repr(_cver2["findings"]))
     finally:
-        shutil.rmtree(_ctmp, ignore_errors=True)
+        _harness.remove_tree(_ctmp)
 
     # --- `summary` got a bound, and a cut one says so ------------------------
     # `details` is bounded three ways -- an allow-list, a clip per value, a cap
@@ -1419,7 +1419,7 @@ def _cases(check):
               and _srows2[1]["summary"] == _snow,
               repr(_sver2["findings"]))
     finally:
-        shutil.rmtree(_stmp, ignore_errors=True)
+        _harness.remove_tree(_stmp)
 
     # --- ...and so did a `details` value -------------------------------------
     # `summary` got a bound AND a marker above. `_clip` had the bound and no
@@ -1582,7 +1582,7 @@ def _cases(check):
               and _vrows2[1]["details"]["reason"].endswith(M.VALUE_TRUNCATED),
               repr(_vver2["findings"]))
     finally:
-        shutil.rmtree(_vtmp, ignore_errors=True)
+        _harness.remove_tree(_vtmp)
 
     # --- mu/av/sa: a divergence, its merge, and the session a file belongs to --
     def _merge_cases(check):
@@ -2404,7 +2404,7 @@ def _cases(check):
                       and _an_none["finding"] is None
                       and _an_none["warning"] is None)
             finally:
-                shutil.rmtree(_an_dir, ignore_errors=True)
+                _harness.remove_tree(_an_dir)
 
             # --- sa: the session a writer id cannot name ---------------------
             _sa_actor = {"sessionId": "payload-id-aaaa", "via": "hook"}
@@ -2482,7 +2482,7 @@ def _cases(check):
                   and M.writer_of("nonsense") == "",
                   repr(M.writer_of("2026-05.a.b.c.jsonl")))
         finally:
-            shutil.rmtree(mtmp, ignore_errors=True)
+            _harness.remove_tree(mtmp)
 
     with_env(None, lambda: _merge_cases(check))
     _gone_cases(check)
@@ -2823,7 +2823,7 @@ def _gone_cases(check):
               "evidence: %r" % (_gw11["findings"],),
               _gw11["ok"] is True and _gw11["findings"] == [])
     finally:
-        shutil.rmtree(_tmp, ignore_errors=True)
+        _harness.remove_tree(_tmp)
 
     _gw12 = M.gone_finding("docs/audit/journal/2026-01.a.jsonl")
     check("gw12 the finding NAMES the file and carries both commands that "
@@ -2971,8 +2971,80 @@ def _line_ending_cases(check):
               mixed.count(b"\r\n") == 2 and mixed.count(b"\n") == 3
               and res["ok"] and res["rows"] == 3 and not res["findings"]
               and not res.get("unanchored"))
+
+        # The simulation has to bite before nl8 can mean anything: a plain
+        # rmtree under it leaves a read-only file behind and says nothing.
+        bite = os.path.join(tmp, "bite")
+        os.makedirs(os.path.join(bite, "objects"))
+        loose = os.path.join(bite, "objects", "loose")
+        with open(loose, "w") as fh:
+            fh.write("x")
+        os.chmod(loose, 0o444)
+        _under_windows_unlink(lambda: shutil.rmtree(bite, ignore_errors=True))
+        check("nl7 THE SIMULATION BITES: under it, a plain rmtree with "
+              "ignore_errors leaves a read-only file behind and raises nothing "
+              "- the shape git's loose objects have, and what leaked this "
+              "block's directory into the working directory on Windows: %r"
+              % (os.path.exists(loose),),
+              os.path.exists(loose))
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        # The fixture holds a git repository (nl6), whose loose objects git
+        # writes read-only; Windows refuses to unlink those, so the removal is
+        # made under that rule here on every platform. A removal that fails
+        # under it is retried without it, so a red nl8 never also leaks.
+        gone = _under_windows_unlink(lambda: _harness.remove_tree(tmp))
+        if not gone:
+            _harness.remove_tree(tmp)
+    check("nl8 the block's fixture, a git repository inside it, is removed "
+          "under Windows' read-only unlink rule - nothing is left in the "
+          "directory TMPDIR names: %r" % (gone,),
+          gone is True and not os.path.lexists(tmp))
+    rmtree_calls = _cleanup_calls(__file__, "shutil", "rmtree")
+    removals = _cleanup_calls(__file__, "_harness", "remove_tree")
+    check("nl9 ...and no `finally` in this file removes a fixture by a bare "
+          "rmtree: every cleanup goes through the house remove_tree, which "
+          "takes a read-only tree too - bare at lines %r, house at %r"
+          % (rmtree_calls, removals),
+          rmtree_calls == [] and len(removals) > 1)
+
+
+def _under_windows_unlink(fn):
+    """`fn()` with `os.unlink`/`os.remove` refusing a file whose owner-write bit
+    is clear, as Windows does for its read-only attribute - POSIX unlinks
+    through the directory's write bit instead, which is why a leak of a git
+    fixture is invisible off Windows. Both are put back afterwards, raise or
+    not."""
+    import stat
+    real_unlink, real_remove = os.unlink, os.remove
+
+    def refusing(path, *args, **kwargs):
+        dir_fd = kwargs.get("dir_fd")
+        st = (os.lstat(path, dir_fd=dir_fd) if dir_fd is not None
+              else os.lstat(path))
+        if not stat.S_ISLNK(st.st_mode) and not st.st_mode & stat.S_IWUSR:
+            raise PermissionError(errno.EACCES, "read-only (emulated)", path)
+        return real_unlink(path, *args, **kwargs)
+    os.unlink, os.remove = refusing, refusing
+    try:
+        return fn()
+    finally:
+        os.unlink, os.remove = real_unlink, real_remove
+
+
+def _cleanup_calls(path, owner, attr):
+    """Line numbers of every `<owner>.<attr>(...)` call inside a `finally` body
+    in the source at `path` - the place a fixture is removed, which is narrower
+    than every call on purpose: nl7 runs a bare rmtree to show it leaks."""
+    with open(path, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    finals = [stmt for node in ast.walk(tree) if isinstance(node, ast.Try)
+              for stmt in node.finalbody]
+    return sorted(set(node.lineno for stmt in finals for node in ast.walk(stmt)
+                      if isinstance(node, ast.Call)
+                      and isinstance(node.func, ast.Attribute)
+                      and node.func.attr == attr
+                      and isinstance(node.func.value, ast.Name)
+                      and node.func.value.id == owner))
 
 
 # --- sl: a stale lock is broken by exactly one waiter ---------------------------
@@ -3337,7 +3409,7 @@ def _stale_lock_cases(check):
               _ki[0][0] == "interrupted"
               and not [n for n in _ki[5] if n != "interrupted.jsonl.lock.break"])
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 def _worktree_writer_cases(check):
@@ -3957,7 +4029,7 @@ def _free_text_cases(check):
               and all(rows.get(r[0]) is r for r in shared)
               and all(rows[r[0]][1].pattern == r[1].pattern for r in shared))
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
     _shape_parity_cases(check)
 
 
@@ -4151,7 +4223,7 @@ def _shape_parity_cases(check):
                                                           "x"))
               == M.OUTSIDE_TOKEN)
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 def _selftest():
