@@ -673,12 +673,17 @@
       },
       "startedAt": "2026-10-09T08:12:57Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-09T09:05:56Z.c7e17e",
+        "status": "passed",
+        "at": "2026-10-09T09:05:56Z"
+      }
     },
     {
       "id": "P121.13-eof",
       "title": "Windows: the red helper links dependencies without symlink privilege",
-      "status": "in_progress",
+      "status": "done",
       "description": "On windows-latest plugins/audit/tests/test_stamp_verification.py fails sd4 (the allow case with dependencies linked) and sd5 (--deps-from proves the red from another checkout's node_modules: without=3 with=0 expected, Windows got otherwise). The helper links node_modules into its throwaway tree; on Windows os.symlink needs a privilege CI and most users lack. Use a directory junction on Windows (or a fallback the helper already has), name the link kind in the note, and keep POSIX behaviour unchanged. This is a real user-facing defect on Windows, not only a test problem. This is CI round 2 on windows-latest; the job log was saved outside the repository for the executor (grep the file name). You cannot run Windows here. Find the root cause, reproduce the Windows condition locally where you can (a CRLF checkout via `git -c core.autocrlf=true` into a scratch clone, no symlink privilege, a slow process start), show it red before the fix and green after, and say plainly what could not be simulated. Fix the class, not only the named case; a platform skip only with the house's idiom and a stated reason.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -707,18 +712,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "530a0703",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Root cause, corrected from the task's guess: on windows-latest the links were made. sd4 and sd5 failed because dependency_plan took git's `rev-parse --show-toplevel` output, which uses forward slashes on Windows, as a filesystem path. The basis then named a mixed-separator path that matched neither expected path.\n\nFix, in stamp-verification.py:\n- native_top() normalises git's toplevel, at both --show-toplevel sites (dependency_plan and red's root). POSIX is unchanged.\n- The privilege defect the task named is fixed as a class too. dependency_plan records a link kind, which link_kind() picks by probing one directory symlink. A refusal on Windows selects directory junctions plus hard links, with a copy across volumes. POSIX keeps symlinks.\n- Linking is split into link_entry and link_dependencies, with an injectable ops table.\n- deps_clause names the link kind in the basis.\n- unlink_junctions removes the helper's own junctions, detected by reparse tag, before every reset and before the throwaway is removed.\n- The docstring's section 4 describes the new linking.\n\nNew stage sw-windows, sw1-sw7:\n- the privilege refusal is simulated with OSError 1314;\n- sw7 is an end-to-end red run under it, which proves the red, names junctions in the basis, and removes every stand-in while the source survives.\n\nRed-first: the helper refused, because three runs of this suite do not fit its 565 s deadline. The probe (scratchpad P121.13-eof/probe.py) on HEAD's code turns sw1-sw7 red, and the fix turns them green. Five mutations each go red, the over-fire one included.\n\nNot simulated off Windows: real junction creation and removal. Known gap: dropping native_top on red's root is caught by no case.",
+        "descriptive": "The red-first proof tool reports Windows paths correctly, and on a Windows account without symlink rights it links dependencies another way instead of failing."
       },
       "startedAt": "2026-10-09T08:12:57Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T08:48:33Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-09T08:48:21Z.ea8fdf",
         "status": "passed",
         "at": "2026-10-09T08:48:21Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "530a0703",
+        "at": "2026-10-09T08:48:33Z",
+        "basis": "orchestrator check: real cause (git's forward-slash toplevel) found from the CI log; probe red on HEAD, green after; five mutations red"
       }
     },
     {

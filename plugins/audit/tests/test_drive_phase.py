@@ -29,7 +29,19 @@ small share beside them. A block shares no state with another - each builds its
 own repositories - so the blocks run concurrently and the parent replays every
 case they report, in block order, through one `_harness.run`. `--stage` still
 runs the named blocks in this process, for a red-first proof in a throwaway tree.
+
+A FULL RUN LASTS AS LONG AS ITS LONGEST BLOCK, at best, so no block may grow
+into one. The windows leg starts a process far slower than the others and has
+few cores, and a block of many drives held the whole file past the sweep's
+per-file cap there while the rest had long finished. So a long block is cut
+where no later case reads a name an earlier one bound - at a call to another
+block that ended it, or between two groups that each build their own fixture -
+and the second half is a `STAGES` row of its own, placed right after the first
+so the replayed case order is the one a run in one process gives. `sb1` reads
+that each block runs in exactly one stage, since a cut half-made runs cases
+twice or never and a green run looks the same either way.
 """
+import ast
 import json
 import os
 import re
@@ -53,6 +65,10 @@ BOUND = 300
 
 _GIT = ["git", "-c", "user.email=fixture@example.com", "-c", "user.name=Fixture",
         "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+# What a fixture repository's own config adds after `init`: the identity and the
+# signing switch the verbs' commits read, since they run without `_GIT`'s flags.
+_FIXTURE_IDENTITY = ("[user]\n\temail = fixture@example.com\n\tname = Fixture\n"
+                     "[commit]\n\tgpgsign = false\n")
 
 
 def _load(modname):
@@ -114,12 +130,16 @@ def _repo(prefix, task_ids=TASKS, gate=("true",), per_task="always",
         json.dump(_plan(task_ids, gate, phase_gate), fh, indent=2)
     # The identity is the repository's own, not only this call's: the verbs the
     # driver runs commit in it too, and a sweep pins HOME and refuses a guessed
-    # identity, so nothing else would supply one.
-    for argv in (["init", "-q"],
-                 ["config", "user.email", "fixture@example.com"],
-                 ["config", "user.name", "Fixture"],
-                 ["config", "commit.gpgsign", "false"],
-                 ["add", "-A"], ["commit", "-qm", "fixture"]):
+    # identity, so nothing else would supply one. It is appended to the config
+    # `init` wrote rather than set with one `git config` per key: every fixture
+    # pays for each process it starts, and on the windows leg a start is what a
+    # full run is made of. `fx1` asks git itself whether it reads the identity.
+    subprocess.run(_GIT + ["init", "-q"], cwd=root, check=True,
+                   capture_output=True, timeout=60)
+    with open(os.path.join(root, ".git", "config"), "a", encoding="utf-8",
+              newline="\n") as fh:
+        fh.write(_FIXTURE_IDENTITY)
+    for argv in (["add", "-A"], ["commit", "-qm", "fixture"]):
         subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
                        timeout=60)
     return root, mpath
@@ -581,7 +601,6 @@ def _decide_cases(check):
           "verb, since no task commit is coming to carry them: %r" % (dirty,),
           blocked == 0 and dirty.strip() == ""
           and "record committed" in "\n".join(said_b))
-    _continue_cases(check)
 
 
 def _attempts(mpath, task_id):
@@ -1283,7 +1302,6 @@ def _signoff_cases(check):
           bool(quiet) is True and quiet.get("added") == []
           and not quiet.get("signedOff") and not quiet.get("landed")
           and not quiet.get("released"))
-    _advance_signoff_cases(check)
 
 
 # The call the phase reviewer's dispatch prints to send after it, and what the
@@ -1366,13 +1384,26 @@ def _advance_signoff_cases(check):
           and did["signedOff"] and did["landed"] and did["released"]
           and NOT_APPLIED not in out)
 
-    def refused(module, prefix, **filing):
-        root, mpath, text = _at_phase_review(module, prefix)
-        _file_phase_review(root, mpath, text, **filing)
-        seen = _counting(module)
-        code, out = _next(module, root, mpath, *ADVANCE)
-        return code, out, seen.get(("audit-task.py", "signoff"), 0), \
-            _signed(mpath)
+
+def _advance_refused(module, prefix, **filing):
+    """A one-task phase review filed with `filing`, then the advance call:
+    `(code, print, signoff calls, signed)`."""
+    root, mpath, text = _at_phase_review(module, prefix)
+    _file_phase_review(root, mpath, text, **filing)
+    seen = _counting(module)
+    code, out = _next(module, root, mpath, *ADVANCE)
+    return code, out, seen.get(("audit-task.py", "signoff"), 0), \
+        _signed(mpath)
+
+
+def _advance_refused_cases(check):
+    """The advance call where the triage has more than `sign-off` to offer: it
+    prints the triage and applies nothing, and each refusal has its red twin."""
+    M, why = _load("drive_phase_advance_refused")
+    if M is None:
+        check("sq3 the driver loads", False, why)
+        return
+    refused = _advance_refused
     for label, prefix, filing in (
             ("sq3 with a finding open", "advance-finding",
              {"findings": FINDINGS[:1]}),
@@ -1519,7 +1550,6 @@ def _review_answer_cases(check):
           run["steps"][-1] == TRIAGE and _answer_lines(triage) == []
           and "--answer accept" not in triage)
     _name_only_triage_cases(check, M, over)
-    _decline_answer_cases(check)
 
 
 def _name_only_triage_cases(check, M, over):
@@ -1619,7 +1649,6 @@ def _redispatch_cases(check):
           first["prints"][-1][0] == 1 and code == 0 and added
           and ("dispatch", "executor", added) in steps
           and steps[-1] == ("dispatch", "reviewer", PHASE))
-    _reuse_review_cases(check)
 
 
 def _reuse_review_cases(check):
@@ -1669,7 +1698,6 @@ def _reuse_review_cases(check):
           "return, or none, would print a triage here: %r" % ((code, text),),
           code == 0 and instruction(text) == ("dispatch", "reviewer", PHASE))
     _reuse_findings_cases(check, M)
-    _late_return_cases(check)
 
 
 def _reuse_findings_cases(check, M):
@@ -1934,7 +1962,6 @@ def _boot_cases(check):
           "signs off with no boot decision: %r" % (run["steps"][-3:],),
           run["steps"][-1] == DONE
           and not any(s[1] == "runtime-boot" for s in run["steps"]))
-    _decline_boot_cases(check)
 
 
 UNRELATED_GATE = "echo tests/unrelated_test.py 1 passed"
@@ -1967,8 +1994,6 @@ def _banner_cases(check):
           "keeps the reason: %r" % ((code, text),),
           code == 0 and instruction(text) == DONE
           and words in (_phase_of(mpath).get("summary") or ""))
-    _decline_coverage_cases(check)
-    _decline_breach_cases(check)
 
 
 def _landing_cases(check):
@@ -2138,9 +2163,14 @@ def _decline_coverage_cases(check):
           "human's no beside their yes: %r" % ((code, summary),),
           code == 0 and instruction(text) == DONE and words in summary)
 
-    # An accept at the head the green run was taken at reuses that run; a task
-    # closed after the accept is a new tree, so its gate is asked about again.
-    M2, _w = _load("drive_phase_reuse_gate")
+
+def _reuse_gate_cases(check):
+    """An accept at the head the green run was taken at reuses that run; a task
+    closed after the accept is a new tree, so its gate is asked about again."""
+    M2, why = _load("drive_phase_reuse_gate")
+    if M2 is None:
+        check("dc4 the driver loads", False, why)
+        return
     seen = _phase_gate_runs(M2)
     root, mpath = _repo("reuse-gc", task_ids=TASKS[:1], gate=(UNRELATED_GATE,),
                         per_task="phase", phase_gate=(UNRELATED_GATE,))
@@ -2165,10 +2195,21 @@ def _decline_coverage_cases(check):
           and ("dispatch", "executor", added) in run["steps"]
           and run["steps"][-1] == ("decide", "gate-coverage", None)
           and not _signed(mpath))
-    _stale_gate_cases(check)
 
 
 RELATED_GATE = "echo src/f1.txt 1 passed"
+STALE_WORDS = "the human: the suite reaches f1 after all"
+
+
+def _to_coverage(prefix):
+    """A one-task phase whose gate reaches none of the work, driven to the
+    gate-coverage decision: `(driver, phase gate run count, root, mpath, run)`."""
+    M, why = _load("drive_phase_stale_%s" % (prefix,))
+    seen = _phase_gate_runs(M)
+    root, mpath = _repo(prefix, task_ids=TASKS[:1], gate=(UNRELATED_GATE,),
+                        per_task="phase", phase_gate=(UNRELATED_GATE,))
+    run = drive(M, root, mpath, answer=_stop_at_other)
+    return M, seen, root, mpath, run
 
 
 def _stale_gate_cases(check):
@@ -2177,15 +2218,7 @@ def _stale_gate_cases(check):
     now, over the declared files as they stand. HEAD alone is not that - the
     gate can be retargeted, a declared file edited or a run recorded by hand
     with no commit."""
-    def to_coverage(prefix):
-        M, why = _load("drive_phase_stale_%s" % (prefix,))
-        seen = _phase_gate_runs(M)
-        root, mpath = _repo(prefix, task_ids=TASKS[:1], gate=(UNRELATED_GATE,),
-                            per_task="phase", phase_gate=(UNRELATED_GATE,))
-        run = drive(M, root, mpath, answer=_stop_at_other)
-        return M, seen, root, mpath, run
-
-    words = "the human: the suite reaches f1 after all"
+    to_coverage, words = _to_coverage, STALE_WORDS
     M, seen, root, mpath, run = to_coverage("stale-retarget")
     before = seen["runs"]
     with _Env(root):
@@ -2235,9 +2268,12 @@ def _stale_gate_cases(check):
           hand[0] == 0 and seen["runs"] == before + 1 and "reused" not in text
           and _signed(mpath))
 
-    # The accept answers the run whose banners it was shown, not the HEAD: a
-    # gate retargeted at the same head is another run, with banners of its own.
-    other = "echo tests/elsewhere_spec.py 3 passed"
+
+def _stale_reaccept_cases(check):
+    """The accept answers the run whose banners it was shown, not the HEAD: a
+    gate retargeted at the same head is another run, with banners of its own."""
+    to_coverage, words = _to_coverage, STALE_WORDS
+    other ="echo tests/elsewhere_spec.py 3 passed"
     M, seen, root, mpath, run = to_coverage("stale-reaccept")
     before = seen["runs"]
     with _Env(root):
@@ -2492,15 +2528,87 @@ def _house_suite(cases):
 
 
 STAGES = (("dp-block", "_drive_cases"), ("dr-block", "_refusal_cases"),
-          ("dd-block", "_decide_cases"), ("dd3-block", "_rerun_cases"),
+          ("dd-block", "_decide_cases"), ("ct-block", "_continue_cases"),
+          ("dd3-block", "_rerun_cases"),
           ("dt-block", "_single_task_cases"), ("dl-block", "_lock_stop_cases"),
           ("dk-block", "_key_cases"), ("ds-block", "_submit_cases"),
           ("dsm-block", "_submit_mutant_cases"), ("sg-block", "_signoff_cases"),
-          ("sa-block", "_review_answer_cases"), ("sr-block", "_redispatch_cases"),
+          ("sq-block", "_advance_signoff_cases"),
+          ("sq3-block", "_advance_refused_cases"),
+          ("sa-block", "_review_answer_cases"),
+          ("da-block", "_decline_answer_cases"),
+          ("sr-block", "_redispatch_cases"), ("rr-block", "_reuse_review_cases"),
+          ("lr-block", "_late_return_cases"),
           ("sf-block", "_fix_review_cases"), ("hr-block", "_risk_cases"),
-          ("rb-block", "_boot_cases"), ("gb-block", "_banner_cases"),
+          ("rb-block", "_boot_cases"), ("db-block", "_decline_boot_cases"),
+          ("gb-block", "_banner_cases"), ("dc-block", "_decline_coverage_cases"),
+          ("dc4-block", "_reuse_gate_cases"), ("gr-block", "_stale_gate_cases"),
+          ("gr4-block", "_stale_reaccept_cases"),
+          ("di-block", "_decline_breach_cases"),
           ("nf-block", "_landing_cases"), ("bk-block", "_blocked_cases"),
-          ("tx-block", "_text_cases"))
+          ("tx-block", "_text_cases"), ("sb-block", "_stage_cases"))
+
+
+def _stage_reach(src, stages):
+    """`{"orphans", "doubled"}` over the case functions `src` defines - every
+    top-level `_..._cases` - read from `stages` down through the calls one case
+    function makes to another. An orphan runs in no stage; a doubled one runs in
+    two places, which is what a block lifted into a stage of its own while its
+    old caller still calls it reads as.
+
+    WHY THIS IS READ AND NOT TRUSTED. A long block is cut by lifting the call
+    that ends it into a `STAGES` row of its own, so each cut is two edits in two
+    places; leaving out the first runs the cases twice, leaving out the second
+    runs them never, and a full run that is green in both shapes says nothing."""
+    tree = ast.parse(src)
+    defs = dict((node.name, node) for node in tree.body
+                if isinstance(node, ast.FunctionDef)
+                and node.name.startswith("_") and node.name.endswith("_cases"))
+
+    def callees(name):
+        return [node.func.id for node in ast.walk(defs[name])
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id in defs and node.func.id != name]
+    runs = dict((name, 0) for name in defs)
+    todo = [fn for _label, fn in stages]
+    while todo:
+        name = todo.pop()
+        if name not in runs:
+            continue
+        runs[name] += 1
+        if runs[name] == 1:
+            todo.extend(callees(name))
+    return {"orphans": sorted(n for n, k in runs.items() if k == 0),
+            "doubled": sorted(n for n, k in runs.items() if k > 1)}
+
+
+def _stage_cases(check):
+    """The stages cover every block once, and the fixture's hand-written
+    identity is one git reads."""
+    with open(os.path.abspath(__file__), "r", encoding="utf-8") as fh:
+        src = fh.read()
+    got = _stage_reach(src, STAGES)
+    check("sb1 every case block of this file runs in exactly one stage - none "
+          "left out of `STAGES`, none run both as a stage and by its old "
+          "caller: %r" % (got,),
+          got == {"orphans": [], "doubled": []})
+    twin = ("def _a_cases(check):\n    _b_cases(check)\n\n\n"
+            "def _b_cases(check):\n    pass\n\n\n"
+            "def _c_cases(check):\n    pass\n")
+    bad = _stage_reach(twin, (("a-block", "_a_cases"), ("b-block", "_b_cases")))
+    good = _stage_reach(twin, (("a-block", "_a_cases"), ("c-block", "_c_cases")))
+    check("sb1m RED TWIN: a block lifted into a stage while its caller still "
+          "calls it reads as doubled, a block no stage reaches as an orphan - "
+          "and the same blocks staged once each read clean: %r" % ((bad, good),),
+          bad == {"orphans": ["_c_cases"], "doubled": ["_b_cases"]}
+          and good == {"orphans": [], "doubled": []})
+    root, _mpath = _repo("identity", task_ids=TASKS[:1])
+    said = dict((key, _git_out(root, "config", "--local", "--get", key).strip())
+                for key in ("user.email", "user.name", "commit.gpgsign"))
+    check("fx1 a fixture repository's own config, written after `init` rather "
+          "than through `git config`, is what git reads back: %r" % (said,),
+          said == {"user.email": "fixture@example.com", "user.name": "Fixture",
+                   "commit.gpgsign": "false"})
 
 
 # --- the stages, each in a process of its own ----------------------------------
