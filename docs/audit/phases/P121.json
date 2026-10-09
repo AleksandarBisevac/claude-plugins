@@ -22,7 +22,79 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P121-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/usage/usage_ledger.py _append_locked / rewrite_month",
+        "issue": "_append_locked counts buffered writes and swallows a failure on flush or close, so rewrite_month's carry check reports success after the carried rows were lost (probe: ENOSPC on close -> True, row not on disk). Base returned False.",
+        "resolution": "Count rows only after the handle closed without raising; a failed carry returns False. Add the close-raises case."
+      },
+      {
+        "id": "P121-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/usage/usage_ledger.py lock_month; hooks.json timeout",
+        "issue": "lock_month retries on every OSError, so on a filesystem refusing flock every append waits MONTH_LOCK_WAIT_S (10 s), the metering hook's own timeout, and metering records nothing. The poll-count bound stretches on old Windows Pythons.",
+        "resolution": "Retry only on contention errnos, go unlocked at once otherwise, wait well below the hook's timeout, bound by time.monotonic(). Add an ENOTSUP case."
+      },
+      {
+        "id": "P121-R3",
+        "severity": "med",
+        "file": "plugins/audit/commands/usage.md",
+        "issue": "The shipped /audit:usage doc still says the metering hook appends without a lock and describes the pre-lock loss.",
+        "resolution": "Match the build guide's audit-usage section."
+      },
+      {
+        "id": "P121-R4",
+        "severity": "med",
+        "file": ".github/workflows/ci.yml",
+        "issue": "The comment says each bound is at least twice the longest finished run, but a 2026-10-01 Windows selftests run took 23m31s against a 45-minute bound.",
+        "resolution": "Raise the selftests bound to cover twice that, or name the runs actually measured."
+      },
+      {
+        "id": "P121-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py run_red finally",
+        "issue": "unlink_junctions' result is discarded, so an unremovable junction goes unreported and the throwaway removal proceeds over it.",
+        "resolution": "Skip the removal and report it when unlink_junctions returns a problem."
+      },
+      {
+        "id": "P121-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py _probe_link_kind",
+        "issue": "Probes on POSIX where only symlinks are possible, adding a mkdtemp failure path.",
+        "resolution": "Return the symlink kind without probing off Windows, or fall back on a mkdtemp error."
+      },
+      {
+        "id": "P121-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py _red_scope native_top",
+        "issue": "No case covers native_top at red's root.",
+        "resolution": "Add a case with a forward-slash toplevel."
+      },
+      {
+        "id": "P121-R8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py _link_texts",
+        "issue": "Declared paths go to git ls-files as pathspecs; a path starting with ':' is read as magic and refuses the landing as unanswerable.",
+        "resolution": "Pass --literal-pathspecs."
+      },
+      {
+        "id": "P121-R9",
+        "severity": "low",
+        "file": "tools/capture-screenshots.mjs watchForStall",
+        "issue": "stopStallWatch clears the interval but not the grace timeout, which can exit 1 after a run already ended.",
+        "resolution": "Clear the grace timer too."
+      },
+      {
+        "id": "P121-R10",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_audit_task.py rv13 under the staged runner",
+        "issue": "rv13 (four contending processes) failed once under heavy load in a staged run; passed alone and unloaded.",
+        "resolution": "Watch on windows-latest; isolate the lock-contention block if it recurs."
+      }
+    ],
+    "outcome": "[findings: 10 - 0 high, 4 med, 6 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -858,6 +930,134 @@
         "at": "2026-10-09T10:11:04Z",
         "basis": "orchestrator check: chain of tail calls cut into stages; identical case lists in all three files; slow-spawn simulation HEAD timed out twice, fix under 80 s; 12 mutations killed"
       }
+    },
+    {
+      "id": "P121.16-eof",
+      "title": "the usage ledger never reports a lost carry as written, and a refused lock never stalls the hook",
+      "status": "pending",
+      "description": "Fixes P121-R1 to R3 from the phase review. (R1) _append_locked counts each buffered write and swallows a failure on flush or close. So rewrite_month's carry check reports success after the carried rows were lost: a probe with ENOSPC raised on close returned True with the row not on disk, where base returned False. Count rows only after the handle has closed without raising, so that a failed carry returns False. Fix append_rows' count the same way, since the old flaw was the same. Add a case where close raises. (R2) lock_month retries on every OSError, so on a filesystem that refuses flock (ENOTSUP or ENOLCK) every append waits MONTH_LOCK_WAIT_S. That is 10 s, the metering hook's own timeout (hooks.json), so the hook is killed before it records anything. Retry only on contention errnos (EWOULDBLOCK/EAGAIN for flock, EACCES/EDEADLOCK for msvcrt), and go unlocked at once on any other errno. Bound the wait with time.monotonic() at a value well below the hook's timeout, and state the basis for the value. Add a case where _try_lock raises ENOTSUP, asserting that append_rows returns quickly with the row written. (R3) commands/usage.md, the shipped /audit:usage doc, still says the metering hook appends without a lock and describes the loss as it was before the lock. Make it match PLUGIN-BUILD-GUIDE.md's audit-usage section. Deliver a mutation probe.",
+      "files": [
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/tests/test_usage_ledger.py",
+        "plugins/audit/tests/test_audit_usage.py",
+        "plugins/audit/commands/usage.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P121.17-eof",
+      "title": "CI bounds and the stall watch say and do what holds",
+      "status": "pending",
+      "description": "Fixes P121-R4 and R9. (R4) ci.yml's comment says each timeout-minutes is at least twice the longest finished run, but Windows selftests in run 36840507574 took 23m31s against a 45-minute bound. Re-derive each bound from `gh run view <id> --json jobs` over the runs you name, set every bound to at least twice the longest, and make the comment name exactly those runs. (R9) capture-screenshots' stopStallWatch clears the interval but not the STALL_GRACE_MS timeout, so a stalled run that already unwound exits 1 thirty seconds later; keep and clear that handle. Show each red before and green after.",
+      "files": [
+        ".github/workflows/ci.yml",
+        "tools/capture-screenshots.mjs",
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P121.18-eof",
+      "title": "the red helper's junction and root-path edges are reported and pinned",
+      "status": "pending",
+      "description": "Fixes P121-R5 to R8. (R5) run_red's finally discards unlink_junctions' result, so an unremovable junction goes unreported and the throwaway removal proceeds over it: skip the removal and report it. (R6) _probe_link_kind probes on POSIX where only symlinks are possible and adds a mkdtemp failure path: return the symlink kind without probing when os.name != 'nt', and fall back on a mkdtemp error. (R7) no case covers native_top at red's root: add one with a forward-slash toplevel. (R8) close-phase _link_texts passes declared paths to `git ls-files` as pathspecs, so a path beginning with ':' is read as magic and refuses the landing: pass --literal-pathspecs (or GIT_LITERAL_PATHSPECS=1), with a case. Each new case red first.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-09T00:55:19Z"
