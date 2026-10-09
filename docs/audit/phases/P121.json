@@ -28,63 +28,81 @@
         "severity": "med",
         "file": "plugins/audit/scripts/usage/usage_ledger.py _append_locked / rewrite_month",
         "issue": "_append_locked counts buffered writes and swallows a failure on flush or close, so rewrite_month's carry check reports success after the carried rows were lost (probe: ENOSPC on close -> True, row not on disk). Base returned False.",
-        "resolution": "Count rows only after the handle closed without raising; a failed carry returns False. Add the close-raises case."
+        "resolution": "fixed in P121.16-eof (96509be9): Count rows only after the handle closed without raising; a failed carry returns False. Add the close-raises case.",
+        "fixTask": "P121.16-eof",
+        "commit": "96509be9"
       },
       {
         "id": "P121-R2",
         "severity": "med",
         "file": "plugins/audit/scripts/usage/usage_ledger.py lock_month; hooks.json timeout",
         "issue": "lock_month retries on every OSError, so on a filesystem refusing flock every append waits MONTH_LOCK_WAIT_S (10 s), the metering hook's own timeout, and metering records nothing. The poll-count bound stretches on old Windows Pythons.",
-        "resolution": "Retry only on contention errnos, go unlocked at once otherwise, wait well below the hook's timeout, bound by time.monotonic(). Add an ENOTSUP case."
+        "resolution": "fixed in P121.16-eof (96509be9): Retry only on contention errnos, go unlocked at once otherwise, wait well below the hook's timeout, bound by time.monotonic(). Add an ENOTSUP case.",
+        "fixTask": "P121.16-eof",
+        "commit": "96509be9"
       },
       {
         "id": "P121-R3",
         "severity": "med",
         "file": "plugins/audit/commands/usage.md",
         "issue": "The shipped /audit:usage doc still says the metering hook appends without a lock and describes the pre-lock loss.",
-        "resolution": "Match the build guide's audit-usage section."
+        "resolution": "fixed in P121.16-eof (96509be9): Match the build guide's audit-usage section.",
+        "fixTask": "P121.16-eof",
+        "commit": "96509be9"
       },
       {
         "id": "P121-R4",
         "severity": "med",
         "file": ".github/workflows/ci.yml",
         "issue": "The comment says each bound is at least twice the longest finished run, but a 2026-10-01 Windows selftests run took 23m31s against a 45-minute bound.",
-        "resolution": "Raise the selftests bound to cover twice that, or name the runs actually measured."
+        "resolution": "fixed in P121.17-eof (0b304360): Raise the selftests bound to cover twice that, or name the runs actually measured.",
+        "fixTask": "P121.17-eof",
+        "commit": "0b304360"
       },
       {
         "id": "P121-R5",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/stamp-verification.py run_red finally",
         "issue": "unlink_junctions' result is discarded, so an unremovable junction goes unreported and the throwaway removal proceeds over it.",
-        "resolution": "Skip the removal and report it when unlink_junctions returns a problem."
+        "resolution": "fixed in P121.18-eof (82174ff4): Skip the removal and report it when unlink_junctions returns a problem.",
+        "fixTask": "P121.18-eof",
+        "commit": "82174ff4"
       },
       {
         "id": "P121-R6",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/stamp-verification.py _probe_link_kind",
         "issue": "Probes on POSIX where only symlinks are possible, adding a mkdtemp failure path.",
-        "resolution": "Return the symlink kind without probing off Windows, or fall back on a mkdtemp error."
+        "resolution": "fixed in P121.18-eof (82174ff4): Return the symlink kind without probing off Windows, or fall back on a mkdtemp error.",
+        "fixTask": "P121.18-eof",
+        "commit": "82174ff4"
       },
       {
         "id": "P121-R7",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/stamp-verification.py _red_scope native_top",
         "issue": "No case covers native_top at red's root.",
-        "resolution": "Add a case with a forward-slash toplevel."
+        "resolution": "fixed in P121.18-eof (82174ff4): Add a case with a forward-slash toplevel.",
+        "fixTask": "P121.18-eof",
+        "commit": "82174ff4"
       },
       {
         "id": "P121-R8",
         "severity": "low",
         "file": "plugins/audit/scripts/git/close-phase.py _link_texts",
         "issue": "Declared paths go to git ls-files as pathspecs; a path starting with ':' is read as magic and refuses the landing as unanswerable.",
-        "resolution": "Pass --literal-pathspecs."
+        "resolution": "fixed in P121.18-eof (82174ff4): Pass --literal-pathspecs.",
+        "fixTask": "P121.18-eof",
+        "commit": "82174ff4"
       },
       {
         "id": "P121-R9",
         "severity": "low",
         "file": "tools/capture-screenshots.mjs watchForStall",
         "issue": "stopStallWatch clears the interval but not the grace timeout, which can exit 1 after a run already ended.",
-        "resolution": "Clear the grace timer too."
+        "resolution": "fixed in P121.17-eof (0b304360): Clear the grace timer too.",
+        "fixTask": "P121.17-eof",
+        "commit": "0b304360"
       },
       {
         "id": "P121-R10",
@@ -94,7 +112,7 @@
         "resolution": "Watch on windows-latest; isolate the lock-contention block if it recurs."
       }
     ],
-    "outcome": "[findings: 10 - 0 high, 4 med, 6 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 10 - 0 high, 4 med, 6 low; 9 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1048,7 +1066,7 @@
     {
       "id": "P121.18-eof",
       "title": "the red helper's junction and root-path edges are reported and pinned",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes P121-R5 to R8. (R5) run_red's finally discards unlink_junctions' result, so an unremovable junction goes unreported and the throwaway removal proceeds over it: skip the removal and report it. (R6) _probe_link_kind probes on POSIX where only symlinks are possible and adds a mkdtemp failure path: return the symlink kind without probing when os.name != 'nt', and fall back on a mkdtemp error. (R7) no case covers native_top at red's root: add one with a forward-slash toplevel. (R8) close-phase _link_texts passes declared paths to `git ls-files` as pathspecs, so a path beginning with ':' is read as magic and refuses the landing: pass --literal-pathspecs (or GIT_LITERAL_PATHSPECS=1), with a case. Each new case red first.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -1079,18 +1097,27 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "82174ff4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes P121-R5 to R8.\n\nR5: run_red's finally keeps unlink_junctions' result. A junction it could not remove skips the throwaway removal, is reported in the payload and on stderr, and exits E_LEFT_BEHIND.\n\nR6: _probe_link_kind returns the symlink kind without probing off Windows. If mkdtemp raises, it falls back to the junction kind, the one that needs no privilege.\n\nR7: sw10 feeds _red_scope a forward-slash, doubled-separator toplevel and asserts the real path.\n\nR8: close-phase passes --literal-pathspecs on _link_texts and, by default, on _git_bytes. `git check-ignore` refuses that flag (exit 128, reproduced), so it opts out, and the docstrings say why. stamp-verification's _git passes the flag too.\n\nNew cases:\n- cr32: a declared link named `:colon-link` lands bound.\n- sw8-sw11: a new sw-edges stage.\ncr32 and sw11 are skipped where a filename starting with ':' cannot be created, found by probing rather than by platform name.\n\ntest_stamp_verification.py's _cases became a STAGES table, and its main accepts `--stage`, so a red proof of one stage fits the helper's deadline.\n\nRed-first: proved for cr32. For sw8-sw11 the helper's verdict was could-not-prove, because HEAD's copy of the file has no --stage. Mutation probe (scratchpad P121.18-eof/probe.py): five mutations, each red on its own case.\n\nSweep: 316/316.",
+        "descriptive": "The proof tool no longer deletes a folder over a link it could not remove, skips a needless probe on macOS and Linux, and the merge step now handles file names that start with a colon."
       },
       "startedAt": "2026-10-09T10:23:31Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T10:58:43Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-09T10:58:33Z.ce5187",
         "status": "passed",
         "at": "2026-10-09T10:58:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "82174ff4",
+        "at": "2026-10-09T10:58:43Z",
+        "basis": "orchestrator check: cr32 proved red; five mutations red; check-ignore's refusal of the literal flag found and handled"
       }
     }
   ],
