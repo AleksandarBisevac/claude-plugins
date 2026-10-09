@@ -400,7 +400,7 @@
     {
       "id": "P121.8",
       "title": "Windows: measure-context counts the same bytes on Windows",
-      "status": "in_progress",
+      "status": "done",
       "description": "On windows-latest, `tools/measure-context.py --selftest` fails case mc3 ('the entry's total is its body plus those files, to the byte') and case mc4 ('an agent loads its system prompt and every skill its frontmatter preloads'). The likely cause is CRLF line endings or path separators. ",
       "files": [
         "tools/measure-context.py"
@@ -428,18 +428,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e9345970",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Root cause: the selftest's fixture writer _fx_write opened files in text mode. On Windows that writes every `\\n` as `\\r\\n`, but the writer returned the length of the LF text, while the tool reads files in binary. Every fixture size came out short by one byte per newline, which turned mc3 and mc4 red; mc15, mc16, mc20 and mc22 share the same writer.\n\nWhat changed in tools/measure-context.py:\n- _fx_write opens with newline=\"\", so the bytes on disk are the bytes it counts.\n- split_frontmatter now charges the closing delimiter's line ending, `\\r\\n` or `\\n`, to the frontmatter rather than to the body. Before, a CRLF checkout's body started with a stray `\\r\\n`.\n- The tool still measures the bytes actually on disk, and does not normalise CRLF.\n\nNew cases:\n- mc28: a fixture file's size on disk equals the size of the text it was given.\n- mc29: CRLF and LF frontmatter split the same way, and a blank line that opens the body still counts.\n\nWindows behaviour was simulated with a text-mode write that turns `\\n` into `\\r\\n` (scratchpad P121.8/probe.py --windows), on scratch copies:\n- HEAD: 21/27, with mc3, mc4, mc15, mc16, mc20 and mc22 red.\n- Fixed: 29/29, plain and simulated.\n- Mutants: restoring the text-mode write turns mc28 red; restoring the LF-only split, or stripping every leading newline, turns mc29 red.\n\nRed-first: the helper refused, because the task declares no test file (the cases are inline in tools/).",
+        "descriptive": "The context-size tool counts the same bytes on Windows, where text files get CRLF line endings."
       },
       "startedAt": "2026-10-09T00:55:21Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T02:29:12Z",
+      "verifiedBy": [
+        "tools/measure-context.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-09T02:21:42Z.5a9820",
         "status": "passed",
         "at": "2026-10-09T02:21:42Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "e9345970",
+        "at": "2026-10-09T02:29:12Z",
+        "basis": "orchestrator check: CRLF-write simulation turns HEAD red and the fix green; mc28 and mc29 each red under their mutant"
       }
     },
     {
