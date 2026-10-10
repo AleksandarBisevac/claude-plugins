@@ -1041,6 +1041,165 @@ def tree_for(data, target=None, cfg=None, project=None, cache=None):
     return out
 
 
+# --- a task worktree is bound to its task ---------------------------------------
+# `tree_for` re-roots an edit in a linked worktree onto THAT worktree's own plan,
+# and a worktree cut at the phase HEAD holds the committed shard, where the task
+# is still `pending`: the deny tier never applied there. `manage-worktrees.py
+# task-add` records a marker in the worktree's admin directory (the file
+# `_worktrees.PROVENANCE_FILE` names), naming the task and the PHASE TREE; the
+# gate reads that marker and judges the edit against the phase tree's plan,
+# restricted to that one task. A hook may not import `scripts/`, so the marker
+# is read as plain JSON and the file name is pinned against the writer by a case.
+TASK_MARKER_FILE = "audit-worktree.json"
+
+
+def _admin_of_tree(tree):
+    """The admin directory of a LINKED worktree, or "" for a main checkout.
+    One stat for the ordinary tree (`.git` is a directory), and one small read
+    for a linked one - no process is started."""
+    dotgit = os.path.join(str(tree), ".git")
+    if not os.path.isfile(dotgit):
+        return ""
+    try:
+        with open(dotgit, "r", encoding="utf-8") as fh:
+            head = fh.readline().strip()
+    except (OSError, ValueError):
+        return ""
+    if not head.startswith("gitdir:"):
+        return ""
+    admin = head[len("gitdir:"):].strip()
+    return admin if os.path.isabs(admin) else os.path.join(str(tree), admin)
+
+
+def _same_tree(a, b):
+    return os.path.realpath(str(a)) == os.path.realpath(str(b))
+
+
+def _task_marker_at(admin):
+    """(record, why): the task marker in `admin`. `record` is None with an empty
+    `why` when this is not a task tree (no marker, or a phase marker with no
+    task), and None with a `why` when the marker is one but cannot be trusted."""
+    path = os.path.join(admin, TASK_MARKER_FILE)
+    if not os.path.isfile(path):
+        return None, ""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            rec = json.load(fh)
+    except (OSError, ValueError) as exc:
+        return None, "%s could not be read (%s)" % (path, exc)
+    if not isinstance(rec, dict) or rec.get("createdBy") != "audit":
+        return None, ""
+    if not rec.get("taskId"):
+        return None, ""
+    return rec, ""
+
+
+def task_binding(tree, manifest_rel):
+    """What binds an edit in `tree` to a task. -> one of
+      {"bound": False}                  an ordinary tree, or an unmarked / phase-
+                                        marked worktree: judged as ever;
+      {"bound": True, "error": why}     a task tree whose binding cannot be
+                                        proved: the caller REFUSES (a guard
+                                        fails loud - see SECURITY.md);
+      {"bound": True, "taskId", "phaseTree", "files": {rel: [..]},
+       "outputs": [(pattern, taskId)]}  the task's scope, read from the PHASE
+                                        tree's plan.
+
+    The task's status is read from the phase tree the marker records, never from
+    this worktree's shard: that copy is where the task is still pending."""
+    admin = _admin_of_tree(tree)
+    if not admin:
+        return {"bound": False}
+    rec, why = _task_marker_at(admin)
+    if rec is None and not why:
+        return {"bound": False}
+    if rec is None:
+        return {"bound": True, "error": why}
+    tid = str(rec["taskId"])
+    phase_tree = rec.get("phaseTree")
+    if not isinstance(phase_tree, str) or not os.path.isdir(phase_tree):
+        return {"bound": True, "error": (
+            "the task marker for %s names phase tree %r, which does not exist"
+            % (tid, phase_tree))}
+    declared = [d for d in _declared_task_ids(phase_tree, manifest_rel)
+                if d["taskId"] == tid]
+    if not declared:
+        return {"bound": True, "error": (
+            "the task marker names %s, which the plan in phase tree %s does not "
+            "hold" % (tid, phase_tree))}
+    if declared[0]["status"] != "in_progress":
+        return {"bound": True, "error": (
+            "task %s is %r in phase tree %s, not in_progress"
+            % (tid, declared[0]["status"], phase_tree))}
+    files = {k: [e for e in v if str(e.get("taskId")) == tid]
+             for k, v in in_progress_task_map(phase_tree, manifest_rel).items()}
+    files = {k: v for k, v in files.items() if v}
+    outputs = [o for o in in_progress_outputs(phase_tree, manifest_rel)
+               if str(o[1]) == tid]
+    return {"bound": True, "taskId": tid, "phaseTree": phase_tree,
+            "files": files, "outputs": outputs}
+
+
+def _declared_task_ids(root, manifest_rel):
+    """[{"taskId", "status"}] for every task of the plan in `root`."""
+    manifest = _load_manifest_assembled(Path(root) / manifest_rel)
+    out = []
+    for phase in (manifest.get("phases") or []) if isinstance(manifest, dict) else []:
+        for task in (phase.get("tasks") or []) if isinstance(phase, dict) else []:
+            if isinstance(task, dict) and task.get("id"):
+                out.append({"taskId": str(task["id"]),
+                            "status": task.get("status")})
+    return out
+
+
+def _common_git_dir(root):
+    dotgit = os.path.join(str(root), ".git")
+    if os.path.isdir(dotgit):
+        return dotgit
+    admin = _admin_of_tree(root)
+    if not admin:
+        return ""
+    try:
+        with open(os.path.join(admin, "commondir"), "r", encoding="utf-8") as fh:
+            common = fh.readline().strip()
+    except (OSError, ValueError):
+        return ""
+    return common if os.path.isabs(common) else os.path.normpath(
+        os.path.join(admin, common))
+
+
+def bound_worktrees(phase_tree):
+    """[{"taskId", "worktree"}] - the task worktrees whose marker names
+    `phase_tree` as their phase tree, in directory order. [] costs one stat for
+    a repository with no linked worktree at all. A marker that cannot be read
+    names no task and is skipped HERE; the tree it sits in fails loud itself
+    through `task_binding` the moment anything is edited there."""
+    common = _common_git_dir(phase_tree)
+    base = os.path.join(common, "worktrees") if common else ""
+    if not base or not os.path.isdir(base):
+        return []
+    out = []
+    try:
+        names = sorted(os.listdir(base))
+    except OSError:
+        return []
+    for name in names:
+        admin = os.path.join(base, name)
+        rec, _why = _task_marker_at(admin)
+        if rec is None or not isinstance(rec.get("phaseTree"), str) \
+                or not _same_tree(rec["phaseTree"], phase_tree):
+            continue
+        try:
+            with open(os.path.join(admin, "gitdir"), "r", encoding="utf-8") as fh:
+                where = fh.readline().strip()
+        except (OSError, ValueError):
+            where = ""
+        if where.endswith(".git"):
+            where = os.path.dirname(where)
+        out.append({"taskId": str(rec["taskId"]), "worktree": where or admin})
+    return out
+
+
 def state_dir(root, cfg):
     return root / (cfg.get("stateDir") or DEFAULTS["stateDir"])
 

@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "test_require_plan --selftest": "pass",
+    "test__config --selftest": "pass",
+    "bench-hooks --gate": "pass",
+    "ruff check plugins/audit tools": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T03:37:07Z",
+    "basis": "`python3 plugins/audit/tests/test_require_plan.py --selftest` in a throwaway tree at HEAD exited 1 with 5 of 214 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bt1 (house FAIL), bt2 (house FAIL), bt4 (house FAIL), bt5 (house FAIL), bt7 (house FAIL): SELFTEST FAILED: 209/214 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "Reviewed the prepared diff (_config.py task_binding/bound_worktrees, require-plan.py steps 1c and 2c, SECURITY.md) as own work; no code changes needed. Mutation-probed tb1-tb7 in a scratch copy of plugins/ (not the shared tree) with seven single mutations (marker name, ordinary-checkout return, no-marker return, phase-marker taskId check, unreadable-marker error, phaseTree isdir check, bound_worktrees empty return): all seven went red. tb1,tb2,tb3(+tb4),tb5,tb7 by named assertion failure; tb4 and tb6 mutants went red by crash (KeyError taskId / TypeError None path) inside the case, not by a named FAIL line. Runs: test_require_plan --selftest 214/214, test__config --selftest 300/300, bench-hooks --gate within budget on 3.12/3.13 (3.11 not measured, no interpreter), ruff clean. prove-gates --list: no row names this binding (it is a hook decision, not a lint), none needed.",
+    "descriptive": "A task worktree is bound to its task by marker, read from the phase tree's plan; unprovable markers refuse every edit, and the phase tree refuses files held by a bound worktree."
+  },
+  "testsAdded": [
+    "test_require_plan.py bt group",
+    "test__config.py tb1-tb7"
+  ],
+  "claims": "claims: tb mutation probe run in scratch copy only; tb4 and tb6 red by exception rather than by assertion; vermin and full sweep not run by me.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:8beb4e563cc3d54db651c4436da34205ea8f2a3eecb1925c99c7bfdb2d3780d1\",\"dirtyDigest\":\"sha256:3f3cf6cacab4bd0b840ccaee58adf331eb1e97d188bc4e5a67a28390e40fac3d\",\"dirtyPaths\":{\"SECURITY.md\":\"eee37328dc2cb123\",\"plugins/audit/hooks/_config.py\":\"941bc1a84a3120e5\",\"plugins/audit/hooks/require-plan.py\":\"ef17de98acfe3a66\",\"plugins/audit/tests/test__config.py\":\"fef4a4273afc3bec\",\"plugins/audit/tests/test_require_plan.py\":\"321c2131469c6801\"},\"head\":\"fd1d219f\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"SECURITY.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/require-plan.py\",\"plugins/audit/tests/test__config.py\",\"plugins/audit/tests/test_require_plan.py\"],\"scopeDigest\":\"sha256:9f979dc894af31b3fbfd114f7f241177cd75bc7e1c9421426800fe21c760e963\",\"v\":2}"
+}

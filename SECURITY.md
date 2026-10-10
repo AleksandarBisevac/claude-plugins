@@ -570,6 +570,17 @@ elsewhere under the project is judged against the project's plan. `guard-bash-wr
 watches the project's tree alone and declines a command from another tree with a notice (see
 bypass class 1 below).
 
+**A task worktree is bound to its task, and that binding fails loud.** `manage-worktrees.py
+task-add` leaves a marker (task, phase tree) in the worktree's admin directory; `require-plan`
+reads it before it grades an edit. In a marked tree only the marked task's files and outputs are
+open, judged by the status the **phase tree's** plan holds (the worktree's own shard still shows
+the task pending). In a phase tree, a file an `in_progress` task covers is refused when that task
+is bound to a worktree, naming it. A marker that cannot be proved — unreadable, no phase tree on
+disk, task absent from that plan or not `in_progress` there — refuses every edit in the tree
+rather than falling back to the worktree's own plan: this is a guard, not an advisory path. The
+one place it skips instead is the phase-tree scan, which passes over a sibling marker it cannot
+read; that tree fails loud on its own first edit.
+
 `remind-tdd` asks the same question for a reason worth stating separately: its nudge is a
 CLAIM about a file rather than a decision about one, and it was also spending the session's
 throttle on a tree it does not govern, which silenced the next reminder that was deserved.

@@ -1696,6 +1696,128 @@ def _cases(check):
             else:
                 os.environ["CLAUDE_PROJECT_DIR"] = _tf_prev
 
+    # (bt) A TASK WORKTREE IS BOUND TO ITS TASK. The worktree's own shard still
+    # shows the task as pending, so judged against it the gate was off; the
+    # marker in the tree's admin dir names the phase tree, and THAT tree's plan
+    # (where the task is in_progress) decides, restricted to the one task.
+    def _bt_build(prefix):
+        import subprocess
+        root = os.path.realpath(_harness.fixture_root(prefix))
+        main = os.path.join(root, "main")
+        os.makedirs(os.path.join(main, "src"))
+        os.makedirs(os.path.join(main, "docs", "audit"))
+        for name in ("a.ts", "b.ts", "c.ts", "d.ts"):
+            with open(os.path.join(main, "src", name), "w",
+                      encoding="utf-8") as fh:
+                fh.write("export const a = 1;\n")
+        plan = {"meta": {"version": 3, "developmentBranch": "main"},
+                "phases": [{"id": "P1", "title": "p", "status": "in_progress",
+                            "tasks": [
+                                {"id": "P1.1", "title": "a", "status": "in_progress",
+                                 "files": ["src/a.ts"]},
+                                {"id": "P1.2", "title": "b", "status": "in_progress",
+                                 "files": ["src/b.ts"]},
+                                {"id": "P1.3", "title": "c", "status": "pending",
+                                 "files": ["src/c.ts"]},
+                                {"id": "P1.4", "title": "d", "status": "pending",
+                                 "files": ["src/d.ts"]}]}]}
+        with open(os.path.join(main, "docs", "audit", "audit-plan.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump(plan, fh, indent=2)
+        git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+               "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+        trees = {"A": "P1.1", "B": "P1.2", "C": "P1.3", "G": "P1.1",
+                 "N": "P1.9", "S": "P1.4", "U": None}
+        steps = [["init", "-q"], ["add", "-A"], ["commit", "-qm", "init"]]
+        steps += [["worktree", "add", "-q", "--detach",
+                   os.path.join(root, "wt" + k)] for k in sorted(trees)]
+        for argv in steps:
+            subprocess.run(git + argv, cwd=main, check=True,
+                           capture_output=True, timeout=30)
+        paths = {k: os.path.join(root, "wt" + k) for k in trees}
+        for k, task in sorted(trees.items()):
+            if task is None:
+                continue
+            admin = subprocess.run(
+                git + ["rev-parse", "--git-dir"], cwd=paths[k], check=True,
+                capture_output=True, text=True, timeout=30).stdout.strip()
+            tree_of_plan = main if k != "G" else os.path.join(root, "gone")
+            with open(os.path.join(admin, "audit-worktree.json"), "w",
+                      encoding="utf-8") as fh:
+                json.dump({"createdBy": "audit", "phaseId": "P1",
+                           "taskId": task, "base": "x",
+                           "phaseTree": tree_of_plan, "at": "t"}, fh)
+        # P1.4 starts AFTER the worktrees were cut: the phase tree's shard says
+        # in_progress, the worktree's committed copy still says pending - the stale-shard case.
+        plan["phases"][0]["tasks"][3]["status"] = "in_progress"
+        with open(os.path.join(main, "docs", "audit", "audit-plan.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump(plan, fh, indent=2)
+        return {"root": root, "main": main, "wt": paths}
+
+    _bt_ok, _bt = _harness.attempt(_bt_build, "require-plan-bt-")
+    if not _bt_ok:
+        check("bt0 the task-worktree fixture builds (%s)" % (_bt,), False)
+    else:
+        _bt_prev = os.environ.get("CLAUDE_PROJECT_DIR")
+        os.environ["CLAUDE_PROJECT_DIR"] = _bt["main"]
+        try:
+            def _bt_edit(tree, rel, sid):
+                data = payload("Edit", os.path.join(tree, rel), new_string=big,
+                               old_string="export const a = 1;\n", sid=sid)
+                data["cwd"] = _bt["main"]
+                ok, got = _harness.attempt(
+                    M.decide, data, cfg=dict(_config.DEFAULTS),
+                    state_dir=Path(_bt["root"]) / "state",
+                    logs_dir=Path(_bt["root"]) / "logs", event="PreToolUse")
+                return got if ok else ("EXC", got)
+            _w = _bt["wt"]
+            _v = _bt_edit(_w["A"], "src/b.ts", "bt-1")
+            check("bt1 an edit in task P1.1's tree to a file only sibling "
+                  "P1.2 declares is refused, naming the sibling: %r" % (_v,),
+                  _v[0] == "block" and "P1.2" in _v[1])
+            _v = _bt_edit(_w["A"], "src/a.ts", "bt-1b")
+            check("bt1b ...and to the task's OWN file it is allowed - the "
+                  "mutation this is for is a binding that refuses everything: "
+                  "%r" % (_v,), _v[0] == "allow")
+            _v = _bt_edit(_bt["main"], "src/a.ts", "bt-2")
+            check("bt2 an edit in the PHASE tree to a file of a task bound to "
+                  "a worktree is refused, naming that worktree: %r" % (_v,),
+                  _v[0] == "block" and _w["A"] in _v[1])
+            _v = _bt_edit(_bt["main"], "src/c.ts", "bt-2b")
+            check("bt2b ...but a file of a task with no worktree is judged as "
+                  "before, and the refusal does not claim a binding: %r" % (_v,),
+                  "bound to" not in _v[1])
+            _v = _bt_edit(_w["U"], "src/a.ts", "bt-3")
+            _v2 = _bt_edit(_w["U"], "src/c.ts", "bt-3b")
+            check("bt3 an UNMARKED linked worktree resolves exactly as today - "
+                  "its own committed plan decides: a declared in_progress file "
+                  "is allowed, a pending task's is refused: %r %r" % (_v, _v2),
+                  _v[0] == "allow" and _v2[0] == "block"
+                  and "bound" not in _v2[1].lower())
+            _v = _bt_edit(_w["G"], "src/a.ts", "bt-4")
+            check("bt4 a marker naming a phase tree that does not exist fails "
+                  "LOUD, refusing even the task's own file: %r" % (_v,),
+                  _v[0] == "block" and "phase tree" in _v[1])
+            _v = _bt_edit(_w["N"], "src/a.ts", "bt-5")
+            check("bt5 a marker naming a task the phase tree does not hold "
+                  "fails loud: %r" % (_v,),
+                  _v[0] == "block" and "P1.9" in _v[1])
+            _v = _bt_edit(_w["C"], "src/c.ts", "bt-6")
+            check("bt6 a task still pending in the PHASE tree edits nothing, "
+                  "even its own file: %r" % (_v,),
+                  _v[0] == "block" and "P1.3" in _v[1])
+            _v = _bt_edit(_w["S"], "src/d.ts", "bt-7")
+            check("bt7 the status is read from the PHASE tree, never the "
+                  "worktree's stale shard: P1.4 is pending in the worktree's "
+                  "copy and in_progress in the phase tree, so its own file is "
+                  "allowed: %r" % (_v,), _v[0] == "allow")
+        finally:
+            if _bt_prev is None:
+                os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            else:
+                os.environ["CLAUDE_PROJECT_DIR"] = _bt_prev
+
     # (m) AN MCP SERVER'S WRITE TOOL IS THE SAME WRITE. It reaches no edit-tool
     # matcher, so a filesystem server's `write_file` used to walk past this gate
     # while `Edit` of the same path was refused - the disagreement `sed -i` had,

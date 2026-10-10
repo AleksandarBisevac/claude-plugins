@@ -284,6 +284,18 @@ _LOCK_WARN = (
 )
 
 
+_BINDING_BROKEN = (
+    "this tree is a task worktree whose binding cannot be proved, so nothing "
+    "is edited in it: %s (edit: %s). Repair or remove the worktree with "
+    "`manage-worktrees.py task-remove`.")
+_BOUND_OUTSIDE = (
+    "%s is outside task %s, the task this worktree is bound to (plan: %s): %s. "
+    "Only that task's files are open here.")
+_BOUND_ELSEWHERE = (
+    "%s belongs to task %s, which is bound to the worktree %s. Edit it there, "
+    "not in the phase tree.")
+
+
 def _deny_payload(msg):
     """Canonical PreToolUse deny payload (printed to stdout with exit 0)."""
     return {
@@ -783,6 +795,15 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
                 % (root, tree["basis"], file_path))
     root, rel = tree["root"], tree["rel"]
 
+    # 1c. A TASK WORKTREE IS BOUND TO ITS TASK. A marker the tree carries names
+    #     the task and the phase tree whose plan holds it; a marker that cannot
+    #     be proved (no such phase tree, task not in that plan, not in_progress
+    #     there) refuses every edit in the tree - a guard fails loud, and a
+    #     bound tree judged as an ordinary one is the gate switched off.
+    binding = _config.task_binding(root, manifest_rel)
+    if binding.get("error"):
+        return ("block", _BINDING_BROKEN % (rel, binding["error"]))
+
     # 2a. the manifest itself, its lockfile and its phase shards ARE the plan —
     #     never gated, even when a custom manifestPath falls outside the exempt
     #     globs.
@@ -853,6 +874,36 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
         return ("allow", "exempt path: %s" % rel)
 
     session_id = str(data.get("session_id", "") or "no-session")
+
+    # 2c. the binding decides, in both directions. In a bound tree only the
+    #     bound task's files and outputs are open - the verdict does not look at
+    #     any other task. In a tree that has task worktrees bound to it, a file
+    #     such a task covers belongs to that worktree, so an edit here is
+    #     refused naming it.
+    if binding["bound"]:
+        if _config.covering_key(binding["files"], rel) is not None \
+                or _config.covering_output(binding["outputs"], rel) is not None:
+            return ("allow", "covered by the bound task %s: %s"
+                    % (binding["taskId"], rel))
+        others = [d["taskId"] for d in _config.declaring_tasks(
+            binding["phaseTree"], manifest_rel, rel)
+            if d["taskId"] != binding["taskId"]]
+        return ("block", _BOUND_OUTSIDE % (
+            rel, binding["taskId"], binding["phaseTree"],
+            ("it is declared by %s, a different task" % ", ".join(others))
+            if others else "no task of this plan declares it for this one"))
+    away = _config.bound_worktrees(root)
+    if away:
+        mine = {w["taskId"]: w["worktree"] for w in away}
+        owners = [e["taskId"] for k, v in _config.in_progress_task_map(
+            root, manifest_rel).items() if _config.covering_key({k: 1}, rel)
+            for e in v]
+        owners += [o[1] for o in _config.in_progress_outputs(root, manifest_rel)
+                   if _config.covering_output([o], rel)]
+        held = [t for t in owners if t in mine]
+        if held:
+            return ("block", _BOUND_ELSEWHERE % (
+                rel, held[0], mine[held[0]]))
 
     # 3. covered by an in_progress task (exact match OR directory prefix match).
     #    A covered edit is allowed on every tier — but on the Post pass it may

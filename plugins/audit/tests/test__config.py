@@ -2337,6 +2337,49 @@ def _cases(check):
           "be loaded: %r" % ((_ck_dir, _ck_file),),
           _ck_dir is None and _ck_file is None)
 
+    # --- tb: a task worktree's binding, read from the marker -----------------
+    import _worktrees as _wtmod
+    check("tb1 the marker file name this hook reads is the one the writer "
+          "uses - two copies of a name, pinned by comparison",
+          M.TASK_MARKER_FILE == _wtmod.PROVENANCE_FILE,
+          "%r vs %r" % (M.TASK_MARKER_FILE, _wtmod.PROVENANCE_FILE))
+    _tb = tempfile.mkdtemp(prefix="config-tb-")
+    try:
+        def _tb_tree(name, marker):
+            tree = os.path.join(_tb, name)
+            admin = os.path.join(_tb, "admin-" + name)
+            os.makedirs(tree)
+            os.makedirs(admin)
+            with open(os.path.join(tree, ".git"), "w") as fh:
+                fh.write("gitdir: %s\n" % admin)
+            if marker is not None:
+                with open(os.path.join(admin, M.TASK_MARKER_FILE), "w") as fh:
+                    fh.write(marker if isinstance(marker, str)
+                             else json.dumps(marker))
+            return tree
+        _plain = os.path.join(_tb, "plain")
+        os.makedirs(os.path.join(_plain, ".git"))
+        check("tb2 an ordinary checkout is not bound",
+              M.task_binding(_plain, "p.json") == {"bound": False})
+        check("tb3 a linked worktree with no marker is not bound",
+              M.task_binding(_tb_tree("nomark", None), "p.json")
+              == {"bound": False})
+        check("tb4 a PHASE marker (no taskId) is not bound",
+              M.task_binding(_tb_tree("phase", {"createdBy": "audit",
+                                                "phaseId": "P1"}), "p.json")
+              == {"bound": False})
+        _got = M.task_binding(_tb_tree("junk", "{not json"), "p.json")
+        check("tb5 an unreadable marker is bound-and-broken, never 'not bound': %r"
+              % (_got,), _got.get("bound") is True and bool(_got.get("error")))
+        _got = M.task_binding(_tb_tree("nophase", {
+            "createdBy": "audit", "taskId": "T1"}), "p.json")
+        check("tb6 a task marker with no phaseTree is broken: %r" % (_got,),
+              _got.get("bound") is True and bool(_got.get("error")))
+        check("tb7 bound_worktrees of a repository with no linked worktree is "
+              "empty", M.bound_worktrees(_plain) == [])
+    finally:
+        _harness.remove_tree(_tb)
+
 
 def _selftest():
     return _harness.run(_cases)
