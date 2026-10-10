@@ -329,7 +329,7 @@
     {
       "id": "P123.6-z4y",
       "title": "a failing tool's output is excerpted head and tail with the failure lines kept, through one helper",
-      "status": "in_progress",
+      "status": "done",
       "description": "F598 + F553, one class from opposite ends: _scoped_commit cuts every refusal reason to (err or out).strip()[:200] (head only), so danuvia's lint-staged refusal kept the progress preamble and lost the failing check; verify.sh keeps only the tail of a failing step, so a failing vitest test could not be named. Choosing an end is the bug. Add one helper in a new scripts/_excerpt.py (L1; the five things CLAUDE.md lists for a new .py): head and tail of a failing tool's output with an explicit 'N chars elided' marker between, plus the lines matching a failure shape (✖, error, FAIL, ERR_) from the elided middle. Route every subprocess-output refusal reason through it: _scoped_commit's (the most cuts), _ado_fetch and _ado_connect's, and any other site in scripts/ that cuts git or tool OUTPUT (a title or a summary cut is a different thing and stays); journal rows keep the excerpt whole in details and clip only the summary (_journal_io._clip_marked). verify.sh's failing-step print keeps every FAIL/✖ line plus the tail. Add a lint in _output.py banning a bare .strip()[:N] / [:N] on a name bound from subprocess output, with a red-first allow case, and add it to prove-gates' table if that is how lints are proven here. A site outside the declared files is a scope widening, not a skip.",
       "files": [
         "plugins/audit/scripts/_excerpt.py",
@@ -372,19 +372,34 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2b9605486429",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "NEW scripts/_excerpt.py (excerpt, reason_of, failure_lines, is_excerpt, MAX_CHARS; head 100 + tail 220 + up to 3 failure lines from the elided middle + '[... N chars elided ...]' marker), layer: shares _machine_paths' layer in _deps.LAYERS; guide tree line, module map regenerated, section added. Routed every (err or out).strip()[:200] in _scoped_commit.py (15 sites), _ado_connect.py, _ado_fetch.py through it. _journal_io: a details value carrying the elision marker is kept whole (private _EXCERPT_VALUE_CHARS), other values still clip at MAX_VALUE_CHARS (summary still _clip_marked head-cut). _output.bare_output_cut_violations (+OUTPUT_RUNNERS, BARE_CUT_PENDING) lints head-only [:N>=40] cuts of names bound from runners / .stdout/.stderr / getattr(...,'stdout'). verify.sh: show_failure keeps FAIL/cross/ERR_/error lines from the dropped part plus the tail, used at all four failing-step prints. Tests: test__excerpt.py (9), test__scoped_commit sc30, test__output bc1-bc4 (+ covered lists), test__journal_io vt1b. SCOPE BLOCKED BY PLAN GATE (could not edit, need a new task): (1) tools/prove-gates.py needs a red row + allow row for bare_output_cut_violations (sweep red on prove-gates c1/a4 until then; suggested rows: replace 'def bare_output_cut_violations(dirs=None, pending=None):' body with return [] ; widen 'or sl.upper.value < OUTPUT_CUT_MIN' to '< 0'); (2) five scripts still cut output head-only, listed in _output.BARE_CUT_PENDING so the lint passes while they remain (a stale row is itself reported): git/close-phase.py (1408, plus an err[:160] at 1473 via _wt._runner that the lint cannot see), governance/drive-phase.py (817, 2588), manifest/ado-connect.py (131), status/_live_copy.py (118,162,170,414,450), status/audit-lookup.py (701,788,851). The follow-up replaces each with _excerpt.reason_of / excerpt and empties BARE_CUT_PENDING. The pre-existing layer_violations item for panel/_panel_state.py (render-report) is not mine.",
+        "descriptive": "One excerpt helper (both ends + failure lines + elided count) now backs every refusal reason in the scoped commit and ADO calls, the journal keeps it whole, verify.sh names the failing test, and a lint stops new head-only cuts; five out-of-scope scripts and prove-gates rows remain for a follow-up task."
       },
       "startedAt": "2026-10-10T08:31:42Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T09:28:07Z",
+      "verifiedBy": [
+        "test__scoped_commit.py sc30",
+        "test__excerpt.py ex1-ex9",
+        "test__output.py bc1-bc4",
+        "test__journal_io.py vt1b"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T09:28:06Z.ec0e3d",
         "status": "passed",
         "at": "2026-10-10T09:28:06Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "2b9605486429",
+        "at": "2026-10-10T09:28:07Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T08:48:49Z",
+        "basis": "`python3 plugins/audit/tests/test__scoped_commit.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 31 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code, its declared test files new at HEAD (plugins/audit/tests/test__excerpt.py) laid over as empty files), each passing with the working tree's implementation - sc30 (house FAIL): SELFTEST FAILED: 30/31 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
@@ -951,7 +966,9 @@
       "description": "`panel/_panel_usage._gate_catches_payload` wraps the evidence read in `except Exception: return []` and also ignores `read_rows(...)`'s own read problem (`.get('rows') or []`), so an unreadable ledger is indistinguishable from a project with no gate history. Latent: no UI reads `gateCatches` yet. Ship `{catches, readError}` with the same readError shape and sentence the evidence tab uses, before any UI reads it; `_usage_shape`'s default becomes the empty-but-readable value. Regression: a read that raises (or a ledger with an undecodable file) yields readError and no catches; an empty ledger yields no catches and no error. Faults: F525.",
       "files": [
         "plugins/audit/scripts/panel/_panel_usage.py",
-        "plugins/audit/tests/test__panel_usage.py"
+        "plugins/audit/tests/test__panel_usage.py",
+        "plugins/audit/README.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -986,7 +1003,18 @@
       "startedAt": "2026-10-10T09:05:38Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "notes": [
+        {
+          "at": "2026-10-10T09:29:46Z",
+          "text": "plugins/audit/README.md rides in this commit as P123.2's follower (its followed-table row for step stop-index-lock): P123.2 did not declare the README, so its commit left the row uncommitted - F612(a) again, fixed by P123.12. PLUGIN-BUILD-GUIDE.md carries this task's own module-map line."
+        }
+      ],
+      "testEvidence": {
+        "runId": "2026-10-10T09:38:54Z.628565",
+        "status": "passed",
+        "at": "2026-10-10T09:38:54Z"
+      }
     },
     {
       "id": "P123.18",

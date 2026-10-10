@@ -36,6 +36,7 @@ _output.install_path()
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _areas                 # noqa: E402  (meta.areas registry + shared resolution)
 import _evidence_io           # noqa: E402  (the ledger's own gate tally, at layer 2)
+import _manifest_vocab        # noqa: E402  (the ledger-read sentence the evidence tab uses)
 import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
 
 # Carried by module-level alias so every body below reads exactly as it did in
@@ -121,9 +122,9 @@ def _usage_shape(**overrides):
         # What the gates CAUGHT, beside what they cost - read off the evidence
         # ledger, which is independent of the usage ledger this shape is
         # otherwise built from. `[]` on every path that has not computed it
-        # yet, exactly like `facts` above; `_gate_catches_payload` is the one
+        # yet, exactly like `facts` above (empty but READABLE); `_gate_catches_payload` is the one
         # place that fills it.
-        "gateCatches": [],
+        "gateCatches": {"catches": [], "readError": None},
     }
     unknown = sorted(k for k in overrides if k not in shape)
     if unknown:
@@ -333,14 +334,24 @@ def _gate_catches_payload(project, config):
     `propose-gates.py` and `_doctor_trail.check_gate_patterns` already fold
     this ledger into. `_usage_economics.gate_catches` cannot read the ledger
     itself (`_evidence_io` sits at its own layer), so the counts are fetched
-    here and handed down as plain data. Fail-soft to `[]`: a card that cannot
-    answer is not the same failure as a tab that cannot load."""
+    here and handed down as plain data.
+
+    Returns `{"catches": [...], "readError": None | {"error", "basis"}}`. A card
+    that cannot answer is not the same failure as a tab that cannot load, but it
+    is not an empty history either: a read that raises, or one that lost a file
+    or a line, ships `readError` (the evidence tab's own shape and sentence) and
+    NO catches, because a tally over rows that were partly lost is a wrong tally."""
     try:
         ul = _load("audit_usage_ledger", "usage_ledger.py")
         manifest_path = _manifest_path(project, config)
         eproject, econfig = _evidence_io.project_config_for(
             manifest_path, project_dir=project)
-        rows = _evidence_io.read_rows(eproject, econfig).get("rows") or []
+        read = _evidence_io.read_rows(eproject, econfig)
+        if read.get("unreadable"):
+            return _gate_catches_read_error(
+                "%s ledger file(s) or line(s) could not be read"
+                % (read["unreadable"],))
+        rows = read.get("rows") or []
         tallies = {}
         for name in _evidence_io.gate_names_seen(rows):
             ran, failed = _evidence_io.gate_tally(rows, name)
@@ -348,9 +359,19 @@ def _gate_catches_payload(project, config):
                 "ran": ran, "failed": failed,
                 "lastFailedAt": _evidence_io.gate_last_caught(rows, name),
                 "costMs": _evidence_io.gate_cost_ms(rows, name)}
-        return ul.gate_catches(tallies, _evidence_io.MIN_HISTORY_RUNS)
-    except Exception:
-        return []
+        return {"catches": ul.gate_catches(tallies,
+                                           _evidence_io.MIN_HISTORY_RUNS),
+                "readError": None}
+    except Exception as exc:
+        return _gate_catches_read_error(exc)
+
+
+def _gate_catches_read_error(why):
+    """The no-catches payload that says WHY, in `_evidence_view`'s shape."""
+    return {"catches": [],
+            "readError": {"error": "%s" % (why,),
+                          "basis": _manifest_vocab.LEDGER_READ_FAILED
+                          % (why,)}}
 
 
 def usage_state(project):

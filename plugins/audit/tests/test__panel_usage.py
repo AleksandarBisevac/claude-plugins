@@ -100,7 +100,7 @@ def _cases(check):
     check("usage_state carries gateCatches even before any evidence is written "
           "- absent evidence reads as an empty list, never a missing key",
           M.usage_state(os.path.join(tmp, "no-evidence-proj")).get("gateCatches")
-          == [])
+          == {"catches": [], "readError": None})
     evdir = os.path.join(os.path.dirname(mpath), "evidence")
     os.makedirs(evdir, exist_ok=True)
     with open(os.path.join(evdir, "2026-08.jsonl"), "w", encoding="utf-8") as fh:
@@ -110,12 +110,52 @@ def _cases(check):
                 "steps": [{"name": "lint", "exit": exit_code,
                            "durationMs": 1000}]}) + "\n")
     ug = M.usage_state(proj)
-    _gc = dict((g["name"], g) for g in ug.get("gateCatches") or [])
+    _gc = dict((g["name"], g) for g in ug["gateCatches"]["catches"])
     check("usage_state's gateCatches folds the EVIDENCE ledger's own tally, "
           "not a second reading of it: %r" % (ug.get("gateCatches"),),
-          _gc.get("lint", {}).get("ran") == 2
+          ug["gateCatches"]["readError"] is None
+          and _gc.get("lint", {}).get("ran") == 2
           and _gc.get("lint", {}).get("failed") == 1
           and _gc.get("lint", {}).get("costMs") == 2000)
+    # An unreadable evidence ledger is NOT a project with no gate history.
+    _real_rr = M._evidence_io.read_rows
+    def _boom(*_a, **_k):
+        raise OSError("ledger dir vanished")
+    M._evidence_io.read_rows = _boom
+    try:
+        _raised = M.usage_state(proj)["gateCatches"]
+    finally:
+        M._evidence_io.read_rows = _real_rr
+    check("a read that raises ships readError and no catches: %r" % (_raised,),
+          _raised["catches"] == []
+          and isinstance(_raised["readError"], dict)
+          and "ledger dir vanished" in _raised["readError"]["error"]
+          and _raised["readError"]["basis"]
+          == M._manifest_vocab.LEDGER_READ_FAILED % "ledger dir vanished")
+    _bad = os.path.join(tmp, "bad-ledger")
+    os.makedirs(os.path.join(_bad, ".claude"), exist_ok=True)
+    _atomic_write_json(_paths._config_path(_bad), {"trivialLineThreshold": 40})
+    _atomic_write_json(os.path.join(_bad, "docs", "audit", "audit-plan.json"),
+                       _mio.load_manifest_safe(mpath))
+    _bev = os.path.join(_bad, "docs", "audit", "evidence")
+    os.makedirs(_bev, exist_ok=True)
+    with open(os.path.join(_bev, "2026-08.jsonl"), "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"ts": "2026-08-01T00:00:00Z", "runId": "g1",
+                             "steps": [{"name": "lint", "exit": 0,
+                                        "durationMs": 1}]}) + "\n")
+        fh.write("{this line is not json}\n")
+        fh.write(json.dumps({"ts": "2026-08-02T00:00:00Z", "runId": "g2",
+                             "steps": [{"name": "lint", "exit": 1,
+                                        "durationMs": 1}]}) + "\n")
+    _undec = M._gate_catches_payload(_bad, M.read_config(_bad))
+    check("a ledger with an unparseable line ships readError and no catches: %r"
+          % (_undec,),
+          _undec["catches"] == [] and _undec["readError"] is not None)
+    _empty = os.path.join(tmp, "empty-ledger")
+    os.makedirs(os.path.join(_empty, ".claude"), exist_ok=True)
+    _empty_gc = M._gate_catches_payload(_empty, M.read_config(_empty))
+    check("an empty ledger ships no catches and no error: %r" % (_empty_gc,),
+          _empty_gc == {"catches": [], "readError": None})
     # The other direction, and the one that looks vacuous: "read once" must mean
     # once PER REQUEST, not once per process. A manifest memoized across requests
     # would satisfy the count above and then serve a stale plan forever — the

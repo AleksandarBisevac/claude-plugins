@@ -379,7 +379,7 @@ L5:
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _panel_policy -> _areas, _config_rules, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
   _panel_runstate -> _doctor_report, _evidence_io, _journal_io, _locks, _output, _panel_paths
-  _panel_usage -> _areas, _evidence_io, _manifest_io, _output, _panel_paths
+  _panel_usage -> _areas, _evidence_io, _manifest_io, _manifest_vocab, _output, _panel_paths
   _panel_viewer -> _loader, _output, _panel_discovery, _panel_paths
   _proposals -> _fmt, _id_refs, _id_shape, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output
   _usage_detail -> _output, _ui_theme, _usage_economics, _usage_viz
