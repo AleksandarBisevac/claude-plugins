@@ -21,7 +21,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P122-R1",
@@ -101,11 +101,49 @@
         "file": "plugins/audit/scripts/governance/_evidence_io.py (LEDGER_KEPT_KEYS)",
         "issue": "The 'command' exemption is by key name at any depth of a ledger row, not by the step.command field the comment justifies, so any other 'command' string in a row is saved unscrubbed.",
         "resolution": "Key the exemption on the path (steps[*].command) or scrub commands against the plan's gate list instead."
+      },
+      {
+        "id": "P122-R12",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_proposals.py:686-690",
+        "issue": "P122.10 says a save that redacts a value says so in a journal row, but only the _panel_write route (_atomic_write_json, save_in_layout) journals. Other plan writers reach the scrubbing atomic_write_json / save_sharded / save_single_file / save_plan_json and drop the returned pointers: _proposals._save, audit-task.py save_single_file (~11451), _evidence_io save_plan_json (1808, 3790), close-phase._revalidated_write, migrate-manifest. The redaction is silent on those paths (the R3 shape).",
+        "resolution": "Carry with R3: route those writers through _panel_write.save_in_layout, or make the journaling part of the writer's caller contract. Not blocking: the scrub itself is applied on every one of them."
+      },
+      {
+        "id": "P122-R13",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:11451 and meta.buildCommands (executor-flagged)",
+        "issue": "The default scrub also rewrites meta.buildCommands on every CLI write. A gate command naming an interpreter under a home directory becomes the outside token and stops being runnable. When --project-dir is a subdirectory of the checkout, in-repo absolute paths become checkout-root-relative while gate steps run with cwd=project. Both pre-date P122.10 (save_sharded) but the new default widens them to every verb. The journal row names the pointer, so it is not silent, and check-committed-pii would have refused the committed original.",
+        "resolution": "Next phase: refuse a machine path in a gate entry at the door that sets it, or exempt gate entries from the scrub and let the PII backstop judge them."
+      },
+      {
+        "id": "P122-R14",
+        "severity": "low",
+        "file": "plugins/audit/scripts/_machine_paths.py:438 (keep=) and plugins/audit/scripts/governance/_evidence_io.py:100",
+        "issue": "scrubbed_values(keep=) has no caller left in scripts/ after the evidence ledger switched to positional steps[i].command; only the mp8 case pins it.",
+        "resolution": "Delete the parameter and mp8, or leave a note naming the reader it is kept for."
+      },
+      {
+        "id": "P122-R15",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:1566-1572 and :883-886",
+        "issue": "The comment at 1566-1567 still says 'a finding no fix task names'; the predicate is now the verb's, so a finding whose fix task never landed is offered too. The `status not in (accepted-open, carried)` guard restates two of the settled words after open_findings already excluded them. The --answer fix refusal says 'not open: F' for a finding that is open but already names a task, which misleads.",
+        "resolution": "Reword the comment, drop the redundant guard, and have the refusal say the finding already names a fix task and is dispositioned at sign-off."
       }
     ],
-    "outcome": "[findings: 11 - 1 high, 1 med, 9 low; 0 with a recorded fix commit]"
+    "outcome": "phase review filed at head df7ebedb1ae0 [findings: 15 - 1 high, 1 med, 13 low; 0 with a recorded fix commit]",
+    "readReturns": [
+      {
+        "return": "returns/P122/09aed798f46fd04e3b7061223197149da7e63a40.reviewer.json",
+        "sha256": "1d753866c8c8748f92dae3e41fb6952d8426009e8f6621ea98efa2c54b0f1475"
+      },
+      {
+        "return": "returns/P122/df7ebedb1ae0386fd3028c31da88e90d03f42587.reviewer.json",
+        "sha256": "1ce71314d96da40c244bb679b04126753d37946f06c72e5087be2b46734f1af1"
+      }
+    ]
   },
-  "summary": null,
+  "summary": "One covers() predicate decides coverage for every reader of task files (plan gate, guards, TDD nudge, commit-scope, staging, scope widening, run-test-gate, red fix tree); done refuses leftover work and start refuses empty files; findings carry their fix or disposition; bug fix tasks for test-only bugs are regression; a script's own --selftest is read only from its own arguments; every committed plan, journal and evidence write is scrubbed of machine paths by default, raw writes by name under a lint. Lows P122-R3..R15 are carried to the all-bugs phase of 3.3.0 (R13, buildCommands rewritten by the scrub, first). Reviewer answers accepted: Orchestrator under the user's standing mandate (2026-10-10, 'sve radis samostalno, bez prekida'): both divergences named finding P122-R1, which fix task P122.10-z4y closed; the re-review at df7ebedb answered intent: matches.",
   "tasks": [
     {
       "id": "P122.1",
@@ -173,9 +211,14 @@
         "at": "2026-10-09T19:48:20Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "db88fc75f933",
-        "at": "2026-10-09T19:48:21Z"
+        "at": "2026-10-10T02:32:16Z",
+        "return": "returns/P122/09aed798f46fd04e3b7061223197149da7e63a40.reviewer.json",
+        "answer": "matches",
+        "redFirst": "could-not-prove",
+        "redFirstBasis": "`sh -c python3 plugins/audit/tests/test__task_outputs.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 51/52 cases passed; 'covers' is not introduced by this task: HEAD already carries it in plugins/audit/scripts/manifest/_task_outputs.py, plugins/audit/hooks/_config.py, plugins/audit/hooks/require-plan.py, plugins/audit/hooks/guard-bash-writes.py, plugins/audit/hooks/guard-secrets-read.py, plugins/audit/hooks/remind-tdd.py, plugins/audit/reference/manifest-conventions.md; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main/node_modules and is not watched; the user's ~/.npmrc dropped (every run has a fresh home) (the red-first helper's block in returns/P122.1/20261009T193258Z.executor.json, at 2026-10-09T19:39:24Z)",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "every task's tests.gate runs `python3 tools/sweep-selftests.py`, which executes the whole tree's selftests, beside validate-manifest, `claude plugin validate`, the status --gate, render-report, ruff+vermin and two browser checks; a gate that runs a whole project is outside the question, so no inherited-test answer is given."
       },
       "redFirst": {
         "at": "2026-10-09T19:39:24Z",
@@ -249,9 +292,14 @@
         "at": "2026-10-09T20:24:57Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "98c31c8199d3",
-        "at": "2026-10-09T20:25:00Z"
+        "at": "2026-10-10T02:32:16Z",
+        "return": "returns/P122/09aed798f46fd04e3b7061223197149da7e63a40.reviewer.json",
+        "answer": "matches",
+        "redFirst": "could-not-prove",
+        "redFirstBasis": "`python3 -c import sys,runpy;sys.argv=['plugins/audit/tests/test__invariants.py','--selftest'];runpy.run_path(sys.argv[0],run_name='__main__')` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: ModuleNotFoundError: No module named '_harness'; HEAD's own tests on HEAD's code are not green (ModuleNotFoundError: No module named '_harness') - the command is already red (or unreadable) at HEAD - narrow it to the task's cases; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main/node_modules and is not watched; the user's ~/.npmrc dropped (every run has a fresh home) (the red-first helper's block in returns/P122.2/20261009T194822Z.executor.json, at 2026-10-09T20:02:30Z)",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "every task's tests.gate runs `python3 tools/sweep-selftests.py`, which executes the whole tree's selftests, beside validate-manifest, `claude plugin validate`, the status --gate, render-report, ruff+vermin and two browser checks; a gate that runs a whole project is outside the question, so no inherited-test answer is given."
       },
       "redFirst": {
         "at": "2026-10-09T20:02:30Z",
@@ -323,9 +371,14 @@
         }
       ],
       "intentCheck": {
-        "answer": "deferred",
         "commit": "57b43e5de32d",
-        "at": "2026-10-09T20:52:52Z"
+        "at": "2026-10-10T02:32:16Z",
+        "return": "returns/P122/09aed798f46fd04e3b7061223197149da7e63a40.reviewer.json",
+        "answer": "matches",
+        "redFirst": "could-not-prove",
+        "redFirstBasis": "`python3 -c import runpy,sys; f='plugins/audit/tests/test_stamp_verification.py'; sys.argv=[f,'--'+'selftest']; runpy.run_path(f, run_name='__main__')` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: ModuleNotFoundError: No module named '_harness'; HEAD's own tests on HEAD's code are not green (ModuleNotFoundError: No module named '_harness') - the command is already red (or unreadable) at HEAD - narrow it to the task's cases; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main/node_modules and is not watched; the user's ~/.npmrc dropped (every run has a fresh home) (the red-first helper's block in returns/P122.3/20261009T202501Z.executor.json, at 2026-10-09T20:35:39Z)",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "every task's tests.gate runs `python3 tools/sweep-selftests.py`, which executes the whole tree's selftests, beside validate-manifest, `claude plugin validate`, the status --gate, render-report, ruff+vermin and two browser checks; a gate that runs a whole project is outside the question, so no inherited-test answer is given."
       },
       "redFirst": {
         "at": "2026-10-09T20:35:39Z",
@@ -396,9 +449,14 @@
         "at": "2026-10-09T21:05:03Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "d3e851232295",
-        "at": "2026-10-09T21:05:04Z"
+        "at": "2026-10-10T02:32:16Z",
+        "return": "returns/P122/09aed798f46fd04e3b7061223197149da7e63a40.reviewer.json",
+        "answer": "matches",
+        "redFirst": "could-not-prove",
+        "redFirstBasis": "`sh -c python3 plugins/audit/tests/test_audit_task.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases lo2 (house FAIL), lo3 (house FAIL), lo5 (house FAIL), lo6 (house FAIL), lo7 (house FAIL), lo8 (house FAIL), but none is the task's own (lo2 a covered change left uncommitted refuses, names that path and not the uncovered one, offers `scope`, writes nothing: (0, 'WARNING: you are standing in /privatethe macOS per-user temp root/d1/pwtx3bsx53g9w4w6wslwxkjr0000gn/T/audit-red-itv557lc/tree, and this writes the plan under the macOS per-user temp root/d1/pwtx3bsx53g9w4w6wslwxkjr0000gn/T/audit-red-itv557lc/task-tmp-cq48gpcd/audit-task-stages-v6d_nkn4/lo-block.tmp/audit-task-lo-cyzvfi6h/covered -'): the runner locates it in no declared test file; lo3 an UNTRACKED file under a declared directory refuses: (0, 'WARNING: you are standing in /privatethe macOS per-user temp root/d1/pwtx3bsx53g9w4w6wslwxkjr0000gn/T/audit-red-itv557lc/tree, and this writes the plan under the macOS per-user temp root/d1/pwtx3bsx53g9w4w6wslwxkjr0000gn/T/audit-red-itv557lc/task-tmp-cq48gpcd/audit-task-stages-v6d_nkn4/lo-block.tmp/audit-task-lo-cyzvfi6h/untracked'): the runner locates it in no declared test file; lo5 a task declaring no files refuses on ANY change nobody else covers, naming it, and says the commit step staged none: (0, 'WARNING: you are standing in /privatethe macOS per-user temp root/d1/pwtx3bsx53g9w4w6wslwxkjr0000gn/T/audit-red-itv557lc/tree, and this writes the plan under the macOS per-user temp root/d1/pwtx3bsx53g9w4w6wslwxkjr0000gn/T/audit-red-itv557lc/task-tmp-cq48gpcd/audit-task-stages-v6d_nkn4/lo-block.tmp/audit-task-lo-cyzvfi6h/nofiles -'): the runner locates it in no declared test file; lo6 another in_progress task's files are not blamed (closes), while a change nobody covers still is, naming only it: (0, 'WARNING: you are standing in /privatethe macOS per-user temp root/d1/pwtx3bsx53g9w4w6wslwxkjr0000gn/T/audit-red-itv557lc/tree, and this writes the plan under the macOS per-user temp root/d1/pwtx3bsx53g9w4w6wslwxkjr0000gn/T/audit-red', 0, 'WARNING: you are standing in /privatethe macOS per-user temp root/d1/pwtx3bsx53g9w4w6wslwxkjr0000gn/T/audit-red-itv557lc/tree, and this writes the plan under the macOS per-user temp root/d1/pwtx3bsx53g9w4w6wslwxkjr0000gn/T/audit-red-itv557lc/task-tmp-cq48gpcd/audit-task-stages-v6d_nkn4/lo-block.tmp/audit-task-lo-cyzvfi6h/others-bo'): the runner locates it in no declared test file; lo7 only IN_PROGRESS tasks shield a change: a pending task's file is still refused: (0, 'WARNING: you are standing in /privatethe macOS per-user temp root/d1/pwtx3bsx53g9w4w6wslwxkjr0000gn/T/audit-red-itv557lc/tree, and this writes the plan under the macOS per-user temp root/d1/pwtx3bsx53g9w4w6wslwxkjr0000gn/T/audit-red'): the runner locates it in no declared test file; lo8 `start` refuses a tdd task with no files, says what to declare, writes nothing: (0, 'ARNING: task P1.3: tests.mode is \\'tdd\\' with expectRedFirst and no tests.add - a red-first task naming no case cannot be shown to have gone red. Name it with `/audit:task scope P1.3 --tests-add \"<case>\"`, or use mode \\'regression\\' or \\'gate-only\\' if no new test is owed\\n  written: docs/audit/audit-plan.json\\n  branch audit/p1-p1 cut from main at 3fc463be4893 -- phase P1\\'s edits and commits happen there'): the runner locates it in no declared test file) - a case is the task's only when the runner locates it in a declared test file (plugins/audit/tests/test_audit_task.py) whose named class defines it, with no identical def in HEAD's test files - SELFTEST FAILED: 903/909 cases passed; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main/node_modules and is not watched; the user's ~/.npmrc dropped (every run has a fresh home) (the red-first helper's block in returns/P122.4/20261009T205252Z.executor.json, at 2026-10-09T20:56:37Z)",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "every task's tests.gate runs `python3 tools/sweep-selftests.py`, which executes the whole tree's selftests, beside validate-manifest, `claude plugin validate`, the status --gate, render-report, ruff+vermin and two browser checks; a gate that runs a whole project is outside the question, so no inherited-test answer is given."
       },
       "redFirst": {
         "at": "2026-10-09T20:56:37Z",
@@ -472,9 +530,14 @@
         "at": "2026-10-09T21:23:15Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "c8a9da650aee",
-        "at": "2026-10-09T21:23:16Z"
+        "at": "2026-10-10T02:32:16Z",
+        "return": "returns/P122/09aed798f46fd04e3b7061223197149da7e63a40.reviewer.json",
+        "answer": "matches",
+        "redFirst": "not-attempted",
+        "redFirstBasis": "regression task, expectRedFirst false, so the mode owes none and the executor attempted none (its `at` says prep run, not by me). I checked by reading and by mutation in a scratch copy: overlaying db88fc75^ versions of hooks/_config.py, guard-bash-writes.py, guard-secrets-read.py and remind-tdd.py made ck1, ck3, k4b, d2, d1b and we4b fail (and cv2-cv4); the shared-prefix twins ck2, k4c, d3, d1c, we4c stay green on both trees by design. This is my observation, not a helper verdict.",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "every task's tests.gate runs `python3 tools/sweep-selftests.py`, which executes the whole tree's selftests, beside validate-manifest, `claude plugin validate`, the status --gate, render-report, ruff+vermin and two browser checks; a gate that runs a whole project is outside the question, so no inherited-test answer is given."
       },
       "redFirst": {
         "status": "not-attempted",
@@ -546,9 +609,14 @@
         "at": "2026-10-09T21:54:40Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "c425bbd7dbb3",
-        "at": "2026-10-09T21:54:41Z"
+        "at": "2026-10-10T02:32:16Z",
+        "return": "returns/P122/09aed798f46fd04e3b7061223197149da7e63a40.reviewer.json",
+        "answer": "matches",
+        "redFirst": "could-not-prove",
+        "redFirstBasis": "`sh -c python3 plugins/audit/tests/test_audit_task.py --self\"\"test` in a throwaway tree at HEAD exited 1 with failing cases gs6t (house FAIL), fd1 (house FAIL), fd2 (house FAIL), fd3 (house FAIL), fd5 (house FAIL), fd6 (house FAIL), fd8 (house FAIL), but none is the task's own (gs6t the GROUP sign-off derives each member's tally from its own findings - the typed one is replaced where a finding stands under it and dropped where none does: (0, (2, ''), [None, '[findings: 1 - 0 high, 1 med, 0 low; 0 with a recorded fix commit]']): the runner locates it in no declared test file; fd1 closing the task `add --fixes` linked writes the commit and `status: fixed` onto its finding in the close itself, and leaves the other finding without either: (0, {'id': 'P1-R1', 'severity': 'med', 'file': 'src/a.ts', 'issue': 'i', 'resolution': 'r', 'fixTask': 'P1.2'}, {'id': 'P1-R2', 'severity': 'med', 'file': 'src/a.ts', 'issue': 'i', 'resolution': 'r'}): the runner locates it in no declared test file; fd2 sign-off over an open finding with no disposition is refused naming that finding and not the fixed one, and writes nothing: (0, \"tree changes. The plan gate reads the in_progress task's `files` from whichever manifest it finds, so a scope widened in the other tree does not unblock the edit it was made for.\\n  Not a refusal -- /audit:worktree creates this pairing on purpose. To write THIS tree instead, pass `--project-dir /privatethe macOS per-user temp root/d1/pwtx3bsx53g9w4w6wslwxkjr0000gn/T/audit-red-jkka5di0/tree` or name a manifest under it.\\n[audit-task] phase P1 signed off (skipped) -- now done\\n  stored phase P1.status: in_progress -> done (every task terminal, review.status skipped, no branch)\\n  written: docs/audit/audit-plan.json\"): the runner locates it in no declared test file; fd3 ALLOW: with the open finding accepted on a reason, sign-off records `accepted-open` and the reason on it, and the tally reads one recorded fix commit: (2, {'id': 'P1-R2', 'severity': 'med', 'file': 'src/a.ts', 'issue': 'i', 'resolution': 'r'}, 'reviewed [findings: 2 - 0 high, 2 med, 0 low; 0 with a recorded fix commit]'): the runner locates it in no declared test file; fd5 `--carried` naming nothing in the plan is refused writing nothing, and one naming a task records `carried` and where: ((2, True), 2, {'id': 'P1-R1', 'severity': 'med', 'file': 'src/a.ts', 'issue': 'i', 'resolution': 'r'}): the runner locates it in no declared test file; fd6 `--accept-open` naming a fixed or unknown finding is refused by name, writing nothing: (2, ''): the runner locates it in no declared test file; fd8 `resolve-finding` writes the same `fixed` status the close does: {'id': 'P1-R2', 'severity': 'med', 'file': 'src/a.ts', 'issue': 'i', 'resolution': 'fixed in P1.2 (0123456789ab): r', 'fixTask': 'P1.2', 'commit': '0123456789abcdef0123456789abcdef01234567'}: the runner locates it in no declared test file) - a case is the task's only when the runner locates it in a declared test file (plugins/audit/tests/test_audit_task.py, plugins/audit/tests/test__status_facts.py, plugins/audit/tests/test_drive_phase.py, plugins/audit/tests/test_audit_status.py) whose named class defines it, with no identical def in HEAD's test files - SELFTEST FAILED: 910/917 cases passed; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P122.6-z4y/20261009T212317Z.executor.json, at 2026-10-09T21:35:11Z)",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "every task's tests.gate runs `python3 tools/sweep-selftests.py`, which executes the whole tree's selftests, beside validate-manifest, `claude plugin validate`, the status --gate, render-report, ruff+vermin and two browser checks; a gate that runs a whole project is outside the question, so no inherited-test answer is given."
       },
       "redFirst": {
         "at": "2026-10-09T21:35:11Z",
@@ -618,9 +686,14 @@
         "at": "2026-10-09T23:07:05Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "872e07ca0db8",
-        "at": "2026-10-09T23:07:06Z"
+        "at": "2026-10-10T02:32:16Z",
+        "return": "returns/P122/09aed798f46fd04e3b7061223197149da7e63a40.reviewer.json",
+        "answer": "matches",
+        "redFirst": "could-not-prove",
+        "redFirstBasis": "`sh -c python3 plugins/audit/tests/test_audit_task.py --selftest --stage bf-block` in a throwaway tree at HEAD exited 1 with failing cases bf1 (house FAIL), bf7 (house FAIL), bf2 (house FAIL), bf3 (house FAIL), bf4 (house FAIL), bf5 (house FAIL), bf6 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 0/7 cases passed; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main/node_modules and is not watched; the user's ~/.npmrc dropped (every run has a fresh home) (the red-first helper's block in returns/P122.7-z4y/20261009T215442Z.executor.json, at 2026-10-09T22:58:46Z)",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "every task's tests.gate runs `python3 tools/sweep-selftests.py`, which executes the whole tree's selftests, beside validate-manifest, `claude plugin validate`, the status --gate, render-report, ruff+vermin and two browser checks; a gate that runs a whole project is outside the question, so no inherited-test answer is given."
       },
       "redFirst": {
         "at": "2026-10-09T22:58:46Z",
@@ -831,9 +904,14 @@
         "at": "2026-10-09T23:28:07Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "f23f53721e4c",
-        "at": "2026-10-09T23:28:08Z"
+        "at": "2026-10-10T02:32:16Z",
+        "return": "returns/P122/09aed798f46fd04e3b7061223197149da7e63a40.reviewer.json",
+        "answer": "matches",
+        "redFirst": "could-not-prove",
+        "redFirstBasis": "`sh -c python3 plugins/audit/tests/test__output.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 197/198 cases passed; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main/node_modules and is not watched; the user's ~/.npmrc dropped (every run has a fresh home) (the red-first helper's block in returns/P122.8-z4y/20261009T230707Z.executor.json, at 2026-10-09T23:19:21Z)",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "every task's tests.gate runs `python3 tools/sweep-selftests.py`, which executes the whole tree's selftests, beside validate-manifest, `claude plugin validate`, the status --gate, render-report, ruff+vermin and two browser checks; a gate that runs a whole project is outside the question, so no inherited-test answer is given."
       },
       "redFirst": {
         "at": "2026-10-09T23:19:21Z",
@@ -916,9 +994,14 @@
         "at": "2026-10-10T00:06:07Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "09aed798f46f",
-        "at": "2026-10-10T00:06:08Z"
+        "at": "2026-10-10T02:32:16Z",
+        "return": "returns/P122/09aed798f46fd04e3b7061223197149da7e63a40.reviewer.json",
+        "answer": "diverges",
+        "redFirst": "could-not-prove",
+        "redFirstBasis": "`sh -c python3 plugins/audit/tests/test__manifest_io.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases ws1 (house FAIL), ws3 (house FAIL), but none is the task's own (ws1 a shard save whose red basis names the real project root and a home path writes the root repo-relative and the home as the outside token - neither machine spelling reaches the shard: '{\\n  \"id\": \"P1\",\\n  \"title\": \"t\",\\n  \"status\": \"pending\",\\n  \"tasks\": [\\n    {\\n      \"id\": \"P1.1\",\\n      \"title\": \"plain words\",\\n      \"status\": \"pending\",\\n      \"redFirst\": {\\n        \"basis\": \"sandbox at the macOS per-user temp root/d1/pwtx3bsx53g9w4w6wslwxkjr0000gn/T/audit-red-98nxp0ep/task-tmp-zr6jy74z/manifest-scrub': the runner locates it in no declared test file; ws3 the single-file layout passes through the same scrub: '{\\n  \"meta\": {\\n    \"version\": 2\\n  },\\n  \"phases\": [\\n    {\\n      \"id\": \"P1\",\\n      \"title\": \"t\",\\n      \"status\": \"pending\",\\n      \"tasks\": [\\n        {\\n          \"i': the runner locates it in no declared test file) - a case is the task's only when the runner locates it in a declared test file (plugins/audit/tests/test__manifest_io.py, plugins/audit/tests/test__journal_io.py, plugins/audit/tests/test__evidence_io.py, plugins/audit/tests/test__machine_paths.py, plugins/audit/tests/test__output.py, plugins/audit/tests/test_close_phase.py, plugins/audit/tests/test__panel_write.py, plugins/audit/tests/test__invariants.py) whose named class defines it, with no identical def in HEAD's test files - SELFTEST FAILED: 173/176 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P122.9-z4y/20261009T234428Z.executor.json, at 2026-10-09T23:57:30Z)",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "every task's tests.gate runs `python3 tools/sweep-selftests.py`, which executes the whole tree's selftests, beside validate-manifest, `claude plugin validate`, the status --gate, render-report, ruff+vermin and two browser checks; a gate that runs a whole project is outside the question, so no inherited-test answer is given."
       },
       "redFirst": {
         "at": "2026-10-09T23:57:30Z",
@@ -1013,7 +1096,7 @@
     {
       "id": "P122.11-z4y",
       "title": "the driver and the verb share one definition of an open finding",
-      "status": "in_progress",
+      "status": "done",
       "description": "Finding P122-R2 (med): drive-phase.open_findings counts findings with no fixTask, while audit-task's open_findings counts findings whose status is not settled and that lack fixTask plus commit. A finding naming a fix task with no commit (closed --no-change, cancelled, or closed by an older plugin copy) is open to the verb and settled to the driver, so a drive that passes --accept-open for the driver's set is refused at sign-off. One predicate, owned by the verb module, read by the driver (it already loads audit-task's helpers or can ask the verb for the open set), with a case for each of the three shapes.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1050,14 +1133,17 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "df7ebedb1ae0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Moved SETTLED_STATUS and open_findings(phase) into _manifest_phases.py (pin case of1 in test__manifest_phases.py, ids renamed fa..fe to clear the register-citation lint rc16). audit-task.py aliases both (SETTLED_STATUS = _phases.SETTLED_STATUS; open_findings = _phases.open_findings). drive-phase.open_findings now calls _phases.open_findings; the _loader.load_script line is gone, so test__deps r2 is satisfied with no KNOWN_LAYER_DEBT entry. Ran selftests: test__deps 307/307, test__manifest_phases 122/122, test_drive_phase 138/138, test_audit_task 926/926 (all exit 0), ruff check plugins/audit tools clean. PLUGIN-BUILD-GUIDE.md untouched this attempt; g1 did not ask for regeneration.",
+        "descriptive": "The driver and the verb now read one open-finding predicate owned by _manifest_phases, with no layer debt."
       },
       "startedAt": "2026-10-10T01:34:45Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T02:10:36Z",
+      "verifiedBy": [
+        "test__manifest_phases of1",
+        "test_drive_phase of1 (no-change fix task offered for disposition)"
+      ],
       "fixes": [
         "P122-R2"
       ],
@@ -1072,14 +1158,25 @@
         "runId": "2026-10-10T02:10:36Z.d1c8e1",
         "status": "passed",
         "at": "2026-10-10T02:10:36Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "df7ebedb1ae0",
+        "at": "2026-10-10T02:10:36Z",
+        "basis": "a fix task for P122-R2: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-10T01:49:41Z",
+        "basis": "`sh -c python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases of1 (house FAIL), of2 (house FAIL), of4 (house FAIL), of3 (house FAIL), but none is the task's own (of1 a finding naming a fix task closed --no-change (no commit) is offered for disposition at sign-off, with the finding no task names and the one whose task never landed; landed, fixed and carried ones are not: ['F-none', 'F-fixed', 'F-carried']: the runner locates it in no declared test file; of2 the driver's open set is the verb's, id for id: ['F-none', 'F-fixed', 'F-carried']: the runner locates it in no declared test file; of4 --answer fix over a finding naming a task that never landed is refused by the driver, which offers disposition: None: the runner locates it in no declared test file; of3 a phase whose findings are all settled offers none: [{'id': 'F-fixed', 'status': 'fixed'}]: the runner locates it in no declared test file) - a case is the task's only when the runner locates it in a declared test file (plugins/audit/tests/test_drive_phase.py, plugins/audit/tests/test_audit_task.py, plugins/audit/tests/test__manifest_phases.py) whose named class defines it, with no identical def in HEAD's test files - SELFTEST FAILED: 134/138 cases passed; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from <project>, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in <project>/node_modules and is not watched; the user's npm config (.npmrc in the home directory) dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     }
   ],
   "reviewPerTask": "phase",
-  "claim": {
-    "sessionId": "0a7c2fcc-df20-4990-96d6-d56b52648faf",
-    "branch": "audit/p122-one-rule-decides-whether-a-dec",
-    "at": "2026-10-09T19:32:58Z"
-  },
-  "startedAt": "2026-10-09T19:32:58Z"
+  "startedAt": "2026-10-09T19:32:58Z",
+  "testEvidence": {
+    "runId": "2026-10-10T02:31:58Z.36441b",
+    "status": "passed",
+    "at": "2026-10-10T02:31:58Z"
+  }
 }
