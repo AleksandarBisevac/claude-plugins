@@ -1199,6 +1199,34 @@ def _brief_cases(check):
           and not says("P1.2", "red-first:", "`not-proved`")
           and not says("P1.3", "inherited tests:", "`flagged`"))
 
+    # ---- a wave task's brief says which tree it works in --------------------
+    # The tree comes from the driver's state, which is where `add_tree` records
+    # it; a task with no tree in that state (width 1) gets none of the lines.
+    proj_w, mpath_w = project("bf-wave", _bf_manifest())
+    plain_w = brief(proj_w, mpath_w, "P1.1", "executor")
+    plain_text = read(brief_file(proj_w, "P1.1", "20260101T000000Z.executor.md")) or ""
+    state_w = os.path.join(proj_w, ".claude", "state", "drive", "P1.json")
+    os.makedirs(os.path.dirname(state_w))
+    with open(state_w, "w", encoding="utf-8") as fh:
+        json.dump({"wave": {"id": "P1-w1", "base": "b" * 40, "tasks": ["P1.1"],
+                            "trees": {"P1.1": "/work/tree-P1.1", "P1.9": "/work/other"}}},
+                  fh)
+    brief(proj_w, mpath_w, "P1.1", "executor")
+    wave_text = read(brief_file(proj_w, "P1.1", "20260101T000000Z.executor.md")) or ""
+    wave_lines = wave_text.splitlines()
+    check("bf40 a wave task's brief carries its own `tree:` and `base:` lines, "
+          "the `cd <tree> &&` rule for every command and the never-commit rule, "
+          "and not a sibling's tree: %r" % (plain_w[0],),
+          "tree: /work/tree-P1.1" in wave_lines and ("base: " + "b" * 40) in wave_lines
+          and "cd /work/tree-P1.1 &&" in wave_text
+          and "never commit" in wave_text.lower()
+          and "/work/other" not in wave_text)
+    check("bf41 the same task's brief at width 1 (no tree in the driver's state) "
+          "carries none of those lines: %r" % (plain_text[:80],),
+          plain_text != "" and not any(
+              ln.startswith(("tree:", "base:")) for ln in plain_text.splitlines())
+          and "cd " not in plain_text and "never commit" not in plain_text.lower())
+
     code6, said6 = brief(proj, mpath, "P1", "executor")
     check("bf11 a phase id asked for a task's role, or a task id for the "
           "phase's, is a miss rather than a brief about the wrong thing: %r"

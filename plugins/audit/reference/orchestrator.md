@@ -265,16 +265,20 @@ contradiction to REPORT (`/audit:phase priority` is what changes it). In the sha
 field lives on the **index stub** only; a copy in a shard body is ignored, and the validator says
 it was.
 
-**Parallel safety:** tasks whose `files` sets are disjoint AND whose `dependsOn` lists are mutually satisfied may
-run in parallel (spawn multiple Agents in one message). Tasks sharing a file or linked via `dependsOn` run sequentially.
+**Concurrency is `executor.waveWidth`, and only the driver decides it.** Absent means 1: one task at
+a time, in id order, in the phase tree. Above 1 the driver picks the ready tasks whose `files` are
+disjoint and whose `dependsOn` are satisfied, gives each a worktree of its own (the `tree:` and
+`base:` lines of its brief), prints their dispatches together (step `dispatch-wave`), and
+integrates each green tree into the phase tree serially. You dispatch only what `next` printed;
+a task you chose to run beside it is not a wave, and it edits the tree the others are measured in.
 
 **That rule is about the FILE SYSTEM and says nothing about the machine, which is the larger
 source of false failures.** Disjoint `files` keeps two executors from writing over each other;
 it does nothing about the cores, the ports and the scratch directories they share. A full suite
 takes all three, and two of them on one host produce reds that neither change caused — a port
 already bound, a worker starved by another measurement, a fixture directory two runs both chose.
-So **the gates are the part that must not overlap**: let executors edit in parallel, and run each
-task's gate where no other full suite is running. `run-test-gate.py` prints a `machine:` line on
+So **the gates are the part that must not overlap**: run each task's gate where no other full
+suite is running. `run-test-gate.py` prints a `machine:` line on
 every recorded run saying whether it had the host to itself and naming the other recorded gate
 runs that shared its window; on a red it also prints `claimed:`, which says whether the verdict
 is this run's to claim at all. **Neither line moves an exit code** — they are observations beside
@@ -724,8 +728,8 @@ A phase can run many tasks, gates, and a merge — don't go silent. Emit a short
 step happens** so a long run stays legible (not one dump at the end):
 
 - **Phase entry:** `> PHASE <id> "<title>" — branch <branch> — N tasks ready`.
-- **Each task, at start:** `  > <taskId> "<title>" (model, tests.mode) — running`; when tasks run in
-  parallel, print the group first (`  > parallel: <id>, <id>`).
+- **Each task, at start:** `  > <taskId> "<title>" (model, tests.mode) — running`; for a wave, print the group
+  first (`  > parallel: <id>, <id>`).
 - **Each task, on return:** `  [OK] <taskId> — gates green, committed <shortSHA>` /
   `  [FAIL] <taskId> — <gate> failed (attempt k/max)` / `  [BLOCKED] <taskId> — attempts exhausted` /
   `  [INFRA] <taskId> — <gate> could not run (human action item)` /

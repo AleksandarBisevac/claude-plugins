@@ -1,0 +1,25 @@
+{
+  "gates": {
+    "test_audit_lookup": "pass",
+    "test__refs": "pass",
+    "test_drive_phase": "pass",
+    "test__deps": "pass",
+    "test__output": "pass",
+    "measure-context --gate": "pass",
+    "ruff": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T04:44:24Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_lookup.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 79 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bf40 (house FAIL): SELFTEST FAILED: 78/79 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "audit-lookup.py: new wave_tree_lines reads the driver state (_fr.drive_state, wave.trees/base) and compose_executor_brief adds a Tree section (tree:, base:, cd <tree> && rule, never commit) only when the task has a tree there; width 1 gets none. Tests bf40 (wave brief) and bf41 (width-1 brief carries none) in test_audit_lookup.py: 79/79. orchestrator.md: the stale Parallel-safety paragraph replaced in place by one on executor.waveWidth and dispatch-wave, plus two dependent stale phrases (let executors edit in parallel; parallel group in progress lines). plugins/audit/README.md followed-from row re-anchored to step dispatch-executor and step dispatch-wave (test__refs 334/334 incl. followed_anchor_drift) and the /audit:phase row's serial wording qualified. phase.md description says one at a time or as waves (phase run form stays 3962/4000). audit-executor.md gains one bullet on tree:/base: briefs (executor 7316/9000); reviewer unchanged at 6995/7000, run.md unchanged (nothing stale in it). Also ran test_drive_phase 159/159, test__deps 307/307, test__output 225/225, ruff clean. Note: the brief's README.md path was read as plugins/audit/README.md, where the followed-from table lives; the root README.md was not touched.",
+    "descriptive": "A wave executor's brief now states its tree, base and cd/never-commit rules; width 1 briefs are unchanged; the stale parallel-tasks paragraph is replaced."
+  },
+  "testsAdded": [
+    "bf40 wave task brief carries tree/base lines, cd rule, never commit",
+    "bf41 width-1 brief carries none"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:b5b674efb5f73593ccdcd2fd3c7bf839226c2d5f126952cbc685b775be3aa75f\",\"dirtyDigest\":\"sha256:c8efeb43cd77a342a04be6c799e46171b39890badc356cbcc6496813617c351f\",\"dirtyPaths\":{\"plugins/audit/README.md\":\"5608e385999c19b2\",\"plugins/audit/agents/audit-executor.md\":\"55f88ae34b80d47a\",\"plugins/audit/commands/phase.md\":\"74c8a2c4bb8000bb\",\"plugins/audit/reference/orchestrator.md\":\"5ba88d75f859bbbf\",\"plugins/audit/scripts/status/audit-lookup.py\":\"7241e4f9c4312aff\",\"plugins/audit/tests/test_audit_lookup.py\":\"2ba4aefbae03e474\"},\"head\":\"6a221c93\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"README.md\",\"plugins/audit/agents/audit-executor.md\",\"plugins/audit/agents/audit-reviewer.md\",\"plugins/audit/commands/phase.md\",\"plugins/audit/commands/run.md\",\"plugins/audit/reference/orchestrator.md\",\"plugins/audit/scripts/status/audit-lookup.py\",\"plugins/audit/tests/test_audit_lookup.py\"],\"scopeDigest\":\"sha256:083fe0aebc4ca04a077931c6b42d45dad6777949c5bde08487a77d2bdca4a7dc\",\"v\":2}"
+}

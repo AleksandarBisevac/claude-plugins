@@ -438,7 +438,7 @@
     {
       "id": "P124.7",
       "title": "the driver runs a phase's ready disjoint tasks as a wave, each gated in its own tree and integrated serially; executor.waveWidth (absent = 1)",
-      "status": "in_progress",
+      "status": "done",
       "description": "F600 design A5, sections 4.1-4.2, D1/D3/D9: sort ready tasks by id; call integrate-task in id order over green tasks; write wave.start, task.worktree, task.integrated, task.integration.refused, wave.done rows; scope --files for widened paths before commit-task-work; re-gate when regate is true or null. Declare executor.waveWidth, executor.worktreeSetup and executor.worktreeRoot (schema, rules, README, COMPATIBILITY: absent changes nothing); init writes waveWidth auto into new configs.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -489,14 +489,22 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6a221c93ee38",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: executor.waveWidth read through wave_width(config) (absent/1 = the serial drive_phase unchanged; invalid = a stop naming it; auto = max(1, cpu-2) with its basis). wave_step opens a wave when no task is in progress and _wave.select picks >=2 ready tasks (natural id order): wave.start row, each member started and given a tree via manage-worktrees task-add --base HEAD [--path <worktreeRoot>/<repo>-<id>] with a task.worktree row. Each next walks members in id order through advance(..., tree=): gate with run-test-gate --tree, stamp graded in the tree, dispatches collected into one print under WAVE_RULE; a member's decision is parked and becomes pending only when nothing else is due. Before close: integrate-task (task.integrated row, or task.integration.refused row + integration-refused decision retry|block; exit 3 -> undeclared-change decision widen|discard|block, widen runs audit-task scope --files existing+new), integration marked in state before close_task, re-gate on the phase tree when regate is true or null (or after widen), reopen of integrate-task's (task, base) entry on a new start. Terminal member trees whose changed bytes equal the phase tree are removed with task-remove --force, else kept and named; when every member is terminal or blocked, wave.done and the wave is dropped. submit reads the task's tree from the driver state (stateDir) and runs red/take there. Config: KNOWN_EXECUTOR + checks + wave_width_setting in _config_rules, schema, hooks/_config.py DEFAULTS (waveWidth 1) and docstring, README table rows, COMPATIBILITY.md absent-changes-nothing paragraph, init.md step 7.5 writes waveWidth auto into a config it creates. Outside files: _panel_settings.py (three Settings controls + help; the gate allowed it) and PLUGIN-BUILD-GUIDE.md module-map line for drive-phase -> _wave (gate allowed it). settings.js edit for a number-or-auto control was REFUSED by the plan gate (declared by done P105.4), so waveWidth is a text control. Own stages: 21/21 pass; full sweep 322/322 files ok exit 0; ruff, vermin, gate-parity, measure-context --gate exit 0.",
+        "descriptive": "a phase now runs its ready disjoint tasks as waves in their own worktrees when executor.waveWidth > 1, and an absent key or width 1 reproduces the 3.2.0 drive"
       },
       "startedAt": "2026-10-10T04:05:25Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T04:40:01Z",
+      "verifiedBy": [
+        "test_drive_phase.py wv1-wv8, wv5m",
+        "test_drive_phase.py wr1-wr3",
+        "test_drive_phase.py wc1-wc2",
+        "test_drive_phase.py w1, w1m",
+        "test_drive_phase.py wz1, wa1, wa2, wu1, wu2",
+        "test__config_rules.py ww1-ww4",
+        "test_validate_config.py cc1w, cc1a"
+      ],
       "reviewPerTask": "phase",
       "notes": [
         {
@@ -508,12 +516,22 @@
         "runId": "2026-10-10T04:40:00Z.541b73",
         "status": "passed",
         "at": "2026-10-10T04:40:00Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "6a221c93ee38",
+        "at": "2026-10-10T04:40:01Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T04:31:16Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage wv-block --stage wr-block --stage wc-block --stage w1-block --stage wz-block` in a throwaway tree at HEAD exited 1 with failing cases wv1 (house FAIL), wv3 (house FAIL), wv4 (house FAIL), wv5 (house FAIL), wv6 (house FAIL), wv7 (house FAIL), wv8 (house FAIL), wr1 (house FAIL), wr2 (house FAIL) and 5 more, but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 3/18 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
       "id": "P124.8",
       "title": "briefs, prompts and docs say which tree a wave task works in",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F600 design A6: replace orchestrator.md's stale parallel-tasks paragraph (the source of F595's confusion) instead of adding beside it; keep followed_anchor_drift green with the README row anchored to dispatch-wave. Mind measure-context's byte ceilings on command bodies.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -550,16 +568,22 @@
       "dependsOn": [
         "P124.7"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T04:40:02Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T04:52:13Z.7c7743",
+        "status": "passed",
+        "at": "2026-10-10T04:52:13Z"
+      }
     },
     {
       "id": "P124.9",

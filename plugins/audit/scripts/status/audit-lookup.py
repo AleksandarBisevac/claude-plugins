@@ -494,6 +494,25 @@ def _verbatim(text, absent):
     return [text] if isinstance(text, str) and text.strip() else [absent]
 
 
+def wave_tree_lines(ctx, phase, task):
+    """The lines that tell a wave member where it works: its own tree, the
+    commit the tree was cut at, and the rules that follow from it. Read from the
+    driver's state, where `add_tree` records the tree; a task with no tree there
+    - width 1, or a phase not driven in waves - gets no line at all."""
+    body, _problem = _fr.drive_state(ctx["state"], str(phase.get("id")))
+    wave = body.get("wave") if isinstance(body.get("wave"), dict) else {}
+    trees = wave.get("trees") if isinstance(wave.get("trees"), dict) else {}
+    tree = trees.get(str(task.get("id")))
+    if not isinstance(tree, str) or not tree:
+        return []
+    return ["tree: %s" % (tree,),
+            "base: %s" % (wave.get("base"),),
+            "You work in this tree, not the project's. Begin every command "
+            "with `cd %s &&`, and edit only files under it." % (tree,),
+            "Never commit there: the driver carries your bytes into the phase "
+            "tree, and the orchestrator commits."]
+
+
 def compose_executor_brief(manifest, phase, task, ctx, files, gate):
     """The executor's whole brief, as lines. `files` is `brief_lookup`'s payload
     and `gate` the `executor.runsGate` reading with its basis."""
@@ -506,6 +525,9 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
              % (tid, task.get("title"), attempts, task.get("startedAt"), pid,
                 phase.get("title")),
              "The rules and the return shape are agents/audit-executor.md's."]
+    tree_lines = wave_tree_lines(ctx, phase, task)
+    if tree_lines:
+        lines += _section("Tree", tree_lines)
     skills = _areas.resolve_skills(manifest, phase, task)
     lines += _section("Skills", [
         "Invoke each via the Skill tool before touching code, in this order:"]

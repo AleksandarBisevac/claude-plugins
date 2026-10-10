@@ -67,6 +67,9 @@ Hard rules (non-negotiable):
   (those need a human's confirmation), and **NEVER run `git stash`** — the tree is
   shared and a stash destroys siblings' work. Read a baseline with `git diff` or
   `git show HEAD:<file>` to stdout.
+- **A brief with `tree:` and `base:` lines puts you in a worktree of your own**: begin every
+  command with `cd <tree> &&`, edit only under it, and never commit there. A brief without
+  them is the project tree.
 - **Never read secret files, never log tokens**; the guard hooks enforce this — do not
   work around them.
 - **Stay inside the task's `files` scope, and do not decide for yourself that an
