@@ -205,6 +205,35 @@ def _cases(check):
           "alone - every rule report.css contributes must survive theming",
           "table.phases" in _thhtml and "prefers-reduced-motion" in _thhtml
           and 'id="audit-theme"' in _thhtml)
+    # The project a default-layout plan is rendered for, with no session behind
+    # the render: <T>, never the manifest's own docs/audit - and not a stray
+    # .claude/ a hand-run gate left there either. The theme is the observable,
+    # because it is read off the same `_proj` the evidence and the panel config
+    # are read off.
+    _dl = os.path.join(tmp, "default-layout")
+    os.makedirs(os.path.join(_dl, ".git"), exist_ok=True)
+    os.makedirs(os.path.join(_dl, ".claude"), exist_ok=True)
+    os.makedirs(os.path.join(_dl, "docs", "audit", ".claude"), exist_ok=True)
+    with open(os.path.join(_dl, ".claude", "audit.theme.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"tokens": {"--accent": {"$value": "#7a1fa2",
+                                           "$dark": "#e040fb"}}}, fh)
+    _dlm = os.path.join(_dl, "docs", "audit", "audit-plan.json")
+    with open(_dlm, "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh)
+    _prev = os.environ.pop("CLAUDE_PROJECT_DIR", None)
+    try:
+        M.main([_dlm, "--out-dir", _dl])
+    finally:
+        if _prev is not None:
+            os.environ["CLAUDE_PROJECT_DIR"] = _prev
+    with open(os.path.join(_dl, "audit-report.html"), encoding="utf-8") as fh:
+        _dlhtml = fh.read()
+    check("rp1 RED-FIRST: a default-layout plan rendered with CLAUDE_PROJECT_DIR "
+          "unset reads <T>'s project files - its theme is compiled in - not the "
+          "manifest's own docs/audit, stray .claude/ there or not (mutation: "
+          "the project is the manifest's directory -> red)",
+          "--accent:#7a1fa2" in _dlhtml)
     check("th-r3 an untheme'd project renders exactly what it always did",
           ("--accent:%s" % _theme.DEFAULT_THEME["--accent"]["$value"])
           in _report_ui.CSS

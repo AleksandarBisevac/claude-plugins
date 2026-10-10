@@ -617,8 +617,51 @@ def _cases(check):
         _harness.remove_tree(feed_tmp)
 
 
+def _stray_cases(check):
+    """The record directory a gate took for the project, named by the doctor."""
+    cfgmod = _loader.load_hooks_config()
+    tmp = _harness.fixture_root("doctor-stray-")
+    try:
+        audit = os.path.join(tmp, "docs", "audit")
+        os.makedirs(audit)
+        rep = base.Report()
+        M.check_local_artifacts(rep, tmp, {}, cfgmod, None, None)
+        check("sr1 ALLOW: a plan with nothing beside it says so, and names the "
+              "plan it looked beside: %r" % (_detail(rep, "record dirs"),),
+              _levels(rep, "record dirs") == ["OK"]
+              and "docs/audit/audit-plan.json" in _detail(rep, "record dirs"))
+        os.makedirs(os.path.join(audit, ".claude", "logs"))
+        os.makedirs(os.path.join(audit, "docs", "audit", "evidence"))
+        rep = base.Report()
+        M.check_local_artifacts(rep, tmp, {}, cfgmod, None, None)
+        said = _detail(rep, "record dirs")
+        check("sr2 RED-FIRST: a .claude/ in docs/audit and a docs/audit/docs "
+              "are each a WARNING naming the path - and asked even with no git "
+              "root, where the rest of the hygiene row answers nothing: %r"
+              % (said,),
+              _levels(rep, "record dirs") == ["WARNING", "WARNING"]
+              and "docs/audit/.claude" in said and "docs/audit/docs" in said)
+        flat = _harness.fixture_root("doctor-stray-flat-")
+        try:
+            os.makedirs(os.path.join(flat, ".claude"))
+            rep = base.Report()
+            M.check_local_artifacts(rep, flat, {"manifestPath": "plan.json"},
+                                    cfgmod, None, None)
+            check("sr3 ALLOW: a plan kept at the project root shares the "
+                  "project's own .claude/, and that is not a stray: %r"
+                  % (_detail(rep, "record dirs"),),
+                  _levels(rep, "record dirs") == ["OK"])
+        finally:
+            _harness.remove_tree(flat)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _stray_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

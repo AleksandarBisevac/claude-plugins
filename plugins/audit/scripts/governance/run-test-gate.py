@@ -4194,10 +4194,13 @@ def _own_log_dir(manifest_path, project_dir):
     """The directory `--own`'s raw log lands in, made and self-ignoring.
 
     `_evidence_io.project_config_for` is the SAME resolution the evidence
-    ledger already uses - a project-dir override, else `CLAUDE_PROJECT_DIR`,
-    else the manifest's OWN directory - asked again here so the log and the
+    ledger already uses - a project-dir override, else
+    `_output.project_of_manifest` - asked again here so the log and the
     evidence it is deliberately NOT part of are sited by one rule and not
-    two that could disagree about where "this manifest's project" is.
+    two that could disagree about where "this manifest's project" is. They
+    did disagree once: this log fell back to the manifest's own directory,
+    so the first hand-run gate made `docs/audit/.claude/`, and the ledger's
+    walk then took that marker for the project's root.
 
     NOT UNDER THE EVIDENCE DIRECTORY, on purpose: that directory is
     COMMITTED (`_evidence_io`'s own module docstring), and this log is
@@ -4650,10 +4653,10 @@ def main(argv, out=print):
                 "pointer from this path for it to repair")
             return E_ASK
     # THE PLUGIN'S ONE ANSWER to which project a named manifest belongs to
-    # (`_panel_write.project_of_manifest`), the one `full-gate.py`,
-    # `import-evidence.py` and `audit-task.py` ask - never a count of
-    # directories, which is right only for `<T>/docs/audit/<file>` and records
-    # anywhere else into a ledger outside the project.
+    # (`_output.project_of_manifest`, re-exported by `_panel_write` and asked
+    # through it here and by `full-gate.py` and `import-evidence.py`) - never a count of directories, which is right only for
+    # `<T>/docs/audit/<file>` and records anywhere else into a ledger outside
+    # the project.
     project = args.project_dir or _panel_write.project_of_manifest(
         args.manifest)
     tree, tree_err = tree_of(args, project)

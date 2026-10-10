@@ -8381,6 +8381,71 @@ def _layout_project_cases(check):
         _harness.remove_tree(base)
 
 
+def _hand_run_project_cases(check):
+    """A FRESH repository - `.git` and nothing else, no `.claude/` - gated by
+    hand: no `--project-dir`, no `CLAUDE_PROJECT_DIR`, the manifest named
+    RELATIVE to the directory the shell stands in. The first run is `--own`,
+    which writes a raw log; the second and third record. Every run must site
+    itself in the repository: the log under `<root>/.claude`, the rows in
+    `<root>/docs/audit/evidence` - and neither a `.claude/` beside the manifest
+    nor a doubled `docs/audit/docs/audit` may come into being, because the
+    first is what made every later run answer `docs/audit` as the project."""
+    root = _mini_repo("run-test-gate-handrun-")
+    here = os.getcwd()
+    env_was = os.environ.pop("CLAUDE_PROJECT_DIR", None)
+    try:
+        audit = os.path.join(root, "docs", "audit")
+        os.makedirs(audit)
+        ok = os.path.join(root, "ok_test.py")
+        with open(ok, "w") as fh:
+            fh.write("print('1 passed')\n")
+        entry = "%s tests/test_ok.py" % (_step(sys.executable, ok),)
+        with open(os.path.join(audit, "audit-plan.json"), "w") as fh:
+            json.dump({"meta": {"version": 3, "buildCommands": {"ok": "true"}},
+                       "phases": [{"id": "P1", "title": "p",
+                                   "status": "in_progress", "testGate": ["ok"],
+                                   "tasks": [{"id": "P1.1", "title": "t",
+                                              "status": "in_progress",
+                                              "tests": {
+                                                  "gateBasis": "declared",
+                                                  "gate": [entry],
+                                                  "add": ["tests/test_ok.py: "
+                                                          "covers ok"]}}]}]},
+                      fh)
+        rel = os.path.join("docs", "audit", "audit-plan.json")
+        os.chdir(root)
+        said = []
+        codes = [M.main([rel, "P1", "--own", "--task", "P1.1", "--quiet"],
+                        out=said.append),
+                 M.main([rel, "P1", "--record"], out=said.append)]
+        # The same plan named absolutely from somewhere else entirely: the
+        # project still comes from the manifest, never from the shell's cwd.
+        os.chdir(here)
+        codes.append(M.main([os.path.join(root, rel), "P1", "--record"],
+                            out=said.append))
+        rows = _ev_io.read_rows(root)["rows"]
+        strays = [p for p in (os.path.join(audit, ".claude"),
+                              os.path.join(audit, "docs"))
+                  if os.path.exists(p)]
+        logs = [ln.split("raw log:", 1)[1].strip() for ln in said
+                if "raw log:" in ln]
+        check("hr1 RED-FIRST: a fresh repo gated by hand - relative manifest, "
+              "no --project-dir, no CLAUDE_PROJECT_DIR - records both runs in "
+              "<root>/docs/audit/evidence and its raw log under <root>/.claude, "
+              "and creates no <manifest dir>/.claude and no docs/audit/docs "
+              "(mutation: site the log by the manifest's own directory -> "
+              "red): %r" % ((codes, len(rows), strays, logs),),
+              codes == [M.E_OK, M.E_OK, M.E_OK] and len(rows) == 2
+              and strays == [] and len(logs) == 1
+              and os.path.realpath(logs[0]).startswith(
+                  os.path.realpath(os.path.join(root, ".claude")) + os.sep))
+    finally:
+        os.chdir(here)
+        if env_was is not None:
+            os.environ["CLAUDE_PROJECT_DIR"] = env_was
+        _harness.remove_tree(root)
+
+
 def _full_scope_cases(check):
     # --- the third arm's own refusals: no git, no manifest needed at all ----
     lines = []
@@ -9346,6 +9411,7 @@ def _selftest():
         _crowd_cases(check)
         _full_scope_cases(check)
         _layout_project_cases(check)
+        _hand_run_project_cases(check)
         _selection_miss_cases(check)
     return _harness.run(body)
 

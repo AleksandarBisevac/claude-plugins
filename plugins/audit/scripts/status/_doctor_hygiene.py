@@ -256,6 +256,52 @@ def check_gate_feed(rep, project, cfg, cfg_mod):
                  "make one edit, and re-run")
 
 
+# --- checks: a record directory a gate took for the project --------------------
+def stray_record_dirs(project, manifest_rel):
+    """`[(path, what)]` - each directory beside the plan that only a run siting
+    itself by the manifest's OWN directory could have made.
+
+    Two shapes, both left by one mistake: the manifest's directory taken for
+    the project. A `.claude/` there (when that directory is not the project
+    itself) is the raw gate log's home under that mistake, and a
+    `docs/audit` under it is the evidence that was then recorded one layout
+    deeper than anything reads. `_output.project_of_manifest` no longer takes
+    such a `.claude/` for a project root, so it is harmless to the resolver -
+    but what was recorded inside it is invisible, which is the reader's to
+    know.
+    """
+    mdir = os.path.dirname(os.path.join(project, manifest_rel))
+    found = []
+    if os.path.normpath(mdir) != os.path.normpath(project) \
+            and os.path.isdir(os.path.join(mdir, ".claude")):
+        found.append((os.path.join(mdir, ".claude"),
+                      "a .claude/ in the plan's own directory, which is not the "
+                      "project"))
+    doubled = os.path.join(mdir, *_output.RECORD_DIR_SHAPE)
+    if os.path.isdir(doubled):
+        found.append((os.path.join(mdir, _output.RECORD_DIR_SHAPE[0]),
+                      "a record directory nested inside the plan's own, where "
+                      "evidence was recorded that no check reads"))
+    return found
+
+
+def check_stray_record_dirs(rep, project, cfg, cfg_mod):
+    """Name a stray record directory beside the plan, or say none was found."""
+    manifest_rel = str((cfg or {}).get("manifestPath")
+                       or cfg_mod.DEFAULTS["manifestPath"])
+    strays = stray_record_dirs(project, manifest_rel)
+    if not strays:
+        rep.ok("record dirs", "no stray .claude/ or doubled docs/audit beside "
+                              "%s" % (manifest_rel,))
+        return
+    for path, what in strays:
+        rep.warn("record dirs",
+                 "%s - %s" % (_output.posix_rel(path, project), what),
+                 "a gate run sited itself by the manifest's directory; move "
+                 "anything worth keeping out of it, delete it, and re-run "
+                 "the gate for any run recorded only there")
+
+
 # --- checks: locks & local artifacts --------------------------------------------
 def check_locks(rep, git_root, project, manifest_rel):
     """A held lock is why a command refuses; a stale one is why it refuses wrongly.
@@ -442,7 +488,13 @@ def check_local_artifacts(rep, project, cfg, cfg_mod, manifest, git_root):
     that no hook has touched since. WARNING at most: a tracked ledger is a
     privacy leak, not evidence of forgery. The journal is deliberately NOT
     in this list — it is the opposite kind of artifact and must stay tracked
-    (check_journal warns about the reverse)."""
+    (check_journal warns about the reverse).
+
+    THE STRAY RECORD DIRECTORY IS ASKED FIRST, and here rather than as a row of
+    its own in the doctor's sequence: it is a local artifact in the wrong
+    place, and it is worth naming whether or not git is present - so it runs
+    before the no-git answer below returns."""
+    check_stray_record_dirs(rep, project, cfg, cfg_mod)
     if not git_root or not shutil.which("git"):
         rep.ok("hygiene", "not a git repository - local artifacts cannot "
                "reach version control")

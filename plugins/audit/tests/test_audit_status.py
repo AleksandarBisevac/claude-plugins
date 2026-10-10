@@ -110,9 +110,9 @@ def _own_project(root=None):
     and removes it. Every case in this file that names the project goes
     through here, so the restore exists once.
 
-    The bare render injects the locks of the project `audit-status.py` is
-    anchored at - `CLAUDE_PROJECT_DIR`, else the working directory - and locks
-    live in the git dir every worktree of a clone shares. Left ambient, a case
+    The bare render injects the locks of the checkout the plan is in
+    (`_output.project_of_manifest`), and locks live in the git dir every
+    worktree of a clone shares. Left ambient, a case
     comparing that render with a hand-built `render_status` reads whatever
     lock a real run holds in the checkout the suite happens to run inside, and
     fails there while passing in the sweep's scratch directory. Both sides of
@@ -2992,8 +2992,16 @@ def _cases(_record):
                     _sh_proj, "phase-P2", note="/audit:phase P2",
                     session="own-project-fixture", pid=os.getpid(),
                     out=_sh_quiet))
+                # The plan sits IN the fixture's repository: the locks the
+                # render reads are the checkout the plan is in, never the
+                # session's or the shell's.
+                _sh_in = os.path.join(_sh_proj, "docs", "audit",
+                                      "audit-plan.json")
+                os.makedirs(os.path.dirname(_sh_in), exist_ok=True)
+                with open(_sh_in, "w", encoding="utf-8") as fh:
+                    json.dump(_sh_fx, fh)
                 try:
-                    _sh_c5, _sh_o5, _sh_e5 = _sh_cli([_sh_path])
+                    _sh_c5, _sh_o5, _sh_e5 = _sh_cli([_sh_in])
                 finally:
                     _lockmod.release(_sh_proj, "phase-P2",
                                      session="own-project-fixture",
@@ -4206,10 +4214,57 @@ def _success_line_cases(check):
                                                "--verbose"], root))
 
 
+def _other_checkout_cases(check):
+    """`/audit:status` run from ANOTHER checkout, no session behind it, answers
+    about the checkout the plan is in. The discovery block is the observable:
+    it is read off the same project the full-run, invariant, lock and
+    portability blocks are, and it is the one a fixture can answer without a
+    git history."""
+    import contextlib as _ctx_oc
+    import io as _io_oc
+    import tempfile as _tf_oc
+    base = _tf_oc.mkdtemp(prefix="audit-status-other-")
+    here = os.getcwd()
+    env_was = os.environ.pop("CLAUDE_PROJECT_DIR", None)
+    try:
+        plan_co = os.path.join(base, "plan-checkout")
+        other = os.path.join(base, "other-checkout")
+        os.makedirs(os.path.join(plan_co, ".git"))
+        os.makedirs(os.path.join(other, ".git"))
+        skill = os.path.join(plan_co, ".claude", "skills", "plan-own-skill")
+        os.makedirs(skill)
+        with open(os.path.join(skill, "SKILL.md"), "w", encoding="utf-8") as fh:
+            fh.write("---\nname: plan-own-skill\ndescription: d\n---\n")
+        os.makedirs(os.path.join(plan_co, "docs", "audit"))
+        mpath = os.path.join(plan_co, "docs", "audit", "audit-plan.json")
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump({"meta": {"version": 3},
+                       "phases": [{"id": "P1", "title": "p", "status": "pending",
+                                   "tasks": []}]}, fh)
+        os.chdir(other)
+        buf = _io_oc.StringIO()
+        with _ctx_oc.redirect_stdout(buf):
+            code = M.main([mpath, "--json", "--discovery"])
+        names = [r.get("name") for r in
+                 (json.loads(buf.getvalue()).get("discovery") or {})
+                 .get("skills") or []] if code == 0 else []
+        check("oc1 RED-FIRST: run with the cwd in another checkout and "
+              "CLAUDE_PROJECT_DIR unset, status reads the PLAN's checkout - its "
+              "own skill is discovered (mutation: the project is the cwd -> "
+              "red): %r" % ((code, names),),
+              code == 0 and "plan-own-skill" in names)
+    finally:
+        os.chdir(here)
+        if env_was is not None:
+            os.environ["CLAUDE_PROJECT_DIR"] = env_was
+        shutil.rmtree(base, ignore_errors=True)
+
+
 def _selftest():
     def body(record):
         _cases(record)
         _resolve_cases(record)
+        _other_checkout_cases(record)
         _harness.stage(record, "lb", _locked_copy_cases)
         _unfinished_header_cases(record)
         _harness.stage(record, "lw", _live_copy_cases)

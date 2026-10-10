@@ -591,9 +591,11 @@ def build_parser():
                     "and refusing the rest.")
     parser.add_argument("manifest")
     parser.add_argument("task")
-    parser.add_argument("--project", default=".",
+    parser.add_argument("--project", default=None,
                         help="the directory holding .claude/ and the records "
-                             "(default: the current directory)")
+                             "(default: the project the manifest is in - "
+                             "its git toplevel, or the nearest .claude/ "
+                             "outside its docs/audit directory)")
     parser.add_argument("--subject", default=None,
                         help="the commit subject after the conventional prefix; "
                              "say what the task did")
@@ -796,7 +798,11 @@ def main(argv, out=print):
         sys.stderr.write("ERROR: no task %r in %s\n" % (args.task, args.manifest))
         return E_USAGE
 
-    project = os.path.abspath(args.project)
+    # The manifest's own project, never the shell's cwd, unless a root was
+    # named: the remedy this command prints names the gate without a project
+    # flag, and that command resolves its project by the same walk.
+    project = os.path.abspath(args.project) if args.project \
+        else _output.project_of_manifest(args.manifest)
     git_root = _invariants.git_root_for(manifest, project)
     if not shutil.which("git"):
         out("%s git is not on PATH, so nothing can be committed at all. Nothing "

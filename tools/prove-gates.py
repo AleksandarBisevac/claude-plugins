@@ -483,6 +483,13 @@ TABLE = (
   "def returns_writer_violations(script_dir=None):\n"
   "    return []",
   OUT, "rw1"),
+ # The one-project-resolver rule, met by a new site in the real tree: a project
+ # taken as dirname of a manifest path is the shape that sited a gate's record in
+ # `docs/audit/docs/audit`, and the live-tree case has to see it.
+ ("manifest_dirname_project_violations", S + "_fmt.py", "after", INSTALL,
+  "\n\ndef _probe_project(manifest_path):\n"
+  "    project = os.path.dirname(manifest_path)\n"
+  "    return project\n", OUT, "md4"),
  # The one-tree rule, crippled. It is what keeps a hook from reading the main
  # checkout's plan for work in a linked worktree, and a version reporting
  # nothing reads exactly like hooks that all ask `_config.tree_for`.
@@ -1445,6 +1452,15 @@ ALLOW = (
  ("returns_writer_violations", S + "_output.py", "replace",
   "            if built and wrote:",
   "            if built or wrote:", OUT, "rw2"),
+ # The one-project-resolver rule, its table ignored: a site the table names with
+ # its reason would be convicted anyway, and `md2`'s fixture holds one.
+ ("manifest_dirname_project_violations", S + "_output.py", "replace",
+  "            if (rel, where) not in allowed:\n"
+  "                violations.append(\n"
+  "                    (rel, \"line %d (%s): derives a project",
+  "            if True:\n"
+  "                violations.append(\n"
+  "                    (rel, \"line %d (%s): derives a project", OUT, "md2"),
  # The one-tree rule, widened to every `repo_root`. The config and the
  # session's own state live with the project on purpose, so a hook resolving
  # the project for those alone is honest code this would convict.

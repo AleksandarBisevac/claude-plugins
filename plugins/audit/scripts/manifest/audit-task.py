@@ -1534,12 +1534,14 @@ def _rescope_refusal(tid, task, blockers):
 
 
 # --- project resolution --------------------------------------------------------
-# An ALIAS, not a copy. The body moved into `_panel_write` when `set-priority.py`
-# needed the same answer: a second command deriving "which project owns this
-# manifest" by its own walk is a second answer, and the two would drift on exactly
-# the markerless case. The name stays here because this file spells
+# An ALIAS, not a copy. The body lives in `_output.project_of_manifest`, the
+# lowest layer, so the evidence ledger, the gate's raw log, the report and the
+# status read resolve the same root this command writes the journal under: a
+# second walk answering "which project owns this manifest" is a second answer,
+# and two of them did drift - one sited a `.claude/` beside the manifest and the
+# other took it for the project. The name stays here because this file spells
 # it unqualified and its suite asks for it by hand.
-_project_of_manifest = _panel_write.project_of_manifest
+_project_of_manifest = _output.project_of_manifest
 
 
 def resolve_basis(args):

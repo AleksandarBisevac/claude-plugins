@@ -3803,8 +3803,47 @@ def _full_status_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _project_config_cases(check):
+    """`project_config_for` with no project named answers the checkout the
+    plan is in - never the session's project and never the manifest's own
+    directory."""
+    base = _harness.fixture_root("evidence-project-config-")
+    env_was = os.environ.get("CLAUDE_PROJECT_DIR")
+    try:
+        root = os.path.join(base, "repo")
+        os.makedirs(os.path.join(root, ".git"))
+        os.makedirs(os.path.join(root, "docs", "audit", ".claude"))
+        mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+        with open(mpath, "w", encoding="utf-8") as fh:
+            fh.write("{}")
+        os.environ["CLAUDE_PROJECT_DIR"] = os.path.join(base, "elsewhere")
+        project, config = M.project_config_for(mpath)
+        check("pc1 RED-FIRST: with no project named, the project is the plan's "
+              "git toplevel - not CLAUDE_PROJECT_DIR naming another checkout, "
+              "not the manifest's own docs/audit, and not a stray .claude/ "
+              "there - so the record is <root>/docs/audit/evidence: %r"
+              % ((project, M.evidence_dir(project, config)),),
+              project == root
+              and M.evidence_dir(project, config)
+              == os.path.join(root, "docs", "audit", "evidence"))
+        os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        named = os.path.join(base, "named")
+        check("pc2 ALLOW: a project named by the caller still wins: %r"
+              % (M.project_config_for(mpath, named)[0],),
+              M.project_config_for(mpath, named)[0] == named)
+    finally:
+        if env_was is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = env_was
+        _harness.remove_tree(base)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _project_config_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

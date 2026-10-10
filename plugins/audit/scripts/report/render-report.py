@@ -453,10 +453,12 @@ def main(argv):
     boundary = boundary_for(manifest_path)
     # The project root every disk read below resolves against - the in-flight
     # reader, the theme, the third place's own ledger read, and (a few lines
-    # down) the panel config. One read rather than a second guess of
-    # CLAUDE_PROJECT_DIR that could answer differently.
-    _proj = os.environ.get("CLAUDE_PROJECT_DIR") or os.path.dirname(
-        os.path.abspath(manifest_path)) or "."
+    # down) the panel config. The checkout the plan is in
+    # (`_output.project_of_manifest`), the answer the gate recorded the evidence
+    # under - not `CLAUDE_PROJECT_DIR`, which may name another checkout, and not
+    # the manifest's own directory, which is `docs/audit` on a default plan and
+    # read `docs/audit/docs/audit/evidence`, where nothing is ever recorded.
+    _proj = _output.project_of_manifest(manifest_path)
     # A PHASE WORKED ON ELSEWHERE IS SHOWN AS ITS LIVE COPY HOLDS IT, read by
     # the one reader `/audit:status` and the panel use and laid over the plan
     # by the same `live_view`, so the three agree on what is ready. Every row

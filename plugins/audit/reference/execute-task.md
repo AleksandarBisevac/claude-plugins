@@ -237,6 +237,11 @@ verb writes and refuses, and what the run commands leave behind, is
          <manifestPath> <phaseId> --task <taskId> --record
      ```
 
+     It needs no `--project-dir`: with none it records into the project the manifest is in —
+     its git toplevel, or its nearest `.claude/` outside its `docs/audit` directory
+     (`_output.project_of_manifest`) — from whatever directory it is run, with or without a
+     session behind it.
+
      The subagent's own run is what it develops against; **this** run is the one that becomes
      evidence. It has to be yours and not its, for the reason the script exists at all: the
      bracket, the check count, the coverage answer and the tree comparison are only true of a run

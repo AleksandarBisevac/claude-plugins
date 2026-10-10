@@ -3468,8 +3468,123 @@ def _finding_code_cases(check):
           % (len(found), bare), len(found) > 10 and bare == [])
 
 
+def _project_of_manifest_cases(check):
+    """The one answer to which project a manifest belongs to."""
+    base = _harness.fixture_root("audit-project-of-")
+
+    def mk(*parts):
+        path = os.path.join(base, *parts)
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    def plan(*parts):
+        path = os.path.join(mk(*parts), "audit-plan.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("{}")
+        return path
+
+    try:
+        repo = mk("repo")
+        mk("repo", ".git")
+        mk("repo", "docs", "audit", ".claude", "logs")
+        mk("repo", "docs", "audit", "docs", "audit", ".claude")
+        got = M.project_of_manifest(plan("repo", "docs", "audit"))
+        check("po1 RED-FIRST: a .claude/ a gate left in the plan's own docs/audit "
+              "is never taken for the project - the git toplevel answers "
+              "(mutation: accept any .claude/ -> docs/audit): %r" % (got,),
+              got == repo)
+        got = M.project_of_manifest(plan("repo", "docs", "audit", "docs",
+                                         "audit"))
+        check("po2 ...nor is one anywhere inside a DOUBLED record directory: "
+              "%r" % (got,), got == repo)
+        sub = mk("repo", "packages", "web")
+        mk("repo", "packages", "web", ".claude")
+        got = M.project_of_manifest(plan("repo", "packages", "web", "docs",
+                                         "audit"))
+        check("po3 ALLOW: a project nested in a larger repository keeps its own "
+              ".claude/ root, outside the record directory (mutation: answer "
+              "the git toplevel alone -> red): %r" % (got,), got == sub)
+        wt = mk("wt")
+        with open(os.path.join(wt, ".git"), "w", encoding="utf-8") as fh:
+            fh.write("gitdir: /elsewhere\n")
+        mk("wt", "docs", "audit", ".claude")
+        got = M.project_of_manifest(plan("wt", "docs", "audit"))
+        check("po4 a linked worktree's .git FILE is a toplevel too: %r" % (got,),
+              got == wt)
+        bare = mk("bare")
+        got = (M.project_of_manifest(plan("bare", "docs", "audit")),
+               M.project_of_manifest(plan("bare", "plans")))
+        check("po5 markerless: a default-layout plan belongs to the directory "
+              "above docs/audit, any other to its own directory: %r" % (got,),
+              got == (bare, os.path.join(bare, "plans")))
+        ex = mk("repo", "examples", "store")
+        mk("repo", "examples", "store", ".claude")
+        got = M.project_of_manifest(plan("repo", "examples", "store"))
+        check("po6 ALLOW: a plan kept beside its own project's .claude/, outside "
+              "any record directory, belongs to that directory: %r" % (got,),
+              got == ex)
+    finally:
+        _harness.remove_tree(base)
+
+    # ---------------------------------- a project derived by dirname arithmetic
+    md = _harness.fixture_root("audit-dirname-project-")
+    try:
+        def _md(rel, text):
+            full = os.path.join(md, *rel.split("/"))
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w", encoding="utf-8") as fh:
+                fh.write(text)
+
+        _md("assign.py", "import os\n"
+                         "def f(manifest_path):\n"
+                         "    project = os.environ.get('X') or os.path.dirname(\n"
+                         "        os.path.abspath(manifest_path))\n"
+                         "    return project\n")
+        _md("sub/kw.py", "import os\n"
+                         "def g(mpath, h):\n"
+                         "    return h(project_dir=os.path.dirname(mpath))\n")
+        _md("ret.py", "import os\n"
+                      "def project_root(mpath):\n"
+                      "    return os.path.dirname(os.path.abspath(mpath))\n")
+        _md("quiet.py", "import os\n"
+                        "def out_dir(manifest_path):\n"
+                        "    base = os.path.dirname(os.path.abspath(manifest_path))\n"
+                        "    project = resolve(manifest_path)\n"
+                        "    return base, project\n")
+        _md("listed.py", "import os\n"
+                         "def legacy(mpath):\n"
+                         "    proj = os.path.dirname(mpath)\n"
+                         "    return proj\n")
+        md_table = (("listed.py", "legacy", "debt"),
+                    ("gone.py", "vanished", "a site deleted since"))
+        hits = M.manifest_dirname_project_violations(md, table=md_table)
+        files = sorted(set(f for f, _w in hits))
+        check("md1 RED-FIRST: a project taken as dirname of a manifest path is "
+              "reported whether it is assigned, passed as a keyword or returned "
+              "from a project-named function: %r" % (hits,),
+              "assign.py" in files and "sub/kw.py" in files and "ret.py" in files)
+        check("md2 ALLOW: dirname of a manifest bound to a name that is not a "
+              "project, and a project asked of a resolver, are silent - and so "
+              "is a site the table names (a lint reading every dirname, or "
+              "ignoring the table, fails here): %r" % (hits,),
+              "quiet.py" not in files and "listed.py" not in files)
+        check("md3 a table row whose site no longer derives a project is "
+              "reported, so the table cannot keep unused permission: %r"
+              % (hits,),
+              any(f == "gone.py" and "vanished" in w for f, w in hits))
+    finally:
+        _harness.remove_tree(md)
+    check("md4 ...and the real tree derives no project by dirname of a manifest "
+          "beyond the sites MANIFEST_DIRNAME_PROJECTS names, each of which still "
+          "does: %r" % (M.manifest_dirname_project_violations(),),
+          M.manifest_dirname_project_violations() == [])
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _project_of_manifest_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

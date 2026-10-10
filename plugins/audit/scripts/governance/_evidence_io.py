@@ -3576,9 +3576,17 @@ def project_config_for(manifest_path, project_dir=None):
     `evidence.dir` is deliberately left alone: a project that declares one has
     said where its record lives, and this has no better answer than the
     declaration.
+
+    THE PROJECT IS `project_dir`, ELSE `_output.project_of_manifest` - the
+    walk `run-test-gate.py`, the report, the status read and the
+    manifest-writing commands take when no root is named. Neither the session's
+    `CLAUDE_PROJECT_DIR` nor the manifest's own directory is consulted: the
+    first may name another checkout than the one the plan is in, and the
+    second is `docs/audit` on nearly every plan, so a hand-run gate with no
+    session behind it sited its raw log at `docs/audit/.claude/` - and that
+    stray marker then made the plan's project `docs/audit` for every later run.
     """
-    project = (project_dir or os.environ.get("CLAUDE_PROJECT_DIR")
-               or os.path.dirname(os.path.abspath(manifest_path)) or ".")
+    project = project_dir or _output.project_of_manifest(manifest_path)
     try:
         config = dict(_journal_io.load_config(project) or {})
     except Exception:

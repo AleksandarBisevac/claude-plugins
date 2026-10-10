@@ -644,8 +644,37 @@ def _cases(check):
         _harness.stage(check, "cl-block", lambda c: _claims_cases(c, repos))
         _harness.stage(check, "sl-block",
                        lambda c: _success_line_cases(c, repos))
+        _harness.stage(check, "dp-block",
+                       lambda c: _default_project_cases(c, repos))
     finally:
         repos.close()
+
+
+def _default_project_cases(check, repos):
+    """No `--project`, run from a directory outside the repository: the project
+    is the one the manifest is in, the same root the remedy it prints - a gate
+    command with no project flag - resolves to."""
+    fx = repos.make()
+    _dirty_work(fx)
+    _gate(fx)
+    before = _head(fx)
+    away = repos.scratch("elsewhere")
+    os.makedirs(away)
+    here = os.getcwd()
+    lines = []
+    held = sys.stderr
+    sys.stderr = io.StringIO()
+    try:
+        os.chdir(away)
+        code = M.main([fx["manifest"], TASK], out=lines.append)
+    finally:
+        os.chdir(here)
+        sys.stderr = held
+    after = _head(fx)
+    check("dp1 RED-FIRST: with no --project and the shell elsewhere, the work is "
+          "committed in the manifest's own repository (mutation: default the "
+          "project to the cwd -> red): %r" % ((code, lines[-3:]),),
+          code == 0 and after != before)
 
 
 # --- the executor's filed `claims`, carried into the commit message ----------

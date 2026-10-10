@@ -234,31 +234,13 @@ def journal_redactions(path, pointers):
 # adds only its next step.
 
 
-def project_of_manifest(mpath):
-    """The project root a NAMED manifest belongs to: the first ancestor of the
-    manifest (starting at its own directory) that holds a `.claude/` dir or a
-    `.git` entry.
-
-    MARKERLESS fallback: when the manifest sits in the default layout
-    (`<T>/docs/audit/<file>`), the root is `<T>` -- taking the manifest's own
-    directory doubled the layout (the journal's default rel re-appended
-    `docs/audit` under `.../docs/audit`). Anywhere else the root is the
-    manifest's own directory. Either way the root stays INSIDE the named
-    manifest's tree, never another repo's."""
-    start = os.path.dirname(os.path.abspath(mpath))
-    cur = start
-    while True:
-        if os.path.isdir(os.path.join(cur, ".claude")) \
-                or os.path.exists(os.path.join(cur, ".git")):
-            return cur
-        parent = os.path.dirname(cur)
-        if parent == cur:
-            break
-        cur = parent
-    if os.path.basename(start) == "audit" \
-            and os.path.basename(os.path.dirname(start)) == "docs":
-        return os.path.dirname(os.path.dirname(start))
-    return start
+# AN ALIAS, NOT A COPY: the walk lives in `_output.project_of_manifest`, the
+# lowest layer, so the evidence ledger, the raw gate log, the report and the
+# status read take the same answer the manifest-writing commands do. Two walks
+# answering "which project owns this manifest" disagreed once already - one
+# fell back to the manifest's own directory, left a `.claude/` there, and the
+# other then took `docs/audit` for the project.
+project_of_manifest = _output.project_of_manifest
 
 
 # HOW A MANIFEST-WRITING COMMAND CHOOSES ITS ROOT, AS DATA AND NOT AS PROSE. The
@@ -278,7 +260,8 @@ PROJECT_BASES = (
      "--project-dir named it, and an explicit root wins over everything below"),
     ("manifest argument",
      "the manifest argument named it, and the root is that file's first "
-     "ancestor holding `.claude/` or `.git` (the manifest's OWN tree)"),
+     "ancestor holding `.git`, or `.claude/` outside its docs/audit record "
+     "directory (the manifest's OWN tree)"),
     ("$CLAUDE_PROJECT_DIR",
      "$CLAUDE_PROJECT_DIR named the session's project and no manifest argument "
      "narrowed it"),

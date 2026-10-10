@@ -1357,8 +1357,9 @@ phase's full-run answer; read it afterwards where it is printed — `/audit:stat
 (`full whole`, `full provisional (since …)`, `full unknown - <reason>`) and `/audit:doctor`'s
 `full run` row (a WARNING naming a PROVISIONAL or UNKNOWN phase with its basis, one OK row when
 every merged phase reads WHOLE), both off `_evidence_io.full_status`. `/audit:status` asks git
-from `CLAUDE_PROJECT_DIR`, or the directory it runs in when that is unset, so run it from the
-project's own checkout. A plan with no
+in the checkout the plan itself is in — the manifest's git toplevel, or its nearest `.claude/`
+outside its `docs/audit` directory (`_output.project_of_manifest`) — so the answer is that
+checkout's wherever the command is run from. A plan with no
 `meta.fullGate` declared prints that the plan names no third place and exits 0; that is not a
 failure of this command, it is the plan's own state.
 

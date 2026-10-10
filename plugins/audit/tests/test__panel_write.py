@@ -2811,8 +2811,17 @@ def _redaction_cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _resolver_identity_cases(check):
+    """`project_of_manifest` here is the anchor's own function, not a copy."""
+    check("pw-po1 the manifest-writing commands' project walk IS "
+          "`_output.project_of_manifest` - one function, so the commands, the "
+          "gate's record and the report cannot answer two different roots",
+          M.project_of_manifest is _output.project_of_manifest)
+
+
 def _selftest():
-    return _harness.run(lambda check: (_cases(check), _redaction_cases(check)))
+    return _harness.run(lambda check: (_cases(check), _redaction_cases(check),
+                                       _resolver_identity_cases(check)))
 
 
 if __name__ == "__main__":

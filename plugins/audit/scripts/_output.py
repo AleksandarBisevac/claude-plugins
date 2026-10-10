@@ -145,6 +145,83 @@ def safe_stdio():
                 pass
 
 
+# --- which project a manifest belongs to ------------------------------------------
+# The default home of a plan's committed record. A directory of this shape holds
+# the manifest, its journal and its evidence - and never a project's own
+# `.claude/`, which is the one fact `project_of_manifest` relies on.
+RECORD_DIR_SHAPE = ("docs", "audit")
+
+
+def _record_shaped(path):
+    """True when `path` ends in `RECORD_DIR_SHAPE`, compared by name."""
+    head, last = os.path.split(path)
+    return (os.path.basename(head), last) == RECORD_DIR_SHAPE
+
+
+def _record_zone(start):
+    """The outermost record-shaped directory at or above `start`, stopping at
+    the first ancestor holding `.git` - or None when there is none."""
+    zone = None
+    cur = start
+    while True:
+        if _record_shaped(cur):
+            zone = cur
+        if os.path.exists(os.path.join(cur, ".git")):
+            return zone
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            return zone
+        cur = parent
+
+
+def _inside(path, top):
+    """True when `path` is `top` or below it."""
+    return top is not None and (path == top or path.startswith(top + os.sep))
+
+
+def project_of_manifest(manifest_path):
+    """The project root the manifest at `manifest_path` belongs to - the answer
+    the gate's record and raw log, the report, the status read and the
+    manifest-writing commands take when no root was named, so a command printed
+    without `--project-dir` lands where its siblings do.
+    `manifest_dirname_project_violations()` names a site deriving its own.
+
+    The walk goes up from the manifest's own directory. A `.git` entry (a
+    directory, or the file a linked worktree carries) is the git toplevel and
+    always answers. A `.claude/` directory answers too, so a project nested
+    inside a larger repository keeps its own root - EXCEPT inside the record
+    directory (`docs/audit`, or a doubled `docs/audit/docs/audit`) at or above
+    the manifest. A `.claude/` there is never a project's: it is what a run
+    that sited itself by the manifest's own directory left behind, and
+    accepting it made every later run answer `docs/audit` as the project and
+    record into `docs/audit/docs/audit`, which nothing reads.
+
+    MARKERLESS FALLBACK: with no `.git` and no acceptable `.claude/`, a manifest
+    under a record-shaped directory belongs to that directory's grandparent,
+    and any other to its own directory - inside the named manifest's tree
+    either way, never another repository's.
+
+    `--project-dir` is the caller's to honour before asking this; an
+    environment variable is not consulted, because a named manifest says
+    which tree it is in and a session's project may be another checkout.
+    """
+    start = os.path.dirname(os.path.abspath(manifest_path))
+    zone = _record_zone(start)
+    cur = start
+    while True:
+        if os.path.exists(os.path.join(cur, ".git")):
+            return cur
+        if os.path.isdir(os.path.join(cur, ".claude")) and not _inside(cur, zone):
+            return cur
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            break
+        cur = parent
+    if zone is not None:
+        return os.path.dirname(os.path.dirname(zone))
+    return start
+
+
 # --- the success line ------------------------------------------------------------
 # What a verb the main loop calls prints when it succeeded and nobody asked for more.
 # Every line a verb prints is read back into a model's context on every call, and a
@@ -1216,6 +1293,128 @@ def depth_sensitive_paths(script_dir=None):
                                "that locates itself carries its own depth; take the "
                                "directory from _output's anchors instead"))
     return violations
+
+
+# --- a project derived from a manifest path -------------------------------------
+# Sites that still derive a project by their own walk or by `dirname` of the
+# manifest, each a statement about code that EXISTS: a row whose site no longer
+# matches is reported, so the table cannot keep permission nobody uses.
+# (file under scripts/, innermost function, reason)
+MANIFEST_DIRNAME_PROJECTS = (
+    ("manifest/repair-commits.py", "project_of",
+     "a git-only walk falling back to the manifest's directory; moving it onto "
+     "project_of_manifest is its own task's change, not this lint's."),
+    ("manifest/repair-tests-add.py", "project_of",
+     "the same walk as repair-commits.py, kept beside it; it moves with that "
+     "one."),
+    ("manifest/_proposals.py", "run",
+     "the project is only handed to the lock library, which asks git from any "
+     "directory inside the checkout; it moves to the resolver with its own "
+     "task."),
+    ("governance/record-risk-confirmation.py", "_project_of",
+     "a .claude/-only walk falling back to the manifest's directory; moving it "
+     "onto project_of_manifest is its own task's change."),
+)
+
+
+def _identifier(node):
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return None
+
+
+def _names_manifest(node):
+    """True when an identifier under `node` names a manifest path."""
+    for n in ast.walk(node):
+        ident = (_identifier(n) or "").lower()
+        if "manifest" in ident or ident.startswith("mpath"):
+            return True
+    return False
+
+
+def _dirname_of_manifest(expr):
+    """True when `expr` holds a `dirname(...)` call over a manifest path."""
+    return any(isinstance(n, ast.Call) and _identifier(n.func) == "dirname"
+               and any(_names_manifest(a) for a in n.args)
+               for n in ast.walk(expr))
+
+
+def _project_derivations(tree):
+    """`(line, innermost function or "<module>")` for each place a project is
+    derived by `dirname` arithmetic on a manifest path: an assignment to a name
+    saying `proj`, a keyword argument saying `proj`, or a `return` from a
+    function whose name says `project`."""
+    found = []
+
+    def visit(node, where, in_project_fn):
+        for child in ast.iter_child_nodes(node):
+            inner, inner_proj = where, in_project_fn
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                inner, inner_proj = child.name, "project" in child.name.lower()
+            value = None
+            if isinstance(child, ast.Assign) and any(
+                    "proj" in (_identifier(n) or "").lower()
+                    for t in child.targets for n in ast.walk(t)):
+                value = child.value
+            elif isinstance(child, ast.keyword) and child.arg \
+                    and "proj" in child.arg.lower():
+                value = child.value
+            elif isinstance(child, ast.Return) and in_project_fn:
+                value = child.value
+            if value is not None and _dirname_of_manifest(value):
+                found.append((value.lineno, where))
+            visit(child, inner, inner_proj)
+
+    visit(tree, "<module>", False)
+    return found
+
+
+def manifest_dirname_project_violations(script_dir=None, table=None):
+    """(file, what) for each project derived from a manifest path by `dirname`
+    arithmetic outside `_output.project_of_manifest`, and each table row whose
+    site no longer does it.
+
+    THE CLASS, NOT THE INSTANCE. A plan's project was answered by more than
+    one walk, and one of them fell back to the manifest's own directory -
+    `docs/audit` on a default plan - so a hand-run gate left a `.claude/`
+    there and every later run recorded under `docs/audit/docs/audit`. The
+    repair is one resolver; this is what keeps a new site from deriving its
+    own answer again.
+
+    WHAT IT CANNOT SEE: a project derived by a name that says neither `proj`
+    nor `manifest` (`root = os.path.dirname(path)`), a `pathlib` `.parent`
+    chain, or a walk with no `dirname` over the manifest's name in it. A
+    clean result means none of the shapes it reads matched - not that every
+    site in the tree asks the resolver."""
+    script_dir = script_dir or SCRIPTS_DIR
+    table = MANIFEST_DIRNAME_PROJECTS if table is None else table
+    allowed = set((f, fn) for f, fn, _why in table)
+    seen = set()
+    violations = []
+    for rel, path in lint_py_files(script_dir):
+        rel = rel.replace(os.sep, "/")
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), filename=rel)
+        except (OSError, SyntaxError, UnicodeDecodeError) as exc:
+            violations.append((rel, "cannot be read or parsed: %s" % (exc,)))
+            continue
+        for line, where in _project_derivations(tree):
+            seen.add((rel, where))
+            if (rel, where) not in allowed:
+                violations.append(
+                    (rel, "line %d (%s): derives a project from a manifest path "
+                          "by dirname - ask _output.project_of_manifest, so it "
+                          "lands where the gate and the report do"
+                          % (line, where)))
+    for f, fn, _why in table:
+        if (f, fn) not in seen:
+            violations.append((f, "MANIFEST_DIRNAME_PROJECTS names %s, which no "
+                                  "longer derives a project by dirname - drop the "
+                                  "row" % (fn,)))
+    return sorted(violations)
 
 
 # --- entry-point guard check --------------------------------------------------

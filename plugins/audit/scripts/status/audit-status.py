@@ -171,12 +171,14 @@ GAP_UNDATED = _status_facts.GAP_UNDATED
 boundary_for = _evidence_io.boundary_for
 
 
-def invariants_block(manifest, manifest_path):
+def invariants_block(manifest, manifest_path, project=None):
     """`_invariants.check_manifest` over every started phase, or the reason it could not run.
 
-    The project is CLAUDE_PROJECT_DIR when Claude Code named one and the working
-    directory otherwise — the same anchor `--discovery` uses, and deliberately not
-    the manifest's own directory, which is `docs/audit/` on nearly every plan.
+    The project is `project` when the caller resolved one, else
+    `_output.project_of_manifest` — the checkout the plan is in, which is the
+    anchor every other block here takes, and deliberately neither the
+    manifest's own directory (`docs/audit/` on nearly every plan) nor the
+    session's or the shell's, which may be another checkout altogether.
 
     An exception comes back as a BLOCK WITH NO `breaches` KEY rather than as an
     empty one. `_status_facts.invariant_breaches` reads that as "nothing was
@@ -189,7 +191,7 @@ def invariants_block(manifest, manifest_path):
     verdict is taken on - every breach, or only the new ones when a baseline is
     in use - and `allBreaches` keeps the full list beside it.
     """
-    project = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    project = project or _output.project_of_manifest(manifest_path)
     try:
         git_root = _invariants.git_root_for(manifest, project)
         result = _invariants.check_manifest(
@@ -2048,7 +2050,10 @@ def main(argv):
     # certifying a tree it never read. The validator reads this checkout's
     # files too, because those are what it is asked to validate, and so do
     # the gate-only blocks below, which ask git about this checkout's history.
-    project = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    # THE CHECKOUT IS THE ONE THE PLAN IS IN (`_output.project_of_manifest`),
+    # never `CLAUDE_PROJECT_DIR` or the cwd: run from another checkout, those
+    # asked the wrong history and every full-run answer came back unknown.
+    project = _output.project_of_manifest(manifest_path)
     flight = flight_for(manifest, manifest_path, project)
     # The overlay the panel and the report take too (`live_view`). `own` is
     # set only when a read laid a body over the plan: only then is `plan` a
@@ -2067,26 +2072,23 @@ def main(argv):
         summary["liveCopyError"] = live["note"]
 
     if want_discovery:
-        # CLAUDE_PROJECT_DIR is how Claude Code names the project on every
-        # invocation it makes; a plain CLI run means "here". The manifest is NOT
-        # the anchor on purpose - it may live under docs/audit/ while the skills
-        # live at the project root.
-        summary["discovery"] = discovery_block(
-            os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+        # The plan's own project root, not the manifest's directory - which
+        # may be docs/audit/ while the skills live at the root.
+        summary["discovery"] = discovery_block(project)
 
     if want_gate and "invariant-breach" in conditions:
         # Computed HERE and injected, not inside the rollup. `_status_facts` is
         # layer 2 and `_invariants` is layer 4, so the gate cannot reach the
         # checks; and this costs several git calls per started phase, which no
         # `/audit:status` that was not asked for it should pay.
-        summary["invariants"] = invariants_block(manifest, manifest_path)
+        summary["invariants"] = invariants_block(manifest, manifest_path,
+                                                 project)
 
     if want_gate and "stranded-skills" in conditions:
         # Injected for `invariant-breach`'s reason — `_status_facts` is layer 2
         # and the scan is layer 3 — and computed only when asked, because it walks
         # the repository's `.claude/` tree.
-        summary["portability"] = portability_block(
-            manifest, os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+        summary["portability"] = portability_block(manifest, project)
 
     # THE ONE INJECTED BLOCK THE HUMAN RENDER ASKS FOR TOO, and that asymmetry is
     # the point rather than an oversight. A run stopping mid-phase is not a gate
@@ -2123,9 +2125,7 @@ def main(argv):
     if ((want_gate and any(c in conditions
                            for c in _status_facts.FULL_RUN_CONDITIONS))
             or not (want_json or want_gate)):
-        summary["fullRun"] = full_run_block(
-            manifest, manifest_path,
-            os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+        summary["fullRun"] = full_run_block(manifest, manifest_path, project)
 
     gate_view = summary
     if want_gate and laid:
