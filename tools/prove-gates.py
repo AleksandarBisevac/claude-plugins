@@ -459,6 +459,14 @@ TABLE = (
   "def state_write_violations(script_dir=None, hooks_dir=None, table=None):\n"
   "    return []",
   DEP, "sw3"),
+ # The scrub-by-default rule, crippled. It is what keeps a new caller from
+ # reaching the JSON writer that leaves machine paths in, and a version
+ # reporting nothing reads exactly like a tree whose only raw writes are listed.
+ ("raw_json_writer_violations", S + "_output.py", "replace",
+  "def raw_json_writer_violations(script_dir=None, hooks_dir=None, table=None):",
+  "def raw_json_writer_violations(script_dir=None, hooks_dir=None, table=None):\n"
+  "    return []",
+  OUT, "rj1"),
  # The one-tree rule, crippled. It is what keeps a hook from reading the main
  # checkout's plan for work in a linked worktree, and a version reporting
  # nothing reads exactly like hooks that all ask `_config.tree_for`.
@@ -1403,6 +1411,13 @@ ALLOW = (
   "            and isinstance(func.value, ast.Name) and func.value.id in modules:",
   "            and isinstance(func.value, (ast.Name, ast.Attribute)):",
   DEP, "sw4"),
+ # The raw-writer allow-list, ignored: a site that names its reason for
+ # writing bytes exactly as given - a re-encoding, the user's own settings -
+ # would be convicted anyway, and `rj2`'s fixture holds one beside the
+ # scrubbing writer in the same file.
+ ("raw_json_writer_violations", S + "_output.py", "replace",
+  "                if (named, where) not in allowed:",
+  "                if True:", OUT, "rj2"),
  # The one-tree rule, widened to every `repo_root`. The config and the
  # session's own state live with the project on purpose, so a hook resolving
  # the project for those alone is honest code this would convict.

@@ -2334,6 +2334,10 @@ AUDITED_EXEMPTIONS = {
     # row whose reason is short enough to be a label; it does not judge whether
     # the sentence is true, so this is the weaker of the two strengths.
     "STATE_WRITERS": ("live", "state_write_violations"),
+    # The sites allowed to write JSON without the machine-path scrub. The lint
+    # reports a reach of the raw writer from a site no row names, and a row whose
+    # site no longer reaches it; whether its reason is true it does not judge.
+    "RAW_JSON_WRITERS": ("live", "raw_json_writer_violations"),
     # ...and the two whose instrument is a CASE rather than a function. This tree's
     # suites lint other files' source, so an auditor living in one is not a lesser
     # auditor - `r2` is the strongest row in this table, refusing a NEW debt and a

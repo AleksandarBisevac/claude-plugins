@@ -1883,6 +1883,114 @@ def truncated_evidence_violations(dirs=None):
     return sorted(violations)
 
 
+# --- the raw JSON writer, by name only ----------------------------------------
+# `_manifest_io.atomic_write_json` scrubs every string of machine paths before it
+# writes, and that is the default because a rule each caller must remember is the
+# rule the next caller does not know about. The writer that does NOT scrub is
+# reached only from the sites below, each with the reason its bytes must stay as
+# given. `_manifest_io` defines it and may call it anywhere.
+RAW_JSON_WRITER = "raw_atomic_write_json"
+RAW_JSON_WRITER_HOME = "scripts/manifest/_manifest_io.py"
+# (file, innermost function, reason). A row is a statement about code that
+# EXISTS: one whose site no longer names the raw writer is reported, so the table
+# cannot carry permission for a site nobody wrote.
+RAW_JSON_WRITERS = (
+    ("scripts/manifest/migrate-json-encoding.py", "_locked_migrate",
+     "it changes a document's escaping and nothing else; its dry run promised "
+     "exactly that diff, and a scrub would add changes nobody was shown."),
+    ("scripts/panel/_panel_write.py", "write_config",
+     "the user's own settings, not a record the plugin composed: a typed "
+     "machine path is refused at the door, and one already on disk is the "
+     "user's to change, not this save's."),
+    ("scripts/panel/_panel_write.py", "write_theme",
+     "a theme file is the user's own settings, written as they set them."),
+)
+
+
+def _raw_writer_references(tree):
+    """`(line, innermost function or "<module>")` for every reference to
+    `RAW_JSON_WRITER` - a call, an attribute read or a bare name. A REFERENCE and
+    not only a call, because `raw = _mio.raw_atomic_write_json` followed by
+    `raw(...)` is the same write under a name no call-only scan would read."""
+    found = []
+
+    def visit(node, where):
+        for child in ast.iter_child_nodes(node):
+            inner = where
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                inner = child.name
+            named = (isinstance(child, ast.Attribute)
+                     and child.attr == RAW_JSON_WRITER) \
+                or (isinstance(child, ast.Name) and child.id == RAW_JSON_WRITER)
+            if named:
+                found.append((child.lineno, where))
+            visit(child, inner)
+
+    visit(tree, "<module>")
+    return found
+
+
+def raw_json_writer_violations(script_dir=None, hooks_dir=None, table=None):
+    """(file, what) for every reach of the raw JSON writer the table does not
+    name, and every table row naming a site that no longer reaches it.
+
+    THE INVARIANT, NOT A LIST OF CALLERS. Scrubbing was added to a plan's
+    savers one writer at a time, and the CLI's single writer behind every
+    verb went on writing the checkout's absolute root into shards because it
+    reached the low-level writer directly. Moving the scrub INTO that writer
+    closes the class; this lint is what keeps the unscrubbed path from being
+    re-opened by a new caller who wanted the old behaviour.
+
+    A tree in which nothing defines the raw writer is reported as BLIND, not
+    clean: a rule about one function has nothing to say when it is gone.
+
+    WHAT IT CANNOT SEE: a write that skips both writers (`json.dump` to an open
+    file, `atomic_write_text` of a hand-built document). Those carry their
+    own rules - `_deps.json_encoding_violations()` and the state-write lint -
+    and a clean result here means "nothing reaches the raw writer unnamed"."""
+    script_dir = script_dir or SCRIPTS_DIR
+    hooks_dir = hooks_dir if hooks_dir is not None else HOOKS_DIR
+    table = RAW_JSON_WRITERS if table is None else table
+    allowed = set((f, fn) for f, fn, _why in table)
+    seen = set()
+    violations = []
+    defined = False
+    for kind, directory in (("scripts", script_dir), ("hooks", hooks_dir)):
+        if not directory or not os.path.isdir(directory):
+            continue
+        for rel, path in lint_py_files(directory):
+            named = "%s/%s" % (kind, rel)
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    tree = ast.parse(fh.read(), filename=rel)
+            except (OSError, SyntaxError):
+                continue
+            if named == RAW_JSON_WRITER_HOME:
+                defined = defined or any(
+                    isinstance(n, ast.FunctionDef) and n.name == RAW_JSON_WRITER
+                    for n in ast.walk(tree))
+                continue
+            for line, where in _raw_writer_references(tree):
+                seen.add((named, where))
+                if (named, where) not in allowed:
+                    violations.append(
+                        (named, "line %d (%s): reaches %s, the writer that does "
+                                "not scrub machine paths - call "
+                                "atomic_write_json, or add a RAW_JSON_WRITERS "
+                                "row saying why these bytes must stay as given"
+                         % (line, where, RAW_JSON_WRITER)))
+    for f, fn, _why in table:
+        if (f, fn) not in seen:
+            violations.append((f, "RAW_JSON_WRITERS names %s, which no longer "
+                                  "reaches %s - drop the row"
+                               % (fn, RAW_JSON_WRITER)))
+    if not defined:
+        violations.append(("<tree>", "%s does not define %s - this rule is "
+                                     "blind, not clean"
+                           % (RAW_JSON_WRITER_HOME, RAW_JSON_WRITER)))
+    return sorted(violations)
+
+
 # --- selftest-flag check ------------------------------------------------------
 _SELFTEST_ARGV = ("a stub reads `--selftest` off sys.argv, which matches the flag "
                   "inside a forwarded test command too; ask "

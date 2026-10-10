@@ -2755,8 +2755,64 @@ def _lost_update_cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _redaction_cases(check):
+    """A plan write that scrubs a machine path says so in one journal row,
+    naming where and never what; a clean write says nothing."""
+    tmp = tempfile.mkdtemp(prefix="audit-pw-redact-")
+
+    class _JRedact(object):
+        rows = []
+
+        @staticmethod
+        def append(project, entry):
+            return _JRedact.append_from_cli_why(project, entry)[0]
+
+        @staticmethod
+        def append_from_cli_why(project, entry):
+            _JRedact.rows.append((project, entry))
+            return "/j/2026-10.redact.jsonl", None
+
+    saved = dict(M._JOURNAL)
+    try:
+        os.makedirs(os.path.join(tmp, ".git"))
+        mpath = os.path.join(tmp, "docs", "audit", "audit-plan.json")
+        home = "/".join(("", "Users", "someone", "work", "x.py"))
+        M._JOURNAL.update({"tried": True, "mod": _JRedact})
+        pointers = M._atomic_write_json(mpath, {
+            "phases": [{"id": "P1", "notes": "read %s at the time" % (home,),
+                        "title": "plain words, docs/a.md"}]})
+        with open(mpath, encoding="utf-8") as fh:
+            text = fh.read()
+        rows = list(_JRedact.rows)
+        summary = (rows[0][1].get("summary") or "") if rows else ""
+        check("rd1 a plan write whose value names a home directory stores it "
+              "without one, returns the pointer it rewrote, and journals ONE "
+              "`plan.redact` row naming that pointer and not the value: %r"
+              % ((pointers, rows),),
+              "someone" not in text and "plain words, docs/a.md" in text
+              and pointers == ["/phases/0/notes"] and len(rows) == 1
+              and rows[0][0] == tmp
+              and rows[0][1].get("action") == "plan.redact"
+              and "/phases/0/notes" in summary and "someone" not in summary)
+        _JRedact.rows[:] = []
+        clean = {"phases": [{"id": "P1", "notes": "nothing machine here"}]}
+        pointers2 = M._atomic_write_json(mpath, clean)
+        with open(mpath, encoding="utf-8") as fh:
+            text2 = fh.read()
+        check("rd2 ALLOW: a clean write journals nothing, returns no pointer and "
+              "is the plugin's one byte shape for the document - a writer that "
+              "journaled every save would fail here: %r" % ((pointers2,
+                                                              _JRedact.rows),),
+              pointers2 == [] and _JRedact.rows == []
+              and text2 == _mio.json_document(clean, 2))
+    finally:
+        M._JOURNAL.clear()
+        M._JOURNAL.update(saved)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    return _harness.run(lambda check: (_cases(check), _redaction_cases(check)))
 
 
 if __name__ == "__main__":

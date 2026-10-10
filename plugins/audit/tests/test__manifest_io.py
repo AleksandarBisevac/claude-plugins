@@ -1278,11 +1278,29 @@ def _scrub_cases(check):
         doc = {"id": "P2", "note": "plain words, docs/a.md"}
         M.save_plan_json(plain, doc)
         raw = os.path.join(repo, "docs", "phases", "raw.json")
-        M.atomic_write_json(raw, doc)
+        M.raw_atomic_write_json(raw, doc)
         check("ws5 ALLOW twin: a document naming no machine is written byte for "
               "byte as the raw writer writes it",
               open(plain, encoding="utf-8").read()
               == open(raw, encoding="utf-8").read())
+        # The low-level writer's DEFAULT name scrubs: a caller that reaches it
+        # directly - as the CLI's own writer did - gets the plan's rule, and
+        # is told where the rule rewrote something.
+        low = os.path.join(repo, "docs", "phases", "P3.json")
+        said = M.atomic_write_json(low, {"id": "P3", "tasks": [
+            {"note": "plain"}, {"note": root_said}]})
+        low_text = open(low, encoding="utf-8").read()
+        check("ws6 atomic_write_json scrubs by default and returns the pointer "
+              "of every value it rewrote, and nothing else: %r"
+              % ((said, low_text[:200]),),
+              repo not in low_text and "someone" not in low_text
+              and "src/a.py" in low_text and said == ["/tasks/1/note"])
+        exact = os.path.join(repo, "docs", "phases", "exact.json")
+        kept = M.raw_atomic_write_json(exact, {"note": root_said})
+        check("ws7 the raw writer, asked for by name, writes the bytes it was "
+              "given - the byte-exact path a re-encoding needs exists, and is "
+              "not the default: %r" % (kept,),
+              kept is None and home in open(exact, encoding="utf-8").read())
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

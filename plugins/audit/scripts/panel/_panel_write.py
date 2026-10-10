@@ -89,6 +89,7 @@ _output.install_path()
 
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _areas                 # noqa: E402  (meta.areas registry + shared resolution)
+import _fmt                   # noqa: E402  (plural(): `1 value` / `2 values`)
 import _policy                # noqa: E402  (the capability policy + its resolution)
 import _ui_theme as _theme    # noqa: E402  (the token layer + the theme compiler)
 import _panel_settings        # noqa: E402  (settings-form schema + write allow-lists)
@@ -151,18 +152,71 @@ def _not_a_json_object():
 
 
 def _atomic_write_json(path, obj):
-    """Thin delegation to the plugin's ONE atomic-JSON-write implementation
-    (_manifest_io.atomic_write_json), which owns the escaping — see the choosing
-    block above it. This wrapper carries the panel's `indent` and nothing else."""
-    _mio.atomic_write_json(path, obj, indent=2)
+    """The plugin's one atomic-JSON writer (`_manifest_io.atomic_write_json`),
+    which owns the escaping and the machine-path scrub, at this panel's
+    `indent` -- and the journal row a scrub that changed something owes.
+
+    Every CLI verb's plan write lands here (`audit-task`'s add, start, done,
+    file-return and sign-off, `set-priority`), so this is the one place above
+    the journal's layer that sees each redaction as it happens. Returns the
+    pointers the scrub rewrote."""
+    pointers = _mio.atomic_write_json(path, obj, indent=2)
+    if pointers:
+        journal_redactions(path, pointers)
+    return pointers
 
 
 def _write_plan_json(path, obj):
-    """`_atomic_write_json` for a plan document: scrubbed on the way out by
-    `_manifest_io.save_plan_json`, which every plan writer shares. The theme and
-    settings files this module also writes are not the plan and keep the raw
-    writer."""
-    _mio.save_plan_json(path, obj, indent=2)
+    """`_atomic_write_json` under the name a plan writer reads best."""
+    return _atomic_write_json(path, obj)
+
+
+def save_in_layout(path, manifest):
+    """Write an assembled `manifest` back in whatever layout `path` holds --
+    shards and index, or one file -- and journal what the scrub rewrote.
+    Returns the pointers.
+
+    The pointers are asked of the WHOLE manifest before the split, because
+    `save_sharded` answers with the files it wrote and the news is about values,
+    which sit wherever the split puts them."""
+    if not _mio.is_sharded(_mio.read_json(path)):
+        return _atomic_write_json(path, manifest)
+    pointers = _mio.redacted_pointers(manifest, _mio.scrubbed_plan(path, manifest))
+    _mio.save_sharded(path, manifest)
+    if pointers:
+        journal_redactions(path, pointers)
+    return pointers
+
+
+def journal_redactions(path, pointers):
+    """One journal row saying the write of `path` rewrote the values at
+    `pointers` to drop a machine path. The `journaled` block; never raises.
+
+    A REWRITE NOBODY IS TOLD ABOUT IS A RECORD CHANGED IN SILENCE: the scrub
+    reaches values written long before it existed, and a historic sentence
+    edited by a save with no row saying so is exactly what the trail is for.
+    The row names the pointers and never the values -- the value is what was
+    taken out. A file outside any checkout has no journal to write to, and
+    then nothing is said rather than something written elsewhere."""
+    project = _mio.checkout_of(path)
+    mod = _journalmod()
+    if not project or mod is None or not hasattr(mod, "append"):
+        return {"journaled": False, "journaledWhy": "unavailable"}
+    entry = {"action": "plan.redact",
+             "target": path,
+             "summary": "%s held a machine path and %s written without it: %s"
+                        % (_fmt.plural(len(pointers), "value"),
+                           "was" if len(pointers) == 1 else "were",
+                           _output.some_of(pointers)),
+             "actor": {"via": "plan-write"}}
+    try:
+        if hasattr(mod, "append_from_cli_why"):
+            written, why = mod.append_from_cli_why(project, entry)
+        else:
+            written, why = mod.append(project, entry), None
+    except Exception as exc:
+        written, why = False, exc
+    return journal_block(project, written, why)
 
 
 # --- the CLI writers' shared machinery ------------------------------------------
@@ -1555,7 +1609,9 @@ def write_config(project, obj=None, mutate=None):
         machine = _machine_path_findings(project, applied)
         if machine:
             return {"ok": False, "findings": machine, "warnings": warnings}
-        _atomic_write_json(path, target)
+        # Raw: the user's own settings. A typed machine path is refused at the
+        # door above; one already on disk is theirs to change, not this save's.
+        _mio.raw_atomic_write_json(path, target, indent=2)
     finally:
         said = _release_write_lock(lock)
     # The config was still written; what the sentence adds is that something else
@@ -1880,7 +1936,8 @@ def write_theme(project, body):
         payload["name"] = save_as
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        _atomic_write_json(path, payload)
+        # Raw: a theme is the user's own settings, not a record the plugin wrote.
+        _mio.raw_atomic_write_json(path, payload, indent=2)
     except Exception as exc:
         return {"ok": False, "findings": ["cannot write %s: %s" % (path, exc)]}
     # Read it back through the same door every other reader uses: a file that

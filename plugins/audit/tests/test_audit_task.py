@@ -12850,6 +12850,38 @@ def _return_cases(check):
           r14[0] == M.E_USAGE and "--from-return" in r14[1]
           and read(mpath) == before)
 
+    # ---- (fm) a close writes no machine path into the shard ----------------
+    # The close's account comes from a filed return, which an agent composed:
+    # its red-first basis quotes the checkout's absolute root and a scratch
+    # tree's temp root, the two spellings a red helper's sandbox description
+    # carries. The plan's own writer is what must take both out, for every verb
+    # that writes through it - so the fixture is a SHARDED plan in a checkout,
+    # the layout where the close writes the phase's shard.
+    proj, mpath = project("dr-fr-machine")
+    os.makedirs(os.path.join(proj, ".git"))
+    _mio.save_sharded(mpath, _mio.load_manifest(mpath))
+    shard = os.path.join(os.path.dirname(mpath), "phases", "P1.json")
+    scratch = "/private/tmp/claude-501/red-tree-x1"
+    basis = ("%s/src/a.ts exit 1 at the root %s; the red ran in %s/src/a.ts"
+             % (proj, os.path.realpath(proj), scratch))
+    file_return(proj, "executor", _fr_executor(redFirst={
+        "status": "proved", "basis": basis, "at": "2026-01-01T00:05:00Z"}))
+    file_return(proj, "reviewer", _fr_reviewer("matches"))
+    r15 = close(proj, "--from-return")
+    written = (read(shard) or b"").decode("utf-8") \
+        + (read(mpath) or b"").decode("utf-8")
+    spellings = (proj, os.path.realpath(proj), scratch)
+    check("fm1 `done --from-return` whose filed red-first basis names the "
+          "checkout's own root and a temp root writes NEITHER into the shard "
+          "or the index - the in-repo path lands repo-relative and the "
+          "scratch path as the outside token: %r"
+          % ((r15[0], r15[1][:160], [s for s in spellings if s in written],
+              (task(mpath).get("redFirst") or {}).get("basis")),),
+          r15[0] == 0 and os.path.isfile(shard)
+          and (task(mpath).get("redFirst") or {}).get("status") == "proved"
+          and not [s for s in spellings if s in written]
+          and "src/a.ts exit 1" in written and "<outside-repo>" in written)
+
 
 _HD_SHA2 = "1111111111111111111111111111111111111111"
 _HD_SHA3 = "2222222222222222222222222222222222222222"
@@ -13864,7 +13896,10 @@ def _held_cases(check):
         os.makedirs(os.path.join(proj, ".claude"))
         mpath = os.path.join(root, name + "-plan", "audit-plan.json")
         os.makedirs(os.path.dirname(mpath))
-        _panel_write._atomic_write_json(
+        # Raw, as the panel's own config save writes: a plan outside the
+        # checkout is a setting the user chose, and the plan writer's scrub
+        # would turn its absolute path into the outside token.
+        _mio.raw_atomic_write_json(
             os.path.join(proj, ".claude", "audit.config.json"),
             {"manifestPath": mpath, "evidence": {"dir": "docs/audit/evidence"},
              "review": {"perTask": "always"}})

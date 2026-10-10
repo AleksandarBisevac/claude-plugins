@@ -787,6 +787,64 @@ def _cases(check):
           "cut: %r" % (M.truncated_evidence_violations(),),
           M.truncated_evidence_violations() == [])
 
+    # ------------------------------------------- the raw JSON writer, by name
+    rw = tempfile.mkdtemp(prefix="audit-rawjson-")
+    try:
+        def _rw(rel, text):
+            full = os.path.join(rw, rel)
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w", encoding="utf-8") as fh:
+                fh.write(text)
+
+        _rw("manifest/_manifest_io.py",
+            "def raw_atomic_write_json(path, obj, indent=2):\n    return None\n"
+            "def atomic_write_json(path, obj, indent=2):\n"
+            "    raw_atomic_write_json(path, obj)\n")
+        _rw("called.py", "import _manifest_io as _mio\n"
+                         "def save(p, o):\n"
+                         "    _mio.raw_atomic_write_json(p, o)\n")
+        _rw("aliased.py", "import _manifest_io as _mio\n"
+                          "w = _mio.raw_atomic_write_json\n")
+        _rw("listed.py", "import _manifest_io as _mio\n"
+                         "def restore(p, o):\n"
+                         "    _mio.raw_atomic_write_json(p, o, indent=2)\n"
+                         "def other(p, o):\n"
+                         "    _mio.atomic_write_json(p, o)\n")
+        rw_table = (("scripts/listed.py", "restore", "byte-exact restore"),
+                    ("scripts/gone.py", "vanished", "a site deleted since"))
+        rw_hits = M.raw_json_writer_violations(rw, "", table=rw_table)
+        rw_files = sorted(set(f for f, _w in rw_hits))
+        check("rj1 a reach of the raw writer from a site the table does not "
+              "name is reported - a call inside a function, and an alias bound "
+              "at module level, which a call-only scan would read past: %r"
+              % (rw_hits,),
+              "scripts/called.py" in rw_files and "scripts/aliased.py" in rw_files
+              and any("(save)" in w for f, w in rw_hits
+                      if f == "scripts/called.py"))
+        check("rj2 ALLOW: the site the table names is silent, and so is the "
+              "scrubbing writer beside it in the same file, and the home module "
+              "that defines and calls the raw writer - a lint that ignored the "
+              "table, or read `atomic_write_json` as the raw name, fails here: %r"
+              % (rw_hits,),
+              "scripts/listed.py" not in rw_files
+              and "scripts/manifest/_manifest_io.py" not in rw_files)
+        check("rj3 a table row whose site no longer reaches the raw writer is "
+              "reported, so the table cannot carry permission for a site nobody "
+              "wrote: %r" % (rw_hits,),
+              any(f == "scripts/gone.py" and "vanished" in w for f, w in rw_hits))
+        os.remove(os.path.join(rw, "manifest", "_manifest_io.py"))
+        rw_blind = M.raw_json_writer_violations(rw, "", table=())
+        check("rj4 a tree whose home module defines no raw writer is reported "
+              "BLIND, never clean: %r" % (rw_blind,),
+              any(f == "<tree>" and "blind" in w for f, w in rw_blind))
+    finally:
+        shutil.rmtree(rw, ignore_errors=True)
+
+    check("rj5 ...and the real tree reaches the raw writer only from the sites "
+          "RAW_JSON_WRITERS names, each of which still does: %r"
+          % (M.raw_json_writer_violations(),),
+          M.raw_json_writer_violations() == [])
+
     # ------------------------------------------------------- selftest coverage
     # Fixture trees first, because NO defect class exists in the real tree any more
     # and a classifier only ever seen returning empty lists is a classifier that

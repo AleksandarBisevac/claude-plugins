@@ -3781,6 +3781,24 @@ def _full_status_cases(check):
               % (open(sc_ok, encoding="utf-8").read()[-160:],),
               "ran 5 suites in docs/a.md" in open(sc_ok,
                                                   encoding="utf-8").read())
+        # Only a STEP's command is the plan's gate entry copied; a `command`
+        # anywhere else is composed text and is scrubbed like the rest.
+        sc_gate = "python3 %s --selftest" % (sc_home,)
+        sc_keep = M.append_row(sc_proj, {
+            "runId": "SC-3", "ts": "2026-01-01T00:00:02Z",
+            "steps": [{"name": "suite", "command": sc_gate}],
+            "command": "rerun of %s" % (sc_home,),
+            "detail": {"command": "nested %s" % (sc_home,)}})
+        sc_rows = [json.loads(line) for line in
+                   open(sc_keep, encoding="utf-8").read().splitlines() if line]
+        sc_row = [r for r in sc_rows if r.get("runId") == "SC-3"][-1]
+        check("sc3 the ledger keeps `steps[i].command` verbatim, so a recorded "
+              "run still matches the gate it ran, and scrubs a `command` key "
+              "anywhere else - top level or nested - because a name match is "
+              "not a copy of the plan: %r" % (sc_row,),
+              sc_row["steps"][0]["command"] == sc_gate
+              and "someone" not in sc_row["command"]
+              and "someone" not in sc_row["detail"]["command"])
     finally:
         _harness.remove_tree(tmp)
 

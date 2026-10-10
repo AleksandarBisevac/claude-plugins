@@ -6564,8 +6564,8 @@ def _remedy_cases(check):
     with open(dup_out, "w") as fh:
         fh.write(" PASS  src/cart.test.js\nTests  5 passed (5)\n")
 
-    def _plan(gate):
-        mp = os.path.join(root, "audit-plan.json")
+    def _plan(gate, at=None):
+        mp = os.path.join(at or root, "audit-plan.json")
         with open(mp, "w") as fh:
             json.dump({"meta": {"version": 2, "buildCommands": {
                 "test": _step(sys.executable, say, dup_out, "0"),
@@ -6626,12 +6626,11 @@ def _remedy_cases(check):
     os.mkdir(spaced)
     subprocess.run(["git", "init", "-q", spaced], check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    sp_mp = os.path.join(spaced, "audit-plan.json")
-    with open(mp, encoding="utf-8") as fh:
-        sp_plan = json.load(fh)
-    sp_plan["phases"][0]["testGate"] = ["test", "coverage"]
-    with open(sp_mp, "w") as fh:
-        json.dump(sp_plan, fh)
+    # Written fresh and not copied from `mp`: rv2's command saved `mp` through
+    # the plan writer, which spells every path inside ITS checkout
+    # repo-relative, and a step reading `say.py` from `root` runs nothing from
+    # this one.
+    sp_mp = _plan(["test", "coverage"], at=spaced)
     sp_lines = []
     M.main([sp_mp, "P1", "--project-dir", spaced, "--no-reuse"],
            out=sp_lines.append)

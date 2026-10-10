@@ -1210,33 +1210,94 @@ def atomic_write_text(path, text):
             os.remove(tmp)
 
 
-def atomic_write_json(path, obj, indent=2):
-    """Write `obj` as JSON to `path` atomically, through `atomic_write_text` --
-    the temp file, the replace and the cleanup are that function's, so there is
-    one implementation of them.
+def raw_atomic_write_json(path, obj, indent=2):
+    """Write `obj` as JSON to `path` atomically and EXACTLY as given, through
+    `atomic_write_text` -- the temp file, the replace and the cleanup are that
+    function's, so there is one implementation of them.
 
-    This is the ONE atomic-JSON-write implementation for the audit plugin, and it
-    takes no encoding argument: the escaping is `json_document`'s, not the
-    caller's -- see the block above for which way and why. `indent` stays a
-    parameter because
-    it is a shape a caller may legitimately want (a machine-read sidecar has no
-    use for two spaces); every caller in this tree asks for the readable one.
+    THE WRITER A CALLER NAMES ON PURPOSE. Every string passes through untouched,
+    which is right for a file whose bytes must come back as they were (a
+    re-encoding that may change escaping and nothing else) or whose values are
+    a person's own settings rather than a record the plugin composed. It is
+    wrong for anything else, so the default name is the scrubbing one below and
+    `_output.raw_json_writer_violations()` refuses a call of this one from any
+    site its allow-list does not name, with the reason.
+
+    The escaping is `json_document`'s, not the caller's -- see the block above
+    for which way and why. `indent` stays a parameter because it is a shape a
+    caller may legitimately want; every caller in this tree asks for the
+    readable one.
     """
     atomic_write_text(path, json_document(obj, indent))
 
 
+def _pointer_token(key):
+    """One JSON-pointer reference token (RFC 6901): `~` and `/` escaped."""
+    return str(key).replace("~", "~0").replace("/", "~1")
+
+
+def redacted_pointers(before, after, at=""):
+    """The JSON pointers of every string `after` holds differently from
+    `before`, in document order; `[]` when the two hold the same strings.
+
+    THE NEWS A SCRUB OWES. A value rewritten on the way to disk is a record
+    changed by its writer, and a writer that changed one silently is how a
+    plan's historic prose was rewritten with nothing saying so. Pointers and
+    never values: the value is what was taken out."""
+    if isinstance(before, str):
+        return [at or "/"] if before != after else []
+    if isinstance(before, dict) and isinstance(after, dict):
+        found = []
+        for key, value in before.items():
+            found.extend(redacted_pointers(value, after.get(key),
+                                           "%s/%s" % (at, _pointer_token(key))))
+        return found
+    if isinstance(before, list) and isinstance(after, list):
+        found = []
+        for i, value in enumerate(before):
+            found.extend(redacted_pointers(
+                value, after[i] if i < len(after) else None, "%s/%d" % (at, i)))
+        return found
+    return []
+
+
+def atomic_write_json(path, obj, indent=2):
+    """Write `obj` as JSON to `path` atomically, every string in it scrubbed of
+    machine paths first. Returns the JSON pointers the scrub rewrote (`[]` for a
+    clean document, which is then written byte for byte as given).
+
+    SCRUBBING IS THE DEFAULT AND NOT A SECOND NAME, because a rule each caller
+    has to remember is the rule the next caller does not know about: the plan's
+    own savers were scrubbed while the CLI's single writer, a priority write and
+    three repair tools still reached this function raw, and the checkout's
+    absolute root went on landing in shards. The path is enough to judge by --
+    `checkout_of` derives the root the in-repo paths are spelled against -- so
+    nothing has to be passed and nothing can be forgotten.
+
+    A WRITE THAT MUST STAY BYTE-EXACT names `raw_atomic_write_json`, and only a
+    site `_output.RAW_JSON_WRITERS` lists, with its reason, may.
+
+    The pointers are what the caller journals: this module sits beside the
+    journal in the layer table and may not write to it, so the news goes UP to
+    a writer that can -- `_panel_write`'s, which every CLI verb reaches.
+    """
+    clean = scrubbed_plan(path, obj)
+    raw_atomic_write_json(path, clean, indent=indent)
+    return redacted_pointers(obj, clean)
+
+
 def _atomic_write_json(path, data):
-    """Private alias for the in-file callers (`save_sharded`, `save_manifest`).
+    """Private alias for the in-file callers (`save_sharded`, `save_single_file`).
     It carries no encoding of its own — there is one encoding and the writer
-    above holds it."""
-    atomic_write_json(path, data, indent=2)
+    above holds it — and it scrubs, because the writer above does."""
+    return atomic_write_json(path, data, indent=2)
 
 
-def _checkout_of(path):
+def checkout_of(path):
     """The directory above `path` holding a `.git` (directory or file), else None.
 
     The scrub needs the checkout's root to tell an in-repo absolute path from a
-    machine one, and a save is handed only the plan's path. A plan outside any
+    machine one, and a save is handed only the target's path. A file outside any
     checkout has no root to spell paths against, and then only the shapes that
     name a machine (a home directory, a scratch directory) are redacted."""
     here = os.path.dirname(os.path.abspath(path))
@@ -1250,27 +1311,22 @@ def _checkout_of(path):
 
 
 def scrubbed_plan(index_path, manifest):
-    """`manifest` as the committed plan may say it: every string passed through
+    """`manifest` as a committed file may say it: every string passed through
     `_machine_paths.scrubbed_values`, in a NEW structure.
 
-    THE SAVE BOUNDARY IS THE ONLY PLACE THIS CAN BE HELD. A red helper's
-    sandbox description, a runner's stderr and a hook's rendered change all land
-    in the plan through callers that composed the text themselves, and a rule
-    each caller must remember is a rule the next one does not know about. Text
-    with no path in it comes back unchanged, so a clean plan is written
-    byte for byte as before."""
-    return _machine_paths.scrubbed_values(_checkout_of(index_path), manifest)
+    THE WRITE IS THE ONLY PLACE THIS CAN BE HELD. A red helper's sandbox
+    description, a runner's stderr and a hook's rendered change all land in the
+    plan through callers that composed the text themselves. Text with no path
+    in it comes back unchanged, so a clean plan is written byte for byte as
+    before."""
+    return _machine_paths.scrubbed_values(checkout_of(index_path), manifest)
 
 
 def save_plan_json(path, obj, indent=2):
     """Write one committed plan document (an index, a shard or a whole plan) at
-    `path`: `scrubbed_plan` first, then `atomic_write_json`.
-
-    THE ONE NAME A PLAN WRITER CALLS when it holds a single document rather than
-    a manifest to split. A writer that must put back bytes it already holds
-    (a restore from a snapshot) copies them and does not come through here;
-    `atomic_write_json` stays the raw writer for files that are not the plan."""
-    atomic_write_json(path, scrubbed_plan(path, obj), indent=indent)
+    `path`. `atomic_write_json` under the name a plan writer reads best; the
+    scrub is that writer's, so the two cannot disagree. Returns its pointers."""
+    return atomic_write_json(path, obj, indent=indent)
 
 
 # --- sharded save ---------------------------------------------------------------
@@ -1294,7 +1350,6 @@ def save_sharded(index_path, manifest, shard_rel_dir="phases"):
     Nothing is created before the check, so a refused save leaves the shard
     directory exactly as it found it — including not existing.
     """
-    manifest = scrubbed_plan(index_path, manifest)
     collisions = shard_name_collisions(manifest, shard_rel_dir)
     if collisions:
         raise ValueError(
@@ -1371,7 +1426,7 @@ def save_single_file(path, manifest):
     own failure path unrecoverable - restoring the index is what undoes this write, and
     an index whose shards have been deleted restores to nothing.
     """
-    _atomic_write_json(path, join_manifest(scrubbed_plan(path, manifest)))
+    _atomic_write_json(path, join_manifest(manifest))
     return [path]
 
 

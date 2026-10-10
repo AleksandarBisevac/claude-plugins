@@ -278,7 +278,9 @@ def _locked_migrate(args, project, mpath, out):
     try:
         for row in rows:
             if row["verdict"] == REWRITE:
-                _mio.atomic_write_json(row["path"], row["obj"], indent=2)
+                # Raw: this command changes the escaping and nothing else, and
+                # its dry run promised exactly that diff.
+                _mio.raw_atomic_write_json(row["path"], row["obj"], indent=2)
     except Exception as exc:
         _panel_write.restore(snap)
         out("[migrate-json-encoding] write failed -- every file restored: %s"

@@ -59,6 +59,7 @@ import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR s
 import _locks  # noqa: E402  (the index lock, already the one implementation)
 import _manifest_rules as _rules  # noqa: E402  (refuse rather than write invalid)
 import _journal_io  # noqa: E402  (the trail this repair has to leave behind)
+import _panel_write  # noqa: E402  (save_in_layout: the scrubbing, journaling plan save)
 
 LOCK_NAME = "index"
 
@@ -256,13 +257,10 @@ def _clear_under_lock(mpath, manifest, lost):
     if findings:
         return ("the result would be invalid, so nothing was written: "
                 + "; ".join(findings[:3])), cleared
-    # Written back in whatever layout it arrived in - `_proposals._save`'s rule,
-    # which is the only correct one under the sharded form: a phase lives in a
-    # shard and a whole-file dump would flatten it.
-    if _mio.is_sharded(_mio.read_json(mpath)):
-        _mio.save_sharded(mpath, manifest)
-    else:
-        _mio.atomic_write_json(mpath, manifest)
+    # Written back in whatever layout it arrived in - a phase lives in a shard
+    # and a whole-file dump would flatten it - with any machine path scrubbed
+    # and the scrub journaled.
+    _panel_write.save_in_layout(mpath, manifest)
     return None, cleared
 
 

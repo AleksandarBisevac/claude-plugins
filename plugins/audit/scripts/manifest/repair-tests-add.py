@@ -76,6 +76,7 @@ import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR s
 import _locks  # noqa: E402  (the index lock, already the one implementation)
 import _manifest_rules as _rules  # noqa: E402  (the shape rule AND refuse-before-save)
 import _journal_io  # noqa: E402  (the trail a write into the plan has to leave)
+import _panel_write  # noqa: E402  (save_in_layout: the scrubbing, journaling plan save)
 
 LOCK_NAME = "index"
 
@@ -260,12 +261,9 @@ def apply_repair(mpath, manifest, ans):
             return False, ("the repair would have made the plan invalid, so "
                            "nothing was written: "
                            + "; ".join(other_findings[:3])), []
-        # Written back in whatever layout it arrived in: a phase lives in a shard
-        # under the sharded form, and a whole-file dump would flatten it.
-        if _mio.is_sharded(_mio.read_json(mpath)):
-            _mio.save_sharded(mpath, manifest)
-        else:
-            _mio.atomic_write_json(mpath, manifest)
+        # Written back in whatever layout it arrived in (a phase lives in a
+        # shard, and a whole-file dump would flatten it), scrubbed and journaled.
+        _panel_write.save_in_layout(mpath, manifest)
     finally:
         if _locks.held(code):
             _locks.release(project, LOCK_NAME, out=lambda *_a, **_k: None)

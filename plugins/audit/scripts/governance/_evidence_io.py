@@ -91,12 +91,13 @@ from _journal_io import (command_facts, redacted_paths,  # noqa: E402
 from _machine_paths import OUTSIDE_TOKEN  # noqa: E402
 
 DEFAULT_DIRNAME = "evidence"
-# The row fields the append's scrub passes through untouched, by name: a step's
-# `command` is a copy of the plan's own gate entry (which the plan's save
-# scrubbed) and every reader asks whether the two are equal, so rewriting it
-# would make a recorded run stop matching the gate it ran. Free text is
-# everything else.
-LEDGER_KEPT_KEYS = frozenset(["command"])
+# The one row field the append's scrub passes through untouched: a STEP's
+# `command`, which is a copy of the plan's own gate entry (which the plan's save
+# scrubbed) and which every reader compares back to that entry, so rewriting it
+# would make a recorded run stop matching the gate it ran. By position and not
+# by key name: a `command` anywhere else in a row is text some runner or caller
+# composed, and is free text like the rest.
+LEDGER_KEPT_STEP_KEY = "command"
 
 
 # --- one resolution of a gate entry, for every reader that needs one -----------
@@ -1183,6 +1184,20 @@ def merge_seams(project, config=None):
 
 
 # --- writing and reading ------------------------------------------------------
+def scrubbed_ledger_row(project, row):
+    """`row` as the ledger may store it: every string scrubbed of machine paths
+    except `steps[i].command` (`LEDGER_KEPT_STEP_KEY` says why). A NEW
+    structure; the argument is untouched."""
+    clean = _journal_io.scrubbed_values(project, row)
+    steps = row.get("steps") if isinstance(row, dict) else None
+    if not isinstance(steps, list) or not isinstance(clean.get("steps"), list):
+        return clean
+    for i, step in enumerate(steps):
+        if isinstance(step, dict) and LEDGER_KEPT_STEP_KEY in step:
+            clean["steps"][i][LEDGER_KEPT_STEP_KEY] = step[LEDGER_KEPT_STEP_KEY]
+    return clean
+
+
 def append_row(project, row, session_id=None, config=None, writer=None):
     """Append one row, chained onto the file's tail; return the file it landed in.
 
@@ -1236,8 +1251,7 @@ def append_row(project, row, session_id=None, config=None, writer=None):
                     "copy and record the run again"
                     % (os.path.basename(path), exc))
         tail = [r for r in rows if not r.get("_unparseable")]
-        linked = chain_onto(_journal_io.scrubbed_values(project, row, keep=LEDGER_KEPT_KEYS),
-                            tail,
+        linked = chain_onto(scrubbed_ledger_row(project, row), tail,
                             os.path.basename(path))
         # LF on every platform, as the journal's appender writes it.
         with open(path, "a", encoding="utf-8", newline="\n") as fh:
