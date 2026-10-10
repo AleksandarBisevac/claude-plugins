@@ -1883,6 +1883,131 @@ def truncated_evidence_violations(dirs=None):
     return sorted(violations)
 
 
+# --- a tool's output, cut at one end ------------------------------------------
+# A refusal reason that quotes a subprocess's output cut the head off it, a failing
+# step's print kept the tail, and each lost the line that named the failure for the
+# tools that matter (a hook opens with a preamble, a test runner closes with a
+# summary). `_excerpt` keeps both ends and the failure lines between them; this is
+# the lint that stops the next site choosing an end again.
+OUTPUT_RUNNERS = frozenset(("run_git", "_git", "_git_bytes", "run_verb",
+                            "record_gate", "check_output", "communicate",
+                            "run", "Popen"))
+OUTPUT_STREAMS = frozenset(("stdout", "stderr"))
+# Below this a head cut is an abbreviation (a SHA, an id), not a quotation.
+OUTPUT_CUT_MIN = 40
+# Files that still cut output head-only because the task that introduced the lint
+# could not edit them (the plan gate held each outside that task's files). A row
+# is a debt and not a permission: it is reported once the file holds no such cut,
+# so the table empties as the sites are routed and cannot outlive them.
+BARE_CUT_PENDING = ("git/close-phase.py", "governance/drive-phase.py",
+                    "manifest/ado-connect.py", "status/_live_copy.py",
+                    "status/audit-lookup.py")
+_BARE_OUTPUT_CUT = ("a head-only cut of a subprocess's output - it keeps whatever "
+                    "the tool printed first and loses the line that names the "
+                    "failure; quote it through _excerpt.excerpt()")
+
+
+def _call_name(call):
+    func = call.func
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return func.id if isinstance(func, ast.Name) else ""
+
+
+def _reads_output(expr):
+    """True when `expr` contains a runner's call or a `.stdout` / `.stderr` read."""
+    for node in ast.walk(expr):
+        if isinstance(node, ast.Call) and _call_name(node) in OUTPUT_RUNNERS:
+            return True
+        if isinstance(node, ast.Attribute) and node.attr in OUTPUT_STREAMS:
+            return True
+        if isinstance(node, ast.Call) and _call_name(node) == "getattr" \
+                and len(node.args) > 1 and isinstance(node.args[1], ast.Constant) \
+                and node.args[1].value in OUTPUT_STREAMS:
+            return True
+    return False
+
+
+def _output_names(scope):
+    """The names `scope` binds from a runner's result, nested functions excluded."""
+    bound = set()
+    stack = list(ast.iter_child_nodes(scope))
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            continue
+        if isinstance(node, ast.Assign) and _reads_output(node.value):
+            for target in node.targets:
+                bound.update(n.id for n in ast.walk(target)
+                             if isinstance(n, ast.Name))
+        stack.extend(ast.iter_child_nodes(node))
+    return bound
+
+
+def _bare_cuts(scope, tainted):
+    """`(line)` of every `X[:N]` in `scope` (nested functions excluded) whose X
+    reads output, directly or through a name in `tainted`, with N a constant of
+    at least OUTPUT_CUT_MIN."""
+    hits = []
+    stack = list(ast.iter_child_nodes(scope))
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            continue
+        stack.extend(ast.iter_child_nodes(node))
+        if not isinstance(node, ast.Subscript) or not isinstance(node.slice, ast.Slice):
+            continue
+        sl = node.slice
+        if sl.lower is not None or sl.step is not None \
+                or not isinstance(sl.upper, ast.Constant) \
+                or not isinstance(sl.upper.value, int) \
+                or sl.upper.value < OUTPUT_CUT_MIN:
+            continue
+        names = set(n.id for n in ast.walk(node.value) if isinstance(n, ast.Name))
+        if _reads_output(node.value) or names & tainted:
+            hits.append(node.lineno)
+    return hits
+
+
+def bare_output_cut_violations(dirs=None, pending=None):
+    """(filename, line, what) for a head-only cut of a subprocess's output.
+
+    THE SHAPE: a slice `X[:N]`, N a constant of at least `OUTPUT_CUT_MIN`, where X
+    reads a `.stdout` / `.stderr` or a name bound in the same function from a call
+    to one of `OUTPUT_RUNNERS` -- `(err or out).strip()[:200]` is the case that
+    started this. Under the minimum a cut is an abbreviation (`sha[:12]`), not a
+    quotation, and a title or a summary is not output at all.
+
+    WHAT IT CANNOT SEE, in the direction every scan in this file errs: output that
+    reaches a name through a parameter, a return value of a runner it does not
+    list, an attribute of an object or a second assignment, a cut by `textwrap`
+    or by a loop, and any file outside `dirs` -- `hooks/` is not in the default
+    because a hook may not import `scripts/` and cannot reach `_excerpt`. So a
+    clean result means "none of this shape here", not "no output is cut".
+    """
+    dirs = dirs if dirs is not None else (SCRIPTS_DIR,)
+    pending = set(BARE_CUT_PENDING if pending is None else pending)
+    violations, cut = [], set()
+    for d in dirs:
+        for name, path in lint_py_files(d):
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    tree = ast.parse(fh.read(), filename=name)
+            except (OSError, SyntaxError):
+                continue
+            scopes = [tree] + [n for n in ast.walk(tree)
+                               if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+            for scope in scopes:
+                for line in _bare_cuts(scope, _output_names(scope)):
+                    cut.add(name)
+                    if name not in pending:
+                        violations.append((name, line, _BARE_OUTPUT_CUT))
+    violations.extend((name, 0, "BARE_CUT_PENDING names a file that holds no "
+                       "head-only cut of output any more - delete the row")
+                      for name in sorted(pending) if name not in cut)
+    return sorted(violations)
+
+
 # --- the raw JSON writer, by name only ----------------------------------------
 # `_manifest_io.atomic_write_json` scrubs every string of machine paths before it
 # writes, and that is the default because a rule each caller must remember is the

@@ -169,6 +169,7 @@ claude-plugins/                           # this repo (personal, public)
           stamp-verification.py           # the CLI over it: take a stamp, or grade one - current / stale (naming the field) / unestablished; `red` proves a red-first in a throwaway tree
           derive-phase-gate.py            # observes a phase's version answer, its two importer listings, changed/red-suite paths and the plan gate's exempt verdict, hands them to _gate_derive.derive, and records phase.testGateDerived (+ testGate in enforce mode) under the index lock
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
+        _excerpt.py                       # how a failing tool's output is quoted in a sentence - head, tail, the failure lines of the middle and a count of what was dropped, so no site chooses an end
         _machine_paths.py                 # what counts as machine identity in a string and how to take it out - the detector, the redaction and the whole-structure scrub the plan, the journal and the evidence ledger all save through
         _fmt.py                           # the one token/cost formatter, shared by usage + report + status
         _cli_fmt.py                       # the one place CLI color lives: --color resolution + paint roles
@@ -291,10 +292,11 @@ L0:
   _output
 
 L1:
+  _excerpt -> _output
   _machine_paths -> _output
 
 L2:
-  _ado_connect -> _output
+  _ado_connect -> _excerpt, _output
   _ado_conventions -> _output
   _ado_fields -> _output
   _ado_parent -> _output
@@ -309,7 +311,7 @@ L2:
   _filed_returns -> _machine_paths, _output
   _fmt -> _output
   _id_refs -> _output
-  _journal_io -> _machine_paths, _output
+  _journal_io -> _excerpt, _machine_paths, _output
   _loader -> _output
   _locks -> _output
   _manifest_io -> _machine_paths, _output
@@ -353,7 +355,7 @@ L3:
   _wave -> _output, _task_outputs
 
 L4:
-  _ado_fetch -> _ado_drift, _output
+  _ado_fetch -> _ado_drift, _excerpt, _output
   _doctor_ado -> _ado_drift, _ado_tracked, _doctor_report, _output
   _doctor_hygiene -> _branch, _locks, _output, _worktrees
   _evidence_view -> _evidence_io, _manifest_io, _output, _report_html, _status_facts
@@ -389,7 +391,7 @@ L6:
   _panel_state -> _evidence_io, _help, _journal_io, _manifest_io, _manifest_rules, _output, _panel_composition, _panel_discovery, _panel_paths, _panel_policy, _panel_runstate, _panel_usage, _panel_viewer, _proposals, _report_html
   _report_md -> _output, _report_html, _usage_markdown
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
-  _scoped_commit -> _evidence_io, _invariants, _journal_io, _output, _task_outputs
+  _scoped_commit -> _evidence_io, _excerpt, _invariants, _journal_io, _output, _task_outputs
 
 L7:
   _live_copy -> _branch, _invariants, _locks, _manifest_io, _output, _scoped_commit, _status_facts, _worktrees
@@ -1391,6 +1393,19 @@ list is not platform-dependent data: `print()` emits CRLF on Windows, CI's
 matches nothing, every migrated file gets run anyway, and the first one fails for printing
 its "cases moved" pointer instead of the contract — green on ubuntu, red on windows, for a
 defect in neither.
+
+### `plugins/audit/scripts/_excerpt.py`
+How a failing tool's output is quoted in a sentence that names the failure. A refusal reason used
+to cut the output at its head and a failing-step print kept only its tail, and each lost the line
+that named the failure for the tools that matter: a hook opens with a progress preamble, a test
+runner closes with a summary. `excerpt` keeps both ends, rescues the lines shaped like a failure
+from the dropped middle, and says how many characters went; `reason_of` is the `(err or out)`
+idiom over it. **It shares `_machine_paths`' layer** because `_journal_io` sizes the one `details`
+value allowed to carry an excerpt (`reason`) from `MAX_CHARS`, and a row's `summary` is where a
+long reason is clipped. `_output.bare_output_cut_violations()` fails a head-only slice of a name
+bound from a subprocess's output; its `BARE_CUT_PENDING` rows are debts, reported once the file no
+longer holds such a cut. `tools/verify.sh`'s `show_failure` applies the same rule to a screen.
+Cases in `plugins/audit/tests/test__excerpt.py`.
 
 ### `plugins/audit/scripts/_machine_paths.py`
 What counts as machine identity in a string, and how the plugin's own text is scrubbed of it

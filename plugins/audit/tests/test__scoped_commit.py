@@ -31,6 +31,7 @@ import sys
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _scoped_commit as M                         # noqa: E402
+import _journal_io                                 # noqa: E402
 
 
 def _git(repo, *args):
@@ -325,6 +326,35 @@ def _row_cases(check, tmp):
           not done["committed"] and "Nothing was staged" in done["refused"]
           and withdrawn == [(seen[-1], "a required row could not be written")]
           and _git(repo, "ls-files", "-s") == found)
+
+    # A HOOK THAT OPENS WITH A PROGRESS PREAMBLE and names the failing check last,
+    # as lint-staged does: a refusal reason cut at its head keeps the preamble and
+    # loses the check, so the withdrawn row could not say what failed. The reason
+    # is run through the journal's own details normaliser, because "the row keeps
+    # it" is a claim about the stored block and not about the string handed to it.
+    hooks = os.path.join(repo, ".git", "hooks")
+    preamble = "".join("[STARTED] step %d of the staged-files pipeline\n" % (i,)
+                       for i in range(40))
+    verdict = "\u2716 prettier --check found issues in lib/store.ts"
+    _write(os.path.join(hooks, "pre-commit"),
+           "#!/bin/sh\ncat >&2 <<'EOF'\n%s%s\nEOF\nexit 1\n" % (preamble, verdict))
+    os.chmod(os.path.join(hooks, "pre-commit"), 0o755)
+    del withdrawn[:]
+    done = M.commit_with_rows(repo, ["keep/a.txt"],
+                              M.classify(repo, [("keep/a.txt", True)]),
+                              ["chore: a"], lambda paths: "foreign", rows,
+                              lambda nonce, why: withdrawn.append(why) or "w")
+    stored = _journal_io.normalise_details({"reason": withdrawn[0]}) if withdrawn \
+        else {}
+    check("sc30 a commit refused by a hook whose 2 KB output starts with a "
+          "progress preamble and ends with the failing check records a "
+          "withdrawn row whose details name lib/store.ts - the preamble does not "
+          "crowd the check out, and the cut says how much it dropped: %r / %r"
+          % (done["refused"][-300:], stored),
+          len(preamble + verdict) > 1800 and not done["committed"]
+          and len(withdrawn) == 1 and "lib/store.ts" in done["refused"]
+          and "lib/store.ts" in (stored or {}).get("reason", "")
+          and "chars elided" in done["refused"])
 
     said = {}
     for label, carried_flag in (("in", True), ("out", False)):

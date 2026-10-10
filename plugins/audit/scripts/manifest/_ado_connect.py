@@ -76,6 +76,8 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _excerpt  # noqa: E402  (the one way a tool's output is quoted in a refusal)
+
 
 # --- rung 1: transport ----------------------------------------------------------
 # The name of the environment variable, never its value. Named as a constant so
@@ -311,7 +313,7 @@ def probe_verdict(envelope):
     return {"verdict": PROBE_OTHER, "ok": False, "rows": [],
             "detail": "the probe failed with exit %r and a message this "
                       "command does not recognise: %s"
-                      % (code, stderr.strip()[:200] or "(no stderr)"),
+                      % (code, _excerpt.reason_of(stderr) or "(no stderr)"),
             "remedy": None}
 
 

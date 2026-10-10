@@ -78,6 +78,8 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _excerpt  # noqa: E402  (the one way a tool's output is quoted in a refusal)
+
 import _ado_drift as _drift  # noqa: E402  (link_inventory: WHICH ids to fetch)
 
 # --- the contract ---------------------------------------------------------------
@@ -322,8 +324,8 @@ def run_chunk(organization, project, ids, timeout=DEFAULT_TIMEOUT_S,
         return {"status": CALL_FAILED, "rows": [], "ids": list(ids),
                 "detail": ("`az boards query` exited %s: %s"
                            % (done.returncode,
-                              (getattr(done, "stderr", "") or
-                               getattr(done, "stdout", "") or "").strip()[:400]))}
+                              _excerpt.reason_of(getattr(done, "stderr", ""),
+                                                 getattr(done, "stdout", ""))))}
     try:
         rows = json.loads(getattr(done, "stdout", "") or "null")
     except ValueError as exc:

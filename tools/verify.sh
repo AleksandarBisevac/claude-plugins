@@ -100,6 +100,23 @@ trap 'rm -rf "$WORKDIR"' EXIT INT TERM
 RESULTS=""
 FAILED=0
 
+# A failing step's log, printed so the failure can be NAMED: every line shaped like
+# one (a cross, FAIL, ERR_, error) from the part the tail would drop, then the tail
+# itself. Keeping only the tail lost a failing test's name whenever the runner's
+# summary came after it. `_excerpt.py` is the same rule for a sentence; this is the
+# same rule for a screen.
+show_failure() {
+  log=$1
+  keep=$2
+  total=$(wc -l <"$log" | tr -d ' ')
+  if [ "$total" -gt "$keep" ]; then
+    dropped=$((total - keep))
+    head -n "$dropped" "$log" | grep -E '✖|FAIL|ERR_|[Ee]rror' | head -40 | sed 's/^/      /'
+    printf '      [... %s earlier line(s) not shown except the failure lines above ...]\n' "$dropped"
+  fi
+  sed 's/^/      /' "$log" | tail -n "$keep"
+}
+
 run() {
   label=$1
   shift
@@ -111,7 +128,7 @@ run() {
   else
     code=$?
     printf 'FAILED (exit %s)\n' "$code"
-    sed 's/^/      /' "$WORKDIR/step.log" | tail -12
+    show_failure "$WORKDIR/step.log" 12
     RESULTS="$RESULTS
   FAIL  $label"
     FAILED=$((FAILED + 1))
@@ -212,7 +229,7 @@ if [ "$AFFECTED" -eq 1 ]; then
       i=$((i + 1))
       printf '  %-58s' "report gate #$i"
       if [ "$(cat "$WORKDIR/par-$i.rc" 2>/dev/null || echo 1)" = "0" ]; then printf 'ok\n'
-      else printf 'FAILED\n'; sed 's/^/      /' "$WORKDIR/par-$i.log" | tail -10; rc=1; fi
+      else printf 'FAILED\n'; show_failure "$WORKDIR/par-$i.log" 10; rc=1; fi
     done
     while IFS= read -r cmd; do
       case "$cmd" in
@@ -222,7 +239,7 @@ if [ "$AFFECTED" -eq 1 ]; then
         *)
           printf '  %-58s' "$cmd"
           if sh -c "$cmd" >"$WORKDIR/step.log" 2>&1; then printf 'ok\n'
-          else printf 'FAILED\n'; sed 's/^/      /' "$WORKDIR/step.log" | tail -10; rc=1; fi ;;
+          else printf 'FAILED\n'; show_failure "$WORKDIR/step.log" 10; rc=1; fi ;;
       esac
     done < "$WORKDIR/steps.txt"
     echo ""
@@ -418,7 +435,7 @@ for f in $report_docs; do
   ok    report is interactive: $b"
   else
     printf 'FAILED\n'
-    sed 's/^/      /' "$WORKDIR/$b.log" | tail -12
+    show_failure "$WORKDIR/$b.log" 12
     RESULTS="$RESULTS
   FAIL  report is interactive: $b"
     FAILED=$((FAILED + 1))

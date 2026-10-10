@@ -208,6 +208,7 @@ from _machine_paths import (MACHINE_PATH_SHAPES, MACHINE_PATH_TOKEN_START,  # no
                             may_hold_path, redacted_free_text, redacted_paths,
                             repo_relative_or_token, scrubbed_values,
                             _checkout_roots, _judged_text)
+import _excerpt  # noqa: E402  (MAX_CHARS: how much one quoted tool output may come to)
 
 ROW_VERSION = 1
 # A row carrying a `details` block is v2. The version names the SHAPE of one row,
@@ -297,6 +298,14 @@ CHANGE_KEYS = ("id", "field", "from", "to")
 _COMMAND_DETAILS_KEY = "command"
 MAX_CHANGES = 12            # a diff bigger than this is a rewrite, not an edit
 MAX_VALUE_CHARS = 120       # a value is evidence, not a payload
+# ...EXCEPT A QUOTED TOOL OUTPUT. A value carrying `_excerpt`'s elision marker is
+# already bounded by `_excerpt.MAX_CHARS` and is the evidence -- its two ends and
+# its failure lines -- so cutting it again at a value's length would put the
+# head-only cut back one level down. It is kept whole, with room for the sentence
+# around it; any other value is clipped as before, and the SUMMARY is where a long
+# reason is shortened. Private on purpose: a bound for one shape of value, not a
+# constant a row reader is promised.
+_EXCERPT_VALUE_CHARS = _excerpt.MAX_CHARS + 300
 MAX_DETAILS_BYTES = 4096    # the whole block, canonically spelled
 # `summary` was the one field of a row with no bound at all, while the `details`
 # block beside it has three of them: an allow-list, a clip per value, and a cap on
@@ -1296,7 +1305,7 @@ def _clip_marked(text, limit, marker):
     return text[:limit - len(marker)] + marker
 
 
-def _clip(value):
+def _clip(value, limit=MAX_VALUE_CHARS):
     """One details value, bounded -- and saying so when it had to be cut.
 
     Strings are held to MAX_VALUE_CHARS; scalars pass; anything structured is
@@ -1305,11 +1314,11 @@ def _clip(value):
     a canonical spelling cut mid-brace is not JSON any more and had nothing on it
     to say why."""
     if isinstance(value, str):
-        return _clip_marked(value, MAX_VALUE_CHARS, VALUE_TRUNCATED)
+        return _clip_marked(value, limit, VALUE_TRUNCATED)
     if value is None or isinstance(value, (bool, int, float)):
         return value
     try:
-        return _clip_marked(canonical(value), MAX_VALUE_CHARS, VALUE_TRUNCATED)
+        return _clip_marked(canonical(value), limit, VALUE_TRUNCATED)
     except Exception:
         return None
 
@@ -1364,7 +1373,10 @@ def normalise_details(details, project=None):
             # review, which is why the ordering has a case of its own.
             out["cwd"] = _clip(repo_relative_or_token(project, val))
         else:
-            out[key] = _clip(redacted_free_text(project, val, roots))
+            text = redacted_free_text(project, val, roots)
+            out[key] = _clip(text, _EXCERPT_VALUE_CHARS
+                             if isinstance(text, str) and _excerpt.is_excerpt(text)
+                             else MAX_VALUE_CHARS)
     if _COMMAND_DETAILS_KEY in details:
         # `command` is no longer in DETAILS_KEYS, so the loop above dropped it;
         # these are what a row carries in its place. Derived from the value AS

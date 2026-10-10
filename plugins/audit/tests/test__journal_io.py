@@ -38,6 +38,7 @@ from _output import safe_stdio                     # noqa: E402
 import _output                                     # noqa: E402  (posix_rel: the one path spelling)
 import _loader                                     # noqa: E402
 import _journal_io as M                            # noqa: E402
+import _excerpt                                    # noqa: E402
 
 _CMD = _loader.load_script("audit-journal.py", modname="audit_journal_boundary")
 
@@ -1311,6 +1312,22 @@ def _cases(check):
           len(_cut) == M.MAX_SUMMARY_CHARS
           and _cut.endswith(M.SUMMARY_TRUNCATED)
           and _cut.count(M.SUMMARY_TRUNCATED) == 1)
+    # A QUOTED TOOL OUTPUT is the one value kept past that bound, because its two
+    # ends and its failure lines ARE the evidence and a second head-only cut would
+    # lose the line that names the failure. The pair is the point: the quoted
+    # value survives whole, and the same length of free text, one marker short of
+    # an excerpt, is still cut -- so the exception cannot become "reason is long".
+    _quoted = "git refused the commit (%s)" % (
+        _excerpt.excerpt("p" * 400 + "\n\u2716 lint failed in lib/store.ts\n"
+                         + "q" * 900 + "\nTAILEND"),)
+    _kept = (M.normalise_details({"reason": _quoted}) or {}).get("reason")
+    _plain = (M.normalise_details({"reason": "x" * len(_quoted)}) or {}).get("reason")
+    check("vt1b a value carrying an excerpt's elision marker is kept whole, the "
+          "failure line and the tail included, while free text of the same length "
+          "is cut at MAX_VALUE_CHARS: %r / %r" % (_kept, len(_plain or "")),
+          _kept == _quoted and len(_quoted) > M.MAX_VALUE_CHARS
+          and "lib/store.ts" in _kept and _kept.endswith("TAILEND)")
+          and len(_plain) == M.MAX_VALUE_CHARS)
     # Exactly AT the bound, not merely under it: an off-by-one here is the
     # difference between a field that is never cut for nothing and one that is.
     _exact = "y" * M.MAX_SUMMARY_CHARS

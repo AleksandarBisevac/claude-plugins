@@ -77,6 +77,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _excerpt  # noqa: E402  (the one way a tool's output is quoted in a refusal)
 import _evidence_io  # noqa: E402  (the one reader of a porcelain line's path)
 import _invariants  # noqa: E402  (`_under`: the one answer to "is this inside"; the trailer)
 import _task_outputs  # noqa: E402  (`covers`: the one rule for whether a declared path holds a file)
@@ -156,7 +157,7 @@ def foreign_staged(git_root, allowed):
         return [], err
     if code != 0:
         return [], ("git would not list the staged paths (%s)"
-                    % ((err or out).strip()[:200],))
+                    % (_excerpt.reason_of(err, out),))
     return [p for p in lines(out) if not under_any(p, allowed)], ""
 
 
@@ -185,7 +186,7 @@ def uncommitted(git_root, allowed):
         return [], err
     if code != 0:
         return [], ("git would not describe the working tree (%s)"
-                    % ((err or out).strip()[:200],))
+                    % (_excerpt.reason_of(err, out),))
     # `_evidence_io._path_of` rather than a slice: a porcelain line for a RENAME is
     # `XY <old> -> <new>` and only the second name exists now, which is a rule this
     # tree already writes down once. `git mv` into `journal/archive/` is exactly
@@ -363,7 +364,7 @@ def stage(git_root, paths, kinds):
         code, out, err = run_git(git_root, argv + group)
         if code is None or code != 0:
             return "`git %s` refused (%s)" % (" ".join(argv[:-1]),
-                                              (err or out).strip()[:200])
+                                              _excerpt.reason_of(err, out))
     return ""
 
 
@@ -430,14 +431,14 @@ def snapshot(git_root, paths):
     if code is None or code != 0:
         return None, ("git would not list the index entries this commit would "
                       "stage (%s), so a failed staging could not be undone - "
-                      "nothing was staged" % ((err or out).strip()[:200],))
+                      "nothing was staged" % (_excerpt.reason_of(err, out),))
     code2, st, err2 = run_git(git_root, ["status", "--porcelain=v2", "-z",
                                          "--untracked-files=no", "--"]
                               + list(paths))
     if code2 is None or code2 != 0:
         return None, ("git would not describe the index this commit would "
                       "stage (%s), so a failed staging could not be undone - "
-                      "nothing was staged" % ((err2 or st).strip()[:200],))
+                      "nothing was staged" % (_excerpt.reason_of(err2, st),))
     ita = [rec.split(" ", 8)[8] for rec in st.split("\0")
            if rec.startswith("1 .A ") and len(rec.split(" ", 8)) == 9]
     return {"entries": [e for e in out.split("\0") if e], "ita": ita}, ""
@@ -465,11 +466,11 @@ def restore(git_root, snap, paths):
     code, out, err = run_git(git_root, ["update-index", "-z", "--index-info"],
                              stdin=feed.encode("utf-8"))
     if code is None or code != 0:
-        return (err or out).strip()[:200] or "git update-index exited %r" % (code,)
+        return _excerpt.reason_of(err, out) or "git update-index exited %r" % (code,)
     if ita:
         code, out, err = run_git(git_root, ["add", "-N", "--"] + sorted(ita))
         if code is None or code != 0:
-            return ((err or out).strip()[:200]
+            return (_excerpt.reason_of(err, out)
                     or "git add -N exited %r" % (code,))
     return ""
 
@@ -534,14 +535,14 @@ def commit_from_index(git_root, paths, paragraphs, head):
                                  index_file=index_file)
         if code != 0:
             return "", "git would not read HEAD into a temporary index (%s)" % (
-                (err or out).strip()[:200],)
+                _excerpt.reason_of(err, out),)
         code, real, err = run_git(git_root, ["ls-files", "-s", "-z", "--"]
                                   + list(paths))
         code2, held, err2 = run_git(git_root, ["ls-files", "-z", "--"]
                                     + list(paths), index_file=index_file)
         if code != 0 or code2 != 0:
             return "", "git would not list the entries to commit (%s)" % (
-                (err or err2).strip()[:200],)
+                _excerpt.reason_of(err, err2),)
         zero = _zero_oid(git_root)
         feed = "".join("0 %s\t%s\0" % (zero, p)
                        for p in sorted(set(f for f in held.split("\0") if f)))
@@ -552,7 +553,7 @@ def commit_from_index(git_root, paths, paragraphs, head):
                                  index_file=index_file)
         if code != 0:
             return "", "git would not build the temporary index (%s)" % (
-                (err or out).strip()[:200],)
+                _excerpt.reason_of(err, out),)
         code, now, _err = run_git(git_root, ["rev-parse", "--verify", "-q",
                                              "HEAD"])
         if code != 0 or now.strip() != head:
@@ -564,13 +565,13 @@ def commit_from_index(git_root, paths, paragraphs, head):
         code, out, err = run_git(git_root, argv, index_file=index_file)
         if code != 0:
             return "", "git refused the commit (%s)" % (
-                (err or out).strip()[:200],)
+                _excerpt.reason_of(err, out),)
         code, sha, err = run_git(git_root, ["rev-parse", "HEAD"])
         code2, parent, _err2 = run_git(git_root, ["rev-parse", "HEAD^"])
         sha, parent = sha.strip(), parent.strip()
         if code != 0 or not sha:
             return "", ("the commit was made and git would not print its SHA "
-                        "(%s)" % ((err or "").strip()[:200],))
+                        "(%s)" % (_excerpt.reason_of(err),))
         if code2 != 0 or parent != head:
             return sha, ("the commit %s was made on %s and not on %s, the HEAD "
                          "read before staging - a commit landed in between, so "
@@ -622,7 +623,7 @@ def stage_and_commit(git_root, paths, kinds, paragraphs, refuse_foreign):
     if code is None or code != 0:
         out["refused"] = restored(git_root, snap, paths,
                                   "git would not list the staged paths (%s)"
-                                  % ((staged_err or staged_out).strip()[:200],))
+                                  % (_excerpt.reason_of(staged_err, staged_out),))
         return out
     out["staged"] = [p for p in lines(staged_out) if under_any(p, paths)]
     if any(kinds.get(p) == DELETED_ON_DISK for p in paths):
@@ -642,14 +643,14 @@ def stage_and_commit(git_root, paths, kinds, paragraphs, refuse_foreign):
     if code is None or code != 0:
         out["refused"] = restored(git_root, snap, paths,
                                   "git refused the commit (%s)"
-                                  % ((c_err or c_out).strip()[:200],))
+                                  % (_excerpt.reason_of(c_err, c_out),))
         return out
     out["committed"] = True
     code, head, head_err = run_git(git_root, ["rev-parse", "HEAD"])
     out["sha"] = head.strip() if code == 0 else ""
     if not out["sha"]:
         out["refused"] = ("the commit was made and git would not print its SHA "
-                          "(%s)" % ((head_err or "").strip()[:200],))
+                          "(%s)" % (_excerpt.reason_of(head_err),))
     return out
 
 

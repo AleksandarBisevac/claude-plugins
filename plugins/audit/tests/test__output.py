@@ -787,6 +787,53 @@ def _cases(check):
           "cut: %r" % (M.truncated_evidence_violations(),),
           M.truncated_evidence_violations() == [])
 
+    # --------------------------------- a tool's output, cut at one end
+    bc = tempfile.mkdtemp(prefix="audit-barecut-")
+    try:
+        def _bc(name, text):
+            with open(os.path.join(bc, name), "w", encoding="utf-8") as fh:
+                fh.write(text)
+        _bc("bare.py", 'def f(run_git):\n'
+                       '    code, out, err = run_git(["status"])\n'
+                       '    return (err or out).strip()[:200]\n')
+        _bc("stream.py", 'def f(done):\n'
+                         '    return done.stderr.decode("utf-8").strip()[:160]\n')
+        _bc("getattr.py", 'def f(done):\n'
+                          '    text = getattr(done, "stdout", "") or ""\n'
+                          '    return text[:120]\n')
+        _bc("sha.py", 'def f(run_git):\n'
+                      '    code, out, err = run_git(["rev-parse", "HEAD"])\n'
+                      '    return out.strip()[:12]\n')
+        _bc("title.py", 'def f(title):\n'
+                        '    return title.strip()[:200]\n')
+        _bc("routed.py", 'def f(run_git, _excerpt):\n'
+                         '    code, out, err = run_git(["status"])\n'
+                         '    return _excerpt.reason_of(err, out)\n')
+        _bc("tail.py", 'def f(run_git):\n'
+                       '    code, out, err = run_git(["status"])\n'
+                       '    return out.strip()[-200:]\n')
+        got = dict((n, l) for n, l, _w in M.bare_output_cut_violations((bc,), ()))
+        check("bc1 a head-only cut of a runner's output is reported by file and "
+              "line, whether the name was bound from a runner, read off "
+              "`.stderr` or fetched with getattr: %r" % (sorted(got.items()),),
+              got.get("bare.py") == 3 and got.get("stream.py") == 2
+              and got.get("getattr.py") == 3)
+        check("bc2 ...and the allow cases are silent - an abbreviated SHA, a cut "
+              "title, the helper's own call and a TAIL slice - each the one a "
+              "widened rule would convict first: %r" % (sorted(got),),
+              not ({"sha.py", "title.py", "routed.py", "tail.py"} & set(got)))
+        held = M.bare_output_cut_violations((bc,), ("bare.py", "title.py"))
+        check("bc3 a pending row silences its file, and a row naming a file with "
+              "no such cut is itself reported, so the table cannot outlive its "
+              "sites: %r" % (held,),
+              not [h for h in held if h[0] == "bare.py"]
+              and [h for h in held if h[0] == "title.py" and h[1] == 0])
+    finally:
+        shutil.rmtree(bc, ignore_errors=True)
+    check("bc4 ...and the real tree carries no head-only cut of output beyond the "
+          "files the pending table names: %r" % (M.bare_output_cut_violations(),),
+          M.bare_output_cut_violations() == [])
+
     # ------------------------------------------- the raw JSON writer, by name
     rw = tempfile.mkdtemp(prefix="audit-rawjson-")
     try:
@@ -1047,6 +1094,7 @@ def _cases(check):
                                   "hooks/require-plan.py",
                                   "scripts/_cli_fmt.py",
                                   "scripts/_deps.py",
+                                  "scripts/_excerpt.py",
                                   "scripts/_fmt.py",
                                   "scripts/_loader.py",
                                   "scripts/_machine_paths.py",
@@ -1205,6 +1253,7 @@ def _cases(check):
                                      "plugins/audit/hooks/require-plan.py",
                                      "plugins/audit/scripts/_cli_fmt.py",
                                      "plugins/audit/scripts/_deps.py",
+                                     "plugins/audit/scripts/_excerpt.py",
                                      "plugins/audit/scripts/_fmt.py",
                                      "plugins/audit/scripts/_loader.py",
                                      "plugins/audit/scripts/_machine_paths.py",

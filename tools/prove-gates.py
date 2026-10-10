@@ -467,6 +467,14 @@ TABLE = (
   "def raw_json_writer_violations(script_dir=None, hooks_dir=None, table=None):\n"
   "    return []",
   OUT, "rj1"),
+ # The bare-output-cut rule, crippled. It is what keeps a failing tool's
+ # output from being cut to its head again, which is how a pre-commit hook's
+ # actual failure went missing from the record twice.
+ ("bare_output_cut_violations", S + "_output.py", "replace",
+  "def bare_output_cut_violations(dirs=None, pending=None):",
+  "def bare_output_cut_violations(dirs=None, pending=None):\n"
+  "    return []",
+  OUT, "bc1"),
  # The returns-writer rule, crippled. It is what keeps a filed return - a
  # committed file under docs/audit - from being written past the scrub, and a
  # version reporting nothing reads exactly like a tree whose returns are clean.
@@ -1426,6 +1434,11 @@ ALLOW = (
  ("raw_json_writer_violations", S + "_output.py", "replace",
   "                if (named, where) not in allowed:",
   "                if True:", OUT, "rj2"),
+ # The bare-output-cut rule, widened to every slice: an id or SHA
+ # abbreviation is a short head cut on purpose, and convicting it would teach
+ # authors to route around the lint.
+ ("bare_output_cut_violations", S + "_output.py", "replace",
+  "sl.upper.value < OUTPUT_CUT_MIN", "sl.upper.value < 0", OUT, "bc2"),
  # The returns-writer rule, widened: a function that only builds a return path
  # without writing one is not a bypass, and convicting it would push readers of
  # the path into the writer.
