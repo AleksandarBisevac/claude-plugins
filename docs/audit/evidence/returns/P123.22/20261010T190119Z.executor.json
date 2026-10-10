@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "sweep-selftests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T19:11:45Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 986 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - hs5d (house FAIL), hs5e (house FAIL): SELFTEST FAILED: 984/986 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "audit-task.py _tip_only_remedy: listing error -> holder unknown with git's reason; prunable holder -> git worktree prune named before the add (new _branch_prunable). Cases hs5d, hs5e added beside hs5b; both failed before the fix (984/986), 986/986 after. tools/sweep-selftests.py exit 0. PLUGIN-BUILD-GUIDE.md untouched (_deps.py --render exit 0).",
+    "descriptive": "The tip-only remedy no longer asserts absence it could not read or an add git refuses."
+  },
+  "testsAdded": [
+    "hs5d",
+    "hs5e"
+  ],
+  "claims": "claims: wording only describes branches in code; no numbers added.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:edf65522b651eab8c5feb076b1de750164898808d54ffc2acb5c6061abdda31f\",\"dirtyDigest\":\"sha256:043a3faa2dbe6490dc79c80579612aed7ef663343022742858bd46b28211b9c9\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\"plugins/audit/scripts/manifest/audit-task.py\":\"cc5c311357e77a3c\",\"plugins/audit/tests/test_audit_task.py\":\"1bcfb45fa210fa67\"},\"head\":\"96f7f5db\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:46d7a57e6cf1dc27f5e86784979da568959e49082f1bd8f91dddf7c890fec491\",\"v\":2}"
+}

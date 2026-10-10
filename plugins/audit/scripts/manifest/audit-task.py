@@ -9157,6 +9157,17 @@ def _tip_only_remedy(proj, listing, waiting, local, branch):
     elif holder:
         where = ("run the driver in %s, the worktree holding %s, whose "
                  "triage lists it" % (holder, branch))
+    elif listing["error"]:
+        where = ("which worktree holds %s is unknown, because git's worktree "
+                 "list could not be read (%s) - run the driver in the "
+                 "worktree holding it, whose triage lists it"
+                 % (branch, listing["error"]))
+    elif _branch_prunable(listing, branch):
+        where = ("a worktree holding %s is gone from disk but still "
+                 "registered, and git refuses to add it again - run `git "
+                 "worktree prune`, then `git worktree add <dir> %s` and run "
+                 "the driver there, whose triage lists it"
+                 % (branch, branch))
     else:
         where = ("no worktree holds %s, so check it out into one first - "
                  "`git worktree add <dir> %s` - and run the driver there, "
@@ -9178,6 +9189,12 @@ def _branch_holder(proj, listing, branch):
         if found:
             return found
     return None
+
+
+def _branch_prunable(listing, branch):
+    """Whether a worktree git lists as prunable has `branch` checked out."""
+    return any(isinstance(t, dict) and t.get("prunable")
+               and t.get("branch") == branch for t in listing["trees"])
 
 
 def _returns_read(proj, cfg, phase):

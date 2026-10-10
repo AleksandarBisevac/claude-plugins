@@ -13955,6 +13955,29 @@ def _held_cases(check):
               and "git worktree add <dir> audit/p1-wt" in gone[1]
               and not names(wt, gone[1]))
 
+        # Unreadable listing: absence cannot be stated, so the holder is unknown.
+        unread = M._tip_only_remedy(
+            proj, {"top": proj, "trees": [], "error": "git exploded"},
+            [{"who": "executor", "what": "P1.1", "sha256": "x"}], [],
+            "audit/p1-wt")
+        check("hs5d an unreadable worktree listing: the remedy says the holder "
+              "is unknown and why, never that no worktree holds the branch: %r"
+              % (unread,),
+              "unknown" in unread and "git exploded" in unread
+              and "no worktree holds" not in unread)
+
+        # A prunable worktree still holds the branch; `worktree add` is refused.
+        proj, mpath, wt, _rel = outside_worktree("signoff-prunable-remedy")
+        shutil.rmtree(wt)
+        prun = signoff(proj, "P1", "skipped")
+        check("hs5e a prunable worktree holding the branch: the remedy names "
+              "`git worktree prune` before the add: %r"
+              % ((prun[0], prun[1][-700:]),),
+              prun[0] == M.E_USAGE and "git worktree prune" in prun[1]
+              and "no worktree holds" not in prun[1]
+              and prun[1].index("git worktree prune")
+              < prun[1].index("git worktree add"))
+
         # The same branch, held by the same worktree, and the same return
         # also in this checkout's evidence: only where the answer sits differs.
         proj, mpath, wt, rel = outside_worktree("signoff-local-remedy")
