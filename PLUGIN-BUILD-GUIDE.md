@@ -160,6 +160,7 @@ claude-plugins/                           # this repo (personal, public)
           drive-phase.py                  # the step driver: `next <phase>` runs every due step that needs no judgement through the existing verbs, as subprocesses, and prints one instruction - dispatch, decide or done; a refused verb stops it with the verb's own words. Sign-off is the phase review's dispatch, one triage decision, then gate, invariants, sign-off verb, commit, landing and lock release as one step. `submit` is an agent's last act: the stamp, the red-first helper and the filing in one call
           full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, then a coupling and a bug per named selection miss of a red run (the red still blocks), or the sentence and exit 0 when no meta.fullGate is declared; --learn-from <runId> runs nothing and learns from an imported row through the same function
           _runner_output.py               # every reading of what a test runner printed: its summary line (how many checks ran) and the lines naming a failing check
+          _runner_collects.py             # does the test runner collect this path: collected, not collected, or could not tell - from the runner's own file listing, else a literal include in its config text
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs; the one POSIX sh (and its PATH) every plan command runs under, or a refusal - never cmd.exe
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
           _wave.py                        # which ready tasks may run together (declared files provably disjoint; an empty declaration runs alone) and what an overlap between two is - mergeable, or a lockfile that is not
@@ -318,6 +319,7 @@ L2:
   _priority -> _output
   _proc_group -> _output
   _refs -> _output
+  _runner_collects -> _output
   _runner_output -> _output
   _task_outputs -> _output
   _ui_theme -> _output
@@ -4451,6 +4453,18 @@ would give it; `locate_sh` returns `<root>\usr\bin` and `<root>\mingw64\bin` wit
 untouched. Both spawn sites take argv and env from ONE call, `shell_invocation`, so the shell and
 its PATH cannot drift apart between them. The path module is a parameter throughout, so the
 cases judge Windows spellings under `ntpath` on every host.
+
+### `plugins/audit/scripts/governance/_runner_collects.py`
+`collects(path, runner, project, lister=None)` answers whether a runner would collect a path, with
+three values (`COLLECTED`, `NOT_COLLECTED`, `COULD_NOT_TELL`), the `via` that produced it and the
+`basis` sentence. Only `NOT_COLLECTED` may stop a run; anything the module does not understand (an
+unknown runner, a computed or spread include, `mergeConfig`, `projects`, a glob form it does not
+translate) is `COULD_NOT_TELL`. The runner's own listing is asked first - `vitest list --filesOnly`,
+`jest --listTests`, `pytest --collect-only -q` (a binary already in the project, never downloaded;
+pytest's list can prove a file collected but never that one is not); otherwise a literal `include`, `testMatch`/`roots`
+or pytest default is read from the config TEXT, which is tokenised and never executed. `match_glob`
+holds the picomatch forms it translates and answers `None` for the rest. Layer 1; it reaches
+nothing but `_output`. Its cases are in `plugins/audit/tests/test__runner_collects.py`.
 
 ### `plugins/audit/scripts/governance/_runner_output.py`
 Every reading of what a test runner printed: `_SUMMARY_READERS` and `summary_count` for how many

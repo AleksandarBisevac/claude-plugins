@@ -180,6 +180,11 @@ LAYERS = (
      # same questions, and an entry point may not import another. It reaches
      # nothing but `_output`.
      "_runner_output",
+     # `_runner_collects` answers "does the test runner collect this path" from
+     # the runner's own listing or its config text. L1 because the task-start
+     # preflight and the scope companions ask the same question and an entry
+     # point may not import another. It reaches nothing but `_output`.
+     "_runner_collects",
      # `_worktrees` answers "which worktrees exist, whose phase is each, and what
      # may be reaped". At L1 for `_commit_trail`'s reason word for word: FOUR
      # surfaces need the SAME answer - `_doctor_hygiene` and `_doctor_policy` (both

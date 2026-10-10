@@ -531,7 +531,7 @@
     {
       "id": "P124.8",
       "title": "briefs, prompts and docs say which tree a wave task works in",
-      "status": "in_progress",
+      "status": "done",
       "description": "F600 design A6: replace orchestrator.md's stale parallel-tasks paragraph (the source of F595's confusion) instead of adding beside it; keep followed_anchor_drift green with the README row anchored to dispatch-wave. Mind measure-context's byte ceilings on command bodies.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -570,32 +570,46 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fa9327fb1eb2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-lookup.py: new wave_tree_lines reads the driver state (_fr.drive_state, wave.trees/base) and compose_executor_brief adds a Tree section (tree:, base:, cd <tree> && rule, never commit) only when the task has a tree there; width 1 gets none. Tests bf40 (wave brief) and bf41 (width-1 brief carries none) in test_audit_lookup.py: 79/79. orchestrator.md: the stale Parallel-safety paragraph replaced in place by one on executor.waveWidth and dispatch-wave, plus two dependent stale phrases (let executors edit in parallel; parallel group in progress lines). plugins/audit/README.md followed-from row re-anchored to step dispatch-executor and step dispatch-wave (test__refs 334/334 incl. followed_anchor_drift) and the /audit:phase row's serial wording qualified. phase.md description says one at a time or as waves (phase run form stays 3962/4000). audit-executor.md gains one bullet on tree:/base: briefs (executor 7316/9000); reviewer unchanged at 6995/7000, run.md unchanged (nothing stale in it). Also ran test_drive_phase 159/159, test__deps 307/307, test__output 225/225, ruff clean. Note: the brief's README.md path was read as plugins/audit/README.md, where the followed-from table lives; the root README.md was not touched.",
+        "descriptive": "A wave executor's brief now states its tree, base and cd/never-commit rules; width 1 briefs are unchanged; the stale parallel-tasks paragraph is replaced."
       },
       "startedAt": "2026-10-10T04:40:02Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T04:52:13Z",
+      "verifiedBy": [
+        "bf40 wave task brief carries tree/base lines, cd rule, never commit",
+        "bf41 width-1 brief carries none"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T04:52:13Z.7c7743",
         "status": "passed",
         "at": "2026-10-10T04:52:13Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "fa9327fb1eb2",
+        "at": "2026-10-10T04:52:13Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T04:44:24Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_lookup.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 79 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bf40 (house FAIL): SELFTEST FAILED: 78/79 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P124.9",
       "title": "the plugin can tell whether a runner collects a test path: collected, not collected, or could not tell",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F599 design B1 and D8. vitest semantics were probed on real vitest 5.0.3; jest testMatch/roots and pytest python_files/testpaths were written from memory - verify them against the runners' docs before closing, and add jest --listTests / pytest --collect-only list modes if cheap.",
       "files": [
         "plugins/audit/scripts/governance/_runner_collects.py",
         "plugins/audit/tests/test__runner_collects.py",
         "plugins/audit/scripts/_deps.py",
         "PLUGIN-BUILD-GUIDE.md",
-        "plugins/audit/tests/test__output.py"
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/README.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -622,16 +636,28 @@
       "dependsOn": [
         "P124.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T04:52:14Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "notes": [
+        {
+          "at": "2026-10-10T04:52:40Z",
+          "text": "plugins/audit/README.md rides in this task's commit as P124.8's follower: P124.8 declared the root README.md (an orchestrator slip in the batch) and edited plugins/audit/README.md's followed-rules and /audit:phase rows; done's leftover check blames only covered paths, so the edit stayed uncommitted - the F612(a) gap, fixed in the all-bugs phase."
+        }
+      ],
+      "testEvidence": {
+        "runId": "2026-10-10T05:07:20Z.44ac04",
+        "status": "passed",
+        "at": "2026-10-10T05:07:20Z"
+      }
     },
     {
       "id": "P124.10",
