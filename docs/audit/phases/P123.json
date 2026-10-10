@@ -923,7 +923,7 @@
     {
       "id": "P123.17",
       "title": "The panel's gate-catches payload reports an unreadable evidence ledger instead of []",
-      "status": "in_progress",
+      "status": "blocked",
       "description": "`panel/_panel_usage._gate_catches_payload` wraps the evidence read in `except Exception: return []` and also ignores `read_rows(...)`'s own read problem (`.get('rows') or []`), so an unreadable ledger is indistinguishable from a project with no gate history. Latent: no UI reads `gateCatches` yet. Ship `{catches, readError}` with the same readError shape and sentence the evidence tab uses, before any UI reads it; `_usage_shape`'s default becomes the empty-but-readable value. Regression: a read that raises (or a ledger with an undecodable file) yields readError and no catches; an empty ledger yields no catches and no error. Faults: F525.",
       "files": [
         "plugins/audit/scripts/panel/_panel_usage.py",
@@ -962,7 +962,8 @@
       "startedAt": "2026-10-10T08:12:51Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "blockedReason": "F619: the wave submit reads the task tree's stale plan; running it from the project dir instead was denied by the auto-mode classifier as a bypass, rightly. Work is done and kept in the task tree (it also needs PLUGIN-BUILD-GUIDE.md for its module-map line); unblock after P123.39 (the F619 fix) lands and the executor files from its own tree."
     },
     {
       "id": "P123.18",
