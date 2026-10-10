@@ -2326,16 +2326,44 @@ def _cases(check):
           M.covering_key(_ck_map, "src/dirdecl-old/mod.ts") is None,
           repr(M.covering_key(_ck_map, "src/dirdecl-old/mod.ts")))
     _ck_real = M._load_scripts_module
+    _ck_saved = dict(M._TASK_RULE_LIB)
+    M._TASK_RULE_LIB.update({"tried": False, "mod": None})
     M._load_scripts_module = lambda name, filename: None
     try:
         _ck_dir = M.covering_key(_ck_map, "src/dirdecl/mod.ts")
         _ck_file = M.covering_key(_ck_map, "pkg/a.py")
     finally:
         M._load_scripts_module = _ck_real
+        M._TASK_RULE_LIB.update(_ck_saved)
     check("ck3 covering_key returns None - uncovered, the loud direction - for "
           "a directory entry AND an exact entry when the coverage rule cannot "
           "be loaded: %r" % ((_ck_dir, _ck_file),),
           _ck_dir is None and _ck_file is None)
+
+    # The coverage rule is loaded once per process, and not at all for an empty
+    # map: guard-bash-writes asks covering_key once per written path.
+    _ck_calls = []
+    _ck_saved2 = dict(M._TASK_RULE_LIB)
+    M._TASK_RULE_LIB.update({"tried": False, "mod": None})
+
+    def _ck_counting(name, filename):
+        _ck_calls.append(name)
+        return _ck_real(name, filename)
+    M._load_scripts_module = _ck_counting
+    try:
+        _ck_empty = M.covering_key({}, "src/dirdecl/mod.ts")
+        _ck_after_empty = len(_ck_calls)
+        M.covering_key(_ck_map, "src/dirdecl/mod.ts")
+        M.covering_key(_ck_map, "pkg/a.py")
+        _ck_after_two = len(_ck_calls)
+    finally:
+        M._load_scripts_module = _ck_real
+        M._TASK_RULE_LIB.update(_ck_saved2)
+    check("ck4 covering_key over an empty map answers None and loads nothing: "
+          "%r" % ((_ck_empty, _ck_after_empty),),
+          _ck_empty is None and _ck_after_empty == 0)
+    check("ck5 two covering_key calls load _task_outputs once: %r" % (_ck_calls,),
+          _ck_after_two == 1 and _ck_calls == ["_task_outputs"])
 
     # --- tb: a task worktree's binding, read from the marker -----------------
     import _worktrees as _wtmod

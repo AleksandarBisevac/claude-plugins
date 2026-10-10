@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "test__config selftest": "pass",
+    "bench-hooks --gate": "pass",
+    "ruff (hooks, test__config)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T15:18:12Z",
+    "basis": "`python3 plugins/audit/tests/test__config.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 292/293 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "hooks/_config.py: added _TASK_RULE_LIB + _task_rule() (tried once, kept, like _LEDGER_LIB); covering_key returns None before loading when file_map is empty and uses _task_rule(); in_progress_outputs and covering_output use it too. tests/test__config.py: ck3 resets/restores the cache around its patch; new ck4 (empty map -> None, zero loads) and ck5 (two calls -> one load). Before the fix the selftest raised AttributeError on _TASK_RULE_LIB (292/293); after: 304/304, exit 0. bench-hooks.py --gate exit 0 (3.11 not measured, no interpreter). No import edge changed, so PLUGIN-BUILD-GUIDE.md untouched. Note: a python heredoc edit to _config.py was refused by the plan gate; redone with the Edit tool.",
+    "descriptive": "covering_key loads _task_outputs once per process and not at all for an empty map."
+  },
+  "testsAdded": [
+    "ck4 covering_key over an empty map answers None and loads nothing",
+    "ck5 two covering_key calls load _task_outputs once"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:25d33fae0d2eb7e8413896dcf4a5f8a8f84fce6d0547a884bd75dcee5a52a428\",\"dirtyDigest\":\"sha256:ad3ab22bcaba4c85bd414bfcce8b3a70f49be66f805987858c71f5c822306d80\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\"plugins/audit/hooks/_config.py\":\"0e54eeb4cd50ac49\",\"plugins/audit/tests/test__config.py\":\"ccd7badb5c06e07f\"},\"head\":\"3836bca8\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/tests/test__config.py\"],\"scopeDigest\":\"sha256:4eb14cfc99ab571742a1da32f90bca2cfc94839a2c4cb513c72181525eba1e69\",\"v\":2}"
+}

@@ -3037,6 +3037,22 @@ def in_progress_files(root, manifest_rel):
         return set()
 
 
+_TASK_RULE_LIB = {"tried": False, "mod": None}
+
+
+def _task_rule():
+    """`_task_outputs`, loaded once per process - the `_ledger_lib` caching.
+
+    guard-bash-writes asks `covering_key` once per written path, and each cold
+    load re-executes the module and the `_output` import behind it. None when it
+    cannot be loaded, which every caller reads as "nothing is covered"."""
+    if not _TASK_RULE_LIB["tried"]:
+        _TASK_RULE_LIB["tried"] = True
+        _TASK_RULE_LIB["mod"] = _load_scripts_module("_task_outputs",
+                                                     "_task_outputs.py")
+    return _TASK_RULE_LIB["mod"]
+
+
 def covering_key(file_map, rel):
     """The key of a rel-file -> [...] map that covers `rel`, or None.
 
@@ -3048,7 +3064,9 @@ def covering_key(file_map, rel):
     TEXT asks it too, over a different map — and a message that named a
     declaring task the gate would not in fact have been opened by is the same
     false claim in a new place. One matcher, so the two cannot disagree."""
-    rule = _load_scripts_module("_task_outputs", "_task_outputs.py")
+    if not file_map:
+        return None
+    rule = _task_rule()
     if rule is None:
         return None
     try:
@@ -3089,7 +3107,7 @@ def in_progress_outputs(root, manifest_rel):
     switches a FEATURE off; switching this one off the other way would switch the
     GATE off, which is the door this whole key had to be built not to open.
     """
-    rule = _load_scripts_module("_task_outputs", "_task_outputs.py")
+    rule = _task_rule()
     if rule is None:
         return []
     out = []
@@ -3124,7 +3142,7 @@ def covering_output(outputs, rel):
     cover anything. `covering_key` is shaped the same way and for the same
     reason.
     """
-    rule = _load_scripts_module("_task_outputs", "_task_outputs.py")
+    rule = _task_rule()
     if rule is None:
         return None
     try:

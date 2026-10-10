@@ -963,7 +963,7 @@
     {
       "id": "P123.13",
       "title": "A shell-created file outside every running task's scope is refused at the edit tools' tier",
-      "status": "in_progress",
+      "status": "done",
       "description": "(F612 part b - guard command reading) guard-bash-writes' Bash branch filters new dirty paths through `_config.source_exts`, so a `cp` of a .webp outside every in_progress task's scope drew nothing, and even a source file draws only a non-blocking notice whatever tier the plan gate is in; the executor said \"plan gate did not refuse\". Match the Write/Edit tier: while the gate is in its deny tier (a phase in_progress), a new non-exempt file a shell command created outside every in_progress task's scope is reported whatever its extension, with a blocking PostToolUse decision naming the path and the remedy (remove it, or widen scope with `/audit:task scope`), and recorded in the session state so attempt-bound-commit's check reads the same fact; the warn and observe tiers keep today's notice. Where the command's destination is readable before the diff (cp/mv/install/tee/redirect targets, through the shared `_config` readers), attribute the file to that command; an unreadable command stays attributed by the git-status diff as today. Red-first both directions: `cp a.webp public/x.webp` outside scope in the deny tier -> blocking decision; the same path inside scope, an exempt path, a read-only command and another session's file -> nothing new. Run `tools/bench-hooks.py --gate` after. Faults: F612. GUARD COMMAND-READING CODE: written by the orchestrator with the user's permission (auto mode off when possible); if the API refuses, record it verbatim and hand the remainder to the human.",
       "files": [
         "plugins/audit/hooks/guard-bash-writes.py",
@@ -1001,25 +1001,43 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3836bca84360",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_config.copy_destinations(words): the destination(s) of cp/mv/ln/install (last operand, or -t/--target-directory) and tee, found past assignments and wrappers by program_candidates, None when unreadable, [] for a non-copying program (cases dd1, dd2). guard-bash-writes: _statement_targets names copy destinations through it, writing_statement matches a path under a directory destination; decide grades a non-source path in the deny tier only (plan_gate_mode), keeps the free-file slot for source files, records every authored uncovered path in state.outOfScope (new state key, loaded and defaulted), and returns 'block' with BLOCK_TEMPLATE for non-source paths the command authored; main prints decision block + reason. Cases co1 (red before: silent), co1b, co2-co4 (allow: covered dir, exempt, read-only). SECURITY.md states the deny-tier answer. Written by the orchestrator under the user's permission for guard command-reading code.",
+        "descriptive": "While a phase runs, a non-source file a shell command creates outside every in_progress task's scope (an image or config copied in with cp) is refused with a blocking decision naming it and the scope remedy; source files keep their notice, and every uncovered path is recorded for the commit check."
       },
       "startedAt": "2026-10-10T15:01:30Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T15:17:01Z",
+      "verifiedBy": [
+        "test_guard_bash_writes co1",
+        "test_guard_bash_writes co1b",
+        "test_guard_bash_writes co2",
+        "test_guard_bash_writes co3",
+        "test_guard_bash_writes co4",
+        "test__config dd1",
+        "test__config dd2"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T15:16:59Z.8267cc",
         "status": "passed",
         "at": "2026-10-10T15:16:59Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "3836bca84360",
+        "at": "2026-10-10T15:17:01Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T15:09:04Z",
+        "basis": "`python3 plugins/audit/tests/test_guard_bash_writes.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 226 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - co1 (house FAIL): SELFTEST FAILED: 224/226 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.14",
       "title": "covering_key loads _task_outputs once per process and not at all for an empty map",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(P122-R9) `hooks/_config.covering_key` calls `_load_scripts_module('_task_outputs', ...)` on every call, re-executing the module and its `_output` import each time, and guard-bash-writes asks it once per written path; it loads even when `file_map` is empty. Cache the module the way `_LEDGER_LIB` is cached (tried once, kept), and return None before loading when the map is empty. Confirm with `tools/bench-hooks.py --gate`. Faults: P122-R9.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -1051,16 +1069,22 @@
         "P123.13"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T15:17:01Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T15:26:11Z.4ab8d4",
+        "status": "passed",
+        "at": "2026-10-10T15:26:11Z"
+      }
     },
     {
       "id": "P123.15",
