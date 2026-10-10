@@ -493,14 +493,39 @@ def _cases(check):
           "%d call(s) recorded; ff-only=%r no-ff=%r"
           % (len(every), any("--ff-only" in c for c in every),
              any("--no-ff" in c for c in every)))
-    check("h1 NO run, in any policy x containment x worktree x --no-ff "
-          "combination, ever issues "
-          "`git switch` - it is unavailable from inside the worktree a "
-          "phase ran in, and moving an operator's HEAD is a side effect no script "
-          "takes on its own. COUNTED over every combination rather than checked on "
-          "the happy path",
+    check("h1 NO run over this corpus issues `git switch`: the only switch a landing "
+          "makes is the landing switch of a clean MAIN worktree standing on the "
+          "merged branch (pure cases ls1-ls5 and the mt cases), and no combination "
+          "here builds that tree. COUNTED over every combination rather than "
+          "checked on the happy path",
           every and not any("switch" in c for c in every),
           "%d call(s) recorded, none a switch" % (len(every),))
+    main_on = W.parse_list("worktree /repo\nHEAD aaa\nbranch refs/heads/feature/p2\n")
+    sw = W.landing_switch(main_on, "feature/p2", "dev", "no-checkout", "/repo", False)
+    check("ls1 a clean main worktree on the branch, the parent held nowhere, after a "
+          "no-checkout merge: `git switch dev`, planned in that worktree: %r" % (sw,),
+          sw["argv"] == ["switch", "dev"] and sw["path"] == "/repo")
+    check("ls2 a dirty or unreadable tree is not switched, and says why: %r / %r"
+          % (W.landing_switch(main_on, "feature/p2", "dev", "no-checkout", "/repo",
+                              True)["why"],
+             W.landing_switch(main_on, "feature/p2", "dev", "no-checkout", "/repo",
+                              None)["why"]),
+          W.landing_switch(main_on, "feature/p2", "dev", "no-checkout", "/repo",
+                           True)["argv"] is None
+          and W.landing_switch(main_on, "feature/p2", "dev", "no-checkout", "/repo",
+                               None)["argv"] is None)
+    check("ls3 a LINKED worktree holding the branch is never switched",
+          W.landing_switch(ORPHAN, "feature/p2", "dev", "no-checkout", "/wt-p2",
+                           False)["argv"] is None)
+    check("ls4 a landing run in a tree other than the one holding the branch, or a "
+          "merge that was not a no-checkout one, switches nothing",
+          W.landing_switch(main_on, "feature/p2", "dev", "no-checkout", "/elsewhere",
+                           False)["argv"] is None
+          and W.landing_switch(main_on, "feature/p2", "dev", "in-parent-worktree",
+                               "/repo", False)["argv"] is None)
+    check("ls5 trees_after_switch moves only the named worktree onto the parent",
+          [t["branch"] for t in W.trees_after_switch(ORPHAN, "/repo", "dev")]
+          == ["dev", "feature/p2"])
     check("h2 ...and no run ever forces: no `+` refspec, no `branch -D`, no "
           "`--force` anywhere",
           every and not any(a.startswith("+") or a in ("-D", "--force")
@@ -909,6 +934,12 @@ def _write_plan(root, meta, phases):
     return mpath
 
 
+def _has_ref(git, name):
+    """Whether the branch `name` resolves in the fixture repository."""
+    return git("rev-parse", "--verify", "-q", "refs/heads/%s" % (name,)
+               ).returncode == 0
+
+
 def _main_tree_cases(check):
     """Signed off from the MAIN worktree while it stands on the phase branch.
 
@@ -928,34 +959,82 @@ def _main_tree_cases(check):
             fh.write("work\n")
         git("add", "-A")
         git("commit", "-q", "-m", "work")
+        work_sha = git("rev-parse", "HEAD").stdout.decode().strip()
         lines = []
         M.main([mpath, "P1", "--project", root, "--delete-branch", "--dry-run"],
                out=lines.append)
         preview = "\n".join(lines)
-        check("mt0 --dry-run words the follow-up as what the cleanup WILL need after "
-              "the merge, not as a cleanup that has run and stopped: %r"
-              % (preview[-300:],),
-              "after the merge, cleanup will need, from" in preview
+        check("mt0 --dry-run previews the landing switch as a step the run WILL take - "
+              "`git switch main` - and the branch deletion after it, and prints no "
+              "hand-over for a cleanup that needs none: %r" % (preview[-300:],),
+              "would run: git switch main" in preview
+              and "would run: git update-ref -d refs/heads/audit/p1-demo" in preview
+              and "cleanup will need" not in preview
               and "cleanup is not finished" not in preview
-              and "git switch main" in preview)
+              and git("branch", "--show-current").stdout.decode().strip()
+              == "audit/p1-demo")
         lines = []
         code = M.main([mpath, "P1", "--project", root, "--delete-branch"],
                       out=lines.append)
         text = "\n".join(lines)
         head = git("branch", "--show-current").stdout.decode().strip()
-        landed = git("merge-base", "--is-ancestor", "audit/p1-demo",
-                     "main").returncode == 0
-        check("mt1 close-phase from the main worktree ON the phase branch lands it, "
-              "moves no HEAD, and prints the two commands that finish the cleanup "
-              "- `git switch main`, then `git branch -d audit/p1-demo` - each on a "
-              "line of its own: exit %r, head %r, %r" % (code, head, text[-400:]),
-              landed and head == "audit/p1-demo"
-              and "\n    git switch main\n    git branch -d audit/p1-demo" in text)
+        landed = git("merge-base", "--is-ancestor", work_sha, "main").returncode == 0
+        subject = git("log", "-1", "--format=%s", "main").stdout.decode()
+        recorded = git("show", "main:docs/audit/audit-plan.json").stdout.decode()
+        check("mt1 close-phase from a CLEAN main worktree standing on the phase "
+              "branch, the parent checked out nowhere, lands it and leaves HEAD on the "
+              "parent with the stamp committed there and the branch deleted: exit %r, "
+              "head %r, subject %r, branch kept %r, %r"
+              % (code, head, subject, _has_ref(git, "audit/p1-demo"), text[-400:]),
+              code == M.E_OK and landed and head == "main"
+              and subject.startswith("chore(audit-state): phase P1 - landed on")
+              and "mergedAt" in recorded and not _has_ref(git, "audit/p1-demo")
+              and git("status", "--porcelain").stdout.decode().strip() == "")
         check("mt2 ...and never tells the operator to remove the main tree, nor "
-              "that a worktree must go first: %r" % (text[-400:],),
-              "git worktree remove" not in text and "must go first" not in text)
+              "that a worktree must go first, nor to switch a checkout it already "
+              "switched: %r" % (text[-400:],),
+              "git worktree remove" not in text and "must go first" not in text
+              and "cleanup is not finished" not in text)
     finally:
         _harness.remove_tree(root)
+    # A TREE WITH UNCOMMITTED WORK IS NOT SWITCHED, and says where it stands.
+    for name, extra in (("keep", ["--keep-branch"]),
+                        ("delete", ["--delete-branch"])):
+        root = _harness.fixture_root("closephase-maintree-dirty-%s" % (name,))
+        try:
+            git = _fixture_git(root)
+            _init_fixture_repo(git)
+            mpath = _write_plan(root, {"developmentBranch": "main"},
+                                [_signed_phase("P1", "audit/p1-demo")])
+            git("add", "-A")
+            git("commit", "-q", "-m", "base")
+            git("checkout", "-q", "-b", "audit/p1-demo")
+            with open(os.path.join(root, "work.txt"), "w") as fh:
+                fh.write("work\n")
+            git("add", "-A")
+            git("commit", "-q", "-m", "work")
+            with open(os.path.join(root, "work.txt"), "w") as fh:
+                fh.write("work, then more\n")
+            lines = []
+            code = M.main([mpath, "P1", "--project", root] + extra, out=lines.append)
+            text = "\n".join(lines)
+            head = git("branch", "--show-current").stdout.decode().strip()
+            landed = git("merge-base", "--is-ancestor", "audit/p1-demo",
+                         "main").returncode == 0
+            with open(os.path.join(root, "work.txt")) as fh:
+                kept = fh.read() == "work, then more\n"
+            check("mt3-%s a main worktree with uncommitted work is NOT switched: the "
+                  "branch still lands, HEAD stays on it, the work is untouched, and "
+                  "the output names `git switch main` and where the checkout sits: "
+                  "exit %r, head %r, %r" % (name, code, head, text[-500:]),
+                  code == M.E_OK and landed and head == "audit/p1-demo" and kept
+                  and ("is still on audit/p1-demo" in text
+                       and "`git switch main`" in text
+                       if name == "keep" else
+                       "\n    git switch main\n    git branch -d audit/p1-demo"
+                       in text))
+        finally:
+            _harness.remove_tree(root)
 
 
 _RA_ANSWERED = {"answer": "matches", "redFirst": "proved",
@@ -2957,8 +3036,13 @@ def _close(mpath, root, *extra):
 
 
 def _landed(git):
-    return git("merge-base", "--is-ancestor", "audit/p1-demo",
-               "main").returncode == 0
+    """Whether the phase's work is on `main`. A landing that switched the main
+    worktree to the parent also deletes the branch, so with the branch gone the
+    work is read off `main`'s own history: the fixtures commit it as `work`."""
+    if _has_ref(git, "audit/p1-demo"):
+        return git("merge-base", "--is-ancestor", "audit/p1-demo",
+                   "main").returncode == 0
+    return "work" in git("log", "--format=%s", "main").stdout.decode().split("\n")
 
 
 def _override_cases(check):
@@ -2981,7 +3065,8 @@ def _override_cases(check):
               and not _merged_at(mpath))
         lines = []
         code = M.main([mpath, "P1", "--project", root, "--override-verdict",
-                       "the red was a runner outage"], out=lines.append)
+                       "the red was a runner outage", "--keep-branch"],
+                      out=lines.append)
         rows = _override_rows(root)
         check("cr2 RED-FIRST: an explicit --override-verdict lands it and journals "
               "the exception - ONE row naming the phase, the red run and the "
@@ -2995,7 +3080,8 @@ def _override_cases(check):
         # ALREADY LANDED: the branch is kept and the parent holds it, a later
         # red is recorded, and the re-runs that stamp or clean up must finish.
         _write_rows(root, ["failed"], first=2)
-        code, text = _close(mpath, root, "--override-verdict", "again")
+        code, text = _close(mpath, root, "--override-verdict", "again",
+                            "--keep-branch")
         check("cr5 a re-run over a landed branch with the override writes NO "
               "second row - one row per actual merge: exit %r, rows %d, %r"
               % (code, len(_override_rows(root)), text[:300]),
@@ -3006,7 +3092,7 @@ def _override_cases(check):
               "prints could otherwise never finish; the verdict is said: exit "
               "%r, %r" % (code, text[:300]),
               code == 0 and "REFUSED" not in text and "already landed" in text
-              and "cr-2" in text and len(_override_rows(root)) == 1)
+              and "`failed`" in text and "run cr-" in text and len(_override_rows(root)) == 1)
     finally:
         if root:
             _harness.remove_tree(root)
@@ -3420,17 +3506,16 @@ def _landing_commit_cases(check):
         lines = []
         code = M.main([mpath, "P1", "--project", root], out=lines.append)
         text = "\n".join(lines)
-        after = git("rev-parse", "audit/p1-demo").stdout.decode().strip()
-        parent = git("rev-parse", "main").stdout.decode().strip()
-        first = git("rev-parse", "%s^" % (after,)).stdout.decode().strip()
+        head = git("branch", "--show-current").stdout.decode().strip()
+        first = git("rev-parse", "main^").stdout.decode().strip()
         dirty = git("status", "--porcelain", "--",
                     "docs/audit/audit-plan.json").stdout.decode().strip()
-        check("lt3 the parent checked out nowhere and the main tree on the phase "
-              "branch: the stamp is committed on that branch, one commit after "
-              "the work, and the parent is fast-forwarded to it, so main's HEAD "
-              "holds the stamp and the tree is clean: exit %r, %s"
-              % (code, text[-300:]),
-              code == M.E_OK and first == tip and parent == after
+        check("lt3 the parent checked out nowhere and a clean main tree on the phase "
+              "branch: the tree is switched to the parent first, so the stamp is "
+              "committed ON the parent, one commit after the work, with HEAD there "
+              "and the tree clean: exit %r, head %r, %s"
+              % (code, head, text[-300:]),
+              code == M.E_OK and head == "main" and first == tip
               and _head_merged_at(git) == _merged_at(mpath) and dirty == "")
     finally:
         _harness.remove_tree(root)

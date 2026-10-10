@@ -21,8 +21,12 @@ rather than merely informal.
     case like that is a rule that needs cases, which is what `_worktrees.merge_plan`
     is.
 
-WHAT IT NEVER DOES. It never moves an operator's HEAD -- no `git switch`, in any
-mode. It never forces: no `+` refspec, no `branch -D`, no `merge --no-ff` unless the
+WHAT IT NEVER DOES. It moves an operator's HEAD in exactly one case: a landing that
+fast-forwarded the parent without a checkout switches the MAIN worktree it was run in
+to the parent, when that worktree stands on the merged branch, holds no uncommitted
+work and nothing holds the parent (`_worktrees.landing_switch`). Every other
+checkout stays where it was, and the output names the `git switch` that leaves the
+merged branch. It never forces: no `+` refspec, no `branch -D`, no `merge --no-ff` unless the
 human passed the flag. It never skips a hook either: `--no-verify` is named in one
 refusal's remedy and appears in no argv this command runs, so a hook is only
 ever skipped by a person typing it. It never deletes a branch that did not reach ITS
@@ -431,6 +435,38 @@ def cleanup_for(inputs, branch, parent, contained, settled=None):
         settled=settled if settled is not None else inputs.get("settled"))
 
 
+def _landing_switch(inputs, git_root, branch, parent, mode):
+    """`_worktrees.landing_switch` over the plan's travelling inputs; the answer
+    carries `argv` None, and why, when the inputs are absent."""
+    if not inputs:
+        return {"argv": None, "path": None, "why": "no observation to decide on"}
+    return _wt.landing_switch(inputs["trees"], branch, parent, mode, git_root,
+                              inputs["treeDirty"])
+
+
+def _switched_inputs(inputs, trees):
+    """The cleanup inputs once the main worktree stands on the parent: `trees` as
+    given, nothing holding the branch, and no worktree left to remove - the one
+    that held it is the main worktree, which is never removed."""
+    return dict(inputs, trees=trees, phaseTree=None, treeDirty=False,
+                wantWorktree=False)
+
+
+def _checkout_stays(inputs, branch, parent, mode, switch):
+    """{"from", "branch", "command", "why"} -- the main worktree a no-checkout
+    landing left on the merged branch, or None when it does not stand there.
+    `why` is the reason `landing_switch` gave, or the one git gave."""
+    if mode != "no-checkout" or not inputs:
+        return None
+    held = _wt.holder_of(inputs["trees"], branch)["tree"]
+    if not held or not held.get("isMain"):
+        return None
+    return {"from": held.get("path"), "branch": branch, "parent": parent,
+            "command": _wt.main_tree_release(inputs["trees"], branch, parent,
+                                             held)["commands"][0],
+            "why": switch.get("why") or ""}
+
+
 # --- the writer ------------------------------------------------------------------
 
 def _step(argv, code, out, err):
@@ -500,10 +536,16 @@ def close(git_root, the_plan, branch, parent, run=None, dry_run=False,
         # it says so, which is honest — the alternative is a preview of the state
         # the repository is leaving rather than the one it is entering.
         preview = cleanup
-        if the_plan.get("cleanupInputs"):
-            preview = cleanup_for(the_plan["cleanupInputs"], branch, parent,
-                                  _wt.CONTAINED, settled=settled_now)
+        inputs = the_plan.get("cleanupInputs")
+        switch = _landing_switch(inputs, git_root, branch, parent, merge["mode"])
+        if inputs:
+            if switch["argv"]:
+                inputs = _switched_inputs(inputs, _wt.trees_after_switch(
+                    inputs["trees"], switch["path"], parent))
+            preview = cleanup_for(inputs, branch, parent, _wt.CONTAINED,
+                                  settled=settled_now)
         answer["plannedSteps"] = ([merge["argv"]] if merge["argv"] else []) \
+            + ([switch["argv"]] if switch["argv"] else []) \
             + [s["argv"] for s in preview["steps"]]
         answer["blocked"] = list(preview["blocked"])
         answer["followUp"] = preview.get("followUp")
@@ -539,6 +581,33 @@ def close(git_root, the_plan, branch, parent, run=None, dry_run=False,
     answer["verified"] = verified
     if verified["answer"] != _wt.CONTAINED:
         return (E_NO_BASIS if verified["answer"] == _wt.UNKNOWN else E_FAIL), answer
+
+    # THE LANDING SWITCH comes BEFORE the stamp, so the stamp and its journal rows are
+    # written in the checkout that stands on the parent and committed there. The
+    # parent equals the branch tip at this point (it was just fast-forwarded to it),
+    # so the switch rewrites no file. A switch git refuses is not a failed landing:
+    # the checkout stays on the branch and the hand-over below names the command.
+    switch = _landing_switch(the_plan.get("cleanupInputs"), git_root, branch, parent,
+                             merge["mode"])
+    switched, now = False, []
+    if switch["argv"] and not dry_run:
+        code, out, err = fn(switch["path"], switch["argv"])
+        answer["steps"].append(_step(switch["argv"], code, out, err))
+        if code is None:
+            return E_NO_BASIS, answer
+        listing = _wt.list_worktrees(git_root, run=run) if code == 0 else None
+        now = ((listing or {}).get("trees") or [])
+        switched = bool(listing) and not listing["error"] and any(
+            t.get("branch") == parent and _wt.same_tree(t.get("path"), switch["path"])
+            for t in now)
+        if not switched:
+            answer["switchWhy"] = ("`git %s` in %s exited %s%s" % (
+                " ".join(switch["argv"]), switch["path"], code,
+                ": %s" % ((err or out or "").strip()[:160],)
+                if (err or out) else ""))
+    answer["switched"] = switched
+    if switched:
+        answer["switchedIn"] = switch["path"]
 
     # THE FACT `mergedAt` RECORDS IS THIS ONE, not "this run performed a merge".
     # `merged` is true only on the paths that ran a git write, so an
@@ -587,12 +656,22 @@ def close(git_root, the_plan, branch, parent, run=None, dry_run=False,
     # just VERIFIED in place of that one mark, and leaves the other two - sign-off
     # done, every task terminal - to answer for themselves.
     if the_plan.get("cleanupInputs"):
-        cleanup = cleanup_for(the_plan["cleanupInputs"], branch, parent,
-                              verified["answer"], settled=settled_now)
+        inputs = the_plan["cleanupInputs"]
+        if switched:
+            # READ BACK, not assumed: the picture the cleanup is decided on is the
+            # worktree list as git reports it now.
+            inputs = _switched_inputs(inputs, now)
+        cleanup = cleanup_for(inputs, branch, parent, verified["answer"],
+                              settled=settled_now)
         answer["blocked"] = list(cleanup["blocked"])
-    # The operator's half of a cleanup this command will not do: freeing a branch
-    # the main worktree stands on takes a switch, and no HEAD is moved here.
+    # The operator's half of a cleanup the landing did not do: freeing a branch the
+    # main worktree stands on takes a switch. When the branch is not being deleted
+    # nothing else would say that the checkout still sits on the merged branch.
     answer["followUp"] = cleanup.get("followUp")
+    answer["checkoutStays"] = (
+        None if switched or answer["followUp"]
+        else _checkout_stays(the_plan.get("cleanupInputs"), branch, parent,
+                             merge["mode"], switch))
 
     for step in cleanup["steps"]:
         code, out, err = fn(git_root, step["argv"])
@@ -2902,12 +2981,25 @@ def render(answer, out=print):
         # A PREVIEW HAS RUN NOTHING, so it says what the cleanup will need rather
         # than that a cleanup stopped.
         out(("  after the merge, cleanup will need, from %s:" if answer.get("dryRun")
-             else "  cleanup is not finished, and this never moves a HEAD. From %s, "
-                  "run:") % (follow["from"],))
+             else "  cleanup is not finished, and the checkout was not switched. "
+                  "From %s, run:") % (follow["from"],))
         for command in follow["commands"]:
             out("    %s" % (command,))
         if follow.get("note"):
             out("  (that %s)" % (follow["note"],))
+    if answer.get("switched"):
+        out("  %s switched to %s (it stood on the merged branch)"
+            % (answer["switchedIn"], answer["parent"]))
+    elif answer.get("switchWhy"):
+        out("  the checkout was NOT switched to %s: %s"
+            % (answer["parent"], answer["switchWhy"]))
+    stays = answer.get("checkoutStays")
+    if stays:
+        out("  %s is still on %s, which has merged into %s%s. To leave it, run "
+            "`%s` there"
+            % (stays["from"], stays["branch"], stays["parent"],
+               " (not switched: %s)" % (stays["why"],) if stays["why"] else "",
+               stays["command"]))
     parked = answer.get("parkedOnBranch") or []
     if parked:
         out("  parked on %s, materializable now that it has landed - on %s, run:"
@@ -2924,8 +3016,8 @@ def render(answer, out=print):
 # refusal, a preview, a cleanup to finish, a field it could not write, an
 # override of the verdict, a lock taken while it ran, work parked to materialize.
 _OWED = ("REFUSED", "NOT MERGED", "WARNING", "would run", "would write",
-         "cleanup is not finished", "after the merge", "parked on", " NOT ",
-         "OVER ITS VERDICT", "not committed here")
+         "cleanup is not finished", "after the merge", "parked on", "is still on",
+         " NOT ", "OVER ITS VERDICT", "not committed here")
 
 
 def _short_record(line):

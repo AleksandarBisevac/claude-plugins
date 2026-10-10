@@ -445,7 +445,11 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
         tree: `fatal: '<parent>' is already used by worktree at '<path>'`, exit 128. The
         documented sign-off was unavailable on exactly the runs this file recommends. The script
         merges **in the worktree that already holds the parent**, or — when nothing holds it —
-        fast-forwards without a checkout. It never moves your HEAD.
+        fast-forwards without a checkout. The one HEAD it moves is the **main** worktree it was
+        run in, when that worktree stands on the merged branch, is clean and nothing holds the
+        parent: it is switched to the parent, so the stamp is committed there and you start
+        the next phase from the parent. A dirty tree, a linked worktree or a parent held
+        elsewhere is left where it was, and the output says so with the `git switch` to run.
       - **`git branch -d` grades against HEAD, not against the parent.** Measured: it deleted a
         branch whose `parentBranch` was `develop` while the work had only reached `main`, exit 0.
         The script gates deletion on `git merge-base --is-ancestor <branch> <parent>` and never on
@@ -518,8 +522,9 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
         cleanup (git would delete the caller's own directory, silently, exit 0); the output hands
         you the command to finish from the main tree.
       - A phase branch **checked out in the main worktree** lands, and the main tree is never
-        removed or switched. The output prints the two commands that free the branch, to run
-        there yourself: `git switch <parent>` (or `git switch --detach <parent>` when another
+        removed. A clean one with the parent held nowhere is switched to the parent and the
+        branch is deleted. Otherwise it is left on the merged branch, and the output prints the
+        commands that free it, to run there yourself: `git switch <parent>` (or `git switch --detach <parent>` when another
         worktree holds the parent, which leaves the main tree on a detached HEAD at the parent,
         and the output says so), then `git branch -d <branch>`. Under `--dry-run` the same
         commands are worded as what the cleanup will need once the merge lands.

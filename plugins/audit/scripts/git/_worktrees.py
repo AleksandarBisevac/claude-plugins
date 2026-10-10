@@ -770,11 +770,11 @@ def merge_plan(trees, branch, parent, contained, parent_exists, parent_dirty,
     operator disproves in one command, and a guard disproved once is a guard routed
     around.
 
-    THIS FUNCTION NEVER PLANS A `git switch`. Not only because the worktree case
-    forbids it -- it does -- but because moving an operator's HEAD is a side effect no
-    script should take on its own, and one path that works from inside a worktree,
-    from the main tree and from a bare checkout is worth more than two that differ by
-    where they were invoked.
+    THIS FUNCTION NEVER PLANS A `git switch`. The merge is one path that works from
+    inside a worktree, from the main tree and from a bare checkout, and it stays that.
+    The one switch a landing makes is decided apart, by `landing_switch`, because it
+    depends on facts the merge does not ask: which checkout the landing runs in, and
+    whether that checkout holds uncommitted work.
     """
     plan = {"mode": "refuse", "where": None, "argv": [], "refusal": None,
             "basis": ""}
@@ -1040,8 +1040,8 @@ def cleanup_plan(trees, branch, parent, contained, tree_dirty, dirty_lines=None,
             if len(_rest) == 1 and _rest[0].get("isMain"):
                 follow_up = main_tree_release(trees, branch, parent, _rest[0])
                 blocked.append(_refusal(
-                    "%r is checked out in the main worktree (%s), and this never "
-                    "moves a HEAD" % (branch, _rest[0].get("path")),
+                    "%r is checked out in the main worktree (%s), which was not "
+                    "switched" % (branch, _rest[0].get("path")),
                     "from %s, run %s%s"
                     % (follow_up["from"],
                        ", then ".join("`%s`" % c for c in follow_up["commands"]),
@@ -1092,7 +1092,7 @@ def cleanup_plan(trees, branch, parent, contained, tree_dirty, dirty_lines=None,
 
 def main_tree_release(trees, branch, parent, main_tree):
     """{"from", "commands", "note"} -- what the operator runs to free `branch` from
-    the main worktree, since nothing here moves a HEAD. `note` says what the
+    the main worktree when the landing did not switch it. `note` says what the
     commands leave behind when that is not the parent checked out, else None.
 
     `git switch <parent>` puts HEAD where `git branch -d` then grades the right
@@ -1108,6 +1108,57 @@ def main_tree_release(trees, branch, parent, main_tree):
             if elsewhere else None)
     return {"from": main_tree.get("path"),
             "commands": [switch, "git branch -d %s" % (branch,)], "note": note}
+
+
+def landing_switch(trees, branch, parent, mode, run_tree, tree_dirty):
+    """{"argv", "path", "why"} -- the one `git switch` a landing makes, or why it makes
+    none (`argv` is then None and `why` says which condition failed).
+
+    THE RULE, in one sentence: a landing that fast-forwarded the parent without
+    checking it out leaves the checkout it ran in on the merged branch, so that
+    checkout is switched to the parent -- when it is the MAIN worktree, it is the one
+    holding `branch`, nothing holds `parent`, and it holds no uncommitted work. Each
+    condition is a reason the switch would be wrong rather than merely unwanted:
+    a linked worktree is the phase's own and is removed or kept as such; a parent
+    held elsewhere makes git refuse; and a switch over uncommitted work carries it
+    onto the parent under a commit that never saw it.
+
+    `tree_dirty` is `dirtiness()`'s answer, and None -- git would not say -- is not a
+    clean tree. `run_tree` is the checkout the landing was asked in.
+    """
+    none = {"argv": None, "path": None, "why": ""}
+    if mode != "no-checkout":
+        return dict(none, why="the merge was not a ref-only fast-forward")
+    held = holder_of(trees, branch)["tree"]
+    if held is None or held.get("prunable"):
+        return dict(none, why="no worktree holds %r" % (branch,))
+    if not held.get("isMain"):
+        return dict(none, path=held.get("path"),
+                    why="%s is a linked worktree, which is the phase's own"
+                        % (held.get("path"),))
+    if not same_tree(held.get("path"), run_tree):
+        return dict(none, path=held.get("path"),
+                    why="the landing was not run in %s" % (held.get("path"),))
+    if holder_of(trees, parent)["tree"] is not None:
+        return dict(none, path=held.get("path"),
+                    why="%r is checked out in another worktree" % (parent,))
+    if tree_dirty is not False:
+        return dict(none, path=held.get("path"),
+                    why="%s holds uncommitted work" % (held.get("path"),)
+                    if tree_dirty else
+                    "git would not say whether %s holds uncommitted work"
+                    % (held.get("path"),))
+    return {"argv": ["switch", parent], "path": held.get("path"),
+            "why": "%s is clean and %r is checked out nowhere" % (held.get("path"),
+                                                                parent)}
+
+
+def trees_after_switch(trees, path, parent):
+    """`trees` as they read once the worktree at `path` stands on `parent`: the
+    preview's picture of the repository after the switch, so a dry run and the run
+    plan the same cleanup."""
+    return [dict(t, branch=parent) if same_tree(t.get("path"), path) else dict(t)
+            for t in (trees or [])]
 
 
 # --- planning a sweep (pure) -----------------------------------------------------

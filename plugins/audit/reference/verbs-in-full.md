@@ -1434,7 +1434,7 @@ preview prints (run from the main tree when this one stands inside the worktree)
 surviving manifest. When the parent branch is checked out in no worktree and the manifest given is
 the phase worktree's own copy, the landing has no surviving copy to stamp: close-phase refuses
 before merging (exit 2), naming the branch - check it out in a worktree, or run close-phase from
-its checkout - so the ref never moves without the record of the landing. With `meta.merge.auto`
+its checkout - so the ref never moves without the record of the landing. When that checkout is the main worktree, standing on the phase branch and clean, it is switched to the parent after the merge and the record is committed there; a dirty one stays on the merged branch and the output names the `git switch`. With `meta.merge.auto`
 false nothing is written, so that run is not refused: it exits 0 and hands over the merge command.
 
 **If `--confirm-high-risk "<your words>"` is present:** the human is answering the high-risk gate

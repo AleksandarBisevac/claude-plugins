@@ -3331,7 +3331,7 @@ PINNED_320_DID = [
     "gate P1.2 green; stamp current",
     "closed P1.2 at <sha>",
     "phase gate green; invariants clean; signed off; committed <sha>; landed "
-    "(audit/p1-one -> main (no-checkout)); lock released",
+    "(audit/p1-one -> main (no-checkout); mergedAt = <ts>...); lock released",
 ]
 # One tuple per journal file - each file is one writer's chain, in append order.
 # The files are read apart because `read_all` orders rows by a one-second stamp
@@ -3365,6 +3365,8 @@ def _normal_did(text):
             continue
         clause = line.partition(": ")[2]
         clause = re.sub(r"\bat \S+\.json\b", "at <path>", clause)
+        clause = re.sub(r"mergedAt = \d{4}-\d\d-\d\d\S*?\.\.\.",
+                        "mergedAt = <ts>...", clause)
         out.append(re.sub(r"\b[0-9a-f]{7,40}\b", "<sha>", clause))
     return out
 

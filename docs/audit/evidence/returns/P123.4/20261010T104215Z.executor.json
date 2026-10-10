@@ -1,0 +1,31 @@
+{
+  "gates": {
+    "test_close_phase --selftest": "pass",
+    "test_drive_phase --selftest": "pass",
+    "tools/sweep-selftests.py": "fail",
+    "ruff check (scripts/git, test_close_phase.py)": "pass",
+    "vermin -t=3.8- (scripts/git, test_close_phase.py)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T11:05:52Z",
+    "basis": "`python3 plugins/audit/tests/test_close_phase.py --selftest` in a throwaway tree at HEAD exited 1 with 5 of 229 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - mt0 (house FAIL), mt1 (house FAIL), mt2 (house FAIL), mt3-keep (house FAIL), lt3 (house FAIL): SELFTEST FAILED: 223/229 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "Added _worktrees.landing_switch (pure: no-checkout mode, MAIN worktree holds the branch and is where the landing runs, parent held nowhere, tree clean) and trees_after_switch. close-phase.close() now runs `git switch <parent>` after the verified merge and BEFORE the stamp, so the stamp and journal rows are committed on the parent by the existing commit_landing path; the cleanup is recomputed on the re-listed worktrees (branch then deleted per policy); the dry-run previews the switch as a planned step. When not switched (dirty, linked worktree, parent held, switch refused) the old path stays, followUp names git switch, and a new 'is still on <branch>' line is printed when no followUp would say it (also added to _OWED). Reworded 'never moves a HEAD' in the followUp render, the main-tree blocked refusal, main_tree_release docstring, merge_plan docstring and close-phase module docstring. Docs rewritten with the code: phase-signoff.md (the sentence 'It never moves your HEAD' and the main-worktree bullet), verbs-in-full.md, README.md landing row. COMPATIBILITY.md checked (grep for HEAD/switch/checkout): it makes no promise about HEAD movement at landing, so no major-release trigger. Tests: mt0/mt1/mt2 rewritten to the new rule, mt3-keep/mt3-delete (dirty tree not switched), ls1-ls5 pure cases, h1 reworded (corpus never builds the switching tree), lt3 rewritten, _landed reads work off main when the branch is deleted, cr2/cr5 use --keep-branch, cr6 asserts the verdict without the specific run id. test_close_phase.py --selftest: 258/258. Outside my files (edit allowed by the gate): plugins/audit/tests/test_drive_phase.py PINNED_320_DID now carries '; mergedAt = <ts>...' with a normaliser in _normal_did, because the clean landing now prints the short success line; that suite: 184/184. tools/sweep-selftests.py run before that fix failed only on test_drive_phase w1 (now fixed; sweep not re-run in full after). Not edited: scripts/_deps.py comment line ~768 still says close-phase 'never moves HEAD' (outside my files); commands/worktree.md needed no change (no claim there). Known consequence: after the switch the checkout no longer holds the branch, so an uncommitted red recorded there is not read as 'the tree holding the branch' on a later re-run (the COMPATIBILITY.md-documented limit of that reader); cr6 was loosened for it.",
+    "descriptive": "A clean single-checkout landing now leaves the user on the parent with the stamp committed there and the branch deleted; a dirty checkout stays put and is told the git switch to run."
+  },
+  "testsAdded": [
+    "mt0",
+    "mt1",
+    "mt2",
+    "mt3-keep",
+    "mt3-delete",
+    "ls1",
+    "ls2",
+    "ls3",
+    "ls4",
+    "ls5"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:0fb0233d1a81ffdb6d635233ddcd78ca009e443085b5560b71ece9f831913e44\",\"dirtyDigest\":\"sha256:2cddd1240c2f56d5c953994fc4fe1427df624dcc7d95d74beecf55f083207564\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\"plugins/audit/README.md\":\"a52ade0b2692c709\",\"plugins/audit/reference/phase-signoff.md\":\"6935e9cac3ecc259\",\"plugins/audit/reference/verbs-in-full.md\":\"5bb592a0bfcec3f3\",\"plugins/audit/scripts/git/_worktrees.py\":\"0222b7edcd4f9c2d\",\"plugins/audit/scripts/git/close-phase.py\":\"4d404fbe9fb5a386\",\"plugins/audit/tests/test_close_phase.py\":\"577b84f05fdaad24\",\"plugins/audit/tests/test_drive_phase.py\":\"a40a0a3f664ddb25\"},\"head\":\"7e9dc3f8\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/README.md\",\"plugins/audit/commands/worktree.md\",\"plugins/audit/reference/phase-signoff.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/git/_worktrees.py\",\"plugins/audit/scripts/git/close-phase.py\",\"plugins/audit/tests/test_close_phase.py\"],\"scopeDigest\":\"sha256:f62379c869e87f95fa45d87da4aeef87f48aaf10182488a36c761a178fad39cf\",\"v\":2}"
+}

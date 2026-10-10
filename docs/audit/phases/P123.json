@@ -165,7 +165,7 @@
     {
       "id": "P123.3",
       "title": "/audit:run given a phase id refuses and names /audit:phase",
-      "status": "in_progress",
+      "status": "done",
       "description": "F595: the owner typed /audit:run p1 meaning the phase; P1.2 alone ran. On main, run.md hands the argument to drive-phase next, whose context tries resolve_phase_id first, so a phase id drives the WHOLE phase (pinned by dt3) - the opposite of the observation. Establish first, from the testbed session's transcript, whether the script or the model picked P1.2, and write the answer into the task note. Either way /audit:run's contract is one task: add a one-task form to drive-phase next (a flag run.md passes) that refuses a phase-shaped id with one line naming /audit:phase <id> and the tasks it would run (in waves once F600 lands, one at a time before), and never picks a task. /audit:phase keeps next <phaseId>. dt3 stays true for the phase form. Update run.md, verbs-in-full.md and README.md's /audit:run row.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -202,25 +202,39 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7e9dc3f8a61a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py next gains --task (dest task_only): given a phase-shaped id (p1, P1, 1) it raises ValueError from phase_form_refusal() -> exit 2, one line naming `/audit:phase <id>` and the tasks it would run, 'in waves of up to N' when executor.waveWidth>1 else 'one at a time'; starts nothing, picks no task. A task id with --task still drives that task; bare next <phaseId> unchanged (dt3 holds). Cases dt7, dt8, dt9 added to test_drive_phase.py. run.md passes --task, verbs-in-full.md and README /audit:run row updated. Own red: HEAD's drive-phase.py copied into a scratch copy of plugins/, test_drive_phase.py --selftest there gave dt7, dt8, dt9 FAIL (181/184); in the tree 184/184 pass, exit 0; ruff check plugins/audit tools exit 0. Not done: the task note on whether script or model picked P1.2 in the testbed transcript was not established (no transcript read).",
+        "descriptive": "/audit:run given a phase id now refuses with one line naming /audit:phase instead of driving a phase or picking a task."
       },
       "startedAt": "2026-10-10T10:26:35Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T10:42:14Z",
+      "verifiedBy": [
+        "dt7",
+        "dt8",
+        "dt9"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T10:42:13Z.ec9e72",
         "status": "passed",
         "at": "2026-10-10T10:42:13Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "7e9dc3f8a61a",
+        "at": "2026-10-10T10:42:14Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T10:34:10Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 184 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dt7 (house FAIL), dt8 (house FAIL), dt9 (house FAIL): SELFTEST FAILED: 181/184 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.4",
       "title": "a single-checkout landing leaves the checkout on the branch it landed on",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F594: merge_plan's no-checkout mode fast-forwards the parent ref with fetch . branch:refs/heads/parent and never moves HEAD, and commit_landing then commits the stamp and journal rows on the phase branch and fast-forwards the parent again. The user stays on the merged phase branch and starts the next phase from it. When the landing runs in the checkout that holds the phase branch, the parent is held by no worktree and that checkout is clean, switch it to the parent after the merge and commit the landing there; otherwise keep today's behaviour and say plainly that the checkout still sits on the merged branch, with the git switch command. phase-signoff.md documents 'It never moves your HEAD' - check COMPATIBILITY.md before changing a documented promise, and rewrite that sentence and the mt0-mt2 / ns3 expectations to the new rule rather than adding an exception beside them.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -229,7 +243,9 @@
         "plugins/audit/reference/phase-signoff.md",
         "plugins/audit/reference/verbs-in-full.md",
         "plugins/audit/README.md",
-        "plugins/audit/commands/worktree.md"
+        "plugins/audit/commands/worktree.md",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/_deps.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -256,16 +272,22 @@
         "P123.3"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T10:42:15Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T11:15:08Z.cf307b",
+        "status": "passed",
+        "at": "2026-10-10T11:15:08Z"
+      }
     },
     {
       "id": "P123.5",
@@ -1886,7 +1908,7 @@
       "id": "P123.33",
       "title": "Every layer number written in prose is checked against _deps.LAYERS or not written",
       "status": "pending",
-      "description": "P122.9 gave `_machine_paths` a layer of its own, so every running-prose mention of another module's layer above it - \"`name` (layer N)\", \"`name` (LN)\" - is now one too low (some were already off by two). Measured on main at 9b9b9dd1 by matching those two shapes against `_deps.LAYERS`: 116 stale mentions in 25 files, most of them in `_deps.py`'s own LAYERS comments; the prep note's 'seven doctor/gate docstrings' was the visible tip. `layer_doc_drift` (lyd1) grades only a module's OPENING 'Layer N' claim about itself and leaves running prose alone on purpose, which is exactly where the rot sits - the F-prose class of a number a table already holds. Invariant: a layer number in prose is checked or not written. Add the check for every mention shape it can read reliably (\"`name` (layer N)\", \"`name` (LN)\", \"this file (LN)\") in docstrings and comments under scripts/ and hooks/, beside `layer_doc_drift` in `_deps.py`, with a prove-gates row (red: plant a wrong number; allow: a correct one). Repair by deleting the number wherever the layer is not the argument (keep the pointer to the module), and correcting it where the sentence's argument is the layer. Re-derive the count with the new check, never from this description. Faults: prep-layer-prose.",
+      "description": "P122.9 gave `_machine_paths` a layer of its own, so every running-prose mention of another module's layer above it - \"`name` (layer N)\", \"`name` (LN)\" - is now one too low (some were already off by two). Measured on main at 9b9b9dd1 by matching those two shapes against `_deps.LAYERS`: 116 stale mentions in 25 files, most of them in `_deps.py`'s own LAYERS comments; the prep note's 'seven doctor/gate docstrings' was the visible tip. `layer_doc_drift` (lyd1) grades only a module's OPENING 'Layer N' claim about itself and leaves running prose alone on purpose, which is exactly where the rot sits - the F-prose class of a number a table already holds. Invariant: a layer number in prose is checked or not written. Add the check for every mention shape it can read reliably (\"`name` (layer N)\", \"`name` (LN)\", \"this file (LN)\") in docstrings and comments under scripts/ and hooks/, beside `layer_doc_drift` in `_deps.py`, with a prove-gates row (red: plant a wrong number; allow: a correct one). Repair by deleting the number wherever the layer is not the argument (keep the pointer to the module), and correcting it where the sentence's argument is the layer. Re-derive the count with the new check, never from this description. Faults: prep-layer-prose. Also: _deps.py close-phase comment still says it never moves HEAD; P123.4 made a clean single checkout switch to the parent after the merge - say so.",
       "files": [
         "plugins/audit/scripts/_deps.py",
         "plugins/audit/tests/test__deps.py",
