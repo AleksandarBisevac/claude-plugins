@@ -142,7 +142,13 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/run-test-gate.py" \
        <manifestPath> <phaseId> --record
    ```
-   (the script applies `meta.nodePreamble` itself). All commands must pass **after** any
+   (the script applies `meta.nodePreamble` itself). Its exit code: `0` passed, `1` the work
+   failed, `2` usage, and **`3` the gate passed but `--record` stored no evidence row** (the
+   output says `GATE NOT RECORDED` and `evidence: NOT recorded - <why>`): repair the ledger it
+   names and run again, because a sign-off needs the row. A verdict the script reuses at an
+   unchanged tree repeats the `NO OVERLAP WITH THIS WORK` and `TREE CHANGED OUTSIDE THIS WORK`
+   banners of the run it reuses — or says `banners not recorded` when that run predates them.
+   All commands must pass **after** any
    review-driven changes. Tests are the final signer. Surface manual items as human action items.
 
    **Route on the two lines a derived gate adds, after the verdict.** In `shadow` mode, over a

@@ -158,6 +158,11 @@ import _runner_output as _ro  # noqa: E402  (every reading of what a test runner
 #                                         printed: its summary, its failure lines)
 
 E_OK, E_FAIL, E_ASK = 0, 1, 2
+# A `--record` run that measured and stored nothing. Its own code because it is
+# neither the work's failure (1) nor a usage error (2): the gate is green and the
+# record the caller asked for does not exist, and a pre-push or CI step reading
+# the exit code must not read that as a pass. Without `--record` nothing changes.
+E_UNRECORDED = 3
 
 # --- what did not finish ------------------------------------------------------
 # The two ways a step produces no verdict, kept APART because they are different
@@ -2430,6 +2435,45 @@ def reuse_identity(project, manifest_path, manifest, commands, owns, group=None,
             "unexcluded": unexcluded}
 
 
+def record_failed(res):
+    """True when `--record` was asked for and the evidence row was not stored.
+
+    Read off `res["recorded"]`, which only `_record_run` and `_record_full_run`
+    write: a run that never asked to record has no such key and is not failed.
+    """
+    recorded = res.get("recorded")
+    return isinstance(recorded, dict) and recorded.get("recorded") is False
+
+
+def unrecorded_line(res):
+    """The verdict line a green run prints in place of `GATE GREEN` when its
+    row was not stored. The green is still the measurement; the line says the
+    record behind it is missing and which exit that earns."""
+    return ("GATE NOT RECORDED: the gate itself passed, but --record stored no "
+            "evidence row (see the `evidence: NOT recorded` line), so nothing "
+            "can later show this run happened. Exit %d, not 0 - fix the "
+            "ledger and re-run." % (E_UNRECORDED,))
+
+
+def verdict_banners(res):
+    """The banner names (`_evidence_io.ROW_BANNERS`) that `_render_verdict`
+    prints for this measured run, for its row to keep.
+
+    ASKED OF THE SAME TWO FACTS THE RENDERER READS, `attributed_mutations`'
+    reported half and `overlap == []`, so a banner added there and forgotten
+    here is a case, not a silence. None-valued observations print neither.
+    """
+    _owned, foreign = attributed_mutations(
+        res.get("treeMutated"), res.get("treeMutatedOwned"),
+        res.get("treeMutatedForeign"))
+    found = []
+    if res.get("overlap") is not None and not res["overlap"]:
+        found.append(_ev.BANNER_NO_OVERLAP)
+    if foreign:
+        found.append(_ev.BANNER_TREE_CHANGED)
+    return found
+
+
 def reused_result(identity, row, elapsed_ms):
     """`run_gate`'s shape for a verdict that was NOT taken here.
 
@@ -2463,6 +2507,9 @@ def reused_result(identity, row, elapsed_ms):
         "notAttributable": None, "attributionBasis": None,
         "cancelledBy": None,
         "overlap": None,
+        # THE REPEATED RUN'S BANNERS, copied like `status`: None when its row
+        # predates the key, which `render_reuse` says rather than omits.
+        "banners": _ev.banners_of(row),
         "coverageBasis": ("no command ran, so no runner named a path here; the "
                           "run named above is where that question was asked"),
     }
@@ -2548,6 +2595,22 @@ def render_reuse(res, out=print):
             "nothing may be read from it - re-run with --no-reuse."
             % (res["status"],))
         return E_FAIL
+    # THE BANNERS THE MEASURED RUN PRINTED, under their original literals so the
+    # caller that keys on them meets them on a repeat too. Said before the
+    # verdict, as the measured run says them.
+    banners = res.get("banners")
+    if banners is None:
+        out("  banners not recorded: run %s predates the row key that keeps "
+            "them, so whether it printed any gate banner is not known here - "
+            "re-run with --no-reuse to measure it."
+            % (prior.get("runId"),))
+    for name in banners or ():
+        out("%s: repeated from run %s, which printed it when it measured this "
+            "verdict; its row holds the paths and the basis." %
+            (name, prior.get("runId")))
+    if record_failed(res):
+        out(unrecorded_line(res))
+        return E_UNRECORDED
     out("GATE GREEN: verdict reused from run %s; no check ran here."
         % (prior.get("runId"),))
     return E_OK
@@ -3883,6 +3946,12 @@ def _render_verdict(res, out):
         # the files a phase claimed would keep the interesting half to
         # itself.
         out("  basis: %s" % res["coverageBasis"])
+    if code == E_OK and record_failed(res):
+        # THE VERDICT STAYS A MEASUREMENT AND STOPS BEING A PASS. `GATE GREEN`
+        # is what a pre-push step and the orchestrator switch on, and printing
+        # it over a record that does not exist is the sentence this replaces.
+        out(unrecorded_line(res))
+        code = E_UNRECORDED
     if code == E_OK:
         # THE TREE CLAUSE IS COMPUTED, because this line was making two claims it
         # had no basis for: `tree unchanged` printed unchanged over a run where
@@ -4472,14 +4541,20 @@ def _run_full(project, args, manifest, out=print):
     if args.as_json:
         out(json.dumps(res, indent=2, sort_keys=True))
         # `row_is_red` is the one reading of "did this run pass".
-        return E_FAIL if _ev.row_is_red(res) else E_OK
+        if _ev.row_is_red(res):
+            return E_FAIL
+        return E_UNRECORDED if record_failed(res) else E_OK
     out("[run-test-gate] full gate: %d command(s)" % (len(commands),))
     code = (render_quiet if args.quiet else render)(res, out=out)
     recorded = (res.get("recorded") or {}).get("recorded")
     for line in selection_lines(selection, run_id if recorded else None, head,
                                 args.manifest, project):
         out(line)
-    out("FULL GATE GREEN at %s" % (head,) if code == E_OK else "FULL GATE RED")
+    if code == E_UNRECORDED:
+        out("FULL GATE NOT RECORDED at %s" % (head,))
+    else:
+        out("FULL GATE GREEN at %s" % (head,) if code == E_OK
+            else "FULL GATE RED")
     return code
 
 
@@ -4491,6 +4566,7 @@ _STATEMENT_OPENINGS = ("PHASE GATE RAN NO SUITE", "SAME SUITE COUNTED ONCE",
                        "RETRIED AFTER A SIGNAL", "TREE CHANGED OUTSIDE THIS WORK",
                        "NO CHECK RAN", "NO OVERLAP WITH THIS WORK",
                        "NARROWED sign-off", "evidence: NOT recorded",
+                       "banners not recorded",
                        "pointer:  NOT updated")
 _ALONE = "machine: this run had the machine to itself"
 
@@ -4580,7 +4656,10 @@ def main(argv, out=print):
     # RECORDING IS OPT-IN FOR NOW. The orchestrator is what will pass it; until
     # that instruction exists, a flag nothing sets is better than a default that
     # writes into every repository the gate has ever been run in.
-    p.add_argument("--record", dest="record", action="store_true")
+    p.add_argument("--record", dest="record", action="store_true",
+                   help="store the run as an evidence row and point the plan at "
+                        "it; a green run whose row could not be stored exits 3 "
+                        "(0 passed, 1 failed, 2 usage, 3 passed but unrecorded)")
     # THE OPERATOR'S WAY BACK TO A MEASUREMENT, and the reason a repeat is
     # allowed to be the default at all: a cache with no override is a cache that
     # gets deleted by hand. It suppresses the LOOKUP and not the identity - the
@@ -4856,6 +4935,8 @@ def main(argv, out=print):
     # ledger and the other stays a fact of this process's own output.
     res["gateSource"] = source
     res["subject"] = subject
+    if res.get(_ev.VERDICT_SOURCE) != _ev.REUSED:
+        res["banners"] = verdict_banners(res)
     if also:
         # WHICH MEMBERS THIS ONE RUN OWNED, on its row: a group member's copied
         # pointer is checked against it, and the carrier's row alone could not
@@ -4914,7 +4995,9 @@ def main(argv, out=print):
         # `treeMutatedForeign` is absent for the same reason and a second one -
         # it is the half nothing can attribute. `row_is_red` is the one reading
         # of "did this run pass", so this exit and the ledger's agree.
-        return E_FAIL if _ev.row_is_red(res) else E_OK
+        if _ev.row_is_red(res):
+            return E_FAIL
+        return E_UNRECORDED if record_failed(res) else E_OK
     # WHOSE gate ran is printed, not left to be inferred from the id: under
     # `--task` a task with no gate of its own is measured by the PHASE's, and a
     # reader who assumed otherwise would credit the wrong declaration. So a

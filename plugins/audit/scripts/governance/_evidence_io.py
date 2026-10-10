@@ -357,6 +357,30 @@ REUSE_KEY = "reuseKey"
 # The row key for `gate_digest`'s answer.
 GATE_DIGEST_KEY = "gateDigest"
 
+# THE BANNERS A MEASURED RUN PRINTED THAT A GREEN EXIT STILL CARRIES, kept on its
+# row so a later repeat of that verdict can print them again. Without them a
+# repeat said `GATE GREEN` and nothing else, and the caller that asks a question
+# of the banner (`drive-phase`'s coverage decision) never asked it of a repeated
+# run. The names are the literals the renderer opens each banner with.
+#
+# ABSENT IS NOT EMPTY: a row written before this key holds nothing, a row written
+# after it holds a list, and `banners_of` keeps the two apart by returning None
+# for the first.
+BANNERS_KEY = "banners"
+BANNER_NO_OVERLAP = "NO OVERLAP WITH THIS WORK"
+BANNER_TREE_CHANGED = "TREE CHANGED OUTSIDE THIS WORK"
+ROW_BANNERS = (BANNER_NO_OVERLAP, BANNER_TREE_CHANGED)
+
+
+def banners_of(row):
+    """The banner names a row recorded, in the order of `ROW_BANNERS`, or None
+    when the row does not say (written before the key existed, or a repeat of
+    such a row). `[]` is the recorded answer "the run printed none"."""
+    banners = row.get(BANNERS_KEY) if isinstance(row, dict) else None
+    if not isinstance(banners, list):
+        return None
+    return [name for name in ROW_BANNERS if name in banners]
+
 
 def gate_digest(entries, build):
     """`sha256:<hex>` over the gate as declared and resolved, or None for no entries.
@@ -726,6 +750,8 @@ def row_for(project, result, scope, ids, identity, published=None):
     # here would be a second copy of a claim the row can already be read for, and
     # this file's rule about a cached count applies to a cached classification
     # just as well.
+    if isinstance(result.get(BANNERS_KEY), list):
+        row[BANNERS_KEY] = banners_of(result)
     if result.get("cancelledBy") is not None:
         row["cancelledBy"] = str(result["cancelledBy"])
     # ...AND THE SECOND SUCH WORD, FOR THE SAME REASON AND NOT BY ANALOGY. A

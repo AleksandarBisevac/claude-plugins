@@ -2635,12 +2635,20 @@ def _stale_gate_cases(check):
         hand = _verb(root, "run-test-gate.py", [mpath, PHASE, "--record",
                                                 "--project-dir", root])
     code, text = _next(M, root, mpath, "--answer", "accept", "--reason", words)
+    runs = seen["runs"]
+    again, again_text = _next(M, root, mpath, "--answer", "accept", "--reason",
+                              words)
     check("gr3 a run recorded by hand after the held one, at the same head: the "
           "verdict would bind the newer run, so the drive measures again rather "
-          "than reading the held run's banners: %r"
-          % ((hand[0], before, seen["runs"], code, text),),
-          hand[0] == 0 and seen["runs"] == before + 1 and "reused" not in text
-          and _signed(mpath))
+          "than reading the held run's banners - and that run repeats the "
+          "banners of the verdict it reuses, so they are asked about again "
+          "(they were dropped on a reuse, which signed off over a banner nobody "
+          "was shown); the second accept is over the new run: %r"
+          % ((hand[0], before, runs, code, text, again, again_text),),
+          hand[0] == 0 and runs == before + 1 and "reused" not in text
+          and instruction(text) == ("decide", "gate-coverage", None)
+          and "NO OVERLAP" in text and "reused" in again_text
+          and again == 0 and _signed(mpath))
 
 
 def _stale_reaccept_cases(check):

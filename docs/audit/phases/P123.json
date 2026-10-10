@@ -1102,7 +1102,7 @@
     {
       "id": "P123.15",
       "title": "Every evidence and journal ts ordering goes through one moment reader, held by a lint",
-      "status": "in_progress",
+      "status": "done",
       "description": "(F530) readers order or compare evidence/journal `ts` as TEXT outside `_evidence_io.oldest_first/newest_row/stamp_moment`, all confirmed on main: `_gate_derive` (newest failed row per phase, `>=` on text), `_doctor_trail` (full-scope candidates sorted on `str(ts)`), `_evidence_view` (`sorted(... str(ts) ...)`), `_doctor_completions` (`min(str(ts))` watermark), `_journal_io` (read order, merge interleave, `max` on text at two sites); `_evidence_io._epoch` is a further moment parser (Z form only), and `_classified` SKIPS a windowless other row (`if o_start is None: continue`), so `contested_by`/`shared_the_machine` answer as if that run never happened; `run-test-gate` spells 'did this run pass' inline (`res[\"status\"] == \"passed\"` on its --json paths) instead of `_evidence_io.row_is_red`. Route each through the one moment reader (the journal side through a parse at its own layer, `_usage_core.parse_ts` permitting), fold `_epoch` into `stamp_moment`, report a windowless other run as undecided, and add an `_output` lint that flags sorted/max/min keyed on a `ts` field and ordering comparisons between ts values outside the helper (an allow-list row per justified exception, and a prove-gates row). Decide and record whether import-evidence refuses a shard whose ts does not parse. Re-render the committed artifacts if their bytes change. (F537, the project-resolution half the draft carried, is folded into P123.5.) Faults: F530.",
       "files": [
         "plugins/audit/scripts/governance/_gate_derive.py",
@@ -1165,25 +1165,44 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "582ff91a4c6d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Routed every ts order through one moment reader. _evidence_io: _epoch now reads through stamp_moment (new day_start=False refuses a bare date; a trailing zone Z/offset is required so a typed local time is not read as UTC) and floors to the whole second; _classified reports a windowless OTHER run as undecided instead of skipping it; contested_by returns None (undecided) when no rival overlaps but an outside run cannot be placed; attribution_of reads that. _gate_derive.newest_red_phase_row -> _evidence_io.newest_row. _evidence_view._rows_for -> reversed(oldest_first). _doctor_trail: full-run candidates -> newest_row; _run_age -> stamp_moment (calendar import dropped). _doctor_completions: _hours_between -> stamp_moment; receipts watermark = earliest receipt by moment (_first_stamp); era test via _before (moment compare; time import dropped). _journal_io: new row_moment/_moment_key over _usage_core.parse_ts; read_all, session first/last, _tie_faults (ties grouped by moment), the undated-row merge refusal (now: no moment), _merge_tails, _merge_marker and newest_anchor all order by moment. run-test-gate: three status=='passed' sites -> _ev.row_is_red; the undecided-neighbour sentence now covers a windowless run. import-evidence: DECIDED not to refuse a shard row whose ts names no moment - it is imported and named (answer.undated, one printed line each); recorded in the module docstring and undated_runs. _output: new lint ts_order_violations + TS_ORDER_SITES (one row: demo/gen-demo-usage.py generate, hour-bucket ts). prove-gates: rows to1 (crippled), to2 (widened to any call but .get), to3 (table ignored). PLUGIN-BUILD-GUIDE: fence line for _journal_io regenerated, paragraph on the lint. Artifacts: check-rendered-artifacts --before-commit exit 0, bytes unchanged, nothing re-rendered. FULL SWEEP: 326/328 files ok; the two reds are both the out-of-scope blockers the plan gate refused: (1) test__deps r2 - _journal_io imports _usage_core from the same layer; fix is moving \"_usage_core\" from the layer-2 tuple to (\"_machine_paths\", \"_excerpt\", \"_usage_core\") in _deps.LAYERS (it imports only _output), then re-render the guide fence (_usage_core moves to L1). (2) tools/gate-parity.py ea1/ea4-ea7/p0 - TS_ORDER_SITES needs \"TS_ORDER_SITES\": (\"live\", \"ts_order_violations\") in AUDITED_EXEMPTIONS. Both Edits were refused by require-plan (session free file already spent); neither was worked around. Also passing: test_run_test_gate 501/501, test_record_outside_run 27/27. Some in-scope edits went through Bash (a python heredoc on _evidence_io/prove-gates, sed -i on test__evidence_io case ids and _journal_io), not Edit.",
+        "descriptive": "Stamps are ordered by the moment they name, not their spelling, everywhere the ledger and journal order rows; two one-line out-of-scope follow-ups (_deps layer, gate-parity row) keep the sweep red until applied."
       },
       "startedAt": "2026-10-10T15:26:13Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T16:12:22Z",
+      "verifiedBy": [
+        "test__evidence_io mw1-mw7",
+        "test__gate_derive dg-red-moment, dg-red-fraction",
+        "test__doctor_trail dfr8, dfr9",
+        "test__evidence_view evm1, evm2",
+        "test__doctor_completions dc3m, dc-wm1, dc-wm2, dc7m",
+        "test__journal_io jmo1-jmo6",
+        "test__output to1-to5",
+        "test_import_evidence i43, i44"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T16:12:21Z.800d1c",
         "status": "passed",
         "at": "2026-10-10T16:12:21Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "582ff91a4c6d",
+        "at": "2026-10-10T16:12:22Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T16:02:12Z",
+        "basis": "`python3 plugins/audit/tests/test__gate_derive.py --selftest` in a throwaway tree at HEAD exited 1, but no case --case names failed an assertion as the task's own: dg-red-moment the newest red row is the newest MOMENT, not the greatest spelling - an offset stamp an hour earlier must not win: {'scope': 'phase', 'phaseId': 'P1', 'status': 'failed', 'ts': '2026-01-06T10:30:00+02:00', 'steps': []} (house FAIL) and 1 more - SELFTEST FAILED: 42/44 cases passed; --case dg-red-moment names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
       "id": "P123.16",
       "title": "A --record run that stored nothing exits non-zero; a reused verdict repeats its banners",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(F532) `run-test-gate --record` wraps `_ev.record(...)` in `except Exception`, prints 'evidence: NOT recorded - ...', then prints GATE GREEN and exits by `res['status']` alone (both the task/phase path and `_record_full_run`), so a pre-push/CI step reading the exit code passes with no evidence. Exit codes are outside COMPATIBILITY's promise but each change is recorded there: give an unrecorded --record run a non-zero exit (a distinct code, named in --help and the docs' exit tables), unchanged without --record. (F565) a verdict reused at an unchanged tree prints 'GATE GREEN: verdict reused from run X; no check ran here.' and none of the banners the measured run printed (NO OVERLAP WITH THIS WORK, TREE CHANGED OUTSIDE THIS WORK, ...), so drive-phase never asks `decide gate-coverage` about it. Store the banner set on the evidence row when the run is measured (`_evidence_io.row_for` allow-list) and have the reuse path print the banners of the run it reuses. (P122-R4) `run-test-gate._declared_by` was switched to `_task_outputs.covers()` and no case exercises it: reverting it to exact match leaves the suite green. Add a case with a `:12-20` line-range entry and a directory entry through `classify_mutations`. Regression: a --record run whose ledger file holds a non-UTF-8 byte exits non-zero; the same run without --record exits 0; a reused NO OVERLAP run prints NO OVERLAP again. Faults: F532, F565, P122-R4.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -1193,7 +1212,8 @@
         "COMPATIBILITY.md",
         "plugins/audit/reference/phase-signoff.md",
         "plugins/audit/reference/execute-task.md",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test_drive_phase.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1224,16 +1244,22 @@
         "P123.15"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T16:12:23Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T16:43:48Z.3e8366",
+        "status": "passed",
+        "at": "2026-10-10T16:43:48Z"
+      }
     },
     {
       "id": "P123.17",

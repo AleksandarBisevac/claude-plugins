@@ -508,6 +508,15 @@ depending on an implementation:
   whose exit code changed was already not getting what it asked for. It is recorded here
   rather than passed over because an exit code moved from 0 to 2 on a shipped command, and a
   pipeline that read a discarded flag as success is a pipeline that now stops,
+- **a `--record` gate run that stored nothing — and it changed.** `run-test-gate.py --record`
+  used to print `evidence: NOT recorded - …`, then `GATE GREEN`, and exit 0 when the evidence
+  row could not be written (a ledger file the reader cannot decode, an unwritable directory),
+  so a pre-push or CI step that read the exit code passed with no evidence behind it. A green
+  run whose row was not stored now prints `GATE NOT RECORDED` in place of `GATE GREEN` and
+  **exits 3** — a code of its own, apart from 1 (the work failed) and 2 (usage); `--help`
+  names it. A red run keeps exit 1, and a run without `--record` is unchanged. It is recorded
+  here rather than passed over because an exit code moved from 0 to 3 on a shipped command,
+  and a pipeline that read the unrecorded green as success is a pipeline that now stops,
 - **a `passed` sign-off with no gate run behind it — and it changed.** `audit-task.py
   signoff --verdict passed` (`/audit:phase signoff`) used to write the verdict whatever the
   ledger held; it now **exits 2** unless the phase's newest recorded gate run binds its work,

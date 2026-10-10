@@ -3902,9 +3902,45 @@ def _moment_reader_cases(check):
           and M.attribution_of(_mine, [_far])["attributed"] is True)
 
 
+def _banner_cases(check):
+    """The banners a measured run printed, as the row keeps them.
+
+    ABSENT AND EMPTY ARE TWO ANSWERS. A row measured by a build that wrote this
+    key and printed nothing holds `[]`; a row from before the key existed holds
+    nothing, and a reader that read the second as the first would repeat a
+    verdict while saying it had been clean.
+    """
+    plain = _harness.fixture_root("audit-evidence-banners-")
+    base = {"status": "passed", "failed": [], "steps": []}
+    ident = {"runId": "R1"}
+    named = (M.BANNER_NO_OVERLAP, M.BANNER_TREE_CHANGED)
+    with_both = M.row_for(plain, dict(base, banners=list(named)), "phase",
+                          {"phaseId": "P1"}, ident)
+    with_none = M.row_for(plain, dict(base, banners=[]), "phase",
+                          {"phaseId": "P1"}, ident)
+    old = M.row_for(plain, dict(base), "phase", {"phaseId": "P1"}, ident)
+    invented = M.row_for(plain, dict(base, banners=[M.BANNER_NO_OVERLAP,
+                                                    "SENTINEL-INVENTED"]),
+                         "phase", {"phaseId": "P1"}, ident)
+    check("bn1 row_for carries the banner list a measured run printed: %r"
+          % (with_both.get("banners"),),
+          M.banners_of(with_both) == list(named))
+    check("bn2 ...an EMPTY list is stored as an empty list, the answer 'the "
+          "run printed none': %r" % (with_none.get("banners"),),
+          with_none.get("banners") == [] and M.banners_of(with_none) == [])
+    check("bn3 ...and a row without the key reads as None - 'banners not "
+          "recorded' - which is not the empty list: %r"
+          % (("banners" in old, M.banners_of(old)),),
+          "banners" not in old and M.banners_of(old) is None)
+    check("bn4 ...a banner outside the allow-list is dropped, so a caller "
+          "cannot widen the row: %r" % (invented.get("banners"),),
+          invented.get("banners") == [M.BANNER_NO_OVERLAP])
+
+
 def _selftest():
     def body(check):
         _cases(check)
+        _banner_cases(check)
         _project_config_cases(check)
         _moment_reader_cases(check)
     return _harness.run(body)

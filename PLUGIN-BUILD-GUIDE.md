@@ -3895,6 +3895,17 @@ stopped at its bound, both fell through to `GATE GREEN` and exit 0 while `status
 `GATE TIMED OUT` are printed from the steps' own `outcome`, never from the status word, so a
 run that is two things says both.
 
+**A `--record` run that stored nothing exits 3** (`E_UNRECORDED`; 0 passed, 1 failed, 2 usage).
+The gate's own green is kept, but `GATE NOT RECORDED` takes the place of `GATE GREEN` and the
+full-scope summary reads `FULL GATE NOT RECORDED`, because a pre-push or CI step reads the exit
+code and a green over a missing row is a pass with no evidence. A red run stays exit 1 and a run
+without `--record` is unchanged. **A reused verdict repeats the banners of the run it reuses:** a
+measured run stores the banners it printed (`NO OVERLAP WITH THIS WORK`, `TREE CHANGED OUTSIDE
+THIS WORK`) on its evidence row as `banners` (`_evidence_io.row_for` allow-lists the names), and
+the reuse path prints them again under their own literals — the ones `drive-phase.py` keys its
+`gate-coverage` decision on. A row written before the key holds none, which is *not recorded*
+and not *none*, and the reuse path says so.
+
 **`observations.countsBasis` is written here for the first time.** It has been copied into every
 evidence row by `_evidence_io.row_for` and rendered by the report and the panel since the ledger
 existed, while nothing ever set it — a three-valued count shipping without the basis that

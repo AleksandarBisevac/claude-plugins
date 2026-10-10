@@ -242,6 +242,10 @@ verb writes and refuses, and what the run commands leave behind, is
      (`_output.project_of_manifest`) — from whatever directory it is run, with or without a
      session behind it.
 
+     Exit codes: `0` passed, `1` failed, `2` usage, **`3` passed but no evidence row was stored**
+     (`GATE NOT RECORDED`) — that is not a pass, so repair the ledger the `evidence: NOT recorded`
+     line names and run again.
+
      The subagent's own run is what it develops against; **this** run is the one that becomes
      evidence. It has to be yours and not its, for the reason the script exists at all: the
      bracket, the check count, the coverage answer and the tree comparison are only true of a run

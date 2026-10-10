@@ -5328,6 +5328,7 @@ def _cases(check):
     # So the cases skip, and say so. Weakening them into something that passes
     # on both would mean asserting a `cancelled` row nothing cancelled.
     _harness.stage(check, "ru0 the verdict-reuse block", _reuse_cases)
+    _harness.stage(check, "ur0 the unrecorded-run block", _unrecorded_cases)
     _harness.stage(check, "nv0 the no-verdict block", _no_verdict_cases)
     _harness.stage(check, "ce0 the empty-and-retry block",
                    _empty_and_retry_cases)
@@ -7290,6 +7291,138 @@ def _own_cases(check):
           "phase's, not the task's: %r" % ((named_kept, named_err),),
           named_kept is None and named_source is None
           and "P1.3 declares no gate entry" in (named_err or ""))
+
+
+def _unrecorded_cases(check):
+    """A `--record` run that stored nothing, a repeat of a banner, and the
+    ownership test behind the tree-changed banner.
+
+    A FUNCTION SO THE BLOCK CAN BE NAMED, for `_interrupt_cases`' reason: the
+    fixture is a real committed repository, and an escape while it is built has
+    to arrive as one failing case.
+    """
+    # --- _declared_by through classify_mutations ---------------------------
+    # EXACT MATCH IS THE REVERSION THIS PAIR GOES RED ON: a `files` entry of
+    # `src/a.ts:12-20` names a line range of a file, and one naming `lib` means
+    # every file under it, so a write to either is the gate rewriting its subject.
+    _rng = M.classify_mutations([" M src/a.ts"], ["src/a.ts:12-20"])
+    _dir = M.classify_mutations(["?? lib/deep/x.ts"], ["lib"])
+    _sib = M.classify_mutations(["?? lib-old/x.ts"], ["lib"])
+    check("ur1 a change to a file declared with a line range is OWNED: %r"
+          % (_rng,), _rng[0] == [" M src/a.ts"] and _rng[1] == [])
+    check("ur2 ...a change under a declared DIRECTORY entry is owned: %r"
+          % (_dir,), _dir[0] == ["?? lib/deep/x.ts"] and _dir[1] == [])
+    check("ur3 ...and a sibling that only shares the prefix is foreign, the "
+          "direction that fails if the directory rule is widened to a bare "
+          "prefix: %r" % (_sib,),
+          _sib[0] == [] and _sib[1] == ["?? lib-old/x.ts"])
+
+    root = _harness.fixture_root("run-test-gate-unrecorded-")
+    os.makedirs(os.path.join(root, "docs", "audit", "phases"))
+    os.makedirs(os.path.join(root, ".claude"))
+    os.makedirs(os.path.join(root, "src"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    with open(os.path.join(root, "src", "a.py"), "w") as fh:
+        fh.write("declared = 1\n")
+    # A gate that passes and names a suite file the work does not own, so the
+    # runner reader finds a path and the overlap is EMPTY rather than unknown.
+    with open(os.path.join(root, "emit.py"), "w") as fh:
+        fh.write("print('\\u2713 other/x.test.js (1 tests)')\n"
+                 "print('Test Files  1 passed (1)')\n")
+    mp = os.path.join(root, "docs", "audit", "audit-plan.json")
+    with open(mp, "w") as fh:
+        json.dump({"meta": {"version": 3, "buildCommands": {
+                       "ok": "true", "emit": "python3 emit.py",
+                       "red": "false"}},
+                   "phases": [{"id": "P1", "title": "one",
+                               "shard": "phases/P1.json"},
+                              {"id": "P2", "title": "two",
+                               "shard": "phases/P2.json"}]}, fh)
+    for pid, gate in (("P1", ["ok"]), ("P2", ["emit"])):
+        with open(os.path.join(root, "docs", "audit", "phases", pid + ".json"),
+                  "w") as fh:
+            json.dump({"id": pid, "title": pid, "status": "in_progress",
+                       "testGate": gate, "tasks": [
+                           {"id": pid + ".1", "title": "t",
+                            "status": "in_progress", "files": ["src/a.py"]}]},
+                      fh)
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for arg in (["add", "--", "docs", ".claude", "src", "emit.py"],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        subprocess.run(["git", "-C", root] + arg, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    evdir = os.path.join(root, "docs", "audit", "evidence")
+
+    def _run(phase, *extra):
+        lines = []
+        code = M.main([mp, phase, "--project-dir", root] + list(extra),
+                      out=lines.append)
+        return code, "\n".join(lines)
+
+    # --- a --record run that stored nothing --------------------------------
+    first_code, _first = _run("P1", "--record", "--no-reuse")
+    check("ur4 SETUP: a first --record run stores its row and exits 0: %r"
+          % ((first_code, os.listdir(evdir) if os.path.isdir(evdir) else None),),
+          first_code == M.E_OK and os.path.isdir(evdir) and os.listdir(evdir))
+    for name in os.listdir(evdir):
+        with open(os.path.join(evdir, name), "ab") as fh:
+            fh.write(b"\xff\xfe not utf-8\n")
+    bad_code, bad = _run("P1", "--record", "--no-reuse")
+    check("ur5 THE FAULT: --record over a ledger file holding a non-UTF-8 byte "
+          "stores nothing, and the exit says so with the distinct code and "
+          "prints no GATE GREEN: %r" % ((bad_code, bad[-300:]),),
+          bad_code == M.E_UNRECORDED and bad_code not in (M.E_OK, M.E_FAIL,
+                                                          M.E_ASK)
+          and "evidence: NOT recorded" in bad and "GATE GREEN" not in bad)
+    plain_code, plain = _run("P1", "--no-reuse")
+    check("ur6 ...and the SAME run without --record is unchanged, exit 0 and "
+          "green: %r" % ((plain_code, plain[-120:]),),
+          plain_code == M.E_OK and "GATE GREEN" in plain)
+    json_code, _json = _run("P1", "--record", "--no-reuse", "--json")
+    check("ur7 ...--json takes the same exit: %r" % (json_code,),
+          json_code == M.E_UNRECORDED)
+    full_code, full = _run("P1", "--record", "--no-reuse", "--quiet")
+    check("ur8 ...and --quiet does not fold the unrecorded green into a one-"
+          "line success: %r" % ((full_code, full[-200:]),),
+          full_code == M.E_UNRECORDED and "GATE GREEN" not in full)
+
+    # --- a reused verdict repeats the banners the measured run printed -----
+    # The undecodable line is taken back out, so the ledger reads again.
+    for name in os.listdir(evdir):
+        path = os.path.join(evdir, name)
+        with open(path, "rb") as fh:
+            kept = [ln for ln in fh.read().splitlines(True)
+                    if b"not utf-8" not in ln]
+        with open(path, "wb") as fh:
+            fh.write(b"".join(kept))
+    m_code, measured = _run("P2", "--record", "--no-reuse")
+    rows = [r for r in _recorded_rows(evdir) if r.get("phaseId") == "P2"]
+    check("ur9 SETUP: a measured run whose gate names nothing owned prints NO "
+          "OVERLAP and stores that banner on its row: %r"
+          % ((m_code, rows[-1:] and rows[-1].get("banners")),),
+          m_code in (M.E_OK, M.E_UNRECORDED)
+          and "NO OVERLAP WITH THIS WORK" in measured
+          and rows and rows[-1].get("banners") == ["NO OVERLAP WITH THIS WORK"])
+    _r_code, reused = _run("P2")
+    check("ur10 THE FAULT: the same tree, re-run, is a repeat - and it prints "
+          "NO OVERLAP again, beside the reuse line: %r"
+          % ((_r_code, reused[-300:]),),
+          "GATE VERDICT REUSED" in reused
+          and "NO OVERLAP WITH THIS WORK" in reused)
+    # THE ROW FROM BEFORE THE KEY: said as not recorded, never as none.
+    old = {"runId": "OLD", "ts": "2026-01-01T00:00:00Z", "status": "passed",
+           "failed": []}
+    lines = []
+    M.render_reuse(M.reused_result({"key": "k", "basis": "b"}, old, 1),
+                   out=lines.append)
+    text = "\n".join(lines)
+    check("ur11 ...and a repeated row that predates the key says its banners "
+          "were not recorded, not that there were none: %r" % (text[-200:],),
+          "banners not recorded" in text and "NO OVERLAP" not in text)
 
 
 def _reuse_cases(check):
