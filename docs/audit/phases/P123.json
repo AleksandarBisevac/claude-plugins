@@ -1427,7 +1427,7 @@
     {
       "id": "P123.19",
       "title": "close-phase refuses before merging when the evidence directory is git-ignored",
-      "status": "in_progress",
+      "status": "done",
       "description": "With docs/audit/evidence excluded (e.g. via .git/info/exclude), a landing from the branch's own checkout merges and then exits 1 because `commit_landing`/`_commit_stamp` refuses an ignored record path ('the stamp is NOT committed'); the irreversible step has already happened. Structurally correct: check the records the landing will commit (`_scoped_commit.ignored_records`) before the merge and refuse with the remedy, so a refusal never follows a merge; keep the post-merge message for causes that cannot be known in advance, and make it say the merge landed and what is left. Record the exit behaviour in COMPATIBILITY.md. Regression: ignored evidence dir -> exit 1 with the branch NOT merged into its parent; not ignored -> lands as today. Faults: F570.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -1463,25 +1463,38 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "5a30e1d8bdc4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "close-phase.py: new ignored_stamp_refusal(manifest_path, project, git_root) classifies the journal and evidence dirs via _scoped_commit.classify/ignored_records (new imports _invariants, _scoped_commit; layers fine, module-map fence line in PLUGIN-BUILD-GUIDE.md regenerated). main() calls it after the landed_answers_refusal check and before the override journal row / merge when landing_due and writes; refuses exit 1 'Nothing was merged or written'. Skipped when the plan file itself is ignored: a first attempt that included the plan file turned five existing ALLOW cases (sv7, ra13, vr12, vr13, vr23b) red, so the unversioned-plan layout stays as before. Post-merge output now prints a line 'the merge landed; what is left is committing the stamp...' before the unchanged 'the stamp is NOT committed:' line (drive-phase.py parses that prefix). Tests ie1/ie2 added in test_close_phase.py (_ignored_evidence_cases, called from _landing_commit_cases). COMPATIBILITY.md entry and phase-signoff.md exit-1 row updated. Full sweep exit 0. PLUGIN-BUILD-GUIDE.md edited only on the generated fence line (scope file). Did not touch guard-release.py.",
+        "descriptive": "A landing over a git-ignored evidence or journal directory is now refused before the merge instead of merging then exiting 1."
       },
       "startedAt": "2026-10-10T17:12:44Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T17:31:15Z",
+      "verifiedBy": [
+        "ie1 evidence dir in .git/info/exclude refuses landing before merge, main unmoved",
+        "ie2 allow twin: evidence not ignored lands"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T17:31:14Z.c4014d",
         "status": "passed",
         "at": "2026-10-10T17:31:14Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "5a30e1d8bdc4",
+        "at": "2026-10-10T17:31:15Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T17:23:07Z",
+        "basis": "`python3 plugins/audit/tests/test_close_phase.py --selftest --stage lt-block` in a throwaway tree at HEAD exited 1 with 1 of 10 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ie1 (house FAIL): SELFTEST FAILED: 9/10 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.20",
       "title": "validate-manifest rejects every plan the published schema rejects, and never raises",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(F548 class) `validate-manifest.py` never applies the JSON Schema: `_manifest_crossrefs` types bug values only (`SCHEMA_READ`, `schema_check`), so any verb can write a schema-invalid plan and only CI's ajv step sees it. Add a stdlib validator for the keyword subset `audit-plan.schema.json` uses (new module `manifest/_json_schema.py` with the five things CLAUDE.md lists: a `--selftest` contract whose cases live in tests/, `safe_stdio()` first in `__main__`, a `_deps.LAYERS` placement, a PLUGIN-BUILD-GUIDE tree line and section, the `_output.PATH_PREAMBLE`; and the migrated-file lists test__output's sc11/sc13 pin), apply it to the whole plan in validate-manifest, and fold the bug-only reader into it; measure the per-verb cost first. (F551) `_manifest_crossrefs._index_bugs` (`bug_by_id`) and `_check_bugs` (`bug['taskId'] not in task_ids`) hash the value, so a list/object id or taskId raises TypeError -> 'internal validator error' naming no field; guard with isinstance so the schema finding names the field. `_manifest_vocab._check_ado` refuses `ado.id: 7.0`, which draft 2020-12 admits: decide (admit an integral float, or keep and say so in the finding). (F552) fallback consumers (`set-priority.py`, `derive-phase-gate.py`, `_panel_write`'s validate before `save_in_layout`, `_proposals._revalidate`) call `validate()` with schema=None and write anyway - bind the loaded schema beside `load_validation_schema` in `_manifest_rules` and use it there (or state the split in COMPATIBILITY's broken-install clause); `ecma_pattern` compiles with re.ASCII (narrows \\s) and lets `re.error` escape validate() - catch it as schema-unchecked; a non-object schema or an unresolvable bug item loads as success - treat as unreadable; `_panel_state._cores` docstring says audit-task reads it '(twice)' - delete the count. Regression: parity case running validate-manifest against the starter, the dogfood plan, the examples and planted schema violations (null where a string is required, wrong enum, extra key where additionalProperties is false) - each rejected exactly where ajv rejects; list id / object taskId produce a named finding, never a raise. The finding `$def` gains its keys in findings-record first, so whole-plan validation does not reject the findings `done`/`signoff` write. Faults: F548, F551, F552.",
       "files": [
         "plugins/audit/scripts/manifest/_json_schema.py",
@@ -1507,7 +1520,11 @@
         "plugins/audit/tests/test__panel_write.py",
         "plugins/audit/tests/test__proposals.py",
         "plugins/audit/tests/test__panel_state.py",
-        "plugins/audit/tests/test__output.py"
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/tests/test__manifest_io.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1541,16 +1558,22 @@
         "P123.19"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T18:11:14Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T18:20:52Z.5a1a0c",
+        "status": "passed",
+        "at": "2026-10-10T18:20:52Z"
+      }
     },
     {
       "id": "P123.21",

@@ -2360,7 +2360,10 @@ def apply_composition(project, patch):
     predating the save it had waited for, and that save's change was lost while
     both answered ok.
     """
-    vm, _, _, _ = _cores()
+    # The schema LOADED AND BOUND, never the `schema=None` fallback: an
+    # unreadable one is then a finding that refuses the save, where the
+    # fallback only warned and let it through.
+    vm = _cores()[0].bound_validator()
     if not isinstance(patch, dict):
         return {"ok": False, "findings": ["patch must be a JSON object"]}
     config = read_config(project)

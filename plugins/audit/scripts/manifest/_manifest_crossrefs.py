@@ -27,9 +27,7 @@ This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__manifest_crossrefs.py` - see
 `plugins/audit/tests/_harness.py`.
 """
-import json
 import os
-import re
 import sys
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -57,6 +55,7 @@ _output.install_path()
 import _manifest_vocab as _vocab  # noqa: E402  (the words, and the shared shape checks)
 import _manifest_io as _mio  # noqa: E402  (the id -> status map, and what 'satisfied' means)
 import _priority  # noqa: E402  (the ONE expression of execution order and its rules)
+import _json_schema as _js  # noqa: E402  (the published schema, read as ajv reads it)
 import _ado_parent as _parent  # noqa: E402  (where each item hangs, and whether it can)
 import _id_refs  # noqa: E402  (FINDING_LISTS: the lists a review holds findings in)
 
@@ -92,10 +91,17 @@ def _index_bugs(manifest):
     bugs = manifest.get("bugs")
     bug_list = bugs if isinstance(bugs, list) else []
     return {"bug_list": bug_list,
-            "bug_ids": [b.get("id") for b in bug_list
-                        if isinstance(b, dict) and b.get("id")],
-            "bug_by_id": {b["id"]: b for b in bug_list
-                          if isinstance(b, dict) and b.get("id")}}
+            "bug_ids": [b.get("id") for b in bug_list if _keyed(b)],
+            "bug_by_id": {b["id"]: b for b in bug_list if _keyed(b)}}
+
+
+def _keyed(record):
+    """True for an object whose `id` is a non-empty STRING - the only id an
+    index may hold. A list or object id cannot be a dict key, and hashing one
+    raised out of validate() as an error naming no field; left out of the index,
+    it is `_require_fields`' finding and the schema's line, each naming the field."""
+    return (isinstance(record, dict) and isinstance(record.get("id"), str)
+            and bool(record.get("id")))
 
 
 # --- the decisions half of the index ---------------------------------------------
@@ -111,10 +117,8 @@ def _index_decisions(manifest):
     decisions = manifest.get("decisions")
     dec_list = decisions if isinstance(decisions, list) else []
     return {"decision_list": dec_list,
-            "decision_ids": [d.get("id") for d in dec_list
-                             if isinstance(d, dict) and d.get("id")],
-            "decision_by_id": {d["id"]: d for d in dec_list
-                               if isinstance(d, dict) and d.get("id")}}
+            "decision_ids": [d.get("id") for d in dec_list if _keyed(d)],
+            "decision_by_id": {d["id"]: d for d in dec_list if _keyed(d)}}
 
 
 def _live_ids(index):
@@ -152,7 +156,9 @@ def _check_unique_ids(index):
     """
     f = []
     seen = set()
-    for i in _live_ids(index):
+    # Only a hashable id can collide by name; a list or object id is the walk's
+    # finding and the schema's line, and hashing it here would raise.
+    for i in [x for x in _live_ids(index) if not isinstance(x, (list, dict))]:
         if i in seen:
             f.append(_output.finding("crossrefs.unique_ids.value", "duplicate id: %s" % i))
         seen.add(i)
@@ -261,7 +267,9 @@ def _cycle_findings(phases, findings):
     edges = {}
 
     def add_edge(a, b):
-        if a and b:
+        # A list or object id cannot key the graph; the walk named it already.
+        if a and b and not isinstance(a, (list, dict)) \
+                and not isinstance(b, (list, dict)):
             edges.setdefault(a, []).append(b)
 
     for phase in phases:
@@ -585,230 +593,49 @@ def _check_file_index(manifest, index):
 
 
 # --- a bug value's type, read off the published schema ------------------------
-# `validate-manifest.py` applies no JSON Schema, and the strict CI step does, so
-# a bug value typed one way by the schema and never checked here passed every
-# local gate and failed CI. The types are READ from the schema at check time
-# rather than restated in a table, so a property the schema gains is typed here
-# with no edit. The reader knows the keywords the bug item is written in; any
-# other constraint keyword is reported as uncheckable, never taken as a pass.
+# The bug values are typed by the ONE schema reader, `_json_schema`, which the
+# whole-plan check in `_manifest_rules` also asks; this half exists because a
+# bug's schema reasons are deduplicated against the hand-written bug checks
+# below, path by path, which the whole-plan walk cannot do. The types are READ
+# from the schema at check time rather than restated in a table, so a property
+# the schema gains is typed here with no edit, and any constraint keyword the
+# reader does not interpret is reported as uncheckable, never taken as a pass.
 PLAN_SCHEMA_REL = ("schema", "audit-plan.schema.json")
-SCHEMA_READ = frozenset(["$ref", "type", "enum", "items", "oneOf", "anyOf",
-                         "pattern", "properties", "required",
-                         "additionalProperties"])
-SCHEMA_ANNOTATIONS = frozenset(["description", "title", "default", "examples",
-                                "$comment", "deprecated", "readOnly",
-                                "writeOnly", "$id", "$schema"])
-_JSON_TYPE_NAMES = ((bool, "boolean"), (int, "integer"), (float, "number"),
-                    (str, "string"), (list, "array"), (dict, "object"))
+# The reader's own sets and words, aliased so a suite that walks the bug item
+# reads the same objects the check does.
+SCHEMA_READ = _js.SUPPORTED
+SCHEMA_ANNOTATIONS = _js.ANNOTATIONS
+json_type = _js.json_type
+schema_admitted = _js.admitted
+ecma_pattern = _js.ecma_pattern
 
 
 def load_plan_schema(root=None):
-    """The shipped manifest schema, parsed. Raises OSError/ValueError."""
+    """The shipped manifest schema, parsed. Raises OSError/ValueError - and
+    ValueError for one that parses but cannot type a bug: not an object, a
+    `$ref` naming nothing, or a bug item with no properties to type against,
+    each of which would otherwise load as a schema that checks nothing."""
     path = os.path.join(root or _output.PLUGIN_ROOT, *PLAN_SCHEMA_REL)
-    with open(path, "r", encoding="utf-8") as fh:
-        return json.load(fh)
-
-
-def json_type(value):
-    """The JSON type name of a parsed value (`null` for None)."""
-    if value is None:
-        return "null"
-    for pytype, name in _JSON_TYPE_NAMES:
-        if isinstance(value, pytype):
-            return name
-    return type(value).__name__
-
-
-def _type_admits(name, value):
-    got = json_type(value)
-    if name == "number":
-        return got in ("integer", "number")
-    if name == "integer" and got == "number":
-        return float(value).is_integer()
-    return got == name
-
-
-def _schema_parts(node, doc, depth=0):
-    """`node` as the list of schema objects that must ALL hold: a `$ref` is
-    followed and its siblings kept as a second part, since JSON Schema reads
-    them as a conjunction. A ref that cannot be followed becomes a part
-    carrying a keyword outside SCHEMA_READ, so it is reported, not passed."""
-    if not isinstance(node, dict) or "$ref" not in node:
-        return [node]
-    ref = node["$ref"]
-    siblings = dict((k, v) for k, v in node.items() if k != "$ref")
-    target = doc
-    if isinstance(ref, str) and ref.startswith("#/") and depth < 32:
-        for part in ref[2:].split("/"):
-            target = target.get(part) if isinstance(target, dict) else None
-    else:
-        target = None
-    parts = ([{"$ref (unresolved)": ref}] if not isinstance(target, dict)
-             else _schema_parts(target, doc, depth + 1))
-    return parts + ([siblings] if siblings else [])
-
-
-def schema_admitted(node, doc):
-    """The words for what `node` admits, e.g. ['string', 'array of string']."""
-    words = []
-    for part in _schema_parts(node, doc):
-        if not isinstance(part, dict):
-            continue
-        names = part.get("type")
-        names = [names] if isinstance(names, str) else list(names or [])
-        items = part.get("items")
-        for name in names:
-            if name == "array" and isinstance(items, dict):
-                name = "array of %s" % "/".join(schema_admitted(items, doc))
-            words.append(name)
-        if "enum" in part:
-            words.append("one of %s" % json.dumps(part["enum"]))
-        for combiner in ("oneOf", "anyOf"):
-            for arm in part.get(combiner) or []:
-                words.extend(schema_admitted(arm, doc))
-    return words
-
-
-def _arm_types(node, doc):
-    names = []
-    for part in _schema_parts(node, doc):
-        got = part.get("type") if isinstance(part, dict) else None
-        names.extend([got] if isinstance(got, str) else list(got or []))
-    return names
-
-
-def _value_class(value):
-    """JSON Schema compares numbers by value (1.0 equals 1); a boolean is
-    never a number, although Python's bool is an int."""
-    got = json_type(value)
-    return "number" if got == "integer" else got
-
-
-def _in_enum(value, enum):
-    return any(_value_class(v) == _value_class(value) and v == value
-               for v in enum)
-
-
-def ecma_pattern(pattern):
-    """`pattern` compiled to read as ajv reads it (`new RegExp(p, 'u')`) on the
-    constructs the schema uses: `\\d` is ASCII only, and a trailing `$` is the
-    end of the string, not the end of a last line. Python's defaults differ on
-    both, so `BUG-1` plus a newline, or with a non-ASCII digit, would match."""
-    if pattern.endswith("$"):
-        body = pattern[:-1]
-        escapes = len(body) - len(body.rstrip("\\"))
-        if escapes % 2 == 0:
-            pattern = body + r"\Z"
-    return re.compile(pattern, re.ASCII)
+    doc = _js.load_document(path)
+    if not _bug_item_properties(doc):
+        raise ValueError("%s: the bug item (properties.bugs.items) resolves to "
+                         "no properties, so no bug value could be typed" % (path,))
+    return doc
 
 
 def schema_check(node, value, doc, where, depth=0):
-    """(reasons, unread) for `value` against the schema `node`.
-
-    `reasons` are findings naming `where`; `unread` is the set of constraint
-    keywords met on the way that this reader does not interpret."""
-    reasons, unread = [], set()
-    for part in _schema_parts(node, doc):
-        r, u = _check_schema_part(part, value, doc, where, depth)
-        reasons.extend(r)
-        unread |= u
-    return reasons, unread
-
-
-def _check_schema_part(part, value, doc, where, depth):
-    if part is True or part == {}:
-        return [], set()
-    if not isinstance(part, dict):
-        return [_output.finding("crossrefs.bugs.schema-false",
-                                "%s: the schema admits no value here" % where)], set()
-    unread = set(k for k in part
-                 if k not in SCHEMA_READ and k not in SCHEMA_ANNOTATIONS)
-    reasons = []
-    names = part.get("type")
-    if names is not None:
-        names = [names] if isinstance(names, str) else list(names)
-        if not any(_type_admits(n, value) for n in names):
-            reasons.append(_output.finding(
-                "crossrefs.bugs.schema-type", "%s is %s, the schema admits %s"
-                % (where, json_type(value), ", ".join(schema_admitted(part, doc)))))
-    if "enum" in part and not _in_enum(value, part["enum"]):
-        reasons.append(_output.finding(
-            "crossrefs.bugs.schema-enum", "%s %s is not one of %s"
-            % (where, json.dumps(value), json.dumps(part["enum"]))))
-    if ("pattern" in part and isinstance(value, str)
-            and not ecma_pattern(part["pattern"]).search(value)):
-        reasons.append(_output.finding(
-            "crossrefs.bugs.schema-pattern",
-            "%s %r does not match the schema's pattern %s"
-            % (where, value, part["pattern"])))
-    if "items" in part and isinstance(value, list):
-        for i, item in enumerate(value):
-            r, u = schema_check(part["items"], item, doc,
-                                "%s[%d]" % (where, i), depth + 1)
-            reasons.extend(r)
-            unread |= u
-    if isinstance(value, dict):
-        r, u = _check_schema_object(part, value, doc, where, depth)
-        reasons.extend(r)
-        unread |= u
-    for combiner in ("oneOf", "anyOf"):
-        if combiner not in part:
-            continue
-        verdicts = [schema_check(arm, value, doc, where, depth + 1)
-                    for arm in part[combiner]]
-        for _r, u in verdicts:
-            unread |= u
-        passing = [not r for r, _u in verdicts].count(True)
-        # An arm of the value's own type that still failed says WHY (a list
-        # holding a number); otherwise the sentence names what is admitted.
-        same_type = [r for (r, _u), arm in zip(verdicts, part[combiner])
-                     if any(_type_admits(n, value) for n in _arm_types(arm, doc))]
-        if passing == 0 and len(same_type) == 1:
-            reasons.extend(same_type[0])
-        elif passing == 0 or (combiner == "oneOf" and passing > 1):
-            reasons.append(_output.finding(
-                "crossrefs.bugs.schema-arms", "%s is %s, the schema admits %s%s"
-                % (where, json_type(value),
-                   ", ".join(schema_admitted(part, doc)) or "nothing",
-                   " - and it matches more than one of them"
-                   if passing > 1 else "")))
-    return reasons, unread
-
-
-def _check_schema_object(part, value, doc, where, depth):
-    reasons, unread = [], set()
-    props = part.get("properties") or {}
-    for key in part.get("required") or []:
-        if key not in value:
-            reasons.append(_output.finding(
-                "crossrefs.bugs.schema-required",
-                "%s.%s is required by the schema" % (where, key)))
-    for key in sorted(value):
-        if key in props:
-            sub = props[key]
-        elif "additionalProperties" in part:
-            sub = part["additionalProperties"]
-        else:
-            continue
-        if sub is True:
-            continue
-        if sub is False:
-            reasons.append(_output.finding(
-                "crossrefs.bugs.schema-additional",
-                "%s.%s is not a property the schema allows" % (where, key)))
-            continue
-        r, u = schema_check(sub, value[key], doc, "%s.%s" % (where, key),
-                            depth + 1)
-        reasons.extend(r)
-        unread |= u
-    return reasons, unread
+    """(reasons, unread) for `value` against the schema `node`, each reason a
+    finding coded `crossrefs.bugs.schema-<kind>` and naming `where`."""
+    reasons, unread = _js.check(node, value, doc, where, depth)
+    return ([_output.finding("crossrefs.bugs.schema-" + kind, text)
+             for kind, text in reasons], unread)
 
 
 def _bug_item_properties(doc):
     """The bug item's `properties`, reached through the schema's own refs."""
     item = ((doc.get("properties") or {}).get("bugs") or {}).get("items") or {}
     props = {}
-    for part in _schema_parts(item, doc):
+    for part in _js.parts(item, doc):
         if isinstance(part, dict):
             props.update(part.get("properties") or {})
     return props
@@ -949,7 +776,12 @@ def _check_bugs(manifest, index, schema=None, schema_root=None):
                                                   handled)
             w.extend(value_w)
             unchecked |= unread
-        if bug.get("taskId"):
+        if bug.get("taskId") and not isinstance(bug["taskId"], str):
+            f.append(_output.finding(
+                "crossrefs.bugs.taskid-string",
+                "%s: taskId must be a task id string, got %s"
+                % (bwhere, _js.json_type(bug["taskId"]))))
+        elif bug.get("taskId"):
             if bug["taskId"] not in task_ids:
                 f.append(_output.finding("crossrefs.bugs.taskid-does-resolve", "%s: taskId '%s' does not resolve to a task" % (bwhere, bug["taskId"])))
             else:
@@ -968,7 +800,12 @@ def _check_bugs(manifest, index, schema=None, schema_root=None):
         "cannot check - the value was NOT verified against it" % (key, kw))
         for key, kw in sorted(unchecked))
     for twhere, tid, bug_ref in index["bug_links"]:
-        if bug_ref not in index["bug_ids"]:
+        if not isinstance(bug_ref, str):
+            f.append(_output.finding(
+                "crossrefs.bugs.bugid-string",
+                "%s: bugId must be a bug id string, got %s"
+                % (twhere, _js.json_type(bug_ref))))
+        elif bug_ref not in index["bug_ids"]:
             f.append(_output.finding("crossrefs.bugs.bugid-does-resolve", "%s: bugId '%s' does not resolve to a bug" % (twhere, bug_ref)))
         else:
             linked = index["bug_by_id"].get(bug_ref) or {}

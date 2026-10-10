@@ -697,9 +697,11 @@ def _save(path, manifest):
 
 
 def _revalidate(manifest):
-    """The validator's own verdict, imported rather than shelled out to."""
+    """The validator's own verdict, imported rather than shelled out to - with
+    the schema LOADED AND BOUND, so an unreadable one is a finding that refuses
+    the write rather than the `schema=None` fallback's warning."""
     import _manifest_rules
-    return _manifest_rules.validate(manifest)
+    return _manifest_rules.bound_validator().validate(manifest)
 
 
 def iso_now():

@@ -118,6 +118,7 @@ claude-plugins/                           # this repo (personal, public)
           _commit_trail.py                # is a recorded task.commit still reachable from any ref?
           _manifest_rules.py              # the ORDER those rules run in, and the surface consumers import
           _manifest_vocab.py              # the manifest's words + the shape checks every level shares
+          _json_schema.py                 # the published JSON Schema, read as ajv reads it, with the stdlib alone
           _task_outputs.py                # what a task's `outputs` pattern may be, and what an honoured one reaches
           _filed_returns.py               # an agent's filed return: its derived path, the shape its role owes, the write-once create
           _manifest_phases.py             # the one walk over phases/tasks, and what a phase carries
@@ -313,6 +314,7 @@ L2:
   _fmt -> _output
   _id_refs -> _output
   _journal_io -> _excerpt, _machine_paths, _output, _usage_core
+  _json_schema -> _output
   _loader -> _output
   _locks -> _output
   _manifest_io -> _machine_paths, _output
@@ -338,7 +340,7 @@ L3:
   _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
   _id_shape -> _branch, _manifest_io, _manifest_vocab, _output
   _manifest_ado -> _ado_conventions, _ado_fields, _manifest_vocab, _output
-  _manifest_crossrefs -> _ado_parent, _id_refs, _manifest_io, _manifest_vocab, _output, _priority
+  _manifest_crossrefs -> _ado_parent, _id_refs, _json_schema, _manifest_io, _manifest_vocab, _output, _priority
   _manifest_phases -> _ado_parent, _ado_tracked, _areas, _manifest_io, _manifest_vocab, _output, _task_outputs
   _manifest_typos -> _areas, _manifest_vocab, _output
   _panel_ui -> _output, _ui_theme
@@ -360,7 +362,7 @@ L4:
   _doctor_hygiene -> _branch, _locks, _output, _worktrees
   _evidence_view -> _evidence_io, _manifest_io, _output, _report_html, _status_facts
   _gate_derive -> _evidence_io, _manifest_io, _manifest_phases, _manifest_vocab, _output, _runner_collects
-  _manifest_rules -> _branch, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output, _status_facts
+  _manifest_rules -> _branch, _json_schema, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output, _status_facts
   _panel_discovery -> _help, _manifest_io, _output, _policy
   _panel_paths -> _config_rules, _loader, _manifest_io, _output, _status_facts
   _panel_settings -> _config_rules, _output
@@ -2031,6 +2033,18 @@ finding. A mute whose bug is closed by its effective status (`_closed_bugs`: the
 carrying `audit-task.py unmute --test <path>` — a warning for the expiry's reason: the runner
 already stops honouring it, and a finding would freeze the very verb that lifts it.
 
+**`_check_schema` applies the published schema to the whole plan** through `_json_schema`,
+every value but `bugs` (which `_check_bugs` types, deduplicated against its hand-written
+checks). Each reason is a `rules.schema.<kind>` WARNING naming the path and 4.0.0, for
+`COMPATIBILITY.md`'s additive promise; a keyword the reader cannot check is one
+`rules.schema.unchecked` warning per keyword. `validate()` resolves the schema once - handed,
+or with `schema=None` read from the plugin's copy, a failed read being one warning - and gives
+it to both checks. **`bound_validator()`** is the form a writer takes: the schema loaded once
+and bound, its `validate` prepending the broken-install finding when the schema could not be
+read, so a write is refused rather than let through on the fallback's warning.
+`set-priority.py`, `derive-phase-gate.py`, `_panel_write.apply_composition` and
+`_proposals._revalidate` validate through it.
+
 ### `plugins/audit/scripts/manifest/_manifest_vocab.py`
 The manifest's **words** (layer 1), and the four shape checks every level of it shares.
 The status/tests/risk/bug enums, the `BUG-`/`PROP-` id patterns, the known-key set per level
@@ -2056,6 +2070,25 @@ nothing), a `KNOWN_*` set nothing anchors, and a stale or reasonless exemption. 
 **lint, not a derivation**: the sets are deliberately WIDER than the schema, and derivation can
 express "equal to" but not "wider" — see the `SCHEMA_ANCHORS` comment for that argument and for
 why the comparison had to live with the walk, a layer up.
+
+### `plugins/audit/scripts/manifest/_json_schema.py`
+The published `schema/audit-plan.schema.json`, **applied** by something a verb runs (layer 1).
+Before it, the schema was applied by CI's `ajv` step over the committed plans and by nothing
+local, so a verb could write a plan the schema refuses. It is a stdlib reader for the keyword
+set the schema is written in — `SUPPORTED` — and an honest word for every other keyword:
+`check(node, value, doc, where)` returns `(reasons, unread)`, and a keyword outside `SUPPORTED`
+and `ANNOTATIONS` lands in `unread`, never in a pass. The places where Python and ECMAScript
+disagree are read ECMAScript's way: an integral float is an `integer`, a boolean is never a
+number, `enum`/`const` compare numbers by value, and `ecma_pattern` reads `\d`/`\w` as ASCII and
+a trailing `$` as the end of the string while leaving `\s` Unicode-wide. A pattern it cannot
+compile is an unread `pattern`, not a raise. `load_document` refuses a file that parses but
+cannot be a schema — a non-object, or one holding a `$ref` that names nothing. A reason is
+`(kind, text)`; each caller codes it: `_manifest_crossrefs` as `crossrefs.bugs.schema-<kind>`
+for bug values, deduplicated against the hand-written bug checks, and `_manifest_rules._check_schema`
+as `rules.schema.<kind>` for the rest of the plan. Both are warnings in 3.x naming the release
+that refuses them, per `COMPATIBILITY.md`; `validate-manifest.py --strict` reads them as findings.
+`test__json_schema`'s keyword walk holds the shipped schema inside the reader's set, so a keyword
+the schema gains is a red build before it is a warning at a user's site.
 
 ### `plugins/audit/scripts/manifest/_filed_returns.py`
 Where an agent's **filed return** lives, what shape it must have, and how it is read
@@ -2764,6 +2797,9 @@ already lost what they are about: an index-only field in a shard body
 its shard (`_manifest_io.stale_stubs`). The second, like `_manifest_crossrefs._check_derived`'s
 stored-against-derived warning, names `audit-task.py settle` - a warning and never a finding,
 because every plan written before the verbs stored derived values carries some.
+`--strict` moves every line the published schema raised (`rules.schema.*` from the whole-plan
+check, `crossrefs.bugs.schema-*` from the bug values) from the warnings to the findings, so the
+command rejects exactly where `ajv` rejects - the reading `COMPATIBILITY.md` announces for 4.0.0.
 
 ### `plugins/audit/scripts/status/_status_facts.py`
 What the manifest SAYS, as a machine-readable answer (layer 2) — the half of status that

@@ -57,12 +57,13 @@ lets every consumer share it without sharing a process, and it is why the cases
 below need no fixture directory. The first other input is the calendar day an
 expired mute is graded against: a caller pins it with `today=`, and otherwise it
 comes from `_manifest_vocab.mute_today()`. The second is the parsed manifest
-schema bug values are typed against: an entry point loads it once with
-`load_validation_schema()` and passes `schema=`, and reports an unreadable one
-itself. Only a consumer that hands none - `schema=None` - makes `validate()`
-read the plugin's schema file, once per call and only for a plan holding a bug;
-that read failing is a warning, not a finding. Who the consumers are is derived,
-not listed:
+schema the WHOLE plan is checked against (`_check_schema`, and the bug values
+in `_check_bugs`): an entry point binds it once with `bound_validator()` - or
+loads it with `load_validation_schema()` and passes `schema=` - and an
+unreadable one is that entry point's finding. Only a consumer that hands none -
+`schema=None` - makes `validate()` read the plugin's schema file, once per call;
+that read failing is a warning, not a finding, which is why a caller that
+WRITES binds the schema instead. Who the consumers are is derived, not listed:
 
     python3 -c "import sys;sys.path.insert(0,'plugins/audit/scripts');import _deps;\
     e,_=_deps.import_graph();print(sorted(a for a,b in e if b=='_manifest_rules'))"
@@ -73,6 +74,7 @@ This module carries no `--selftest` of its own; its cases live in
 import os
 import re
 import sys
+import types
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -102,6 +104,7 @@ import _manifest_phases as _phases  # noqa: E402  (the one walk, and what a phas
 import _manifest_ado as _ado  # noqa: E402  (meta.ado: the connector config, one front door)
 import _manifest_typos as _typos  # noqa: E402  (the did-you-mean detectors)
 import _manifest_crossrefs as _crossrefs  # noqa: E402  (ids, refs, cycles, fileIndex, bugs)
+import _json_schema as _js  # noqa: E402  (the published schema, read as ajv reads it)
 import _branch as _branch  # noqa: E402  (where a phase branches from, and its name)
 import _status_facts  # noqa: E402  (CLOSED_BUG: the one reading of "not open", for a
 #                                    mute whose bug is closed)
@@ -214,6 +217,7 @@ _check_refs_and_cycles = _crossrefs._check_refs_and_cycles
 _check_file_index = _crossrefs._check_file_index
 _check_bugs = _crossrefs._check_bugs
 load_validation_schema = _crossrefs.load_validation_schema
+BUG_VALUE_REFUSAL_RELEASE = _crossrefs.BUG_VALUE_REFUSAL_RELEASE
 _check_decisions = _crossrefs._check_decisions
 _check_proposals = _crossrefs._check_proposals
 _check_priority = _crossrefs._check_priority
@@ -495,6 +499,93 @@ def _check_muted(manifest, index, today=None):
     return (f, w)
 
 
+# --- the published schema, over the whole plan -------------------------------------
+# The schema was applied by CI's `ajv` step over three committed plans and by
+# nothing a verb runs, so a verb could write a plan the published schema refuses.
+# This is that check, made by the one reader `_check_bugs` also asks.
+#
+# A WARNING IN 3.x, NAMING THE RELEASE THAT REFUSES IT, and that is the
+# compatibility contract rather than a soft start: `COMPATIBILITY.md` promises
+# that a plan which validates keeps validating inside the major line, and a value
+# only the schema refuses validated before this check existed. A value a
+# hand-written rule already refuses stays that rule's finding. `validate-manifest
+# --strict` reads these lines as findings, which is the 4.0.0 reading on demand.
+SCHEMA_CODE_PREFIX = "rules.schema."
+# `bugs` is typed by `_check_bugs`, which knows which of a bug's paths a
+# hand-written check already refused and says each fault once.
+_SCHEMA_SKIP = ("bugs",)
+
+
+def _schema_path(reason):
+    """The plan path a schema reason opens with (`phases[0].title`)."""
+    return re.split(r"[ :]", str(reason), 1)[0]
+
+
+def _finding_loci(findings):
+    """The paths the findings already raised open with, where a finding opens
+    with one: `meta.version: missing ...` -> `meta.version`."""
+    return set(_schema_path(x) for x in findings if _schema_path(x))
+
+
+def _already_said(path, loci):
+    """True when a finding already raised is about `path` or a path above it -
+    the same fault, which the schema's line would say a second time."""
+    return any(path == lo or path.startswith(lo + ".") or path.startswith(lo + "[")
+               for lo in loci)
+
+
+def _check_schema(manifest, schema, findings=()):
+    """([], warnings): every place the plan breaks the published schema, by
+    path, and every constraint the reader could not check, by keyword.
+
+    ONE FAULT, ONE LINE: a reason at or under a path one of `findings` (the
+    hand-written rules' verdict, raised first) opens with is that finding's
+    fault and is not said again. A hand-written finding that names its subject
+    some other way (`task P0.1: ...`) is not matched, and the schema's warning
+    stands beside it.
+
+    `schema` False means the caller could not load one and has said so; there is
+    nothing to check against and nothing more to say."""
+    if not isinstance(schema, dict):
+        return ([], [])
+    plan = dict((k, v) for k, v in manifest.items() if k not in _SCHEMA_SKIP)
+    reasons, unread = _js.check_findings(schema, plan, schema, "")
+    loci = _finding_loci(findings)
+    w = [_output.finding(
+        SCHEMA_CODE_PREFIX + _js.kind_of(reason),
+        "%s - the published schema refuses this value; validate-manifest will "
+        "refuse it from %s (a warning in 3.x)" % (reason, BUG_VALUE_REFUSAL_RELEASE))
+        for reason in reasons if not _already_said(_schema_path(reason), loci)]
+    # The reader's own gap is never the plan's fault, so at most a warning,
+    # once per keyword; the build keeps the shipped schema inside the reader's
+    # set (`test__json_schema`'s keyword walk).
+    w.extend(_output.finding(
+        SCHEMA_CODE_PREFIX + "unchecked",
+        "the published schema constrains this plan with `%s`, which "
+        "validate-manifest cannot check - those values were NOT verified "
+        "against it" % (kw,)) for kw in sorted(unread))
+    return ([], w)
+
+
+def bound_validator(root=None):
+    """The rules with the plan schema LOADED ONCE and bound in, for a caller
+    that writes.
+
+    `validate(manifest, today=None)` answers as `validate()` does, with the
+    broken-install finding prepended when the schema could not be read - so a
+    verb that refuses on findings refuses a write it cannot check, where the
+    `schema=None` fallback would only have warned and let it through.
+    `unreadable` is that finding alone, for a verb that validates only after
+    writing and must refuse before it."""
+    schema, unreadable = load_validation_schema(root)
+
+    def bound(manifest, today=None):
+        findings, warnings = validate(manifest, today=today, schema=schema)
+        return list(unreadable) + findings, warnings
+    return types.SimpleNamespace(validate=bound, unreadable=list(unreadable),
+                                 schema=schema)
+
+
 # --- validate: one walk, then one question per piece ------------------------------
 # `validate()` was 354 lines, and its size was never the reason it was hard to
 # cut. The reason was the INDEX: seven accumulating locals built by one pass over
@@ -560,11 +651,12 @@ def validate(manifest, today=None, schema=None):
     """Return (findings, warnings) — two lists of strings; empty findings = valid.
 
     `today` pins the calendar day `_check_muted` grades an expiry against; None
-    reads the clock. `schema` is the parsed manifest schema the bug values are
-    typed against, loaded by the entry point with `load_validation_schema()`;
-    False means that load failed and the entry point reported it; None falls
-    back to reading the plugin's own copy, and only for a plan holding a bug.
-    Those two are the only inputs here that are not the manifest.
+    reads the clock. `schema` is the parsed manifest schema the plan is checked
+    against, loaded by the entry point with `load_validation_schema()` (or
+    bound by `bound_validator()`); False means that load failed and the entry
+    point reported it; None falls back to reading the plugin's own copy, once,
+    and a failed read is a warning. Those two are the only inputs here that are
+    not the manifest.
 
     ORCHESTRATION ONLY. Every question lives in a piece above that answers it
     and returns its own pair; this decides the ORDER, which is the one thing
@@ -584,6 +676,11 @@ def validate(manifest, today=None, schema=None):
         f.extend(pair[0])
         w.extend(pair[1])
 
+    if schema is None:
+        # Read once here and handed to both schema checks below, so a failed
+        # read is one warning rather than one per check.
+        schema, unavailable = _crossrefs._fallback_schema(None)
+        w.extend(unavailable)
     add(_check_meta(manifest))
     add(_check_branch(manifest))
     add(_check_areas(manifest))
@@ -621,6 +718,9 @@ def validate(manifest, today=None, schema=None):
     add(_check_ado_parents(manifest, phases))
     add(_check_derived(manifest))
     add(_check_muted(manifest, index, today))
+    # LAST, and handed every finding raised above, so a fault a hand-written
+    # rule already refused is said once.
+    add(_check_schema(manifest, schema, list(f)))
     return (f, w)
 
 

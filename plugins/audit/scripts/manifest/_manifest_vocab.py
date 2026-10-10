@@ -964,6 +964,18 @@ def _require_fields(obj, where, findings):
         if not obj.get(key):
             findings.append(_output.finding("vocab.require_fields.missing-required", "%s: missing required '%s'" % (where, key)))
             ok = False
+    # A LIST OR OBJECT ID IS A FINDING, and only those: an id is a dict key in
+    # every index the validator builds, and one of these raised out of
+    # `validate()` as an error naming no field, so no plan holding one ever
+    # validated. A number or a boolean id did validate, so it stays the schema's
+    # warning (COMPATIBILITY.md, "Validation stays additive").
+    if isinstance(obj.get("id"), (list, dict)):
+        findings.append(_output.finding(
+            "vocab.require_fields.id-unhashable",
+            "%s: 'id' must be a string, got %s - an id is what every reference "
+            "and index names this record by"
+            % (where, "an array" if isinstance(obj["id"], list) else "an object")))
+        ok = False
     return ok
 
 
@@ -981,10 +993,20 @@ def _check_ado(obj, where, findings):
     # `isinstance(x, bool)` first, because `bool` subclasses `int` and `true`
     # would otherwise be accepted as a work-item id. `meta.version` already
     # excluded it by name, so the tree disagreed with itself about one question.
-    if "id" in ado and (isinstance(ado.get("id"), bool)
-                        or not isinstance(ado.get("id"), int)):
-        findings.append(_output.finding("vocab.ado.ado-id-integer", "%s: ado.id must be an integer work-item id, got %r"
-                        % (where, ado.get("id"))))
+    # An INTEGRAL FLOAT (`7.0`) IS REFUSED TOO, deliberately stricter than the
+    # schema: draft 2020-12's `integer` admits it, but the readers that index a
+    # link by its id (`_ado_drift._collect`, `read-ado-links.py`) keep only an
+    # int, so a `7.0` link is one they skip. The finding says so, so the
+    # disagreement with `ajv` reads as a decision rather than a bug.
+    ado_id = ado.get("id")
+    if "id" in ado and (isinstance(ado_id, bool) or not isinstance(ado_id, int)):
+        integral = isinstance(ado_id, float) and ado_id.is_integer()
+        findings.append(_output.finding("vocab.ado.ado-id-integer", "%s: ado.id must be an integer work-item id, got %r%s"
+                        % (where, ado_id,
+                           " - an integral number written with a fraction, "
+                           "which the JSON Schema admits but the readers that "
+                           "index a link by its id skip; write %d" % (ado_id,)
+                           if integral else "")))
     # A FINDING rather than a warning, and not for symmetry: a misspelled origin
     # reads as "unrecorded" everywhere downstream, which is the same silence a
     # pre-0.44 link produces. So the one wrong value here is indistinguishable

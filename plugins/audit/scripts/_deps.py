@@ -225,6 +225,10 @@ LAYERS = (
      # word. `TERMINAL` is deliberately NOT here - it is `_manifest_io`'s, and
      # holding it would put this module at L2 and its consumers at L3.
      "_manifest_vocab",
+     # `_json_schema` reads the plan's published JSON Schema the way `ajv` does,
+     # with the stdlib alone. It reaches nothing but `_output`, and both the bug
+     # checks and the whole-plan check one layer up ask it, so it sits here.
+     "_json_schema",
      # `_task_outputs` is what a task's `outputs` pattern may be and what an
      # honoured one reaches. It is at L1 for `_locks`' reason word for word:
      # `hooks/_config.py` resolves it by path on the per-tool-call plan-gate

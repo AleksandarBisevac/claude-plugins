@@ -497,6 +497,36 @@ def _cases(check):
         # correct. Both close it and neither means `fixed`, so a chain of `==`
         # comparisons learns the next word at one call site and goes on relabelling
         # a settled report everywhere else.
+        # A list or object where an id belongs cannot key an index. Each reader
+        # used to hash it and raise a TypeError naming no field; now it is left
+        # out of every index, and the validator names it.
+        _uh_plan = {"phases": [
+            {"id": ["P9"], "title": "p", "status": "pending",
+             "tasks": [{"id": {"x": 1}, "title": "t", "status": "done"},
+                       {"id": "P9.2", "title": "t", "status": "done"}]}],
+            "decisions": [{"id": ["DEC-1"], "status": "done"}]}
+        try:
+            _uh = {"status_index": M.status_index(_uh_plan),
+                   "tasks_by_id": sorted(M.tasks_by_id(_uh_plan)),
+                   "phase_of_task": M.phase_of_task(_uh_plan),
+                   "bug list taskId": M.effective_bug_status(
+                       {"id": "B1", "status": "open", "taskId": ["P9.2"]},
+                       M.tasks_by_id(_uh_plan)),
+                   "bug object taskId": M.effective_bug_status(
+                       {"id": "B2", "status": "open", "taskId": {"id": "P9.2"}},
+                       M.tasks_by_id(_uh_plan))}
+        except TypeError as exc:                     # the defect under test
+            _uh = {"raised": repr(exc)}
+        check("ki1 RED-FIRST: a list or object phase, task or decision id, and "
+              "a list or object bug taskId, are left out of every index and "
+              "lookup - never a raise - while the string id beside them is "
+              "kept: %r" % (_uh,),
+              "raised" not in _uh
+              and _uh["status_index"] == {"P9.2": "done"}
+              and _uh["tasks_by_id"] == ["P9.2"]
+              and _uh["phase_of_task"] == {"P9.2": ["P9"]}
+              and _uh["bug list taskId"] == "open"
+              and _uh["bug object taskId"] == "open", _uh)
         check("effective_bug_status: 'not_a_bug' wins over a done task too - a "
               "verified negative relabelled `fixed` would claim a change nobody "
               "made",

@@ -458,6 +458,13 @@ def describe_unresolved(resolved):
 # a silent pass because a louder reader owns exactly this class of defect.
 
 
+def keyable_id(value):
+    """True for an id an index may be keyed by: present, and not a list or an
+    object. Those two cannot be a dict key, and hashing one raised out of every
+    reader below with an error naming no field; the validator names it instead."""
+    return bool(value) and not isinstance(value, (list, dict))
+
+
 def iter_tasks(manifest):
     """Yield `(phase, task)` for every task in the manifest, in document order.
 
@@ -513,7 +520,7 @@ def tasks_by_id(manifest):
     `validate-manifest` is what reports them, and a lookup that silently merged two
     tasks would hide the thing being reported.
     """
-    return {t["id"]: t for _, t in iter_tasks(manifest) if t.get("id")}
+    return {t["id"]: t for _, t in iter_tasks(manifest) if keyable_id(t.get("id"))}
 
 
 def resolve_phase_id(manifest, wanted):
@@ -585,10 +592,10 @@ def status_index(manifest):
         # The DERIVED status: a phase signed off with every task terminal is done
         # as a blocker too, and a phase only awaiting sign-off is not - unsigned
         # work does not release what waits on it.
-        if ph.get("id"):
+        if keyable_id(ph.get("id")):
             status[ph["id"]] = effective_phase_status(ph)
         for t in (ph.get("tasks") or []):
-            if isinstance(t, dict) and t.get("id"):
+            if isinstance(t, dict) and keyable_id(t.get("id")):
                 status[t["id"]] = t.get("status")
     # DECISIONS ARE THE FOURTH KIND IN THIS MAP, and they are here rather than in
     # a resolver of their own because a second resolver would be a second answer
@@ -602,7 +609,7 @@ def status_index(manifest):
     # duplicate id across all four kinds.
     decisions = manifest.get("decisions")
     for d in (decisions if isinstance(decisions, list) else []):
-        if isinstance(d, dict) and d.get("id"):
+        if isinstance(d, dict) and keyable_id(d.get("id")):
             status[d["id"]] = d.get("status")
     return status
 
@@ -618,7 +625,8 @@ def phase_of_task(manifest):
     Same truthy-id filter and same LAST-wins duplicate rule as `tasks_by_id`, so
     the two indexes always have an identical key set; a caller may zip them.
     """
-    return {t["id"]: p.get("id") for p, t in iter_tasks(manifest) if t.get("id")}
+    return {t["id"]: p.get("id") for p, t in iter_tasks(manifest)
+            if keyable_id(t.get("id"))}
 
 
 def recorded_attempt(task):
@@ -792,7 +800,8 @@ def effective_bug_status(bug, task_by_id):
     # WITHOUT the truthy-id filter (audit-status.py's ready-list index is one such)
     # carries a `None` key, and a bug with no `taskId` would then look that key up,
     # find a task, and read 'fixed'. `_report_html._bug_view` omits this guard.
-    task = task_by_id.get(tid) if tid else None
+    # `keyable_id` beside it: a list or object `taskId` cannot be looked up.
+    task = task_by_id.get(tid) if keyable_id(tid) else None
     if isinstance(task, dict) and task.get("status") == "done":
         return "fixed"
     return stored
@@ -918,7 +927,7 @@ def phase_basis(phase):
 def _fix_task(bug, task_by_id):
     """The bug's linked task when it is done, else None."""
     tid = (bug or {}).get("taskId")
-    task = task_by_id.get(tid) if tid else None
+    task = task_by_id.get(tid) if keyable_id(tid) else None
     return task if isinstance(task, dict) and task.get("status") == "done" else None
 
 

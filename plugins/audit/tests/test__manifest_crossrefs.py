@@ -403,12 +403,12 @@ def _cases(check):
                   "crossrefs.bugs.schema-")
               for f5, w5 in _bt_dup.values()), _bt_dup)
     # A constraint the reader does not interpret is REPORTED, not passed: the
-    # doctored schema adds one to `title`, a property the real one leaves
-    # un-lengthed. The allow half is bt3, where the real schema's annotations
+    # doctored schema adds `contentEncoding` to `title`, a keyword the reader
+    # has no word for. The allow half is bt3, where the real schema's annotations
     # (every property's `description`) produce no such finding.
     _bt_doctored = copy.deepcopy(_bt_doc)
     _bt_resolve(_bt_doctored["properties"]["bugs"]["items"],
-                _bt_doctored)["properties"]["title"]["minLength"] = 1
+                _bt_doctored)["properties"]["title"]["contentEncoding"] = "base64"
     _bt_uf, _bt_unread = _bt_report("title", "t", schema=_bt_doctored)
     check("bt2 at a user's site, a constraint keyword outside the reader's set "
           "is ONE WARNING naming the property and the keyword - the value is "
@@ -417,14 +417,14 @@ def _cases(check):
           _bt_uf == [] and len(_bt_unread) == 1
           and _output.finding_code(_bt_unread[0])
           == "crossrefs.bugs.schema-unchecked"
-          and "title" in _bt_unread[0] and "minLength" in _bt_unread[0],
+          and "title" in _bt_unread[0] and "contentEncoding" in _bt_unread[0],
           (_bt_uf, _bt_unread))
     # THE BUILD, NOT THE USER, CATCHES A READER BEHIND ITS SCHEMA. Every
     # keyword the bug item reaches - through $ref too - must be one the
     # checker reads; the doctored copies prove the walk sees a keyword on the
     # item's own property AND one reachable only through a $ref.
     _bw_ref = copy.deepcopy(_bt_doc)
-    _bw_ref["$defs"]["adoLink"]["properties"]["url"]["maxLength"] = 9
+    _bw_ref["$defs"]["adoLink"]["properties"]["url"]["maxItems"] = 9
     _bw = {"shipped schema": _bw_unread(_bt_doc),
            "keyword on a bug property": _bw_unread(_bt_doctored),
            "keyword behind a $ref": _bw_unread(_bw_ref)}
@@ -433,8 +433,8 @@ def _cases(check):
           "keyword added on a property or behind a $ref is named here: %r"
           % (_bw,),
           _bw == {"shipped schema": [],
-                  "keyword on a bug property": ["minLength"],
-                  "keyword behind a $ref": ["maxLength"]}
+                  "keyword on a bug property": ["contentEncoding"],
+                  "keyword behind a $ref": ["maxItems"]}
           and "ado" in _bt_props and "$ref" in _bt_props["ado"], _bw)
     # A schema the plugin cannot read is a broken INSTALL, not a refusable
     # plan: the entry point's load says so as a FINDING. Inside the rules it
@@ -525,6 +525,64 @@ def _cases(check):
           and _bt_plans["docs/audit/audit-plan.json"][0] > 0
           and _bt_plans["examples/acme-store/audit-plan.json"][0] > 0,
           _bt_plans)
+
+    # --- a value that cannot be a dict key: named, never raised ---
+    # A list id or an object taskId used to be hashed into the index, so the
+    # whole validation died as "internal validator error" naming no field.
+    _uh = {}
+    for _uh_name, _uh_bug in (
+            ("list id", {"id": ["BUG-1"], "title": "t", "status": "open"}),
+            ("object taskId", {"id": "BUG-2", "title": "t", "status": "open",
+                               "taskId": {"id": "P0.1"}})):
+        _uh_plan = {"meta": {"version": 2},
+                    "phases": [{"id": "P0", "title": "p", "status": "pending",
+                                "tasks": [{"id": "P0.1", "title": "t",
+                                           "status": "pending"}]}],
+                    "bugs": [_uh_bug]}
+        try:
+            _uh[_uh_name] = _rules.validate(_uh_plan)
+        except Exception as exc:                     # the defect under test
+            _uh[_uh_name] = ("raised", repr(exc))
+    check("mc47 RED-FIRST: a bug whose id is a list, or whose taskId is an "
+          "object, is a finding NAMING the field - never a raise: %r" % (_uh,),
+          all(isinstance(fw, tuple) and fw[0] != "raised" for fw in _uh.values())
+          and any("id must" in x or ".id" in x for x in _uh["list id"][0])
+          and any("taskId" in x for x in _uh["object taskId"][0]), _uh)
+    _rx_doc = copy.deepcopy(_bt_doc)
+    _bt_resolve(_rx_doc["properties"]["bugs"]["items"],
+                _rx_doc)["properties"]["id"]["pattern"] = "^BUG-(\\d+$"
+    try:
+        _rx = _bt_report("id", "BUG-1", schema=_rx_doc)
+    except Exception as exc:                         # the defect under test
+        _rx = ("raised", repr(exc))
+    check("mc48 RED-FIRST: a schema pattern that will not compile is ONE "
+          "schema-unchecked warning naming the property and `pattern` - never "
+          "a re.error escaping validate(), never a pass: %r" % (_rx,),
+          _rx[0] != "raised" and _rx[0] == []
+          and [_output.finding_code(x) for x in _rx[1]]
+          == ["crossrefs.bugs.schema-unchecked"]
+          and "pattern" in _rx[1][0], _rx)
+    _bi_root = tempfile.mkdtemp(prefix="xref-item-")
+    try:
+        os.makedirs(os.path.join(_bi_root, "schema"))
+        _bi = {}
+        for _bi_name, _bi_body in (
+                ("array document", [1]),
+                ("bug item gone", dict((k, v) for k, v in _bt_doc.items()
+                                       if k != "properties"))):
+            with open(os.path.join(_bi_root, *M.PLAN_SCHEMA_REL), "w",
+                      encoding="utf-8") as fh:
+                json.dump(_bi_body, fh)
+            _bi[_bi_name] = M.load_validation_schema(_bi_root)
+    finally:
+        shutil.rmtree(_bi_root, ignore_errors=True)
+    check("mc49 RED-FIRST: a schema that parses but is no object, or whose bug "
+          "item resolves to nothing, is UNREADABLE - the broken-install finding "
+          "- never loaded as a schema that types nothing: %r" % (_bi,),
+          all(loaded is False and len(found) == 1
+              and _output.finding_code(found[0])
+              == "crossrefs.bugs.schema-unreadable"
+              for loaded, found in _bi.values()), _bi)
 
     # --- proposals ---
     prop = {"id": "PROP-1", "status": "proposed",

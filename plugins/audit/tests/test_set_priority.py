@@ -270,6 +270,29 @@ def _cases(check):
               and raw(mp)["phases"][0].get("priority") is None,
               "%r %r" % (code, out))
 
+        # --- the schema is bound at this site, not fallen back to ------------
+        # Validated with no schema handed in, an unreadable one was a warning
+        # and the pin was written anyway; bound, it is the broken-install
+        # finding and nothing is written.
+        import _manifest_rules
+        import _output
+        _d, mp = project()
+        before = open(mp, "rb").read()
+        real_load = _manifest_rules.load_validation_schema
+        _manifest_rules.load_validation_schema = lambda root=None: (False, [
+            _output.finding("crossrefs.bugs.schema-unreadable",
+                            "bugs: the plugin's manifest schema could not be "
+                            "read - the install is broken: planted")])
+        try:
+            code, out = run([mp, "P1", "1"])
+        finally:
+            _manifest_rules.load_validation_schema = real_load
+        check("v2 RED-FIRST: the pin validates with the schema LOADED AND BOUND, "
+              "so an unreadable schema refuses it as a broken install with the "
+              "file byte-identical - never a fallback warning and a write",
+              code == 1 and "install is broken" in out
+              and open(mp, "rb").read() == before, "%r %r" % (code, out))
+
         # --- usage errors -----------------------------------------------------
         _d, mp = project()
         for argv, why in (([mp, "PX", "1"], "an unknown phase"),

@@ -489,6 +489,35 @@ def _cases(check):
     check("non-composition data preserved",
           saved["phases"][0]["title"] == "P" and saved["meta"]["version"] == 2)
 
+    # THE SCHEMA IS BOUND HERE, NOT FALLEN BACK TO. A save validated with no
+    # schema handed in read the plugin's own copy, and when that read failed
+    # it said so as a warning and wrote anyway; bound, an unreadable schema is
+    # the broken-install finding and the save is refused before any write.
+    import _manifest_rules as _sb_rules
+    _sb_real = _sb_rules.load_validation_schema
+    with open(mpath, "rb") as fh:
+        _sb_before = fh.read()
+    _sb_rules.load_validation_schema = lambda root=None: (False, [
+        _output.finding("crossrefs.bugs.schema-unreadable",
+                        "bugs: the plugin's manifest schema could not be read "
+                        "- the install is broken: planted")])
+    try:
+        _sb = M.apply_composition(proj, {"tasks": {"P1.1": {"model": "haiku"}}})
+    finally:
+        _sb_rules.load_validation_schema = _sb_real
+    with open(mpath, "rb") as fh:
+        _sb_after = fh.read()
+    check("sb1 RED-FIRST: a settings save validates with the schema LOADED AND "
+          "BOUND, so an unreadable schema refuses it as a broken install and "
+          "the plan is untouched - never a fallback warning and a write: %r"
+          % (_sb,),
+          _sb.get("ok") is False and _sb_after == _sb_before
+          and any("install is broken" in x for x in _sb.get("findings") or []))
+    # The fixture the cases below read, put back whatever the save did, so a
+    # red here stays one red rather than every later case's.
+    with open(mpath, "wb") as fh:
+        fh.write(_sb_before)
+
     # A BUILD COMMAND IS EXECUTED AS WRITTEN: a machine path in one is refused
     # at the save, with a remedy a command can take, never stored for the
     # writer's scrub to rewrite into a command that no longer runs.

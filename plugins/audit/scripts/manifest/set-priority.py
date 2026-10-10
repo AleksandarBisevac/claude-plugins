@@ -237,7 +237,10 @@ def _locked_set(args, project, config, mpath, phase_id, tier, out):
         out("[set-priority] manifest root is not an object")
         return E_USAGE
 
-    vm = _panel_write._cores()[0]
+    # The schema LOADED AND BOUND, never the `schema=None` fallback: an
+    # unreadable one is then a finding that refuses this write below, where the
+    # fallback only warned and let the pin through.
+    vm = _panel_write._cores()[0].bound_validator()
     pre_findings, _pre_w = vm.validate(assembled)
     if pre_findings:
         # Refusing BEFORE the write is what tells "your change broke it" apart

@@ -222,9 +222,9 @@ usage_state = _usage.usage_state
 def _cores():
     """The manifest rules, validate-config, audit-status and hooks/_config.
 
-    A POSITIONAL 4-TUPLE, KEPT: `_panel_write` (twice) and `audit-task` (twice)
-    read index 0 out of it, `_panel_write` and two suites read index 1, and the
-    shape is what they read it by. What changed when this module was split up is
+    A POSITIONAL 4-TUPLE, KEPT: `_panel_write` and `audit-task` read index 0
+    out of it, `_panel_write` and the suites read index 1, and the shape is what
+    they read it by. What changed when this module was split up is
     where the pieces come from -- three of them from `_panel_paths` at layer 3,
     and `_manifest_rules` from the plain import above, which is legal HERE at
     layer 5 and was the one thing that could not sit in the shared base.

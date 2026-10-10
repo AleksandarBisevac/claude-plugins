@@ -1102,6 +1102,46 @@ def _cases_schema_input(record):
            "for a consumer that loads none: reads %d" % (fallback_reads,),
            fallback_reads == 1 and fallback == handed)
 
+    # ONE FAULT, ONE LINE across the hand-written rules and the schema: a
+    # path a finding already opens with is not said again by the schema; a
+    # path no finding names still is.
+    dup = _valid_manifest()
+    del dup["meta"]["version"]
+    dup["phases"][0]["priority"] = 0
+    dup_f, dup_w = M.validate(dup, schema=schema)
+    dup_schema = [x for x in dup_w if (_output.finding_code(x) or "")
+                  .startswith(M.SCHEMA_CODE_PREFIX)]
+    record("pu4 a fault a hand-written rule refuses (meta.version missing) is "
+           "ONE finding with no schema warning beside it, while a value only "
+           "the schema refuses (priority 0) in the same plan is still its one "
+           "warning: %r" % ((dup_f, dup_schema),),
+           len([x for x in dup_f if "meta.version" in x]) == 1
+           and [x.split(" ", 1)[0] for x in dup_schema] == ["phases[0].priority"])
+
+    # bound_validator: the schema loaded once and bound, for a caller that
+    # writes. Broken, the install finding rides every verdict; whole, the
+    # verdict is validate()'s own with that schema handed in.
+    def broken(root=None):
+        raise OSError("schema gone")
+    _xr.load_plan_schema = broken
+    try:
+        gone = M.bound_validator()
+    finally:
+        _xr.load_plan_schema = real
+    gone_f, _gone_w = gone.validate(_valid_manifest())
+    whole = M.bound_validator()
+    record("pu3 RED-FIRST: bound_validator() over an unreadable schema prepends "
+           "the broken-install FINDING to every verdict, so a writer refusing "
+           "on findings refuses - where the schema=None fallback only warned; "
+           "over a readable one its verdict is validate()'s own: %r"
+           % ((gone_f, gone.unreadable),),
+           gone.schema is False and len(gone.unreadable) == 1
+           and gone_f == gone.unreadable
+           and _output.finding_code(gone_f[0])
+           == "crossrefs.bugs.schema-unreadable"
+           and isinstance(whole.schema, dict) and whole.unreadable == []
+           and whole.validate(plan) == M.validate(plan, schema=schema))
+
 
 # --- meta.muted: the warnings, graded against a pinned day ----------------------
 def _cases_muted(record):

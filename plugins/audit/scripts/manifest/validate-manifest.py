@@ -15,7 +15,13 @@ Output classes:
              combinations); exit stays 0 when there are only warnings.
 
 Usage:
-  python3 validate-manifest.py <manifest-path> [--verbose]
+  python3 validate-manifest.py <manifest-path> [--verbose] [--strict]
+
+`--strict` reads every line the published schema raises (the whole-plan check's
+`rules.schema.*` and the bug values' `crossrefs.bugs.schema-*`) as a FINDING, so
+the command rejects exactly the plans `ajv` rejects. Without it those lines are
+warnings naming the release that refuses them, because `COMPATIBILITY.md`
+promises that a plan which validates keeps validating inside the major line.
 
 Run as a command, a VALID plan is said in one line: the OK line, naming
 `--verbose` when there were warnings (`_output.terse_cli`). An invalid plan
@@ -111,12 +117,30 @@ def success_line(lines):
     return ok[0] + (" - `--verbose` prints the warnings" if warned else "")
 
 
+# The rule codes the published schema raises, whichever check raised them.
+SCHEMA_CODES = ("rules.schema.", "crossrefs.bugs.schema-")
+
+
+def is_schema_line(line):
+    """True for a line the published schema raised (`SCHEMA_CODES`)."""
+    return str(_output.finding_code(line) or "").startswith(SCHEMA_CODES)
+
+
+def strict_split(findings, warnings):
+    """(findings, warnings) with every schema warning moved to the findings -
+    the `--strict` reading, which is the 4.0.0 one."""
+    moved = [w for w in warnings if is_schema_line(w)]
+    return (list(findings) + moved,
+            [w for w in warnings if not is_schema_line(w)])
+
+
 def main(argv):
     verbose = "--verbose" in argv
-    paths = [a for a in argv if a != "--verbose"]
+    strict = "--strict" in argv
+    paths = [a for a in argv if a not in ("--verbose", "--strict")]
     if len(paths) != 1:
         sys.stderr.write("usage: validate-manifest.py <manifest-path> "
-                         "[--verbose]\n")
+                         "[--verbose] [--strict]\n")
         return 2
     try:
         manifest = _mio.load_manifest(paths[0])
@@ -124,7 +148,7 @@ def main(argv):
         sys.stderr.write("ERROR: cannot read/parse %s: %s\n" % (paths[0], exc))
         return 2
 
-    # The schema bug values are typed against is loaded HERE, once, so the rules
+    # The schema the plan is checked against is loaded HERE, once, so the rules
     # read no file; an unreadable one is this command's finding to report.
     schema, unreadable = _manifest_rules.load_validation_schema()
     try:
@@ -133,6 +157,8 @@ def main(argv):
     except Exception as exc:  # defensive; validate() should never raise
         print("FINDING: internal validator error: %s" % exc)
         return 1
+    if strict:
+        findings, warnings = strict_split(findings, warnings)
 
     # The one question `validate()` cannot be asked. It takes the ASSEMBLED
     # manifest, and an index-only field written into a shard body is already gone

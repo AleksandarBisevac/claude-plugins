@@ -582,7 +582,10 @@ def _locked_run(args, project, config, mpath, phase_id, out):
         out("[derive-phase-gate] manifest root is not an object")
         return E_USAGE
 
-    vm = _panel_write._cores()[0]
+    # The schema LOADED AND BOUND, never the `schema=None` fallback: an
+    # unreadable one is then a finding that refuses this write below, where the
+    # fallback only warned and let the derived gate through.
+    vm = _panel_write._cores()[0].bound_validator()
     pre_findings, _w = vm.validate(assembled)
     if pre_findings:
         out("[derive-phase-gate] the manifest is already invalid -- nothing "

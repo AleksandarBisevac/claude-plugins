@@ -711,9 +711,44 @@ def _redact_cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _schema_bound_cases(check):
+    """The schema is bound at this write site, not fallen back to: validated
+    with no schema handed in, an unreadable one was a warning and the
+    proposal was materialized anyway."""
+    import _manifest_rules
+    import _output
+    tmp = tempfile.mkdtemp(prefix="audit-prop-schema-")
+    try:
+        subprocess.call(["git", "init", "-q", tmp])
+        os.makedirs(os.path.join(tmp, "docs", "audit"))
+        mp = os.path.join(tmp, "docs", "audit", "audit-plan.json")
+        with io.open(mp, "w", encoding="utf-8") as fh:
+            json.dump(_manifest([_prop("PROP-1", payload=_payload("P9"))]), fh)
+        before = io.open(mp, "rb").read()
+        real_load = _manifest_rules.load_validation_schema
+        _manifest_rules.load_validation_schema = lambda root=None: (False, [
+            _output.finding("crossrefs.bugs.schema-unreadable",
+                            "bugs: the plugin's manifest schema could not be "
+                            "read - the install is broken: planted")])
+        try:
+            ok, info = M.run(mp, "materialize", ["PROP-1"])
+        finally:
+            _manifest_rules.load_validation_schema = real_load
+        said = " ".join((info or {}).get("findings") or [])
+        check("sb1 RED-FIRST: a materialize validates with the schema LOADED AND "
+              "BOUND, so an unreadable schema refuses it as a broken install, "
+              "the plan byte-identical - never a fallback warning and a write: "
+              "%r" % ((ok, info),),
+              ok is False and "install is broken" in said
+              and io.open(mp, "rb").read() == before)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _selftest():
     def body(check):
         _redact_cases(check)
+        _schema_bound_cases(check)
         _cases(check)
         _placeholder_cases(check)
         _race_cases(check)

@@ -1307,7 +1307,8 @@ def _walk_phases(phases, build_keys=()):
         # task inherits its phase's answer and never declares one, so checking it
         # on the task walk below would invite a declaration the resolver ignores.
         _add_tracked(phase, pwhere, f, w)
-        if pid:
+        # A list or object id cannot key an index; `_require_fields` named it.
+        if pid and not isinstance(pid, (list, dict)):
             phase_ids.append(pid)
         if phase.get("status") not in STATUS:
             f.append(_output.finding("phases.walk_phases.phase-status", "%s: status %r not in %s" % (pwhere, phase.get("status"), list(STATUS))))
@@ -1370,7 +1371,8 @@ def _walk_phases(phases, build_keys=()):
             twhere = "task %s" % (tid or ("%s.tasks[%d]" % (pwhere, ti)))
             _require_fields(task, twhere, f)
             _unknown_keys(task, KNOWN_TASK, twhere, w)
-            if tid:
+            # A list or object id cannot key an index; `_require_fields` named it.
+            if tid and not isinstance(tid, (list, dict)):
                 task_ids.append(tid)
                 task_by_id[tid] = task
                 files = task.get("files")

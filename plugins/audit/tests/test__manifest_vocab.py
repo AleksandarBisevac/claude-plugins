@@ -118,6 +118,28 @@ def _cases(check):
     M._check_ado({"ado": {"id": 41}}, "task T", f)
     check("mv11 ...and a real work-item id passes - the case that fails if "
           "the integer test is inverted", f == [], f)
+    f = []
+    M._check_ado({"ado": {"id": 7.0}}, "task T", f)
+    f2 = []
+    M._check_ado({"ado": {"id": 7.5}}, "task T", f2)
+    check("mv11b an INTEGRAL FLOAT id (7.0) stays refused though draft 2020-12 "
+          "admits it, and the finding SAYS SO - naming the schema's reading, "
+          "why it is refused and the int to write; a fractional one carries "
+          "no such clause: %r" % ((f, f2),),
+          len(f) == 1 and "the JSON Schema admits" in f[0]
+          and "write 7" in f[0]
+          and len(f2) == 1 and "JSON Schema" not in f2[0], (f, f2))
+    f = []
+    ok = M._require_fields({"id": ["P1"], "title": "t", "status": "pending"},
+                           "phase X", f)
+    f2 = []
+    ok2 = M._require_fields({"id": 7, "title": "t", "status": "pending"},
+                            "phase X", f2)
+    check("mv11c a LIST id is a finding naming 'id' - one used to raise out of "
+          "validate() naming no field - while a NUMBER id, which validated "
+          "before, is left to the schema's warning: %r" % ((ok, f, ok2, f2),),
+          ok is False and len(f) == 1 and "'id' must be a string" in f[0]
+          and ok2 is True and f2 == [], (f, f2))
     # PRE-EXISTING AND RECORDED RATHER THAN FIXED: `bool` is an `int` subclass,
     # so `"id": true` passes the integer test here, unlike `meta.version` in
     # `_check_meta`, which excludes bool by name. This case asserts the CURRENT
@@ -556,7 +578,14 @@ def _cases(check):
                    # "invisible rather than absent" repair this table refuses.
                    "_refs.py": "no walk - one $def read by name, to ask whether "
                                "the red-first vocabulary the documents point at "
-                               "is declared"}
+                               "is declared",
+                   # A FOURTH WALK, ADDED WITH ITS ROW: the validator. It walks
+                   # the schema against a plan's VALUES and, for the build, the
+                   # keyword names the schema uses - neither a field map nor a
+                   # vocabulary, so it answers neither question above.
+                   "manifest/_json_schema.py": "a fourth walk - the plan's "
+                                               "values checked against the "
+                                               "schema, as ajv checks them"}
     _defs_readers = sorted(rel for rel, text in _isrc.items() if "$defs" in text)
     check("mv36 ...and the claim both of those rest on - that this is NOT the "
           "tree's only schema walk - is COUNTED rather than written down: every one "

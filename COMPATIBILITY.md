@@ -134,6 +134,32 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   command that loads it, because that is a broken install rather than a plan; and a
   schema keyword the validator does not interpret is at most a warning, because that
   fault is the plugin's — the build refuses to ship a schema whose bug item uses one.
+
+  **The rest of the plan is the third announcement, made the same way.** The published
+  schema is now applied to the whole plan, by the reader that types the bug values
+  (`scripts/manifest/_json_schema.py`), so a value only the schema refuses anywhere in
+  the plan — a `null` title, a status off its enum, a `priority` of `0`, a key where
+  `additionalProperties` is `false` — is a **warning** in 3.x naming **4.0.0**, and 4.0.0
+  makes it a finding. `validate-manifest.py --strict` gives that 4.0.0 reading today: it
+  exits 1 exactly where `ajv` rejects the plan. Two refusals are not part of this
+  announcement, because no plan that carried them ever validated: a list or object
+  `id` on a phase, task or bug used to raise out of the validator, and is a finding
+  naming the field; and an `ado.id` written as an integral float (`7.0`) stays the
+  finding it was, though draft 2020-12 admits it, because the readers that index a link
+  by its id skip a non-int one — the finding says so.
+
+  **A broken install refuses a write; it does not only warn.** A schema the plugin
+  cannot read — missing, unparsable, not an object, holding a `$ref` that names nothing,
+  or with a bug item that resolves to no properties — is a finding from the command
+  that loads it. The `audit-task.py` verbs, `set-priority.py`, `derive-phase-gate.py`,
+  the panel's settings save and the proposal verbs bind the loaded schema
+  (`_manifest_rules.bound_validator`, or `audit-task.py`'s own `_validator`), so that
+  finding refuses their write. **The split, stated rather than hidden:** a consumer that
+  hands the rules no schema meets the softer reading — the rules read the plugin's copy
+  themselves, and a failed read is a warning — and that still includes some writers:
+  the merge driver (`merge-manifest.py`), `repair-commits.py`, `repair-tests-add.py`,
+  `migrate-json-encoding.py` and `migrate-manifest.py`. On a broken install those can
+  still write a plan no schema was checked against, and say so as that warning.
 - **A manifest key a released version READS keeps being read** — the promise the
   config section below makes about a config key, made here for the same reason: the
   manifest is a file you wrote. `phases[].adoTracked` is the newest one. A phase

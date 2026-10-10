@@ -313,6 +313,8 @@ def _cases(record):
         _cases_muted(record, path2)
         _cases_bug_value_types(record, path2)
         _cases_success_line(record, path2)
+        _cases_schema_parity(record, path2)
+        _cases_never_raises(record, path2)
     finally:
         if os.path.exists(path2):
             os.unlink(path2)
@@ -413,6 +415,142 @@ def _cases_bug_value_types(record, path):
            % ((code_gone, out_gone[:300]),),
            code_gone == 1 and "install is broken" in out_gone
            and "FINDING" in out_gone)
+
+
+# --- the published schema, applied to the whole plan ---------------------------
+# Where `ajv` (CI's `ajv-cli validate --spec=draft2020 --all-errors`) rejects each
+# planted violation, as the path this command's lines name. Recorded from a real
+# ajv run over the same plants; ajv names an extra key's PARENT with the key in
+# `params`, and the line here names the key itself.
+SCHEMA_PLANTS = (
+    ("null where a string is required",
+     lambda m: m["phases"][0].__setitem__("title", None),
+     ["phases[0].title"]),
+    ("a value off its enum",
+     lambda m: m["phases"][0]["tasks"][0].__setitem__("status", "bogus"),
+     ["phases[0].tasks[0].status"]),
+    ("an extra key where additionalProperties is false",
+     lambda m: m["meta"].__setitem__(
+         "ado", {"stateMap": {"phase": {"pending": "New"}, "sprint": 1}}),
+     ["meta.ado.stateMap.sprint"]),
+    ("a minimum and an enum at once",
+     lambda m: (m["phases"][0].__setitem__("priority", 0),
+                m["phases"][0]["tasks"][0]["tests"].__setitem__("mode", None)),
+     ["phases[0].priority", "phases[0].tasks[0].tests.mode"]),
+)
+SCHEMA_PLANS = ("plugins/audit/templates/audit-plan.starter.json",
+                "docs/audit/audit-plan.json",
+                "examples/acme-store/audit-plan.json")
+
+
+def _schema_lines(lines):
+    """The lines the whole-plan schema check raised, by their rule code."""
+    import _output                                                 # noqa: E402
+    return [x for x in lines
+            if (_output.finding_code(x) or "").startswith("rules.schema.")]
+
+
+def _cases_schema_parity(record, path):
+    """validate-manifest applies the published schema to the WHOLE plan, and
+    rejects (under --strict) exactly where ajv rejects."""
+    import _manifest_io as _mio                                   # noqa: E402
+    import _manifest_rules                                        # noqa: E402
+    import _output                                                 # noqa: E402
+    schema, unreadable = _manifest_rules.load_validation_schema()
+    clean = {}
+    for rel in SCHEMA_PLANS:
+        full = os.path.join(_output.REPO_ROOT, rel)
+        f, w = M.validate(_mio.load_manifest(full), schema=schema)
+        clean[rel] = (_schema_lines(f + w), _run([full, "--strict"])[0])
+    record("sp1 ALLOW: the starter, this repository's own plan and the shipped "
+           "example - three plans ajv accepts - carry no schema line, and each "
+           "passes --strict: %r" % (clean,),
+           unreadable == [] and all(lines == [] and code == 0
+                                    for lines, code in clean.values()), clean)
+    starter = os.path.join(_output.REPO_ROOT, SCHEMA_PLANS[0])
+    with open(starter, "r", encoding="utf-8") as fh:
+        base = json.load(fh)
+    faults = {}
+    for name, plant, expected in SCHEMA_PLANTS:
+        plan = copy.deepcopy(base)
+        plant(plan)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(plan, fh)
+        f, w = M.validate(plan, schema=schema)
+        lines = _schema_lines(f + w)
+        named = sorted(x.split(" ", 1)[0] for x in lines)
+        code, out = _run([path, "--strict"])
+        if (named != sorted(expected) or code != 1
+                or not all(("FINDING: " + e) in out for e in expected)):
+            faults[name] = (named, code, out[-400:])
+    record("sp2 RED-FIRST: each planted violation - null where a string is "
+           "required, a value off its enum, an extra key where "
+           "additionalProperties is false, a minimum - is named at exactly the "
+           "path ajv rejects, once, and --strict exits 1 on it: %r" % (faults,),
+           faults == {}, faults)
+    plan = copy.deepcopy(base)
+    plan["phases"][0]["priority"] = 0
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(plan, fh)
+    f, w = M.validate(plan, schema=schema)
+    code, out = _run([path, "--verbose"])
+    record("sp3 ...and WITHOUT --strict a value only the schema refuses is a "
+           "WARNING naming 4.0.0 and the plan still validates, exit 0 - "
+           "COMPATIBILITY.md's 'Validation stays additive' within 3.x: %r"
+           % ((_schema_lines(f), _schema_lines(w), code),),
+           _schema_lines(f) == [] and len(_schema_lines(w)) == 1
+           and "will refuse it from 4.0.0" in _schema_lines(w)[0]
+           and code == 0 and "phases[0].priority 0" in out)
+
+
+def _cases_never_raises(record, path):
+    """validate() never raises: every value of the shipped example, replaced
+    by a list or an object, is a finding or a warning, never a TypeError."""
+    import _manifest_io as _mio                                   # noqa: E402
+    import _manifest_rules                                        # noqa: E402
+    import _output                                                 # noqa: E402
+    base = _mio.load_manifest(os.path.join(
+        _output.REPO_ROOT, "examples", "acme-store", "audit-plan.json"))
+    base.setdefault("bugs", []).append(
+        {"id": "BUG-90", "title": "t", "status": "open", "taskId": "P1.1"})
+    schema, _u = _manifest_rules.load_validation_schema()
+    leaves = []
+
+    def walk(node, at):
+        if isinstance(node, dict):
+            for key, val in node.items():
+                walk(val, at + [key])
+        elif isinstance(node, list):
+            for i, val in enumerate(node[:2]):
+                walk(val, at + [i])
+        elif isinstance(node, (str, int)) and not isinstance(node, bool):
+            leaves.append(at)
+    walk(base, [])
+    raised = {}
+    for at in leaves:
+        for bad in (["x"], {"a": 1}):
+            plan = copy.deepcopy(base)
+            node = plan
+            for key in at[:-1]:
+                node = node[key]
+            node[at[-1]] = bad
+            try:
+                _manifest_rules.validate(plan, schema=schema)
+            except Exception as exc:                  # the defect under test
+                raised.setdefault(type(exc).__name__, []).append(at)
+    record("nr1 RED-FIRST: no value of the shipped example (bug ids and taskIds "
+           "included), replaced by a list or an object, makes validate() raise "
+           "- %d leaves walked: %r" % (len(leaves), raised),
+           raised == {} and len(leaves) > 100, raised)
+    plan = _valid_manifest()
+    plan["bugs"][0]["id"] = ["BUG-1"]
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(plan, fh)
+    code, out = _run([path])
+    record("nr2 ...and the command names the field rather than reporting an "
+           "internal validator error: %r" % (out[-300:],),
+           code == 1 and "internal validator error" not in out
+           and "'id' must be a string, got an array" in out)
 
 
 def _cases_output(record, path):
@@ -585,27 +723,29 @@ def _cases_test_evidence(record, path):
            % (bare, both),
            bare == (0, [], []) and both == bare and task_typo != bare)
 
-    # CURRENT BEHAVIOUR, asserted so a later fix changes a case on purpose rather
-    # than discovering one - the same reason mv12 pins `bool` being an `int`.
-    # `additionalProperties` is permissive at this level and no `_unknown_keys()`
-    # call descends into the block, so the command cannot see a cached `attempt`
-    # (cut on purpose: a count beside the thing that produces it is this repo's
-    # most-repeated defect) or a `status` the schema does not declare. ajv over
-    # `audit-plan.schema.json` is what refuses both.
+    # What the command sees INSIDE the block, now that the published schema is
+    # applied to the whole plan. `additionalProperties` is permissive at this
+    # level and no `_unknown_keys()` call descends into the block, so a cached
+    # `attempt` (cut on purpose: a count beside the thing that produces it is
+    # this repo's most-repeated defect) still passes unseen - the schema admits
+    # it. A `status` the schema's enum does not declare is the schema's line: a
+    # WARNING in 3.x, exactly where ajv refuses it.
     _inside = _valid_manifest()
     _inside["phases"][0]["tasks"][0]["testEvidence"] = dict(good, attempt=3,
                                                             status="green")
     _inside["phases"][0]["tasks"][0]["zzzProbe"] = 1
     inside = _out(_inside)
-    record("c21 the command sees nothing INSIDE the block - a cached `attempt` and "
-           "a `status` no enum declares both pass here - while the sibling probe on "
-           "the same task draws its one warning in the same run. That pairing is "
-           "what makes this a fact about the level rather than about the "
-           "typo-catcher being off, and it is why the enum is ajv's to enforce: %r"
-           % (inside,),
+    _in_schema = [x for x in inside[2] if "published schema refuses" in x]
+    record("c21 INSIDE the block, the cached `attempt` passes unseen while the "
+           "`status` no enum declares is ONE schema warning naming that path - "
+           "and the sibling probe on the same task draws its typo warning in the "
+           "same run, so the pairing is a fact about the level: %r" % (inside,),
            inside[0] == 0 and inside[1] == []
-           and len(inside[2]) == 1 and "'zzzProbe'" in inside[2][0]
-           and "testEvidence" not in inside[2][0])
+           and len(inside[2]) == 2 and len(_in_schema) == 1
+           and "phases[0].tasks[0].testEvidence.status" in _in_schema[0]
+           and "attempt" not in " ".join(inside[2])
+           and any("'zzzProbe'" in x and "testEvidence" not in x
+                   for x in inside[2]))
 
 
     # `meta.evidenceSince` through the same door, one level up. The command's

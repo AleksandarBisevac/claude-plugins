@@ -340,6 +340,9 @@ def _cases(check):
         def __init__(self):
             self.calls = 0
 
+        def bound_validator(self):
+            return self
+
         def validate(self, manifest):
             self.calls += 1
             if self.calls == 1:
@@ -362,6 +365,29 @@ def _cases(check):
           % (code6, out6),
           code6 == M.E_INVALID and after6 == before6
           and "REFUSED" in out6)
+
+    # --- dp-schema: the schema is bound at this site, not fallen back to ---
+    # Validated with no schema handed in, an unreadable one was a warning and
+    # the derived gate was written anyway; bound, it is the broken-install
+    # finding and nothing is written.
+    import _manifest_rules
+    import _output
+    d_sb, m_sb, _base_sb = _project(root, mode="shadow")
+    before_sb = open(m_sb, "rb").read()
+    real_load = _manifest_rules.load_validation_schema
+    _manifest_rules.load_validation_schema = lambda root=None: (False, [
+        _output.finding("crossrefs.bugs.schema-unreadable",
+                        "bugs: the plugin's manifest schema could not be read "
+                        "- the install is broken: planted")])
+    try:
+        code_sb, out_sb = _run([m_sb, "P1"])
+    finally:
+        _manifest_rules.load_validation_schema = real_load
+    check("dp-schema RED-FIRST: the derived gate validates with the schema "
+          "LOADED AND BOUND, so an unreadable schema refuses the write as a "
+          "broken install, file byte-identical: exit=%r %r" % (code_sb, out_sb),
+          code_sb == M.E_INVALID and "install is broken" in out_sb
+          and open(m_sb, "rb").read() == before_sb)
 
     # --- dp-smoke: dg10 end to end -- a real source file gets smoke ADDED, ---
     # never skipped (the allow case a mutation that always skips smoke would
