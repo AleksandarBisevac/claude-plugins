@@ -601,7 +601,7 @@
     {
       "id": "P124.9",
       "title": "the plugin can tell whether a runner collects a test path: collected, not collected, or could not tell",
-      "status": "in_progress",
+      "status": "done",
       "description": "F599 design B1 and D8. vitest semantics were probed on real vitest 5.0.3; jest testMatch/roots and pytest python_files/testpaths were written from memory - verify them against the runners' docs before closing, and add jest --listTests / pytest --collect-only list modes if cheap.",
       "files": [
         "plugins/audit/scripts/governance/_runner_collects.py",
@@ -638,14 +638,16 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "33131e0be18d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Verified jest/pytest semantics against current upstream docs (raw jest Configuration.md, pytest reference.rst via curl; context7 not available). Findings: jest docs name micromatch not picomatch (docstring fixed); current jest default testMatch extension is ?([mc])[jt]s?(x), version-dependent, so default-config answers for .mjs/.cjs/.mts/.cts are now COULD_NOT_TELL (case j5b); pytest python_files default and testpaths-only-without-args confirmed. Added jest --listTests and pytest --collect-only -q listers (LISTERS table, collects asks the runner's lister); pytest list only proves COLLECTED, never refutes. Neither binary is installed here, so those readers are exercised via injected listers and fake shell-script binaries, not real runs (stated in the docstring). Updated sc11/sc13 in test__output.py (listed in files), the guide paragraph, and switched __main__ to selftest_requested (sfl8 lint). Results: test__runner_collects 94/94, test__deps 307/307, test__output 225/225, ruff clean. plugins/audit/README.md left as is for the commit. Full sweep/vermin whole-tree not run.",
+        "descriptive": "The plugin can ask vitest, jest or pytest's own listing, else the config, whether a test path is collected, with jest/pytest semantics checked against upstream docs."
       },
       "startedAt": "2026-10-10T04:52:14Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T05:07:21Z",
+      "verifiedBy": [
+        "test__runner_collects: j5b, jl1-jl4, pl1-pl3, lm7 reworded"
+      ],
       "reviewPerTask": "phase",
       "notes": [
         {
@@ -657,12 +659,22 @@
         "runId": "2026-10-10T05:07:20Z.44ac04",
         "status": "passed",
         "at": "2026-10-10T05:07:20Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "33131e0be18d",
+        "at": "2026-10-10T05:07:21Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T04:59:28Z",
+        "basis": "`python3 plugins/audit/tests/test__runner_collects.py --selftest` in a throwaway tree at HEAD exited 1 on \"ModuleNotFoundError: No module named '_runner_collects'\", and the task introduces '_runner_collects': absent from HEAD's plugins/audit/scripts/governance/_runner_collects.py, plugins/audit/scripts/_deps.py, PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md and present in the working tree's plugins/audit/scripts/governance/_runner_collects.py, plugins/audit/scripts/_deps.py, PLUGIN-BUILD-GUIDE.md; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P124.10",
       "title": "a task's unavoidable companion files are derived from its intent and the repo layout",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F599 design B2.",
       "files": [
         "plugins/audit/scripts/manifest/_scope_companions.py",
@@ -697,16 +709,22 @@
         "P124.9",
         "P124.4"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T05:07:22Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T05:18:06Z.9b7332",
+        "status": "passed",
+        "at": "2026-10-10T05:18:06Z"
+      }
     },
     {
       "id": "P124.11",

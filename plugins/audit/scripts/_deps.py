@@ -304,6 +304,11 @@ LAYERS = (
      # merge driver's resolve verb both reach the same list from above.
      "_id_refs"),
     ("_panel_ui", "_report_html", "_report_ui",
+     # `_scope_companions` derives the files a change cannot avoid (manifest and
+     # lockfile, locale files, the runner config). It reads `_runner_collects` at
+     # L1 for whether the runner collects a path, so L2 is the first layer that
+     # holds its edges strictly downward; the task writer above it calls it.
+     "_scope_companions",
      # The four passes `_usage_analytics` was cut into. Each answers ONE of the
      # questions that file held, each reads `_usage_core` at L1, and none reads
      # another - which is what lets all four share a layer, and what they had to

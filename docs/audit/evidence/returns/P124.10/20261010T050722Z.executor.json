@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "test__scope_companions": "pass",
+    "test__runner_collects": "pass",
+    "test__deps": "pass",
+    "test__output": "pass",
+    "ruff": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T05:09:29Z",
+    "basis": "`python3 plugins/audit/tests/test__scope_companions.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: ModuleNotFoundError: No module named '_scope_companions'; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "Reviewed the prepared _scope_companions.py against P124.9's committed _runner_collects API (collects(), COLLECTED/NOT_COLLECTED/COULD_NOT_TELL, VITEST_CONFIGS/VITE_CONFIGS/JEST_CONFIGS/PYTEST_CONFIG_FILES all exist; module is at scripts/governance/). Changed the __main__ stub to _output.selftest_requested(sys.argv[1:]). Removed the rust and go ECOSYSTEMS rows: no case covered them and they were beyond the B2 row; node and python stay (covered by dep cases). The guide module-map needed no regeneration (test__deps passes). Ran: test__scope_companions 30/30, test__runner_collects 94/94, test__deps 307/307, test__output 225/225 (all exit 0), ruff check plugins/audit tools clean.",
+    "descriptive": "derive() now yields a task's unavoidable companions (manifest and lockfile on disk, locale files, runner config) with a basis each and every absence reported, node and python only."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__scope_companions.py (30 cases)"
+  ],
+  "claims": "claims: rust/go rows removed because no case exercised them; no number in prose added.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:d8e8bdc87be65036417d9c2e59c8e6ff9aa450c19a9960333bf7964a6e3079b4\",\"dirtyDigest\":\"sha256:5873e78e7c06b90f55720ae0aed150fdac705097bf6ef50e37464819e69c819f\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"1f08b00d0bdcfe2f\",\"plugins/audit/scripts/_deps.py\":\"6f0755be6cb741e6\",\"plugins/audit/scripts/manifest/_scope_companions.py\":\"79c6b213347607be\",\"plugins/audit/tests/test__output.py\":\"7f6879f1e30e8b87\",\"plugins/audit/tests/test__scope_companions.py\":\"f084df9ce4a519f7\"},\"head\":\"33131e0b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/_deps.py\",\"plugins/audit/scripts/manifest/_scope_companions.py\",\"plugins/audit/tests/test__output.py\",\"plugins/audit/tests/test__scope_companions.py\"],\"scopeDigest\":\"sha256:c31a34403912cc0587c4ea06e1e6ff2cc90850f1fef32966c6e8ec92d49a79e8\",\"v\":2}"
+}

@@ -108,6 +108,7 @@ claude-plugins/                           # this repo (personal, public)
           resolve-branch.py               # the door onto _branch: this phase's parent branch and branch name
           repair-commits.py               # put the manifest back to the truth after a history rewrite
           repair-tests-add.py             # move the path an old tests.add entry already spells to the front of it
+          _scope_companions.py            # the files a change cannot avoid, read off the repo: a new dependency's manifest and the lockfile actually on disk, every locale file, the runner config for a test the runner does not collect - each with its basis, and every absence reported
           _proposals.py                   # the proposal lifecycle: refusals, closure, collision remap, lock+apply+validate, and the rows both surfaces list
           materialize-proposal.py         # the command door onto it: arguments, the list table, printing, exit codes
           _areas.py                       # meta.areas registry + reviewSkill/skills resolution
@@ -341,6 +342,7 @@ L3:
   _panel_ui -> _output, _ui_theme
   _report_html -> _areas, _fmt, _manifest_io, _manifest_vocab, _output, _priority, _ui_theme
   _report_ui -> _output, _ui_theme
+  _scope_companions -> _output, _runner_collects
   _status_facts -> _areas, _filed_returns, _manifest_io, _manifest_vocab, _output, _priority, _usage_core
   _tree_stamp -> _journal_io, _manifest_vocab, _output
   _usage_coverage -> _manifest_io, _output, _usage_core
@@ -2106,6 +2108,18 @@ and would let two of them disagree about which objects were skipped as malformed
 per-phase rules a schema cannot express — a parallel-run `claim` left on a finished phase,
 an `area` that normalises to no tags at all, a `budgetUSD` of zero, and a phase marked done
 over tasks that are not **finished** (done *or* cancelled).
+
+### `plugins/audit/scripts/manifest/_scope_companions.py`
+`derive(intent, repo, lister=None)` returns `{"companions": [{path, kind, basis}], "notes": [...]}`
+for the files a change cannot avoid. The intent is structured flags (`dependencies`, optional
+`ecosystem`, `userStrings`, `tests` with `runner`, and the task's `files`); the paths come from
+the repo. A dependency brings its nearest package manifest and the lockfile that is on disk (all of
+them when more than one is, saying so; none when there is none, saying so). User-facing strings
+bring every file of the one locale directory the layout shows (`messages/<tag>.json`,
+`locales/<tag>/...`); two candidate directories or none add nothing. A test path for which
+`_runner_collects.collects` answers `NOT_COLLECTED` brings the runner config; `COLLECTED` and
+`COULD_NOT_TELL` add nothing and say which. Layer 2. Its cases are in
+`plugins/audit/tests/test__scope_companions.py`.
 
 ### `plugins/audit/scripts/manifest/_proposals.py`
 The proposal lifecycle itself (layer 4): the refusals in `commands/propose.md`'s own order,
