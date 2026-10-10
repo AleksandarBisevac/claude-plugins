@@ -815,7 +815,7 @@
     {
       "id": "P124.12",
       "title": "task start refuses a declared test the runner will never collect, before an executor is spent",
-      "status": "in_progress",
+      "status": "done",
       "description": "F599 design B4; the executor brief's widen rule (widen a runner include for the repo layout, not one directory).",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -852,31 +852,76 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "99adc19c9e1c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: scope_gap preflight asks _runner_collects.collects per tests.add path for the runner of the task's gate entries; definite NOT_COLLECTED returns decision scope-gap (widen|block) naming the runner config via _scope_companions.derive; COULD_NOT_TELL appends one did-line and the start goes on; skipped when the config is already in files. Called before start_task in drive_phase and drive_task, and for every picked task before open_wave. widen runs audit-task scope --files (existing + config) then the loop re-selects; pending_still_applies/answer_refusal handle the unstarted task. audit-lookup.py: WIDEN_RULE line in the executor brief Tests section when tests.add is non-empty. README followed row for step decide-scope-gap. PLUGIN-BUILD-GUIDE.md module-map fence updated for drive-phase's three new edges (outside declared files; test__deps g1 required it). Tests: pf1-pf5 in test_drive_phase.py (166/166, test_audit_lookup 79/79, test__refs 334/334, test__deps 307/307), measure-context --gate OK, ruff clean, vermin ok. Not run: full sweep.",
+        "descriptive": "A task whose declared test the runner will never collect now stops at decide scope-gap before any executor is spent, at width 1 and in waves."
       },
       "startedAt": "2026-10-10T05:48:27Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T06:02:33Z",
+      "verifiedBy": [
+        "pf1",
+        "pf2",
+        "pf3",
+        "pf4",
+        "pf5"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T06:02:32Z.412ad9",
         "status": "passed",
         "at": "2026-10-10T06:02:32Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "99adc19c9e1c",
+        "at": "2026-10-10T06:02:33Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T05:54:38Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage pf-block` in a throwaway tree at HEAD exited 1 with failing cases pf1 (house FAIL), pf2 (house FAIL), pf3 (house FAIL), pf4 (house FAIL), pf5 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 0/5 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
       "id": "P124.13-k2x",
       "title": "the panel's Settings edits executor.waveWidth as a number or auto, and saves a number as a number",
-      "status": "pending",
+      "status": "in_progress",
       "description": "P124.7 added executor.waveWidth (an integer >= 1 or \"auto\") with a Settings control in _panel_settings.py, but settings.js has no number-or-auto field type, so the control is a plain text box: \"auto\" saves, a typed number saves as a string, and the config validator refuses it. Add the field type in the panel script (read the refactoring-the-assembled-ui and writing-javascript skills first; the panel script is ordered parts concatenated into one inline script), with the substring pins in test__panel_ui.py, and drive the panel in a browser to confirm the save (the orchestrator runs the browser gate). executor.worktreeSetup and worktreeRoot are free text and need nothing new.",
       "files": [
         "plugins/audit/scripts/ui/panel/settings.js",
         "plugins/audit/scripts/panel/_panel_settings.py",
         "plugins/audit/tests/test__panel_settings.py",
-        "plugins/audit/tests/test__panel_ui.py"
+        "plugins/audit/tests/test__panel_ui.py",
+        "tools/ui-tests/int-or-auto.test.mjs",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/demo-gate.gif",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/mobile.png",
+        "docs/screenshots/overview.png",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png",
+        "plugins/audit/tests/test__panel_page.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -903,16 +948,22 @@
         "P124.7"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T06:17:17Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T06:30:11Z.43680e",
+        "status": "passed",
+        "at": "2026-10-10T06:30:11Z"
+      }
     }
   ],
   "request": "F600 + F599 (owner-mandated, testbed): tasks inside a phase run concurrently in their own worktrees, gated there and integrated serially; task scopes carry their unavoidable companions. One phase per the user (fewer review rounds).",

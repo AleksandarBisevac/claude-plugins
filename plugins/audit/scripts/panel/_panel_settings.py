@@ -617,7 +617,7 @@ SETTINGS_GROUPS = (
             {"path": "executor.maxHours", "label": "Hours before an agent hands back",
              "kind": "number", "min": 0},
             {"path": "executor.waveWidth", "label": "Tasks run at once",
-             "kind": "text", "placeholder": "1, or auto"},
+             "kind": "intOrAuto", "placeholder": "1, or auto"},
             {"path": "executor.worktreeSetup", "label": "Setup run in each task tree",
              "kind": "text", "placeholder": "none"},
             {"path": "executor.worktreeRoot", "label": "Where task trees are made",

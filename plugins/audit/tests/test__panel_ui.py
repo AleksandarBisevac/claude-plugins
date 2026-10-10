@@ -26,6 +26,7 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _ui_theme as _theme                         # noqa: E402
 import _panel_ui as M                              # noqa: E402
+import _panel_settings as _settings                # noqa: E402
 
 
 # --- cases --------------------------------------------------------------------
@@ -162,6 +163,28 @@ def _cases(check):
           a is b)
     check("cache=False bypasses the cache and still matches",
           M.raw_template(cache=False) == a)
+
+    # --- executor.waveWidth: a whole number or auto, a number sent as a number --
+    # The construct this pins is the one that makes the value a number on the
+    # wire; whether a typed 3 really arrives as 3 is executed in
+    # tools/ui-tests/int-or-auto.test.mjs.
+    _ww = [f for g in _settings.SETTINGS_GROUPS for f in g["fields"]
+           if f["path"] == "executor.waveWidth"]
+    check("the waveWidth control is declared with the number-or-auto kind, not "
+          "free text: %r" % (_ww,), len(_ww) == 1 and _ww[0]["kind"] == "intOrAuto")
+    _sj = _theme.read_asset("panel/settings.js")
+    check("settings.js has a parseIntOrAuto that accepts the word auto and a "
+          "positive integer, and scalarField stores its parsed value, so a typed "
+          "3 is sent as the number 3",
+          "function parseIntOrAuto(v)" in _sj and "{ok:true,value:'auto'}" in _sj
+          and "{ok:true,value:Number(t)}" in _sj
+          and "setPath(cfg,f.path,r.ok?r.value:v)" in _sj
+          and "/^[1-9][0-9]*$/" in _sj)
+    check("a refused waveWidth value is explained in the form: the reason is "
+          "rendered beside the box and the box is marked aria-invalid",
+          "data-refusal" in _sj and "aria-invalid" in _sj
+          and "whole number of 1 or more, or the word auto" in _sj
+          and "f.kind==='intOrAuto'" in _sj)
 
 
 def _selftest():

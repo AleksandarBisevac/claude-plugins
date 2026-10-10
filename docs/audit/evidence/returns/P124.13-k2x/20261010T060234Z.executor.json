@@ -1,0 +1,27 @@
+{
+  "gates": {
+    "test__panel_ui": "pass",
+    "test__panel_settings": "pass",
+    "test_panel_server": "pass",
+    "test__refs": "fail",
+    "ruff": "pass",
+    "vitest int-or-auto": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T06:04:29Z",
+    "basis": "`python3 plugins/audit/tests/test__panel_ui.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 89 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - the waveWidth control is declared with the number-or-auto kind, not free text: [{'path': 'executor.waveWidth', 'label': 'Tasks run at once', 'kind': 'text', 'placeholder': '1, or auto'}] (house FAIL) and 2 more: SELFTEST FAILED: 86/89 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "Added kind 'intOrAuto' in plugins/audit/scripts/ui/panel/settings.js: pure parseIntOrAuto (auto -> 'auto', /^[1-9][0-9]*$/ safe integer -> Number, else {ok:false, reason}); scalarField stores the parsed value, shows the reason in a role=alert span (data-refusal) and sets aria-invalid; refused text stays in the draft as typed so the server validator also refuses it on Save (Save is not blocked in the form). _panel_settings.py: executor.waveWidth kind text -> intOrAuto. test__panel_ui.py: 3 new cases (89/89 pass). New vitest file tools/ui-tests/int-or-auto.test.mjs (outside declared files; plan gate allowed it): 10 tests pass. test__panel_settings 58/58, test_panel_server 102/102, ruff clean. test__refs 332/334: sc1/sc2 fail because docs/screenshots/panel-*.png digests no longer match the panel sources - expected from any panel UI change; needs the orchestrator's screenshot re-capture (browser gate, not run by me). Browser not driven.",
+    "descriptive": "Settings now edits executor.waveWidth as a number or auto and saves a typed number as a number, refusing anything else with its reason."
+  },
+  "testsAdded": [
+    "test__panel_ui.py: waveWidth declared intOrAuto",
+    "test__panel_ui.py: parseIntOrAuto + parsed value stored",
+    "test__panel_ui.py: refusal reason rendered, aria-invalid",
+    "tools/ui-tests/int-or-auto.test.mjs (10 cases)"
+  ],
+  "claims": "claims: browser behaviour unverified (orchestrator's gate); screenshot digests stale by design of this change",
+  "stamp": "audit-stamp: {\"content\":\"sha256:8a1e823f5ef358e2153067208f5b5d0237a98b34006aecc16b0a162cef2845a1\",\"dirtyDigest\":\"sha256:add9f2d16ff22b7056d4270a4469ca56e97151d60e3bc5b5d56abe59ec76c574\",\"dirtyPaths\":{\"plugins/audit/scripts/panel/_panel_settings.py\":\"aae06e3350753c5a\",\"plugins/audit/scripts/ui/panel/settings.js\":\"d7bb295d899ba83a\",\"plugins/audit/tests/test__panel_ui.py\":\"98e9ac07a04a780d\",\"tools/ui-tests/int-or-auto.test.mjs\":\"8e1f8851df06279f\"},\"head\":\"99adc19c\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/panel/_panel_settings.py\",\"plugins/audit/scripts/ui/panel/settings.js\",\"plugins/audit/tests/test__panel_settings.py\",\"plugins/audit/tests/test__panel_ui.py\"],\"scopeDigest\":\"sha256:cf26c95ff3a27d4df83c8cd0eb8813dadbf1fcda6bf09c119cb0d96f60cab819\",\"v\":2}"
+}

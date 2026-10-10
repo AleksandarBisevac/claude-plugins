@@ -1,0 +1,25 @@
+{
+  "gates": {
+    "test__panel_page": "pass",
+    "test__panel_ui": "pass",
+    "test__panel_settings": "pass",
+    "test__refs": "fail",
+    "vitest int-or-auto": "pass",
+    "ruff": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T06:17:57Z",
+    "basis": "`python3 plugins/audit/tests/test__panel_ui.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 89 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code, its declared jest or vitest test files new at HEAD (tools/ui-tests/int-or-auto.test.mjs) left absent), each passing with the working tree's implementation - the waveWidth control is declared with the number-or-auto kind, not free text: [{'path': 'executor.waveWidth', 'label': 'Tasks run at once', 'kind': 'text', 'placeholder': '1, or auto'}] (house FAIL) and 2 more: SELFTEST FAILED: 86/89 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "settings.js scalarField: the intOrAuto refusal span is no longer spliced into the el('div',{class:'f'},klabel(...),inp) call; the wrapper is built with exactly the original expression (klabel with id handed to the label, then inp) and the refusal appended afterwards via box.append. No hand-built label. test__panel_page 490/490 (kl1 and fl2 green, exemption list unchanged because it still truthfully describes the page), test__panel_ui 89/89, test__panel_settings 58/58, vitest int-or-auto 10/10, ruff clean. test__refs 332/334: only sc1/sc2 fail, because panel source changed (digest cd836e88 -> f9dfa18d) so the committed panel screenshots are stale; the orchestrator must re-run node tools/capture-screenshots.mjs. Browser gates not run.",
+    "descriptive": "The waveWidth number-or-auto control now passes the panel page label checks; panel source changed again, screenshots need re-capture."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__panel_ui.py: waveWidth intOrAuto cases (from attempt 1)",
+    "tools/ui-tests/int-or-auto.test.mjs"
+  ],
+  "claims": "claims: panel source changed after the last screenshot capture (sc1/sc2 red until re-captured); kl1/fl2 verified green by running test__panel_page --selftest (490/490).",
+  "stamp": "audit-stamp: {\"content\":\"sha256:a8592581fe47cf4206e282c526a324032bb8027c86cd0e32d56968a394099e69\",\"dirtyDigest\":\"sha256:34e47c95a04795938da345c48dc12c66bcc884f01f93dc2da1808fc9cb98e66b\",\"dirtyPaths\":null,\"head\":\"99adc19c\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"docs/screenshots/areas.png\",\"docs/screenshots/authors.png\",\"docs/screenshots/captured-at.json\",\"docs/screenshots/dark.png\",\"docs/screenshots/demo-gate.gif\",\"docs/screenshots/expanded.png\",\"docs/screenshots/filtered.png\",\"docs/screenshots/filters.png\",\"docs/screenshots/mobile.png\",\"docs/screenshots/overview.png\",\"docs/screenshots/panel-appearance.png\",\"docs/screenshots/panel-blocks.png\",\"docs/screenshots/panel-composition-expanded.png\",\"docs/screenshots/panel-composition.png\",\"docs/screenshots/panel-confirm.png\",\"docs/screenshots/panel-dark.png\",\"docs/screenshots/panel-gate.png\",\"docs/screenshots/panel-guards.png\",\"docs/screenshots/panel-help.png\",\"docs/screenshots/panel-mobile.png\",\"docs/screenshots/panel-monthly.png\",\"docs/screenshots/panel-overview.png\",\"docs/screenshots/panel-person.png\",\"docs/screenshots/panel-policy-expanded.png\",\"docs/screenshots/panel-policy.png\",\"docs/screenshots/panel-proposals.png\",\"docs/screenshots/panel-usage.png\",\"plugins/audit/scripts/panel/_panel_settings.py\",\"plugins/audit/scripts/ui/panel/settings.js\",\"plugins/audit/tests/test__panel_page.py\",\"plugins/audit/tests/test__panel_settings.py\",\"plugins/audit/tests/test__panel_ui.py\",\"tools/ui-tests/int-or-auto.test.mjs\"],\"scopeDigest\":\"sha256:8863d5cee60e6bbcfc233480892c6fa1674362ff72f111656a758420e6ec2c42\",\"v\":2}"
+}

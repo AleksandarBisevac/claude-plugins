@@ -308,7 +308,7 @@ function renderSettings(){closeCombo();
  * @typedef {object} SettingField
  * @property {string} path - dot-separated config path this control edits
  * @property {string} label - the visible words naming the control
- * @property {'text'|'int'|'number'|'bool'|'enum'|'list'|'date'|'custom'} kind -
+ * @property {'text'|'int'|'number'|'intOrAuto'|'bool'|'enum'|'list'|'date'|'custom'} kind -
  *   which builder renders it; 'custom' means the CUSTOM map names one by path
  * @property {string} [enum] - key into ENUMS, for kind 'enum'
  * @property {string} [placeholder] - what an empty box should say when the
@@ -343,6 +343,24 @@ function boolField(cfg,d,f,tip){
  // ahead of the i. What it did NOT have was a clean name. Same shape as every
  // other field now: the control, then the words pointing at it by id.
  return el('div',{class:'f cbf'},cb,klabel(f.label,f.path,tip,fieldId(f.path)));}
+
+/**
+ * Reads what was typed into a whole-number-or-"auto" box.
+ *
+ * A number must reach the config as a number: the validator refuses the string
+ * "3", so a plain text box that stores what it holds saves a value the next
+ * validation rejects. "auto" is the one word allowed; anything else is refused
+ * here, with the reason, rather than by the server after Save.
+ *
+ * @param {string} v - the raw box text; an empty string is the caller's "unset"
+ * @returns {{ok: boolean, value?: (number|string), reason?: string}} the value to
+ *   store, or why there is none
+ */
+function parseIntOrAuto(v){
+ const t=String(v).trim();
+ if(t==='auto')return {ok:true,value:'auto'};
+ if(/^[1-9][0-9]*$/.test(t)&&Number.isSafeInteger(Number(t)))return {ok:true,value:Number(t)};
+ return {ok:false,reason:'enter a whole number of 1 or more, or the word auto'};}
 
 /**
  * The control for every non-boolean, non-custom kind: text, int, number, date,
@@ -407,12 +425,24 @@ function scalarField(cfg,d,f,tip){
   inp=el('input',Object.assign({type:t,id:fieldId(f.path),value:cur??'',
     placeholder:def==null?(f.placeholder||''):String(def)},
     f.min!=null?{min:String(f.min)}:{}));}
+ // The reason a typed value was refused sits beside the box, named by it. The
+ // refused text stays in the draft as typed, so the box and the draft agree and
+ // the server's validator refuses it again if Save is pressed anyway.
+ const refusal=f.kind==='intOrAuto'
+  ?el('span',{class:'mut small',role:'alert','data-refusal':f.path}):null;
  inp.oninput=inp.onchange=()=>{const v=inp.value;
-  if(v===''){delPath(cfg,f.path);return;}
+  if(v===''){delPath(cfg,f.path);if(refusal){refusal.textContent='';inp.removeAttribute('aria-invalid');}return;}
+  if(f.kind==='intOrAuto'){const r=parseIntOrAuto(v);
+   setPath(cfg,f.path,r.ok?r.value:v);
+   refusal.textContent=r.ok?'':r.reason;
+   if(r.ok)inp.removeAttribute('aria-invalid');else inp.setAttribute('aria-invalid','true');
+   return;}
   if(f.kind==='int')setPath(cfg,f.path,parseInt(v,10));
   else if(f.kind==='number')setPath(cfg,f.path,Number(v));
   else setPath(cfg,f.path,v);};
- return el('div',{class:'f'},klabel(f.label,f.path,tip,fieldId(f.path)),inp);}
+ const box=el('div',{class:'f'},klabel(f.label,f.path,tip,fieldId(f.path)),inp);
+ if(refusal)box.append(refusal);
+ return box;}
 
 // ---------- the custom field renderers ----------
 /**
