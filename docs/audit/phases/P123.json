@@ -962,7 +962,7 @@
     {
       "id": "P123.17",
       "title": "The panel's gate-catches payload reports an unreadable evidence ledger instead of []",
-      "status": "in_progress",
+      "status": "done",
       "description": "`panel/_panel_usage._gate_catches_payload` wraps the evidence read in `except Exception: return []` and also ignores `read_rows(...)`'s own read problem (`.get('rows') or []`), so an unreadable ledger is indistinguishable from a project with no gate history. Latent: no UI reads `gateCatches` yet. Ship `{catches, readError}` with the same readError shape and sentence the evidence tab uses, before any UI reads it; `_usage_shape`'s default becomes the empty-but-readable value. Regression: a read that raises (or a ledger with an undecodable file) yields readError and no catches; an empty ledger yields no catches and no error. Faults: F525.",
       "files": [
         "plugins/audit/scripts/panel/_panel_usage.py",
@@ -995,14 +995,18 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9b7a30d46fa4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Reviewed the attempt-1 diff: _gate_catches_payload returns {catches, readError}; a raising read or a non-zero read['unreadable'] ships readError {error, basis=_manifest_vocab.LEDGER_READ_FAILED} and no catches; _usage_shape default is {catches: [], readError: None}. Grepped plugins and tools for gateCatches: only _panel_usage.py and its test reference it, so no JS/UI reader exists and no UI change is owed. Ran test__panel_usage 40/40, test__deps 307/307, test__panel_ui 89/89 (each printed ALL PASS) and ruff check plugins/audit tools (All checks passed). README.md left untouched.",
+        "descriptive": "The panel gate-catches payload now says when the evidence ledger was unreadable instead of reporting an empty history."
       },
       "startedAt": "2026-10-10T09:05:38Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T09:38:55Z",
+      "verifiedBy": [
+        "a read that raises ships readError and no catches",
+        "a ledger with an unparseable line ships readError and no catches",
+        "an empty ledger ships no catches and no error"
+      ],
       "reviewPerTask": "phase",
       "notes": [
         {
@@ -1014,6 +1018,16 @@
         "runId": "2026-10-10T09:38:54Z.628565",
         "status": "passed",
         "at": "2026-10-10T09:38:54Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "9b7a30d46fa4",
+        "at": "2026-10-10T09:38:55Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T09:30:58Z",
+        "basis": "`python3 plugins/audit/tests/test__panel_usage.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 10 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - usage_state carries gateCatches even before any evidence is written - absent evidence reads as an empty list, never a missing key (house FAIL): SELFTEST FAILED: 8/10 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
@@ -1681,7 +1695,34 @@
       "files": [
         "plugins/audit/scripts/ui/panel/core.js",
         "tools/ui-tests/server-offline.test.mjs",
-        "plugins/audit/tests/test__panel_page.py"
+        "plugins/audit/tests/test__panel_page.py",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/demo-gate.gif",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/mobile.png",
+        "docs/screenshots/overview.png",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
       ],
       "tests": {
         "mode": "tdd",
@@ -1716,7 +1757,12 @@
       "startedAt": "2026-10-10T09:05:38Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T09:53:00Z.e77cda",
+        "status": "passed",
+        "at": "2026-10-10T09:53:00Z"
+      }
     },
     {
       "id": "P123.31",

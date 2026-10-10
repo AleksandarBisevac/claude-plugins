@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "vitest server-offline": "pass",
+    "test__panel_page --selftest": "pass",
+    "test__panel_ui --selftest": "pass",
+    "test__refs --selftest": "fail",
+    "ruff": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T09:40:35Z",
+    "basis": "`npx vitest run tools/ui-tests/server-offline.test.mjs` in a throwaway tree at HEAD exited 1 with 2 of 12 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - resolves a WRITE to the no-answer refusal once the bound passes (AssertionError: expected +0 to be 1 // Object.is equality) and 1 more: Tests  3 failed | 9 passed (12); run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "Edited plugins/audit/scripts/ui/panel/core.js: api() now races fetch (with an AbortController signal) and the json() body read against one setTimeout of API_BOUND_MS (60000, const added after NO_ANSWER); on timeout it aborts, a write resolves to {ok:false,noAnswer:true,findings:[NO_ANSWER]}, a read rejects with an Error carrying noAnswer and cause; the timer is cleared in finally; doc comment gained a paragraph. Review of the proposal: it bounded only the fetch, so a server that sent headers and stalled the body would still hang; I put the body read inside the same race (a non-JSON body still rejects as before). vitest server-offline 12/12 pass (3 new were red before, 3 failed/9 passed, per attempt 1). test__panel_page 490/490, test__panel_ui 89/89 pass. test__refs 332/334: only sc1/sc2 red (screenshots record the old panel build) - the orchestrator must re-capture screenshots; I did not run browser gates. ruff clean. test__panel_page.py not edited (no pin needed changing).",
+    "descriptive": "The panel's api() gives up on a silent server after 60 s and reads it as no answer instead of hanging."
+  },
+  "testsAdded": [
+    "server-offline.test.mjs: a fetch that never settles - resolves a WRITE to the no-answer refusal",
+    "rejects a READ with noAnswer",
+    "allow twin: an answer before the bound is unchanged, timer cleared"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:4eb5831eec4db4dec3c2414f8839db9ce5278cd5c9847a07cbfaf89870895498\",\"dirtyDigest\":\"sha256:3279c6a1afc990252d2a23b53ec7b6d7be51ebee472ac46c4d77cc716ffc0105\",\"dirtyPaths\":{\"plugins/audit/scripts/ui/panel/core.js\":\"07638b93fff9fc46\",\"tools/ui-tests/server-offline.test.mjs\":\"7ef2656b47d43794\"},\"head\":\"9b7a30d4\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/ui/panel/core.js\",\"plugins/audit/tests/test__panel_page.py\",\"tools/ui-tests/server-offline.test.mjs\"],\"scopeDigest\":\"sha256:c15ca97164adf72d0b9ed616416e63741d4747705aee15b5a9467c24c1ba3177\",\"v\":2}"
+}

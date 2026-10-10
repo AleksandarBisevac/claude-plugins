@@ -78,20 +78,32 @@ const $=(s,r=document)=>r.querySelector(s), el=(t,a={},...k)=>{const e=document.
  * rejection with nothing on screen. A body that is not JSON still rejects either
  * way: that server answered, so it is not offline.
  *
+ * The wait for the answer, body included, is bounded by `API_BOUND_MS`: a server
+ * that accepts the connection and never replies is read exactly like one that is
+ * gone, and the request is aborted so nothing keeps running behind the refusal.
+ *
  * @param {string} m - HTTP method
  * @param {string} p - path on this origin, e.g. /api/state
  * @param {Object<string, *>} [b] - payload, serialized as JSON; omit for a GET
  * @returns {Promise<Object<string, *>>} the parsed answer, or for a write that got
  *   none, `{ok: false, noAnswer: true, findings: [NO_ANSWER]}`
  */
-const api=async(m,p,b)=>{let r;
- try{r=await fetch(p,{method:m,headers:{'X-Audit-Token':TOKEN,
-  'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});}
- catch(cause){
+const api=async(m,p,b)=>{
+ const ac=new AbortController();let timer;
+ const bound=new Promise(res=>{timer=setTimeout(()=>{ac.abort();res(NO_ANSWER);},API_BOUND_MS);});
+ const noAnswer=cause=>{
   if(m!=='GET')return {ok:false,noAnswer:true,findings:[NO_ANSWER]};
   const e=new Error('the panel server did not answer '+m+' '+p);
-  e.noAnswer=true;e.cause=cause;throw e;}
- return r.json();};
+  e.noAnswer=true;e.cause=cause;throw e;};
+ try{
+  let r;
+  try{r=await Promise.race([fetch(p,{method:m,headers:{'X-Audit-Token':TOKEN,
+   'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined,signal:ac.signal}),bound]);}
+  catch(cause){return noAnswer(cause);}
+  if(r===NO_ANSWER)return noAnswer(new Error('no answer within '+API_BOUND_MS+' ms'));
+  const body=await Promise.race([r.json(),bound]);
+  return body===NO_ANSWER?noAnswer(new Error('no body within '+API_BOUND_MS+' ms')):body;}
+ finally{clearTimeout(timer);}};
 /**
  * What a write that got no answer can honestly say.
  *
@@ -102,6 +114,8 @@ const api=async(m,p,b)=>{let r;
  */
 const NO_ANSWER='The panel server did not answer, so no write is confirmed. '
  +'Your edits are still in the form.';
+/** How long `api` waits for an answer before reading silence as no answer, in ms. */
+const API_BOUND_MS=60000;
 /**
  * The same path, signed for a NAVIGATION rather than a fetch.
  *

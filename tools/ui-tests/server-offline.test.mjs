@@ -96,6 +96,51 @@ describe('a write whose fetch rejects', () => {
   });
 });
 
+describe('a fetch that never settles', () => {
+  // The timer is the case's own: the sandbox's setTimeout never fires, so the
+  // case captures the callback and runs it, which is "the bound has passed".
+  function stalled() {
+    const p = panel();
+    vm.runInContext(
+      '__timers = []; __cleared = 0;'
+      + 'setTimeout = function (f, ms) { __timers.push([f, ms]); return __timers.length; };'
+      + 'clearTimeout = function () { __cleared++; };'
+      + 'fetch = function () { return new Promise(function () {}); };', p.ctx);
+    const expire = () => p.get('__timers').forEach((t) => t[0]());
+    return { p, expire };
+  }
+
+  it('resolves a WRITE to the no-answer refusal once the bound passes', async () => {
+    const { p, expire } = stalled();
+    const pending = p.fn('api')('PUT', '/api/config', { a: 1 });
+    expect(p.get('__timers').length).toBe(1);
+    expect(p.get('__timers')[0][1]).toBeGreaterThan(0);
+    expire();
+    const res = await pending;
+    expect(res.ok).toBe(false);
+    expect(res.noAnswer).toBe(true);
+    expect(res.findings[0]).toMatch(/did not answer/);
+  });
+
+  it('rejects a READ with noAnswer once the bound passes', async () => {
+    const { p, expire } = stalled();
+    const pending = p.fn('api')('GET', '/api/state');
+    expire();
+    await expect(pending).rejects.toMatchObject({ noAnswer: true });
+  });
+
+  it('allow twin: an answer before the bound is unchanged, and the timer is cleared',
+    async () => {
+      const p = panel();
+      vm.runInContext(
+        '__cleared = 0; setTimeout = function () { return 7; };'
+        + 'clearTimeout = function (t) { __cleared += (t === 7) ? 1 : 0; };', p.ctx);
+      p.net({ ok: true, x: 1 });
+      expect(await p.fn('api')('GET', '/api/state')).toEqual({ ok: true, x: 1 });
+      expect(p.get('__cleared')).toBe(1);
+    });
+});
+
 describe('the poll owns liveness', () => {
   it('a poll whose fetch rejects marks the page offline, and the next poll that '
      + 'answers clears it', async () => {
