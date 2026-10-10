@@ -42,7 +42,7 @@ Usage:
                                 [--json]
   stamp-verification.py red     [--project DIR] --manifest M --task T
                                 [--case ID|LABEL ...] [--introduces SYMBOL ...]
-                                [--deps-from DIR] [--timeout S] [--json]
+                                [--derive-introduces] [--deps-from DIR] [--timeout S] [--json]
                                 -- <test command>
 
   `compare` reads the stamp from stdin when neither --stamp nor --stamp-file is
@@ -592,7 +592,7 @@ _FINAL_ERROR = re.compile(r"^\s*(?:E\s+)?([A-Za-z_][\w.]*(?:Error|Exception)):\s
 # is the test's own text failing to parse, and it survives any fix.
 INTRODUCES_CLASSES = ("ImportError", "ModuleNotFoundError", "AttributeError",
                       "NameError")
-_SYMBOL_SHAPE = re.compile(r"^[A-Za-z_][\w.]*$")
+_SYMBOL_SHAPE = re.compile(r"^[A-Za-z_][\w.-]*$")
 
 
 def classify_run(code, text, cmd=None):
@@ -818,6 +818,47 @@ def introduced(root, implementation, symbol, deadline=None):
                   % (", ".join(implementation), ", ".join(in_wt)))
 
 
+def _top_names(text):
+    """The names a Python module binds at its top level - defs, classes and
+    plain assignments - or None when `text` does not parse."""
+    tree = _parse(text)
+    if tree is None:
+        return None
+    names = set()
+    for stmt in tree.body:
+        if isinstance(stmt, _DEFS + (ast.ClassDef,)):
+            names.add(stmt.name)
+        elif isinstance(stmt, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
+            names.update(n for t in targets for n in _target_names(t))
+    return names
+
+
+def derive_introduced(root, implementation, deadline=None):
+    """The symbols the task's diff introduces, read off the declared Python
+    implementation files: each top-level def, class or assignment name the
+    working tree's copy binds and HEAD's does not, and - for a file HEAD does
+    not have - the file's own name as well, which a test names when it imports
+    the new module. `introduced` still decides, per symbol, whether it counts."""
+    found = []
+    for rel in implementation:
+        if not rel.endswith(".py"):
+            continue
+        now = _top_names(_wt_text(root, rel))
+        if now is None:
+            continue
+        before = _head_text(root, rel, timeout=max(1, _left(deadline))
+                            if deadline is not None else 120)
+        names = set(now)
+        if before is None:
+            names.add(os.path.basename(rel)[:-3])
+        else:
+            names -= _top_names(before) or set()
+        found += sorted(n for n in names if n not in found
+                        and _SYMBOL_SHAPE.match(n) and not n.startswith("__"))
+    return found
+
+
 # --- which failing case is the task's own: the baseline is GREEN ---
 # Whether a case is new cannot be read off the test file's source, and seven
 # review rounds each found another way to read it off two runs' output while
@@ -914,7 +955,13 @@ def _is_named(failure, name):
     printed, with or without the detail a house FAIL line appends after a
     ` (` - read in place, so a long detail costs no prefix copies."""
     label = failure.get("label") or ""
-    return (name == failure.get("id") or name == label
+    first = label.split(None, 1)[0] if label.strip() else None
+    # The house runner prints the id as the label's first word. One with a digit
+    # is read by `house_case_id`; a hyphenated or underscored one without
+    # (`dg-red-moment`) is the same kind of word. A plain first word of a
+    # sentence label is not a name.
+    first = first if first and re.search(r"[-_]", first) else None
+    return (name == failure.get("id") or name == label or name == first
             or (label.startswith(name) and label.startswith(" (", len(name))))
 
 
@@ -1234,8 +1281,16 @@ def _replaces(stmt, path):
         return False
     if isinstance(stmt, ast.Assign):
         targets = stmt.targets
-    elif isinstance(stmt, (ast.AugAssign, ast.AnnAssign)):
+    elif isinstance(stmt, ast.AugAssign):
         targets = [stmt.target]
+    elif isinstance(stmt, ast.AnnAssign):
+        # `New.test_x: int` with no value binds nothing.
+        targets = [stmt.target] if stmt.value is not None else []
+    elif isinstance(stmt, (ast.For, ast.AsyncFor)):
+        targets = [stmt.target]
+    elif isinstance(stmt, (ast.With, ast.AsyncWith)):
+        targets = [item.optional_vars for item in stmt.items
+                   if item.optional_vars is not None]
     else:
         targets = []
     if any(_dotted(a) == path for t in targets for a in _attribute_targets(t)):
@@ -2638,7 +2693,7 @@ def _red_scope(args, cmd, deadline):
     bad = [s for s in args.introduces if not _SYMBOL_SHAPE.match(s)]
     if bad:
         return None, ("--introduces takes an identifier (letters, digits, `_`, "
-                      "`.`), and %r is not one - a fragment is a substring of "
+                      "`.`, `-`), and %r is not one - a fragment is a substring of "
                       "outputs it has nothing to do with" % (bad[0],))
     try:
         manifest = _mio.load_manifest(args.manifest)
@@ -2697,6 +2752,10 @@ def run_red(args, cmd, out):
         sys.stderr.write("ERROR: %s\n" % (problem,))
         return E_USAGE
     root = scope["root"]
+    if args.derive_introduces:
+        args.introduces = list(args.introduces) + [
+            n for n in derive_introduced(root, scope["implementation"], deadline)
+            if n not in args.introduces]
     leftovers = leftover_throwaways(root, timeout=max(1, _left(deadline)))
     env, dropped, naming = child_env(root)
     # The runs swap files in place, and a copy of the same size written in the
@@ -2869,6 +2928,12 @@ def build_parser():
                         help="the text carrying the stamp; `compare` only")
     parser.add_argument("--stamp-file", dest="stamp_file", default=None,
                         help="a file carrying the stamp; `compare` only")
+    parser.add_argument("--derive-introduces", action="store_true",
+                        help="red: also treat as introduced the top-level names "
+                             "(and the new files) the declared implementation "
+                             "files add over HEAD; `drive-phase.py submit` passes "
+                             "it, and --introduces stays the override that names "
+                             "one more")
     parser.add_argument("--introduces", action="append", default=[],
                         help="a symbol the task creates; `red` only - a compile "
                              "or collection error counts as red only when the "

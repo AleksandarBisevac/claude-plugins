@@ -34,6 +34,7 @@ import ntpath
 import os
 import posixpath
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -2719,6 +2720,13 @@ def _located_cases(check):
          False),
         ("replaced by an annotated assignment", base + "New.test_x: object = f\n",
          ["New"], False),
+        ("a for target", base + "for New.test_x in [f]:\n    pass\n", ["New"], False),
+        ("a with target", base + "with ctx() as New.test_x:\n    pass\n", ["New"],
+         False),
+        ("a with target inside a tuple", base + "with ctx() as (New.test_x, b):\n"
+         "    pass\n", ["New"], False),
+        ("an annotation with no value binds nothing", base + "New.test_x: int\n",
+         ["New"], True),
         ("setattr with the literal name", base + "setattr(New, 'test_x', f)\n",
          ["New"], False),
         ("setattr inside an assignment", base + "_ = setattr(New, 'test_x', f)\n",
@@ -2740,6 +2748,42 @@ def _located_cases(check):
     ]
     wrong = [(k, want) for k, text, chain, want in replacing
              if (M._definition(text, chain, "test_x") is not None) != want]
+    named = [M._is_named({"id": None, "label": "dg-red-moment the moment reads"},
+                         "dg-red-moment"),
+             M._is_named({"id": None, "label": "dg-red-moment the moment reads"},
+                         "dg-red"),
+             M._is_named({"id": "ab1", "label": "ab1 x"}, "ab1"),
+             M._is_named({"id": None, "label": "the new value"}, "the")]
+    check("sr212 --case names a house case by the first word of its printed "
+          "label, a hyphenated id with no digit included - and a prefix of that "
+          "word, or a plain first word of a sentence, does not name it: %r"
+          % (named,), named == [True, False, True, False])
+    root_d = tempfile.mkdtemp(prefix="stamp-derive-")
+    try:
+        for rel, text in (("src/old.py", "a = 1\n\n\ndef keep():\n    pass\n"),):
+            os.makedirs(os.path.join(root_d, "src"), exist_ok=True)
+            with open(os.path.join(root_d, rel), "w") as fh:
+                fh.write(text)
+        subprocess.run(["git", "init", "-q"], cwd=root_d, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=root_d, check=True)
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit",
+                        "-qm", "x"], cwd=root_d, check=True, capture_output=True)
+        for rel, text in (("src/old.py", "a = 1\nb = 2\n\n\ndef keep():\n    pass\n"
+                                         "\n\ndef foo():\n    pass\n\n\nclass Bar:\n    pass\n"),
+                          ("src/integrate-task.py", "def go():\n    pass\n"),
+                          ("src/notes.md", "# foo\n")):
+            with open(os.path.join(root_d, rel), "w") as fh:
+                fh.write(text)
+        derived = M.derive_introduced(root_d, ["src/old.py", "src/integrate-task.py",
+                                               "src/notes.md"])
+    finally:
+        shutil.rmtree(root_d, ignore_errors=True)
+    check("sr213 the symbols a task's diff introduces are the new top-level def, "
+          "class and assignment names of its declared Python files, plus the "
+          "name of a file HEAD does not have - hyphenated included - and nothing "
+          "HEAD already binds: %r" % (derived,),
+          derived == ["Bar", "b", "foo", "go", "integrate-task"]
+          and bool(M._SYMBOL_SHAPE.match("integrate-task")))
     check("sr186 once the chain resolves, a later assignment to the attribute "
           "<chain>.<case> - plain, through a tuple, augmented or annotated - or a "
           "`setattr(<chain>, '<case>', ...)` with that literal name replaces the def, "

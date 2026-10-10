@@ -2724,6 +2724,7 @@ def red_block(ctx, task, args, cmd, tree=None):
             extra += [flag, value]
     if args.deps_from:
         extra += ["--deps-from", args.deps_from]
+    extra.append("--derive-introduces")
     code, out, err = run_verb(ctx, "stamp-verification.py", [
         "red", "--project", tree or ctx["gitRoot"], "--manifest", ctx["manifest"],
         "--task", task["id"], "--json"] + extra + ["--"] + list(cmd))
@@ -2835,8 +2836,11 @@ def submit(ctx, manifest, args, cmd, text):
                            else red_block(ctx, task, args, cmd))
             if stop is not None:
                 return stop
-            body["redFirst"] = block
+            body["redFirst"] = dict(block, source=_fr.HELPER_SOURCE)
             ctx["did"].append("red-first %s" % (block.get("status"),))
+        if not cmd and isinstance(body.get("redFirst"), dict):
+            # No helper ran, so the mark is not ours to leave on a typed block.
+            body["redFirst"].pop("source", None)
         line, stop = take_stamp(ctx, task, tree) if tree else take_stamp(ctx, task)
         if stop is not None:
             return stop

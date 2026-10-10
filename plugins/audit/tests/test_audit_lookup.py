@@ -1193,6 +1193,7 @@ def _brief_cases(check):
          "cases": [], "symbols": [], "dropped": [], "new": [],
          "head_files": None, "head_defs": None, "head_modules": None,
          "path": None})[2]
+    helper = dict(helper, source="red-first-helper")   # as `submit` marks it
     file_exec(projm, text=_BF_EXEC.replace(
         '{"status": "proved", "basis": "exit 1", "at": "z"}',
         json.dumps(helper)))

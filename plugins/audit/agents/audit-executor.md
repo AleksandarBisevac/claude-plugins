@@ -53,8 +53,9 @@ Hard rules (non-negotiable):
   your command on HEAD's code — and the fix run must turn each failure green. If HEAD's
   own test files are already red, narrow the command to the task's cases (one file,
   one `-k`). A compile error, an import error or zero tests collected is
-  `could-not-prove` unless the task introduces the symbol the run fails on — pass
-  `--introduces <symbol>`. The runners whose tally the helper reads are `house`,
+  `could-not-prove` unless the task introduces the symbol the run fails on — `submit`
+  derives the introduced symbols from your diff, so name `--introduces <symbol>` only to
+  override that reading. The runners whose tally the helper reads are `house`,
   `pytest`, `unittest`, `jest` and `vitest`. A test that passes without the fix gets
   no word at all and is not filed: the work is to fix the test.
 - **A proof you were not ALLOWED to make is `could-not-prove`, never an inference**:

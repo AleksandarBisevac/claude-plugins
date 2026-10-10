@@ -154,8 +154,9 @@ verb writes and refuses, and what the run commands leave behind, is
      fresh home and temp directory of its own. A command
      already red at HEAD is `could-not-prove`: narrow the command to the task's cases.
      `--case` narrows to the ids or labels it names, held to that same test: it must name a
-     case that failed an assertion in the task's run. Its
-     `--introduces <symbol>` is where "the task introduces the symbol" is decided: an
+     case that failed an assertion in the task's run. `submit`
+     derives the introduced symbols from the task's diff and passes them as
+     `--derive-introduces`; `--introduces <symbol>` is the override, and is where "the task introduces the symbol" is decided: an
      identifier absent from HEAD's copy of every declared implementation file and present
      in the working tree's, a final import/attribute/name error naming it, and a second run
      with the working tree's implementation copied in that loses that error and reaches its

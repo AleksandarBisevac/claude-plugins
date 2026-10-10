@@ -4696,10 +4696,12 @@ TMPDIR/TMP/TEMP, and `PYTHONNOUSERSITE=1`. So the runs differ only in the files 
    capture, an import (a `*` import counts as binding anything), a def, a class, and a walrus
    anywhere in the statement outside a lambda; any of those after the def means the def is not
    what runs, and so does a later statement at any level of the chain that `_replaces()` the case
-   on its class - an assignment of any kind to the exact attribute path `<chain>.<case>`
-   (`New.test_x = f` at module level, `Inner.test_x = f` in `Outer`'s body) or a
-   `setattr(<chain>, '<case>', ...)` naming it literally - while any other attribute of the class
-   is untouched; a def in a string, in another class or merely inherited is not it), and no test file
+   on its class - an assignment with a value to the exact attribute path `<chain>.<case>`
+   (`New.test_x = f` at module level, `Inner.test_x = f` in `Outer`'s body), a `for` or
+   `with ... as` target spelling it, or a `setattr(<chain>, '<case>', ...)` naming it literally -
+   while any other attribute of the class, and a bare annotation `New.test_x: int` that binds
+   nothing, are untouched; an author who needs to wrap a case writes the decorator form on the def
+   itself, which the helper reads as the def; a def in a string, in another class or merely inherited is not it), and no test file
    anywhere in HEAD's tree (`head_tree()`: `git ls-tree -r` filtered by `_is_test_path()`, read
    by one `git cat-file --batch` under the deadline) holds an ast-identical def under the same
    class chain and name (`credit_problem()`). That is keyed by the definition, not by the path, so
@@ -4753,7 +4755,10 @@ name a case that failed an assertion, because the flag is chosen by the party be
 basis names the case and says whether it was named or derived. A house suite whose every failure is a block that raised while being built, a
 run with errors and nothing asserted, zero collected, and a bare traceback ending in a compile or
 import error are `collection-error`, which prints `could-not-prove` — unless the task
-**introduces the symbol**: `--introduces S` needs an identifier, absent from HEAD's copy of every
+**introduces the symbol**: `drive-phase.py submit` passes `--derive-introduces`, which names the
+top-level def, class and assignment names the declared Python implementation files add over HEAD
+(and the name of a file HEAD does not have, hyphenated included), and `--introduces S` stays the
+override that names one more; each symbol needs an identifier, absent from HEAD's copy of every
 declared implementation file and present in the working tree's; a final error of the
 import/attribute/name class naming `S` whole (pytest's `E   ` gutter is read, and a tally-less
 AttributeError counts as a collection error), never a syntax error; and a SECOND run in the

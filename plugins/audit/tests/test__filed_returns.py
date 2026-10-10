@@ -361,7 +361,9 @@ def _helper_block():
            "cases": [], "symbols": [], "dropped": [], "new": [],
            "head_files": None, "head_defs": None, "head_modules": None,
            "path": None}
-    return sv.red_verdict(run, ctx)[2]
+    block = sv.red_verdict(run, ctx)[2]
+    # `drive-phase.py submit` marks the block it files from the helper's output.
+    return dict(block, source=M.HELPER_SOURCE) if isinstance(block, dict) else block
 
 
 def _mechanical_cases(check):
@@ -376,11 +378,17 @@ def _mechanical_cases(check):
 
     block = _helper_block()
     typed = {"status": "proved", "basis": "python3 t.py exit 1", "at": "z"}
+    mark = getattr(M, "HELPER_SOURCE", None)
+    bare = dict((k, v) for k, v in block.items() if k != "source")
     check("ma1 the helper's own block - written by stamp-verification's "
-          "`red_verdict`, not typed here - reads as the helper's, and a block "
-          "typed by hand with the same word does not: %r" % ((block,),),
-          isinstance(block, dict)
+          "`red_verdict`, not typed here - reads as the helper's only once "
+          "`drive-phase.py submit` has marked it; the helper's exact words with "
+          "no mark, a block typed by hand with the same word, and a mark of "
+          "another value are not: %r" % ((block,),),
+          isinstance(block, dict) and bool(mark)
           and helper_red(_executor(redFirst=block)) == block
+          and helper_red(_executor(redFirst=bare)) is None
+          and helper_red(_executor(redFirst=dict(bare, source="typed"))) is None
           and helper_red(_executor(redFirst=typed)) is None
           and helper_red(None) is None)
 

@@ -1,0 +1,26 @@
+{
+  "gates": {
+    "sweep-selftests": "pass",
+    "ruff": "pass",
+    "vermin": "pass",
+    "measure-context": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T17:04:28Z",
+    "basis": "`python3 plugins/audit/tests/test__filed_returns.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 53/54 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "F535: stamp-verification._replaces now reads For/AsyncFor and With/AsyncWith targets as replacements and counts an AnnAssign only with a value (sr186 rows added: for target, with target, with-tuple target refused; bare `New.test_x: int` proves). F573: new `--derive-introduces` flag + derive_introduced() (top-level def/class/assignment names added over HEAD in declared .py files, plus the stem of a file HEAD lacks, hyphenated included; _SYMBOL_SHAPE now accepts `-`); drive-phase red_block always passes it, --introduces stays the override (ds7h: submit with no --introduces proves a red on `foo`; sr213 unit case). F576: _filed_returns.HELPER_SOURCE mark; helper_red_first requires redFirst.source == mark; submit marks the block it fills and strips a typed mark when no helper ran (ma1 rewritten: unmarked twin and wrong-mark are not the helper's). Hyphen --case: _is_named matches a label's first word when it contains - or _ (sr212). Docs: PLUGIN-BUILD-GUIDE, audit-executor.md, execute-task.md. Because the mark is new, test_audit_lookup.py and test_audit_task.py (OUTSIDE declared files; edits were allowed) mark their red_verdict-built blocks. Sweep: python3 tools/sweep-selftests.py exit 0 (all files ok). NOT DONE: F613 JS missing-module table, house-runner abort naming an introduced symbol or declared file as a missing-symbol red, F621 inline-suite red proof via test hunks.",
+    "descriptive": "The red-first helper reads for/with replacements and bare annotations right, submit derives introduced symbols itself, and only submit-marked blocks count as the helper's."
+  },
+  "testsAdded": [
+    "sr186 rows (for/with/bare annotation)",
+    "sr212",
+    "sr213",
+    "ds7h",
+    "ma1 (marked/unmarked twin)"
+  ],
+  "claims": "claims: none beyond the evidence in outcome.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:b01c9d7b4aafadcdc5766f7004a6bbf4d4e31f2faeeb001b53fd1a3a9fd36d11\",\"dirtyDigest\":\"sha256:27b2c1d5267a3b04eb408c5fe901f6b32b6eddb1bfbc1d53ffd9bf4fd609a8ce\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\"PLUGIN-BUILD-GUIDE.md\":\"0349eec1973c432e\",\"plugins/audit/agents/audit-executor.md\":\"cce5b21e74bc9149\",\"plugins/audit/reference/execute-task.md\":\"c9f84833c82a2d17\",\"plugins/audit/scripts/governance/drive-phase.py\":\"a5719fbb4f6dfa75\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"21a3582c8ea7fe6b\",\"plugins/audit/scripts/manifest/_filed_returns.py\":\"6b261b0529eb9572\",\"plugins/audit/tests/test__filed_returns.py\":\"2c88435a25d08781\",\"plugins/audit/tests/test_audit_lookup.py\":\"42c797d1acb07f8e\",\"plugins/audit/tests/test_audit_task.py\":\"21f6cd262ebfe60f\",\"plugins/audit/tests/test_drive_phase.py\":\"5ad7c192b0a3792f\",\"plugins/audit/tests/test_stamp_verification.py\":\"8a6197c2a2cc59a2\"},\"head\":\"6ab0c7dc\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/agents/audit-executor.md\",\"plugins/audit/agents/audit-reviewer.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/scripts/manifest/_filed_returns.py\",\"plugins/audit/tests/test__filed_returns.py\",\"plugins/audit/tests/test_drive_phase.py\",\"plugins/audit/tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:1b5a116ca8d3f67be1cdd8c07f98dbb1961b89fec6b4f64e5426034d5a055616\",\"v\":2}"
+}

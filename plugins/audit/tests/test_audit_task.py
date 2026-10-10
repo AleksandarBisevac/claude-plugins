@@ -13342,6 +13342,7 @@ def _held_cases(check):
          "cases": [], "symbols": [], "dropped": [], "new": [],
          "head_files": None, "head_defs": None, "head_modules": None,
          "path": None})[2]
+    helper = dict(helper, source=_fr.HELPER_SOURCE)   # as `submit` marks it
     typed = {"status": "proved", "basis": "python3 t.py exit 1",
              "at": "2026-01-01T00:05:00Z"}
     mech = ("redFirst", "redFirstBasis", "inheritedTests", "inheritedTestsBasis")

@@ -1129,6 +1129,44 @@ def _submit_cases(check):
           code == 0 and "has no inline --selftest" in text
           and "test_drive_phase.py" in text)
 
+    # No --introduces: the helper is handed the symbols the task's diff adds, so
+    # a test red on a name that does not exist at HEAD proves instead of grading
+    # could-not-prove.
+    plan = _plan(TASKS[:1], ("true",))
+    task = plan["phases"][0]["tasks"][0]
+    task["files"] = ["src/mine.py", "tests/test_mine.py"]
+    plan["fileIndex"] = dict((f, ["P1.1"]) for f in task["files"])
+    task["tests"] = {"mode": "tdd", "add": ["tests/test_mine.py: foo is two"],
+                     "gate": ["true"], "expectRedFirst": True}
+    root, mpath = _repo("introduced", task_ids=TASKS[:1])
+    os.makedirs(os.path.join(root, "tests"))
+    for rel, text in (("src/mine.py", "v = 1\n"),
+                      ("tests/test_mine.py", _house_suite([("old1", "mine.v >= 1")]))):
+        with open(os.path.join(root, *rel.split("/")), "w") as fh:
+            fh.write(text)
+    with open(mpath, "w") as fh:
+        json.dump(plan, fh, indent=2)
+    subprocess.run(_GIT + ["add", "-A"], cwd=root, check=True, capture_output=True)
+    subprocess.run(_GIT + ["commit", "-qm", "tdd"], cwd=root, check=True,
+                   capture_output=True)
+    with _Env(root):
+        M.main(["next", PHASE, mpath, "--project-dir", root], out=[].append)
+    with open(os.path.join(root, "src", "mine.py"), "w") as fh:
+        fh.write("v = 1\n\n\ndef foo():\n    return 2\n")
+    with open(os.path.join(root, "tests", "test_mine.py"), "w") as fh:
+        fh.write(_house_suite([("old1", "mine.v >= 1"), ("new1", "mine.foo() == 2")]))
+    body = _executor_body("P1.1", {"testsAdded": ["tests/test_mine.py: new1"]})
+    code, text = _submit(None, root, mpath, "P1.1", body,
+                         tail=["--", sys.executable, "tests/test_mine.py"])
+    path = _filed_path(mpath, "P1.1")
+    filed = json.loads(_read(path).decode("utf-8")) if os.path.exists(path or "-") else {}
+    red = filed.get("redFirst") or {}
+    check("ds7h submit with no --introduces hands the helper the symbols the task's "
+          "diff adds: a test red on `foo`, a name HEAD does not have, is `proved`, "
+          "and the block is marked as the helper's: %r" % ((code, text, red),),
+          code == 0 and red.get("status") == "proved"
+          and red.get("source") == _fr.HELPER_SOURCE)
+
     # The brief prints the manifest relative to the project; the agent's shell
     # may stand elsewhere.
     root, mpath, _t = _started(M, "relative")

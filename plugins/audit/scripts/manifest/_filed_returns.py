@@ -546,6 +546,9 @@ _ANSWER_PAIRS = (("redFirst", "redFirstBasis"),
                  ("inheritedTests", "inheritedTestsBasis"))
 # `red_verdict` in `stamp-verification.py` opens every basis with the command
 # and the throwaway it ran in; `ma1` in the tests reads a block it wrote.
+# The value of `redFirst.source` on a block `drive-phase.py submit` filled from
+# the helper's output; the filing verb trusts this mark and not the wording.
+HELPER_SOURCE = "red-first-helper"
 _HELPER_BASIS = re.compile(r"^`.+?` in a throwaway tree at HEAD(?: exited -?\d+|:)",
                            re.S)
 # A gate entry shaped `key:project` that names no build command resolves to
@@ -590,9 +593,12 @@ _INTERPRETER = re.compile(r"^(?:python[0-9.]*|py|node)(?:\.exe)?$")
 
 def helper_red_first(executor):
     """The executor return's `redFirst` when it is the red-first helper's block
-    - a word of the vocabulary, the helper's basis and its time - else None."""
+    - a word of the vocabulary, the helper's basis, its time, and the mark
+    `drive-phase.py submit` puts on the block it fills - else None. The words
+    alone prove nothing: a block typed in the helper's wording carries no mark."""
     red = executor.get("redFirst") if isinstance(executor, dict) else None
-    if not (isinstance(red, dict) and red.get("status") in RED_FIRST_WORDS
+    if not (isinstance(red, dict) and red.get("source") == HELPER_SOURCE
+            and red.get("status") in RED_FIRST_WORDS
             and _said(red, "at") and _said(red, "basis")
             and _HELPER_BASIS.match(red["basis"])):
         return None
