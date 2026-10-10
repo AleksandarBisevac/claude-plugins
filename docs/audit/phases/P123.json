@@ -223,7 +223,7 @@
       "id": "P123.5",
       "title": "run-test-gate resolves its project the way every other verb does",
       "status": "pending",
-      "description": "F593, PRIORITY (hit the testbed owner twice; root cause reproduced, see PLAN.md F593). Two resolvers answer 'which project does this manifest belong to': _evidence_io.project_config_for (--project-dir, CLAUDE_PROJECT_DIR, then the MANIFEST'S OWN DIRECTORY) used by run-test-gate._own_log_dir, and _panel_write.project_of_manifest (first ancestor holding .claude/ or .git). The first hand-run gate (no CLAUDE_PROJECT_DIR in a terminal or Bash-tool shell) writes its raw log under docs/audit/.claude/, which then makes project_of_manifest answer docs/audit forever, so every later run without --project-dir records evidence into docs/audit/docs/audit/, which no check reads. Every printed gate remedy omits --project-dir (commit-task-work's, audit-task's gate_command and its other print sites). Fix the class: ONE project resolver for every writer and every printed command, anchored on the git toplevel (or a .git file), never accepting a .claude/ marker inside the manifest's own docs/audit-shaped directory; project_config_for's manifest-dir fallback goes away; printed commands then need no flag because the default is right; keep audit-task.resolve_basis and drive-phase.project_context on the same function. Add a doctor hygiene check naming a stray <manifest dir>/.claude or docs/audit/docs. Keep lp1 true. Blocked by P123.1 only because both edit audit-task.py.",
+      "description": "F593, PRIORITY (hit the testbed owner twice; root cause reproduced, see PLAN.md F593). Two resolvers answer 'which project does this manifest belong to': _evidence_io.project_config_for (--project-dir, CLAUDE_PROJECT_DIR, then the MANIFEST'S OWN DIRECTORY) used by run-test-gate._own_log_dir, and _panel_write.project_of_manifest (first ancestor holding .claude/ or .git). The first hand-run gate (no CLAUDE_PROJECT_DIR in a terminal or Bash-tool shell) writes its raw log under docs/audit/.claude/, which then makes project_of_manifest answer docs/audit forever, so every later run without --project-dir records evidence into docs/audit/docs/audit/, which no check reads. Every printed gate remedy omits --project-dir (commit-task-work's, audit-task's gate_command and its other print sites). Fix the class: ONE project resolver for every writer and every printed command, anchored on the git toplevel (or a .git file), never accepting a .claude/ marker inside the manifest's own docs/audit-shaped directory; project_config_for's manifest-dir fallback goes away; printed commands then need no flag because the default is right; keep audit-task.resolve_basis and drive-phase.project_context on the same function. Add a doctor hygiene check naming a stray <manifest dir>/.claude or docs/audit/docs. Keep lp1 true. Blocked by P123.1 only because both edit audit-task.py. ALSO (F537, the same class): Fold F537 into P123.5: render-report takes CLAUDE_PROJECT_DIR or the manifest's own directory (<T>/docs/audit, not <T>) for its project, and audit-status takes CLAUDE_PROJECT_DIR or the cwd for project and git root (so /audit:status from another checkout answers every phase's full-run question 'unknown'); both go through the one resolver P123.5 builds, verbs-in-full.md's '/audit:status asks git from CLAUDE_PROJECT_DIR, or the directory it runs in' sentence is rewritten, and an _output lint flags a project derived from a manifest path by dirname arithmetic (prove-gates row). Regression: a default-layout manifest rendered with CLAUDE_PROJECT_DIR unset reads <T>'s evidence; status run with cwd in another checkout reads the plan's own checkout. Also add F593's RECURRED shape as a case: run-test-gate given a RELATIVE manifest and no --project-dir records into <root>/docs/audit/evidence, never docs/audit/docs/audit. Because P123.5 now edits _output.py, test__output.py and tools/prove-gates.py, it needs dependsOn P123.6-z4y (shared _output.py/test__output.py) besides the P123.1 order its description already states.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
         "plugins/audit/scripts/governance/_evidence_io.py",
@@ -237,7 +237,15 @@
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/scripts/status/_doctor_hygiene.py",
-        "plugins/audit/tests/test__doctor_hygiene.py"
+        "plugins/audit/tests/test__doctor_hygiene.py",
+        "plugins/audit/scripts/report/render-report.py",
+        "plugins/audit/tests/test_render_report.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__output.py",
+        "tools/prove-gates.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -261,7 +269,8 @@
       "skills": [],
       "risk": "med",
       "blockedBy": [
-        "P123.1"
+        "P123.1",
+        "P123.6-z4y"
       ],
       "dependsOn": [],
       "attempts": 0,
@@ -317,6 +326,1717 @@
       "skills": [],
       "risk": "med",
       "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.7",
+      "title": "No gate or config value is rewritten by the write scrub, and every redaction is journaled",
+      "status": "pending",
+      "description": "PRIORITY (P122-R13). `_manifest_io.scrubbed_plan` runs `_machine_paths.scrubbed_values` over the WHOLE plan on every save (`atomic_write_json`, `save_plan_json`, `save_sharded`, `save_single_file`), so executable and config values are rewritten with everything else: a `meta.buildCommands` entry naming an interpreter under a home directory becomes the outside-repo token and the gate stops running, and with `--project-dir` below the checkout root an in-repo absolute path becomes checkout-relative while gate steps run with cwd=project. Invariant: an executable or config value is never silently rewritten - it is refused at the door that sets it, or exempt from the scrub. Do both: (1) exempt those fields from `scrubbed_plan` by their POSITION in the plan (`meta.buildCommands.*`, `meta.phaseGate`, `meta.fullGate`, each phase's `testGate`, each task's `tests.gate`, and any other field the plan executes - enumerate them from the readers of `_evidence_io.resolved_commands`), as a pointer table beside `scrubbed_plan`, never a key name at any depth (the flaw R11 removed from the ledger); (2) refuse a machine path in those fields at every door that writes them - audit-task's `--gate` on `add`, `scope`, `add-phase` and `retarget`, the panel settings save of `meta.buildCommands` through `_panel_write`, and derive-phase-gate's derived entry - each refusal naming the field and the remedy (a repo-relative or PATH-resolved spelling), with `tools/check-committed-pii.py` left as the backstop for a hand edit. (P122-R14) `scrubbed_values(keep=)` is a name-keyed exemption with no caller outside the mp8 case: replace it with the pointer exemption or delete it with mp8. (P122-R3, P122-R12) A save that redacts prose must say so: only `_panel_write`'s route journals `plan.redact`, while `_proposals._save`, audit-task's own `save_single_file` call, `_evidence_io`'s `save_plan_json` calls, `close-phase._revalidated_write` and migrate-manifest drop the pointers the writer returns. Make the journal row part of the one writer contract (route them through `_panel_write.save_in_layout`, or have every plan writer journal what it redacted) rather than a duty each caller remembers, and add a case over the committed corpus listing the rewrites the scrub makes today, so rewriting historic prose is a decision on record. (prep note) `_invariants.write_baseline` stores each breach's free-text line and its `subject` through the same scrubbing `atomic_write_json`: establish whether a subject or breach line can carry an absolute path, and make the baseline's match key survive the scrub (compare scrubbed keys on both sides, or keep subjects path-free and say so in `found()`), since a subject the scrub rewrote would never match again and re-report a frozen breach as new. Update SECURITY.md's scrub paragraph to the new rule. Faults: P122-R13, P122-R3, P122-R12, P122-R14, prep-invariants-baseline-breach.",
+      "files": [
+        "plugins/audit/scripts/_machine_paths.py",
+        "plugins/audit/tests/test__machine_paths.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/tests/test__manifest_io.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/tests/test__panel_write.py",
+        "plugins/audit/scripts/manifest/_proposals.py",
+        "plugins/audit/tests/test__proposals.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/manifest/migrate-manifest.py",
+        "plugins/audit/tests/test_migrate_manifest.py",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/tests/test_derive_phase_gate.py",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/tests/test__invariants.py",
+        "SECURITY.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__manifest_io.py: a plan whose meta.buildCommands names an interpreter under a home directory, saved through every writer (single-file and sharded), keeps the command byte for byte while a home path in a task description is still scrubbed",
+          "plugins/audit/tests/test_audit_task.py: scope --gate and add-phase --gate with a home-directory interpreter are refused naming the field; a repo-relative spelling is written",
+          "plugins/audit/tests/test__panel_write.py: a settings save putting a machine path into meta.buildCommands is refused, not rewritten",
+          "plugins/audit/tests/test__proposals.py: a save that redacts a value writes a plan.redact journal row naming its pointers",
+          "plugins/audit/tests/test_close_phase.py: a save that redacts a value writes a plan.redact journal row naming its pointers",
+          "plugins/audit/tests/test_migrate_manifest.py: a save that redacts a value writes a plan.redact journal row naming its pointers",
+          "plugins/audit/tests/test__invariants.py: a baseline written over a breach whose subject or line would be scrubbed still matches the same breach on the next run"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [
+        "P123.1",
+        "P123.4",
+        "P123.5"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.8",
+      "title": "Every migrated stub asks selftest_requested(), and the lint sees a local argv name too",
+      "status": "pending",
+      "description": "P122.8 added `_output.selftest_requested(argv)` and `selftest_argv_violations()`, whose docstring says it cannot see a stub that reads `--selftest` off a local name bound to `sys.argv`. Four stubs do exactly that (`if \"--selftest\" in argv:` in migrate-manifest's, merge-manifest's, usage/_usage_bench's and render-report's `__main__`). None forwards a command today, but the invariant was every stub. Convert the four to `selftest_requested(...)`, and widen `selftest_argv_violations()` to flag a membership test of `--selftest` against any name bound from `sys.argv` (including a slice) inside a migrated stub, with its prove-gates row (red: plant `argv = sys.argv[1:]` / `\"--selftest\" in argv` in one stub; allow: the helper call). Faults: P122-R5.",
+      "files": [
+        "plugins/audit/scripts/manifest/migrate-manifest.py",
+        "plugins/audit/scripts/manifest/merge-manifest.py",
+        "plugins/audit/scripts/usage/_usage_bench.py",
+        "plugins/audit/scripts/report/render-report.py",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__output.py",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__output.py: selftest_argv_violations flags a stub testing '--selftest' in a local argv bound from sys.argv[1:], and is quiet on the selftest_requested call",
+          "tools/prove-gates.py: a selftest_argv row that goes red when one of the four stubs is reverted to the local-argv spelling"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P123.7",
+        "P123.6-z4y"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.9",
+      "title": "A fix batch lands whole from stdin, rerun re-measures, and fix refusals say the truth",
+      "status": "pending",
+      "description": "(F606) `drive-phase.add_fix_tasks` calls `audit-task.py add` once per finding and passes the finding's issue and resolution on argv as `--description`; the argv prose check refused a text holding \" :400\" (\"whitespace before a mark that hugs the word in front of it\") and the batch stopped with only some findings given a task. Hand the whole batch over in ONE `add --from-file -` call on stdin, where no shell rewrites a value: add `fixes` to `BATCH_TASK_KEYS` so a batch task writes `task.fixes` and each finding's `fixTask` in the same write `--fixes` does today, and the batch lands all or nothing. (F607, the discipline half only - the every-path scope half is P124's b3) a fix task defaults to gate-only, so a finding asking for a new test got gate [lint, typecheck]. Derive a fix task's mode with the rule `--bug` already uses (`_bug_tests_mode`: every named file a test path -> regression with its note, else tdd); gate-only only when the caller passes it. (F608, recurred on P4) `--answer rerun` on a gate-red decision returns None and the next task gate reuses the red verdict (\"GATE VERDICT REUSED ... nothing ran here\"), so the decision comes back unchanged and the operator ran `run-test-gate.py --no-reuse --record` by hand. A rerun answer measures: mark it in the drive state for that start and pass `--no-reuse` to the next gate run, consuming the mark once. (P122-R15) the `--answer fix` refusal prints \"not open: F\" for a finding that is open but already names a fix task - say that it already names a fix task and is dispositioned at sign-off; reword the `run_signoff` comment that still says \"a finding no fix task names\", and drop the guard that restates `accepted-open`/`carried` after `open_findings` (now in `_manifest_phases`) has already excluded them. Name the batch form in verbs-in-full.md and the rerun rule in orchestrator.md. Also F617: a pending triage is satisfied without an answer once every med+ open finding names a pending/in-progress fix task (added by hand with add --fixes); the drive runs them, re-reviews, re-triages; such a finding is offered neither fix nor accept-open. Faults: F606, F607, F608, P122-R15, F617.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/reference/verbs-in-full.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: --answer fix over two findings, one whose text carries ' :400', adds both fix tasks in one write; a batch whose second task is invalid writes neither",
+          "plugins/audit/tests/test_drive_phase.py: a red reused verdict followed by --answer rerun runs the gate (no REUSED line) and the next plain run may reuse again",
+          "plugins/audit/tests/test_audit_task.py: a batch task with fixes records task.fixes and the finding's fixTask; a fix task naming only test files is regression, else tdd, unless --tests-mode is passed",
+          "plugins/audit/tests/test_drive_phase.py: --answer fix naming a finding that already has a fixTask is refused with the 'already names a fix task' wording, not 'not open'"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P123.7",
+        "P123.2",
+        "P123.3"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.10",
+      "title": "A retry brief names the red step and its output; an executor with no return is resumed",
+      "status": "pending",
+      "description": "(F609) the brief's \"Retry - what attempt N left on the record\" section (`audit-lookup`) prints `outcome.technical`, a runId and redFirst, and nothing about which gate step went red or what it printed, so the executor could not know the smoke test was the red step. Read that run's evidence row through `_evidence_io` and name each red step's command with its failure excerpt, cut by P123.6's shared `_excerpt` helper; when the row or its output cannot be read, say that instead of 'none recorded'. (F611) executors twice ended without running the brief's submit block and printed the return object instead. `drive-phase.advance` already turns this into `decide no-executor-return` with answers retry/block, and retry spends an attempt on work that is finished. Add a `resume` answer, recommended and spending no attempt, that prints one instruction: resume the dispatched executor (its id from the dispatch mark) and run its submit block. In the brief, put the submit block first and alone in the closing \"Your return\" section (`executor_return_lines`), ahead of the return's shape. Keep the decision vocabulary in step with the README's followed table (`_refs.followed_anchor_drift`) and orchestrator.md. Measure afterwards: count no-executor-return decisions in the next phase's journal. Faults: F609, F611.",
+      "files": [
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_lookup.py: a retry after a red gate step names that step's command and its failing line; an unreadable evidence row is said, not 'none recorded'",
+          "plugins/audit/tests/test_audit_lookup.py: the submit block is the first thing in the 'Your return' section",
+          "plugins/audit/tests/test_drive_phase.py: no-executor-return offers resume first; --answer resume spends no attempt and prints the resume instruction"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P123.9"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.11",
+      "title": "The finding schema names status, acceptedReason and carriedTo, and done journals them",
+      "status": "pending",
+      "description": "(P122-R6) findings now carry `status` (fixed|accepted-open|carried), `acceptedReason` and `carriedTo`, written by `done` and `signoff`, and the schema's finding definition names none of them and still says `fixTask`/`commit` are written by resolve-finding. Document the three keys in the finding `$def` with their writers. `carriedTo` holds a task or bug id but is not in `_id_refs.SCALAR_REFS`, so `/audit:task move` leaves it dangling: add it, with its test__id_refs pin. (P122-R7) `record_fix_on_findings` returns journal-shaped changes (the finding's commit, review.outcome) and `_locked_done` discards them, so the `task.done` row does not show the finding rewrite: append them to done's journal changes. This lands before validator-schema, which starts applying the schema to whole plans. Faults: P122-R6, P122-R7.",
+      "files": [
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/manifest/_id_refs.py",
+        "plugins/audit/tests/test__id_refs.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__id_refs.py: moving a task named by a finding's carriedTo rewrites carriedTo",
+          "plugins/audit/tests/test_audit_task.py: done --commit on a fix task writes a task.done row whose changes include the finding's commit"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P123.9"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.12",
+      "title": "A task commit carries exactly its attempt: no older dirt swept in, no new file left out",
+      "status": "pending",
+      "description": "One invariant: a task's commit holds the change its own attempt made - nothing from before the attempt is swept in, and nothing made during it is left out in silence. (F610) P2.7 was blocked with edits uncommitted in a file P2.8 also declares, and P2.8 started with no warning; on P5 commit-task-work did stage a blocked task's dirty hunks into another task's commit. P122.4's leftover refusal misses it because the edits are covered by the new task's own files. `start` refuses when a declared file of the task being started is dirty and is declared by another not-done task that has spent an attempt (blocked, or in_progress), naming that task and offering unblock-and-finish or a stash named by the task; commit-task-work refuses when a declared file's uncommitted change predates the task's `startedAt` (record at `start` a snapshot of the declared files' blob ids and compare against it; a file mtime is only a fallback, with that basis stated), and where it can, stages only hunks that differ from the start snapshot. (F612 part a, the commit-time check - not guard reading) P4.3's executor `cp`-ed an image outside its declared files; commit-task-work staged declared files only, so the commit references an image it does not contain. `_uncommitted_leftovers` blames only paths the task's files cover: at commit-task-work and at `done --commit` also list untracked or changed paths that appeared since the attempt began and that no in_progress task covers, and refuse naming them, offering `/audit:task scope` widening or removing the file. (P122-R10) `_porcelain_paths` reads `git status --porcelain` without -z, so a path with a space or a non-ASCII byte is quoted and never matches a declared entry: use -z and split on NUL, a rename carrying two names. Update execute-task.md, verbs-in-full.md and the README's /audit:task start/done text. Faults: F610, F612, P122-R10.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a blocked task with a dirty declared file and a second task declaring it -> start refuses naming the blocked task",
+          "plugins/audit/tests/test_commit_task_work.py: a declared file dirty before startedAt is refused; a change made after start is committed",
+          "plugins/audit/tests/test_commit_task_work.py: a file created during the attempt outside every in_progress task's scope refuses the commit by name until scope is widened or the file removed",
+          "plugins/audit/tests/test_audit_task.py: a leftover named 'a b.ts' or with a non-ASCII byte is found by done's leftover check"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [
+        "P123.10",
+        "P123.11",
+        "P123.6-z4y"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.13",
+      "title": "A shell-created file outside every running task's scope is refused at the edit tools' tier",
+      "status": "pending",
+      "description": "(F612 part b - guard command reading) guard-bash-writes' Bash branch filters new dirty paths through `_config.source_exts`, so a `cp` of a .webp outside every in_progress task's scope drew nothing, and even a source file draws only a non-blocking notice whatever tier the plan gate is in; the executor said \"plan gate did not refuse\". Match the Write/Edit tier: while the gate is in its deny tier (a phase in_progress), a new non-exempt file a shell command created outside every in_progress task's scope is reported whatever its extension, with a blocking PostToolUse decision naming the path and the remedy (remove it, or widen scope with `/audit:task scope`), and recorded in the session state so attempt-bound-commit's check reads the same fact; the warn and observe tiers keep today's notice. Where the command's destination is readable before the diff (cp/mv/install/tee/redirect targets, through the shared `_config` readers), attribute the file to that command; an unreadable command stays attributed by the git-status diff as today. Red-first both directions: `cp a.webp public/x.webp` outside scope in the deny tier -> blocking decision; the same path inside scope, an exempt path, a read-only command and another session's file -> nothing new. Run `tools/bench-hooks.py --gate` after. Faults: F612. GUARD COMMAND-READING CODE: written by the orchestrator with the user's permission (auto mode off when possible); if the API refuses, record it verbatim and hand the remainder to the human.",
+      "files": [
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test_guard_bash_writes.py",
+        "plugins/audit/tests/test__config.py",
+        "SECURITY.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_bash_writes.py: a non-source file created by cp outside scope in the deny tier yields a blocking decision naming it; inside scope, exempt, read-only and another session's file stay silent",
+          "plugins/audit/tests/test__config.py: the destination reader names cp/mv/install/tee targets and returns no answer for an unreadable command"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [
+        "P123.7"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.14",
+      "title": "covering_key loads _task_outputs once per process and not at all for an empty map",
+      "status": "pending",
+      "description": "(P122-R9) `hooks/_config.covering_key` calls `_load_scripts_module('_task_outputs', ...)` on every call, re-executing the module and its `_output` import each time, and guard-bash-writes asks it once per written path; it loads even when `file_map` is empty. Cache the module the way `_LEDGER_LIB` is cached (tried once, kept), and return None before loading when the map is empty. Confirm with `tools/bench-hooks.py --gate`. Faults: P122-R9.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__config.py: two covering_key calls load _task_outputs once; an empty file_map loads nothing and answers None"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P123.13"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.15",
+      "title": "Every evidence and journal ts ordering goes through one moment reader, held by a lint",
+      "status": "pending",
+      "description": "(F530) readers order or compare evidence/journal `ts` as TEXT outside `_evidence_io.oldest_first/newest_row/stamp_moment`, all confirmed on main: `_gate_derive` (newest failed row per phase, `>=` on text), `_doctor_trail` (full-scope candidates sorted on `str(ts)`), `_evidence_view` (`sorted(... str(ts) ...)`), `_doctor_completions` (`min(str(ts))` watermark), `_journal_io` (read order, merge interleave, `max` on text at two sites); `_evidence_io._epoch` is a further moment parser (Z form only), and `_classified` SKIPS a windowless other row (`if o_start is None: continue`), so `contested_by`/`shared_the_machine` answer as if that run never happened; `run-test-gate` spells 'did this run pass' inline (`res[\"status\"] == \"passed\"` on its --json paths) instead of `_evidence_io.row_is_red`. Route each through the one moment reader (the journal side through a parse at its own layer, `_usage_core.parse_ts` permitting), fold `_epoch` into `stamp_moment`, report a windowless other run as undecided, and add an `_output` lint that flags sorted/max/min keyed on a `ts` field and ordering comparisons between ts values outside the helper (an allow-list row per justified exception, and a prove-gates row). Decide and record whether import-evidence refuses a shard whose ts does not parse. Re-render the committed artifacts if their bytes change. (F537, the project-resolution half the draft carried, is folded into P123.5.) Faults: F530.",
+      "files": [
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/scripts/report/_evidence_view.py",
+        "plugins/audit/scripts/status/_doctor_completions.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/import-evidence.py",
+        "plugins/audit/scripts/_output.py",
+        "tools/prove-gates.py",
+        "plugins/audit/tests/test__gate_derive.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/tests/test__evidence_view.py",
+        "plugins/audit/tests/test__doctor_completions.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test_import_evidence.py",
+        "plugins/audit/tests/test__output.py",
+        "examples/acme-store/acme-store-audit.html",
+        "docs/demo-large.html",
+        "docs/index.html"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__evidence_io.py: a windowless other row makes contested_by answer undecided, never 'alone'; _epoch's offset form agrees with stamp_moment",
+          "plugins/audit/tests/test__gate_derive.py: one case each where '+02:00' or fractional stamps make text order and time order disagree, red on main",
+          "plugins/audit/tests/test__doctor_trail.py: one case each where '+02:00' or fractional stamps make text order and time order disagree, red on main",
+          "plugins/audit/tests/test__evidence_view.py: one case each where '+02:00' or fractional stamps make text order and time order disagree, red on main",
+          "plugins/audit/tests/test__doctor_completions.py: one case each where '+02:00' or fractional stamps make text order and time order disagree, red on main",
+          "plugins/audit/tests/test__journal_io.py: one case each where '+02:00' or fractional stamps make text order and time order disagree, red on main",
+          "plugins/audit/tests/test__output.py: the ts-ordering lint flags a planted max(r['ts']) and is quiet on _evidence_io's helpers"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [
+        "P123.8"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.16",
+      "title": "A --record run that stored nothing exits non-zero; a reused verdict repeats its banners",
+      "status": "pending",
+      "description": "(F532) `run-test-gate --record` wraps `_ev.record(...)` in `except Exception`, prints 'evidence: NOT recorded - ...', then prints GATE GREEN and exits by `res['status']` alone (both the task/phase path and `_record_full_run`), so a pre-push/CI step reading the exit code passes with no evidence. Exit codes are outside COMPATIBILITY's promise but each change is recorded there: give an unrecorded --record run a non-zero exit (a distinct code, named in --help and the docs' exit tables), unchanged without --record. (F565) a verdict reused at an unchanged tree prints 'GATE GREEN: verdict reused from run X; no check ran here.' and none of the banners the measured run printed (NO OVERLAP WITH THIS WORK, TREE CHANGED OUTSIDE THIS WORK, ...), so drive-phase never asks `decide gate-coverage` about it. Store the banner set on the evidence row when the run is measured (`_evidence_io.row_for` allow-list) and have the reuse path print the banners of the run it reuses. (P122-R4) `run-test-gate._declared_by` was switched to `_task_outputs.covers()` and no case exercises it: reverting it to exact match leaves the suite green. Add a case with a `:12-20` line-range entry and a directory entry through `classify_mutations`. Regression: a --record run whose ledger file holds a non-UTF-8 byte exits non-zero; the same run without --record exits 0; a reused NO OVERLAP run prints NO OVERLAP again. Faults: F532, F565, P122-R4.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "COMPATIBILITY.md",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/reference/execute-task.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: --record with an undecodable ledger month file exits the new non-zero code and prints no GATE GREEN; without --record exit 0",
+          "plugins/audit/tests/test_run_test_gate.py: a measured NO OVERLAP run, re-run at the same tree, prints the NO OVERLAP banner beside the reuse line",
+          "plugins/audit/tests/test__evidence_io.py: row_for carries the banner list and an old row without it reads as 'banners not recorded', not as none",
+          "plugins/audit/tests/test_run_test_gate.py: classify_mutations owns a change to a file declared as 'src/a.ts:12-20' and one under a declared directory entry; exact-match _declared_by turns it red"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P123.12",
+        "P123.15"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.17",
+      "title": "The panel's gate-catches payload reports an unreadable evidence ledger instead of []",
+      "status": "pending",
+      "description": "`panel/_panel_usage._gate_catches_payload` wraps the evidence read in `except Exception: return []` and also ignores `read_rows(...)`'s own read problem (`.get('rows') or []`), so an unreadable ledger is indistinguishable from a project with no gate history. Latent: no UI reads `gateCatches` yet. Ship `{catches, readError}` with the same readError shape and sentence the evidence tab uses, before any UI reads it; `_usage_shape`'s default becomes the empty-but-readable value. Regression: a read that raises (or a ledger with an undecodable file) yields readError and no catches; an empty ledger yields no catches and no error. Faults: F525.",
+      "files": [
+        "plugins/audit/scripts/panel/_panel_usage.py",
+        "plugins/audit/tests/test__panel_usage.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__panel_usage.py: evidence read raising -> gateCatches.readError set, catches empty; empty ledger -> readError None"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.18",
+      "title": "Red-first helper reads replacements right, derives --introduces, and marks its own block",
+      "status": "pending",
+      "description": "(F535) `stamp-verification._replaces` reads Assign/AugAssign/AnnAssign targets and setattr only: a `for New.<case> in [...]` or `with ... as New.<case>` target also replaces the case and HEAD's red is still credited through it, while a bare `New.<case>: int` (AnnAssign with no value, binds nothing) is refused. Read For/AsyncFor and With/AsyncWith targets as replacements; count an AnnAssign only with a value; PLUGIN-BUILD-GUIDE tells an author to wrap with the decorator form. (F573) executors rarely pass `--introduces`, so a test red on a missing symbol grades could-not-prove; have `drive-phase.py submit` derive the introduced symbols from the task's diff (new top-level def/class/assignment names in the declared source files) and pass them to the red helper, with the executor brief naming the flag only as an override. (F576) `_filed_returns.helper_red_first` recognises the helper's block by its wording, so a hand-typed block in those words is filed as computed; `drive-phase.py submit` marks the block it fills (a `source` field or the helper output's digest) and the filing verb trusts the mark, not the words. Regression: T3/T4 (for/with targets) refused; bare annotation proves; a missing-symbol red with no flag grades proved when the diff introduces the symbol; a hand-typed block in the helper's words is not treated as the helper's. Also F613 (testbed P3.1/P5.2/P6.1, and this repo P124.1): a JS missing-module failure (Vite \"Failed to resolve import\", jest \"Cannot find module\", node ERR_MODULE_NOT_FOUND) whose path resolves to a declared file is a missing-symbol red - one per-runner table of missing-module spellings, not a second Python-only list. Also the house runner shape seen on this repo in P124.1/P124.2: a suite whose body aborts on the missing symbol (an AttributeError or TypeError from the task's new name, printing SELFTEST FAILED: N-1/N) is graded \"no test was collected or none reached an assertion\"; an abort naming the task's introduced symbol, or a declared file, is a missing-symbol red. And: --introduces refuses a hyphenated entry-point name (integrate-task), so a new CLI script cannot name its own symbol; a new file the task declares (untracked at HEAD) is itself the introduced thing. Faults: F535, F573, F576, F613.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/reference/execute-task.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: for-target and with-target replacement refused (T3, T4); `New.test_x: int` with no value still proves",
+          "plugins/audit/tests/test_drive_phase.py: submit with no --introduces on a diff adding `def foo` grades a NameError red on foo as proved",
+          "plugins/audit/tests/test__filed_returns.py: a redFirst block carrying the helper's basis words but no helper mark is not helper_red_first; the marked twin is"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P123.16"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.19",
+      "title": "close-phase refuses before merging when the evidence directory is git-ignored",
+      "status": "pending",
+      "description": "With docs/audit/evidence excluded (e.g. via .git/info/exclude), a landing from the branch's own checkout merges and then exits 1 because `commit_landing`/`_commit_stamp` refuses an ignored record path ('the stamp is NOT committed'); the irreversible step has already happened. Structurally correct: check the records the landing will commit (`_scoped_commit.ignored_records`) before the merge and refuse with the remedy, so a refusal never follows a merge; keep the post-merge message for causes that cannot be known in advance, and make it say the merge landed and what is left. Record the exit behaviour in COMPATIBILITY.md. Regression: ignored evidence dir -> exit 1 with the branch NOT merged into its parent; not ignored -> lands as today. Faults: F570.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "COMPATIBILITY.md",
+        "plugins/audit/reference/phase-signoff.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_close_phase.py: evidence dir in .git/info/exclude -> refusal before merge, parent ref unchanged; allow twin lands"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P123.16"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.20",
+      "title": "validate-manifest rejects every plan the published schema rejects, and never raises",
+      "status": "pending",
+      "description": "(F548 class) `validate-manifest.py` never applies the JSON Schema: `_manifest_crossrefs` types bug values only (`SCHEMA_READ`, `schema_check`), so any verb can write a schema-invalid plan and only CI's ajv step sees it. Add a stdlib validator for the keyword subset `audit-plan.schema.json` uses (new module `manifest/_json_schema.py` with the five things CLAUDE.md lists: a `--selftest` contract whose cases live in tests/, `safe_stdio()` first in `__main__`, a `_deps.LAYERS` placement, a PLUGIN-BUILD-GUIDE tree line and section, the `_output.PATH_PREAMBLE`; and the migrated-file lists test__output's sc11/sc13 pin), apply it to the whole plan in validate-manifest, and fold the bug-only reader into it; measure the per-verb cost first. (F551) `_manifest_crossrefs._index_bugs` (`bug_by_id`) and `_check_bugs` (`bug['taskId'] not in task_ids`) hash the value, so a list/object id or taskId raises TypeError -> 'internal validator error' naming no field; guard with isinstance so the schema finding names the field. `_manifest_vocab._check_ado` refuses `ado.id: 7.0`, which draft 2020-12 admits: decide (admit an integral float, or keep and say so in the finding). (F552) fallback consumers (`set-priority.py`, `derive-phase-gate.py`, `_panel_write`'s validate before `save_in_layout`, `_proposals._revalidate`) call `validate()` with schema=None and write anyway - bind the loaded schema beside `load_validation_schema` in `_manifest_rules` and use it there (or state the split in COMPATIBILITY's broken-install clause); `ecma_pattern` compiles with re.ASCII (narrows \\s) and lets `re.error` escape validate() - catch it as schema-unchecked; a non-object schema or an unresolvable bug item loads as success - treat as unreadable; `_panel_state._cores` docstring says audit-task reads it '(twice)' - delete the count. Regression: parity case running validate-manifest against the starter, the dogfood plan, the examples and planted schema violations (null where a string is required, wrong enum, extra key where additionalProperties is false) - each rejected exactly where ajv rejects; list id / object taskId produce a named finding, never a raise. The finding `$def` gains its keys in findings-record first, so whole-plan validation does not reject the findings `done`/`signoff` write. Faults: F548, F551, F552.",
+      "files": [
+        "plugins/audit/scripts/manifest/_json_schema.py",
+        "plugins/audit/tests/test__json_schema.py",
+        "plugins/audit/scripts/manifest/_manifest_crossrefs.py",
+        "plugins/audit/scripts/manifest/_manifest_rules.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/manifest/validate-manifest.py",
+        "plugins/audit/scripts/manifest/set-priority.py",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/scripts/manifest/_proposals.py",
+        "plugins/audit/scripts/panel/_panel_state.py",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "COMPATIBILITY.md",
+        "plugins/audit/tests/test__manifest_crossrefs.py",
+        "plugins/audit/tests/test__manifest_rules.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/tests/test_validate_manifest.py",
+        "plugins/audit/tests/test_set_priority.py",
+        "plugins/audit/tests/test_derive_phase_gate.py",
+        "plugins/audit/tests/test__panel_write.py",
+        "plugins/audit/tests/test__proposals.py",
+        "plugins/audit/tests/test__panel_state.py",
+        "plugins/audit/tests/test__output.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__json_schema.py: each supported keyword accepts and rejects; an unsupported keyword is reported, never passed",
+          "plugins/audit/tests/test_validate_manifest.py: parity with the schema on the starter, the dogfood plan, examples/acme-store/audit-plan.json and planted violations",
+          "plugins/audit/tests/test__manifest_crossrefs.py: bug with list id and object taskId -> named finding, no raise; re.error in a pattern -> schema-unchecked",
+          "plugins/audit/tests/test_set_priority.py: a schema-invalid write is refused at the fallback site",
+          "plugins/audit/tests/test_derive_phase_gate.py: a schema-invalid write is refused at the fallback site",
+          "plugins/audit/tests/test__panel_write.py: a schema-invalid write is refused at the fallback site",
+          "plugins/audit/tests/test__proposals.py: a schema-invalid write is refused at the fallback site"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [
+        "P123.18",
+        "P123.19"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.21",
+      "title": "Every cross-file plan fact (fileIndex, bugs[], bug-task link) is written whole by a verb",
+      "status": "pending",
+      "description": "Cross-file manifest facts are still written by hand or committed apart on main. (F461) no verb rebuilds `fileIndex` from the shards (audit-task has no `reindex`): a hand-edited shard `files` parts from the index in silence and surfaces only at sign-off; add `audit-task.py reindex` (under the lock, journal row, revalidate) and name it in the crossref finding's remedy. (F528, partly closed by P122) `/audit:bug fix` step 4 is now done by `add --bug`, but step 5 still tells the model to extend `fileIndex` by hand although `add` already derives it - delete that step; `/audit:bug close` step 2 (status, notes) is a hand edit with no verb - add a bug close verb; `commands/sync.md` (pull bugs) still writes a bug with `ado`/`adoParent` 'following /audit:bug add's shape' by hand - give `bug-add` the fields (or an import verb) and make the doc call it. (F549) the reciprocal link's halves live in different files - `task.bugId` in the shard, `bug.taskId` in the index - and commit-task-work commits the shard without the index, so the task commit's recorded manifest fails validation ('bugId ... but that bug's taskId is None'); commit-task-work carries the index when the shard change carries a cross-file link (or the index lands first). (P122-R8) `_bug_for_add` refuses only a closed bug, so `add --bug` over an in_progress bug that already names another live task overwrites its `taskId` and orphans that task's `bugId`: refuse it by name; and the README's /audit:task signature lacks `--bug` (task.md's argument-hint has it). Regression: link a bug through the normal flow and `verify-invariants` reports no breach at either commit; reindex after a hand-widened shard pairs the index; a doc test that no command doc spells a hand edit of bugs[] or fileIndex. Faults: F461, F528, F549, P122-R8.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "plugins/audit/tests/test_commit_manifest_index.py",
+        "plugins/audit/scripts/manifest/_manifest_crossrefs.py",
+        "plugins/audit/tests/test__manifest_crossrefs.py",
+        "plugins/audit/commands/bug.md",
+        "plugins/audit/commands/sync.md",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/reference/tracker-sync.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_commit_task_work.py: a task commit whose shard links a bug records a manifest that validates",
+          "plugins/audit/tests/test_audit_task.py: reindex re-derives fileIndex from shards; bug link/close/import verbs write both halves under the lock with a journal row",
+          "plugins/audit/tests/test_audit_task.py: no commands/*.md tells the model to edit bugs[] or fileIndex by hand",
+          "plugins/audit/tests/test_audit_task.py: add --bug over an in_progress bug whose taskId names a live task is refused by name and writes nothing"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [
+        "P123.20"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.22",
+      "title": "The sign-off's tip-only remedy never states an unread worktree list or an impossible add",
+      "status": "pending",
+      "description": "`audit-task._tip_only_remedy` (with `_branch_holder`) says 'no worktree holds <branch>' when the worktree list could not be read (absence stated without a basis), and names `git worktree add <dir> <branch>` when a prunable worktree holds the branch, which git refuses (exit 128). When the listing carries an error, say the holder is unknown and why; when a prunable worktree holds the branch, name `git worktree prune` before the add. The refusal itself is unchanged. Regression: pinned beside hs5b - unreadable listing -> 'unknown' wording; prunable holder -> prune named first. Faults: F571.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: unreadable worktree listing -> remedy names the holder as unknown; prunable holder -> remedy names `git worktree prune` before add"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P123.21"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.23",
+      "title": "A layout migration's backup lands in an ignored place, never beside the plan",
+      "status": "pending",
+      "description": "`migrate-manifest.py` copies the original to `<manifest>.bak-<UTC>` beside the plan (and retires a shard dir as `<dir>.bak-<UTC>`), and nothing the plugin writes ignores that name, so a committed-looking copy of the plan sits next to it. Park restore points under the plugin's private `.claude/` area with a targeted ignore line, reusing one ignore-line writer (today `panel-server._ensure_panel_files_ignored`, moved to a shared helper both call); update every doc that names the location (layout.md, init.md regenerate/split, README) and the doctor's restore remedy. Regression: an in-place migration leaves no new untracked file beside the manifest, `git check-ignore` matches the backup, and a failed migration still restores from it. Faults: F363.",
+      "files": [
+        "plugins/audit/scripts/manifest/migrate-manifest.py",
+        "plugins/audit/tests/test_migrate_manifest.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/tests/test__manifest_io.py",
+        "plugins/audit/scripts/panel/panel-server.py",
+        "plugins/audit/tests/test_panel_server.py",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/tests/test__doctor_setup.py",
+        "plugins/audit/commands/layout.md",
+        "plugins/audit/commands/init.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_migrate_manifest.py: in-place migration in a git repo -> `git status --porcelain` shows no backup and check-ignore matches it; restore-on-failure still works"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P123.21"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.24",
+      "title": "Scripts find their dir on any path spelling, committed files are LF, Windows edges pinned",
+      "status": "pending",
+      "description": "(F582) `examples/report.sh` and `plugins/audit/hooks/py-launch.sh` find their own dir with `case \"$0\" in */*)`, which a backslash `$0` (no `/`) defeats; `tools/verify.sh`/`tools/redfirst.sh` use `dirname \"$0\"` unchecked. One POSIX-sh idiom everywhere that normalises backslashes first - in py-launch.sh with builtins only (parameter expansion, no `tr`), per CLAUDE.md - and a lint over every tracked `.sh`; probe py-launch.sh with a backslash path. (F585) three writers of committed files write text mode with platform newlines: `_manifest_io.atomic_write_text` (manifest JSON, usage backfill), `gen-demo-manifest.py` (example evidence .jsonl), `gen-demo-usage.py` (example usage .jsonl); write `newline=\"\\n\"` and add an AST lint over scripts/ for a text-mode write open without newline=, with the CRLF-default simulation case from test__journal_io's nl-block. (F546 a,b) test__proc_group pg18 asserts `None stays None` only for `shell_env`; add `shell_invocation('true')[1] is None` / `is d` identity at the call both spawn sites make. test_import_evidence i39/i40 skip with `absent=not linked`, so the 'skipped where the mechanism exists' protection cannot fire; fall back to a directory junction (`_winapi.CreateJunction`) and skip only when both are absent. (F546 c is already fixed: `import-evidence._is_under` accepts the spelled or the resolved path.) Regression: py-launch.sh started as a drive-letter, backslash-separateda drive-letter, backslash-separated $0 resolves its dir; CRLF-default simulation writes LF bytes. Also F615 (CI windows, sl4): a breaker that loses the .lock.break race with PermissionError/EACCES retries the acquire within the deadline instead of refusing the append; a case simulates the Windows denial. Faults: F582, F585, F546, F615.",
+      "files": [
+        "examples/report.sh",
+        "examples/panel.sh",
+        "plugins/audit/hooks/py-launch.sh",
+        "tools/verify.sh",
+        "tools/redfirst.sh",
+        "plugins/audit/tests/test_py_launch.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/scripts/demo/gen-demo-usage.py",
+        "plugins/audit/tests/test__manifest_io.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        "plugins/audit/tests/test_gen_demo_usage.py",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__output.py",
+        "tools/prove-gates.py",
+        "plugins/audit/tests/test__proc_group.py",
+        "plugins/audit/tests/test_import_evidence.py",
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/tests/test__locks.py",
+        "plugins/audit/tests/test_gen_demo_*.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_py_launch.py: a $0 spelled with backslashes and no slash resolves the launcher's dir",
+          "plugins/audit/tests/test__manifest_io.py: under a CRLF-default newline simulation the written bytes contain no \\r\\n",
+          "plugins/audit/tests/test_gen_demo_*.py: under a CRLF-default newline simulation the written bytes contain no \\r\\n",
+          "plugins/audit/tests/test__output.py: the newline lint flags open(p, 'w', encoding=...) with no newline= in scripts/; the .sh lint flags case \"$0\" in */*)",
+          "plugins/audit/tests/test__proc_group.py: shell_invocation identity for env None and a passed dict",
+          "plugins/audit/tests/test_import_evidence.py: i39/i40 run through a junction when symlink is refused"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P123.23"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.25",
+      "title": "The loader probe never writes into the shared scripts/ tree, so no suite races it",
+      "status": "pending",
+      "description": "`test__loader.py` writes `_loader_probe_a/` and `_loader_probe_b/` into the REAL `scripts/` because `_loader.script_index()` has no root seam, while `test__journal_io._scripts_modules()` walks `SCRIPTS_DIR` with os.walk and skips only __pycache__; under the parallel sweep the walk lists a probe file and then fails to open it (seen in P117.4's and P118.14's task gates). Structural fix: give `script_index()` (and the `_output.script_files()` walk it builds on) a root argument, point the probe at a temp copy, and route test__journal_io's walk through `_output.py_files()` (which already excludes `LOADER_PROBE_DIR`). Regression: the loader cases leave scripts/ untouched (listing before == after); the journal walk holds no probe path even when one is planted. Faults: F560.",
+      "files": [
+        "plugins/audit/scripts/_loader.py",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__loader.py",
+        "plugins/audit/tests/test__journal_io.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__loader.py: the probe runs against a temp root and scripts/ is unchanged",
+          "plugins/audit/tests/test__journal_io.py: a planted _loader_probe_x file under the walk root is not listed"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P123.24"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.26",
+      "title": "Suites pass with a space and a non-suffix symlink in TMPDIR and the interpreter path",
+      "status": "pending",
+      "description": "Reproduced on main (HEAD export, TMPDIR and venv interpreter under a path with a space; all green without the space): test_guard_secrets_read 23 reds (tt2, tt3, ww5, ww7a, ww10a, lq7 x4, sm17, we12, xs0, xs1, xs3, xs4, lw2, lw3, lw8, lw10-lw13), test__config tr7, test_journal_writes tf3/tf4, test_stamp_verification sr44. The ones read so far build commands with an unquoted `%s` path (`\"cd %s && ...\"`), which is a different command to the shell - a fixture defect. Triage every red: quote fixture paths with shlex.quote where the test means one word; any red that survives quoting is a product fail-open (a guard reading a quoted spaced path wrongly) and is handed to the guard-readers task with its repro, not fixed here. Then add a sweep leg that runs with TMPDIR containing a space AND reached through a symlink whose target is not a suffix-extension of the link, so the class stays measured, described in every document gate-parity compares. Regression: the leg is green on the fixed tree and red on main. Faults: F543.",
+      "files": [
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/tests/test_journal_writes.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "tools/sweep-selftests.py",
+        "tools/verify.sh",
+        ".github/workflows/ci.yml",
+        "tools/gate-parity.py",
+        "CONTRIBUTING.md",
+        "CLAUDE.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/sweep-selftests.py: --selftest case that the spaced leg builds a TMPDIR with a space via a non-suffix symlink",
+          "plugins/audit/tests/test_guard_secrets_read.py: each fixture path quoted; the same cases green under the spaced leg",
+          "plugins/audit/tests/test__config.py: each fixture path quoted; the same cases green under the spaced leg",
+          "plugins/audit/tests/test_journal_writes.py: each fixture path quoted; the same cases green under the spaced leg",
+          "plugins/audit/tests/test_stamp_verification.py: each fixture path quoted; the same cases green under the spaced leg"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P123.14",
+        "P123.24"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.27",
+      "title": "The Azure example pins a tag holding every script it calls, and a release check holds it",
+      "status": "pending",
+      "description": "`docs/examples/azure-pipelines.yml` fetches and clones the plugin at v0.5.0 (`auditPlugin` URL and `git clone --branch v0.5.0`), while its steps call `governance/run-test-gate.py` and `status/audit-status.py` with options v0.5.0 does not have. Repin to the current release tag and add a check to the release set that every plugin script path an example invokes exists at the tag it pins (git ls-tree), refusing rather than passing when the tag is not available locally; add it to the version-bump follower list so the next bump cannot leave the example behind. Regression: the check fails on the current v0.5.0 pin. Faults: F533.",
+      "files": [
+        "docs/examples/azure-pipelines.yml",
+        "tools/check-example-pins.py",
+        "tools/verify.sh",
+        "tools/gate-parity.py",
+        "CONTRIBUTING.md",
+        "CLAUDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-example-pins.py: a fixture example pinning a tag without the script it calls is refused; the repinned example passes; a missing tag refuses"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P123.26"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.28",
+      "title": "A long unbroken title token wraps instead of widening the report; leg 10 says what it did",
+      "status": "pending",
+      "description": "(F578) BUG-22's fix removed the bare-cell `overflow-wrap:anywhere` rule, so a task/bug title holding an unbroken run longer than the window still scrolls the page sideways (`ui/report-css/tables.css` says so). Have `_report_html.py` insert `<wbr>` break opportunities inside unbroken runs above a length threshold in title text (HTML only; the Markdown twin unchanged), update the stylesheet comment, then plant the token in bare cells again in check-report-interactive's leg 10b. (F580) leg 10b's label claims a long unbroken token in every table though data tables get only the prose - print what was planted per table; leg 10a's `FRAMED_BELOW = 832` restates the 52rem breakpoint - derive it from one shared constant beside RESPONSIVE_LADDER in `tools/ui-checks/responsive.mjs`. Re-render the committed artifacts if their bytes change. Regression: a title with an 80-char unbroken token renders with <wbr> and no horizontal page scroll at the narrowest ladder width. Faults: F578, F580.",
+      "files": [
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/tests/test__report_html.py",
+        "plugins/audit/scripts/ui/report-css/tables.css",
+        "tools/check-report-interactive.mjs",
+        "tools/ui-checks/responsive.mjs",
+        "examples/acme-store/acme-store-audit.html",
+        "docs/demo-large.html",
+        "docs/index.html"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__report_html.py: a title with a long unbroken run carries <wbr> inside it and ordinary words do not",
+          "tools/check-report-interactive.mjs: leg 10b plants the token in bare cells and labels each table with what it got"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P123.15"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.29",
+      "title": "The manifest-diff hook never journals another session's verb write as its own",
+      "status": "pending",
+      "description": "`hooks/journal-writes.py` refreshes its baseline at Pre (P72.3), but its own docstring names the residual: a peer writing during this call's window is read as this call's write and journaled under this session - the shared-checkout rows of F554 (a verb's completion journaled again under the peer's sessionId). In Post, a difference whose resulting stateHash already appears in a journal row (any session's verb row) is already recorded and gets no row; a difference no row accounts for is journaled with an explicit unattributed marker rather than this session's id. Regression: two sessions on one checkout, A writes through a verb while B's tool call is open, B's journal gains no row claiming A's change; B's own edit in the same window is still journaled. Faults: F554.",
+      "files": [
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/tests/test_journal_writes.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_journal_writes.py: verb row present for the post-state hash -> Post writes nothing; unexplained change -> row marked unattributed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P123.26"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.30",
+      "title": "The panel's api() fetch is bounded, so a stalled server reads as no answer, not a hang",
+      "status": "pending",
+      "description": "CI run 37875405209 hung six hours in the screenshot step after 'composition: confirmed'; P121.14 added the stall watch and job time bounds, but `ui/panel/core.js` `api()` still awaits `fetch` with no timeout, the only unbounded wait on that path. Bound it with an AbortSignal timeout and treat a timeout like a rejected fetch (a write resolves to the NO_ANSWER refusal, a read rejects with noAnswer), keeping the server-offline semantics. Regression (vitest): a fetch that never settles resolves a write to the no-answer refusal and rejects a read after the bound; an answer before the bound is unchanged. Faults: F587.",
+      "files": [
+        "plugins/audit/scripts/ui/panel/core.js",
+        "tools/ui-tests/server-offline.test.mjs",
+        "plugins/audit/tests/test__panel_page.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ui-tests/server-offline.test.mjs: a never-settling fetch -> write gets noAnswer refusal, read rejects with noAnswer, both after the bound"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.31",
+      "title": "A mutating gate sweep announces itself, and the sweep refuses to read a tree mid-mutation",
+      "status": "pending",
+      "description": "The dirty-file half is closed (redfirst.sh refuses a dirty file). Still open on main: `tools/prove-gates.py` mutates the tree for minutes with nothing another process can see - `tools/orchestrator-state.py` (what is running/uncommitted/staged) does not report it, and a concurrent `tools/sweep-selftests.py` reads a mid-mutation tree and reports false reds. Have prove-gates hold a marker (under the git dir, with pid and start) for the whole run, orchestrator-state report 'a mutating sweep is live', and sweep-selftests refuse to start (naming the marker, ignoring a dead pid's) while one is live. Regression: with a live marker the sweep refuses; with a stale marker it proceeds and says so. Faults: F441.",
+      "files": [
+        "tools/prove-gates.py",
+        "tools/orchestrator-state.py",
+        "tools/sweep-selftests.py",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/sweep-selftests.py: refuses with a live marker, proceeds past a dead pid's",
+          "tools/orchestrator-state.py: reports the live sweep"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P123.27"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.32",
+      "title": "No prose states a count a command prints, and CLAUDE.md states the under-ten rule",
+      "status": "pending",
+      "description": "Three author-enforced prose-number leftovers, all confirmed on main. (F316) ratio claims the lint deliberately cannot read: `_deps.py` ('Fourteen of the fifteen sites are converted'), `tests/_harness.py` header ('17 of the 18 detail-carrying files'), `test_remind_tdd.py` docstring ('Twelve of the 48 suites'), `test__panel_page.py` ('# 8 of 40 can be coloured.', 'fails at 17 of 353 with this feature switched off', and the label 'a fixed 3 left 10 of the 72, 6 left 5, 8 left 2, 16 left none'), plus the twin comment in `ui/panel/usage-model.js` ('when only 8 of 40 can be coloured'). Repair is the rule's own: delete the number and keep the pointer; the `test__panel_page.py` measurement table is made a value the case computes and prints in its detail rather than reworded. The lint fixtures in test__output.py/test__deps.py that quote these phrases are inputs and stay, and so does the quotation in `_output.py`'s own WHAT IT CANNOT SEE comment, which documents the shape. (F544a) the `_worktrees` LAYERS comment in `_deps.py` says 'FOUR surfaces need the SAME answer' and names four importers while more import it - delete the count, keep the reason (more than one layer needs the same answer). (F562) CLAUDE.md says `_numeral_span()` 'reads both spellings, for every shape it knows' while its docstring says bare number words under ten are off by default - state the exception and point at the docstring's reason. Regression: the prose lints stay green and `grep -nE \"Fourteen of the fifteen|17 of the 18|Twelve of the 48|8 of 40|17 of 353|10 of the 72\"` over non-fixture files is empty. Faults: F316, F544, F562.",
+      "files": [
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/tests/_harness.py",
+        "plugins/audit/tests/test_remind_tdd.py",
+        "plugins/audit/tests/test__panel_page.py",
+        "plugins/audit/scripts/ui/panel/usage-model.js",
+        "CLAUDE.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [
+          "plugins/audit/tests/test__panel_page.py: the over-colouring case prints the per-cap leftover table it measures instead of asserting a sentence that restates it"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P123.27",
+        "P123.30"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.33",
+      "title": "Every layer number written in prose is checked against _deps.LAYERS or not written",
+      "status": "pending",
+      "description": "P122.9 gave `_machine_paths` a layer of its own, so every running-prose mention of another module's layer above it - \"`name` (layer N)\", \"`name` (LN)\" - is now one too low (some were already off by two). Measured on main at 9b9b9dd1 by matching those two shapes against `_deps.LAYERS`: 116 stale mentions in 25 files, most of them in `_deps.py`'s own LAYERS comments; the prep note's 'seven doctor/gate docstrings' was the visible tip. `layer_doc_drift` (lyd1) grades only a module's OPENING 'Layer N' claim about itself and leaves running prose alone on purpose, which is exactly where the rot sits - the F-prose class of a number a table already holds. Invariant: a layer number in prose is checked or not written. Add the check for every mention shape it can read reliably (\"`name` (layer N)\", \"`name` (LN)\", \"this file (LN)\") in docstrings and comments under scripts/ and hooks/, beside `layer_doc_drift` in `_deps.py`, with a prove-gates row (red: plant a wrong number; allow: a correct one). Repair by deleting the number wherever the layer is not the argument (keep the pointer to the module), and correcting it where the sentence's argument is the layer. Re-derive the count with the new check, never from this description. Faults: prep-layer-prose.",
+      "files": [
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/tests/test__deps.py",
+        "tools/prove-gates.py",
+        "plugins/audit/scripts/demo/gen-demo-usage.py",
+        "plugins/audit/scripts/panel/_panel_page.py",
+        "plugins/audit/scripts/panel/_panel_state.py",
+        "plugins/audit/scripts/config/_config_rules.py",
+        "plugins/audit/scripts/config/validate-config.py",
+        "plugins/audit/scripts/manifest/_ado_drift.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/manifest/_priority.py",
+        "plugins/audit/scripts/usage/_usage_core.py",
+        "plugins/audit/scripts/status/_doctor_ado.py",
+        "plugins/audit/scripts/status/_doctor_completions.py",
+        "plugins/audit/scripts/status/_doctor_hygiene.py",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/scripts/governance/audit-journal.py",
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/scripts/report/_report_md.py",
+        "plugins/audit/scripts/report/_report_page.py",
+        "plugins/audit/scripts/report/render-report.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__deps.py: the layer-mention check flags a planted '`_manifest_io` (layer 1)' and is quiet on the correct number; the shipped tree reports nothing"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P123.28",
+        "P123.31",
+        "P123.32"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.34",
+      "title": "The history guard reads git only in command position and quoted << as data",
+      "status": "pending",
+      "description": "Probed on main (`git_invocations`): `echo attempt used git stash` -> [('stash', [])] and `cat <<'EOF' | python3 x.py --technical -` with stash words in the body -> stash push (false denies, F505); `sh -c 'echo \"a<<b\"; git stash drop'` and `sh -c 'echo a<<b; git stash drop'` -> [] (F536: `_config.split_heredocs` treats `<<` inside a single-quoted -c argument as a heredoc and drops the rest - a missed git call). Fix: a git invocation counts only in command position (start, ;, &&, ||, |, newline, or after a command-running prefix found by `_config.program_candidates`); a piped heredoc body is classified by the far side of the pipe (a script reading `-` = data, a shell = commands, unknown = conservative); `split_heredocs` ignores `<<` inside quotes as the shell does. Red-first both directions: `true && git stash push`, `sudo git stash drop`, `xargs git stash drop` stay deny; the two F505 shapes allow; the quoted-<< git call is read. Check `tools/bench-hooks.py --gate` after. Faults: F505, F536. GUARD COMMAND-READING CODE: written by the orchestrator with the user's permission (auto mode off when possible); if the API refuses, record it verbatim and hand the remainder to the human.",
+      "files": [
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test_guard_history_rewrite.py",
+        "plugins/audit/tests/test__config.py",
+        "SECURITY.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_history_rewrite.py: echo/piped-heredoc stash words allowed; command-position stash still refused; sh -c with quoted << reads the later git call",
+          "plugins/audit/tests/test__config.py: split_heredocs leaves a quoted << in place and still lifts a real heredoc"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [
+        "P123.26"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.35",
+      "title": "Shared command readers keep floor candidates and read escapes as the shell does, pinned",
+      "status": "pending",
+      "description": "(F542) `_config.program_candidates` returns `(fallback, fallback)` when an inner wrapper is uncertain, discarding the floor candidates collected from an exact outer wrapper; return them with the fallback. The secrets guard's here-string no-raise lines are covered by no test (b5h12a stays green with them deleted) - add a row that reaches them and prove it red with them removed. (F547) `_config.effective_cwd`'s cd reader, probed on main: `cd a\\\\ b` resolves `a\\ b` (the shell reads an escaped backslash and a word break - return no answer), `cd [x]` resolves literally though SECURITY.md says a glob is unresolvable (add `[` to `UNRESOLVED_MARKS` or document), `cd \\-d` keeps the backslash; state the double-quote reduction limit in the docstring; add test__config unit rows for the escape and for literal Windows backslashes. Also take any product fail-open the spaced-paths triage hands over (a guard reading a quoted spaced path wrongly). Red-first each. Also F614: a shell-write refusal names the rule that refused it (the plan gate), not the hook that hosts the check. Faults: F542, F547, F614. GUARD COMMAND-READING CODE: written by the orchestrator with the user's permission (auto mode off when possible); if the API refuses, record it verbatim and hand the remainder to the human.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "SECURITY.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__config.py: program_candidates keeps floor words with an uncertain inner wrapper; effective_cwd -> None for an escaped backslash before a space and for a bracket glob; Windows backslashes stay literal",
+          "plugins/audit/tests/test_guard_secrets_read.py: a here-string row that goes red when the no-raise lines are removed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P123.34"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.36",
+      "title": "The release guard finds git and gh past assignments, wrappers, global options and sh -c",
+      "status": "pending",
+      "description": "Probed on main (`_publishers`): `GH_REPO=x gh release create v1`, `env GH_REPO=x gh release create v1`, `git --git-dir=.git tag v1`, `git -c user.name=x tag v1`, `sudo git tag v1` and `bash -c 'git tag v3'` all return [] - missed denies; `-C`, subshells, heredoc data, quoted text and the listing forms are already handled (the heredoc/listing/unrelated-repo halves of F524 are closed on main). Find the program past leading assignments and wrappers with `_config.program_candidates`, accept git's global options (`-C`, `-c`, `--git-dir=`, `--work-tree=`, ...) before the verb, and read `sh -c`/`bash -c`/eval arguments with `_config.handed_commands`. Deny half first, every spelling above pinned red-first; then confirm the allow cases (`grep 'git tag' f`, heredoc text, `git tag --sort=-creatordate`) stay allowed. `tools/bench-hooks.py --gate` after. Faults: F524. GUARD COMMAND-READING CODE: written by the orchestrator with the user's permission (auto mode off when possible); if the API refuses, record it verbatim and hand the remainder to the human.",
+      "files": [
+        ".claude/hooks/guard-release.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          ".claude/hooks/guard-release.py: each missed spelling above is refused; the existing allow cases stay allowed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.37",
+      "title": "the plan gate's free-file budget is per task attempt for subagents, and a refusal names who spent it",
+      "status": "pending",
+      "description": "F616: require-plan's one-free-file-per-session budget is shared by every subagent an orchestrator session dispatches, so an early executor spends it for every later one, and the refusal names a file the current executor never edited. Key the budget per task attempt for an edit made under a dispatched task (session id plus the in_progress task the edit is covered toward or the driver state names), keep the per-session budget for the main loop, and have the refusal name the task or agent that spent it and when. The directory-entry half of the report is already fixed by P122's covers() (step 3 runs before the done-owner check). Plan-gate hook code, not shell-command parsing. Faults: F616.",
+      "files": [
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test_require_plan.py",
+        "plugins/audit/tests/test__config.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_require_plan.py: two subagent attempts of one session each get their own free file, and a refusal names the attempt that spent the budget"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P123.14"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.38",
+      "title": "the wave driver's remaining edges are pinned and its docs say what the code does",
+      "status": "pending",
+      "description": "Carried lows from P124's reviews: integration-refused offers retry and spends an attempt where the design offers redo with no attempt spent; F599 behaviours at width 1 (scope-gap preflight, WIDEN_RULE, add --fixes scoping) are unpinned because the w1 fixture has no tests.add; the driver re-gate on regate:null is unpinned (mutation survived); task_binding's not-in_progress branch survives mutation (pin its message); a worktreeSetup that rewrites tracked files surfaces as undeclared-change - say so beside the setting; plugins/audit/README.md's /audit:worktree row still says a second tree is refused (task-add adopts it now); a discarded change's kept tree is named only once - name it in status until removed; commands/task.md's argument-hint lacks --introduces; a phase-review submit refuses a full 40-char head SHA where the plan records 12 - accept any unambiguous prefix. Faults: P124-R5, P124-R6, P124-R7, P124-R8, P124-R9, P124-R10, P124-R11.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/README.md",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/commands/worktree.md",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: an integration refusal on a dirty phase tree offers redo, which recuts the tree and spends no attempt; a width-1 run of a task whose test the runner will not collect stops at scope-gap"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P123.9"
+      ],
       "dependsOn": [],
       "attempts": 0,
       "maxAttempts": 3,
