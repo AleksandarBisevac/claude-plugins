@@ -1991,6 +1991,109 @@ def raw_json_writer_violations(script_dir=None, hooks_dir=None, table=None):
     return sorted(violations)
 
 
+# --- the returns writer, by name only ------------------------------------------
+# A filed return is committed under `<evidence>/returns`, and it is composed by
+# an agent and by the stamp helper, so it can carry any machine's path. The
+# scrub is `_filed_returns.file_once`'s, and the rule below keeps it the only
+# route: a function that BUILDS a return's path and WRITES a file is a second
+# route unless it is the home module.
+RETURNS_WRITER_HOME = "scripts/manifest/_filed_returns.py"
+RETURNS_WRITER = "file_once"
+RETURNS_SCRUBS = ("scrubbed_values", "scrubbed_return_text")
+RETURN_PATH_BUILDERS = ("return_path", "return_rel", "phase_return_rel")
+_FILE_WRITE_ATTRS = ("write_text", "write_bytes", "atomic_write_text",
+                     "atomic_write_json", "raw_atomic_write_json", "dump")
+
+
+def _called_name(node):
+    func = node.func
+    return func.attr if isinstance(func, ast.Attribute) else (
+        func.id if isinstance(func, ast.Name) else None)
+
+
+def _opens_for_writing(node):
+    """Whether a Call is `open(path, "<a mode that writes>")`."""
+    if _called_name(node) != "open":
+        return False
+    modes = [a for a in node.args[1:2]] + [k.value for k in node.keywords
+                                           if k.arg == "mode"]
+    return any(isinstance(m, ast.Constant) and isinstance(m.value, str)
+               and any(c in m.value for c in "wxa+") for m in modes)
+
+
+def _returns_writes_by_function(tree):
+    """`{function: (path-builder line or 0, write line or 0)}` for every
+    function (innermost) that names a return-path builder and/or writes."""
+    found = {}
+
+    def visit(node, where):
+        for child in ast.iter_child_nodes(node):
+            inner = child.name if isinstance(
+                child, (ast.FunctionDef, ast.AsyncFunctionDef)) else where
+            built, wrote = found.get(where, (0, 0))
+            name = (child.attr if isinstance(child, ast.Attribute) else
+                    child.id if isinstance(child, ast.Name) else None)
+            if name in RETURN_PATH_BUILDERS and not built:
+                built = child.lineno
+            if isinstance(child, ast.Call) and not wrote and (
+                    _opens_for_writing(child)
+                    or _called_name(child) in _FILE_WRITE_ATTRS):
+                wrote = child.lineno
+            if built or wrote:
+                found[where] = (built, wrote)
+            visit(child, inner)
+
+    visit(tree, "<module>")
+    return found
+
+
+def returns_writer_violations(script_dir=None):
+    """(file, what) for every function that builds a filed return's path and
+    writes a file itself, and for a home writer that no longer scrubs.
+
+    THE INVARIANT, NOT A LIST OF CALLERS. Plan shards were scrubbed one saver at
+    a time and the returns - committed beside them - were not, which is the same
+    defect a third time. The scrub is moved into `file_once`; this keeps a new
+    caller from writing a return some other way.
+
+    A tree without the home module is BLIND, not clean. WHAT IT CANNOT SEE: a
+    path assembled without a builder (`os.path.join(evidence, "returns", ...)`);
+    those spell the directory name, which `_filed_returns` owns."""
+    script_dir = script_dir or SCRIPTS_DIR
+    violations = []
+    home_seen = False
+    for rel, path in lint_py_files(script_dir):
+        named = "scripts/%s" % rel
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), filename=rel)
+        except (OSError, SyntaxError):
+            continue
+        if named == RETURNS_WRITER_HOME:
+            home_seen = True
+            scrubbing = any(
+                isinstance(fn, ast.FunctionDef) and fn.name == RETURNS_WRITER
+                and any(isinstance(n, ast.Name) and n.id in RETURNS_SCRUBS
+                        for n in ast.walk(fn))
+                for fn in ast.walk(tree))
+            if not scrubbing:
+                violations.append((named, "%s no longer calls the scrub (%s) - "
+                                          "a committed return would carry machine "
+                                          "paths" % (RETURNS_WRITER,
+                                                     "/".join(RETURNS_SCRUBS))))
+            continue
+        for where, (built, wrote) in sorted(_returns_writes_by_function(tree).items()):
+            if built and wrote:
+                violations.append((named, "line %d (%s): builds a filed return's "
+                                          "path and writes a file itself - file "
+                                          "it through %s, which scrubs machine "
+                                          "paths" % (wrote, where, RETURNS_WRITER)))
+    if not home_seen:
+        violations.append(("<tree>", "%s is missing - this rule is blind, not "
+                                     "clean" % (RETURNS_WRITER_HOME,)))
+    return sorted(violations)
+
+
 # --- selftest-flag check ------------------------------------------------------
 _SELFTEST_ARGV = ("a stub reads `--selftest` off sys.argv, which matches the flag "
                   "inside a forwarded test command too; ask "

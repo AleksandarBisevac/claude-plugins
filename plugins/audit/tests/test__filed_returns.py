@@ -146,6 +146,23 @@ def _cases(check):
           claims == "claims:\n1 n/a" and problem is None
           and M.claims_from_return(root, later) == (None, None)
           and M.claims_from_return(root, {"id": "P1.1"}) == (None, None))
+    dirty = M.return_path(root, {"id": "P1.3", "startedAt": _START}, "executor")
+    machine = "/Users/someone/work/proj/docs/audit/audit-plan.json"
+    M.file_once(dirty, json.dumps(_executor(
+        stamp='audit-stamp:{"manifest":"%s"}' % (machine,))) + "\n")
+    with open(dirty, "r", encoding="utf-8", newline="") as fh:
+        wrote = fh.read()
+    check("rp11 a return carrying a machine path is filed with it scrubbed, "
+          "and still parses as the same return otherwise: %r" % (wrote,),
+          "someone" not in wrote and "/Users/" not in wrote
+          and json.loads(wrote).get("gates") == _executor().get("gates"))
+    clean = M.return_path(root, {"id": "P1.4", "startedAt": _START}, "executor")
+    plain = json.dumps(_executor(
+        stamp='audit-stamp:{"manifest":"docs/audit/audit-plan.json"}')) + "\n"
+    M.file_once(clean, plain)
+    with open(clean, "r", encoding="utf-8", newline="") as fh:
+        check("rp12 THE ALLOW TWIN: a return with only a repo-relative path is "
+              "filed byte for byte as given", fh.read() == plain)
 
 
 _SHA = "0123456789abcdef0123456789abcdef01234567"

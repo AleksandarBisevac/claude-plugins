@@ -827,6 +827,14 @@ def _stamp_head(line):
         return None
 
 
+def _stamp_field(line, key):
+    """One field of a stamp line's JSON, or None."""
+    try:
+        return json.loads(str(line).split(":", 1)[1]).get(key)
+    except (IndexError, ValueError, AttributeError):
+        return None
+
+
 def _read(path):
     with open(path, "rb") as fh:
         return fh.read()
@@ -2689,6 +2697,22 @@ def _wave_cases(check):
     filed = [_file_wave_executor(root, mpath, t) for t in sent]
     check("wv4 each executor's submit from the project files its return: %r"
           % (filed,), [c for c, _t in filed] == [0, 0])
+    texts = dict((t, _read(_filed_path(mpath, t)).decode("utf-8")
+                  if _filed_path(mpath, t) and os.path.exists(_filed_path(mpath, t))
+                  else "") for t in sent)
+    labels = dict((t, _stamp_field(json.loads(x or "{}").get("stamp"), "manifest"))
+                  for t, x in texts.items())
+    spelled = [p for t in sent for p in (root, _tree_of(root, t),
+                                         os.path.realpath(root),
+                                         os.path.realpath(_tree_of(root, t) or "-"))
+               if p and any(p in x for x in texts.values())]
+    check("wv4a a wave executor's filed return names its stamp's manifest by a "
+          "project-relative label and carries no absolute machine path - neither "
+          "the project's, nor the task tree's - anywhere in it: %r %r"
+          % (labels, spelled),
+          all(texts.values())
+          and all(l and not os.path.isabs(l) for l in labels.values())
+          and not spelled)
     code, second = _next_wave(M, root, mpath)
     rows = dict((t, _rows_of(root, mpath, t)) for t in ("P1.1", "P1.2"))
     green = dict((t, [r.get("status") for r in rs]) for t, rs in rows.items())

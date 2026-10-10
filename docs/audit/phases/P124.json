@@ -22,7 +22,76 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P124-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:advance (reviewer dispatch precedes integrate_member); plugins/audit/scripts/status/audit-lookup.py:_diff_lines and compose_reviewer_brief",
+        "issue": "In a wave a per-task reviewer (review.perTask always, or signals when a signal fires) is dispatched after the gate and BEFORE the task's bytes are integrated. Its brief's diff is `git diff HEAD -- <files>` read from the phase tree, where the task's change does not exist yet (it lives in the task tree until integrate-task runs), and the reviewer brief carries no tree:/base: lines (wave_tree_lines feeds the executor brief only). The reviewer is shown an empty diff and answers intent/inherited-tests about nothing. Default `phase` mode is unaffected. No case runs a wave with per_task other than phase (_wave_repo takes per_task but every wave case uses the default).",
+        "resolution": "Either point the reviewer brief at the task's tree (tree:, base:, and a diff read with `git -C <tree> diff <base>` plus untracked files) and say so in audit-reviewer.md, or integrate before the reviewer is due. Add a wave case with per_task=always asserting the reviewer brief's diff is non-empty.",
+        "fixTask": "P124.15-k2x"
+      },
+      {
+        "id": "P124-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:take_stamp (tree branch)",
+        "issue": "take_stamp passes `--project <task tree> --manifest <phase tree manifest>`. stamp-verification's recorder_exclusion labels a manifest outside the project root by its ABSOLUTE path, so every wave executor stamp stores `\"manifest\": \"<absolute machine path>/docs/audit/audit-plan.json\"` (reproduced against a scratch repo plus linked worktree: the stamp and the content note both carry the absolute path, and the note reports every recorder path as 'could not be left out'). file-return writes that text verbatim into the committed executor return with no scrub, so a wave run commits a machine path into evidence: the class P122 removed, and what tools/check-committed-pii.py exists to refuse. Serial runs are unaffected (manifest inside the root, label is relative). wv4 only asserts the return was filed.",
+        "resolution": "Give take a way to store the project-relative label of the phase tree's manifest when the measured tree is a task tree (or compute the label against the phase tree and pass the tree only as the digest root), and add a wave case asserting the filed stamp's manifest field is relative and the return holds no absolute path.",
+        "fixTask": "P124.14-k2x"
+      },
+      {
+        "id": "P124-R3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:add_tree, step_member, close_wave",
+        "issue": "Tree creation is not resumable, which the design promised ('worktrees are found again through their markers'). (a) task-add writes the marker, then runs executor.worktreeSetup (an install, minutes) before returning; a session death or Ctrl-C in that window leaves a marked tree that the driver state does not name. The rerun calls task-add, which refuses 'task X already has a tree', so the run stops and only a manual task-remove recovers it. (b) On a failed setup add_tree records the tree in wave.trees and stops; the next `next` finds the tree recorded and dispatches the executor straight into the half-provisioned tree, never re-running setup, so the 'could not run, no attempt spent' promise turns into a red gate and a spent attempt. (c) close_wave drops wave.trees while a blocked member's tree is kept on disk; unblocking that task into a later wave hits the same 'already has a tree' refusal. All three are loud, none loses bytes. The wc cases crash only after integration.",
+        "resolution": "In add_tree treat the 'already has a tree' refusal for a tree whose marker base equals the wave base as adoption (record it, and re-run setup unless a setup-ok mark is stored), keep an unresolved setup failure in the member's state so the next step retries it, and carry kept trees of blocked members across close_wave. Add a case that kills the driver between task-add and the state write, and one for a failed setup followed by a second next.",
+        "fixTask": "P124.15-k2x"
+      },
+      {
+        "id": "P124-R4",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:tree_holds_only_integrated, retire_member; plugins/audit/tests/test_drive_phase.py (wu1/wu2)",
+        "issue": "The only thing that keeps a discarded undeclared change from being destroyed is tree_holds_only_integrated deciding the tree still holds bytes the phase tree lacks, because retire_member then removes clean trees with `task-remove --force` (which also deletes ignored files). Mutation on a scratch copy: making the comparison never report a difference (`if sides[0] != sides[1]` to `if False`) leaves wv, wr, wc, w1, wz and pf stages all passing. No case answers `discard` and checks the tree survives and is named, so the guard can be deleted without a test failing. By reading, the guard is correct (a path present in the tree and absent from the phase tree compares unequal).",
+        "resolution": "Add a wave case: P1.2 writes an undeclared notes.txt, answer discard, close; assert the task closes, notes.txt is absent from the phase tree, the tree directory still exists with notes.txt in it, and the did-line says 'kept'.",
+        "fixTask": "P124.15-k2x"
+      },
+      {
+        "id": "P124-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:apply_answer (integration-refused retry), DECISIONS",
+        "issue": "Design D2 offers `redo|block` for a conflict and says redo does not spend an attempt; the code offers `retry|block` for every integration refusal kind (dirty, non-mergeable, conflict), recuts the tree with --force and spends an attempt. For a dirty phase tree the work is fine and only the tree needs cleaning, yet the only non-block answer discards a green executor run.",
+        "resolution": "Offer a re-integrate answer for `dirty`, and make the conflict redo not count against maxAttempts, or record the deviation."
+      },
+      {
+        "id": "P124-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:drive_phase / drive_task (scope_gap), audit-lookup.py WIDEN_RULE, drive-phase.py add_fix_tasks",
+        "issue": "'Width 1 reproduces 3.2.0 exactly' holds for the wave machinery (w1 pins did-lines and journal actions from a real 3.2.0 drive), but the F599 pieces apply at width 1 too: the scope-gap preflight (and its could-not-tell did-line, and runner list processes run at task start), the WIDEN_RULE line in the executor brief when tests.add is set, and add --fixes scoping. The w1 fixture declares no tests.add, so none of that is pinned either way. Intended by F599, but the desired outcome's sentence reads wider than the behaviour.",
+        "resolution": "Reword the outcome sentence to say width 1 changes nothing about the wave machinery, or add a tests.add fixture to w1 so the width-1 difference is pinned on purpose."
+      },
+      {
+        "id": "P124-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:integrate_member (regate None)",
+        "issue": "Mutating `held.get(\"regate\") is not False` to `is True` (null no longer re-gates) and mutating the non-widen regate to False both leave every wave case green; only wu2's widen path pins the re-gate. By selection, declared overlaps cannot share a wave, so the reachable inputs are widen, a lost state file (regate null) and a phase-tree change since the base.",
+        "resolution": "Add a case where the integration state file is deleted before the rerun and assert the re-gate runs."
+      },
+      {
+        "id": "P124-R8",
+        "severity": "low",
+        "file": "plugins/audit/hooks/_config.py:task_binding (status check)",
+        "issue": "Removing the `declared[0][\"status\"] != \"in_progress\"` refusal leaves test__config and test_require_plan green. The edit is still refused (the task contributes no files), so only the message and the fail-loud wording are lost.",
+        "resolution": "One tb case with the task done in the phase tree asserting the error names the status."
+      },
+      {
+        "id": "P124-R9",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/integrate-task.py:task_changes",
+        "issue": "A worktreeSetup that rewrites a tracked file (a lockfile touched by an install) surfaces at integration as an undeclared-change decision for every task in the wave, and an ignored output file is neither integrated nor reported before task-remove --force. Both are loud or ignored by definition, but neither is mentioned beside executor.worktreeSetup.",
+        "resolution": "Say in the worktreeSetup README row that setup must not modify tracked files."
+      }
+    ],
+    "outcome": "[findings: 9 - 0 high, 4 med, 5 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -886,7 +955,7 @@
     {
       "id": "P124.13-k2x",
       "title": "the panel's Settings edits executor.waveWidth as a number or auto, and saves a number as a number",
-      "status": "in_progress",
+      "status": "done",
       "description": "P124.7 added executor.waveWidth (an integer >= 1 or \"auto\") with a Settings control in _panel_settings.py, but settings.js has no number-or-auto field type, so the control is a plain text box: \"auto\" saves, a typed number saves as a string, and the config validator refuses it. Add the field type in the panel script (read the refactoring-the-assembled-ui and writing-javascript skills first; the panel script is ordered parts concatenated into one inline script), with the substring pins in test__panel_ui.py, and drive the panel in a browser to confirm the save (the orchestrator runs the browser gate). executor.worktreeSetup and worktreeRoot are free text and need nothing new.",
       "files": [
         "plugins/audit/scripts/ui/panel/settings.js",
@@ -950,20 +1019,145 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "79f02001d457",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "settings.js scalarField: the intOrAuto refusal span is no longer spliced into the el('div',{class:'f'},klabel(...),inp) call; the wrapper is built with exactly the original expression (klabel with id handed to the label, then inp) and the refusal appended afterwards via box.append. No hand-built label. test__panel_page 490/490 (kl1 and fl2 green, exemption list unchanged because it still truthfully describes the page), test__panel_ui 89/89, test__panel_settings 58/58, vitest int-or-auto 10/10, ruff clean. test__refs 332/334: only sc1/sc2 fail, because panel source changed (digest cd836e88 -> f9dfa18d) so the committed panel screenshots are stale; the orchestrator must re-run node tools/capture-screenshots.mjs. Browser gates not run.",
+        "descriptive": "The waveWidth number-or-auto control now passes the panel page label checks; panel source changed again, screenshots need re-capture."
       },
       "startedAt": "2026-10-10T06:17:17Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T06:30:12Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__panel_ui.py: waveWidth intOrAuto cases (from attempt 1)",
+        "tools/ui-tests/int-or-auto.test.mjs"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T06:30:11Z.43680e",
         "status": "passed",
         "at": "2026-10-10T06:30:11Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "79f02001d457",
+        "at": "2026-10-10T06:30:12Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T06:17:57Z",
+        "basis": "`python3 plugins/audit/tests/test__panel_ui.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 89 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code, its declared jest or vitest test files new at HEAD (tools/ui-tests/int-or-auto.test.mjs) left absent), each passing with the working tree's implementation - the waveWidth control is declared with the number-or-auto kind, not free text: [{'path': 'executor.waveWidth', 'label': 'Tasks run at once', 'kind': 'text', 'placeholder': '1, or auto'}] (house FAIL) and 2 more: SELFTEST FAILED: 86/89 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
+    },
+    {
+      "id": "P124.14-k2x",
+      "title": "committed executor and reviewer returns are scrubbed at their writer, and a wave stamp labels its manifest relative",
+      "status": "in_progress",
+      "description": "Finding P124-R2 (med), the third recurrence of the machine-path class (F538, F604, P122-R1): take_stamp passes --project <task tree> --manifest <phase tree manifest>, stamp-verification labels a manifest outside the project root by its absolute path, and file-return writes the stamp verbatim into the committed return under docs/audit/evidence/returns, which no scrub covers. Two layers: (1) the stamp names the manifest relative to the phase tree's checkout (or by its repo-relative path), never absolute; (2) the invariant - every committed file under docs/audit (returns included) is written through the scrubbing writer; extend _output's raw_json_writer_violations lint (or add one) so a write of a returns file that bypasses it is a finding, with a red-first allow case. Find where returns are written (file-return in audit-task / _filed_returns) and route it.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__output.py",
+        "tools/prove-gates.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a wave executor's filed return carries a project-relative manifest label in its stamp and no absolute machine path anywhere"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-10T06:43:17Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "fixes": [
+        "P124-R2"
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T07:12:00Z.5c95d2",
+        "status": "passed",
+        "at": "2026-10-10T07:12:00Z"
+      }
+    },
+    {
+      "id": "P124.15-k2x",
+      "title": "a wave survives a crash during tree setup, a blocked member keeps its tree into a later wave, its reviewer reads its own diff, and a discarded change keeps its tree",
+      "status": "pending",
+      "description": "Findings P124-R1, R3, R4 (med), all in the wave driver. R1: with review.perTask always/signals, a member's reviewer is dispatched before integrate_member, and its brief reads git diff HEAD from the phase tree where the task's bytes are not yet - pass the task tree and base into the reviewer brief (wave_tree_lines feeds only the executor today), or integrate before the reviewer is due; add a wave case with per_task always. R3: tree creation is not resumable as the design promised - add_tree must find an existing tree through its marker (read_provenance with expect_task) instead of task-add refusing \"already has a tree\"; a tree whose setup failed or never finished is re-provisioned (setup re-run) before any dispatch, spending no attempt; close_wave must not drop a blocked member's tree so a later wave adopts it. R4: tree_holds_only_integrated guards a discarded undeclared change from task-remove --force, but no case exercises it (mutating it to never differ left every stage green) - add the discard-then-close case asserting the tree survives and is named. Blocked by the R2 task only because both edit drive-phase.py.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/scripts/git/manage-worktrees.py",
+        "plugins/audit/tests/test_manage_worktrees.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a crash after task-add's marker but before setup finishes resumes by finding the tree through its marker and re-running setup without spending an attempt; a blocked member's tree is adopted by a later wave; a per-task reviewer brief in a wave names the task tree and base; answering discard keeps the tree and names it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "fixes": [
+        "P124-R1",
+        "P124-R3",
+        "P124-R4"
+      ]
     }
   ],
   "request": "F600 + F599 (owner-mandated, testbed): tasks inside a phase run concurrently in their own worktrees, gated there and integrated serially; task scopes carry their unavoidable companions. One phase per the user (fewer review rounds).",

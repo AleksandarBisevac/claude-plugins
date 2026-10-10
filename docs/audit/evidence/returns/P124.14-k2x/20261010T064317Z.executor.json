@@ -1,0 +1,30 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_drive_phase.py --selftest": "pass",
+    "test__filed_returns.py --selftest": "pass",
+    "test_stamp_verification.py --selftest": "pass",
+    "test__output.py --selftest": "pass",
+    "test__deps.py --selftest": "pass",
+    "tools/gate-parity.py": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "tools/sweep-selftests.py": "fail",
+    "tools/prove-gates.py --list": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T07:03:33Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 167 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - wv4a (house FAIL): SELFTEST FAILED: 166/167 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "Layer 1: stamp-verification.recorder_exclusion labels a manifest outside the project by its place in its own checkout (_own_checkout_rel), and reads it back as the project's copy on both sides (take and compare), so the stamp carries no absolute path. Layer 2 (invariant): _filed_returns.file_once now scrubs the JSON through _machine_paths.scrubbed_values (scrubbed_return_text; clean text is written byte for byte), so every filed return, task or phase, executor or reviewer, is scrubbed at its one writer. New lint _output.returns_writer_violations: a function that builds a return path (return_path/return_rel/phase_return_rel) and writes a file itself is a finding; the home writer must still call the scrub; a tree without the home is BLIND. Tests: wv4a in test_drive_phase (red before: stamp manifest was the absolute phase-tree path and the tree path appeared in the filed return), rp11/rp12 (scrub + allow twin) in test__filed_returns, sr210/sr211 in test_stamp_verification, rw1-rw5 in test__output. PLUGIN-BUILD-GUIDE.md module map fence regenerated for the new _filed_returns -> _machine_paths edge. Full sweep: 324/326 files ok; the two red are tools/prove-gates.py (c1, a4: returns_writer_violations has no row) and test__deps g1 (fixed afterwards by the guide fence, test__deps now 307/307). NOT DONE, REFUSED BY THE PLAN GATE: tools/prove-gates.py is outside this task's files and the gate refused the edit (P18.6 etc. done). The orchestrator must add two rows after the raw_json_writer_violations rows: red ('returns_writer_violations', S+'_output.py','replace','def returns_writer_violations(script_dir=None):','def returns_writer_violations(script_dir=None):\\n    return []',OUT,'rw1') and allow ('returns_writer_violations',S+'_output.py','replace','            if built and wrote:','            if built or wrote:',OUT,'rw2'). Also: already-committed returns under docs/audit/evidence/returns (P122.*, P124.4 ...) still carry machine paths from before this fix; not touched (outside files).",
+    "descriptive": "A committed return is scrubbed of machine paths at its one writer, a wave stamp names its manifest relative, and a lint keeps a second route from reopening the class."
+  },
+  "testsAdded": [
+    "wv4a (test_drive_phase)",
+    "rp11, rp12 (test__filed_returns)",
+    "sr210, sr211 (test_stamp_verification)",
+    "rw1-rw5 (test__output)"
+  ],
+  "claims": "claims:\n1 comment/doc: docstrings on file_once, scrubbed_return_text, returns_writer_violations and recorder_exclusion state what the code does; verified by the cases rp11/rp12, rw1-rw5, sr210/sr211.\n2 check can fail: wv4a seen red before the fix (manifest label absolute, tree path in the return), green after; rw1-rw3 use fixtures that go red on each half.\n3 class: invariant moved into the single writer plus a lint, not another instance.\n4 prose-in-mechanism: the rule is enforced by returns_writer_violations (rw5 pins the real tree).\n5 measured once: n/a.\n6 guard reads operation: the lint reads path-builder references and write calls in the AST, not a spelling.\n7 numbers: none written into prose.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:64af6d61efdd4b2668ae85ff543297dca8d3535ba70598fa0abcc4a765c01464\",\"dirtyDigest\":\"sha256:7b21061de143f22a25aa1ad92c1782c1caa49c1e919c9a0d6f01b7725debc56f\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"edede28e0d7f661b\",\"plugins/audit/scripts/_output.py\":\"a3c5f84b2a4864e9\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"ad6e7a1b968b4c69\",\"plugins/audit/scripts/manifest/_filed_returns.py\":\"90c0b3b192d8504f\",\"plugins/audit/tests/test__filed_returns.py\":\"5efdb334f8d5faa0\",\"plugins/audit/tests/test__output.py\":\"1dfd82fa80ea1149\",\"plugins/audit/tests/test_drive_phase.py\":\"c362a691ca688f75\",\"plugins/audit/tests/test_stamp_verification.py\":\"8094114172bc3063\"},\"head\":\"79f02001\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/_output.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/scripts/manifest/_filed_returns.py\",\"plugins/audit/tests/test__filed_returns.py\",\"plugins/audit/tests/test__output.py\",\"plugins/audit/tests/test_drive_phase.py\",\"plugins/audit/tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:4d5986c61c07c830d82e6355defde1ddb7dbbd18e978fba89729efba0a386d73\",\"v\":2}"
+}

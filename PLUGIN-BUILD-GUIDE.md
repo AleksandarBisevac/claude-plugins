@@ -306,7 +306,7 @@ L2:
   _commit_trail -> _output
   _demo_cast -> _output
   _deps -> _output
-  _filed_returns -> _output
+  _filed_returns -> _machine_paths, _output
   _fmt -> _output
   _id_refs -> _output
   _journal_io -> _machine_paths, _output

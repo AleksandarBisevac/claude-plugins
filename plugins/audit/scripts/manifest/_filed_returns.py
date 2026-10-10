@@ -89,6 +89,8 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _machine_paths  # noqa: E402  (what a committed file may not say, and its redaction)
+
 
 # --- the vocabulary ---------------------------------------------------------------
 RETURN_ROLES = ("executor", "reviewer")
@@ -202,10 +204,43 @@ def return_problems(role, body):
 
 
 # --- the write and the read -------------------------------------------------------
+def _checkout_above(path):
+    """The directory above `path` holding a `.git`, else None - the root the
+    scrub spells in-repo paths against."""
+    here = os.path.dirname(os.path.abspath(path))
+    while True:
+        if os.path.exists(os.path.join(here, ".git")):
+            return here
+        up = os.path.dirname(here)
+        if up == here:
+            return None
+        here = up
+
+
+def scrubbed_return_text(path, text):
+    """`text` as a committed return may say it: a JSON document has every string
+    passed through `_machine_paths.scrubbed_values`, and one with no machine
+    path comes back byte for byte. Text that does not parse is returned as it is
+    - the callers judge the shape before they write."""
+    try:
+        body = json.loads(text)
+    except ValueError:
+        return text
+    clean = _machine_paths.scrubbed_values(_checkout_above(path), body)
+    return text if clean == body else json.dumps(clean, indent=2) + "\n"
+
+
 def file_once(path, text):
-    """Write `text` to `path` verbatim, creating it; raises `FileExistsError`
-    when a return is already filed there, which leaves that one untouched."""
+    """Write `text` to `path` scrubbed of machine paths, creating it; raises
+    `FileExistsError` when a return is already filed there, which leaves that
+    one untouched.
+
+    THE ONE WRITER OF A COMMITTED RETURN, and the scrub is its own so no caller
+    has to remember it: a stamp taken in a task's worktree, or a claim quoting a
+    path, lands under `docs/audit/evidence/returns` like any other committed
+    file. `_output.returns_writer_violations()` refuses a second route."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    text = scrubbed_return_text(path, text)
     with open(path, "x", encoding="utf-8", newline="") as fh:
         fh.write(text)
 

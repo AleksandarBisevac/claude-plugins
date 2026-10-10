@@ -3278,6 +3278,25 @@ def _jest_cases(check):
           "terminal escape byte in it, even though the run's own output carried "
           "nothing but coloured lines: %r" % (basis_c,),
           "Tests:       1 failed, 1 total" in basis_c and "\x1b" not in basis_c)
+    phase_tree = _harness.fixture_root("stamp-label-phase-")
+    task_tree = _harness.fixture_root("stamp-label-task-")
+    inner = os.path.join(phase_tree, "docs", "audit", "audit-plan.json")
+    os.makedirs(os.path.join(phase_tree, ".git"))
+    os.makedirs(os.path.dirname(inner))
+    _excl, label_out, _note = M.recorder_exclusion(task_tree, inner)
+    _excl2, label_in, _note2 = M.recorder_exclusion(
+        phase_tree, inner)
+    check("sr210 a manifest outside the project is labelled by its place in its "
+          "own checkout, never absolute, and the label reads back inside the "
+          "project: %r %r" % (label_out, label_in),
+          label_out == "docs/audit/audit-plan.json"
+          and not os.path.isabs(label_out)
+          and M.stored_manifest(task_tree, label_out)
+          == os.path.join(os.path.abspath(task_tree), "docs", "audit",
+                          "audit-plan.json"))
+    check("sr211 THE ALLOW TWIN: a manifest inside the project keeps its "
+          "project-relative label: %r" % (label_in,),
+          label_in == "docs/audit/audit-plan.json")
 
 
 # A jest test file as a task adds it: a comment and strings holding brackets and

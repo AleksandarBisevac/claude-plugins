@@ -467,6 +467,14 @@ TABLE = (
   "def raw_json_writer_violations(script_dir=None, hooks_dir=None, table=None):\n"
   "    return []",
   OUT, "rj1"),
+ # The returns-writer rule, crippled. It is what keeps a filed return - a
+ # committed file under docs/audit - from being written past the scrub, and a
+ # version reporting nothing reads exactly like a tree whose returns are clean.
+ ("returns_writer_violations", S + "_output.py", "replace",
+  "def returns_writer_violations(script_dir=None):",
+  "def returns_writer_violations(script_dir=None):\n"
+  "    return []",
+  OUT, "rw1"),
  # The one-tree rule, crippled. It is what keeps a hook from reading the main
  # checkout's plan for work in a linked worktree, and a version reporting
  # nothing reads exactly like hooks that all ask `_config.tree_for`.
@@ -1418,6 +1426,12 @@ ALLOW = (
  ("raw_json_writer_violations", S + "_output.py", "replace",
   "                if (named, where) not in allowed:",
   "                if True:", OUT, "rj2"),
+ # The returns-writer rule, widened: a function that only builds a return path
+ # without writing one is not a bypass, and convicting it would push readers of
+ # the path into the writer.
+ ("returns_writer_violations", S + "_output.py", "replace",
+  "            if built and wrote:",
+  "            if built or wrote:", OUT, "rw2"),
  # The one-tree rule, widened to every `repo_root`. The config and the
  # session's own state live with the project on purpose, so a hook resolving
  # the project for those alone is honest code this would convict.

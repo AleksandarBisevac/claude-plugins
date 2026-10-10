@@ -402,15 +402,21 @@ def recorder_exclusion(project, manifest):
     a tree. Left in, the first journal row or manifest write after a stamp would
     move its content field and every stamp would go stale on the orchestrator's
     own bookkeeping. `manifest` is an absolute path or None; `label` is it
-    project-relative where it sits inside the project, so a stamp compared from
-    another working directory finds it (`stored_manifest`). `note` is None unless
+    project-relative where it sits inside the project, else relative to the
+    checkout holding it, so a stamp compared from another working directory
+    finds it (`stored_manifest`) and none carries an absolute path. A manifest
+    outside the project is then READ AS the project's copy at that relative
+    path, on both sides. `note` is None unless
     `recorded_paths` reported a write it could not exclude, which is said rather
     than absorbed."""
     root = os.path.abspath(project)
     path, label = manifest or None, None
     if path:
         rel = _output.posix_rel(os.path.realpath(path), os.path.realpath(root))
-        label = path if rel == ".." or rel.startswith("../") else rel
+        if rel == ".." or rel.startswith("../"):
+            rel = _own_checkout_rel(path)
+        label = rel if rel is not None else path
+        path = stored_manifest(root, label)
     excluded, dropped = _evidence_io.recorded_paths(root, path)
     note = None
     if dropped:
@@ -418,6 +424,21 @@ def recorder_exclusion(project, manifest):
                 "content field: %s"
                 % (len(dropped), _output.some_of([d for d, _why in dropped])))
     return excluded, label, note
+
+
+def _own_checkout_rel(path):
+    """`path` relative to the checkout holding it, or None when no `.git` sits
+    above it. A manifest outside the project - a wave task's tree, the plan in
+    the phase tree - is named by where it sits in ITS repository, so the stamp
+    (committed in a filed return) never carries the machine's absolute path."""
+    here = os.path.dirname(os.path.abspath(path))
+    while True:
+        if os.path.exists(os.path.join(here, ".git")):
+            return _output.posix_rel(os.path.abspath(path), here)
+        up = os.path.dirname(here)
+        if up == here:
+            return None
+        here = up
 
 
 def stored_manifest(project, label):

@@ -1,0 +1,277 @@
+{
+  "findings": [
+    {
+      "id": 1,
+      "severity": "med",
+      "file": "plugins/audit/scripts/governance/drive-phase.py:advance (reviewer dispatch precedes integrate_member); plugins/audit/scripts/status/audit-lookup.py:_diff_lines and compose_reviewer_brief",
+      "issue": "In a wave a per-task reviewer (review.perTask always, or signals when a signal fires) is dispatched after the gate and BEFORE the task's bytes are integrated. Its brief's diff is `git diff HEAD -- <files>` read from the phase tree, where the task's change does not exist yet (it lives in the task tree until integrate-task runs), and the reviewer brief carries no tree:/base: lines (wave_tree_lines feeds the executor brief only). The reviewer is shown an empty diff and answers intent/inherited-tests about nothing. Default `phase` mode is unaffected. No case runs a wave with per_task other than phase (_wave_repo takes per_task but every wave case uses the default).",
+      "resolution": "Either point the reviewer brief at the task's tree (tree:, base:, and a diff read with `git -C <tree> diff <base>` plus untracked files) and say so in audit-reviewer.md, or integrate before the reviewer is due. Add a wave case with per_task=always asserting the reviewer brief's diff is non-empty."
+    },
+    {
+      "id": 2,
+      "severity": "med",
+      "file": "plugins/audit/scripts/governance/drive-phase.py:take_stamp (tree branch)",
+      "issue": "take_stamp passes `--project <task tree> --manifest <phase tree manifest>`. stamp-verification's recorder_exclusion labels a manifest outside the project root by its ABSOLUTE path, so every wave executor stamp stores `\"manifest\": \"<absolute machine path>/docs/audit/audit-plan.json\"` (reproduced against a scratch repo plus linked worktree: the stamp and the content note both carry the absolute path, and the note reports every recorder path as 'could not be left out'). file-return writes that text verbatim into the committed executor return with no scrub, so a wave run commits a machine path into evidence: the class P122 removed, and what tools/check-committed-pii.py exists to refuse. Serial runs are unaffected (manifest inside the root, label is relative). wv4 only asserts the return was filed.",
+      "resolution": "Give take a way to store the project-relative label of the phase tree's manifest when the measured tree is a task tree (or compute the label against the phase tree and pass the tree only as the digest root), and add a wave case asserting the filed stamp's manifest field is relative and the return holds no absolute path."
+    },
+    {
+      "id": 3,
+      "severity": "med",
+      "file": "plugins/audit/scripts/governance/drive-phase.py:add_tree, step_member, close_wave",
+      "issue": "Tree creation is not resumable, which the design promised ('worktrees are found again through their markers'). (a) task-add writes the marker, then runs executor.worktreeSetup (an install, minutes) before returning; a session death or Ctrl-C in that window leaves a marked tree that the driver state does not name. The rerun calls task-add, which refuses 'task X already has a tree', so the run stops and only a manual task-remove recovers it. (b) On a failed setup add_tree records the tree in wave.trees and stops; the next `next` finds the tree recorded and dispatches the executor straight into the half-provisioned tree, never re-running setup, so the 'could not run, no attempt spent' promise turns into a red gate and a spent attempt. (c) close_wave drops wave.trees while a blocked member's tree is kept on disk; unblocking that task into a later wave hits the same 'already has a tree' refusal. All three are loud, none loses bytes. The wc cases crash only after integration.",
+      "resolution": "In add_tree treat the 'already has a tree' refusal for a tree whose marker base equals the wave base as adoption (record it, and re-run setup unless a setup-ok mark is stored), keep an unresolved setup failure in the member's state so the next step retries it, and carry kept trees of blocked members across close_wave. Add a case that kills the driver between task-add and the state write, and one for a failed setup followed by a second next."
+    },
+    {
+      "id": 4,
+      "severity": "med",
+      "file": "plugins/audit/scripts/governance/drive-phase.py:tree_holds_only_integrated, retire_member; plugins/audit/tests/test_drive_phase.py (wu1/wu2)",
+      "issue": "The only thing that keeps a discarded undeclared change from being destroyed is tree_holds_only_integrated deciding the tree still holds bytes the phase tree lacks, because retire_member then removes clean trees with `task-remove --force` (which also deletes ignored files). Mutation on a scratch copy: making the comparison never report a difference (`if sides[0] != sides[1]` to `if False`) leaves wv, wr, wc, w1, wz and pf stages all passing. No case answers `discard` and checks the tree survives and is named, so the guard can be deleted without a test failing. By reading, the guard is correct (a path present in the tree and absent from the phase tree compares unequal).",
+      "resolution": "Add a wave case: P1.2 writes an undeclared notes.txt, answer discard, close; assert the task closes, notes.txt is absent from the phase tree, the tree directory still exists with notes.txt in it, and the did-line says 'kept'."
+    },
+    {
+      "id": 5,
+      "severity": "low",
+      "file": "plugins/audit/scripts/governance/drive-phase.py:apply_answer (integration-refused retry), DECISIONS",
+      "issue": "Design D2 offers `redo|block` for a conflict and says redo does not spend an attempt; the code offers `retry|block` for every integration refusal kind (dirty, non-mergeable, conflict), recuts the tree with --force and spends an attempt. For a dirty phase tree the work is fine and only the tree needs cleaning, yet the only non-block answer discards a green executor run.",
+      "resolution": "Offer a re-integrate answer for `dirty`, and make the conflict redo not count against maxAttempts, or record the deviation."
+    },
+    {
+      "id": 6,
+      "severity": "low",
+      "file": "plugins/audit/scripts/governance/drive-phase.py:drive_phase / drive_task (scope_gap), audit-lookup.py WIDEN_RULE, drive-phase.py add_fix_tasks",
+      "issue": "'Width 1 reproduces 3.2.0 exactly' holds for the wave machinery (w1 pins did-lines and journal actions from a real 3.2.0 drive), but the F599 pieces apply at width 1 too: the scope-gap preflight (and its could-not-tell did-line, and runner list processes run at task start), the WIDEN_RULE line in the executor brief when tests.add is set, and add --fixes scoping. The w1 fixture declares no tests.add, so none of that is pinned either way. Intended by F599, but the desired outcome's sentence reads wider than the behaviour.",
+      "resolution": "Reword the outcome sentence to say width 1 changes nothing about the wave machinery, or add a tests.add fixture to w1 so the width-1 difference is pinned on purpose."
+    },
+    {
+      "id": 7,
+      "severity": "low",
+      "file": "plugins/audit/scripts/governance/drive-phase.py:integrate_member (regate None)",
+      "issue": "Mutating `held.get(\"regate\") is not False` to `is True` (null no longer re-gates) and mutating the non-widen regate to False both leave every wave case green; only wu2's widen path pins the re-gate. By selection, declared overlaps cannot share a wave, so the reachable inputs are widen, a lost state file (regate null) and a phase-tree change since the base.",
+      "resolution": "Add a case where the integration state file is deleted before the rerun and assert the re-gate runs."
+    },
+    {
+      "id": 8,
+      "severity": "low",
+      "file": "plugins/audit/hooks/_config.py:task_binding (status check)",
+      "issue": "Removing the `declared[0][\"status\"] != \"in_progress\"` refusal leaves test__config and test_require_plan green. The edit is still refused (the task contributes no files), so only the message and the fail-loud wording are lost.",
+      "resolution": "One tb case with the task done in the phase tree asserting the error names the status."
+    },
+    {
+      "id": 9,
+      "severity": "low",
+      "file": "plugins/audit/scripts/git/integrate-task.py:task_changes",
+      "issue": "A worktreeSetup that rewrites a tracked file (a lockfile touched by an install) surfaces at integration as an undeclared-change decision for every task in the wave, and an ignored output file is neither integrated nor reported before task-remove --force. Both are loud or ignored by definition, but neither is mentioned beside executor.worktreeSetup.",
+      "resolution": "Say in the worktreeSetup README row that setup must not modify tracked files."
+    }
+  ],
+  "preExisting": [],
+  "intent": {
+    "answer": "matches",
+    "note": "The phase delivers the outcome: _wave selects disjoint ready tasks, manage-worktrees task-add cuts detached trees with a task marker, run-test-gate --tree measures in the tree and records in the project ledger, integrate-task folds one tree in serially and refuses dirty, conflict, non-mergeable and undeclared by name, the plan gate binds a marked tree to its task and fails loud, the driver runs waves behind executor.waveWidth (absent = 1), and F599 adds the runner-collects reading, companions, --introduces, fix-task scoping and the scope-gap preflight. Width 1 is pinned against a real 3.2.0 drive (w1) with a red twin (w1m); the gate-in-own-tree property has a red twin (wv5m) and was confirmed by reading (record_gate takes --tree, the binding compares declared bytes). Read against the user-weighted concerns: integrate-task holds up (mutations that drop the undeclared check or the three-way merge go red); the plan-gate fail-loud branches go red under mutation except the status branch (low); crash-resume of integration is sound (state file with a writing status, bytes check when the file is lost, reopen on a new start) but resume of tree CREATION is not (finding 3). Open: the reviewer sees an empty diff in a wave (finding 1), the stamp stores an absolute path (finding 2), and the keep-the-tree guard behind `discard` is untested (finding 4).",
+    "missing": [],
+    "redFirst": "not-attempted",
+    "redFirstBasis": "mode phase: the per-task red-first answers are the tasks entries' (computed by the filing verb); the phase itself owes none. Several tasks' could-not-prove is the known missing-module helper fault (F573/F613) and the new-module tests plainly fail without the module; mutation of the delivered code was used where it matters (see findings 4, 7, 8 and the passing red twins).",
+    "inheritedTests": "not-asked",
+    "inheritedTestsBasis": "every task's tests.gate runs whole projects (python3 tools/sweep-selftests.py over the tree, the manifest validators, plugin validate, the status gate, the report render, ruff and vermin, the screenshot check and the interactive report check), so no entry selects a bounded set of tests the question could be asked of."
+  },
+  "verdict": "findings",
+  "tasks": [
+    {
+      "id": "P124.1",
+      "commit": "f3b479a85bd5",
+      "answer": "matches",
+      "note": "select(tasks, width) and overlap(a, b) are pure over task dicts through _task_outputs.covers; lockfiles (names plus any .lock suffix) are non-mergeable; empty-files tasks run alone; a deferred task says why. The executor outcome describes the diff, including the corrected LAYERS comment.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate entries run whole projects (sweep of every selftest, validators, lint, screenshot and report checks); none selects a bounded set.",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`python3 plugins/audit/tests/test__wave.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: ModuleNotFoundError: No module named '_wave'; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P124.1/20261010T023359Z.executor.json, at 2026-10-10T02:36:08Z)"
+    },
+    {
+      "id": "P124.2",
+      "commit": "e7022c55a650",
+      "answer": "matches",
+      "note": "task-add/task-remove, the task marker and read_provenance(expect_task) as described; a second tree for a task is refused (ta8), which finding 3 shows the driver does not adopt on resume. README and guide name the verbs and --base.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate entries run whole projects; none selects a bounded set.",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_manage_worktrees.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 39/40 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P124.2/20261010T025232Z.executor.json, at 2026-10-10T02:54:35Z)"
+    },
+    {
+      "id": "P124.3",
+      "commit": "a14a45c5924e",
+      "answer": "matches",
+      "note": "--tree measures in DIR, records in the project ledger, testedState.tree is a sha1 prefix of the realpath (no path), refused with --full/--reconcile and for a missing directory; vb32/vb33 show the binding compares declared content, not HEAD. Documented in the module docstring and orchestrator.md as the description asks.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate entries run whole projects; none selects a bounded set.",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_run_test_gate.py --selftest` in a throwaway tree at HEAD exited 1 with 8 of 500 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - tr1 (house FAIL), tr2 (house FAIL), tr3 (house FAIL), tr4 (house FAIL), tr5 (house FAIL), tr6 (house FAIL), tr7 (house FAIL), tr8 (house FAIL): SELFTEST FAILED: 492/500 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P124.3/20261010T030305Z.executor.json, at 2026-10-10T03:14:13Z)"
+    },
+    {
+      "id": "P124.4",
+      "commit": "fd1d219f196c",
+      "answer": "matches",
+      "note": "integrate-task works on paths from the task tree's own index, refuses dirty/conflict/non-mergeable/undeclared by name before writing, leaves the phase index alone and is resumable. Mutations on a scratch copy (drop the undeclared check; replace the three-way merge guard) turned i7* and i1/i2 red. The GIT_OPTIONAL_LOCKS claim is honestly stated as unproven.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate entries run whole projects; none selects a bounded set.",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_integrate_task.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: ImportError: audit plugin: no script named 'integrate-task.py' among the 136 .py file(s) found under /private/var/folders/d1/pwtx3bsx53g9w4w6wslwxkjr0000gn/T/audit-red-cg1f3u9_/tree/plugins/audit/scripts. (0 searched means the walk found nothing at all - a tree that is not there - which is a different problem from a misspelled name); 'integrate_task' is not introduced by this task: no declared implementation file in the working tree carries it; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P124.4/20261010T032202Z.executor.json, at 2026-10-10T03:26:48Z)"
+    },
+    {
+      "id": "P124.5",
+      "commit": "bc319735692b",
+      "answer": "matches",
+      "note": "task_binding reads the marker, resolves the task in the phase tree's plan and refuses every edit in a tree whose binding cannot be proved; step 1c runs before the exemptions and on every tier; the phase tree refuses files held by a bound worktree. Mutation: replacing the loud refusal with 'not bound' reddened bt4/bt5, and making an unreadable marker 'not bound' reddened tb5. Only the not-in_progress branch survives mutation (low, finding 8).",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate entries run whole projects; none selects a bounded set.",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_require_plan.py --selftest` in a throwaway tree at HEAD exited 1 with 5 of 214 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bt1 (house FAIL), bt2 (house FAIL), bt4 (house FAIL), bt5 (house FAIL), bt7 (house FAIL): SELFTEST FAILED: 209/214 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P124.5/20261010T033530Z.executor.json, at 2026-10-10T03:37:07Z)"
+    },
+    {
+      "id": "P124.6",
+      "commit": "82cd0df1acc3",
+      "answer": "matches",
+      "note": ".worktreeinclude copies and executor.worktreeSetup run in the tree after the marker; a failed or timed-out setup is E_SETUP (could-not-run, spendsAttempt false); check_worktree_env is wired into diagnose. Whether the driver honours 'no attempt spent' on a second next is finding 3(b), a P124.7 matter.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate entries run whole projects; none selects a bounded set.",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_manage_worktrees.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 58 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - wi1 (house FAIL), wi4 (house FAIL), wi5 (house FAIL): SELFTEST FAILED: 54/58 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P124.6/20261010T035612Z.executor.json, at 2026-10-10T03:57:11Z)"
+    },
+    {
+      "id": "P124.7",
+      "commit": "6a221c93ee38",
+      "answer": "matches",
+      "note": "The description's rows (wave.start, task.worktree, task.integrated, task.integration.refused, wave.done), id-order integration, scope --files before the commit, re-gate on true/null, config declaration in schema, rules, README and COMPATIBILITY, and init writing auto into new configs are all in the diff, and the executor's outcome describes it. Deviations are small (retry in place of redo, finding 5). The task's own tests leave four gaps found by mutation or reading: finding 1 (reviewer ordering), 2 (stamp path), 3 (tree creation resume) and 4 (untested keep-the-tree guard), plus the lows 6 and 7.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate entries run whole projects; none selects a bounded set.",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage wv-block --stage wr-block --stage wc-block --stage w1-block --stage wz-block` in a throwaway tree at HEAD exited 1 with failing cases wv1 (house FAIL), wv3 (house FAIL), wv4 (house FAIL), wv5 (house FAIL), wv6 (house FAIL), wv7 (house FAIL), wv8 (house FAIL), wr1 (house FAIL), wr2 (house FAIL) and 5 more, but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 3/18 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P124.7/20261010T040525Z.executor.json, at 2026-10-10T04:31:16Z)"
+    },
+    {
+      "id": "P124.8",
+      "commit": "fa9327fb1eb2",
+      "answer": "matches",
+      "note": "The executor brief carries tree:, base:, the cd rule and never-commit only for a task with a tree in the driver state; width 1 briefs are unchanged (bf41); the stale parallel-tasks paragraph is replaced in place; the README row is re-anchored. The reviewer brief is not given a tree, which the design's A6 does not ask for but which finding 1 shows is needed once a reviewer is due in a wave.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate entries run whole projects; none selects a bounded set.",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_audit_lookup.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 79 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bf40 (house FAIL): SELFTEST FAILED: 78/79 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P124.8/20261010T044002Z.executor.json, at 2026-10-10T04:44:24Z)"
+    },
+    {
+      "id": "P124.9",
+      "commit": "33131e0be18d",
+      "answer": "matches",
+      "note": "collects() answers collected / not collected / could not tell for vitest, jest and pytest, asking the project's local binary list mode first (never downloading) and falling back to the config; jest default-extension answers are could-not-tell by design. Jest and pytest listers are exercised via injected listers and fake binaries, stated in the docstring.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate entries run whole projects; none selects a bounded set.",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test__runner_collects.py --selftest` in a throwaway tree at HEAD exited 1 on \"ModuleNotFoundError: No module named '_runner_collects'\", and the task introduces '_runner_collects': absent from HEAD's plugins/audit/scripts/governance/_runner_collects.py, plugins/audit/scripts/_deps.py, PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md and present in the working tree's plugins/audit/scripts/governance/_runner_collects.py, plugins/audit/scripts/_deps.py, PLUGIN-BUILD-GUIDE.md; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P124.9/20261010T045214Z.executor.json, at 2026-10-10T04:59:28Z)"
+    },
+    {
+      "id": "P124.10",
+      "commit": "ffe783088571",
+      "answer": "matches",
+      "note": "derive() yields dependency manifest plus lockfiles on disk, locale files in a single detected locale directory, and the runner config for an uncollected test, each with a basis and every absence reported; node and python only, which the outcome states.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate entries run whole projects; none selects a bounded set.",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`python3 plugins/audit/tests/test__scope_companions.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: ModuleNotFoundError: No module named '_scope_companions'; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P124.10/20261010T050722Z.executor.json, at 2026-10-10T05:09:29Z)"
+    },
+    {
+      "id": "P124.11",
+      "commit": "ed493ab285f5",
+      "answer": "matches",
+      "note": "add/scope --introduces, explorer introduces field, init step 5.3, F607 scope half (every path a finding names, test placement, per-runner gate repoint) and drive-phase add_fix_tasks no longer cutting at the first colon are all present; the large outcome describes the diff. A width-1 behaviour change by design (finding 6).",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate entries run whole projects; none selects a bounded set.",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage cz-block` in a throwaway tree at HEAD exited 1 with failing cases cz1 (house FAIL), cz2 (house FAIL), cz4 (house FAIL), cz5 (house FAIL), cz6 (house FAIL), cz7 (house FAIL), cz7 (house FAIL), cz7 (house FAIL), cz7 (house FAIL) and 5 more, but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 2/17 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P124.11/20261010T051807Z.executor.json, at 2026-10-10T05:40:14Z)"
+    },
+    {
+      "id": "P124.12",
+      "commit": "99adc19c9e1c",
+      "answer": "matches",
+      "note": "scope_gap asks collects per tests.add path before start_task (serial, drive_task and per picked wave member), a definite NOT_COLLECTED is the scope-gap decision (widen|block) naming the runner config, could-not-tell prints one line, and the executor brief gains the widen rule. pf1-pf5 cover it.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate entries run whole projects; none selects a bounded set.",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage pf-block` in a throwaway tree at HEAD exited 1 with failing cases pf1 (house FAIL), pf2 (house FAIL), pf3 (house FAIL), pf4 (house FAIL), pf5 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 0/5 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P124.12/20261010T054827Z.executor.json, at 2026-10-10T05:54:38Z)"
+    },
+    {
+      "id": "P124.13-k2x",
+      "commit": "79f02001d457",
+      "answer": "matches",
+      "note": "The waveWidth control is a new intOrAuto kind; parseIntOrAuto sends a typed whole number as a number and 'auto' as the word, refuses anything else with a reason beside the box, and the draft keeps the typed text so the server's validator refuses it too; the vitest case reaches the real function; screenshots are recaptured in the same commit as the executor's claim asks.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate entries run whole projects; none selects a bounded set.",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test__panel_ui.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 89 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code, its declared jest or vitest test files new at HEAD (tools/ui-tests/int-or-auto.test.mjs) left absent), each passing with the working tree's implementation - the waveWidth control is declared with the number-or-auto kind, not free text: [{'path': 'executor.waveWidth', 'label': 'Tasks run at once', 'kind': 'text', 'placeholder': '1, or auto'}] (house FAIL) and 2 more: SELFTEST FAILED: 86/89 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P124.13-k2x/20261010T061717Z.executor.json, at 2026-10-10T06:17:57Z)"
+    }
+  ],
+  "computedAnswers": {
+    "P124.1": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P124.2": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P124.3": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P124.4": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P124.5": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P124.6": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P124.7": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P124.8": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P124.9": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P124.10": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P124.11": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P124.12": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P124.13-k2x": [
+      "redFirst",
+      "redFirstBasis"
+    ]
+  }
+}

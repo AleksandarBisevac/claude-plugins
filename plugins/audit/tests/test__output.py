@@ -845,6 +845,64 @@ def _cases(check):
           % (M.raw_json_writer_violations(),),
           M.raw_json_writer_violations() == [])
 
+    # ------------------------------------------------ the returns writer
+    rt = tempfile.mkdtemp(prefix="returns-writer-")
+    try:
+        def _rt(rel, text):
+            full = os.path.join(rt, *rel.split("/"))
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w", encoding="utf-8") as fh:
+                fh.write(text)
+
+        home = ("def scrubbed_return_text(p, t):\n    return t\n"
+                "def file_once(path, text):\n"
+                "    text = scrubbed_return_text(path, text)\n"
+                "    open(path, 'x').write(text)\n"
+                "def return_path(e, t, r):\n    return e\n")
+        _rt("manifest/_filed_returns.py", home)
+        _rt("bypass.py", "import _filed_returns as _fr\n"
+                         "def file(e, t, text):\n"
+                         "    path = _fr.return_path(e, t, 'executor')\n"
+                         "    with open(path, 'w') as fh:\n"
+                         "        fh.write(text)\n")
+        _rt("reads.py", "import _filed_returns as _fr\n"
+                        "def read(e, t):\n"
+                        "    path = _fr.return_path(e, t, 'executor')\n"
+                        "    with open(path, 'r') as fh:\n"
+                        "        return fh.read()\n"
+                        "def other(p, text):\n"
+                        "    with open(p, 'w') as fh:\n"
+                        "        fh.write(text)\n")
+        rt_hits = M.returns_writer_violations(rt)
+        rt_files = sorted(set(f for f, _w in rt_hits))
+        check("rw1 a function that builds a filed return's path and writes the "
+              "file itself is reported, naming the function: %r" % (rt_hits,),
+              rt_files == ["scripts/bypass.py"]
+              and any("(file)" in w for _f, w in rt_hits))
+        check("rw2 ALLOW: a reader that builds the same path, a writer that "
+              "builds no return path, and the home module that does both are "
+              "silent - a lint keyed on either half alone fails here: %r"
+              % (rt_hits,),
+              "scripts/reads.py" not in rt_files
+              and "scripts/manifest/_filed_returns.py" not in rt_files)
+        _rt("manifest/_filed_returns.py",
+            home.replace("    text = scrubbed_return_text(path, text)\n", ""))
+        rt_unscrubbed = M.returns_writer_violations(rt)
+        check("rw3 a home writer that no longer calls the scrub is reported: %r"
+              % (rt_unscrubbed,),
+              any(f == "scripts/manifest/_filed_returns.py" and "scrub" in w
+                  for f, w in rt_unscrubbed))
+        os.remove(os.path.join(rt, "manifest", "_filed_returns.py"))
+        check("rw4 a tree without the home module is BLIND, never clean: %r"
+              % (M.returns_writer_violations(rt),),
+              any(f == "<tree>" and "blind" in w
+                  for f, w in M.returns_writer_violations(rt)))
+    finally:
+        shutil.rmtree(rt, ignore_errors=True)
+    check("rw5 ...and the real tree files a return only through the scrubbing "
+          "writer: %r" % (M.returns_writer_violations(),),
+          M.returns_writer_violations() == [])
+
     # ------------------------------------------------------- selftest coverage
     # Fixture trees first, because NO defect class exists in the real tree any more
     # and a classifier only ever seen returning empty lists is a classifier that
