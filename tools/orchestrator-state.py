@@ -114,9 +114,29 @@ def ready_tasks(manifest):
     return out
 
 
+def sweep_line(git_dir):
+    """One line on whether a mutating gate sweep holds this tree."""
+    from _suite import marker_state
+    seen = marker_state(git_dir)
+    if seen["state"] == "live":
+        return ("a mutating sweep is live (pid %d, since %s) - the tree is mid-"
+                "mutation, do not read a gate over it" % (seen["pid"], seen["started"]))
+    if seen["state"] == "unreadable":
+        return "%s exists but cannot be read - whether a sweep is live is unknown" % (
+            seen["path"],)
+    if seen["state"] == "stale":
+        return "stale marker %s (pid %d is gone) - no live mutating sweep" % (
+            seen["path"], seen["pid"])
+    return "no mutating sweep holds the tree"
+
+
 def main():
     head = _git(["rev-parse", "--short", "HEAD"])
     print("HEAD %s" % head)
+    from _suite import git_dir_of
+    git_dir = git_dir_of(REPO)
+    print("MUTATING SWEEP: %s" % (
+        sweep_line(git_dir) if git_dir else "no git dir, so no marker could be read"))
 
     rows = worktrees()
     if rows:
@@ -216,6 +236,21 @@ def _cases(check):
         check("s5 an unreadable manifest answers None rather than an empty list, so "
               "'nothing is ready' cannot be read off 'nothing could be read'",
               ready_tasks("audit-plan.json") is None)
+        import _suite
+        gd = os.path.join(box, "gitdir")
+        os.makedirs(gd)
+        check("o1 no marker: the sweep line says nothing is mutating",
+              "no mutating sweep" in sweep_line(gd), sweep_line(gd))
+        _suite.hold(gd, pid=os.getpid())
+        got = sweep_line(gd)
+        check("o2 a live marker is reported as 'a mutating sweep is live', with the "
+              "pid", "a mutating sweep is live" in got and str(os.getpid()) in got, got)
+        dead = subprocess.Popen([sys.executable, "-c", "pass"])
+        dead.wait()
+        _suite.hold(gd, pid=dead.pid)
+        got = sweep_line(gd)
+        check("o3 a marker whose pid is dead is reported as stale, never as live",
+              "stale" in got and "is live" not in got, got)
     finally:
         REPO = keep
         shutil.rmtree(box, ignore_errors=True)

@@ -267,6 +267,12 @@ python3 tools/sweep-selftests.py --encoding cp1252
 # is listed in `SPACED_EXEMPT` with the reason, and the run prints each one.
 python3 tools/sweep-selftests.py --spaced
 
+# a mutating gate sweep (`tools/prove-gates.py`) rewrites the working tree for minutes
+# and holds a marker file under the git dir while it does. The sweep above refuses to
+# start while the marker's pid is alive, since it would read a half-mutated tree and
+# report reds that are not real; a marker whose pid is gone is ignored, and the sweep
+# says so. `python3 tools/orchestrator-state.py` prints the same fact.
+
 # the meta-gate: this list, verify.sh and ci.yml describe one gate set, and they had
 # drifted in both directions at once before anything compared them. All THREE are
 # compared now, and this document was the last one added — while claiming to be the

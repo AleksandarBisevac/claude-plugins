@@ -1,0 +1,28 @@
+{
+  "gates": {
+    "sweep-selftests": "pass",
+    "sweep-selftests --spaced": "pass",
+    "ruff": "pass",
+    "vermin": "pass",
+    "gate-parity": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T22:43:54Z",
+    "basis": "`python3 tools/sweep-selftests.py` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: ImportError: cannot import name 'git_dir_of' from '_suite' (/private/var/folders/d1/pwtx3bsx53g9w4w6wslwxkjr0000gn/T/audit-red-f5627tj4/tree/tools/_suite.py); HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 54/55 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "tools/_suite.py: shared marker helpers (MARKER_NAME, git_dir_of, pid_alive, hold, release, marker_state: none/live/stale/unreadable). tools/prove-gates.py main(): holds the marker under the git dir for the whole mutating run (refuses to start if another live/unreadable one exists, releases in finally; --list/--help take none). tools/sweep-selftests.py: marker_gate() refuses with exit 2 naming the marker file and pid on a live or unreadable marker, ignores a dead pid's and prints 'ignoring stale marker'. tools/orchestrator-state.py: sweep_line() prints 'MUTATING SWEEP: a mutating sweep is live (pid, since)'. CONTRIBUTING.md note added; PLUGIN-BUILD-GUIDE.md untouched (it does not describe tools/). New cases mk0-mk2 (sweep) and o1-o3 (orchestrator-state). Exit codes: sweep 0 (331 files ok), --spaced 0, ruff 0 (after fixing one F821 I introduced), vermin 0, gate-parity 0, prove-gates --selftest 0. Not run: a full mutating prove-gates run, so the live marker is exercised only through the helper cases, not end to end. orchestrator-state now imports _suite (and so the test tree) on each run.",
+    "descriptive": "A mutating gate sweep announces itself via a git-dir marker; the sweep refuses to read a tree mid-mutation and orchestrator-state reports it."
+  },
+  "testsAdded": [
+    "sweep-selftests mk0",
+    "sweep-selftests mk1",
+    "sweep-selftests mk2",
+    "orchestrator-state o1",
+    "orchestrator-state o2",
+    "orchestrator-state o3"
+  ],
+  "claims": "claims: marker is per-worktree git dir (a sweep in another worktree reads a different tree); stale = pid not alive per os.kill(0) / OpenProcess; pid reuse by an unrelated process would read as live (accepted).",
+  "stamp": "audit-stamp: {\"content\":\"sha256:990db8dcaf8844950a8c10ceac46ad14885194df04aae76fbc81336365065256\",\"dirtyDigest\":\"sha256:2a5f00dce8cea2994434dcbc4030a39b0186a1a72cb8532f9ff363dad02c515d\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\"CONTRIBUTING.md\":\"07a380a1fce02d9d\",\"tools/_suite.py\":\"931293fd5b68b718\",\"tools/orchestrator-state.py\":\"0437e632ba64188a\",\"tools/prove-gates.py\":\"fca433ecfdb6f996\",\"tools/sweep-selftests.py\":\"f4ad24068fe65e6f\"},\"head\":\"bf843074\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CONTRIBUTING.md\",\"PLUGIN-BUILD-GUIDE.md\",\"tools/_suite.py\",\"tools/gate-parity.py\",\"tools/orchestrator-state.py\",\"tools/prove-gates.py\",\"tools/sweep-selftests.py\"],\"scopeDigest\":\"sha256:8502437f5b979ee09f8fee89844b698b4dc02406c1dc03c553b3ed8e210af27c\",\"v\":2}"
+}

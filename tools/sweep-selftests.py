@@ -846,10 +846,40 @@ def _flag_value(argv, name, fallback):
     return fallback
 
 
+def marker_gate(git_dir, out, err):
+    """Exit code 2 when a mutating gate sweep holds the tree, else None.
+
+    A live (or unreadable) marker refuses, because the tree is mid-mutation and every
+    red this run printed would be about the mutation; a stale one is ignored on the
+    record so a killed run does not wedge every sweep after it."""
+    from _suite import marker_state
+    seen = marker_state(git_dir)
+    if seen["state"] == "live":
+        err.write("sweep-selftests: refusing to start - %s says a mutating sweep "
+                  "(pid %d, since %s) is rewriting the tree; a run now reads "
+                  "mid-mutation files and reports false reds. Wait for it, or stop "
+                  "it.\n" % (seen["path"], seen["pid"], seen["started"]))
+        return 2
+    if seen["state"] == "unreadable":
+        err.write("sweep-selftests: refusing to start - %s exists but cannot be "
+                  "read, so whether a mutating sweep is live is unknown; remove it "
+                  "if none is.\n" % (seen["path"],))
+        return 2
+    if seen["state"] == "stale":
+        out.write("sweep-selftests: ignoring stale marker %s (pid %d is gone, "
+                  "started %s)\n" % (seen["path"], seen["pid"], seen["started"]))
+    return None
+
+
 def main(argv):
     if "-h" in argv or "--help" in argv:
         sys.stdout.write(__doc__.strip() + "\n")
         return 0
+    from _suite import git_dir_of
+    git_dir = git_dir_of(REPO)
+    refused = marker_gate(git_dir, sys.stdout, sys.stderr) if git_dir else None
+    if refused is not None:
+        return refused
     encoding = _flag_value(argv, "--encoding", None)
     timeout = int(_flag_value(argv, "--timeout", DEFAULT_TIMEOUT))
     jobs = int(_flag_value(argv, "--jobs", default_jobs()))
@@ -1568,6 +1598,34 @@ def _cases(check):
     finally:
         remove_tree(sp_work)
 
+    # --- a mutating gate sweep holds a marker; this sweep refuses to read the tree ---
+    import _suite
+    mk_box = tempfile.mkdtemp(prefix="sweep-marker-")
+    try:
+        mk_dead = subprocess.Popen([sys.executable, "-c", "pass"])
+        mk_dead.wait()
+        mk_out, mk_err = io.StringIO(), io.StringIO()
+        check("mk0 no marker: the sweep proceeds and says nothing",
+              marker_gate(mk_box, mk_out, mk_err) is None
+              and mk_out.getvalue() == "" and mk_err.getvalue() == "")
+
+        _suite.hold(mk_box, pid=os.getpid())
+        mk_out, mk_err = io.StringIO(), io.StringIO()
+        mk_code = marker_gate(mk_box, mk_out, mk_err)
+        check("mk1 a LIVE marker refuses with exit 2 and names the marker file and "
+              "the pid: %r" % (mk_err.getvalue(),),
+              mk_code == 2 and _suite.MARKER_NAME in mk_err.getvalue()
+              and str(os.getpid()) in mk_err.getvalue())
+
+        _suite.hold(mk_box, pid=mk_dead.pid)
+        mk_out, mk_err = io.StringIO(), io.StringIO()
+        mk_code = marker_gate(mk_box, mk_out, mk_err)
+        check("mk2 a marker whose pid is DEAD is ignored - the sweep proceeds - and "
+              "says that it did: %r / %r" % (mk_out.getvalue(), mk_err.getvalue()),
+              mk_code is None and "stale" in mk_out.getvalue()
+              and str(mk_dead.pid) in mk_out.getvalue())
+    finally:
+        remove_tree(mk_box)
 
 
 def _selftest():

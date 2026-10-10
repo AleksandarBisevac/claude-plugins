@@ -2768,6 +2768,30 @@ def main(argv):
                 sys.stdout.write("  %-5s %-28s %s\n"
                                  % ("allow", name, "no allow case; reason recorded"))
         return 0
+    # THE MARKER, held for the whole mutating run: a concurrent sweep refuses on it
+    # and orchestrator-state reports it. Released in `finally`; a killed run leaves a
+    # marker whose pid is dead, which readers ignore aloud.
+    import _suite
+    git_dir = _suite.git_dir_of(REPO)
+    if git_dir is None:
+        sys.stderr.write("prove-gates: no git dir under %s, so no marker could be "
+                         "held; refusing to mutate a tree nobody can see is "
+                         "mutating\n" % (REPO,))
+        return 2
+    seen = _suite.marker_state(git_dir)
+    if seen["state"] in ("live", "unreadable"):
+        sys.stderr.write("prove-gates: %s says another mutating run holds this tree "
+                         "(%s); refusing to start a second\n"
+                         % (seen["path"], seen["state"]))
+        return 2
+    marker = _suite.hold(git_dir)
+    try:
+        return _prove(want_red, want_allow, table, allow, only)
+    finally:
+        _suite.release(marker)
+
+
+def _prove(want_red, want_allow, table, allow, only):
     code = 0
     if want_red:
         sys.stdout.write("proving %d gate(s) go RED; each mutates the tree and "

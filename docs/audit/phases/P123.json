@@ -2255,7 +2255,7 @@
     {
       "id": "P123.29",
       "title": "The manifest-diff hook never journals another session's verb write as its own",
-      "status": "in_progress",
+      "status": "done",
       "description": "`hooks/journal-writes.py` refreshes its baseline at Pre (P72.3), but its own docstring names the residual: a peer writing during this call's window is read as this call's write and journaled under this session - the shared-checkout rows of F554 (a verb's completion journaled again under the peer's sessionId). In Post, a difference whose resulting stateHash already appears in a journal row (any session's verb row) is already recorded and gets no row; a difference no row accounts for is journaled with an explicit unattributed marker rather than this session's id. Regression: two sessions on one checkout, A writes through a verb while B's tool call is open, B's journal gains no row claiming A's change; B's own edit in the same window is still journaled. Also (F629, same class, so ONE redesign under both hooks): the PostToolUse bash-write-guard (`hooks/guard-bash-writes.py`) keeps `seenDirty` from the session's PREVIOUS Bash call and blames the current command for every path dirtied since - a quiet monitor session running a read-only `git log` was told a peer's P123.json write was its own, with a stop-and-alarm order. Build one shared attribution helper both hooks call, bound to the command's own window: PreToolUse records the call's start; a path is this call's only if it changed at or after that start (blob/stateHash evidence first, mtime as the stated fallback); a path dirty since before the start is never this call's; where the window holds a live peer (a live lock holder or another session's journal row inside it), the message says 'changed during this command; this session or <other session> wrote it', names both, and orders no stop. Regression (both hooks): session B dirties a file at T0, session A runs a read-only Bash at T0+10min -> no claim, no journal row; A's own `echo >> file` inside the window is still reported/journaled. Run tools/bench-hooks.py --gate after. Faults: F554, F629.",
       "files": [
         "plugins/audit/hooks/journal-writes.py",
@@ -2294,19 +2294,41 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "bf8430742f54",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added a shared window helper in hooks/_config.py (writer_key, record_call_start, call_start, changed_in_window, ts_epoch, window_peers, window_note). journal-writes Pre now notes the call start for Bash/mcp (one small atomic write, no read; bench-hooks --gate exit 0). Post sweep: a moved path whose (target, stateHash) matches a non-hook row stamped inside the window gets no row; an unaccounted move with a peer evidenced in the window (other session's row inside it, or live lock) is journaled with sessionId None and 'changed during this command; this session or <peer> wrote it'; no peer -> attributed as before; no start -> old behaviour. guard-bash-writes: new paths whose mtime precedes the call start are absorbed; manifest paths under a live peer's lock that moved in-window get WINDOW_LOCK_TEMPLATE (both candidates, no stop) unless the command text names the write. Tests: wn1-wn3 (journal), wn1-wn4 (guard), cw1-cw4 (_config); so_pre in the existing so group moves its window past earlier rows (second-resolution stamps). Docs: SECURITY.md bullet, PLUGIN-BUILD-GUIDE.md two paragraphs. Hot path adds: a write in Pre; reads of the start file only after a move/new dirty path; the trail read only after a move.  Not run: the --spaced and sweep were run as listed. Note: the unattributed marker is only used when a peer is evidenced; a lone writer stays attributed (otherwise every shell-made manifest write would lose its author).",
+        "descriptive": "A peer's verb write or earlier file change is no longer journaled or alarmed as the current Bash call's own; ambiguous cases name both candidates and order no stop."
       },
       "startedAt": "2026-10-10T21:56:58Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T22:22:40Z",
+      "verifiedBy": [
+        "test_journal_writes.py wn1",
+        "test_journal_writes.py wn2",
+        "test_journal_writes.py wn3",
+        "test_guard_bash_writes.py wn1",
+        "test_guard_bash_writes.py wn2",
+        "test_guard_bash_writes.py wn3",
+        "test_guard_bash_writes.py wn4",
+        "test__config.py cw1",
+        "test__config.py cw2",
+        "test__config.py cw3",
+        "test__config.py cw4"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T22:22:39Z.3a3844",
         "status": "passed",
         "at": "2026-10-10T22:22:39Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "bf8430742f54",
+        "at": "2026-10-10T22:22:40Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T22:13:09Z",
+        "basis": "`python3 plugins/audit/tests/test_journal_writes.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 137/138 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
@@ -2403,14 +2425,16 @@
     {
       "id": "P123.31",
       "title": "A mutating gate sweep announces itself, and the sweep refuses to read a tree mid-mutation",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The dirty-file half is closed (redfirst.sh refuses a dirty file). Still open on main: `tools/prove-gates.py` mutates the tree for minutes with nothing another process can see - `tools/orchestrator-state.py` (what is running/uncommitted/staged) does not report it, and a concurrent `tools/sweep-selftests.py` reads a mid-mutation tree and reports false reds. Have prove-gates hold a marker (under the git dir, with pid and start) for the whole run, orchestrator-state report 'a mutating sweep is live', and sweep-selftests refuse to start (naming the marker, ignoring a dead pid's) while one is live. Regression: with a live marker the sweep refuses; with a stale marker it proceeds and says so. Faults: F441.",
       "files": [
         "tools/prove-gates.py",
         "tools/orchestrator-state.py",
         "tools/sweep-selftests.py",
         "CONTRIBUTING.md",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/_suite.py",
+        "tools/gate-parity.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -2438,16 +2462,22 @@
         "P123.27"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T22:22:41Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T22:53:19Z.06b634",
+        "status": "passed",
+        "at": "2026-10-10T22:53:19Z"
+      }
     },
     {
       "id": "P123.32",
@@ -3151,7 +3181,7 @@
       "id": "P123.45-64p",
       "title": "A close refuses while an undeclared tracked file changed during the attempt, and a printed brief survives a scope widening",
       "status": "pending",
-      "description": "(F623, reported from the testbed on 3.2.0) An executor edited a TRACKED file outside its task's files (an allowlist in a test the gate needed); the drive printed 'gate green; closed at <sha>' and the commit held only the declared files, so the commit alone fails the suite the gate passed. The during-attempt refusal in commit-task-work pins a file the attempt CREATED outside scope (ctw-at3), but the start snapshot holds the DECLARED files' blob ids only, so a tracked undeclared file modified during the attempt is attributed by mtime at best. Record at `start` the blob id of every tracked dirty-or-clean path the attempt could touch cheaply (the porcelain set at start plus HEAD's blob for any path that later shows dirty is enough: a path clean at start and dirty at close changed during the attempt), so a tracked file modified during the attempt that no in_progress task covers is refused at commit-task-work, at `done --commit` and therefore at the drive's close, naming the path and offering `/audit:task scope` widening; the drive never prints 'closed' while one exists. Allow: the same file already dirty before `start` is not this task's (the existing before-attempt wording). (F624) After `drive next` printed a dispatch and the orchestrator ran `audit-task scope` on that started task, the next `drive next` answered `decide no-executor-return` for a brief no executor ever received, and `retry` spent an attempt: a printed brief with no return and no dispatch evidence is re-printed (or re-issued after scope), never graded as an executor that returned nothing, and costs no attempt. Faults: F623, F624.",
+      "description": "(F623, reported from the testbed on 3.2.0) An executor edited a TRACKED file outside its task's files (an allowlist in a test the gate needed); the drive printed 'gate green; closed at <sha>' and the commit held only the declared files, so the commit alone fails the suite the gate passed. The during-attempt refusal in commit-task-work pins a file the attempt CREATED outside scope (ctw-at3), but the start snapshot holds the DECLARED files' blob ids only, so a tracked undeclared file modified during the attempt is attributed by mtime at best. Record at `start` the blob id of every tracked dirty-or-clean path the attempt could touch cheaply (the porcelain set at start plus HEAD's blob for any path that later shows dirty is enough: a path clean at start and dirty at close changed during the attempt), so a tracked file modified during the attempt that no in_progress task covers is refused at commit-task-work, at `done --commit` and therefore at the drive's close, naming the path and offering `/audit:task scope` widening; the drive never prints 'closed' while one exists. Allow: the same file already dirty before `start` is not this task's (the existing before-attempt wording). (F624) After `drive next` printed a dispatch and the orchestrator ran `audit-task scope` on that started task, the next `drive next` answered `decide no-executor-return` for a brief no executor ever received, and `retry` spent an attempt: a printed brief with no return and no dispatch evidence is re-printed (or re-issued after scope), never graded as an executor that returned nothing, and costs no attempt. (F632, reported from the testbed) The drive closed a fix task done and green over a return filed `not-attempted` (the executor was blocked) and an empty diff, after its scope was widened with two `tests.add` files that were never written: a green gate over an unchanged tree proves only that nothing broke. The close (and `done --commit`) refuses when the filed return records a not-attempted/blocked outcome and the task's change is empty, and when a `tests.add` entry names a file absent at close - each refusal naming the evidence and offering restart or cancel; a no-change close stays possible only through its explicit `--no-change` reason. Regression: not-attempted return + empty diff -> close refused; an absent tests.add file -> close refused; a real change with its tests present closes. Faults: F623, F624, F632.",
       "files": [
         "plugins/audit/scripts/governance/_scoped_commit.py",
         "plugins/audit/scripts/governance/commit-task-work.py",
@@ -3167,9 +3197,7 @@
       "tests": {
         "mode": "tdd",
         "add": [
-          "plugins/audit/tests/test_commit_task_work.py: a tracked file clean at start, modified during the attempt and declared by no in_progress task is refused at commit naming it; the same file dirty before start is not refused as this attempt's",
-          "plugins/audit/tests/test_drive_phase.py: a close over such a path stops and does not print 'closed'",
-          "plugins/audit/tests/test_drive_phase.py: dispatch printed, then audit-task scope on the started task, then next re-prints the dispatch rather than deciding no-executor-return, and no attempt is spent"
+          "plugins/audit/tests/test_drive_phase.py: a close over a not-attempted return and an empty diff is refused; a tests.add file absent at close is refused; a real change with its tests present closes"
         ],
         "expectRedFirst": true,
         "gate": [
@@ -3281,6 +3309,54 @@
           "plugins/audit/tests/test__machine_paths.py: a home root containing a space is replaced whole - no fragment of the user path survives - and a spaced repo-internal path stays repo-relative",
           "plugins/audit/tests/test_stamp_verification.py: a quoted --require preload with a space in NODE_OPTIONS is named in the basis",
           "tools/sweep-selftests.py: SPACED_EXEMPT holds no row for the scrub, stamp-verification or harness suites"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.48-64p",
+      "title": "A fix task that would declare no path is refused, and a fix task's gate runs the test its finding asks for",
+      "status": "pending",
+      "description": "(F631, reported from the testbed's P11 review on 3.2.0; the free-text path split itself is already fixed by `_finding_paths`) Two gaps remain in how `add --fixes` / `drive next --answer fix` scope a fix task. (a) A finding whose `file` text names no resolvable path still yields a fix task with no files, which the plan gate then refuses edit by edit; refuse the add instead, naming each such finding and the `scope --files` remedy (or, from the drive, stop with that question) - never a task whose scope is empty by accident. (b) When a finding's resolution asks for a test, or the fix scope holds a test path, the fix task's gate includes the runner that test belongs to (through `_gate_derive`, the one place that maps a test path to its runner); when no runner can be derived, the note says why instead of leaving a lint/typecheck-only gate in silence. Regression: `--fixes` over a finding with `file: \"(no path here)\"` refuses naming it; a finding with `file: \"src/a.ts\"` and a resolution 'add a unit test' yields a gate holding the unit runner; the reported string `src/a.ts (x, y)` still scopes `src/a.ts` alone. Faults: F631.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "plugins/audit/reference/verbs-in-full.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: --fixes over a finding naming no path is refused naming the finding; a finding with a source path and a resolution asking for a unit test yields a gate holding the unit runner; 'src/a.ts (x, y)' scopes src/a.ts alone"
         ],
         "expectRedFirst": true,
         "gate": [

@@ -92,6 +92,89 @@ attempt = _harness.attempt
 remove_tree = _harness.remove_tree
 
 
+# --- the marker a mutating gate sweep holds ------------------------------------
+# `prove-gates.py` edits the working tree for minutes and restores it after each row.
+# Nothing another process could see said so, so a concurrent sweep read a half-mutated
+# tree and reported reds that were not real. The marker is a file under the git dir (not
+# the working tree, which is what is being mutated, and not tracked), carrying the pid
+# and the start time; the sweep refuses on a live one and `orchestrator-state.py`
+# reports it. A marker whose pid is gone is stale - a killed run cannot release it - and
+# is ignored aloud rather than wedging every later sweep.
+MARKER_NAME = "prove-gates-live.json"
+
+
+def git_dir_of(repo):
+    """The absolute git dir of `repo`'s working tree, or None when git cannot say."""
+    import subprocess
+    try:
+        got = subprocess.run(["git", "-C", repo, "rev-parse", "--absolute-git-dir"],
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    path = got.stdout.decode("utf-8", "replace").strip()
+    return path if got.returncode == 0 and path else None
+
+
+def pid_alive(pid):
+    """Whether a process with this pid exists. POSIX asks with signal 0; Windows opens
+    the process, because `os.kill` there TERMINATES a process rather than probing it."""
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+        if not handle:
+            return False
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True    # exists, owned by someone else
+    return True
+
+
+def hold(git_dir, pid=None):
+    """Write the marker for `pid` (this process by default); returns its path."""
+    import json
+    import time
+    path = os.path.join(git_dir, MARKER_NAME)
+    with io.open(path, "w", encoding="utf-8") as fh:
+        fh.write(u"%s\n" % json.dumps({
+            "pid": os.getpid() if pid is None else pid,
+            "started": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}))
+    return path
+
+
+def release(path):
+    """Remove the marker; a marker already gone is not an error."""
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def marker_state(git_dir):
+    """What the marker says: {"state": none|live|stale|unreadable, "path", "pid",
+    "started"}. An unreadable marker is its own state - reading it as `none` would let
+    a sweep run over a tree somebody is mutating."""
+    import json
+    path = os.path.join(git_dir, MARKER_NAME)
+    if not os.path.isfile(path):
+        return {"state": "none", "path": path, "pid": None, "started": None}
+    try:
+        with io.open(path, encoding="utf-8") as fh:
+            body = json.load(fh)
+        pid, started = int(body["pid"]), str(body.get("started", "?"))
+    except (OSError, ValueError, KeyError, TypeError):
+        return {"state": "unreadable", "path": path, "pid": None, "started": None}
+    return {"state": "live" if pid_alive(pid) else "stale", "path": path,
+            "pid": pid, "started": started}
+
+
 # --- the rule: no tool tallies its own cases ----------------------------------
 def _selftest_body(tree):
     """The statements of a module-level `def _selftest`, or None if there is none."""
