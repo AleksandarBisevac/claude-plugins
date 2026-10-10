@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "interactive (node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html)": "pass",
+    "sweep-selftests": "pass",
+    "ruff": "pass",
+    "vermin": "pass",
+    "check-rendered-artifacts --before-commit": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T21:48:57Z",
+    "basis": "`node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SyntaxError: The requested module './ui-checks/responsive.mjs' does not provide an export named 'FRAMED_BELOW'; HEAD's own tests on HEAD's code are not green (no tally or error reader matched its output, so no line of it is quoted as decisive) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "e_title() added to _report_html.py (<wbr> every 16 chars inside a space-free run over 32 chars, chunks escaped separately; e() untouched); task, bug and proposal-task title call sites in _report_page.py use it. tables.css comment updated. FRAMED_BELOW = 52*16 exported from tools/ui-checks/responsive.mjs and imported by check-report-interactive.mjs; leg 10b plants the token (with <wbr>) in bare prose cells and prints per table what each got. Three committed artifacts re-rendered. Screenshots were re-captured by the orchestrator (node tools/capture-screenshots.mjs, exit 0), which cleared test__refs sc1/sc2. Tests: 5 e_title cases in test__report_html.py, regression case pg0 in test__report_page.py (80-char token renders with <wbr>, Markdown twin unchanged). Evidence: interactive gate 184 checks passed; python3 tools/sweep-selftests.py exit 0 on the re-run; ruff exit 0; vermin exit 0 (both from the earlier run, nothing edited since).",
+    "descriptive": "Long unbroken title tokens get break opportunities in the HTML report, and the browser gate plants them in titles again."
+  },
+  "testsAdded": [
+    "test__report_html.py: e_title cases",
+    "test__report_page.py: pg0",
+    "check-report-interactive.mjs leg 10b"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:901a9af27e2293b5bdc8491562b9ca7336ae7d631a0e03ec2db210b4206766a8\",\"dirtyDigest\":\"sha256:e2fc7026c87edb33e52f8f357c23426f997fb76e71ce14290b5fba8c674e3d2b\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\"docs/demo-large.html\":\"fee02e36205c6a1f\",\"docs/index.html\":\"f3a797d0e653a31a\",\"docs/screenshots/captured-at.json\":\"93fa6daeed4a4e53\",\"docs/screenshots/panel-appearance.png\":\"b72b9a31aeb1c231\",\"docs/screenshots/panel-policy-expanded.png\":\"2b69d36dee9b433e\",\"docs/screenshots/panel-policy.png\":\"5250687a0632e86c\",\"docs/screenshots/panel-proposals.png\":\"81e5dcfe3a81bc29\",\"examples/acme-store/acme-store-audit.html\":\"f3a797d0e653a31a\",\"plugins/audit/scripts/report/_report_html.py\":\"f0f405a1fa13b862\",\"plugins/audit/scripts/report/_report_page.py\":\"39c7e901fb60fd36\",\"plugins/audit/scripts/ui/report-css/tables.css\":\"e173663822de27b1\",\"plugins/audit/tests/test__report_html.py\":\"fdbf517d4c24a631\",\"plugins/audit/tests/test__report_page.py\":\"3d0ae6dc5e927919\",\"tools/check-report-interactive.mjs\":\"eb93940ebbb8ef09\",\"tools/ui-checks/responsive.mjs\":\"3f44946a0f78614b\"},\"head\":\"3c23b459\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"docs/demo-large.html\",\"docs/index.html\",\"docs/screenshots\",\"examples/acme-store/acme-store-audit.html\",\"plugins/audit/scripts/report/_report_html.py\",\"plugins/audit/scripts/report/_report_page.py\",\"plugins/audit/scripts/ui/report-css/tables.css\",\"plugins/audit/tests/test__report_html.py\",\"plugins/audit/tests/test__report_page.py\",\"plugins/audit/tests/test_render_report.py\",\"tools/check-report-interactive.mjs\",\"tools/ui-checks/responsive.mjs\"],\"scopeDigest\":\"sha256:1f820a0c3d10a5b36f8e66f912bcdc6f0111bcb57bff5ecf4538d48045d971a3\",\"v\":2}"
+}

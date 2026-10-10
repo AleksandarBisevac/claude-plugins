@@ -94,6 +94,7 @@ _SCRIPT = _report_ui.SCRIPT
 # nothing upward. Aliased here so the call sites below read as they did when all
 # of this was one file.
 e = _report_html.e
+e_title = _report_html.e_title
 _areas_of = _report_html._areas_of
 _bug_view = _report_html._bug_view
 _chip_buttons = _report_html._chip_buttons
@@ -379,7 +380,7 @@ def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners, workers=None,
                ' data-held="1"' if held else "",
                _filter_attrs(t, tview),
                e(t.get("id")), e(t.get("id")),
-               e(t.get("id")), e(t.get("title")),
+               e(t.get("id")), e_title(t.get("title")),
                _chip(t.get("status")),
                "".join(cells[c]() for c in cols)))
         out.append(_detail_row(t, ph, owners, ncol, seg, pid, workers, tview,
@@ -905,7 +906,7 @@ def _proposals_block(manifest, show=True):
         if tasks:
             trs = "".join(
                 '<tr><td class=mono>%s</td><td>%s</td><td class=mono>%s</td></tr>'
-                % (e(t.get("id")), e(t.get("title")), e(t.get("risk") or "—"))
+                % (e(t.get("id")), e_title(t.get("title")), e(t.get("risk") or "—"))
                 for t in tasks)
             body.append('<div class="tablewrap"><table class="data">'
                         "<thead><tr><th>task</th><th>title</th><th>risk</th></tr>"
@@ -944,7 +945,7 @@ def _bugs_block(manifest, summary, evidence=None):
         rows.append(
             '<tr data-status="%s"><td class=mono>%s</td><td>%s</td><td>%s</td><td>%s</td>'
             "<td class=mono>%s</td><td class=mono>%s</td>%s<td>%s</td></tr>"
-            % (e(bstatus), e(b.get("id")), e(b.get("title")),
+            % (e(bstatus), e(b.get("id")), e_title(b.get("title")),
                _chip(bstatus),
                e(b.get("severity") or "—"), e(b.get("taskId") or "—"),
                e(bfixed[:9]), tev, _ado_cell(b)))

@@ -59,6 +59,10 @@
  */
 // --- the ladder, and measuring one rung of it ----------------------------------
 
+// The report's tablet breakpoint, 52rem, in CSS pixels at the 16px root: the
+// widths at or below it are the ones where the tables scroll in their own frame.
+export const FRAMED_BELOW = 52 * 16;
+
 export const RESPONSIVE_LADDER = [
   320, 390, 544, 545, 640, 641, 688, 768, 769, 832, 833,
   960, 961, 1120, 1121, 1152, 1153, 1200, 1247, 1248, 1512,

@@ -46,6 +46,22 @@ def _cases(check):
           M.e(None) == "")
     check("e() stringifies non-strings before escaping", M.e(42) == "42")
 
+    # --- e_title(): break opportunities inside one unbroken run ----------------
+    _tok = "0123456789abcdef" * 5
+    _rt = M.e_title("fix " + _tok + " now")
+    check("e_title puts <wbr> inside an unbroken run past the threshold: %r" % (_rt,),
+          _rt.count("<wbr>") >= 4 and _rt.replace("<wbr>", "") == "fix " + _tok + " now")
+    _plain = "Deduplicate the ledger rows, then re-check the plugins/audit/scripts tree"
+    check("e_title leaves ordinary words alone (no <wbr>)",
+          M.e_title(_plain) == M.e(_plain))
+    _hostile = M.e_title("<b>" + "&" * 60 + "</b>")
+    check("e_title still escapes, and never cuts an entity in half: %r" % (_hostile,),
+          "<b>" not in _hostile and "&amp;<wbr>" in _hostile
+          and "&am<wbr>" not in _hostile and "&a<wbr>" not in _hostile)
+    check("e_title of None is empty, like e()", M.e_title(None) == "")
+    check("e() itself never emits <wbr> (attributes use it)",
+          "<wbr>" not in M.e(_tok))
+
     # --- _safe_url(): the one gate a URL passes before becoming an href -------
     check("_safe_url accepts https", M._safe_url("https://x.io/a") == "https://x.io/a")
     check("_safe_url accepts http", M._safe_url("http://x.io/a") == "http://x.io/a")

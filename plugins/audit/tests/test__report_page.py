@@ -68,6 +68,19 @@ def _cases(check):
                      {"id": "P2", "title": "two", "status": "pending",
                       "done": 0, "total": 1}]}
 
+    # --- a long unbroken title token ---------------------------------------------
+    _long = "x" * 80
+    _lm = {"meta": {"title": "page", "repo": "r"},
+           "bugs": [{"id": "BUG-1", "title": "b " + _long, "status": "open"}],
+           "phases": [{"id": "P1", "title": "one", "status": "pending",
+                       "tasks": [{"id": "P1.1", "title": "t " + _long,
+                                  "status": "pending"}]}]}
+    _ld = M.render_html(_lm, _s, "b", None)
+    check("pg0 an 80-character unbroken token in a task and a bug title renders "
+          "with <wbr> inside it, and the Markdown twin carries it whole",
+          "<td>t xxxxxxxxxxxxxxxx<wbr>" in _ld and "<td>b xxxxxxxxxxxxxxxx<wbr>" in _ld
+          and ("t " + _long) in _report_md.render_md(_lm, _s, None))
+
     # --- the _report_md seam ---------------------------------------------------
     # The one edge that makes _report_md non-optional for anyone taking this
     # file: the page carries the Markdown twin as its "Download .md" payload, so

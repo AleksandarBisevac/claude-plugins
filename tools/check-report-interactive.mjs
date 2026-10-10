@@ -53,6 +53,7 @@ import { resolve } from 'node:path';
 import { RESPONSIVE_LADDER, walkResponsiveLadder, assertLadderMeasuredSomething,
          newLadderTally, assertStillLive, newLivenessTally,
          assertLivenessWasChecked } from './capture-screenshots.mjs';
+import { FRAMED_BELOW } from './ui-checks/responsive.mjs';
 // Naming a <details> by what it CONTAINS. `.more` is a shared BEHAVIOURAL class
 // (print expansion) that several disclosures wear on purpose, so it identifies a
 // behaviour and not a disclosure; the rule and the scar it came from are in that
@@ -2331,7 +2332,6 @@ expect('...nor the panel inside it', onPaper.panel, true);
 //     Task rows are opened for it and closed again, because the resting layout
 //     the ladder measures shows none of their titles.
 {
-  const FRAMED_BELOW = 832;
   const shut = await page.evaluate(() =>
     [...document.querySelectorAll('tr.task')].every((r) => r.offsetParent === null));
   if (shut) { await page.click('#audit-expand'); await page.waitForTimeout(250); }
@@ -2408,13 +2408,12 @@ expect('...nor the panel inside it', onPaper.panel, true);
 //     are wider the bugs table has no slack left at the first unframed rung,
 //     so the row widened the page with nothing in it longer than a word.
 //
-//     A bare-text cell (a title) gets the summary and NOT the token, and that
-//     is a known gap rather than an oversight. The only rule that breaks a
-//     token there is one that lets the cell break anywhere, and that lowers
-//     its narrowest width to a letter - the column algorithm then starves it
-//     and splits ordinary words, which 10a above exists to catch. Breaking a
-//     token without that cost needs the renderer to put break opportunities
-//     inside long tokens; the stylesheet cannot. Each width either
+//     A bare-text cell (a title) gets the summary AND the token, the token
+//     carrying the <wbr> break opportunities the renderer puts inside a long
+//     run in a title - the stylesheet cannot break it without lowering the
+//     cell's narrowest width to a letter, which 10a above exists to catch.
+//     Each table's label says what it was given, because a table with no
+//     prose bare column gets the token in its full-width cells alone. Each width either
 //     side of a breakpoint is then asked one question: did that row make the
 //     DOCUMENT any wider than it already was? Compared to the page's own width
 //     before the row went in, so a plan that already overflows is accused of
@@ -2461,6 +2460,7 @@ expect('...nor the panel inside it', onPaper.panel, true);
       }
       const cells = [...row.cells].filter((c) => c.colSpan > 1
         || (isBare(c) && proseCols.has(c.cellIndex)));
+      const got = { bare: 0, full: 0, marks: 0 };
       for (const cell of cells) {
         // A phase with no desired outcome and no summary renders no .pmeta,
         // and that is the one block this row exists to fill.
@@ -2480,15 +2480,27 @@ expect('...nor the panel inside it', onPaper.panel, true);
           unbroken.className = 'ptev';
           unbroken.textContent = token;
           meta.before(unbroken);
+          got.marks += 1;
         } else {
-          // The token goes only where the stylesheet can break it without
-          // starving a column - see the gap named above.
-          cell.textContent = cell.colSpan > 1 ? `${prose} ${token}` : prose;
+          if (cell.colSpan > 1) {
+            cell.textContent = `${prose} ${token}`;
+            got.full += 1;
+          } else {
+            // A bare cell is broken by the <wbr> the renderer puts inside a
+            // long run in a title, so the planted token wears the same.
+            cell.textContent = `${prose} `;
+            token.match(/.{1,16}/g).forEach((chunk, i) => {
+              if (i) cell.append(document.createElement('wbr'));
+              cell.append(chunk);
+            });
+            got.bare += 1;
+          }
         }
       }
       if (!cells.length) { skipped.push(`${table.className} (no prose cell)`); continue; }
       proto.after(row);
-      made.push(table.className);
+      made.push(`${table.className} [prose in ${cells.length} cell(s), token in ${got.bare} bare + `
+        + `${got.full} full-width + ${got.marks} evidence-mark cell(s)]`);
     }
     return { made, skipped };
   }, { token: LONG_TOKEN, prose: LONG_PROSE });
@@ -2525,8 +2537,8 @@ expect('...nor the panel inside it', onPaper.panel, true);
   }
   await page.setViewportSize({ width: 1512, height: 945 });
   await page.waitForTimeout(200);
-  expect(`a very long summary and a very long unbroken token, planted in ${planted.made.join(' + ') || 'no table'}, `
-    + 'widen the document at no width', widened.join(', ') || 'none', 'none');
+  expect(`hostile content (planted per table: ${planted.made.join(' + ') || 'no table'}) `
+    + 'widens the document at no width', widened.join(', ') || 'none', 'none');
   expect('...and the planted rows were really on the page, wrapped, at the narrowest width',
     planted.made.length > 0 && narrowest !== null && narrowest.painted, true);
 }

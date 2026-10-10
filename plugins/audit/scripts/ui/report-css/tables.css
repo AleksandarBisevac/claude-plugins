@@ -44,14 +44,12 @@ td.when,td.mono{font-variant-numeric:tabular-nums}
    document would scroll sideways. Its prose spans every column, so letting it
    break costs no column anything. The drawer's `.dt-v` does the same for its
    values.
-   A BARE-TEXT cell (a task or bug title) deliberately does not get this rule,
-   and the cost is stated here because it is real: an unbroken token in a title
-   longer than the window still widens the page. The rule was tried there and
-   was worse - a cell that may break anywhere has a narrowest width of one
-   letter, so the column algorithm starved the title column above the
-   breakpoint and split ordinary words mid-letter on every shipped report.
-   Breaking only the long token needs break opportunities inside it, which the
-   renderer can supply and this sheet cannot. */
+   A BARE-TEXT cell (a task or bug title) deliberately does not get this rule:
+   a cell that may break anywhere has a narrowest width of one letter, so the
+   column algorithm starved the title column above the breakpoint and split
+   ordinary words mid-letter on every shipped report. Its long tokens are
+   broken another way - the renderer puts a break opportunity inside any
+   unbroken run in a title, so this sheet needs no rule for them. */
 :where(table.phases,table.data) td[colspan]{overflow-wrap:anywhere}
 /* vw: the label and its select are one control and wrap as one — the toolbar
    is a flex row, and letting the words break away from the box they name is

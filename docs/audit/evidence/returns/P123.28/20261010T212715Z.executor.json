@@ -1,0 +1,25 @@
+{
+  "gates": {
+    "interactive (node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html)": "pass",
+    "sweep-selftests": "fail",
+    "sweep-selftests --spaced": "fail",
+    "ruff": "pass",
+    "vermin": "pass",
+    "check-rendered-artifacts --before-commit": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T21:40:57Z",
+    "basis": "`node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SyntaxError: The requested module './ui-checks/responsive.mjs' does not provide an export named 'FRAMED_BELOW'; HEAD's own tests on HEAD's code are not green (no tally or error reader matched its output, so no line of it is quoted as decisive) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "Added e_title() to _report_html.py (<wbr> every 16 chars inside any space-free run over 32 chars, each chunk escaped separately; e() untouched); swapped task title, bug title and proposal-task title call sites in _report_page.py. tables.css comment updated. responsive.mjs exports FRAMED_BELOW = 52*16 beside RESPONSIVE_LADDER; check-report-interactive imports it (directly from ui-checks/responsive.mjs because capture-screenshots.mjs, outside scope, is the re-export hub). Leg 10b now plants the token (with <wbr>) in bare prose cells and its label prints per table how many bare/full-width/evidence-mark cells got the token. Re-rendered the three committed artifacts (CSS comment bytes only; no title in them has a long run); reverted the unrelated timestamp change report.sh made to acme-store-audit.md. Tests: 5 cases in test__report_html.py, 1 regression case (pg0) in test__report_page.py. Interactive gate: 184 checks passed, exit 0. ruff exit 0, vermin exit 0. Sweep exit 1 (also --spaced): the only failing file is plugins/audit/tests/test__refs.py, cases sc1/sc2, because docs/screenshots/*.png were captured from the old report CSS digest; the tables.css comment change moves the digest. Fix is `node tools/capture-screenshots.mjs`, which rewrites docs/screenshots/*.png and the screenshot record, outside this task's files and a browser capture the orchestrator should run (capture lock). I did not run it.",
+    "descriptive": "Long unbroken title tokens now get break opportunities in the HTML report and the browser gate plants them in titles again; screenshots need a re-capture."
+  },
+  "testsAdded": [
+    "test__report_html.py: e_title cases",
+    "test__report_page.py: pg0",
+    "check-report-interactive.mjs leg 10b"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:0e8b9814bc6e0eef74c4ad287fd0e0cc8bb6496b36cf7706994b07b6a23a5a7f\",\"dirtyDigest\":\"sha256:946cc2031542ff0831d911825e235e1fa25a919d96f86c11ebc26d9840393c89\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\"docs/demo-large.html\":\"fee02e36205c6a1f\",\"docs/index.html\":\"f3a797d0e653a31a\",\"examples/acme-store/acme-store-audit.html\":\"f3a797d0e653a31a\",\"plugins/audit/scripts/report/_report_html.py\":\"f0f405a1fa13b862\",\"plugins/audit/scripts/report/_report_page.py\":\"39c7e901fb60fd36\",\"plugins/audit/scripts/ui/report-css/tables.css\":\"e173663822de27b1\",\"plugins/audit/tests/test__report_html.py\":\"fdbf517d4c24a631\",\"plugins/audit/tests/test__report_page.py\":\"3d0ae6dc5e927919\",\"tools/check-report-interactive.mjs\":\"eb93940ebbb8ef09\",\"tools/ui-checks/responsive.mjs\":\"3f44946a0f78614b\"},\"head\":\"3c23b459\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"docs/demo-large.html\",\"docs/index.html\",\"examples/acme-store/acme-store-audit.html\",\"plugins/audit/scripts/report/_report_html.py\",\"plugins/audit/scripts/report/_report_page.py\",\"plugins/audit/scripts/ui/report-css/tables.css\",\"plugins/audit/tests/test__report_html.py\",\"plugins/audit/tests/test__report_page.py\",\"plugins/audit/tests/test_render_report.py\",\"tools/check-report-interactive.mjs\",\"tools/ui-checks/responsive.mjs\"],\"scopeDigest\":\"sha256:0a99be1834d3612035d1215be99df0a9f3d49577d86ccb9849bd4af21539b17c\",\"v\":2}"
+}

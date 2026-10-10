@@ -113,6 +113,28 @@ def e(value):
     return html.escape(str(value if value is not None else ""), quote=True)
 
 
+_WBR_RUN = 32     # an unbroken run longer than this gets break opportunities
+_WBR_EVERY = 16   # ...one every this many characters
+
+
+def e_title(value):
+    """Escape title text for a table cell, with `<wbr>` inside any unbroken run
+    longer than `_WBR_RUN`. The stylesheet cannot break such a token without
+    letting every cell break anywhere, so the markup offers the break points.
+    Each chunk is escaped on its own, so an entity is never cut in half. HTML
+    only: the Markdown twin carries the title unchanged."""
+    text = str(value if value is not None else "")
+    parts = []
+    for tok in text.split(" "):
+        if len(tok) > _WBR_RUN:
+            tok = "<wbr>".join(e(tok[i:i + _WBR_EVERY])
+                               for i in range(0, len(tok), _WBR_EVERY))
+        else:
+            tok = e(tok)
+        parts.append(tok)
+    return " ".join(parts)
+
+
 def _safe_url(url):
     """Return the url only when it is plain http(s) — else None (render as text)."""
     u = str(url or "")
