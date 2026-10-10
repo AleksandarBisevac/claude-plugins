@@ -968,8 +968,8 @@ def _check_shards(rep, index_path, manifest, mio=None):
                         "meta.version says 3 (sharded) but no phase carries a "
                         "shard ref - the stamp and the phase stubs disagree, and "
                         "the stubs are what every reader goes by",
-                        "restore the shard refs from the .bak-<UTC> beside the "
-                        "manifest, or re-split with /audit:layout sharded")
+                        "restore the shard refs from the .bak-<UTC> in "
+                        ".claude/audit-backups/, or re-split with /audit:layout sharded")
             return
         rep.ok("layout", "single-file layout - one file, one diff, no index to "
                          "keep in step; the cost is that running one phase loads "

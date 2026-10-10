@@ -17,7 +17,7 @@ SOURCE, refuse a mid-run change unless forced, back the original up, write atomi
 re-read the result and check it both validates and reads as the layout that was asked
 for - and RESTORE the backup on any failure.
 
-A backup is still a restore point and not an undo: copying `<manifest>.bak-<UTC>` back by
+A backup is still a restore point and not an undo: copying `.claude/audit-backups/<manifest>.bak-<UTC>` back by
 hand discards every manifest write made after the layout change. Say that wherever the
 backup is mentioned. What the reverse direction changes is that going back is no longer
 something a user has to do by hand at all.
@@ -45,12 +45,15 @@ Safe by default:
     it too, so the preview is not the step that discovers it
   - refuses, in the sharded direction, when no phase carries an id: a split with
     nothing to shard reads as single-file whatever the version says
-  - backs up the original to <manifest>.bak-<UTC> before writing
+  - backs up the original to <project>/.claude/audit-backups/<manifest>.bak-<UTC>
+    before writing - an ignored directory, so the copy never sits beside the plan
+    looking like a second one
   - re-reads the RESULT: it must validate AND read as the requested layout by BOTH
     readings of the layout - the phase stubs and `meta.version`. On any failure it
     RESTORES the backup and exits non-zero
   - `--to=single-file` then moves the emptied shard directory aside under a
-    `.bak-<UTC>` name. A rename, so it cannot half-apply, and it deletes nothing
+    `.bak-<UTC>` name in that same directory. A rename, so it cannot half-apply, and
+    it deletes nothing
 
 Exit codes: 0 ok / already in that layout - 1 refused or validation failure -
 2 usage/unreadable.
@@ -251,7 +254,8 @@ def _retire_shard_dir(raw_index, index_path, stamp):
     sdir, why = _mio.shard_dir_to_retire(raw_index, index_path)
     if not sdir:
         return "shards left in place (%s)" % why
-    parked = "%s.bak-%s" % (sdir, stamp)
+    parked = os.path.join(_mio.backup_dir_for(index_path),
+                          "%s.bak-%s" % (os.path.basename(sdir), stamp))
     if os.path.exists(parked):
         raise RuntimeError("cannot move %s aside: %s already exists" % (sdir, parked))
     os.rename(sdir, parked)
@@ -363,7 +367,9 @@ def migrate(path, *, to="sharded", dry_run=False, force=False, renumber=False, o
     stamp = _utc_stamp()
     backup = None
     if out is None:                     # in-place: back up the original first
-        backup = "%s.bak-%s" % (path, stamp)
+        backup_dir, ignored = _mio.ensure_backup_dir(path)
+        backup = os.path.join(backup_dir,
+                              "%s.bak-%s" % (os.path.basename(path), stamp))
         shutil.copy2(path, backup)
     retired = ""
     # Asked of the ASSEMBLED plan before either save splits or joins it: the
@@ -391,6 +397,10 @@ def migrate(path, *, to="sharded", dry_run=False, force=False, renumber=False, o
     msg = "%s -> %s: %s" % (current, to, target)
     if backup:
         msg += "\n  backup (the manifest file only): %s" % backup
+        if not ignored:
+            msg += ("\n  WARNING: could not write the ignore line for %s - add "
+                    "it to .claude/.gitignore before committing"
+                    % (_mio.BACKUP_DIR_NAME + "/"))
     if retired:
         msg += "\n  " + retired
     if to == "single-file" and out is not None:

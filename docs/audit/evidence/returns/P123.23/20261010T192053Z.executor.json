@@ -1,0 +1,27 @@
+{
+  "gates": {
+    "sweep-selftests (python3 tools/sweep-selftests.py)": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T19:26:37Z",
+    "basis": "`python3 plugins/audit/tests/test_migrate_manifest.py --selftest` in a throwaway tree at HEAD exited 1 with 4 of 5 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bk1 (house FAIL), bk2 (house FAIL), bk3 (house FAIL), bk4 (house FAIL): SELFTEST FAILED: 0/5 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "Added _mio.ensure_claude_ignored (shared ignore-line writer), backup_dir_for, ensure_backup_dir and BACKUP_DIR_NAME in _manifest_io.py; panel-server._ensure_panel_files_ignored now delegates to the shared writer. migrate-manifest.py parks the manifest backup and the retired shard dir under <checkout>/.claude/audit-backups/ (git-ignored by a targeted 'audit-backups/' line), warning when the line cannot be written. New _backup_cases (bk1-bk8: nothing untracked beside the plan, check-ignore matches, targeted line, reverse parks shards, failed migration restores) plus updated existing path assumptions. Docs updated: layout.md, init.md (regenerate + split), README, PLUGIN-BUILD-GUIDE.md, and the doctor restore remedy text in _doctor_setup.py. python3 tools/sweep-selftests.py exit 0; ruff clean. No test change needed in test__doctor_setup.py or test__manifest_io.py (both unmodified; manifest_io selftest passes).",
+    "descriptive": "A layout migration's restore points land in an ignored .claude/audit-backups directory instead of beside the plan."
+  },
+  "testsAdded": [
+    "bk1",
+    "bk2",
+    "bk3",
+    "bk4",
+    "bk5",
+    "bk6",
+    "bk7",
+    "bk8"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:0eb796caa1c89f6d1b26f3a5b68c03e197e0078a61274577c48c86741ca142e7\",\"dirtyDigest\":\"sha256:9ea5909c981033875294184bdad840db4f883c1935c93d4e0d5ed03d51a1ace8\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\"PLUGIN-BUILD-GUIDE.md\":\"987966f6aa63a175\",\"plugins/audit/README.md\":\"7d58161092b80b21\",\"plugins/audit/commands/init.md\":\"39c968c355dce334\",\"plugins/audit/commands/layout.md\":\"af39b065263bbe8a\",\"plugins/audit/scripts/manifest/_manifest_io.py\":\"ddf74a7502b4226f\",\"plugins/audit/scripts/manifest/migrate-manifest.py\":\"74ae9f43f86702d3\",\"plugins/audit/scripts/panel/panel-server.py\":\"c49e3c59a6eb0850\",\"plugins/audit/scripts/status/_doctor_setup.py\":\"0892e7fbda562a93\",\"plugins/audit/tests/test_migrate_manifest.py\":\"3c77baeba00069fc\"},\"head\":\"170ff682\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/README.md\",\"plugins/audit/commands/init.md\",\"plugins/audit/commands/layout.md\",\"plugins/audit/scripts/manifest/_manifest_io.py\",\"plugins/audit/scripts/manifest/migrate-manifest.py\",\"plugins/audit/scripts/panel/panel-server.py\",\"plugins/audit/scripts/status/_doctor_setup.py\",\"plugins/audit/tests/test__doctor_setup.py\",\"plugins/audit/tests/test__manifest_io.py\",\"plugins/audit/tests/test_migrate_manifest.py\",\"plugins/audit/tests/test_panel_server.py\"],\"scopeDigest\":\"sha256:83d98dd41bddfe5e67234cb12a340ae02d9e036a8587aaa0e475d007a65fb0c1\",\"v\":2}"
+}

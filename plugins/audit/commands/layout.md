@@ -113,7 +113,7 @@ layouts, so it applies to either direction) or `--force` through from `$ARGUMENT
 `--to=`, the script still means `sharded`: that is the spelling in older runbooks and transcripts.
 
 Either direction: the script validates the **source** first, backs the manifest up to
-`<manifestPath>.bak-<UTC>`, writes atomically, then **re-validates the result and restores the
+`.claude/audit-backups/<manifest file name>.bak-<UTC>` (an ignored directory under the project, never beside the plan), writes atomically, then **re-validates the result and restores the
 backup on any failure**.
 
 **To `sharded`, one more refusal, and `--dry-run` hits it too.** Two phase ids that sanitise to
@@ -135,7 +135,7 @@ failure paths you control — unless the acquire in step 1 said the lock was alr
 case it is not yours to give back. A release that exits **3** means you were taken over: stop and
 tell the user rather than `--force`-ing past it.
 
-Report the backup path in both directions, and say what it is: `.bak-<UTC>` is a **restore point
+Report the backup path in both directions, and say what it is: the `.bak-<UTC>` copy under `.claude/audit-backups/` is a **restore point
 for this command**, not an undo for the plan. Restoring it discards every manifest write made
 since, and stops being a useful route back the moment the manifest is written to again. Safe to
 delete once the user is happy.

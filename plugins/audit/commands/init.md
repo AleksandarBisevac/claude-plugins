@@ -36,8 +36,8 @@ carries (`proposals[]` entries with `status: "proposed"`):
 re-running init when what they actually want is to materialize what the last run
 parked. Then ask (AskUserQuestion):
 - **Abort** (default) — keep the existing manifest; suggest `/audit:status`.
-- **Regenerate** — back it up to `<manifestPath>.bak-<UTC timestamp>` first
-  (the backup includes any proposals).
+- **Regenerate** — back it up to `.claude/audit-backups/<manifest file name>.bak-<UTC timestamp>` first (an ignored directory, never beside the plan;
+  the backup includes any proposals).
 - **Append phases** — keep existing phases; new phases continue the id sequence,
   counting BOTH live phases and any `proposals[].payload` reserved phase ids
   (see manifest-conventions.md → ID allocation). New proposal ids come from
@@ -693,7 +693,7 @@ spells out — a wide gate nobody was told about is
 how a default teaches the wrong lesson, and this is the last place to say it before the plan
 starts running. Name the layout that was written, and
 when it is sharded, that the index and every `phases/*.json` are new files to
-`git add` — plus that the `.bak-<UTC>` the split left behind is a copy of the file
+`git add` — plus that the `.bak-<UTC>` the split left under `.claude/audit-backups/` (git-ignored) is a copy of the file
 written moments earlier, so on a fresh init it is noise and safe to delete.
 
 **Parked (any):** a proposal table (`PROP-id — reserved phase — title — tasks`)

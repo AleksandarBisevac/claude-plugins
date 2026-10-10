@@ -1719,7 +1719,7 @@
     {
       "id": "P123.22",
       "title": "The sign-off's tip-only remedy never states an unread worktree list or an impossible add",
-      "status": "in_progress",
+      "status": "done",
       "description": "`audit-task._tip_only_remedy` (with `_branch_holder`) says 'no worktree holds <branch>' when the worktree list could not be read (absence stated without a basis), and names `git worktree add <dir> <branch>` when a prunable worktree holds the branch, which git refuses (exit 128). When the listing carries an error, say the holder is unknown and why; when a prunable worktree holds the branch, name `git worktree prune` before the add. The refusal itself is unchanged. Regression: pinned beside hs5b - unreadable listing -> 'unknown' wording; prunable holder -> prune named first. Faults: F571.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1753,25 +1753,38 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "170ff6829b4c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py _tip_only_remedy: listing error -> holder unknown with git's reason; prunable holder -> git worktree prune named before the add (new _branch_prunable). Cases hs5d, hs5e added beside hs5b; both failed before the fix (984/986), 986/986 after. tools/sweep-selftests.py exit 0. PLUGIN-BUILD-GUIDE.md untouched (_deps.py --render exit 0).",
+        "descriptive": "The tip-only remedy no longer asserts absence it could not read or an add git refuses."
       },
       "startedAt": "2026-10-10T19:01:19Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T19:20:52Z",
+      "verifiedBy": [
+        "hs5d",
+        "hs5e"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T19:20:51Z.07215a",
         "status": "passed",
         "at": "2026-10-10T19:20:51Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "170ff6829b4c",
+        "at": "2026-10-10T19:20:52Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T19:11:45Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 986 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - hs5d (house FAIL), hs5e (house FAIL): SELFTEST FAILED: 984/986 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.23",
       "title": "A layout migration's backup lands in an ignored place, never beside the plan",
-      "status": "pending",
+      "status": "in_progress",
       "description": "`migrate-manifest.py` copies the original to `<manifest>.bak-<UTC>` beside the plan (and retires a shard dir as `<dir>.bak-<UTC>`), and nothing the plugin writes ignores that name, so a committed-looking copy of the plan sits next to it. Park restore points under the plugin's private `.claude/` area with a targeted ignore line, reusing one ignore-line writer (today `panel-server._ensure_panel_files_ignored`, moved to a shared helper both call); update every doc that names the location (layout.md, init.md regenerate/split, README) and the doctor's restore remedy. Regression: an in-place migration leaves no new untracked file beside the manifest, `git check-ignore` matches the backup, and a failed migration still restores from it. Faults: F363.",
       "files": [
         "plugins/audit/scripts/manifest/migrate-manifest.py",
@@ -1812,16 +1825,22 @@
         "P123.21"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T19:20:53Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T19:35:19Z.dff17c",
+        "status": "passed",
+        "at": "2026-10-10T19:35:19Z"
+      }
     },
     {
       "id": "P123.24",
@@ -2959,6 +2978,59 @@
           "plugins/audit/tests/test_stamp_verification.py: SELFTEST FAILED N-1/N with an AttributeError naming an introduced symbol grades proved; the same abort naming an unrelated name stays could-not-prove",
           "plugins/audit/tests/test_stamp_verification.py: an inline suite is red-proved from its added test hunks alone, or could-not-prove with the inline reason",
           "plugins/audit/tests/test_audit_task.py: add/scope of a task whose only test file is also its source defaults to regression mode"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.45-64p",
+      "title": "A close refuses while an undeclared tracked file changed during the attempt, and a printed brief survives a scope widening",
+      "status": "pending",
+      "description": "(F623, reported from the testbed on 3.2.0) An executor edited a TRACKED file outside its task's files (an allowlist in a test the gate needed); the drive printed 'gate green; closed at <sha>' and the commit held only the declared files, so the commit alone fails the suite the gate passed. The during-attempt refusal in commit-task-work pins a file the attempt CREATED outside scope (ctw-at3), but the start snapshot holds the DECLARED files' blob ids only, so a tracked undeclared file modified during the attempt is attributed by mtime at best. Record at `start` the blob id of every tracked dirty-or-clean path the attempt could touch cheaply (the porcelain set at start plus HEAD's blob for any path that later shows dirty is enough: a path clean at start and dirty at close changed during the attempt), so a tracked file modified during the attempt that no in_progress task covers is refused at commit-task-work, at `done --commit` and therefore at the drive's close, naming the path and offering `/audit:task scope` widening; the drive never prints 'closed' while one exists. Allow: the same file already dirty before `start` is not this task's (the existing before-attempt wording). (F624) After `drive next` printed a dispatch and the orchestrator ran `audit-task scope` on that started task, the next `drive next` answered `decide no-executor-return` for a brief no executor ever received, and `retry` spent an attempt: a printed brief with no return and no dispatch evidence is re-printed (or re-issued after scope), never graded as an executor that returned nothing, and costs no attempt. Faults: F623, F624.",
+      "files": [
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_commit_task_work.py: a tracked file clean at start, modified during the attempt and declared by no in_progress task is refused at commit naming it; the same file dirty before start is not refused as this attempt's",
+          "plugins/audit/tests/test_drive_phase.py: a close over such a path stops and does not print 'closed'",
+          "plugins/audit/tests/test_drive_phase.py: dispatch printed, then audit-task scope on the started task, then next re-prints the dispatch rather than deciding no-executor-return, and no attempt is spent"
         ],
         "expectRedFirst": true,
         "gate": [

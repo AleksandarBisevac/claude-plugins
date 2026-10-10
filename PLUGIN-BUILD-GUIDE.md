@@ -5210,10 +5210,10 @@ is where both writers take that number from, because the layout has TWO independ
 all. `migrate-manifest.py` — driven by `/audit:layout`, of which `/audit:migrate` is the kept
 legacy spelling — converts in EITHER direction — `--to=sharded|single-file`, defaulting to
 sharded so every invocation predating the reverse still means what it meant — under one discipline:
-validate source → refuse mid-run (unless `--force`) → backup `.bak-<UTC>` → write → re-read and check
+validate source → refuse mid-run (unless `--force`) → backup `.bak-<UTC>` (under the ignored `.claude/audit-backups/`, never beside the plan) → write → re-read and check
 the result both validates AND reads as the layout asked for → restore on failure. `--renumber` repairs
 duplicate `BUG-` ids in either direction, `--dry-run` previews. Going to single-file then moves the
-emptied shard directory aside under a `.bak-<UTC>` name — one `os.rename`, so it cannot half-apply and
+emptied shard directory aside under a `.bak-<UTC>` name in that directory — one `os.rename`, so it cannot half-apply and
 nothing is deleted — as the last step, after the result has validated, because it is the only mutation
 restoring the index does not undo. No lock is taken in the script: the index lock belongs to the
 command driving it. Locks moved to the shared git dir(two-tier: index + per-phase-shard); ids allocate under the index lock; bug status is derived from the

@@ -74,7 +74,7 @@ def _cases(check):
         check("shards written", os.path.isfile(os.path.join(tmp, "c1", "phases", "P1.json"))
               and os.path.isfile(os.path.join(tmp, "c1", "phases", "P2.json")))
         check("backup written", any(n.startswith("audit-plan.json.bak-")
-              for n in os.listdir(os.path.join(tmp, "c1"))))
+              for n in os.listdir(os.path.join(tmp, "c1", ".claude", "audit-backups"))))
         reloaded = _mio.load_manifest(p)
         expect = _legacy()
         expect["meta"]["version"] = 3
@@ -309,8 +309,8 @@ def _cases(check):
         check("rev5 the round trip loses nothing AS DATA - single-file -> sharded -> "
               "single-file is the source manifest again, meta.version included",
               _rraw == _legacy(), json.dumps(_rraw, sort_keys=True))
-        _rparked = [n for n in os.listdir(os.path.join(tmp, "rev"))
-                    if n.startswith("phases.bak-")]
+        _rbak = os.path.join(tmp, "rev", ".claude", "audit-backups")
+        _rparked = [n for n in os.listdir(_rbak) if n.startswith("phases.bak-")]
         check("rev6 the emptied shard directory is MOVED ASIDE, not deleted and not "
               "left looking live", len(_rparked) == 1
               and not os.path.isdir(os.path.join(tmp, "rev", "phases")),
@@ -321,7 +321,7 @@ def _cases(check):
         check("rev7 ...and every shard file is still in it - a rename cannot "
               "half-apply, which a delete-then-write can",
               bool(_rparked) and sorted(os.listdir(
-                  os.path.join(tmp, "rev", _rparked[0]))) == ["P1.json", "P2.json"])
+                  os.path.join(_rbak, _rparked[0]))) == ["P1.json", "P2.json"])
         check("rev8 a second reverse is a no-op, the same way a second forward is",
               M.migrate(_rp, to="single-file")[0] == 0
               and "already single-file" in M.migrate(_rp, to="single-file")[1])
@@ -550,8 +550,9 @@ def _cases(check):
             check("rst6 ...and the shard directory was never moved: a failure must "
                   "not leave the shard state half-changed",
                   os.path.isdir(os.path.join(_r1root, "phases"))
-                  and not [n for n in os.listdir(_r1root)
-                           if n.startswith("phases.bak-")],
+                  and not [n for n in os.listdir(os.path.join(
+                      _r1root, ".claude", "audit-backups"))
+                      if n.startswith("phases.bak-")],
                   repr(sorted(os.listdir(_r1root))))
 
             # r2. THE TRAP: the reverse write leaves `meta.version` naming the
@@ -690,8 +691,95 @@ def _redact_cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _backup_cases(check):
+    """A restore point is parked under the project's private `.claude/` area with a
+    targeted ignore line, never beside the plan where it reads as a second plan."""
+    import subprocess
+    tmp = tempfile.mkdtemp(prefix="migrate-backup-")
+
+    def _git(*argv):
+        return subprocess.run(["git", "-C", tmp] + list(argv),
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              universal_newlines=True)
+
+    def _untracked_mentions(needle):
+        out = _git("status", "--porcelain", "-uall").stdout
+        return [ln for ln in out.splitlines() if needle in ln]
+
+    try:
+        subprocess.call(["git", "init", "-q", tmp])
+        adir = os.path.join(tmp, "docs", "audit")
+        os.makedirs(adir)
+        p = os.path.join(adir, "audit-plan.json")
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(_legacy(), fh)
+        bdir = os.path.join(tmp, ".claude", "audit-backups")
+
+        code, msg = M.migrate(p)
+        parked = sorted(os.listdir(bdir)) if os.path.isdir(bdir) else []
+        check("bk1 an in-place migration parks the manifest backup under "
+              ".claude/audit-backups: %r" % ((code, parked),),
+              code == 0 and len(parked) == 1
+              and parked[0].startswith("audit-plan.json.bak-"), msg)
+        check("bk2 ...and leaves no .bak- name beside the plan",
+              not [n for n in os.listdir(adir) if ".bak-" in n],
+              repr(sorted(os.listdir(adir))))
+        check("bk3 ...so git status shows no backup among the untracked files",
+              not _untracked_mentions(".bak-") and parked
+              and not _untracked_mentions("audit-backups"),
+              _git("status", "--porcelain", "-uall").stdout)
+        rel = os.path.join(".claude", "audit-backups", parked[0]) if parked else "x"
+        check("bk4 ...because git check-ignore matches the backup",
+              _git("check-ignore", "-q", rel).returncode == 0)
+        gi = os.path.join(tmp, ".claude", ".gitignore")
+        with open(gi, encoding="utf-8") as fh:
+            lines = [ln.strip() for ln in fh.read().splitlines()]
+        check("bk5 ...by a targeted line, not a blanket ignore of .claude",
+              "audit-backups/" in lines and ".claude" not in lines
+              and "*" not in lines, repr(lines))
+
+        code2, msg2 = M.migrate(p, to="single-file")
+        names = sorted(os.listdir(bdir))
+        check("bk6 the reverse parks the retired shard directory there too, "
+              "beside the manifest backup: %r" % (names,),
+              code2 == 0 and any(n.startswith("phases.bak-") for n in names)
+              and not os.path.isdir(os.path.join(adir, "phases")), msg2)
+        check("bk7 ...with nothing left beside the plan and nothing untracked "
+              "under a .bak- name",
+              not [n for n in os.listdir(adir) if ".bak-" in n]
+              and not _untracked_mentions(".bak-"))
+
+        # a failed migration still restores from the parked copy
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(_legacy(), fh)
+        before = open(p, "rb").read()
+        orig = M._load_validator
+
+        class _FailsOnTheResult(object):
+            def __init__(self):
+                self.calls = 0
+
+            def validate(self, _manifest):
+                self.calls += 1
+                return ([], []) if self.calls == 1 else (["injected"], [])
+
+        stub = _FailsOnTheResult()
+        M._load_validator = lambda: stub
+        try:
+            fcode, fmsg = M.migrate(p)
+        finally:
+            M._load_validator = orig
+        check("bk8 a failed migration restores the original from the parked "
+              "copy, byte for byte: %r" % ((fcode, stub.calls),),
+              fcode == 1 and "restored" in fmsg and ".claude" in fmsg
+              and open(p, "rb").read() == before, fmsg)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _selftest():
     def body(check):
+        _backup_cases(check)
         _redact_cases(check)
         _cases(check)
     return _harness.run(body)

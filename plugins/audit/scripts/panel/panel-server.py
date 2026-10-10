@@ -596,22 +596,8 @@ def _ensure_panel_files_ignored(project):
     hygiene). Returns True when every rule is in place, False when any could
     not be ensured — callers must warn then, not claim."""
     try:
-        gi = os.path.join(os.path.dirname(_pidfile(project)), ".gitignore")
-        try:
-            with open(gi, "r", encoding="utf-8") as fh:
-                content = fh.read()
-        except OSError:
-            content = None
-        have = [ln.strip() for ln in (content or "").splitlines()]
-        missing = [row for row in _PANEL_PRIVATE_FILES if row[0] not in have]
-        if not missing:
-            return True
-        with open(gi, "a", encoding="utf-8") as fh:
-            if content and not content.endswith("\n"):
-                fh.write("\n")
-            for base, note in missing:
-                fh.write("%s\n%s\n" % (note, base))
-        return True
+        return _mio.ensure_claude_ignored(os.path.dirname(_pidfile(project)),
+                                          _PANEL_PRIVATE_FILES)
     except Exception:
         return False
 

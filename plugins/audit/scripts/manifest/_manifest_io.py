@@ -1324,6 +1324,66 @@ def checkout_of(path):
         here = up
 
 
+# --- private files under the project's .claude/ ---------------------------------------
+# Where a layout change parks the copy it can restore from. Under `.claude/`, not
+# beside the plan: a `<manifest>.bak-<UTC>` next to the plan reads as a second plan
+# and nothing ignores that name.
+BACKUP_DIR_NAME = "audit-backups"
+
+
+def ensure_claude_ignored(claude_dir, rows):
+    """Write the targeted ignore lines `rows` into `<claude_dir>/.gitignore`.
+
+    `rows` is a sequence of `(pattern, note)`; the note goes on its OWN line above
+    the pattern, because git reads `#` as a comment only at the start of a line and
+    `name  # why` would be a pattern matching that whole string. Never a blanket
+    ignore: `audit.config.json` and `settings.json` beside it are what a team
+    commits. Returns True when every pattern is in place, False when any could not
+    be ensured - the caller warns then and does not claim."""
+    try:
+        gi = os.path.join(claude_dir, ".gitignore")
+        try:
+            with open(gi, "r", encoding="utf-8") as fh:
+                content = fh.read()
+        except OSError:
+            content = None
+        have = [ln.strip() for ln in (content or "").splitlines()]
+        missing = [row for row in rows if row[0] not in have]
+        if not missing:
+            return True
+        os.makedirs(claude_dir, exist_ok=True)
+        with open(gi, "a", encoding="utf-8") as fh:
+            if content and not content.endswith("\n"):
+                fh.write("\n")
+            for base, note in missing:
+                fh.write("%s\n%s\n" % (note, base))
+        return True
+    except Exception:
+        return False
+
+
+def backup_dir_for(path):
+    """The ignored directory a restore point for the manifest at `path` goes in:
+    `<checkout>/.claude/audit-backups`, or beside the manifest's own directory when
+    no checkout holds it."""
+    root = checkout_of(path) or os.path.dirname(os.path.abspath(path))
+    return os.path.join(root, ".claude", BACKUP_DIR_NAME)
+
+
+def ensure_backup_dir(path):
+    """Create `backup_dir_for(path)` and make sure git ignores it.
+
+    Returns `(directory, ignored)`; `ignored` False means the ignore line could not
+    be written and the caller must say so."""
+    directory = backup_dir_for(path)
+    os.makedirs(directory, exist_ok=True)
+    ignored = ensure_claude_ignored(
+        os.path.dirname(directory),
+        ((BACKUP_DIR_NAME + "/",
+          "# audit plugin: restore points a layout change parks, never to be committed"),))
+    return directory, ignored
+
+
 # --- what the scrub leaves alone ---------------------------------------------------
 # EVERY POSITION IN A PLAN WHOSE VALUE SOMETHING EXECUTES OR CONFIGURES, as the
 # JSON pointer it sits at. Enumerated from the readers, not guessed: every
