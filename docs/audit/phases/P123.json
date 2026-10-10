@@ -2083,7 +2083,7 @@
     {
       "id": "P123.39-64p",
       "title": "a wave executor's submit files against the phase tree's plan from wherever it is run",
-      "status": "in_progress",
+      "status": "blocked",
       "description": "F619, found live in P123's first wave: the brief's submit block names docs/audit/audit-plan.json relatively and the brief's rule makes every command start with cd <task tree>, so the manifest resolves to the task tree's committed shard where the task is still pending, and audit-task refuses the filing as \"records no start\". Fix: (1) drive-phase submit resolves a relative manifest under --project-dir (project_context's rule), never the cwd; (2) the wave brief's submit block carries the phase tree's absolute manifest and says this command runs from the project. Red-first as in tests.add, plus the width-1 allow twin.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2124,7 +2124,8 @@
       "startedAt": "2026-10-10T08:29:18Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "blockedReason": "Waves cannot run on this repo with the installed 3.2.0 hooks: the plan gate predates the task-tree binding (P124.5, ships in 3.3.0), so it reads the task tree's stale plan and refuses edits, and the wave submit hits F619. Work so far is kept in the task tree; re-run at executor.waveWidth 1 in the phase tree, starting from the tree's work."
     }
   ],
   "reviewPerTask": "phase",
