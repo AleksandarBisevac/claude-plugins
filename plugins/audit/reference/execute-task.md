@@ -565,6 +565,19 @@ verb writes and refuses, and what the run commands leave behind, is
         read to be put back, or the task's verdict refused the commit; **2** the manifest will not
         load, there is no such task, or an override carries no reason.
 
+        **The commit carries exactly this attempt, and it refuses the two ways it could carry
+        anything else.** `/audit:task start` recorded a snapshot of every dirty path's bytes. A
+        declared file whose uncommitted change is still at the bytes it had then **predates the
+        attempt**: it is refused by name instead of being staged. Finish the task that made it,
+        or set it aside under that task's name. A declared file that was dirty then and changed
+        since is refused too, because its diff holds both changes and one commit cannot carry
+        half of it. A path that **changed during the attempt** and that no in_progress task
+        declares — an image `cp`-ed in, a generated file — is refused by name as well. Widen
+        the scope (`/audit:task scope`, then record the gate again) or remove the file. When a
+        task has no snapshot, each file's mtime against `startedAt` decides instead, and the
+        refusal says that this is its basis. `/audit:task done --commit` makes the second check
+        again.
+
         **The commit is bound to the gate you recorded above, and the script enforces it.** It
         reads the task's newest evidence row — the rows carrying its task id, so a task measured
         by its phase's gate under `--task` counts and a sign-off run does not — and refuses unless

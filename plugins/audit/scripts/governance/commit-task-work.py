@@ -53,6 +53,13 @@ being the operator's decision; and a file taken out of the index with `git rm
 declared path git holds nowhere - the case the red-first workflow names before
 writing it - is reported and passed over.
 
+EXACTLY THE ATTEMPT, NOT MERELY THE DECLARED SCOPE (`attempt_refusal`). A declared
+file whose uncommitted change predates the task's start, by the snapshot `start`
+recorded, is another run's work and is refused rather than staged; a path that
+changed during the attempt and that no in_progress task declares is refused by
+name rather than left out in silence. With no snapshot a file's mtime against
+`startedAt` decides, and the refusal says so.
+
 A REFUSAL LEAVES THE INDEX AS IT WAS FOUND. Every refusal reached before staging
 touches nothing; every one after it puts the allowed paths' index entries back
 from a snapshot (`_scoped_commit.snapshot`), including an entry the operator had
@@ -130,6 +137,7 @@ Stdlib only, Python 3.8 compatible.
 import argparse
 import json
 import os
+import pathlib
 import shutil
 import sys
 
@@ -160,6 +168,7 @@ import _evidence_io  # noqa: E402  (where the evidence ledger lives)
 import _filed_returns  # noqa: E402  (the executor's filed return, for its `claims`)
 import _invariants  # noqa: E402  (the git root, the manifest file pair, the under-test)
 import _journal_io  # noqa: E402  (where the trail lives, and the append)
+import _loader  # noqa: E402  (load_hooks_config: where the start snapshot lives)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR shards)
 import _manifest_vocab as _vocab  # noqa: E402  (one reading of a `files` entry's line suffix)
 import _scoped_commit  # noqa: E402  (the staging discipline and the answer shape, shared with the other two scoped commits)
@@ -421,6 +430,112 @@ def ignored_refusal(ignored, ignored_records):
     return "%s. Nothing was staged" % (". ".join(parts),)
 
 
+# --- the attempt this commit carries -------------------------------------------
+# The words a declared file's change from before the attempt earns. Constants
+# because a case names them: "predates" is the whole finding.
+PREDATES = "changed before this attempt began"
+MIXED = ("changed before this attempt began AND again during it, so its diff "
+         "holds both and this commit cannot carry one half of it")
+# The two ways past older dirt in a declared file: finish the run that made it,
+# or set it aside under that run's name.
+SET_ASIDE = ("finish the task that made it, or set it aside named by that task "
+             "(git stash push -m <its task id> -- <path>), then commit")
+
+
+def _them(paths):
+    return "it" if len(paths) == 1 else "them"
+
+
+def owned_rels(manifest, project, git_root, task):
+    """Every declared entry of every in_progress task, and of `task` itself,
+    git-root relative with the line suffix dropped."""
+    nodes = [t for t in _mio.tasks_by_id(manifest).values()
+             if isinstance(t, dict) and (t.get("status") == "in_progress"
+                                         or t.get("id") == task.get("id"))]
+    names = [_vocab._strip_line_suffix(entry).strip() for node in nodes
+             for entry in (node.get("files") or []) if isinstance(entry, str)]
+    rels = [_invariants._rel(os.path.join(project, name), git_root)
+            for name in names if name]
+    return sorted(set(rel for rel in rels if rel is not None))
+
+
+def _hooks_config():
+    return _loader.load_hooks_config(modname="audit__config")
+
+
+def attempt_state_dir(project, config):
+    """The state directory a task's start record is read from."""
+    return str(_hooks_config().state_dir(pathlib.Path(project), config or {}))
+
+
+def run_state_rels(project, config, git_root):
+    """The plugin's own runtime directories, git-root relative: the state
+    directory the start record lives in, and the logs beside it."""
+    hc, root = _hooks_config(), pathlib.Path(project)
+    rels = [_invariants._rel(str(hc.state_dir(root, config or {})), git_root),
+            _invariants._rel(str(hc.logs_dir(root, config or {})), git_root)]
+    return [rel for rel in rels if rel is not None]
+
+
+def attempt_refusal(manifest, task, project, git_root, config, targets,
+                    pending):
+    """`(refusal, notes, attribution)` - whether this commit would carry
+    anything but its attempt.
+
+    TWO WAYS IT COULD, refused apart because the repairs differ. A declared
+    file whose change predates the start is another run's work, and staging it
+    would sweep it in. A path changed during the attempt that no in_progress
+    task covers would be left out in silence, and the commit would reference
+    work it does not contain. The start record decides both; with none, each
+    file's mtime against `startedAt` does, and the refusal names that basis.
+    A task recording more than one attempt with no record is not asked the
+    first question: its re-start re-stamped `startedAt`, and its own earlier
+    edit would read as older dirt."""
+    record, _why = _scoped_commit.read_attempt(
+        attempt_state_dir(project, config), task.get("id"))
+    started = task.get("startedAt")
+    parts, notes = [], []
+    declared = [p for p in pending
+                if _scoped_commit.under_any(p, targets["declared"])]
+    mine = {"predates": [], "mixed": [], "basis": None}
+    if record is not None or (_mio.recorded_attempt(task) or 0) <= 1:
+        mine = _scoped_commit.attribute(git_root, declared, record, started)
+    if mine["predates"]:
+        parts.append("%s %s - %s (basis: %s). %s" % (
+            "the declared file" if len(mine["predates"]) == 1
+            else "the declared files", ", ".join(mine["predates"]), PREDATES,
+            mine["basis"], SET_ASIDE[0].upper() + SET_ASIDE[1:]))
+    if mine["mixed"]:
+        parts.append("%s - %s (basis: %s)" % (", ".join(mine["mixed"]), MIXED,
+                                              mine["basis"]))
+    skip = (list(targets["paths"]) + run_state_rels(project, config, git_root)
+            + ([targets["indexRel"]] if targets.get("indexRel") else []))
+    strays, why = _scoped_commit.attempt_strays(
+        git_root, record, started,
+        owned_rels(manifest, project, git_root, task), skip)
+    if strays is None:
+        return why, notes, None
+    during = strays["during"]
+    if during:
+        parts.append("%s changed during this attempt and no in_progress task "
+                     "declares %s (basis: %s), so this commit would leave %s "
+                     "out in silence. Widen the scope (/audit:task scope %s "
+                     "--files <paths>, then record the gate again) or remove %s"
+                     % (", ".join(during), _them(during), strays["basis"],
+                        _them(during), task.get("id"), _them(during)))
+    undated = strays["undated"]
+    if undated and record is None and started:
+        notes.append("%s could not be dated - no file to read an mtime from - "
+                     "so whether this attempt changed %s is not asked"
+                     % (", ".join(undated), _them(undated)))
+    attribution = {"basis": strays["basis"], "during": during,
+                   "predates": strays["predates"],
+                   "declaredPredates": mine["predates"],
+                   "mixed": mine["mixed"]}
+    refusal = ("%s. Nothing was staged" % ("; ".join(parts),)) if parts else ""
+    return refusal, notes, attribution
+
+
 # --- the verdict the work was measured under ------------------------------------
 def verdict_binding(manifest_path, phase, task, project, config=None,
                     manifest=None):
@@ -625,6 +740,7 @@ def commit_work(manifest, phase, task, manifest_path, project, git_root,
                                 git_root, subject, config, override)
     answer.setdefault("verdict", None)
     answer.setdefault("overridden", False)
+    answer.setdefault("attempt", None)
     return code, answer
 
 
@@ -660,6 +776,16 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
         return E_FAIL, _scoped_commit.answer(skipped, refused=why)
     if not pending:
         return E_OK, _scoped_commit.answer(skipped, quiet=NOTHING_UNCOMMITTED)
+
+    # THE ATTEMPT, still before staging: older dirt in a declared file and a
+    # change nobody declares are both refused with nothing to undo.
+    refusal, notes, attribution = attempt_refusal(
+        manifest, task, project, git_root, config, targets, pending)
+    skipped = skipped + notes
+    if refusal:
+        answer = _scoped_commit.answer(skipped, refused=refusal)
+        answer["attempt"] = attribution
+        return E_FAIL, answer
 
     # THE VERDICT, still before staging: a refusal here has nothing to undo.
     verdict = verdict_binding(manifest_path, phase, task, project, config=config,

@@ -14735,8 +14735,10 @@ def _leftover_cases(check):
             "meta": {"version": 2, "buildCommands": {"test": "true"}},
             "phases": [{"id": "P1", "title": "P1", "status": "in_progress",
                         "testGate": ["test"], "tasks": tasks}],
-            "fileIndex": dict((f, [t["id"]]) for t in tasks
-                              for f in t["files"]), "bugs": []})
+            "fileIndex": dict((f, sorted(t["id"] for t in tasks
+                                         if f in t["files"]))
+                              for t in tasks for f in t["files"]),
+            "bugs": []})
         git(proj, "init", "-q", "-b", "main")
         write(proj, "src/a.ts", "a\n")
         write(proj, "src/b.ts", "b\n")
@@ -14760,7 +14762,13 @@ def _leftover_cases(check):
         with open(path, "rb") as fh:
             return fh.read()
 
+    def backdate(proj, rel):
+        # 2024-01-01: before the `startedAt` every fixture task here carries.
+        os.utime(os.path.join(proj, *rel.split("/")), (1704067200, 1704067200))
+
     try:
+        _attempt_cases(check, project, task, write, close, start, read, git,
+                       backdate)
         proj, mpath = project("clean", [task("P1.1", ["src/a.ts"])])
         code, text = close(proj)
         check("lo1 a clean tree closes: %r" % ((code, text[-700:]),), code == 0)
@@ -14768,10 +14776,14 @@ def _leftover_cases(check):
         proj, mpath = project("covered", [task("P1.1", ["src/a.ts"])])
         write(proj, "src/a.ts", "left over\n")
         write(proj, "src/b.ts", "someone else's, not covered\n")
+        # Dated before the task's start, with no start snapshot: the change
+        # PREDATES the attempt, so it is not this close's to answer for.
+        backdate(proj, "src/b.ts")
         before = read(mpath)
         code, text = close(proj)
         check("lo2 a covered change left uncommitted refuses, names that path "
-              "and not the uncovered one, offers `scope`, writes nothing: %r"
+              "and not the uncovered one that predates the attempt, offers "
+              "`scope`, writes nothing: %r"
               % ((code, text[:300]),),
               code == M.E_USAGE and text.count("src/a.ts") == 1
               and "src/b.ts" not in text and "/audit:task scope" in text
@@ -14788,6 +14800,7 @@ def _leftover_cases(check):
         write(proj, "docs/audit/journal/2026-01.jsonl", "{}\n")
         write(proj, "docs/audit/evidence/e.json", "{}\n")
         write(proj, "docs/audit/audit-plan.json.bak", "x")
+        backdate(proj, "docs/audit/audit-plan.json.bak")
         code, text = close(proj)
         # The bookkeeping directories are skipped even for a task declaring
         # none; this is the allow case that fails if the skip is dropped.
@@ -14858,6 +14871,84 @@ def _leftover_cases(check):
               "`outputs` beside a test of its own): %r" % ((code2, code3, _t[-400:]),), code2 == 0 and code3 == 0)
     finally:
         _harness.remove_tree(root)
+
+
+def _attempt_cases(check, project, task, write, close, start, read, git,
+                   backdate):
+    """A task's close answers for exactly its own attempt: `start` refuses to
+    hand a file another started task left dirty to a second task, and `done`
+    reads every path by NUL-separated status and blames the undeclared ones
+    that appeared during the attempt, never the ones that were there before."""
+    blocked = task("P1.1", ["src/a.ts"], status="blocked",
+                   blockedReason="attempts exhausted")
+    proj, mpath = project("start-dirty", [
+        blocked, task("P1.2", ["src/a.ts"], status="pending", attempts=0)])
+    write(proj, "src/a.ts", "the blocked task's unfinished edit\n")
+    before = read(mpath)
+    code, text = start(proj, "P1.2")
+    check("ae1 `start` refuses a task whose declared file is dirty and declared "
+          "by another task that has spent an attempt (blocked), names that task, "
+          "offers unblock-and-finish or a stash named by it, writes nothing: %r"
+          % ((code, text[-500:]),),
+          code == M.E_USAGE and "P1.1" in text and "src/a.ts" in text
+          and "unblock" in text and "stash" in text and read(mpath) == before)
+    proj, mpath = project("start-clean", [
+        task("P1.1", ["src/a.ts"], status="blocked",
+             blockedReason="attempts exhausted"),
+        task("P1.2", ["src/a.ts"], status="pending", attempts=0)])
+    code, text = start(proj, "P1.2")
+    check("ae2 ALLOW: the same plan with the shared file clean starts: %r"
+          % ((code, text[-300:]),), code == 0)
+    proj, mpath = project("start-unspent", [
+        task("P1.1", ["src/a.ts"], status="pending", attempts=0),
+        task("P1.2", ["src/a.ts"], status="pending", attempts=0)])
+    write(proj, "src/a.ts", "nobody's attempt\n")
+    code, text = start(proj, "P1.2")
+    check("ae3 ALLOW: a dirty file whose other declarer never spent an attempt "
+          "is no started task's work, so the start goes ahead: %r"
+          % ((code, text[-300:]),), code == 0)
+
+    for name, rel in (("space", "src/a b.ts"), ("non-ascii", u"src/ž.ts")):
+        proj, mpath = project("lo-%s" % (name,), [task("P1.1", [rel])])
+        write(proj, rel, "committed\n")
+        git(proj, "add", "-A")
+        git(proj, "commit", "-q", "-m", "the file")
+        write(proj, rel, "left over\n")
+        before = read(mpath)
+        code, text = close(proj)
+        check("ae4 a declared file named %r left uncommitted is found by done's "
+              "leftover check - git quotes that name without -z, and the quoted "
+              "spelling matched no declared entry: %r" % (rel, (code, text[:300])),
+              code == M.E_USAGE and rel in text and read(mpath) == before)
+
+    proj, mpath = project("during-fallback", [task("P1.1", ["src/a.ts"])])
+    write(proj, "src/made-during.ts", "an image the executor copied in\n")
+    write(proj, "src/before.ts", "older dirt\n")
+    backdate(proj, "src/before.ts")
+    code, text = close(proj)
+    check("ae5 with no start snapshot, an undeclared file dated after the "
+          "task's start refuses the close by name and offers scope or removal, "
+          "says the basis is the file's mtime, and leaves the older one alone: %r"
+          % ((code, text[:500]),),
+          code == M.E_USAGE and "src/made-during.ts" in text
+          and "src/before.ts" not in text and "/audit:task scope" in text
+          and "mtime" in text)
+
+    proj, mpath = project("during-snapshot", [
+        task("P1.1", ["src/a.ts"], status="pending", attempts=0)])
+    write(proj, "src/b.ts", "dirt from before the attempt\n")
+    code0, said = start(proj, "P1.1")
+    write(proj, "src/c.ts", "made during the attempt\n")
+    code, text = close(proj)
+    os.remove(os.path.join(proj, "src", "c.ts"))
+    code2, text2 = close(proj)
+    check("ae6 with the snapshot `start` recorded, the file created during the "
+          "attempt outside every in_progress scope refuses the close by name, "
+          "the dirt from before the start is not blamed though it is newer than "
+          "`startedAt` could tell, and removing the file lets it close: %r"
+          % ((code0, said[-200:], code, text[:400], code2, text2[-300:]),),
+          code0 == 0 and code == M.E_USAGE and "src/c.ts" in text
+          and "src/b.ts" not in text and code2 == 0)
 
 
 def _no_change_layout_cases(check, project, git, write, close, read):

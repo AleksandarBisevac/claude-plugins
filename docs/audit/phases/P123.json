@@ -806,7 +806,7 @@
     {
       "id": "P123.11",
       "title": "The finding schema names status, acceptedReason and carriedTo, and done journals them",
-      "status": "in_progress",
+      "status": "done",
       "description": "(P122-R6) findings now carry `status` (fixed|accepted-open|carried), `acceptedReason` and `carriedTo`, written by `done` and `signoff`, and the schema's finding definition names none of them and still says `fixTask`/`commit` are written by resolve-finding. Document the three keys in the finding `$def` with their writers. `carriedTo` holds a task or bug id but is not in `_id_refs.SCALAR_REFS`, so `/audit:task move` leaves it dangling: add it, with its test__id_refs pin. (P122-R7) `record_fix_on_findings` returns journal-shaped changes (the finding's commit, review.outcome) and `_locked_done` discards them, so the `task.done` row does not show the finding rewrite: append them to done's journal changes. This lands before validator-schema, which starts applying the schema to whole plans. Faults: P122-R6, P122-R7.",
       "files": [
         "plugins/audit/schema/audit-plan.schema.json",
@@ -845,25 +845,38 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3994386aefbb",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Schema finding $def now names status (fixed|accepted-open|carried), acceptedReason, carriedTo with writers. _id_refs.SCALAR_REFS gains carriedTo; test__id_refs ir13b added (red 15/16 before, 16/16 after). record_fix_on_findings changes are now appended to done's task.done journal changes via _journal_done/_done_details extra_changes (also in the --json result); test_audit_task hd6b added (red before: 959/960, 960/960 after). NOT DONE / BLOCKED: full sweep has 1 failure, test_gen_demo_manifest.py 'every schema field the demo fixture does not carry has an explicit exemption' naming finding.acceptedReason, finding.carriedTo, finding.status. Fix is three SCHEMA_EXEMPTIONS rows in plugins/audit/scripts/demo/gen-demo-manifest.py; the plan gate refused my Edit there (file not in P123.11 files; only P123.24 pending declares it). Orchestrator must add those rows or widen scope. PLUGIN-BUILD-GUIDE.md/module-map untouched (no import edge change).",
+        "descriptive": "The finding schema documents status/acceptedReason/carriedTo, task move rewrites carriedTo, and done's journal row shows the finding rewrite; demo-manifest exemptions still owed."
       },
       "startedAt": "2026-10-10T14:11:20Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T14:27:10Z",
+      "verifiedBy": [
+        "test__id_refs.py ir13b",
+        "test_audit_task.py hd6b"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T14:27:09Z.1ee428",
         "status": "passed",
         "at": "2026-10-10T14:27:09Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "3994386aefbb",
+        "at": "2026-10-10T14:27:10Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T14:18:43Z",
+        "basis": "`python3 plugins/audit/tests/test__id_refs.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 16 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ir13b (house FAIL): SELFTEST FAILED: 15/16 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.12",
       "title": "A task commit carries exactly its attempt: no older dirt swept in, no new file left out",
-      "status": "pending",
+      "status": "in_progress",
       "description": "One invariant: a task's commit holds the change its own attempt made - nothing from before the attempt is swept in, and nothing made during it is left out in silence. (F610) P2.7 was blocked with edits uncommitted in a file P2.8 also declares, and P2.8 started with no warning; on P5 commit-task-work did stage a blocked task's dirty hunks into another task's commit. P122.4's leftover refusal misses it because the edits are covered by the new task's own files. `start` refuses when a declared file of the task being started is dirty and is declared by another not-done task that has spent an attempt (blocked, or in_progress), naming that task and offering unblock-and-finish or a stash named by the task; commit-task-work refuses when a declared file's uncommitted change predates the task's `startedAt` (record at `start` a snapshot of the declared files' blob ids and compare against it; a file mtime is only a fallback, with that basis stated), and where it can, stages only hunks that differ from the start snapshot. (F612 part a, the commit-time check - not guard reading) P4.3's executor `cp`-ed an image outside its declared files; commit-task-work staged declared files only, so the commit references an image it does not contain. `_uncommitted_leftovers` blames only paths the task's files cover: at commit-task-work and at `done --commit` also list untracked or changed paths that appeared since the attempt began and that no in_progress task covers, and refuse naming them, offering `/audit:task scope` widening or removing the file. (P122-R10) `_porcelain_paths` reads `git status --porcelain` without -z, so a path with a space or a non-ASCII byte is quoted and never matches a declared entry: use -z and split on NUL, a rename carrying two names. Update execute-task.md, verbs-in-full.md and the README's /audit:task start/done text. Faults: F610, F612, P122-R10.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -909,16 +922,22 @@
         "P123.6-z4y"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T14:27:10Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T15:01:28Z.074cbe",
+        "status": "passed",
+        "at": "2026-10-10T15:01:28Z"
+      }
     },
     {
       "id": "P123.13",

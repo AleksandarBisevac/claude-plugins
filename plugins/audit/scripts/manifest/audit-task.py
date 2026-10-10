@@ -431,6 +431,9 @@ import _task_outputs as _touts  # noqa: E402  (what an `outputs` pattern may be 
 #                                            one rule this verb, the validator and the
 #                                            plan gate all read)
 import _warning_groups as _wg  # noqa: E402  (the shape a repeated warning prints in)
+import _scoped_commit         # noqa: E402  (status_paths, the start snapshot and the
+#                                            attribution a task commit is held to, so
+#                                            `start` records and `done` reads the same)
 import _worktrees             # noqa: E402  (which worktree the caller is standing in,
 #                                            and its branch -- a downward edge, L7 -> L1,
 #                                            the same list `close-phase.py` and
@@ -4363,6 +4366,43 @@ def _entry_warnings(phase):
     return out
 
 
+def _held_dirt(project, git_root, plan, node):
+    """`[(path, task id, status, attempt)]` - each of `node`'s declared files
+    holding an uncommitted change that another not-done task which has spent an
+    attempt (blocked, or in_progress) also declares. That change is most likely
+    the other task's unfinished work, and nothing at commit time could tell it
+    from this task's."""
+    mine = _declared_rels(project, git_root, node)
+    dirty = (_porcelain_paths(git_root, mine) or []) if mine else []
+    if not dirty:
+        return []
+    holders = [t for t in _mio.tasks_by_id(plan).values()
+               if isinstance(t, dict) and t.get("id") != node.get("id")
+               and t.get("status") in ("blocked", "in_progress")
+               and (_mio.recorded_attempt(t) or 0) > 0]
+    return [(path, str(t.get("id")), t.get("status"), _mio.recorded_attempt(t))
+            for path in dirty for t in holders
+            if any(_touts.covers(f, path)
+                   for f in _declared_rels(project, git_root, t))]
+
+
+def _held_dirt_refusal(tid, held):
+    """The sentence `_held_dirt` earns: each path, the task holding it, and
+    the two ways past - finish that task, or set its change aside under its
+    name."""
+    first = held[0]
+    return ("[audit-task] REFUSED: %s cannot start - %s. A change there is most "
+            "likely that task's unfinished work, and %s's commit would sweep it "
+            "in as its own. Finish it - unblocking it first when it is blocked "
+            "(/audit:task unblock %s --reason \"...\") - or set its change aside named by "
+            "it (git stash push -m %s -- %s), then start %s. Nothing written."
+            % (tid, "; ".join("%s holds an uncommitted change and %s (%s, "
+                              "attempt %s) declares it too"
+                              % (path, other, status, attempt)
+                              for path, other, status, attempt in held),
+               tid, first[1], first[1], first[0], tid))
+
+
 def _locked_start(args, project, config, mpath, tid, out):
     """Promote one task to `in_progress`, under the lock, with a row and a
     revalidation -- the path every mutating verb in this file takes.
@@ -4474,6 +4514,14 @@ def _locked_start(args, project, config, mpath, tid, out):
 
     git_root = os.path.abspath(os.path.join(project,
                                             (config or {}).get("gitRoot") or "."))
+    # ANOTHER STARTED TASK'S UNFINISHED EDIT is refused here, before it can be
+    # read as this task's: a retry of this one continues its own work, so only
+    # a first start is asked.
+    held = ([] if status == "in_progress"
+            else _held_dirt(project, git_root, assembled, node))
+    if held:
+        out(_held_dirt_refusal(tid, held))
+        return E_USAGE
     entry = _phase_entry(git_root, assembled.get("meta") or {}, phase)
     if entry.get("refusal"):
         out(entry["refusal"])
@@ -4612,6 +4660,12 @@ def _locked_start(args, project, config, mpath, tid, out):
         undo_lock()
         raise
 
+    # WHAT THE TREE HELD WHEN THIS ATTEMPT BEGAN, which is the one thing that
+    # tells a commit its own change from older dirt afterwards. Advisory to this
+    # write: without it the commit and the close fall back to mtimes and say so.
+    snap_said, snap_why = _scoped_commit.record_attempt(
+        _run_state_dir(project, config), git_root, tid, node.get("attempts"),
+        node.get("startedAt"))
     jres = _journal_start(project, config, mpath, tid, phase_id, was, node,
                           healed, entry, forced, claim_rows,
                           _examined_head(git_root))
@@ -4651,7 +4705,9 @@ def _locked_start(args, project, config, mpath, tid, out):
                   "claimTakeoverBasis": (
                       _takeover_basis(phase_id, claim["holder"] or {})
                       if claim["action"] == "takeover" else None),
-                  "phaseLock": lock}
+                  "phaseLock": lock,
+                  "startSnapshot": {"said": snap_said or None,
+                                    "why": snap_why or None}}
         result.update(jres)
         result.update(stdin_notes_key(args))
         result.update(project_basis_key(args))
@@ -4671,6 +4727,9 @@ def _locked_start(args, project, config, mpath, tid, out):
     out("  attempt %s, against a recorded ceiling of %s"
         % (node.get("attempts"), ceiling))
     out("  startedAt %s" % (node.get("startedAt"),))
+    out("  %s" % (snap_said or "start snapshot NOT recorded: %s - the commit "
+                  "and the close date this attempt's changes by mtime instead"
+                  % (snap_why,),))
     for row in healed:
         # THE PHASE'S OWN LINE, and it names the field rather than announcing a
         # promotion, because two fields move and only one of them is a status.
@@ -5123,19 +5182,14 @@ def _no_change_moves(project, git_root, phase, task, plan=None, start_head=None)
 
 
 def _porcelain_paths(git_root, pathspec=()):
-    """The paths `git status --porcelain` lists, untracked files included, or
-    None when git could not be asked - which reads apart from `[]`, a tree
-    that is clean. A rename lists the path it became.
+    """The paths `git status` lists, untracked files included, or None when git
+    could not be asked - which reads apart from `[]`, a tree that is clean.
 
-    `_git_answer` strips the output, so the first line may have lost the blank
-    its status code opens with: the code is cut by shape, not width."""
-    argv = ["status", "--porcelain", "--untracked-files=all"]
-    code, status = _git_answer(git_root, *(argv + (["--"] + list(pathspec)
-                                                   if pathspec else [])))
-    if code != 0:
-        return None
-    return [re.sub(r"^\s*\S{1,2} ", "", line).strip().split(" -> ")[-1]
-            for line in status.splitlines() if line.strip()]
+    `_scoped_commit.status_paths`, the NUL-separated reading: a name with a
+    space or a non-ASCII byte comes back unquoted and matches its declared
+    entry, and a rename lists both of its names."""
+    paths, _why = _scoped_commit.status_paths(git_root, pathspec)
+    return paths
 
 
 def _bookkeeping_rels(project, config, mpath, raw_index, git_root):
@@ -5162,28 +5216,60 @@ def _declared_rels(project, git_root, task):
     return [rel for rel in rels if rel is not None]
 
 
+def _run_state_dir(project, config):
+    """The plugin's state directory for `project` - where a task's start
+    snapshot lives (`_scoped_commit.attempt_record_path`)."""
+    hc = _loader.load_hooks_config(modname="audit__config")
+    return str(hc.state_dir(pathlib.Path(project), config or {}))
+
+
+def _run_state_rels(project, config, git_root):
+    """The plugin's own runtime directories, git-root relative: a start
+    snapshot written there is the run's record, never a task's work."""
+    hc = _loader.load_hooks_config(modname="audit__config")
+    root = pathlib.Path(project)
+    rels = [_invariants._rel(str(hc.state_dir(root, config or {})), git_root),
+            _invariants._rel(str(hc.logs_dir(root, config or {})), git_root)]
+    return [rel for rel in rels if rel is not None]
+
+
 def _uncommitted_leftovers(project, config, mpath, raw_index, git_root, plan,
                            task):
-    """Paths the working tree still changes that `task`'s close would not carry.
+    """`(left, during, basis)` - the changes `task`'s close would not carry.
 
-    A task that declares files owns the changes those files cover. A task that
-    declares none owns whatever no OTHER in_progress task covers - the commit
-    step stages declared files only, so its work is exactly what it left. The
-    plan's own bookkeeping is never counted. Empty when git cannot be asked: a
-    project outside git has no tree to leave work in."""
+    `left` is what the task owns and left in the tree. A task that declares
+    files owns the changes those files cover; a task that declares none owns
+    whatever no OTHER in_progress task covers - the commit step stages declared
+    files only, so its work is exactly what it left.
+
+    `during` is the rest of the attempt: a path no in_progress task covers that
+    changed SINCE THE ATTEMPT BEGAN, by the snapshot `start` recorded or, with
+    none, by its mtime against `startedAt` - `basis` says which. A change from
+    before the attempt is in neither list: it is not this close's to answer
+    for. The plan's own bookkeeping and the plugin's runtime state are never
+    counted. All empty when git cannot be asked: a project outside git has no
+    tree to leave work in."""
     paths = _porcelain_paths(git_root)
     if not paths:
-        return []
-    skip = _bookkeeping_rels(project, config, mpath, raw_index, git_root)
+        return [], [], None
+    skip = (_bookkeeping_rels(project, config, mpath, raw_index, git_root)
+            + _run_state_rels(project, config, git_root))
     paths = [p for p in paths if not any(_touts.covers(s, p) for s in skip)]
     mine = _declared_rels(project, git_root, task)
-    if mine:
-        return [p for p in paths if any(_touts.covers(f, p) for f in mine)]
     others = [rel for t in _mio.tasks_by_id(plan).values()
               if isinstance(t, dict) and t.get("id") != task.get("id")
               and t.get("status") == "in_progress"
               for rel in _declared_rels(project, git_root, t)]
-    return [p for p in paths if not any(_touts.covers(f, p) for f in others)]
+    unowned = [p for p in paths if not any(_touts.covers(f, p) for f in others)]
+    if not mine:
+        return unowned, [], None
+    left = [p for p in paths if any(_touts.covers(f, p) for f in mine)]
+    record, _why = _scoped_commit.read_attempt(_run_state_dir(project, config),
+                                               task.get("id"))
+    seen = _scoped_commit.attribute(git_root,
+                                    [p for p in unowned if p not in left],
+                                    record, task.get("startedAt"))
+    return left, seen["during"], seen["basis"]
 
 
 def _done_task(task, now, commit, descriptive, technical, verified, intent,
@@ -5695,8 +5781,8 @@ def _locked_done(args, project, config, mpath, tid, out):
         if refusal:
             out(refusal)
             return E_USAGE
-        left = _uncommitted_leftovers(project, config, mpath, raw_index,
-                                      git_root, assembled, node)
+        left, during, basis = _uncommitted_leftovers(
+            project, config, mpath, raw_index, git_root, assembled, node)
         if left:
             out("[audit-task] REFUSED: %s closes on %s, but the working tree "
                 "still holds changes that commit does not carry: %s. %s "
@@ -5709,6 +5795,16 @@ def _locked_done(args, project, config, mpath, tid, out):
                     "none of them: declare what it changes with "
                     "/audit:task scope %s --files <paths>, commit them, then "
                     "close." % (tid,)))
+            return E_USAGE
+        if during:
+            out("[audit-task] REFUSED: %s closes on %s, and %s changed during "
+                "this attempt with no in_progress task declaring %s (basis: "
+                "%s) - the commit would reference work it does not contain. "
+                "Widen the scope (/audit:task scope %s --files <paths>) and "
+                "commit it, or remove %s. Nothing written."
+                % (tid, sha[:7], ", ".join(during),
+                   "it" if len(during) == 1 else "them", basis, tid,
+                   "it" if len(during) == 1 else "them"))
             return E_USAGE
     key, key_source, refusal = _review_key_for(config, node, phase)
     filed = {}
@@ -5804,6 +5900,9 @@ def _locked_done(args, project, config, mpath, tid, out):
 
     jres = _journal_done(project, config, mpath, tid, phase_id, was, node,
                          finding_changes)
+    # The run is closed, so its start snapshot is spent: a reopened task starts
+    # over and records its own, where a retry of this one kept it.
+    _scoped_commit.drop_attempt(_run_state_dir(project, config), tid)
     index_note = _index_dirty_note(written, mpath, project, phase_id)
     branch_note = _phase_branch_note(git_root, phase, cwd=git_root)
     open_left = _still_open(phase)

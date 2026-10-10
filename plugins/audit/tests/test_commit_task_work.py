@@ -52,6 +52,9 @@ M = _loader.load_script("commit-task-work.py", "ctw")
 # one `run-test-gate.py --record` wrote, or these cases would be grading the
 # committer against a row shape the recorder never produces.
 RTG = _loader.load_script("run-test-gate.py", "rtg_for_ctw")
+# THE REAL `start`, for the same reason: the snapshot an attempt is attributed
+# by is the one that verb records.
+AT = _loader.load_script("audit-task.py", "at_for_ctw")
 
 PHASE = "P1"
 TASK = "P1.1"
@@ -646,6 +649,7 @@ def _cases(check):
                        lambda c: _success_line_cases(c, repos))
         _harness.stage(check, "dp-block",
                        lambda c: _default_project_cases(c, repos))
+        _harness.stage(check, "ae-block", lambda c: _attempt_cases(c, repos))
     finally:
         repos.close()
 
@@ -716,9 +720,11 @@ def _git_trailer(fx, sha, key):
 
 
 def _claims_cases(check, repos):
+    # The declared file alone: this return dates the task's start, and a stray
+    # made after it is a change no running task answers for (ctw-at3).
     fx = repos.make()
     _file_executor_return(fx, claims=_CLAIMS)
-    _dirty_work(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 2  # the task's own work\n")
     _gate(fx)
     code, text = _run(fx, TASK, "--subject", "the work")
     sha = _head(fx)
@@ -741,7 +747,7 @@ def _claims_cases(check, repos):
 
     plain = repos.make()
     _file_executor_return(plain)
-    _dirty_work(plain)
+    _write(os.path.join(plain["root"], OWNED), "a = 2  # the task's own work\n")
     _gate(plain)
     pcode, _ptext = _run(plain, TASK, "--subject", "the work")
     psha = _head(plain)
@@ -1687,6 +1693,98 @@ def _success_line_cases(check, repos):
           % (refused[1][:200],),
           refused[0] != 0 and len(refused[1].splitlines()) > 1
           and refused == _cli(rfx, "--subject", "the work", "--verbose"))
+
+
+def _restartable(fx):
+    """The fixture's P1.1 put back to `pending` with no attempt spent, committed,
+    so the real `start` verb can take it - the record of an attempt is what
+    `start` writes, and a hand-made one would grade the committer against a
+    shape the verb never produces."""
+    shard = _mio.read_json(fx["shard"])
+    task = [t for t in shard["tasks"] if t.get("id") == TASK][0]
+    task.update({"status": "pending", "attempts": 0, "commit": None,
+                 "completedAt": None, "startedAt": None})
+    TI._write_json(fx["shard"], shard)
+    TI._git(fx["root"], "add", "--", SHARD_REL)
+    TI._git(fx["root"], "commit", "-q", "-m", "fixture: P1.1 restartable",
+            "--", SHARD_REL)
+
+
+def _start(fx):
+    """`(code, text)` of `/audit:task start` on the fixture task, in-process."""
+    lines = []
+    held = sys.stderr
+    sys.stderr = io.StringIO()
+    try:
+        code = AT.main(["start", TASK, "--project-dir", fx["root"]],
+                       out=lines.append)
+    finally:
+        sys.stderr = held
+    return code, "\n".join(str(x) for x in lines)
+
+
+def _attempt_cases(check, repos):
+    """A task commit carries exactly its attempt: a declared file's change that
+    was there before `start` is refused rather than swept in, a change made
+    after it is committed, and a file the attempt created outside every
+    in_progress task's scope refuses the commit by name until the scope is
+    widened or the file removed."""
+    fx = repos.make()
+    _restartable(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 9  # another task's dirt\n")
+    scode, said = _start(fx)
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw-at1 a declared file whose uncommitted change predates the task's "
+          "start - the snapshot `start` recorded holds it at these bytes - is "
+          "refused by name and nothing is committed or left staged: %r"
+          % ((scode, said[-200:], code, text[:400]),),
+          scode == 0 and code == 1 and OWNED in text
+          and _const("PREDATES") in text and _head(fx) == before
+          and _staged(fx) == [])
+
+    fx = repos.make()
+    _restartable(fx)
+    scode, said = _start(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 2  # this attempt's work\n")
+    _gate(fx)
+    code, text = _run(fx)
+    check("ctw-at2 ALLOW: the same declared file changed AFTER the start is this "
+          "attempt's work and is committed: %r" % ((scode, code, text[:300]),),
+          scode == 0 and code == 0 and OWNED in _carried(fx, _head(fx)))
+
+    fx = repos.make()
+    _restartable(fx)
+    scode, said = _start(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 2  # this attempt's work\n")
+    _write(os.path.join(fx["root"], "src", "img.png"), "copied in\n")
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    held = _head(fx)
+    os.remove(os.path.join(fx["root"], "src", "img.png"))
+    code2, text2 = _run(fx)
+    check("ctw-at3 a file the attempt created outside every in_progress task's "
+          "scope refuses the commit by name and offers widening the scope or "
+          "removing it; removed, the commit goes through without it: %r"
+          % ((scode, code, text[:400], code2, text2[:200]),),
+          scode == 0 and code == 1 and "src/img.png" in text
+          and "/audit:task scope" in text and held == before
+          and _head(fx) != before and code2 == 0 and "src/img.png" not in _carried(fx, _head(fx)))
+
+    fx = repos.make()
+    _restartable(fx)
+    scode, said = _start(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 2  # this attempt's work\n")
+    _write(os.path.join(fx["root"], "src", "img.png"), "copied in\n")
+    _set_task(fx, files=[OWNED, "src/img.png"])
+    _gate(fx)
+    code, text = _run(fx)
+    check("ctw-at4 ...and widened to declare it, the same file is committed as "
+          "the task's work: %r" % ((scode, code, text[:300]),),
+          scode == 0 and code == 0
+          and "src/img.png" in _carried(fx, _head(fx)))
 
 
 def _selftest():

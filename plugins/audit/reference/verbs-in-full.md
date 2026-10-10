@@ -601,6 +601,19 @@ step 2 prescribes as an orchestrator `Edit`:
 
 - `status: "in_progress"`, `startedAt` stamped at the moment of the call, and
   `attempts` incremented.
+- **a start snapshot**, under the state directory (`attempts/<taskId>.json`): every path
+  `git status --porcelain -z` lists, with a digest of its bytes. It is what tells this
+  attempt's change from older dirt when the task commits and closes. A re-start keeps the
+  snapshot the first start wrote, because an earlier attempt's edits are the task's own, and
+  `done` removes it. The output names it, or says it could not be written and that the commit
+  and the close will date changes by mtime instead.
+
+A first start (not a retry) is **refused** when one of the task's declared files holds an
+uncommitted change and another not-done task that has spent an attempt (blocked, or
+in_progress) declares that file too. The change is most likely that task's unfinished work,
+and this task's commit would sweep it in. The refusal names the path and the task, and gives
+the two ways past: finish that task (unblock it first if it is blocked), or set its change
+aside under that task's name with `git stash push -m <its id> -- <path>`. Nothing is written.
 - **the phase around it, when that phase is still `pending`** — `status` and a `startedAt`
   of its own, from the same instant, in the same write. Until this, the control panel's
   save was the only thing in the plugin that promoted a phase at all, so a plan driven
@@ -738,6 +751,20 @@ until the commit does. The manifest write then rides along with the next task's 
 or with sign-off, which is exactly what step 4c already prescribes for `task.commit`;
 what changes is that one write carries both halves instead of two writes carrying one
 each. Do **not** amend.
+
+**A close with `--commit` claims the commit holds the attempt's work, so the working tree is
+read first, and the close is refused, writing nothing, on either of two things.** One is a
+change the task owns and left uncommitted: a path its `files` cover, or any change no other
+in_progress task covers when it declares none. The other is a path no in_progress task covers
+that changed **during this attempt**: a file copied in or generated outside the declared
+scope. That second one is judged by the start snapshot `start` recorded, or, when there is
+none, by the file's mtime against `startedAt`. The refusal states which of the two bases it
+used. A change that was already there before the attempt began is not this close's to answer
+for, and is not named. The repair is to widen the scope (`/audit:task scope <id> --files
+...`) and commit the file, or to remove it. The tree is read with `git status --porcelain -z`,
+so a path with a space or a non-ASCII byte is matched as written. The plan's own bookkeeping
+(manifest, journal, evidence) and the plugin's state directory are never counted. A successful
+close removes the task's start snapshot.
 
 What it writes — exactly the fields step 4 prescribes, and nothing besides:
 

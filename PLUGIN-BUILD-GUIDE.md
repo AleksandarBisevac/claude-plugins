@@ -391,7 +391,7 @@ L6:
   _panel_state -> _evidence_io, _help, _journal_io, _manifest_io, _manifest_rules, _output, _panel_composition, _panel_discovery, _panel_paths, _panel_policy, _panel_runstate, _panel_usage, _panel_viewer, _proposals, _report_html
   _report_md -> _output, _report_html, _usage_markdown
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
-  _scoped_commit -> _evidence_io, _excerpt, _invariants, _journal_io, _output, _task_outputs
+  _scoped_commit -> _excerpt, _invariants, _journal_io, _manifest_io, _output, _task_outputs
 
 L7:
   _live_copy -> _branch, _invariants, _locks, _manifest_io, _output, _scoped_commit, _status_facts, _worktrees
@@ -406,14 +406,14 @@ L8:
   audit-logs -> _claude_home, _gate_feed, _output
   audit-lookup -> _areas, _claude_home, _config_rules, _evidence_io, _excerpt, _filed_returns, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output
   audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _scope_companions, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
+  audit-task -> _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
   close-phase -> _branch, _claude_home, _config_rules, _evidence_io, _filed_returns, _journal_io, _loader, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _tree_stamp, _verdict_binding, _worktrees
   commit-audit-state -> _claude_home, _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
   commit-manifest-index -> _claude_home, _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
-  commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
+  commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _loader, _machine_paths, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
   drive-phase -> _areas, _claude_home, _config_rules, _evidence_io, _filed_returns, _gate_derive, _journal_io, _loader, _manifest_io, _manifest_phases, _output, _runner_collects, _scope_companions, _status_facts, _verdict_binding, _wave
   explain-ado-drift -> _ado_drift, _manifest_io, _output
@@ -3603,6 +3603,19 @@ never the shared index, another may stage only the shared index and the journal 
 the row that names its commit, and never a phase's file. A shared builder taking a flag would be
 one function holding several safety properties, which is the shape in which a widened list stops
 being noticed.
+
+**What one attempt changed.** A task commit carries exactly its attempt, and the only way to tell
+an attempt's change from older dirt afterwards is a record taken when it began. `record_attempt()`
+is what `/audit:task start` calls: every path `status_paths()` lists — `git status --porcelain -z`,
+so a name with a space or a non-ASCII byte is read verbatim and a rename gives both names — with
+the first characters of its `file_hash`, the stamp's `dirtyPaths` spelling, written under the
+state directory. A re-start keeps the record (an earlier attempt's own edits are the task's) and
+`/audit:task done` drops it. `attribute()` then sorts paths into `predates` (dirty at the start
+at the same bytes), `during`, and `mixed` (dirty then and changed since, which no commit can
+split); with no record it falls back to each file's mtime against `startedAt` and says so in its
+`basis`. `attempt_strays()` is that sort over every path no in_progress task covers.
+`commit-task-work.py` refuses older dirt in a declared file and a stray made during the attempt;
+`done --commit` refuses the stray too.
 
 ### `plugins/audit/scripts/governance/commit-audit-state.py`
 `commit-audit-state.py <manifest> <phaseId>` — **commit any uncommitted audit state, or say

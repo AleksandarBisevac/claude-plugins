@@ -48,12 +48,15 @@ This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__scoped_commit.py`.
 """
 import binascii
+import calendar
+import json
 import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -78,10 +81,10 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _excerpt  # noqa: E402  (the one way a tool's output is quoted in a refusal)
-import _evidence_io  # noqa: E402  (the one reader of a porcelain line's path)
 import _invariants  # noqa: E402  (`_under`: the one answer to "is this inside"; the trailer)
 import _task_outputs  # noqa: E402  (`covers`: the one rule for whether a declared path holds a file)
 import _journal_io  # noqa: E402  (the withdrawing row's append)
+import _manifest_io as _mio  # noqa: E402  (atomic_write_text: the start snapshot's one writer)
 
 
 # --- asking git ---------------------------------------------------------------
@@ -179,19 +182,14 @@ def uncommitted(git_root, allowed):
     reporting "nothing is uncommitted" for a tree git refused to read is the false
     clean sheet these verbs exist to avoid.
     """
-    code, out, err = run_git(git_root, ["status", "--porcelain",
-                                        "--untracked-files=all", "--"]
-                             + list(allowed))
-    if code is None:
-        return [], err
-    if code != 0:
-        return [], ("git would not describe the working tree (%s)"
-                    % (_excerpt.reason_of(err, out),))
-    # `_evidence_io._path_of` rather than a slice: a porcelain line for a RENAME is
-    # `XY <old> -> <new>` and only the second name exists now, which is a rule this
-    # tree already writes down once. `git mv` into `journal/archive/` is exactly
-    # that shape, so the case is real rather than theoretical.
-    return [_evidence_io._path_of(ln) for ln in lines(out)], ""
+    # `status_paths`, NUL-separated: a line read by `lines()` loses the blank
+    # that opens a worktree-only status, so its path came back with the status
+    # letter glued on - harmless while only the list's truth was read, wrong the
+    # moment a path in it is compared. A rename lists both of its names.
+    paths, why = status_paths(git_root, allowed)
+    if paths is None:
+        return [], why
+    return paths, ""
 
 
 # --- how each allowed path is staged ------------------------------------------
@@ -841,6 +839,205 @@ def fitted_header(fixed, subject, limit=HEADER_MAX_CHARS):
     if room <= 0:
         return fixed
     return "%s%s%s" % (fixed, subject[:room], SUBJECT_TRUNCATED)
+
+
+# --- what this attempt changed ------------------------------------------------
+# A task commit carries exactly its attempt: nothing that was in the tree before
+# the attempt began, and nothing made during it left out in silence. The only
+# way to tell the two apart afterwards is a record taken AT THE START, so `start`
+# writes one - every dirty path with a digest of its bytes - and the committer and
+# `done` compare the tree against it. A path dirty then at the same bytes now
+# PREDATES the attempt; a path absent from it, or at other bytes, changed DURING
+# it.
+#
+# THE DIGEST IS THE STAMP'S SPELLING (`_tree_stamp._dirty_paths`): the first
+# characters of `_journal_io.file_hash`, null for a path whose bytes are not
+# there to read. The record is a file rather than a stamp line, so it carries no
+# path bound.
+#
+# KEPT ACROSS A RE-START, REMOVED BY THE CLOSE. A retry - and an unblock followed
+# by a start - continues the same unfinished work, and an earlier attempt's own
+# edits are this task's; a fresh record there would call them older dirt. A
+# reopened task starts over, which is why `done` removes the record.
+#
+# WITH NO RECORD, a file's mtime against `startedAt` is the fallback, said as
+# such wherever it decides anything. A re-start re-stamps `startedAt`, so a
+# caller does not let the fallback call a declared file's change older dirt on
+# a task recording more than one attempt: an earlier attempt's own edit would
+# read as exactly that. An unblock resets the count, and there the fallback can
+# still be wrong in that direction - the record is what does not.
+ATTEMPT_DIR = "attempts"
+ATTEMPT_RECORD_VERSION = 1
+ATTEMPT_DIGEST_CHARS = 16
+
+BASIS_SNAPSHOT = "the snapshot `start` recorded of every dirty path's bytes"
+BASIS_MTIME = ("no start snapshot, so each file's mtime against the task's "
+               "`startedAt` %s")
+BASIS_NONE = ("no start snapshot and no `startedAt`, so which changes this "
+              "attempt made is not asked")
+
+
+def status_paths(git_root, pathspec=()):
+    """`(paths, why)` - every path `git status` lists, untracked files one by
+    one, read NUL-separated; `why` set, and `paths` None, when git would not say.
+
+    `-z` BECAUSE A PATH GIT WOULD QUOTE IS NOT A DECLARED PATH. Without it a
+    name with a space or a non-ASCII byte comes back in quotes, octal-escaped,
+    and matches no `files` entry - so a leftover under that name was never
+    found. A rename or copy carries two names, the new one first and its
+    source after it, and both are listed: the source's removal is a change too.
+    """
+    code, out, err = run_git(git_root, ["status", "--porcelain", "-z",
+                                        "--untracked-files=all", "--"]
+                             + list(pathspec))
+    if code is None:
+        return None, err
+    if code != 0:
+        return None, ("git would not describe the working tree (%s)"
+                      % (_excerpt.reason_of(err, out),))
+    fields = out.split("\0")
+    paths, i = [], 0
+    while i < len(fields):
+        entry = fields[i]
+        i += 1
+        if len(entry) < 4:
+            continue
+        paths.append(entry[3:].replace("\\", "/"))
+        if entry[0] in "RC" or entry[1] in "RC":
+            if i < len(fields) and fields[i]:
+                paths.append(fields[i].replace("\\", "/"))
+            i += 1
+    return sorted(set(paths)), ""
+
+
+def path_marks(git_root, paths):
+    """`{path: digest prefix or None}` for each of `paths`, read now."""
+    marks = {}
+    for path in paths:
+        digest = _journal_io.file_hash(os.path.join(git_root, path))
+        marks[path] = (None if digest is None
+                       else digest.split(":", 1)[-1][:ATTEMPT_DIGEST_CHARS])
+    return marks
+
+
+def attempt_record_path(state_dir, task_id):
+    """Where the start record of `task_id` lives under the state directory."""
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", str(task_id))
+    return os.path.join(str(state_dir), ATTEMPT_DIR, "%s.json" % (safe,))
+
+
+def read_attempt(state_dir, task_id):
+    """`(record, why)` - the start record of `task_id`, or None and why not."""
+    path = attempt_record_path(state_dir, task_id)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            record = json.load(fh)
+    except (OSError, IOError):
+        return None, "no start snapshot was recorded for %s" % (task_id,)
+    except ValueError as exc:
+        return None, "the start snapshot %s does not parse (%s)" % (path, exc)
+    if not isinstance(record, dict) or record.get("taskId") != str(task_id) \
+            or not isinstance(record.get("paths"), dict):
+        return None, ("the start snapshot %s is not one of %s's"
+                      % (path, task_id))
+    return record, ""
+
+
+def record_attempt(state_dir, git_root, task_id, attempt, started_at):
+    """`(said, why)` - write the start record of `task_id`, or keep the one a
+    re-start of the same unfinished work already has. `said` is the sentence
+    for the start's output; `why` is set when nothing could be recorded."""
+    held, _problem = read_attempt(state_dir, task_id)
+    if held is not None:
+        return ("start snapshot kept from attempt %s (%d dirty path(s) then): a "
+                "re-start continues the same work"
+                % (held.get("attempt"), len(held["paths"])), "")
+    paths, why = status_paths(git_root)
+    if paths is None:
+        return "", why
+    record = {"v": ATTEMPT_RECORD_VERSION, "taskId": str(task_id),
+              "attempt": attempt, "startedAt": started_at,
+              "paths": path_marks(git_root, paths)}
+    path = attempt_record_path(state_dir, task_id)
+    try:
+        _mio.atomic_write_text(path, json.dumps(record, indent=1,
+                                                sort_keys=True) + "\n")
+    except OSError as exc:
+        return "", "the start snapshot could not be written to %s (%s)" % (
+            path, exc)
+    return ("start snapshot recorded: %d dirty path(s) predate this attempt"
+            % (len(paths),), "")
+
+
+def drop_attempt(state_dir, task_id):
+    """Remove the start record of `task_id`; True when one was removed."""
+    try:
+        os.remove(attempt_record_path(state_dir, task_id))
+        return True
+    except OSError:
+        return False
+
+
+def _iso_seconds(text):
+    """Seconds since the epoch for an ISO `...Z` moment, or None."""
+    try:
+        return calendar.timegm(time.strptime(str(text)[:19], "%Y-%m-%dT%H:%M:%S"))
+    except (TypeError, ValueError):
+        return None
+
+
+def attribute(git_root, paths, record, started_at):
+    """`{"during", "predates", "undated", "basis"}` over `paths` - which changes
+    this attempt made, by `record` when there is one, else by mtime.
+
+    `predates` with a record holds only paths at the SAME bytes as at the
+    start; a path dirty then and changed since is `during` AND listed in
+    `mixed`, because its diff holds both and no commit can carry one half."""
+    out = {"during": [], "predates": [], "undated": [], "mixed": []}
+    if record is not None:
+        out["basis"] = BASIS_SNAPSHOT
+        then = record["paths"]
+        now = path_marks(git_root, paths)
+        for path in paths:
+            if path in then and then[path] == now[path]:
+                out["predates"].append(path)
+            else:
+                out["during"].append(path)
+                if path in then:
+                    out["mixed"].append(path)
+        return out
+    start = _iso_seconds(started_at)
+    if start is None:
+        out["basis"] = BASIS_NONE
+        out["undated"] = list(paths)
+        return out
+    out["basis"] = BASIS_MTIME % (started_at,)
+    for path in paths:
+        try:
+            mtime = os.lstat(os.path.join(git_root, path)).st_mtime
+        except OSError:
+            out["undated"].append(path)
+            continue
+        (out["during"] if mtime >= start else out["predates"]).append(path)
+    return out
+
+
+def attempt_strays(git_root, record, started_at, owned, skip):
+    """`(attribution, why)` - `attribute` over every path `git status` lists
+    that no entry of `owned` covers and no entry of `skip` holds.
+
+    `owned` is every declared entry of every in_progress task, git-root
+    relative: a change one of them covers is that task's work in flight. `skip`
+    is the run's own bookkeeping - the manifest, the journal, the evidence, the
+    state directory this record lives in. What is left and changed DURING the
+    attempt is a change no running task answers for."""
+    paths, why = status_paths(git_root)
+    if paths is None:
+        return None, why
+    rest = [p for p in paths
+            if not any(_task_outputs.covers(entry, p) for entry in owned)
+            and not under_any(p, skip)]
+    return attribute(git_root, rest, record, started_at), ""
 
 
 # --- what happened ------------------------------------------------------------
