@@ -643,32 +643,42 @@ re-pull imports nothing. Never modify ADO during `pull`.
 2. Drop already-linked items (dedup rule above).
 3. For each remaining item, show `id | title | state | assignee` and ask
    (AskUserQuestion, multi-select) which to import.
-4. Import each selected item as a manifest bug following `/audit:bug add`'s shape and the
-   conventions doc: the id from `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" next-id bug <manifestPath>` (never computed
-   by hand), `status: "open"`, title/description from the work
-   item, `repro` from its repro steps,
+4. Import each selected item with ONE call to the bug writer, never an edit of the index:
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" bug-add "<work item title>" \
+     --severity <low|med|high> --description "<work item description>" \
+     [--repro "<its repro steps>"] --reported-by "<identity, below>" \
+     --ado '{"id": <id>, "url": "<url>"}' \
+     [--ado-parent '{"id": <parent id>, "type": "<type>", "title": "<title>", "url": "<url>"}'] \
+     [<manifestPath>]
+   ```
+   The verb allocates the id, writes `status: "open"`, and stamps the link
    `ado: {id, url, lastSyncedAt, origin: "imported"}` — the card was made by
-   somebody else and a later push has to be able to say so.
-   **When the card has a board parent, write `adoParent: {id, type, title, url,
-   source: "imported", observedAt: <ISO now>}`** — a SIBLING of `ado`, never a field
-   inside it, because `ado` is the link sync writes and `adoParent` is a declaration
-   about where the work belongs. **A card with NO parent gets no `adoParent` key at
-   all — not `null`.** Absent means "fall through to `meta.ado.parentWorkItem`";
-   `null` means "hangs under nothing", and a pull is not entitled to make that
-   declaration on the operator's behalf. `type` and `title` come from the same
-   fetch; they are the BASIS the hierarchy check reads, and without them every link
-   reports `not verified`. `reportedBy`
+   somebody else and a later push has to be able to say so. It refuses a card whose id
+   any record of the plan already links, by name, so a re-pull cannot import one twice.
+   **Pass `--ado-parent` when the card has a board parent**; the verb writes it as
+   `adoParent: {id, type, title, url, source: "imported", observedAt: <ISO now>}` — a
+   SIBLING of `ado`, never a field inside it, because `ado` is the link sync writes and
+   `adoParent` is a declaration about where the work belongs. **A card with NO parent
+   takes no `--ado-parent`, and the bug gets no `adoParent` key at all — not `null`.**
+   Absent means "fall through to `meta.ado.parentWorkItem`"; `null` means "hangs under
+   nothing", and a pull is not entitled to make that declaration on the operator's
+   behalf. `type` and `title` come from the same fetch; they are the BASIS the
+   hierarchy check reads, and without them every link reports `not verified`.
+   `--reported-by`
    comes from the work item's assignee (creator when unassigned) via **reverse lookup**
    in `meta.ado.identityMap`: when some entry's VALUE matches that ADO identity
-   (case-insensitively), write the LEDGER identity — the key — so the imported bug's
+   (case-insensitively), pass the LEDGER identity — the key — so the imported bug's
    `reportedBy` speaks the same form the usage ledger's author column and
    `meta.areas[*].owner` do, and the author/owner filters in status/report/panel line
    up. Two keys sharing one value (the validator warns about that map) → the FIRST in
-   map order wins; name the pick in the report. No matching entry → today's
-   `reportedBy: "ado:<assignee-or-creator>"`, unchanged. The lookup applies ONLY to the
+   map order wins; name the pick in the report. No matching entry → pass
+   `ado:<assignee-or-creator>`, unchanged. The lookup applies ONLY to the
    bug being imported right now: **existing manifest rows are never rewritten** — not by
    `pull`, not by a later identityMap edit. `reportedBy` is a record of what was known
-   at import time, not a live view. Revalidate.
+   at import time, not a live view. `--severity` is the card's Severity read back through
+   the mapping table above (`2 - High` → `high`, `3 - Medium` → `med`, `4 - Low` → `low`).
+   The verb revalidates, rolls back on a finding and journals a `bug.add` row itself.
 5. Report + handoff: `/audit:bug fix BUG-<n>` to materialize a fix task.
 
 ### `pull sprint`

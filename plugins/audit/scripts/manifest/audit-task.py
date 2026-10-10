@@ -86,7 +86,13 @@ Usage:
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py bug-add "<title>|-" [manifest] --severity low|med|high
                 --description TEXT|- [--files a,b] [--repro TEXT|-]
-                [--expected TEXT|-] [--actual TEXT|-]
+                [--expected TEXT|-] [--actual TEXT|-] [--reported-by NAME]
+                [--ado JSON] [--ado-parent JSON]
+                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py bug-close <bugId> [manifest] --status wontfix|not_a_bug|fixed
+                --reason TEXT|- [--commit <sha>]
+                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py reindex [manifest]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py mute --test <path> --reason TEXT|- --owner NAME
                 --until <YYYY-MM-DD> --bug <bugId> [manifest]
@@ -2857,6 +2863,17 @@ def _bug_for_add(assembled, bug_id):
     if bug.get("status") in ("fixed", "wontfix", "not_a_bug"):
         return None, ("[audit-task] --bug %s is %s; a closed bug takes no fix "
                       "task. Nothing written." % (bug_id, bug.get("status")))
+    # ONE BUG, ONE LIVE TASK. The link is written into both halves by this
+    # write, so a bug already naming a live task would be repointed and that
+    # task's `bugId` left naming a bug that no longer names it back.
+    owner = _mio.tasks_by_id(assembled).get(bug.get("taskId")) \
+        if bug.get("taskId") else None
+    if isinstance(owner, dict) and owner.get("status") not in _mio.TERMINAL:
+        return None, ("[audit-task] --bug %s is already being fixed by %s "
+                      "(status %s); one bug has one live task - run it with "
+                      "/audit:run %s, or cancel it first. Nothing written."
+                      % (bug_id, owner.get("id"), owner.get("status"),
+                         owner.get("id")))
     return bug, None
 
 
@@ -11526,19 +11543,42 @@ def _locked_bug_add(args, project, config, mpath, out):
         out("[audit-task] --files names the suspected repository-relative "
             "files, and %s" % ("; ".join(bad),))
         return E_USAGE
+    now = _utc_now()
+    ado, refusal = _imported_link(args.ado, "--ado", "origin", "lastSyncedAt",
+                                  now)
+    if refusal is None:
+        parent, refusal = _imported_link(args.ado_parent, "--ado-parent",
+                                         "source", "observedAt", now)
+    if refusal:
+        out(refusal)
+        return E_USAGE
 
     plan = _read_plan(mpath, out)
     if isinstance(plan, int):
         return plan
     raw_index, assembled, vm = plan
+    if ado is not None:
+        holders = _ado_linked(assembled, ado["id"])
+        if holders:
+            out("[audit-task] --ado: work item %s is already linked by %s - a "
+                "card the plan already holds is not imported twice. Nothing "
+                "written." % (ado["id"], ", ".join(holders)))
+            return E_USAGE
     bug_id = _id_shape.next_bug_id(assembled, _mint_suffix(mpath, assembled))
     values = {"id": bug_id, "title": title, "status": "open",
-              "severity": severity, "reportedAt": _utc_now(),
-              "reportedBy": None, "description": description,
+              "severity": severity, "reportedAt": now,
+              "reportedBy": args.reported_by, "description": description,
               "repro": args.repro, "expected": args.expected,
               "actual": args.actual, "files": files, "taskId": None,
               "fixedIn": None, "notes": None}
     bug = dict((key, values[key]) for key in _BUG_TEMPLATE_KEYS)
+    # Present only when passed: an ABSENT `adoParent` falls through to the
+    # plan's default parent and `null` declares "under nothing", which an
+    # import is not entitled to declare on the operator's behalf.
+    if ado is not None:
+        bug["ado"] = ado
+    if parent is not None:
+        bug["adoParent"] = parent
     assembled["bugs"] = list(assembled.get("bugs") or []) + [bug]
 
     wrote = _write_plan(project, mpath, raw_index, assembled, vm, [],
@@ -11561,6 +11601,297 @@ def _locked_bug_add(args, project, config, mpath, out):
     _report_tail(out, jres, "bug.add", warnings, written_manifest, written,
                  index_note)
     return 0
+
+
+def _imported_link(raw, flag, provenance, moment, now):
+    """`(link, refusal)` for an `--ado` / `--ado-parent` JSON object, or
+    `(None, None)` when the flag was not passed.
+
+    The card's own facts come from the caller - its integer `id`, and `url`,
+    `type`, `title` as the board answered them. The provenance word and the
+    moment are the verb's: the link says it was IMPORTED, and `moment` is
+    stamped with `now` unless the caller read one off the board. A different
+    provenance word is refused rather than overwritten, since this door only
+    ever imports.
+    """
+    if raw is None:
+        return None, None
+    try:
+        link = json.loads(raw)
+    except ValueError as exc:
+        return None, ("[audit-task] %s takes a JSON object such as "
+                      "'{\"id\": 42, \"url\": \"...\"}': %s" % (flag, exc))
+    if not isinstance(link, dict):
+        return None, "[audit-task] %s takes a JSON object, got %s" % (
+            flag, type(link).__name__)
+    ident = link.get("id")
+    if isinstance(ident, bool) or not isinstance(ident, int) or ident < 1:
+        return None, ("[audit-task] %s needs the work item's integer `id`, got "
+                      "%r" % (flag, ident))
+    if link.get(provenance) not in (None, "imported"):
+        return None, ("[audit-task] %s: `%s` is the verb's to write, and it "
+                      "writes `imported` - got %r" % (flag, provenance,
+                                                      link.get(provenance)))
+    link[provenance] = "imported"
+    link[moment] = link.get(moment) or now
+    return link, None
+
+
+def _ado_linked(assembled, ident):
+    """The ids of every record whose `ado.id` is `ident` - live phases, tasks,
+    bugs and the parked proposals' payloads alike, the set `/audit:sync pull`
+    dedups against."""
+    found = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            link = node.get("ado")
+            if isinstance(link, dict) and link.get("id") == ident:
+                found.append(str(node.get("id") or "a record"))
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+    walk(assembled)
+    return found
+
+
+# --- bug-close: the three closing words, written by a verb ----------------------
+# `/audit:bug close` set `status` and `notes` with a hand edit and nothing
+# journaled it. The verb writes both, refuses a close the bug cannot take, and
+# records `bug.close` with the move and the reason.
+_BUG_CLOSE_WORDS = ("wontfix", "not_a_bug", "fixed")
+_BUG_CLOSED = ("fixed", "wontfix", "not_a_bug")
+
+
+def cmd_bug_close(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_bug_close(
+                           args, project, config, mpath, out))
+
+
+def _locked_bug_close(args, project, config, mpath, out):
+    """Close one bug, under lock: `status`, the reason as `notes`, and
+    `fixedIn` for a `fixed` close given `--commit`.
+
+    REFUSED, EXIT 2, before anything is read off disk: a missing or unknown
+    word, a missing reason, and a `--commit` beside a close that changed
+    nothing. Then, off the plan: no such bug, a bug already closed, and a bug
+    whose fix task is running - that task's commit is what closes it.
+
+    THE REASON IS WRITTEN AS PASSED, appended to `notes` on a line of its own
+    when the bug already carries one, so an earlier note is never lost.
+    """
+    bug_id = (args.title or "").strip()
+    word = (args.status or "").strip()
+    reason = args.reason or ""
+    if not bug_id:
+        out("[audit-task] bug-close needs a bug id: bug-close <bugId> "
+            "--status %s --reason TEXT" % ("|".join(_BUG_CLOSE_WORDS),))
+        return E_USAGE
+    if word not in _BUG_CLOSE_WORDS:
+        out("[audit-task] bug-close needs --status %s, got %r - the three are "
+            "different answers, so none is assumed"
+            % ("|".join(_BUG_CLOSE_WORDS), args.status))
+        return E_USAGE
+    if not reason.strip():
+        out("[audit-task] bug-close needs --reason TEXT - the one-line "
+            "justification is the record of why it closed")
+        return E_USAGE
+    if args.commit and word != "fixed":
+        out("[audit-task] --commit records `fixedIn`, which only a `fixed` "
+            "close has; a %s close changed nothing to point at" % (word,))
+        return E_USAGE
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    bugs = [dict(b) if isinstance(b, dict) else b
+            for b in (assembled.get("bugs") or [])]
+    idx = next((i for i, b in enumerate(bugs)
+                if isinstance(b, dict) and b.get("id") == bug_id), None)
+    if idx is None:
+        out("[audit-task] bug-close: %s names no bug of this plan. Nothing "
+            "written." % (bug_id,))
+        return E_USAGE
+    bug = bugs[idx]
+    was = _mio.effective_bug_status(bug, _mio.tasks_by_id(assembled))
+    if was in _BUG_CLOSED:
+        out("[audit-task] bug-close: %s is already %s. Nothing written."
+            % (bug_id, was))
+        return E_USAGE
+    owner = _mio.tasks_by_id(assembled).get(bug.get("taskId")) \
+        if bug.get("taskId") else None
+    if isinstance(owner, dict) and owner.get("status") == "in_progress":
+        out("[audit-task] bug-close: %s is being fixed by %s, which is "
+            "running - finish or unblock it through /audit:run first; its "
+            "commit is what closes the bug. Nothing written."
+            % (bug_id, owner.get("id")))
+        return E_USAGE
+    stored = bug.get("status")
+    bug["status"] = word
+    bug["notes"] = ("%s\n%s" % (bug["notes"], reason)) if bug.get("notes") \
+        else reason
+    if args.commit:
+        bug["fixedIn"] = args.commit
+    bugs[idx] = bug
+    assembled["bugs"] = bugs
+
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [],
+                        "the close", out, index_fields=("bugs",))
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    summary = "%s closed %s (was %s): %s" % (bug_id, word, stored, reason)
+    jres = _journal_row(project, config, mpath, "bug.close", summary,
+                        {"field": bug_id, "from": stored, "to": word,
+                         "reason": reason})
+    index_note = _index_dirty_note(written, mpath, project, None)
+    if args.as_json:
+        result = {"ok": True, "bugId": bug_id, "bug": bug, "written": written}
+        out(_json_tail(result, args, jres, warnings, written_manifest,
+                       index_note))
+        return 0
+    out("[audit-task] %s" % (summary,))
+    _report_tail(out, jres, "bug.close", warnings, written_manifest, written,
+                 index_note)
+    return 0
+
+
+# --- reindex: fileIndex re-derived from the shards ------------------------------
+# `fileIndex` lives in the index and the `files` it mirrors live in the shards,
+# so a shard edited by hand parts from the index and nothing said so before
+# sign-off. `add` and `scope` keep the pair for the tasks they write; this is
+# the verb for everything else - one derivation over every live task, under the
+# lock, revalidated, journaled.
+def cmd_reindex(args, out):
+    # `reindex` takes no id, so a manifest named in the first free positional
+    # is the manifest - `settle`'s shape.
+    _manifest_from_positional(args)
+    project = _resolve_project(args)
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_reindex(
+                           args, project, config, mpath, out))
+
+
+def derived_file_index(assembled):
+    """`fileIndex` as the live tasks' `files` say it is, keyed by the path
+    without its line suffix.
+
+    ORDER IS KEPT where it can be: a row whose claimants are unchanged keeps
+    the order it had, and a task newly claiming a row is appended in plan
+    order. A row is never reordered on a call that changed nothing in it,
+    which in a file two phases both write is merge-conflict material."""
+    claims = {}
+    for _phase, task in _mio.iter_tasks(assembled):
+        tid = task.get("id")
+        if not isinstance(tid, str):
+            continue
+        for entry in (task.get("files") or []):
+            if not isinstance(entry, str) or not entry.strip():
+                continue
+            row = claims.setdefault(_vocab._strip_line_suffix(entry), [])
+            if tid not in row:
+                row.append(tid)
+    old = assembled.get("fileIndex") if isinstance(
+        assembled.get("fileIndex"), dict) else {}
+    derived = {}
+    for path in list(old) + [p for p in claims if p not in old]:
+        if path not in claims:
+            continue
+        kept = [t for t in (old.get(path) or []) if t in claims[path]]
+        derived[path] = kept + [t for t in claims[path] if t not in kept]
+    return derived
+
+
+def _index_pairs(index):
+    """Every (path, task) pair a `fileIndex` holds."""
+    return set((path, tid) for path, ids in index.items()
+               if isinstance(ids, list) for tid in ids)
+
+
+def _reindex_moves(old, new):
+    """`(claimed, released)` - the (path, task) pairs the derivation adds and
+    drops, each sorted."""
+    before, after = _index_pairs(old), _index_pairs(new)
+    return sorted(after - before), sorted(before - after)
+
+
+def _locked_reindex(args, project, config, mpath, out):
+    """Re-derive `fileIndex` and write the index alone.
+
+    THE ONE PRE-EXISTING FINDING IT TAKES is the one it exists to settle: the
+    plan is read, and every finding that is not a `fileIndex` finding refuses
+    the call with nothing written, exactly as `_read_plan` refuses for every
+    other verb. The written plan must then validate with no finding at all."""
+    try:
+        raw_index = _mio.read_json(mpath)
+        assembled = _mio.load_manifest(mpath)
+    except Exception as exc:
+        out("[audit-task] cannot read/assemble manifest: %s" % exc)
+        return E_USAGE
+    vm = _validator()
+    pre_findings, _w = vm.validate(assembled)
+    others = [f for f in pre_findings if not str(
+        _output.finding_code(f) or "").startswith(FILE_INDEX_FINDINGS)]
+    if others:
+        out("[audit-task] the manifest is invalid beyond its fileIndex -- "
+            "nothing written; fix these first:")
+        for line in others:
+            out("FINDING: " + line)
+        return E_INVALID
+    old = assembled.get("fileIndex") if isinstance(
+        assembled.get("fileIndex"), dict) else {}
+    new = derived_file_index(assembled)
+    if new == old:
+        if args.as_json:
+            result = {"ok": True, "claimed": [], "released": [], "written": []}
+            result.update(project_basis_key(args))
+            out(json.dumps(result, indent=2, sort_keys=True))
+            return 0
+        out("[audit-task] nothing to reindex -- fileIndex already says what "
+            "every live task's files say (%d row(s))" % (len(new),))
+        return 0
+    claimed, released = _reindex_moves(old, new)
+    assembled["fileIndex"] = new
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [],
+                        "the reindex", out, files_changed=True,
+                        index_fields=("fileIndex",))
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    summary = "fileIndex re-derived from the shards: %d claimed, %d released" % (
+        len(claimed), len(released))
+    jres = _journal_row(project, config, mpath, "plan.reindex", summary,
+                        {"changes": [{"id": p, "field": "fileIndex", "to": t}
+                                     for p, t in claimed]
+                         + [{"id": p, "field": "fileIndex", "from": t}
+                            for p, t in released]})
+    index_note = _index_dirty_note(written, mpath, project, None)
+    if args.as_json:
+        result = {"ok": True, "claimed": [list(c) for c in claimed],
+                  "released": [list(r) for r in released], "written": written}
+        out(_json_tail(result, args, jres, warnings, written_manifest,
+                       index_note))
+        return 0
+    out("[audit-task] %s" % (summary,))
+    for path, tid in claimed:
+        out("  claimed: %s by %s" % (path, tid))
+    for path, tid in released:
+        out("  released: %s by %s" % (path, tid))
+    _report_tail(out, jres, "plan.reindex", warnings, written_manifest,
+                 written, index_note)
+    return 0
+
+
+# The code prefix of every finding `_manifest_crossrefs._check_file_index`
+# raises - the findings `reindex` settles and so does not refuse on.
+FILE_INDEX_FINDINGS = "crossrefs.file_index."
 
 
 # --- mute / unmute: meta.muted, an index-only write -----------------------------
@@ -12158,7 +12489,12 @@ VERB_FLAGS = {
     # title is the positional and the id is allocated, so neither is a flag.
     # `--severity` is shared with `finding`, whose field takes the same words.
     "bug-add": ("severity", "description", "files", "repro", "expected",
-                "actual"),
+                "actual", "reported_by", "ado", "ado_parent"),
+    # `bug-close` takes the bug id as its positional, the closing word, the
+    # reason that becomes `notes`, and - for `fixed` alone - the commit.
+    "bug-close": ("status", "reason", "commit"),
+    # `reindex` derives everything it writes, so it reads no flag of its own.
+    "reindex": (),
     # `mute` writes one `meta.muted` entry, one flag per field; `unmute`
     # drops one by the test alone, `uncouple`'s shape.
     "mute": ("test", "reason", "owner", "until", "bug"),
@@ -12195,8 +12531,9 @@ def build_parser():
                             "retarget", "start", "done", "seed", "next-id",
                             "signoff", "settle", "reopen", "move", "block",
                             "unblock", "note", "couple", "uncouple", "finding",
-                            "resolve-finding", "correct", "bug-add", "mute",
-                            "unmute", "file-return"])
+                            "resolve-finding", "correct", "bug-add",
+                            "bug-close", "reindex", "mute", "unmute",
+                            "file-return"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -12446,6 +12783,24 @@ def build_parser():
     p.add_argument("--repro", default=None, metavar="TEXT", help=_PROSE_HELP)
     p.add_argument("--expected", default=None, metavar="TEXT", help=_PROSE_HELP)
     p.add_argument("--actual", default=None, metavar="TEXT", help=_PROSE_HELP)
+    # `bug-add` only, for the import `/audit:sync pull bugs` makes: who
+    # reported it, and the board card and its parent as JSON objects the verb
+    # stamps as imported.
+    p.add_argument("--reported-by", dest="reported_by", default=None,
+                   metavar="NAME",
+                   help="bug-add: who reported the bug (the ledger identity)")
+    p.add_argument("--ado", default=None, metavar="JSON",
+                   help="bug-add: the board card this bug imports, "
+                        "'{\"id\": <int>, \"url\": ...}'")
+    p.add_argument("--ado-parent", dest="ado_parent", default=None,
+                   metavar="JSON",
+                   help="bug-add: the card's board parent, '{\"id\": <int>, "
+                        "\"type\": ..., \"title\": ..., \"url\": ...}'; omit "
+                        "it for a card with none")
+    # `bug-close` only. No `choices`, for `--severity`'s reason: the door
+    # grades the word so a `--json` caller still receives one object.
+    p.add_argument("--status", default=None,
+                   help="bug-close: %s" % ("|".join(_BUG_CLOSE_WORDS),))
     # `mute` only. The `meta.muted` fields `--test` and `--reason` do not
     # already carry: who answers for lifting it, the last UTC day it holds,
     # and the bug tracking the failure it hides.
@@ -12734,6 +13089,7 @@ def _dispatch(args, argv, out):
              "note": cmd_note, "couple": cmd_couple, "uncouple": cmd_uncouple,
              "finding": cmd_finding, "resolve-finding": cmd_resolve_finding,
              "correct": cmd_correct, "bug-add": cmd_bug_add,
+             "bug-close": cmd_bug_close, "reindex": cmd_reindex,
              "mute": cmd_mute, "unmute": cmd_unmute,
              "file-return": cmd_file_return}
     try:

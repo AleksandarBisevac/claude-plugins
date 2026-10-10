@@ -23,11 +23,12 @@ investigation that found nothing left no row and the next reader ran it again.
 
 Read `${CLAUDE_PLUGIN_ROOT}/reference/manifest-conventions.md` FIRST. Resolve and read
 the manifest. If it doesn't exist, stop and point to `/audit:init` (or the starter template).
-After EVERY hand mutation: revalidate with
-`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/validate-manifest.py" <manifestPath>`.
-`add` writes through `audit-task.py bug-add`, which takes the **concurrency lock**, revalidates
-and rolls back itself — do not hold the lock around that call. `fix`/`close` hold the lock
-(see conventions → Concurrency lock) around their writes; `list` is read-only and never locks.
+**No subcommand edits the manifest by hand.** `bugs[]`, the bug ↔ task link and `fileIndex`
+live in the index while the task lives in its phase's shard, so every write here is a call to
+`audit-task.py` — `bug-add` for `add`, `add --bug` for `fix`, `bug-close` for `close` — which
+takes the **concurrency lock**, writes both halves of a cross-file fact in one write,
+revalidates, rolls back on a finding and journals the write itself. Do not hold the lock around
+those calls. `list` is read-only and never locks.
 
 ## Subcommand: `add "<title>"`
 
@@ -65,7 +66,8 @@ Default filter: everything NOT `fixed`/`wontfix`/`not_a_bug`. `list all` shows e
 
 1. **Refuse when**: the bug doesn't exist; its status is `fixed`/`wontfix`/`not_a_bug`; or its
    `taskId` is already set and that task is not `done` → point to `/audit:run <taskId>`
-   instead (one bug = one live task; no second execution engine).
+   instead (one bug = one live task; no second execution engine). `add --bug` refuses the
+   last of these itself, naming the bug and the task it already has, with nothing written.
 2. **Target phase**: `--phase <id>` if given (must not be `done`); else, on a phase
    branch, **the phase whose branch is checked out** - a bug found while working a phase is
    fixed in that phase (`/audit:task add` picks the same one, see `commands/task.md`); else
@@ -97,8 +99,9 @@ Default filter: everything NOT `fixed`/`wontfix`/`not_a_bug`. `list all` shows e
      not exist yet.
    - `risk`: bug severity high → `high`, med → `med`, else `low`.
    - `model`: `sonnet` (or stronger for `risk: "high"`).
-4. **Update the bug**: `status: "in_progress"`, `taskId: <new task id>` (`add --bug` already wrote both).
-5. Extend `fileIndex` with the task's files. Revalidate.
+4. **Nothing is left to write.** The same `add --bug` call wrote the bug's half of the link
+   (`status: "in_progress"`, `taskId: <new task id>`) into the index and the task's `files`
+   into `fileIndex`, revalidated and journaled; there is no follow-up edit.
 
    **A mute on this bug does not hold in this task's gate.** If `meta.muted` quarantines a suite
    under this bug, a gate run for the task (`run-test-gate.py … --task <taskId>`) does not
@@ -108,7 +111,7 @@ Default filter: everything NOT `fixed`/`wontfix`/`not_a_bug`. `list all` shows e
    by its fix task reaching `done`, no run honours the mute any more and `validate-manifest.py`
    warns (`rules.muted.bug-closed`); lift it with
    `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" unmute --test <path> <manifestPath>`.
-6. **Report + handoff**: `Materialized <taskId> for <bugId> — run /audit:run <taskId>`.
+5. **Report + handoff**: `Materialized <taskId> for <bugId> — run /audit:run <taskId>`.
    Do NOT execute the fix here — execution, commits, and the red-first check are the
    `/audit:run`/`/audit:phase` job (it also flips the bug to `fixed` + `fixedIn` on the task commit).
    That run records what happened to the proof on `task.redFirst`: `proved` when the repro
@@ -120,18 +123,28 @@ Default filter: everything NOT `fixed`/`wontfix`/`not_a_bug`. `list all` shows e
 
 ## Subcommand: `close <bugId> [wontfix|not_a_bug|fixed]`
 
-1. Refuse if the bug's materialized task is `in_progress` (finish or unblock it via
-   `/audit:run` / `/audit:phase` first).
-2. Set `status` to the word the caller passed, `wontfix` when they passed none.
+1. **Choose the word.** The caller's, `wontfix` when they passed none.
    **Ask rather than guess between the two closed-without-a-change answers** — a
    report that was real and will not be fixed, and a report somebody checked and
    found correct, are different facts about the codebase and only the human knows
    which happened. `fixed` only if the human explicitly says it was fixed outside
-   the pipeline. Record a one-line `notes` justification either way.
+   the pipeline. A one-line justification goes with it either way.
+2. Close it with the verb:
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" bug-close <bugId> \
+     --status <wontfix|not_a_bug|fixed> --reason "<the justification>" \
+     [--commit <sha>] [<manifestPath>]
+   ```
+   It writes the word as the bug's status and the reason as its notes (appended on a line of
+   its own when the bug already carries some), records `fixedIn` from `--commit` on a `fixed`
+   close, revalidates and journals a `bug.close` row. It refuses, exit 2 with nothing written,
+   a bug whose fix task is `in_progress` (finish or unblock it via `/audit:run` /
+   `/audit:phase` first — that task's commit is what closes it), a bug already closed, a
+   missing word or reason, and `--commit` beside a close that changed nothing.
 
    **A `not_a_bug` row is the whole point of the word**, so do not delete the bug
    instead: a verified negative with no row is an investigation the next reader
    repeats.
 
-   **The operator's words go in VERBATIM** — see `reference/manifest-conventions.md` → *The operator's words go in unchanged*. This value reaches the hash-chained journal, so a paraphrase makes the trail guarantee a sentence its subject never wrote.
-3. Revalidate and report.
+   **The operator's words go in VERBATIM** — see `reference/manifest-conventions.md` → *The operator's words go in unchanged*. This value reaches the hash-chained journal, so a paraphrase makes the trail guarantee a sentence its subject never wrote. A reason holding backticks or a run of spaces goes on stdin as `--reason -`.
+3. Report the line the verb printed.

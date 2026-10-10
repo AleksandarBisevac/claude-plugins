@@ -344,8 +344,19 @@ directories, `*` stays inside one, and a trailing `/` means the same as `/**`.
 
 ## fileIndex maintenance
 
-Adding a task with `files` MUST add/extend the matching top-level `fileIndex`
-entries (`"<file>": [..., "<taskId>"]`). Never remove other tasks' ids.
+`fileIndex` lives in the index and the `files` it mirrors live in the shards, so it is
+never written by hand. `/audit:task add` and `scope` keep it paired for the task they write;
+for anything else — a shard edited by hand, a plan assembled by `/audit:init`, rows a task
+no longer claims — `audit-task.py reindex` re-derives it from every live task's `files`,
+under the index lock, revalidated, with a `plan.reindex` journal row. A row whose claimants
+did not change keeps its order. The validator names the same verb on every `fileIndex`
+finding.
+
+The bug ↔ task link has the same shape — `task.bugId` in the shard, `bug.taskId` in the
+index — and is written by `audit-task.py add --bug`, both halves in one write; a bug is
+reported with `bug-add` and closed with `bug-close`. A task commit whose shard completes
+such a link carries the index with it (`commit-task-work.py`), since either half alone
+fails validation.
 
 ## Immutable history
 
@@ -486,6 +497,12 @@ The journal's **completion-record actions**:
   nothing moved
 - `bug.add` — `audit-task.py bug-add` appended one bug to `bugs[]` (details: field = the new bug
   id, to = `open`)
+- `bug.close` — `audit-task.py bug-close` closed one bug (details: field = the bug id, from = the
+  status it stored, to = `wontfix`, `not_a_bug` or `fixed`, reason = the justification written
+  to its `notes`)
+- `plan.reindex` — `audit-task.py reindex` re-derived `fileIndex` from every live task's `files`
+  (details: changes, one per row it claimed (`to` = the task) or released (`from` = the task),
+  each with id = the path and field = `fileIndex`). A paired index writes no row
 - `test.muted` — `audit-task.py mute` wrote or extended one `meta.muted` entry (details: field =
   the test path, from = the `until` an extended entry carried, null for a new one, to = the new
   `until`, reason)
@@ -544,7 +561,7 @@ by design:** a sign-off of a branchless phase (`mergedAt` is null, which cannot 
 from another), and a completion that was never recorded anywhere. Both cost a repeated row, never
 a lost one.
 `task.start`, `task.move`, `task.block`, `task.unblock`, `task.note`, `coupling.learned`, `coupling.dropped`, `coupling.caught`,
-`bug.add`, `test.muted` and `test.unmuted` are written **in process** by `audit-task.py`, the same way its `task.done`, `task.reopen` and `plan.settle` rows
+`bug.add`, `bug.close`, `test.muted` and `test.unmuted` are written **in process** by `audit-task.py`, the same way its `task.done`, `task.reopen`, `plan.settle` and `plan.reindex` rows
 are. `phase.gateDerived` is written **in process** by `derive-phase-gate.py`, its own entry point,
 for the identical reason. `phase.merged` and `phase.mergedHead.recorded` are written **in process** by
 `close-phase.py`, for the same reason again: it writes the plan with `os.replace` from a script

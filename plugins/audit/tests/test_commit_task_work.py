@@ -650,8 +650,79 @@ def _cases(check):
         _harness.stage(check, "dp-block",
                        lambda c: _default_project_cases(c, repos))
         _harness.stage(check, "ae-block", lambda c: _attempt_cases(c, repos))
+        _harness.stage(check, "bl-block", lambda c: _bug_link_cases(c, repos))
     finally:
         repos.close()
+
+
+def _link_bug(fx, tid=TASK, bid="BUG-1"):
+    """A bug linked to `tid` the way `audit-task.py add --bug` writes it: the
+    task's `bugId` in the shard and the bug's `taskId` in the index, both
+    uncommitted."""
+    shard = _mio.read_json(fx["shard"])
+    for task in shard["tasks"]:
+        if task.get("id") == tid:
+            task["bugId"] = bid
+    TI._write_json(fx["shard"], shard)
+    index = _mio.read_json(fx["manifest"])
+    index["bugs"] = [{"id": bid, "title": "b", "status": "in_progress",
+                      "taskId": tid}]
+    TI._write_json(fx["manifest"], index)
+
+
+def _bug_link_cases(check, repos):
+    """A task commit whose shard links a bug carries the index holding the
+    link's other half, so the manifest it records validates - and an index
+    change that is no bug link stays out of it."""
+    import _manifest_rules as _rules
+    fx = repos.make()
+    _dirty_work(fx)
+    _link_bug(fx)
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    after = _head(fx)
+    carried = _carried(fx, after) if after != before else []
+    clone = _clone_at(fx, after, repos.scratch("bug-link"))
+    findings = _rules.validate(_mio.load_manifest(
+        os.path.join(clone, *INDEX_REL.split("/"))))[0]
+    check("ctw82 RED-FIRST: a task commit whose shard links a bug records a "
+          "manifest that VALIDATES - read off a fresh clone at the commit, "
+          "where a shard carrying `bugId` beside an index whose bug names no "
+          "task fails 'link must be reciprocal' - because the commit carries "
+          "the index holding the other half: %r"
+          % ((code, carried, findings[:2], text[-300:]),),
+          code == 0 and INDEX_REL in carried and SHARD_REL in carried
+          and findings == [])
+    _manifest, phase, task = _phase_and_task(fx)
+    task["commit"] = after
+    graded = _invariants.commit_scope(
+        phase, fx["root"], ".", SHARD_REL, INDEX_REL,
+        "docs/audit/journal", "docs/audit/evidence")
+    check("ctw83 ...and the grader agrees: `commit_scope` reads the same link "
+          "off git and calls the commit clean: %r" % (graded.get("breaches"),),
+          not graded.get("breaches"))
+    check("ctw84 ...and the output says WHY the index rode along, naming the "
+          "link, since a task commit carrying the index is otherwise the "
+          "mistake its own refusal describes: %r" % (text[-400:],),
+          "BUG-1" in text and INDEX_REL in text)
+
+    # AN INDEX CHANGE THAT IS NO BUG LINK stays out of the commit.
+    fx = repos.make()
+    _dirty_work(fx)
+    index = _mio.read_json(fx["manifest"])
+    index["meta"]["title"] = "touched"
+    TI._write_json(fx["manifest"], index)
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    after = _head(fx)
+    check("ctw85 SECOND-DIRECTION CASE: an index edited for any other reason "
+          "is left out of the task commit and left dirty in the working tree "
+          "for commit-manifest-index.py: %r" % ((code, text[-200:]),),
+          code == 0 and after != before
+          and INDEX_REL not in _carried(fx, after)
+          and INDEX_REL in TI._git(fx["root"], "status", "--porcelain"))
 
 
 def _default_project_cases(check, repos):

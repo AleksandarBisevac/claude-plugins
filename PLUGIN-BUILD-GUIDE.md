@@ -129,7 +129,7 @@ claude-plugins/                           # this repo (personal, public)
           _id_refs.py                     # an id renamed everywhere the plan points at it, from one list of fields
           _warning_groups.py              # the SHAPE those warnings print in: many that differ only in the item they name, as one line
           validate-manifest.py            # the command over those rules: read a file, print, exit 0/1/2
-          audit-task.py                   # /audit:task + /audit:phase doer: add/scope/start/done/cancel and add-phase/retarget, under the index lock
+          audit-task.py                   # /audit:task + /audit:phase + /audit:bug doer: add/scope/start/done/cancel, add-phase/retarget, bug-add/bug-close, reindex, under the index lock
           migrate-manifest.py             # /audit:layout doer: --to=sharded|single-file (backup+restore)
           _manifest_merge.py              # three-way merge of one manifest document by RECORD: ids, not lines
           merge-manifest.py               # the git merge driver over it, plus install/uninstall/status and the shim
@@ -5136,7 +5136,23 @@ appends one bug in exactly the shape `commands/bug.md` spells - every key presen
 links `null` - with the id `next-id bug` would print, creating the list when the plan has none,
 into the index alone, with a `bug.add` journal row. It exists because that shape used to be a
 paragraph the model re-typed by hand on every report, and nothing checked that every key reached
-the file.
+the file. `--reported-by`, `--ado '<json>'` and `--ado-parent '<json>'` are the import
+`/audit:sync pull bugs` makes: the verb stamps the link `origin: imported` and the parent
+`source: imported` with their moments, writes no `adoParent` key for a card with none, and
+refuses by name a card any record already links.
+
+`bug-close <bugId> --status wontfix|not_a_bug|fixed --reason TEXT [--commit <sha>]` is the one
+writer of a human close: the word, the reason as `notes`, `fixedIn` for a `fixed` close given a
+commit, into the index alone with a `bug.close` row. It refuses a bug whose fix task is running,
+one already closed, and a `--commit` beside a close that changed nothing. `add --bug` is the
+link's writer and refuses a bug another live task already fixes, by name - the two halves live
+in different files, and repointing one orphans the other.
+
+`reindex` re-derives `fileIndex` from the `files` every live task declares (`derived_file_index`,
+which keeps a row's order when its claimants are unchanged), writes the index alone and records
+`plan.reindex`. It runs over a plan whose only findings are `fileIndex` findings
+(`FILE_INDEX_FINDINGS`) and refuses any other, since those are the findings it settles; the
+validator's `fileIndex` findings name it as their repair (`_manifest_crossrefs.FILEINDEX_REMEDY`).
 
 `mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId>` and
 `unmute --test <path>` are the only writers of `meta.muted`, the quarantine the gate runner

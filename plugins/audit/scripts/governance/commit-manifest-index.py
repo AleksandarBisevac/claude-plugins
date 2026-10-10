@@ -5,7 +5,9 @@ WHY THIS EXISTS. In the sharded layout the index holds `meta`,
 `fileIndex`, `bugs[]`, `deferred`, `proposals` and the phase stubs, and the
 shards hold the task bodies. Structural commands write the index: `/audit:task
 add --files ...` updates `fileIndex`, `/audit:phase add` appends a stub. But
-`orchestrator.md` step 4c forbids a TASK commit from staging the index, and
+`orchestrator.md` step 4c forbids a TASK commit from staging the index - save
+the one commit that completes a bug link, whose halves live one in each file
+(`commit-task-work.py`) - and
 `commit-audit-state.py` refuses it too -- both for the same stated reason, and
 both correctly. So nothing committed the index at all: the structural edits piled
 up in a working tree until somebody noticed and committed them by hand. Reported

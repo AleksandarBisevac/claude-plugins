@@ -46,8 +46,13 @@ either layout (the scripts and hooks assemble transparently), but WRITES must ta
   **runtime** field — phase `status`/`branch`/`baseRef`/`mergedAt`/`review`/`summary`/`claim` and
   task `status`/`attempts`/`startedAt`/`completedAt`/`outcome`/`commit` — lives in that phase's
   **shard**. Edit the SHARD, never the index. **Structural** writes (adding a phase/task/bug,
-  `fileIndex`, `bugs[]`, `proposals[]`) go to the **index** under the index lock. A phase run therefore touches
+  `fileIndex`, `bugs[]`, `proposals[]`) go to the **index** under the index lock, through
+  `audit-task.py` (`add`, `bug-add`, `bug-close`, `reindex` and the rest), never by an Edit. A phase run therefore touches
   **only its own shard** — which is exactly why two phase branches merge without a manifest conflict.
+  The one exception is a task commit whose shard completes a **bug link**: `task.bugId` lives in
+  the shard and `bug.taskId` in the index, the validator refuses either alone, so
+  `commit-task-work.py` carries the index in that commit and names the link it completes;
+  `verify-invariants.py`'s `commit-scope` reads the same link off git and allows exactly that.
   A structural write is the opposite case: it appends to the index, so two branches that each add a
   record conflict there unless the merge driver is installed (`/audit:layout merge-driver`), which
   merges by record and leaves only a genuine collision — one field changed two ways, or one id
@@ -345,7 +350,8 @@ names; `phase-<phaseId>` also works — **take the narrowest one that covers you
   Acquire → edit the index → release, within that step. The status mirror is written by the
   scripts that store a derived status, never by hand, and each takes this lock itself:
   `audit-task.py signoff` and `done` (a fixed bug's `status`/`fixedIn` too) and `settle`, and
-  `close-phase.py` when its `mergedAt` stamp stores `done`.
+  `close-phase.py` when its `mergedAt` stamp stores `done`. The bug and file-index writes are the
+  same: `bug-add`, `bug-close` and `reindex` each take this lock themselves.
 - **`usage`** — held while the usage ledger's monthly files are rewritten by the backfill; the
   orchestrator's own verbs never take it.
 - **`phase-<phaseId>`** — held for the DURATION of a phase run by `next`/`run`/`phase`/`review`/

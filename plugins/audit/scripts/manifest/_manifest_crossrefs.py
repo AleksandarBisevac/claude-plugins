@@ -549,6 +549,11 @@ def _check_ado_parents(manifest, phases):
 # from every other one. Matching the sentence in two files by hand is how
 # the two would drift; one of them owns the words.
 FILEINDEX_PAIRING = "missing from fileIndex"
+# The door both fileIndex findings name. UNQUOTED on purpose: a finding's
+# subject is its locus and its quoted ids (`_manifest_rules.finding_subject`),
+# and a quoted command here would become an id every baseline keyed on.
+FILEINDEX_REMEDY = ("audit-task.py reindex re-derives fileIndex from the files "
+                    "every live task declares")
 
 
 def _check_file_index(manifest, index):
@@ -581,14 +586,18 @@ def _check_file_index(manifest, index):
             if isinstance(ref, str):
                 bucket.add(ref)  # only hashable str ids enter the set
             if ref not in task_ids:
-                f.append(_output.finding("crossrefs.file_index.task-does-exist", "fileIndex['%s']: task '%s' does not exist" % (fpath, ref)))
+                f.append(_output.finding(
+                    "crossrefs.file_index.task-does-exist",
+                    "fileIndex['%s']: task '%s' does not exist - %s"
+                    % (fpath, ref, FILEINDEX_REMEDY)))
     for tid, files in index["task_files"].items():
         for fentry in files:
             key = _strip_line_suffix(fentry)
             if tid not in stripped_index.get(key, set()):
                 f.append(_output.finding("crossrefs.file_index.file-fileindex-include", "task %s: file '%s' %s "
-                         "(fileIndex['%s'] must include '%s')"
-                         % (tid, fentry, FILEINDEX_PAIRING, key, tid)))
+                         "(fileIndex['%s'] must include '%s') - %s"
+                         % (tid, fentry, FILEINDEX_PAIRING, key, tid,
+                            FILEINDEX_REMEDY)))
     return (f, [])
 
 

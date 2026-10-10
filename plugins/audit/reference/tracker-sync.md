@@ -23,7 +23,10 @@ is the one wrong answer available here. The provenance tag cannot stand in for i
 authorship. The **id type is per-tracker**: ADO ids are integers; a JIRA binding would
 carry string keys (`PROJ-123`) in its own `jira` field with its own `$def`. Links are
 written ONLY by the sync command (and `lastSyncedAt` bumps by the echo) — never by
-hand. Links are never deleted: disabling the connector freezes them.
+hand. A pulled bug's link is born through the bug writer, `audit-task.py bug-add --ado
+<json> [--ado-parent <json>]`, which stamps `origin: imported` and the moment itself and
+refuses a card any record already links. Links are never deleted: disabling the
+connector freezes them.
 
 ### Config keys (mirrored shape per tracker)
 
@@ -86,7 +89,8 @@ weaker than sync:
 
 ### Proposal-based pull
 
-Imported sprint items land as **parked proposals**, never directly in the live plan —
+Imported bugs enter `bugs[]` through the bug writer above, one call each, never an
+edit of the index. Imported sprint items land as **parked proposals**, never directly in the live plan —
 review and materialize via `/audit:propose`. Scoping: one sprint can span multiple
 repos, so `pull` filters (`areaPath`, `tags`, AND-composed) say which items belong
 here; with **no filter configured the pull refuses to import blind** — it lists the

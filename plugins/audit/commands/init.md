@@ -430,9 +430,11 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
    `createdISO` from `date -u +%Y-%m-%dT%H:%M:%SZ`, `developmentBranch`, `branchPrefix: "audit"`,
    `gitRoot` (from step 3.1), `commit`, detected `buildCommands`, `areas` (from step 3.5 — omit the
    key entirely when nothing was detected or the user selected nothing), defaults elsewhere), `phases`,
-   top-level `fileIndex` built from every task's `files`, `bugs: []`, `deferred`, `proposals`.
-   Task `files` and `fileIndex` keys are **project-dir-relative** (they include the `gitRoot` prefix,
-   e.g. `test/src/foo.ts` when `gitRoot` is `test`).
+   `fileIndex: {}`, `bugs: []`, `deferred`, `proposals`. Both of the first two stay empty here:
+   step 7 derives the file index from the tasks' `files` with a verb, and a bug enters only
+   through `/audit:bug add`. Task `files` are **project-dir-relative** (they include the
+   `gitRoot` prefix, e.g. `test/src/foo.ts` when `gitRoot` is `test`), and so is every row the
+   verb derives from them.
    **A file the task must CREATE belongs in `files` too, before it exists.** `files` is what the plan
    gate matches an edit against, and the gate asks the manifest, never the disk — so a declared path
    that is not there yet is a legitimate creation target and `/audit:task add` reports it as a
@@ -650,9 +652,15 @@ which layout was written and why the question was not worth asking yet.
 ## 7. Write + validate
 
 1. `mkdir -p` the manifest's parent directory; Write the manifest as decided in
-   step 6 (approved phases in `phases[]` with their `fileIndex` entries; parked
-   phases in `proposals[]`).
-2. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/validate-manifest.py" <manifestPath>` —
+   step 6 — approved phases in `phases[]`, parked phases in `proposals[]`, and the
+   file index still `fileIndex: {}` as step 4 assembled it.
+2. **Derive the file index with the verb**, never by hand — it reads every live task's
+   `files`, writes the index under the lock, revalidates and journals a `plan.reindex` row:
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" reindex <manifestPath>
+   ```
+   With everything parked there is no live task, and it says there is nothing to reindex.
+   Then run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/validate-manifest.py" <manifestPath>` —
    on findings, fix and re-run until clean (this is mandatory).
 3. If `npx` is available, also run
    `npx ajv-cli validate --spec=draft2020 -s "${CLAUDE_PLUGIN_ROOT}/schema/audit-plan.schema.json" -d <manifestPath>`;

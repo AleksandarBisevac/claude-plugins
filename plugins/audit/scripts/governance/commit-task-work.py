@@ -28,9 +28,13 @@ them can disagree about what "refused" means.
 WHAT IT STAGES. Exactly the four things step 4c allows, each named in the output:
 the task's own `files`, the phase's manifest file (the shard when sharded), the
 journal directory and the evidence directory. Nothing else, and the manifest
-INDEX explicitly not - a task commit carrying the index is what makes two
-parallel phases conflict on merge, which is the property the sharded layout was
-introduced to buy. `_invariants.commit_scope` re-derives that same list from git
+INDEX not - a task commit carrying the index is what makes two parallel phases
+conflict on merge, which is the property the sharded layout was introduced to
+buy - with ONE exception: a shard that links a bug whose index half is written
+and not committed (`_invariants.completed_bug_links`). The task's `bugId` and
+the bug's `taskId` live one in each file and the validator refuses either
+alone, so that commit carries the index or records a manifest that does not
+validate; the output names the link. `_invariants.commit_scope` re-derives that same list from git
 afterwards, so the commits this makes are graded by something that did not make
 them, and the two lists are written against one paragraph rather than against
 each other.
@@ -207,6 +211,7 @@ MANIFEST_LABEL = "the phase's manifest file"
 JOURNAL_LABEL = "the journal directory"
 EVIDENCE_LABEL = "the evidence directory"
 DECLARED_LABEL = "the task's declared file"
+INDEX_LABEL = "the manifest index, for the bug link it completes"
 
 # The action the trail records for this commit. LOCAL to this file, unlike
 # `_invariants.ACTION_STATE_COMMITTED` and `ACTION_INDEX_COMMITTED`, and the
@@ -329,6 +334,18 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
         if rel not in [c[0] for c in candidates]:
             candidates.append((rel, label, True, False))
 
+    index_rel = _invariants._rel(index_abs, git_root)
+    if index_rel is not None and os.path.abspath(index_abs) == os.path.abspath(
+            phase_file_abs):
+        # The single-file layout: the manifest IS the index, and step 4c's "do NOT
+        # stage the index" is about the SHARDED index a parallel phase would
+        # conflict on. Naming it here would refuse the manifest this commit is
+        # required to carry.
+        index_rel = None
+    links = bug_links(index_abs, phase_file_abs, index_rel, git_root)
+    if links and index_rel not in [c[0] for c in candidates]:
+        candidates.append((index_rel, INDEX_LABEL, True, False))
+
     # ONE CLASSIFICATION FOR THE WHOLE LIST, asked of git in a fixed number of
     # calls rather than one per path, so a task declaring many files does not pay
     # a process apiece.
@@ -360,18 +377,27 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
         if mine:
             declared.append(rel)
 
-    index_rel = _invariants._rel(index_abs, git_root)
-    if index_rel is not None and os.path.abspath(index_abs) == os.path.abspath(
-            phase_file_abs):
-        # The single-file layout: the manifest IS the index, and step 4c's "do NOT
-        # stage the index" is about the SHARDED index a parallel phase would
-        # conflict on. Naming it here would refuse the manifest this commit is
-        # required to carry.
-        index_rel = None
     return {"paths": paths, "declared": declared,
             "kinds": dict((rel, kinds[rel]) for rel in paths),
             "ignored": ignored, "ignoredRecords": ignored_records,
-            "skipped": skipped, "indexRel": index_rel}
+            "skipped": skipped, "indexRel": index_rel,
+            "bugLinks": links if index_rel in paths else []}
+
+
+def bug_links(index_abs, phase_file_abs, index_rel, git_root):
+    """The bug links the working shard carries whose index half is written and
+    not yet committed - `_invariants.completed_bug_links` over the files as
+    they stand against the index HEAD holds. Empty in the single-file layout,
+    where the one file carries both halves already."""
+    if index_rel is None:
+        return []
+    try:
+        index_now = _mio.read_json(index_abs)
+        body = _mio.read_json(phase_file_abs)
+    except Exception:
+        return []
+    return _invariants.completed_bug_links(
+        index_now, _invariants.json_at(git_root, "HEAD", index_rel), body)
 
 
 def foreign_refusal(foreign, targets):
@@ -741,6 +767,7 @@ def commit_work(manifest, phase, task, manifest_path, project, git_root,
     answer.setdefault("verdict", None)
     answer.setdefault("overridden", False)
     answer.setdefault("attempt", None)
+    answer.setdefault("bugLinks", [])
     return code, answer
 
 
@@ -873,6 +900,7 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
                                    journalled=done["journalled"], done=done)
     answer["verdict"] = verdict
     answer["overridden"] = overriding
+    answer["bugLinks"] = [list(link) for link in targets["bugLinks"]]
     return E_OK, answer
 
 
@@ -948,6 +976,10 @@ def main(argv, out=print):
         return code
     _scoped_commit.render(answer, PREFIX, out=out)
     verdict = answer.get("verdict") or {}
+    for bid, tid in answer.get("bugLinks") or []:
+        out("  index: carried, because this shard links %s to %s and the "
+            "index holds that link's other half - one without the other "
+            "records a manifest that does not validate" % (bid, tid))
     if answer.get("committed") and not answer.get("refused"):
         if answer.get("overridden"):
             out("  verdict: OVERRIDDEN, and the journal records it with the "

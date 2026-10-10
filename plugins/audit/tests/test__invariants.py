@@ -340,7 +340,18 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
     shard["tasks"][0]["status"] = "done"
     _write_json(shard_path, shard)
     staged = ["src/a.py", "docs/audit/phases/P1.json"]
-    if index_in_task:
+    if index_in_task == "bug-link":
+        # A BUG LINKED THROUGH THE NORMAL FLOW: `add --bug` writes the task's
+        # `bugId` into the shard and the bug's `taskId` into the index, and a
+        # commit carrying only one half records a manifest that does not
+        # validate - so this task commit carries the index too.
+        shard["tasks"][0]["bugId"] = "BUG-1"
+        _write_json(shard_path, shard)
+        index["bugs"] = [{"id": "BUG-1", "title": "b", "status": "in_progress",
+                          "taskId": "P1.1"}]
+        _write_json(index_path, index)
+        staged.append("docs/audit/audit-plan.json")
+    elif index_in_task:
         index["meta"]["title"] = "touched"
         _write_json(index_path, index)
         staged.append("docs/audit/audit-plan.json")
@@ -654,6 +665,33 @@ def _cases(check):
               "README: %r" % (scope["breaches"],),
               len(scope["breaches"]) == 1
               and "INDEX" in scope["breaches"][0])
+
+        linked = repos.get(index_in_task="bug-link")
+        linked_answer = _phase_answer(linked)
+        scope = _check(linked_answer, "commit-scope")
+        revalidated = _check(linked_answer, "manifest-revalidated")
+        check("iv7b RED-FIRST, the ALLOW twin of iv7: a task commit whose shard "
+              "links a bug carries the index holding the link's other half - "
+              "the one way the commit records a manifest that validates - and "
+              "that is no breach, while the commit is still examined and the "
+              "state it recorded revalidates: %r"
+              % ((scope["breaches"], scope["examined"],
+                  revalidated["breaches"]),),
+              scope["breaches"] == [] and scope["examined"] == 2
+              and revalidated["breaches"] == [])
+        links = M.completed_bug_links(
+            {"bugs": [{"id": "BUG-1", "taskId": "P1.1"}]}, {"bugs": []},
+            {"tasks": [{"id": "P1.1", "bugId": "BUG-1"}]})
+        unlinked = M.completed_bug_links(
+            {"bugs": [{"id": "BUG-1", "taskId": "P1.1"}]},
+            {"bugs": [{"id": "BUG-1", "taskId": "P1.1"}]},
+            {"tasks": [{"id": "P1.1", "bugId": "BUG-1"}]})
+        check("iv7c ...and the exception is the link and nothing wider: the "
+              "pair a commit completes is named, and a link whose index half "
+              "was already committed completes nothing, so an index change "
+              "that is not a bug link stays iv7's breach: %r"
+              % ((links, unlinked),),
+              links == [("BUG-1", "P1.1")] and unlinked == [])
 
         journalled = repos.get(journal_in_commit=True)
         scope = _check(_phase_answer(journalled), "commit-scope")

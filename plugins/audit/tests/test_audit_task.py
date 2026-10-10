@@ -4206,6 +4206,11 @@ def _flag_cases(check):
                                "--description", "d"],
                    "mute": ["mute", "--test", "tests/test_vf.py"],
                    "unmute": ["unmute", "--test", "tests/test_vf.py"],
+                   # `reindex` reads no flag of its own, so its row is the bare
+                   # call; `bug-close` with the two its door requires.
+                   "reindex": ["reindex"],
+                   "bug-close": ["bug-close", "BUG-1", "--status", "wontfix",
+                                 "--reason", "r"],
                    # `file-return` with its one flag; the misplaced-flag check
                    # fires before the door reads stdin.
                    "file-return": ["file-return", "P2.9", "--role",
@@ -4354,6 +4359,19 @@ def _flag_cases(check):
         _vf_ok["unmute/--test"] = run(
             ["unmute", "--test", "tests/test_vf.py", "--json",
              "--project-dir", _vf_mu_proj])[0]
+        # ...then the import flags on a second bug, and `bug-close` closing
+        # the first with every flag it reads.
+        _vf_ok["bug-add/--ado"] = run(
+            ["bug-add", "Imported", "--severity", "low", "--description", "d",
+             "--reported-by", "alice", "--ado", '{"id": 9}',
+             "--ado-parent", '{"id": 3}', "--json",
+             "--project-dir", _vf_mu_proj])[0]
+        _vf_ok["bug-close/--commit"] = run(
+            ["bug-close", "BUG-1", "--status", "fixed", "--reason", "r",
+             "--commit", _VF_SHA, "--json", "--project-dir", _vf_mu_proj])[0]
+        _vf_ri_proj, _vf_ri_mp = mk("vf-reindex", base_manifest())
+        _vf_ok["reindex/--json"] = run(
+            ["reindex", "--json", "--project-dir", _vf_ri_proj])[0]
         # `unblock` reads `--reason`, on a task whose attempts are spent.
         _vf_ub = base_manifest()
         _vf_ub["phases"][1]["tasks"][1].update(status="blocked", attempts=3,
@@ -7474,6 +7492,11 @@ def _close_cases(check):
                       "--owner", "o", "--until", "2998-01-01",
                       "--bug", "BUG-3"]),
             ("unmute", ["unmute", "--test", "tests/test_tw.py"]),
+            # ...and `bug-close` closes the bug that pair's mute named, once
+            # the mute is lifted; `reindex` re-derives whatever `tw_all` holds.
+            ("bug-close", ["bug-close", "BUG-3", "--status", "wontfix",
+                           "--reason", "r"]),
+            ("reindex", ["reindex"]),
             # ...and `unblock`, on a pair whose task has spent its attempts.
             ("unblock", ["unblock", "P2.3", "--reason", "try again"]),
         )
@@ -7495,6 +7518,7 @@ def _close_cases(check):
         _tw_pairs = {"unblock": (tw_ub_tree, tw_ub_proj),
                      "mute": (tw_mu_tree, tw_mu_proj),
                      "unmute": (tw_mu_tree, tw_mu_proj),
+                     "bug-close": (tw_mu_tree, tw_mu_proj),
                      "seed": (tw_seed_tree, tw_seed_proj),
                      "signoff": (tw_sign_tree, tw_sign_proj),
                      "finding": (tw_rv_tree, tw_rv_proj),
@@ -15982,6 +16006,363 @@ def _batch_fix_cases(check):
         shutil.rmtree(root, ignore_errors=True)
 
 
+# --- (xf) a fact two files share is written whole, by a verb ------------------
+# A sentence in a command document that tells the model to write `fileIndex`,
+# `bugs[]` or a bug's own fields itself. Read SENTENCE BY SENTENCE and
+# section-aware: a bug field (`status`, `notes`, ...) counts as a bug edit only
+# in a section whose heading names a bug or in a sentence that does. The shapes
+# are measured against `commands/` rather than imagined - an imperative opening,
+# the field, and no writing verb named in the same sentence.
+_XF_IMPERATIVE = re.compile(
+    r"^(?:\*\*)?(?:Extend|Update|Edit|Append|Add|Assemble|Build|Set|Write|"
+    r"Fill|Record|Import|Mark|Flip|Link)\b")
+_XF_SHARED = re.compile(r"`fileIndex`|`bugs(?:\[\])?`|`bugs: \[\]`|"
+                        r"\bas a manifest bug\b")
+_XF_BUG_FIELD = re.compile(
+    r"`(?:status|notes|taskId|fixedIn|ado|adoParent)(?::[^`]*)?`")
+_XF_BUILT = re.compile(r"`fileIndex`\s+(?:built|derived|extended)\s+from")
+_XF_VERB = re.compile(
+    r"audit-task\.py\"?\s+(?:reindex|bug-add|bug-close|add|scope|move|settle)"
+    r"\b|`(?:reindex|bug-add|bug-close)\b")
+_XF_SPLIT = re.compile(r"(?<=[.;:])\s+|\n\s*\n|\n\s*(?:\d+\.|-)\s+")
+
+
+def hand_edit_sentences(text, where="doc"):
+    """[(where, heading, sentence)] for each sentence of `text` that tells
+    its reader to write a cross-file plan fact by hand."""
+    found = []
+    for section in re.split(r"\n(?=#{2,3} )", text):
+        heading = section.split("\n", 1)[0]
+        bug_section = "bug" in heading.lower()
+        for raw in _XF_SPLIT.split(section):
+            sentence = " ".join(raw.split())
+            if not sentence or _XF_VERB.search(sentence):
+                continue
+            bug_edit = ((bug_section or re.search(r"\bbug\b", sentence))
+                        and _XF_BUG_FIELD.search(sentence))
+            if _XF_BUILT.search(sentence) or (
+                    _XF_IMPERATIVE.search(sentence)
+                    and (_XF_SHARED.search(sentence) or bug_edit)):
+                found.append((where, heading[:60], sentence[:160]))
+    return found
+
+
+def _crossfile_cases(check):
+    """`fileIndex`, `bugs[]` and the bug-task link each live in a file the
+    other half does not, so each is written by a verb that writes both halves
+    under the index lock, revalidates and journals - and no command document
+    tells the model to write one by hand."""
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, run_on_stdin, base_manifest, mk, mk_empty, task_in, _pin, _unpin,
+     _PD_SHA, pd_fixture, pd_repo, git) = _at_kit(tmp)
+
+    def a_bug(bid, **over):
+        bug = {"id": bid, "title": "b", "status": "open", "severity": "low",
+               "reportedAt": "2026-01-01T00:00:00Z", "reportedBy": None,
+               "description": "d", "repro": None, "expected": None,
+               "actual": None, "files": [], "taskId": None, "fixedIn": None,
+               "notes": None}
+        bug.update(over)
+        return bug
+
+    def rows(proj, action):
+        return [r for r in _journal_io.read_all(proj)
+                if r.get("action") == action]
+
+    def plan(mpath):
+        return _mio.load_manifest(mpath)
+
+    def bug_of(mpath, bid):
+        return next((b for b in plan(mpath).get("bugs") or []
+                     if b.get("id") == bid), {})
+
+    def shard_path(mpath, pid):
+        return os.path.join(os.path.dirname(mpath), "phases", "%s.json" % (pid,))
+
+    try:
+        # ---- reindex: the index re-derived from the shards ----------------------
+        proj, mpath = mk("xf-reindex", base_manifest(), sharded=True)
+        p2 = shard_path(mpath, "P2")
+        body = _mio.read_json(p2)
+        # A HAND-WIDENED SHARD: P2.3 gains a file the index never heard of, and
+        # a row the index carries for P2.1 stops being claimed.
+        body["tasks"][1]["files"] = ["src/new.ts"]
+        body["tasks"][0]["files"] = []
+        _panel_write._atomic_write_json(p2, body)
+        with open(p2, "rb") as fh:
+            shard_before = fh.read()
+        unpaired = M._validator().validate(plan(mpath))[0]
+        code, txt = run(["reindex", "--project-dir", proj])
+        after = plan(mpath)
+        with open(p2, "rb") as fh:
+            shard_after = fh.read()
+        check("xf1 RED-FIRST: a shard widened by hand parts from the index (the "
+              "validator says so), and `reindex` re-derives `fileIndex` from the "
+              "shards - the new file claimed, the released row gone - writes the "
+              "index alone and leaves a plan that validates: %r"
+              % ((code, txt[-300:], after.get("fileIndex"), unpaired[:2]),),
+              any("missing from fileIndex" in f for f in unpaired)
+              and code == 0 and after.get("fileIndex") == {"src/new.ts": ["P2.3"]}
+              and shard_after == shard_before
+              and M._validator().validate(after)[0] == [])
+        _xf_rows = rows(proj, "plan.reindex")
+        check("xf1b ...and the write is journaled as `plan.reindex`, naming the "
+              "rows it claimed and released: %r" % (_xf_rows[-1:],),
+              len(_xf_rows) == 1
+              and "src/new.ts" in json.dumps(_xf_rows[0].get("details")))
+        before = _plan_bytes(proj)
+        code, txt = run(["reindex", "--project-dir", proj])
+        check("xf1c ...and a second `reindex` over a paired index writes nothing, "
+              "says so and journals nothing: %r" % ((code, txt[-200:]),),
+              code == 0 and "nothing to reindex" in txt
+              and _plan_bytes(proj) == before
+              and len(rows(proj, "plan.reindex")) == 1)
+
+        # ORDER IS KEPT for a row whose claimants did not change: a shared row
+        # rewritten in a new order on a call that changed nothing is merge
+        # material in the one file two phases both write.
+        fx = base_manifest()
+        fx["phases"][1]["tasks"][1]["files"] = ["src/a.ts"]
+        fx["fileIndex"] = {"src/a.ts": ["P2.3", "P2.1"], "src/zz.ts": ["P2.1"]}
+        proj, mpath = mk("xf-order", fx, sharded=True)
+        code, txt = run(["reindex", "--project-dir", proj])
+        check("xf1d ...a row still claimed by the same tasks keeps its order, and "
+              "a row nobody claims is released: %r"
+              % ((code, plan(mpath).get("fileIndex")),),
+              code == 0
+              and plan(mpath).get("fileIndex") == {"src/a.ts": ["P2.3", "P2.1"]})
+
+        fx = base_manifest()
+        fx["phases"][1]["tasks"][1]["dependsOn"] = ["P9.9"]
+        proj, mpath = mk("xf-other-finding", fx, sharded=True)
+        before = _plan_bytes(proj)
+        code, txt = run(["reindex", "--project-dir", proj])
+        check("xf1e ...and a plan holding a finding `reindex` cannot settle is "
+              "refused whole, naming it, with nothing written - re-deriving the "
+              "index over a plan wrong elsewhere would be blamed for it: %r"
+              % ((code, txt[-300:]),),
+              code == M.E_INVALID and "P9.9" in txt
+              and _plan_bytes(proj) == before)
+
+        # ---- bug-close: a closed bug, written by a verb ---------------------------
+        fx = base_manifest()
+        fx["bugs"] = [a_bug("BUG-1"), a_bug("BUG-2"), a_bug("BUG-3")]
+        proj, mpath = mk("xf-close", fx, sharded=True)
+        code, txt = run(["bug-close", "BUG-1", "--status", "not_a_bug",
+                         "--reason", "checked: the `200` is correct",
+                         "--project-dir", proj])
+        b1 = bug_of(mpath, "BUG-1")
+        closed = rows(proj, "bug.close")
+        check("xf2 RED-FIRST: `bug-close` writes the word the caller passed and "
+              "the reason VERBATIM as `notes`, and journals a `bug.close` row "
+              "naming the move: %r" % ((code, txt[-200:], b1, closed[-1:]),),
+              code == 0 and b1.get("status") == "not_a_bug"
+              and b1.get("notes") == "checked: the `200` is correct"
+              and len(closed) == 1
+              and (closed[0].get("details") or {}).get("from") == "open"
+              and (closed[0].get("details") or {}).get("to") == "not_a_bug")
+        code, txt = run(["bug-close", "BUG-2", "--status", "fixed", "--reason",
+                         "fixed outside the pipeline", "--commit", _PD_SHA,
+                         "--project-dir", proj])
+        check("xf2b ...`fixed` with `--commit` records `fixedIn`: %r"
+              % ((code, bug_of(mpath, "BUG-2")),),
+              code == 0 and bug_of(mpath, "BUG-2").get("status") == "fixed"
+              and bug_of(mpath, "BUG-2").get("fixedIn") == _PD_SHA)
+        before = _plan_bytes(proj)
+        _xf_refused = {}
+        for argv, what in (
+                (["bug-close", "BUG-3", "--reason", "r"], "no --status"),
+                (["bug-close", "BUG-3", "--status", "gone", "--reason", "r"],
+                 "bad --status"),
+                (["bug-close", "BUG-3", "--status", "wontfix"], "no --reason"),
+                (["bug-close", "BUG-3", "--status", "wontfix", "--reason", "r",
+                  "--commit", _PD_SHA], "--commit beside wontfix"),
+                (["bug-close", "BUG-1", "--status", "wontfix", "--reason", "r"],
+                 "already closed"),
+                (["bug-close", "BUG-9", "--status", "wontfix", "--reason", "r"],
+                 "no such bug")):
+            _xf_refused[what] = run(argv + ["--project-dir", proj])[0]
+        check("xf2c ...and a close missing its word or its reason, with a word a "
+              "bug does not take, a commit beside a close that changed nothing, "
+              "on a bug already closed or on no bug at all is refused, exit 2, "
+              "with nothing written: %r" % (_xf_refused,),
+              sorted(set(_xf_refused.values())) == [2]
+              and _plan_bytes(proj) == before)
+
+        fx = base_manifest()
+        fx["phases"][1]["tasks"][1].update(status="in_progress", attempts=1,
+                                          bugId="BUG-1")
+        fx["bugs"] = [a_bug("BUG-1", status="in_progress", taskId="P2.3")]
+        proj, mpath = mk("xf-close-running", fx, sharded=True)
+        before = _plan_bytes(proj)
+        code, txt = run(["bug-close", "BUG-1", "--status", "wontfix",
+                         "--reason", "r", "--project-dir", proj])
+        check("xf2d ...and a bug whose fix task is running is refused by name - "
+              "finish or unblock P2.3 first - with nothing written: %r"
+              % ((code, txt[-200:]),),
+              code == 2 and "P2.3" in txt and _plan_bytes(proj) == before)
+
+        # ---- bug-add: the import `/audit:sync pull bugs` makes -------------------
+        fx = base_manifest()
+        fx["bugs"] = [a_bug("BUG-1", ado={"id": 41, "url": "u41",
+                                           "lastSyncedAt": None,
+                                           "origin": "imported"})]
+        proj, mpath = mk("xf-import", fx, sharded=True)
+        code, txt = run(["bug-add", "Imported", "--severity", "med",
+                         "--description", "from the board", "--reported-by",
+                         "alice", "--ado", '{"id": 42, "url": "u42"}',
+                         "--ado-parent", '{"id": 7, "type": "Feature", '
+                         '"title": "Checkout", "url": "u7"}',
+                         "--project-dir", proj])
+        b2 = bug_of(mpath, "BUG-2")
+        ado, parent = b2.get("ado") or {}, b2.get("adoParent") or {}
+        check("xf3 RED-FIRST: `bug-add --ado --ado-parent --reported-by` writes "
+              "the imported bug whole - the link stamped `origin: imported` with "
+              "its sync moment, the parent a sibling of it stamped `source: "
+              "imported` with the moment it was observed - and journals "
+              "`bug.add`: %r" % ((code, txt[-300:], b2),),
+              code == 0 and b2.get("reportedBy") == "alice"
+              and ado.get("id") == 42 and ado.get("url") == "u42"
+              and ado.get("origin") == "imported" and ado.get("lastSyncedAt")
+              and parent.get("id") == 7 and parent.get("type") == "Feature"
+              and parent.get("title") == "Checkout"
+              and parent.get("source") == "imported" and parent.get("observedAt")
+              and len(rows(proj, "bug.add")) == 1
+              and M._validator().validate(plan(mpath))[0] == [])
+        code, txt = run(["bug-add", "No parent", "--severity", "low",
+                         "--description", "d", "--ado", '{"id": 43}',
+                         "--project-dir", proj])
+        check("xf3b ...a card with no board parent gets NO `adoParent` key - "
+              "absent falls through to the plan's default, and `null` would "
+              "declare 'under nothing' on the operator's behalf: %r"
+              % ((code, bug_of(mpath, "BUG-3")),),
+              code == 0 and "adoParent" not in bug_of(mpath, "BUG-3")
+              and (bug_of(mpath, "BUG-3").get("ado") or {}).get("id") == 43)
+        before = _plan_bytes(proj)
+        _xf_bad = {}
+        for argv, what in (
+                (["--ado", '{"id": 41}'], "a card already linked"),
+                (["--ado", "{not json"], "unparseable"),
+                (["--ado", '{"id": "42"}'], "an id that is not an integer"),
+                (["--ado-parent", '{"type": "Feature"}'], "a parent with no id")):
+            code, txt = run(["bug-add", "T", "--severity", "low",
+                             "--description", "d"] + argv
+                            + ["--project-dir", proj])
+            _xf_bad[what] = (code, "41" in txt if what.startswith("a card")
+                             else True)
+        check("xf3c ...and a card the plan already links is refused BY NAME, "
+              "as is a link that will not parse, an id that is not an integer "
+              "and a parent with no id - exit 2, nothing written: %r" % (_xf_bad,),
+              sorted(set(v[0] for v in _xf_bad.values())) == [2]
+              and all(v[1] for v in _xf_bad.values())
+              and _plan_bytes(proj) == before)
+
+        # ---- add --bug over a bug another live task already fixes ---------------
+        fx = base_manifest()
+        fx["phases"][1]["tasks"][1]["bugId"] = "BUG-1"
+        fx["bugs"] = [a_bug("BUG-1", status="in_progress", taskId="P2.3")]
+        proj, mpath = mk("xf-relink", fx, sharded=True)
+        before = _plan_bytes(proj)
+        code, txt = run(["add", "Fix BUG-1 again", "--phase", "P2", "--bug",
+                         "BUG-1", "--files", "src/x.ts", "--project-dir", proj])
+        check("xf4 RED-FIRST: `add --bug` over an in_progress bug whose `taskId` "
+              "names a live task is refused BY NAME - the bug and the task it "
+              "already has - with nothing written, rather than repointing the "
+              "bug and orphaning P2.3's `bugId`: %r" % ((code, txt[-300:]),),
+              code == 2 and "BUG-1" in txt and "P2.3" in txt
+              and _plan_bytes(proj) == before)
+        fx = base_manifest()
+        fx["bugs"] = [a_bug("BUG-1")]
+        proj, mpath = mk("xf-link", fx, sharded=True)
+        code, txt = run(["add", "Fix BUG-1", "--phase", "P2", "--bug", "BUG-1",
+                         "--files", "src/x.ts", "--project-dir", proj])
+        linked = bug_of(mpath, "BUG-1")
+        check("xf4b ALLOW: an open bug with no task is linked through the normal "
+              "flow - both halves in one write, the task's `bugId` in the shard "
+              "and the bug's `taskId` in the index, journaled and valid: %r"
+              % ((code, linked),),
+              code == 0 and linked.get("taskId") == "P2.4"
+              and (task_in(mpath, "P2.4") or {}).get("bugId") == "BUG-1"
+              and len(rows(proj, "task.add")) == 1
+              and M._validator().validate(plan(mpath))[0] == [])
+
+        # ---- the three writes are under the index lock ---------------------------
+        if not shutil.which("git"):
+            print("SKIP xf5 (git not installed)")
+        else:
+            fx = base_manifest()
+            fx["bugs"] = [a_bug("BUG-1")]
+            projk, mpathk = mk("xf-lock", fx, sharded=True, git=True)
+            _k_names = ("CLAUDE_CODE_SESSION_ID", "CLAUDE_PID",
+                        "AUDIT_LOCK_TOKENS")
+            _k_saved = dict((n, os.environ.get(n)) for n in _k_names)
+            for n in _k_names:
+                os.environ.pop(n, None)
+            try:
+                held = subprocess.run(
+                    [sys.executable,
+                     os.path.join(_output.SCRIPTS_DIR, "governance",
+                                  "audit-lock.py"),
+                     "acquire", "index", "--project", projk,
+                     "--note", "another run", "--session", "sess-X",
+                     "--pid", str(os.getpid())],
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    universal_newlines=True)
+                before = _plan_bytes(projk)
+                _xf_lock = dict((verb, run(argv + ["--project-dir", projk])[0])
+                                for verb, argv in (
+                    ("reindex", ["reindex"]),
+                    ("bug-close", ["bug-close", "BUG-1", "--status", "wontfix",
+                                   "--reason", "r"]),
+                    ("bug-add", ["bug-add", "T", "--severity", "low",
+                                 "--description", "d", "--ado", '{"id": 5}'])))
+                check("xf5 each verb waits on a live index lock - exit 3, the "
+                      "plan untouched: %r" % ((held.returncode, _xf_lock),),
+                      held.returncode == 0
+                      and _xf_lock == {"reindex": 3, "bug-close": 3,
+                                       "bug-add": 3}
+                      and _plan_bytes(projk) == before)
+            finally:
+                for n, v in _k_saved.items():
+                    if v is None:
+                        os.environ.pop(n, None)
+                    else:
+                        os.environ[n] = v
+
+        # ---- no command document tells the model to write one by hand ---------
+        _xf_found = []
+        cdir = os.path.join(_output.PLUGIN_ROOT, "commands")
+        _xf_docs = sorted(n for n in os.listdir(cdir) if n.endswith(".md"))
+        for name in _xf_docs:
+            with open(os.path.join(cdir, name), "r", encoding="utf-8") as fh:
+                _xf_found.extend(hand_edit_sentences(fh.read(), name))
+        check("xf6 RED-FIRST: no `commands/*.md` sentence tells the model to "
+              "write `fileIndex`, `bugs[]` or a bug's fields by hand - each of "
+              "those has a verb (`reindex`, `bug-add`, `bug-close`, `add "
+              "--bug`): %r" % (_xf_found,),
+              _xf_docs != [] and _xf_found == [])
+        _xf_red = hand_edit_sentences(
+            "## Subcommand: `fix <bugId>`\n\n5. Extend `fileIndex` with the "
+            "task's files. Revalidate.\n\n## Subcommand: `close <bugId>`\n\n"
+            "2. Set `status` to the word the caller passed.\n\n## 7. Write\n\n"
+            "1. Write the manifest (phases with their `fileIndex` entries).\n"
+            "4. Import each selected item as a manifest bug following the "
+            "shape.\n", "probe")
+        _xf_allow = hand_edit_sentences(
+            "## Subcommand: `close <bugId>`\n\n2. Set the word with `T "
+            "bug-close <bugId> --status <word>`.\n3. Write the manifest, then "
+            "run `audit-task.py reindex`, which derives `fileIndex`.\n"
+            "Bugs live in the manifest's top-level `bugs[]`, OUTSIDE phases.\n",
+            "probe")
+        check("xf6b ...over a detector that fires: the four hand edits the "
+              "documents carried are each found, and a sentence naming the verb "
+              "that writes it - or merely describing where the field lives - is "
+              "not: %r" % ((_xf_red, _xf_allow),),
+              len(_xf_red) == 4 and _xf_allow == [])
+    finally:
+        _harness.remove_tree(tmp)
+
+
 STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("at3-block", "_flag_cases"), ("at4-block", "_start_cases"),
           ("at5-block", "_close_cases"), ("at6-block", "_group_cases"),
@@ -15997,7 +16378,8 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("ps-block", "_stage_runner_cases"),
           ("of-block", "_open_finding_shape_cases"),
           ("fp-block", "_first_plan_cases"),
-          ("bx-block", "_batch_fix_cases"))
+          ("bx-block", "_batch_fix_cases"),
+          ("xf-block", "_crossfile_cases"))
 
 
 if __name__ == "__main__":

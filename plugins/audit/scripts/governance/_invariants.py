@@ -337,7 +337,59 @@ def ledger_dir_for(manifest, manifest_path):
 COMMIT_SCOPE_BASIS = ("git show --name-only <task.commit>, against that task's "
                       "`files`, its phase's manifest file, the journal directory "
                       "and the evidence directory - the four things "
-                      "orchestrator.md step 4c allows a task commit to stage")
+                      "orchestrator.md step 4c allows a task commit to stage - "
+                      "plus the index when the commit completes a bug link")
+
+
+def completed_bug_links(index_now, index_before, phase_body):
+    """`[(bugId, taskId)]` - each bug link `phase_body` carries whose index
+    half `index_now` holds and `index_before` did not.
+
+    THE ONE REASON A TASK COMMIT CARRIES THE INDEX. A bug link has a half in
+    each file - the task's `bugId` in the shard, the bug's `taskId` in the
+    index - and the validator refuses either half alone, so a commit carrying
+    the shard without the index records a manifest that does not validate. A
+    link whose index half was already committed completes nothing here, which
+    keeps every other index change outside a task commit.
+    """
+    def taken(index):
+        return dict((b.get("id"), b.get("taskId"))
+                    for b in ((index or {}).get("bugs") or [])
+                    if isinstance(b, dict))
+    now, before = taken(index_now), taken(index_before)
+    links = []
+    for task in ((phase_body or {}).get("tasks") or []):
+        if not isinstance(task, dict):
+            continue
+        bid, tid = task.get("bugId"), task.get("id")
+        if isinstance(bid, str) and bid and tid and now.get(bid) == tid \
+                and before.get(bid) != tid:
+            links.append((bid, tid))
+    return links
+
+
+def json_at(git_root, rev, rel):
+    """The JSON object git holds for `rel` at `rev`, or None when there is
+    none - absent, unreadable or not an object, each of which completes no
+    link."""
+    if not rev or not rel:
+        return None
+    code, out = _git(git_root, ["show", "%s:%s" % (rev, rel)])
+    if code is None or code != 0:
+        return None
+    try:
+        doc = json.loads(out)
+    except ValueError:
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def _commit_bug_links(git_root, sha, parent, index_rel, phase_file_rel):
+    """The bug links commit `sha` completes, read off git: the index and the
+    shard as it recorded them, against the index its parent held."""
+    return completed_bug_links(json_at(git_root, sha, index_rel),
+                               json_at(git_root, parent, index_rel),
+                               json_at(git_root, sha, phase_file_rel))
 
 
 def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
@@ -358,6 +410,12 @@ def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
     sharded layout was introduced to buy. Folding it into the generic "a path
     that is not allowed" line would report the expensive mistake in the same
     words as a stray README.
+
+    ONE EXCEPTION, READ OFF GIT: a commit that completes a bug link of this
+    phase's shard (`completed_bug_links`, the index and shard it recorded
+    against the index its parent held). The link's halves live one in each
+    file, so that commit is the only one recording a manifest that validates,
+    and `commit-task-work.py` carries the index for exactly that reason.
     """
     breaches, gaps = [], []
     tasks = [t for t in (phase.get("tasks") or [])
@@ -379,6 +437,7 @@ def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
                         "reports the same SHA)" % (tid, sha[:12]))
             continue
         sha = parents.split()[0] if parents.split() else sha
+        parent = parents.split()[1] if len(parents.split()) > 1 else None
         if len(parents.split()) > _MERGE_PARENTS:
             gaps.append("%s: %s is a merge commit, and `git show --name-only` "
                         "prints no files for one - an empty list here would read "
@@ -405,8 +464,13 @@ def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
             if _under(path, journal_rel) or _under(path, evidence_rel):
                 continue
             if index_rel and path == index_rel and index_rel != phase_file_rel:
+                if _commit_bug_links(git_root, sha, parent, index_rel,
+                                     phase_file_rel):
+                    continue
                 breaches.append(found(
-                    "%s: commit %s staged the manifest INDEX (%s). A task commit "
+                    "%s: commit %s staged the manifest INDEX (%s), and it "
+                    "completes no bug link of this phase's shard - the one "
+                    "change a task commit carries the index for. A task commit "
                     "changes only its own phase's shard - the index is what "
                     "parallel phases would then conflict on"
                     % (tid, sha[:12], index_rel), "%s %s" % (tid, index_rel), sha))

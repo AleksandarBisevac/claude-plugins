@@ -395,7 +395,9 @@ On a started task `scope --introduces` is a widening and is taken as one.
 `add --bug BUG-3` materializes the task that fixes an open bug: it writes `task.bugId`, and in
 the same write the bug's `taskId` and `status: in_progress`, because the validator refuses a link
 that is not reciprocal. A bug the plan lacks, or one already `fixed`/`wontfix`/`not_a_bug`, is
-refused, writing nothing. When `--tests-mode` is absent the mode follows from the files the BUG
+refused, writing nothing — and so is a bug whose `taskId` already names a live task (any status
+but `done` or `cancelled`), by name, since repointing it would leave that task's `bugId` naming a
+bug that no longer names it back: one bug has one live task. When `--tests-mode` is absent the mode follows from the files the BUG
 names (not `--files`): if every one is a test path (the reading `_filed_returns.is_test_path`
 holds, the one the red-first helper grades with) the task is `regression` and a note on the task
 says why, since a defect in a test file cannot be shown red first; otherwise, and for a bug
@@ -1340,6 +1342,43 @@ It **reports** the old id, the new id, the number of references rewritten, wheth
 **ready now**, and the ledger note: *historical ledger rows keep the old taskId — history is
 never rewritten; new spend attributes to the new id; `movedFrom` plus the journal's `task.move`
 row are what let a reader join the two.*
+
+### Subcommand: `reindex`
+
+`fileIndex` lives in the index and the `files` it mirrors live in the shards, so a shard edited
+by hand parts from the index in silence until the validator — or sign-off — reads the pair.
+`add` and `scope` keep it paired for the task they write; this is the door for everything else:
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" reindex [<manifestPath>] [--json]
+```
+
+It re-derives `fileIndex` from the `files` of every live task (parked proposals stay out — they
+enter at materialize), keyed by the path without its `:line-range`, and writes the index alone,
+under the index lock. A row whose claimants did not change keeps its order; a task newly claiming
+a row is appended in plan order; a row no task claims is released. It revalidates and rolls back
+on a finding, and records a `plan.reindex` journal row naming each row it claimed and released.
+It refuses a plan whose findings are not `fileIndex` findings — re-deriving the index over a plan
+wrong elsewhere would be blamed for it — and a paired index writes nothing and says so. The
+validator's own `fileIndex` findings name this verb as their repair.
+
+### The bug writers — `bug-add` and `bug-close`
+
+`/audit:bug` spells the dialogue; these are the writes, each under the index lock, revalidated,
+rolled back on a finding and journaled. Neither touches a shard.
+
+- **`bug-add "<title>" --severity low|med|high --description TEXT`** appends one bug in the
+  shape `commands/bug.md` lists (`bug.add`). `--reported-by NAME`, `--ado '<json>'` and
+  `--ado-parent '<json>'` are the import `/audit:sync pull bugs` makes: the link is stamped
+  `origin: imported` with its `lastSyncedAt`, the parent `source: imported` with its
+  `observedAt`, and a bug with no `--ado-parent` gets no `adoParent` key at all. A card whose
+  id any record of the plan already links is refused by name, as is a link that will not
+  parse or carries no integer `id`.
+- **`bug-close <bugId> --status wontfix|not_a_bug|fixed --reason TEXT [--commit <sha>]`**
+  writes the word, the reason as `notes` (appended on a line of its own to notes already
+  there) and, for `fixed`, `fixedIn` from `--commit` (`bug.close`). It refuses a bug whose fix
+  task is `in_progress`, a bug already closed, a missing word or reason, and `--commit` beside
+  a close that changed nothing — each exit 2, nothing written.
 
 ### Subcommand: `priority <phaseId> <tier|--clear>` — the legacy spelling
 

@@ -964,7 +964,8 @@ def _cases(record):
            "line suffix is still stripped on the way in, so the forward half "
            "of this fixture stays clean",
            _f_ds10 == ["task P0.1: file 'src/b.ts' missing from fileIndex "
-                       "(fileIndex['src/b.ts'] must include 'P0.1')"]
+                       "(fileIndex['src/b.ts'] must include 'P0.1') - %s"
+                       % (M._crossrefs.FILEINDEX_REMEDY,)]
            and _w_ds10 == [], (_f_ds10, _w_ds10))
 
     _ds_bug_m = {"bugs": [{"id": "BUG-1", "title": "b", "status": "open",

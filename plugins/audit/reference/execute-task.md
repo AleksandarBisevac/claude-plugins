@@ -639,7 +639,11 @@ verb writes and refuses, and what the run commands leave behind, is
         a gitignored directory is staged as the tracked file it is, and so are the tracked files of
         a declared directory git ignores as a whole; a conflict resolved in the working tree is
         resolved by the staging, as plain `git add` would; the manifest **index** is refused with a
-        sentence of its own; the staged list is read back after staging as well as before it; and
+        sentence of its own — **except** when the shard links a bug whose index half is written and
+        not yet committed (`task.bugId` in the shard, `bug.taskId` in the index, as `add --bug`
+        writes them): the validator refuses either half alone, so that one commit carries the
+        index too and prints an `index: carried` line naming the link, and `commit-scope` reads
+        the same link off git and calls it clean; the staged list is read back after staging as well as before it; and
         any refusal after staging puts the allowed paths' index entries back as they were found —
         an entry you had staged at its own bytes, a conflict's stages and an intent-to-add path
         included, in a SHA-256 repository as in a SHA-1 one; stat data and a skip-worktree bit are
@@ -655,7 +659,8 @@ verb writes and refuses, and what the run commands leave behind, is
           records those as **deferred** rather than as breaches. It then asks the pairing of the
           manifest **as it stands**, so the debt is real and is settled once: land the index change
           in its own commit before sign-off, with the script that already does this correctly —
-          `/audit:task scope` re-derives `fileIndex` for you, and
+          `/audit:task scope` re-derives `fileIndex` for you (`audit-task.py reindex` does it for
+          the whole plan after a shard edited by hand), and
           ```
           python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-manifest-index.py" \
               <manifestPath> <phaseId>
@@ -744,8 +749,8 @@ verb writes and refuses, and what the run commands leave behind, is
           `fixedIn` = this `task.commit`) — and `/audit:task done` stores both values on the bug in
           the same write, under the index lock. That is the one write a task close makes to the
           index, and the verb says so with the `commit-manifest-index.py` line that lands it on its
-          own; a close of a task no bug links to leaves the index untouched. (`/audit:bug close` still records a human `wontfix` / `not_a_bug` / `fixed`
-          on the index, under the index lock — a structural decision, not part of a run.)
+          own; a close of a task no bug links to leaves the index untouched. (`/audit:bug close` records a human `wontfix` / `not_a_bug` / `fixed`
+          through `audit-task.py bug-close`, under the index lock — a structural decision, not part of a run.)
         - The `task.commit` write rides along with the next task's commit (or the sign-off commit) — do NOT amend.
      d. **ADO echo** — now that the SHA is captured, echo the done transition
         (`reference/orchestrator.md` → **ADO echo**; an `onComplete` comment carries this

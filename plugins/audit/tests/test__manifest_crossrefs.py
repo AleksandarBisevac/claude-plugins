@@ -288,6 +288,18 @@ def _cases(check):
           "a finding - the direction a schema cannot express, and the one "
           "that catches the common drift",
           len(f) == 1 and "missing from fileIndex" in f[0], f)
+    _remedy_f = M._check_file_index(
+        {"fileIndex": {"src/a.ts": ["P0.9"]}},
+        _index(task_ids=["P0.1"], task_files={"P0.1": ["src/b.ts"]}))[0]
+    check("mc14b RED-FIRST: both fileIndex findings name the verb that repairs "
+          "them - a hand-widened shard otherwise surfaces at sign-off with no "
+          "door named - and the remedy is UNQUOTED, so the finding's subject "
+          "(its locus and quoted ids, what an invariant baseline keys on) does "
+          "not move: %r" % (_remedy_f,),
+          len(_remedy_f) == 2
+          and all(M.FILEINDEX_REMEDY in x for x in _remedy_f)
+          and "audit-task.py reindex" in M.FILEINDEX_REMEDY
+          and "'" not in M.FILEINDEX_REMEDY and "`" not in M.FILEINDEX_REMEDY)
     f, w = M._check_file_index(
         {"fileIndex": {"src/a.ts:12-40": ["P0.1"]}},
         _index(task_ids=["P0.1"], task_files={"P0.1": ["src/a.ts:99"]}))

@@ -3202,8 +3202,8 @@ def _cases(check):
           "rather than a silent skip: %r"
           % ((_tk_shared, sorted(_tk_flags)),),
           _tk_shared == ["add", "add-phase", "block", "cancel", "couple", "done",
-                         "move", "mute", "note", "reopen", "scope", "start",
-                         "unblock", "uncouple", "unmute"]
+                         "move", "mute", "note", "reindex", "reopen", "scope",
+                         "start", "unblock", "uncouple", "unmute"]
           and "move" in _tk_flags and "move" in _at_usage)
     # `_tk_all`, not `_tk_flags`: the latter has no row for a verb that came from
     # the other document, and indexing it here raised `KeyError` the first time
