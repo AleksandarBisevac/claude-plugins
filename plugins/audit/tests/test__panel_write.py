@@ -489,6 +489,50 @@ def _cases(check):
     check("non-composition data preserved",
           saved["phases"][0]["title"] == "P" and saved["meta"]["version"] == 2)
 
+    # A BUILD COMMAND IS EXECUTED AS WRITTEN: a machine path in one is refused
+    # at the save, with a remedy a command can take, never stored for the
+    # writer's scrub to rewrite into a command that no longer runs.
+    with open(mpath, "rb") as fh:
+        _bc_before = fh.read()
+    _bc_home = "/".join(("", "Users", "someone", ".venv", "bin", "python3"))
+    _bc = M.apply_composition(proj, {"meta": {"buildCommands": {
+        "test": _bc_home + " -m pytest"}}})
+    with open(mpath, "rb") as fh:
+        _bc_after = fh.read()
+    _bc_said = " ".join(_bc.get("findings") or [])
+    check("bc1 a settings save putting a home-directory interpreter into "
+          "meta.buildCommands is REFUSED naming the field and a remedy a "
+          "command can take (repo-relative or PATH-resolved, never a "
+          "placeholder), the value never echoed and the plan untouched: %r"
+          % (_bc,),
+          _bc.get("ok") is False and "meta.buildCommands" in _bc_said
+          and "PATH" in _bc_said and "<home>" not in _bc_said
+          and "someone" not in _bc_said and _bc_after == _bc_before)
+    _bc_ok = M.apply_composition(proj, {"meta": {"buildCommands": {
+        "test": "python3 -m pytest tests"}}})
+    _ws_before = M.read_config(proj)
+
+    def _ws_set(value):
+        def mutate(cfg):
+            out = dict(cfg)
+            out["executor"] = dict(out.get("executor") or {},
+                                   worktreeSetup=value)
+            return out
+        return mutate
+    _ws = M.write_config(proj, mutate=_ws_set("sh " + _bc_home))
+    _ws_said = " ".join(_ws.get("findings") or [])
+    check("bc3 the config's executor.worktreeSetup - a command each task tree "
+          "runs - meets the same door: refused naming the field with a "
+          "remedy a command can take, the config unchanged: %r" % (_ws,),
+          _ws.get("ok") is False and "executor.worktreeSetup" in _ws_said
+          and "PATH" in _ws_said and "someone" not in _ws_said
+          and M.read_config(proj) == _ws_before)
+    check("bc2 ALLOW twin: a PATH-resolved build command is written byte for "
+          "byte - a door refusing every command would pass bc1: %r" % (_bc_ok,),
+          _bc_ok.get("ok") is True
+          and M._read_json(mpath)["meta"]["buildCommands"]
+          == {"test": "python3 -m pytest tests"})
+
     # structural edits refused
     res = M.apply_composition(proj, {"phases": {"P1": {"title": "HACKED"}}})
     check("structural phase edit refused", not res["ok"] and

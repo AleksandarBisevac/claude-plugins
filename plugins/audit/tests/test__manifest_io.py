@@ -1305,8 +1305,273 @@ def _scrub_cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _executed_plan(cmd, inrepo, prose):
+    """A plan carrying `cmd` at every position the plan executes or
+    configures, `prose` in free text beside them, and `cmd` once more under a
+    key NAMED like a gate at a position that is not one."""
+    def phase(pid):
+        return {"id": pid, "title": "t", "status": "pending",
+                "testGate": ["test", cmd],
+                "testGateDerived": {"entry": cmd, "always": [cmd], "smoke": cmd},
+                "review": {"gate": [cmd]},
+                "tasks": [{"id": pid + ".1", "title": "t", "status": "pending",
+                           "description": prose,
+                           "tests": {"gate": [cmd]}}]}
+    return {"meta": {"version": "2.1-sharded",
+                     "buildCommands": {"test": cmd, "local": "sh " + inrepo},
+                     "nodePreamble": "source " + cmd,
+                     "fullGate": ["test", cmd],
+                     "phaseGate": {"mode": "shadow", "smoke": cmd,
+                                   "derived": {"runner": cmd}},
+                     "runtimeBoot": {"launch": cmd, "appRootPath": inrepo},
+                     "gitRoot": inrepo},
+            "phases": [phase("P1")],
+            "proposals": [{"id": "PROP-1", "payload": {"phase": phase("PX")}}]}
+
+
+# Every executed or configured value `_executed_plan` plants, as the pointer
+# it sits at. Written out rather than read off `_manifest_io`'s table, so a
+# position dropped from the table is a value this case finds rewritten.
+_PLANTED = ("/meta/buildCommands/test", "/meta/buildCommands/local",
+            "/meta/nodePreamble", "/meta/fullGate/1",
+            "/meta/phaseGate/smoke", "/meta/phaseGate/derived/runner",
+            "/meta/runtimeBoot/launch", "/meta/runtimeBoot/appRootPath",
+            "/meta/gitRoot")
+_PLANTED_PHASE = ("/testGate/1", "/testGateDerived/entry",
+                  "/testGateDerived/always/0", "/testGateDerived/smoke",
+                  "/tasks/0/tests/gate/0")
+
+
+def _at(doc, pointer):
+    for token in pointer.strip("/").split("/"):
+        doc = doc[int(token)] if isinstance(doc, list) else doc[token]
+    return doc
+
+
+def _executed_cases(check):
+    """A value the plan executes or configures is never rewritten by the save
+    scrub, through any writer and wherever the plan keeps it; free text
+    beside it, and the same command at a position nothing executes, still is."""
+    tmp = tempfile.mkdtemp(prefix="manifest-exec-")
+    try:
+        repo = os.path.join(tmp, "repo")
+        os.makedirs(os.path.join(repo, ".git"))
+        interp = "/".join(("", "Users", "someone", ".venv", "bin", "python3"))
+        cmd = interp + " -m pytest tests"
+        inrepo = os.path.join(repo, "tools", "gate.sh")
+        prose = "ran %s by hand" % (interp,)
+        plan = _executed_plan(cmd, inrepo, prose)
+        source = json.loads(json.dumps(plan))
+        phase_at = dict(("/phases/0" + p, p) for p in _PLANTED_PHASE)
+        phase_at.update(("/proposals/0/payload/phase" + p, p)
+                        for p in _PLANTED_PHASE)
+        wanted = list(_PLANTED) + sorted(phase_at)
+
+        def kept(doc):
+            return [p for p in wanted if _at(doc, p) == _at(source, p)]
+
+        def scrubbed(doc):
+            return ["someone" not in json.dumps(_at(doc, p)) for p in (
+                "/phases/0/tasks/0/description",
+                "/proposals/0/payload/phase/tasks/0/description",
+                "/phases/0/review/gate",
+                "/proposals/0/payload/phase/review/gate")]
+
+        results = {}
+        single = os.path.join(repo, "single", "audit-plan.json")
+        M.save_single_file(single, plan)
+        results["save_single_file"] = M.load_manifest(single)
+        idx = os.path.join(repo, "sharded", "audit-plan.json")
+        M.save_sharded(idx, plan)
+        results["save_sharded"] = M.load_manifest(idx)
+        whole = os.path.join(repo, "whole", "audit-plan.json")
+        pointers = M.save_plan_json(whole, plan)
+        results["save_plan_json"] = M.read_json(whole)
+        low = os.path.join(repo, "low", "audit-plan.json")
+        M.atomic_write_json(low, plan)
+        results["atomic_write_json"] = M.read_json(low)
+        report = dict((name, (len(kept(doc)), scrubbed(doc)))
+                      for name, doc in sorted(results.items()))
+        check("ex1 a plan naming a home-directory interpreter in "
+              "meta.buildCommands - and at every other position the plan "
+              "executes or configures, in a live phase and a parked proposal "
+              "- keeps each of those values byte for byte through every "
+              "writer, while the home path in a task description and the "
+              "same command under a key merely NAMED `gate` are still "
+              "scrubbed: %r" % (report,),
+              all(n == len(wanted) and all(s) for n, s in report.values())
+              and plan == source)
+        check("ex2 the pointers a whole-plan save returns name only the "
+              "free text it rewrote - an exempt value is not a redaction: %r"
+              % (pointers,),
+              sorted(pointers) == sorted([
+                  "/phases/0/tasks/0/description",
+                  "/phases/0/review/gate/0",
+                  "/proposals/0/payload/phase/tasks/0/description",
+                  "/proposals/0/payload/phase/review/gate/0"]))
+        shard = os.path.join(repo, "sharded", "phases", "P9.json")
+        body = json.loads(json.dumps(plan["phases"][0]))
+        M.save_plan_json(shard, body)
+        wrote = M.read_json(shard)
+        check("ex3 a SHARD document written on its own - the phase body a "
+              "verb rewrites in place - is read as a phase, so its gates "
+              "survive too and its free text is scrubbed: %r"
+              % ([p for p in _PLANTED_PHASE if _at(wrote, p) != _at(body, p)],),
+              all(_at(wrote, p) == _at(body, p) for p in _PLANTED_PHASE)
+              and "someone" not in json.dumps(wrote["tasks"][0]["description"]))
+        other = os.path.join(repo, "other.json")
+        M.atomic_write_json(other, {"entries": [{"testGate": [cmd]}],
+                                    "buildCommands": {"test": cmd},
+                                    "testGate": [cmd],
+                                    "tasks": [{"tests": {"gate": [cmd]}}]})
+        check("ex4 ALLOW twin of the exemption: a document that is neither a "
+              "plan nor a phase - a `tasks` list with no `id` beside it - has "
+              "no executed positions, so the same keys there, at the depths a "
+              "phase keeps them, are scrubbed; a table read by key name, or a "
+              "phase read off `tasks` alone, would keep them: %r"
+              % (M.read_json(other),),
+              "someone" not in json.dumps(M.read_json(other)))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# THE REWRITES THE SCRUB MAKES TO THE COMMITTED CORPUS, ON RECORD. A pointer
+# here is historic prose the next save of that shard rewrites, journaled; a
+# pointer the scrub finds and this table does not name is a NEW rewrite of
+# history - a widened pattern, or a shape reaching text written long ago -
+# and stays red until somebody decides it here. One that has already been
+# rewritten simply stops being found, which is the decision carried out.
+_CORPUS_REWRITES = {
+    "docs/audit/phases/P34.json": ("/tasks/1/outcome/technical",),
+    "docs/audit/phases/P36.json": ("/tasks/10/description",),
+    "docs/audit/phases/P72.json": ("/review/findings/6/issue",
+                                   "/tasks/1/description"),
+    "docs/audit/phases/P75.json": ("/tasks/3/description",),
+    "docs/audit/phases/P82.json": ("/review/findings/38/issue",),
+}
+
+
+def _corpus_documents():
+    """`[(repo-relative path, absolute path)]` of every committed plan
+    document: the dogfood plan and the shipped example, index and shards."""
+    import _output as _out
+    root = str(_out.REPO_ROOT)
+    found = []
+    for top in (os.path.join(root, "docs", "audit"),
+                os.path.join(root, "examples")):
+        for dirpath, dirs, files in os.walk(top):
+            dirs.sort()
+            for name in sorted(files):
+                full = os.path.join(dirpath, name)
+                rel = os.path.relpath(full, root).replace(os.sep, "/")
+                if name == "audit-plan.json" or (
+                        os.path.basename(dirpath) == "phases"
+                        and name.endswith(".json")):
+                    found.append((rel, full))
+    return found
+
+
+def _corpus_cases(check):
+    docs = _corpus_documents()
+    found, unread = {}, []
+    for rel, full in docs:
+        try:
+            body = M.read_json(full)
+        except Exception as exc:
+            unread.append("%s: %s" % (rel, exc))
+            continue
+        pointers = M.redacted_pointers(body, M.scrubbed_plan(full, body))
+        if pointers:
+            found[rel] = tuple(pointers)
+    new = dict((rel, [p for p in ps if p not in _CORPUS_REWRITES.get(rel, ())])
+               for rel, ps in found.items())
+    new = dict((rel, ps) for rel, ps in new.items() if ps)
+    check("ex5 every rewrite the save scrub makes to the committed plan "
+          "corpus (%d document(s) read) is one on record in "
+          "_CORPUS_REWRITES - a new one is a decision to rewrite history, "
+          "not a side effect: found=%r new=%r unread=%r"
+          % (len(docs), found, new, unread),
+          len(docs) > 10 and not new and not unread)
+
+
+# Calls of the plan's scrubbing writers that do not write a plan, each with
+# the reason it owes no `plan.redact` row. Keyed by (file, function).
+_NOT_A_PLAN_WRITE = {
+    ("gen-demo-manifest.py", "write_manifest"):
+        "the demo's own fixture plan, generated into an output directory "
+        "with no journal of its own",
+    ("read-ado-links.py", "main"):
+        "a cache of board items, not a plan",
+    ("fetch-ado-items.py", "main"):
+        "a cache of board items, not a plan",
+    ("_invariants.py", "write_baseline"):
+        "the invariants baseline, not a plan; its match key is compared "
+        "scrubbed on both sides (`fingerprints`)",
+}
+_PLAN_WRITERS = ("save_plan_json", "atomic_write_json", "save_sharded",
+                 "save_single_file")
+_JOURNALS = ("report_redactions", "journal_redactions",
+             "save_in_layout", "_atomic_write_json", "_write_plan_json")
+
+
+def _called_name(call):
+    """The name a call reaches, bare or through a module: `f()` or `m.f()`."""
+    if isinstance(call.func, ast_module().Attribute):
+        return call.func.attr
+    if isinstance(call.func, ast_module().Name):
+        return call.func.id
+    return None
+
+
+def ast_module():
+    import ast
+    return ast
+
+
+def _plan_write_sites():
+    """`[(file, function, line, journals)]` for every call of a plan writer
+    through `_manifest_io` outside that module, read off the syntax tree."""
+    import ast
+    import _output as _out
+    sites = []
+    for _rel, path in _out.py_files(str(_out.SCRIPTS_DIR)):
+        name = os.path.basename(path)
+        if name == "_manifest_io.py":
+            continue
+        with open(path, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+        for fn in ast.walk(tree):
+            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            calls = [n for n in ast.walk(fn) if isinstance(n, ast.Call)]
+            writes = [c for c in calls if isinstance(c.func, ast.Attribute)
+                      and c.func.attr in _PLAN_WRITERS
+                      and isinstance(c.func.value, ast.Name)
+                      and c.func.value.id in ("_mio", "mio")]
+            journals = any(_called_name(c) in _JOURNALS for c in calls)
+            sites.extend((name, fn.name, c.lineno, journals) for c in writes)
+    return sites
+
+
+def _writer_contract_cases(check):
+    sites = _plan_write_sites()
+    silent = ["%s:%d %s()" % (f, line, fn) for f, fn, line, journals in sites
+              if not journals and (f, fn) not in _NOT_A_PLAN_WRITE]
+    stale = sorted("%s %s()" % k for k in _NOT_A_PLAN_WRITE
+                   if not any((f, fn) == k for f, fn, _l, _j in sites))
+    check("ex6 every call of a plan writer through _manifest_io journals what "
+          "the scrub rewrote in the same function, or is a write "
+          "_NOT_A_PLAN_WRITE names with its reason - a save that redacts "
+          "prose says so (%d site(s) read): silent=%r stale-exemptions=%r"
+          % (len(sites), silent, stale),
+          len(sites) > 5 and not silent and not stale)
+
+
 def _selftest():
     def body(check):
+        _executed_cases(check)
+        _corpus_cases(check)
+        _writer_contract_cases(check)
         _stub_claim_cases(check)
         _cases(check)
         _root_key_cases(check)

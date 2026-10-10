@@ -382,6 +382,7 @@ import _branch                # noqa: E402  (parent_branch: which branch is the 
 import _journal_io            # noqa: E402  (read_all: the phase.add rows a side-branch
                               # warning is read back from; MAX_VALUE_CHARS, the
                               # per-value bound a long outcome is fitted into)
+import _machine_paths         # noqa: E402  (executed_value_refusal: the gate flags' door)
 import _locks                 # noqa: E402  (lock_dir, judge, held_by_us: whether a phase
                               # claim's holder still holds a live run, read the way
                               # `audit-lock.py status` reads it - a downward edge, L7 -> L1)
@@ -1128,6 +1129,14 @@ def resolve_briefs(args, out, stream=None):
 # or meets the shell-gap check, and each is a list a repeated flag fills.
 _VERBATIM_LIST_FLAGS = (("gate", "--gate"), ("gate_set", "--gate-set"),
                         ("verified_by", "--verified-by"))
+# ...and the gate flags write a field something EXECUTES, which the plan's save
+# keeps byte for byte (`_manifest_io.executed_positions`) rather than rewrite
+# into a command that no longer runs. So their refusal names the field a verb
+# writes and offers a spelling that runs - a placeholder would not.
+_GATE_DESTS = ("gate", "gate_set")
+_GATE_FIELD = {"add": "tests.gate", "scope": "tests.gate",
+               "add-phase": "testGate", "retarget": "testGate",
+               "seed": "testGate and tests.gate"}
 
 
 def resolve_verbatim_values(args, out):
@@ -1135,17 +1144,24 @@ def resolve_verbatim_values(args, out):
 
     Before the lock, like `resolve_briefs`: a gate command or a test name
     holding a machine path lands in the committed plan and its journal row as
-    typed, so it is refused by `_journal_io.check_free_text` before anything
-    is written. `misplaced_flag_refusal` has already run, so every value here
-    is one the verb would write."""
-    carried = [(flag, value) for dest, flag in _VERBATIM_LIST_FLAGS
+    typed, so it is refused before anything is written - a gate by
+    `_machine_paths.executed_value_refusal`, naming the field it would run
+    from, and a test name by `_journal_io.check_free_text`.
+    `misplaced_flag_refusal` has already run, so every value here is one the
+    verb would write."""
+    carried = [(dest, flag, value) for dest, flag in _VERBATIM_LIST_FLAGS
                for value in (getattr(args, dest, None) or [])
                if isinstance(value, str) and value]
     if not carried:
         return None
     root = _free_text_root(args)
-    for flag, value in carried:
-        machine = _journal_io.check_free_text(root, flag, value)
+    for dest, flag, value in carried:
+        if dest in _GATE_DESTS:
+            machine = _machine_paths.executed_value_refusal(
+                root, "%s (%s)" % (_GATE_FIELD.get(args.command, "the gate"),
+                                   flag), value)
+        else:
+            machine = _journal_io.check_free_text(root, flag, value)
         if machine:
             out("[audit-task] " + machine)
             return E_USAGE
@@ -7022,6 +7038,7 @@ def _batch_phase_problems(phase):
     for key in ("testGate", "blockedBy"):
         if key in phase and not _is_text_list(phase[key]):
             out.append("`phase.%s` must be a list of non-empty strings" % (key,))
+    out.extend(_batch_gate_problems(phase.get("testGate"), "`phase.testGate`"))
     area = phase.get("area")
     if "area" in phase and not (_is_text(area)
                                 or (_is_text_list(area) and area)):
@@ -7040,7 +7057,19 @@ def _batch_tests_problems(tests, where):
         if key in tests and not _is_text_list(tests[key]):
             out.append("%s.tests.%s must be a list of non-empty strings"
                        % (where, key))
+    out.extend(_batch_gate_problems(tests.get("gate"), "%s.tests.gate" % (where,)))
     return out
+
+
+def _batch_gate_problems(entries, where):
+    """A refusal per gate entry of a batch file that carries a machine path:
+    the batch writes the gate as `--gate` would, so it meets the same door.
+    No project is at hand, so the home shapes are asked and the
+    checkout-root shape is not."""
+    if not _is_text_list(entries):
+        return []
+    return [why for why in (_machine_paths.executed_value_refusal(
+        None, where, entry) for entry in entries) if why]
 
 
 def _batch_task_problems(task, where):
@@ -7573,6 +7602,10 @@ def _create_then(project, mpath, body, config, out):
                 os.remove(mpath)
             except OSError:
                 pass
+    if code == 0:
+        # Only a plan that is KEPT has news: a refused body takes the file away.
+        _mio.report_redactions(mpath, _mio.planned_redactions(mpath, plan),
+                               _journal_io.append_from_cli_why, project=project)
     return code
 
 
@@ -11718,6 +11751,8 @@ def _locked_seed(args, project, config, mpath, out):
     except Exception as exc:
         out("[audit-task] write failed: %s" % exc)
         return E_INVALID
+    _mio.report_redactions(mpath, _mio.planned_redactions(mpath, assembled),
+                           _journal_io.append_from_cli_why, project=project)
 
     try:
         written_manifest = _mio.load_manifest(mpath)

@@ -89,6 +89,7 @@ _output.install_path()
 
 import _id_shape  # noqa: E402  (number(): the numeric part of an id, suffix or not)
 import _manifest_io as _mio  # noqa: E402
+import _journal_io  # noqa: E402  (the append a redacting save's row goes through)
 import _manifest_rules  # noqa: E402  (the manifest rules, at layer 2 - imported, not loaded)
 
 
@@ -365,6 +366,9 @@ def migrate(path, *, to="sharded", dry_run=False, force=False, renumber=False, o
         backup = "%s.bak-%s" % (path, stamp)
         shutil.copy2(path, backup)
     retired = ""
+    # Asked of the ASSEMBLED plan before either save splits or joins it: the
+    # news is about values, wherever the layout puts them.
+    pointers = _mio.planned_redactions(target, manifest)
     try:
         if to == "sharded":
             written = _mio.save_sharded(target, manifest)
@@ -380,6 +384,9 @@ def migrate(path, *, to="sharded", dry_run=False, force=False, renumber=False, o
             retired = _retire_shard_dir(raw, path, stamp)
     except Exception as exc:
         return 1, "layout change failed (%s): %s" % (_restore(path, backup, target), exc)
+    # ONLY ONCE THE RESULT STANDS: a failed run puts the old bytes back, and a
+    # row saying it rewrote values would then describe a plan nobody kept.
+    _mio.report_redactions(target, pointers, _journal_io.append_from_cli_why)
 
     msg = "%s -> %s: %s" % (current, to, target)
     if backup:

@@ -158,18 +158,53 @@ def _cases(check):
               and scrubbed["a"][0].startswith("x ")
               and scrubbed["a"][0].endswith(" y"))
 
-        home = "/Users/someone/work/secret/run.py"
-        row = {"steps": [{"command": "python3 " + home, "note": "ran " + home}]}
-        kept = M.scrubbed_values(repo, row, keep=frozenset(["command"]))
+        home = "/".join(("", "Users", "someone", "work", "secret", "run.py"))
+        row = {"steps": [{"command": "python3 " + home, "note": "ran " + home},
+                         {"command": "python3 " + home}],
+               "other": {"command": "python3 " + home}}
+        kept = M.scrubbed_values(repo, row,
+                                 exempt=M.exempt_positions(["/steps/*/command"]))
         plain = M.scrubbed_values(repo, row)
-        check("mp8 a field NAMED in `keep` is the one value a reader compares "
-              "back and passes through byte for byte at any depth, while a "
-              "sibling free-text field is still scrubbed, and with nothing "
-              "kept both are scrubbed: %r" % ((kept, plain),),
-              kept["steps"][0]["command"] == row["steps"][0]["command"]
+        check("mp8 a value at an EXEMPT POSITION passes through byte for byte, "
+              "every index the wildcard covers included, while a sibling "
+              "free-text field AND a field of the same NAME at another "
+              "position are still scrubbed - the exemption is where a value "
+              "sits, never what its key is called: %r" % ((kept, plain),),
+              [s["command"] for s in kept["steps"]]
+              == [s["command"] for s in row["steps"]]
               and home not in kept["steps"][0]["note"]
+              and home not in kept["other"]["command"]
               and home not in json.dumps(plain)
               and row["steps"][0]["note"].endswith(home))
+        whole = M.scrubbed_values(repo, row, exempt=M.exempt_positions(["/steps"]))
+        check("mp9 an exempt position covers the whole subtree under it, and "
+              "nothing outside it: %r" % (whole,),
+              whole["steps"] == row["steps"]
+              and home not in whole["other"]["command"])
+
+        said = M.executed_value_refusal(repo, "meta.buildCommands.test",
+                                        "python3 " + home)
+        inner = M.executed_value_refusal(
+            repo, "testGate", "sh " + os.path.join(repo, "tools", "gate.sh"))
+        check("mp10 a machine path in an executed value is refused naming the "
+              "field, the shape and the remedy a command can take - a "
+              "repo-relative or PATH-resolved spelling, never a placeholder "
+              "that would stop it running - and never the value; an in-repo "
+              "absolute path is refused as the checkout root: %r"
+              % ((said, inner),),
+              said and "meta.buildCommands.test" in said and "posix-home" in said
+              and "PATH" in said and "repo-relative" in said
+              and "someone" not in said and "<home>" not in said
+              and inner and "checkout-root" in inner and repo not in inner)
+        check("mp11 ALLOW twin: a repo-relative command and a PATH-resolved "
+              "one are no refusal - a door that refused every command would "
+              "pass mp10: %r"
+              % ([M.executed_value_refusal(repo, "testGate", v)
+                  for v in ("python3 tools/gate.py", "npx vitest run",
+                            ["test", "lint"])],),
+              all(M.executed_value_refusal(repo, "testGate", v) is None
+                  for v in ("python3 tools/gate.py", "npx vitest run",
+                            ["test", "lint"])))
 
         check("mp7 the journal re-exports the SAME objects, so the detector "
               "tool and every old caller judge by one pattern set",

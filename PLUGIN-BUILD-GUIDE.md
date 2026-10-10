@@ -381,7 +381,7 @@ L5:
   _panel_runstate -> _doctor_report, _evidence_io, _journal_io, _locks, _output, _panel_paths
   _panel_usage -> _areas, _evidence_io, _manifest_io, _manifest_vocab, _output, _panel_paths
   _panel_viewer -> _loader, _output, _panel_discovery, _panel_paths
-  _proposals -> _fmt, _id_refs, _id_shape, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output
+  _proposals -> _fmt, _id_refs, _id_shape, _journal_io, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output
   _usage_detail -> _output, _ui_theme, _usage_economics, _usage_viz
   _usage_load -> _loader, _output, _report_html
   _usage_markdown -> _output, _ui_theme, _usage_economics, _usage_viz
@@ -395,7 +395,7 @@ L6:
 
 L7:
   _live_copy -> _branch, _invariants, _locks, _manifest_io, _output, _scoped_commit, _status_facts, _worktrees
-  _panel_write -> _ado_parent, _ado_tracked, _areas, _branch, _config_rules, _fmt, _gate_feed, _journal_io, _locks, _manifest_io, _output, _panel_discovery, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme, _warning_groups, _worktrees
+  _panel_write -> _ado_parent, _ado_tracked, _areas, _branch, _config_rules, _gate_feed, _journal_io, _locks, _machine_paths, _manifest_io, _output, _panel_discovery, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme, _warning_groups, _worktrees
   _report_page -> _fmt, _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage, _status_facts
 
 L8:
@@ -406,7 +406,7 @@ L8:
   audit-logs -> _claude_home, _gate_feed, _output
   audit-lookup -> _areas, _claude_home, _config_rules, _evidence_io, _filed_returns, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output
   audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _loader, _locks, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _scope_companions, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
+  audit-task -> _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _scope_companions, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
@@ -414,7 +414,7 @@ L8:
   commit-audit-state -> _claude_home, _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
   commit-manifest-index -> _claude_home, _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
   commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
-  derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
+  derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _loader, _machine_paths, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
   drive-phase -> _areas, _claude_home, _config_rules, _evidence_io, _filed_returns, _gate_derive, _journal_io, _loader, _manifest_io, _manifest_phases, _output, _runner_collects, _scope_companions, _status_facts, _verdict_binding, _wave
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
@@ -427,7 +427,7 @@ L8:
   materialize-proposal -> _claude_home, _manifest_io, _output, _proposals, _warning_groups
   merge-manifest -> _claude_home, _id_refs, _id_shape, _locks, _manifest_io, _manifest_merge, _manifest_rules, _merge_install, _output
   migrate-json-encoding -> _claude_home, _manifest_io, _manifest_rules, _output, _panel_write
-  migrate-manifest -> _id_shape, _manifest_io, _manifest_rules, _output
+  migrate-manifest -> _id_shape, _journal_io, _manifest_io, _manifest_rules, _output
   panel-server -> _claude_home, _live_copy, _manifest_io, _output, _panel_discovery, _panel_page, _panel_runstate, _panel_settings, _panel_state, _panel_write, _ui_theme
   propose-gates -> _claude_home, _evidence_io, _manifest_vocab, _output
   read-ado-links -> _ado_drift, _ado_tracked, _manifest_io, _output

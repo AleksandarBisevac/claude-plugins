@@ -74,6 +74,7 @@ _output.install_path()
 import _fmt  # noqa: E402  (plural(): `1 task` / `2 tasks`, one implementation)
 import _locks  # noqa: E402  (the index lock, already the one implementation)
 import _manifest_io as _mio  # noqa: E402  (layout-aware read and write)
+import _journal_io  # noqa: E402  (the append a redacting save's row goes through)
 import _id_refs  # noqa: E402  (rename: a placeholder renamed everywhere the plan points at it)
 import _id_shape  # noqa: E402  (is_placeholder_phase: a side branch's reserved phase id)
 import _manifest_vocab as _vocab  # noqa: E402  (PROPOSAL_STATUS: the words a
@@ -683,11 +684,16 @@ def apply_revive(manifest, pid):
 
 # --- orchestration: lock, apply, revalidate, write ------------------------------
 def _save(path, manifest):
-    """Write the manifest back in whatever layout it arrived in."""
+    """Write the manifest back in whatever layout it arrived in, and journal
+    what the save's scrub rewrote - a parked payload is the plan's oldest
+    prose, and a save that rewrote some of it in silence would be a record
+    changed with nothing saying so."""
     if _mio.is_sharded(_mio.read_json(path)):
+        pointers = _mio.planned_redactions(path, manifest)
         _mio.save_sharded(path, manifest)
     else:
-        _mio.atomic_write_json(path, manifest)
+        pointers = _mio.atomic_write_json(path, manifest)
+    _mio.report_redactions(path, pointers, _journal_io.append_from_cli_why)
 
 
 def _revalidate(manifest):

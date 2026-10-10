@@ -651,8 +651,50 @@ def _cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _redact_cases(check):
+    """A layout change that scrubs a machine path out of the plan says so in
+    the journal, naming where and never what; a clean one says nothing."""
+    import subprocess
+    import _journal_io
+    tmp = tempfile.mkdtemp(prefix="migrate-redact-")
+    try:
+        subprocess.call(["git", "init", "-q", tmp])
+        p = os.path.join(tmp, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(p))
+        legacy = _legacy()
+        home = "/".join(("", "Users", "someone", "notes", "probe.md"))
+        legacy["phases"][1]["tasks"][0]["description"] = "read %s first" % (home,)
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(legacy, fh)
+        code, msg = M.migrate(p)
+        rows = [r for r in _journal_io.read_all(tmp)
+                if r.get("action") == "plan.redact"]
+        said = " ".join(str(r.get("summary") or "") for r in rows)
+        shard = os.path.join(tmp, "docs", "audit", "phases", "P2.json")
+        with open(shard, encoding="utf-8") as fh:
+            text = fh.read()
+        check("mr1 a migration whose plan names a home directory writes the "
+              "shards without it AND one `plan.redact` row naming the pointer "
+              "it rewrote, never the value: %r" % ((code, said),),
+              code == 0 and "someone" not in text and len(rows) == 1
+              and "/phases/1/tasks/0/description" in said
+              and "someone" not in said)
+        code2, _msg2 = M.migrate(p, to="single-file")
+        rows2 = [r for r in _journal_io.read_all(tmp)
+                 if r.get("action") == "plan.redact"]
+        check("mr2 ALLOW twin: migrating the now-clean plan back adds no row - a "
+              "writer that journaled every save would fail here: %r"
+              % ((code2, len(rows2)),),
+              code2 == 0 and len(rows2) == 1)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _redact_cases(check)
+        _cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

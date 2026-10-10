@@ -9614,6 +9614,49 @@ def _record_cases(check):
               and [p.get("testGate") for p in _gd_phase]
               == [["test", "python3 tools/u.py"]])
 
+        # ---- (mx) a gate is EXECUTED, so its refusal names the field it runs from
+        projmx, mpmx = mk("mx-exec-door", pd_fixture())
+        _mx_interp = "/".join(("", "Users", "someone", ".venv", "bin",
+                               "python3")) + " -m pytest tests"
+        with open(mpmx, "rb") as _fh:
+            _mx_before = _fh.read()
+        _mx_scope = run(["scope", "P2.3", "--gate", _mx_interp,
+                         "--project-dir", projmx])
+        _mx_phase = run(["add-phase", "Executed door", "--outcome", "o",
+                         "--gate", _mx_interp, "--project-dir", projmx])
+        with open(mpmx, "rb") as _fh:
+            _mx_after = _fh.read()
+        check("mx1 scope --gate and add-phase --gate with a home-directory "
+              "interpreter are refused naming the FIELD each writes "
+              "(tests.gate, testGate) and a remedy a command can take - "
+              "repo-relative or PATH-resolved, never a placeholder that would "
+              "stop it running - and nothing is written: %r"
+              % ([(r[0], r[1][:200]) for r in (_mx_scope, _mx_phase)],),
+              _mx_scope[0] == 2 and "tests.gate" in _mx_scope[1]
+              and _mx_phase[0] == 2 and "testGate" in _mx_phase[1]
+              and all("PATH" in r[1] and "<home>" not in r[1]
+                      and "someone" not in r[1] for r in (_mx_scope, _mx_phase))
+              and _mx_after == _mx_before)
+        _mx_ok_scope = run(["scope", "P2.3", "--gate", "python3 tools/t.py",
+                            "--tests-mode", "gate-only",
+                            "--project-dir", projmx])
+        _mx_ok_phase = run(["add-phase", "Executed door", "--outcome", "o",
+                            "--gate", "python3 tools/t.py",
+                            "--project-dir", projmx])
+        _mx_plan = _mio.load_manifest(mpmx)
+        _mx_task = task_in(mpmx, "P2.3") or {}
+        _mx_new = [p for p in (_mx_plan.get("phases") or [])
+                   if p.get("title") == "Executed door"]
+        check("mx2 ALLOW twin: the repo-relative spelling is written by both "
+              "verbs - a door refusing every gate would pass mx1: %r"
+              % ((_mx_ok_scope[0], _mx_ok_scope[1][-200:], _mx_ok_phase[0],
+                  _mx_ok_phase[1][-200:]),),
+              _mx_ok_scope[0] == 0 and _mx_ok_phase[0] == 0
+              and (_mx_task.get("tests") or {}).get("gate")
+              == ["python3 tools/t.py"]
+              and [p.get("testGate") for p in _mx_new]
+              == [["python3 tools/t.py"]])
+
         # ---- (rv) review findings: recorded by a verb, the tally derived ----------
         # Sign-off step 1 records the reviewer's findings, and until these verbs
         # that record was a hand edit of the phase shard - no lock, no journal row,
@@ -14171,6 +14214,22 @@ def _batch_cases(check):
           % ((code, txt),),
           code == M.E_USAGE and "openChoices" in txt and "dependOn" in txt
           and tree_bytes(proj) == before)
+
+    proj, mpath = project("machine-gate")
+    before = tree_bytes(proj)
+    _fb_home = "/".join(("", "Users", "someone", ".venv", "bin",
+                         "python3")) + " -m pytest"
+    machine = _batch_doc()
+    machine["phase"]["testGate"] = [_fb_home]
+    machine["tasks"][0].setdefault("tests", {})["gate"] = [_fb_home]
+    code, txt = _cli(["add", "--from-file", batch(proj, machine)], proj)
+    check("fb6b a batch whose phase and task gates name a home-directory "
+          "interpreter is refused naming both fields and a remedy a command "
+          "can take, the value never echoed, nothing written - fb1 is the "
+          "allow twin: %r" % ((code, txt),),
+          code == M.E_USAGE and "phase.testGate" in txt
+          and ".tests.gate" in txt and "PATH" in txt
+          and "someone" not in txt and tree_bytes(proj) == before)
 
     proj, mpath = project("missing-dep")
     before = tree_bytes(proj)

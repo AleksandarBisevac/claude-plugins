@@ -910,7 +910,7 @@ def _revalidated_write(manifest_path, path, obj):
         # first is not written at all.
         raise OSError("%s could not be read before the write" % (path,))
     pre = _findings_of(manifest_path)
-    _mio.save_plan_json(path, obj, indent=2)
+    pointers = _mio.save_plan_json(path, obj, indent=2)
     new = sorted(_findings_of(manifest_path) - pre)
     if new:
         try:
@@ -920,6 +920,9 @@ def _revalidated_write(manifest_path, path, obj):
                 "%s was written and introduced %s; restoring its prior bytes "
                 "failed: %s - the plan holds the refused write"
                 % (path, "; ".join(new[:3]), exc))
+        return new
+    # Only a write that STANDS is journaled: a restored one rewrote nothing.
+    _mio.report_redactions(path, pointers, _journal_io.append_from_cli_why)
     return new
 
 

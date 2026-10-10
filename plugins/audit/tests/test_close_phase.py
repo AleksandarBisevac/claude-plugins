@@ -815,6 +815,49 @@ def _cases(check):
         _harness.remove_tree(root)
 
 
+def _redact_journal_cases(check):
+    """A sign-off write that scrubs a machine path out of the plan says so in
+    the journal, naming where and never what; a clean one says nothing."""
+    import _journal_io
+    root = _harness.fixture_root("closephase-redact")
+    try:
+        subprocess.call(["git", "init", "-q", root])
+        mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        plan = {"meta": {"version": 2, "title": "t"},
+                "phases": [{"id": "P1", "title": "t", "status": "pending",
+                            "tasks": [{"id": "P1.1", "title": "a",
+                                       "status": "pending"}]}],
+                "fileIndex": {}, "bugs": []}
+        _mio.raw_atomic_write_json(mpath, plan)
+
+        def redact_rows():
+            return [r for r in _journal_io.read_all(root)
+                    if r.get("action") == "plan.redact"]
+        home = "/".join(("", "Users", "someone", "notes", "probe.md"))
+        dirty = json.loads(json.dumps(plan))
+        dirty["meta"]["title"] = "read %s first" % (home,)
+        new1 = M._revalidated_write(mpath, mpath, dirty)
+        rows = redact_rows()
+        said = " ".join(str(r.get("summary") or "") for r in rows)
+        with open(mpath, encoding="utf-8") as fh:
+            text = fh.read()
+        check("rj1 a sign-off write whose plan names a home directory writes it "
+              "without one AND one `plan.redact` row naming the pointer it "
+              "rewrote, never the value: %r" % ((new1, said),),
+              new1 == [] and "someone" not in text and len(rows) == 1
+              and "/meta/title" in said and "someone" not in said)
+        clean = json.loads(json.dumps(plan))
+        clean["meta"]["title"] = "plain words"
+        new2 = M._revalidated_write(mpath, mpath, clean)
+        check("rj2 ALLOW twin: a clean write adds no row - a writer that "
+              "journaled every save would fail here: %r"
+              % ((new2, len(redact_rows())),),
+              new2 == [] and len(redact_rows()) == 1)
+    finally:
+        _harness.remove_tree(root)
+
+
 def _parked_cases(check):
     """What sign-off says about the work a phase branch parked for later."""
     manifest = {"meta": {}, "phases": [], "proposals": [
@@ -4929,6 +4972,7 @@ STAGES = (("tk-block", "_takeover_cases"), ("lk-block", "_lock_cases"),
           ("ns-block", "_no_survivor_cases"),
           ("ls-block", "_landed_survivor_cases"), ("cp-block", "_cases"),
           ("pk-block", "_parked_cases"), ("ld-block", "_landed_cases"),
+          ("rj-block", "_redact_journal_cases"),
           ("mt-block", "_main_tree_cases"),
           ("ra-block", "_review_answer_cases"),
           ("pv-block", "_post_verdict_remedy_cases"),

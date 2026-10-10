@@ -2037,8 +2037,62 @@ def _landing_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _scrubbed_baseline_cases(check):
+    """A baseline is written through the scrubbing writer, so a breach whose
+    subject or line names a machine path is stored rewritten; the next run
+    must still recognise it as the same breach rather than report it new."""
+    home = _harness.fixture_root("baseline-scrub-")
+    try:
+        repo = os.path.join(home, "repo")
+        subprocess.run(["git", "init", "-q", repo], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        machine = "/".join(("", "Users", "someone", "work", "x.py"))
+        inside = os.path.join(repo, "src", "a.py")
+
+        def history():
+            return {"found": True, "phaseId": "P7", "branch": "b",
+                    "breaches": [], "gaps": [], "checks": [M.result(
+                        "branch-history", "b",
+                        [M.found("touched %s" % (machine,), machine),
+                         M.found("touched %s" % (inside,), inside),
+                         M.found("plain", "src/plain.py")], [], 1)]}
+        mpath = os.path.join(repo, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        target = M.baseline_path_for(mpath)
+        written, why = M.write_baseline(
+            target, history(), {"phases": [{"id": "P7", "status": "done"}]},
+            repo)
+        with open(target, encoding="utf-8") as fh:
+            stored = fh.read()
+        block, why2 = M.apply_baseline(history(), mpath, repo)
+        check("bs1 a baseline written over breaches whose subject and line the "
+              "writer scrubs - a home path and an in-repo absolute path - "
+              "stores neither spelling and still MATCHES all of them on the "
+              "next run, none reported new or unmatched: %r"
+              % ((why, why2, block and (block["matched"], block["new"],
+                                        block["unmatched"])),),
+              written and why is None and why2 is None
+              and "someone" not in stored and repo not in stored
+              and block["matched"] == 3 and block["new"] == []
+              and block["unmatched"] == [])
+        again, why3 = M.write_baseline(
+            target, history(), {"phases": [{"id": "P7", "status": "done"}]},
+            repo)
+        with open(target, encoding="utf-8") as fh:
+            stored2 = json.load(fh)
+        check("bs2 ...and writing the baseline again over the same run keeps "
+              "one entry per breach, nothing removed as stale: %r"
+              % ((why3, again and again["removed"],
+                  len(stored2.get("entries") or [])),),
+              again and why3 is None and again["removed"] == []
+              and len(stored2.get("entries") or []) == 3)
+    finally:
+        _harness.remove_tree(home)
+
+
 def _selftest():
     def body(check):
+        _scrubbed_baseline_cases(check)
         _cases(check)
         _harness.stage(check, "ln-block", _landing_cases)
     return _harness.run(body)

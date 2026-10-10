@@ -435,7 +435,7 @@ def redacted_free_text(project, value, roots=None):
     return out
 
 
-def scrubbed_values(project, value, roots=None, seen=None, keep=()):
+def scrubbed_values(project, value, roots=None, seen=None, exempt=()):
     """`value` with every string in it run through `redacted_free_text`; a NEW
     structure, the argument untouched. Dict keys, numbers and booleans stay.
 
@@ -446,30 +446,87 @@ def scrubbed_values(project, value, roots=None, seen=None, keep=()):
     roots and a memo (`seen`) across the whole walk: a shard repeats the same
     sentences many times, and the redaction is a pure function of the string.
 
-    THE RULE FOR WHAT IT MUST NOT TOUCH: a value some reader compares back to
-    another record, or resolves as a key, an id or a path, is not free text.
-    Rewriting it makes the row stop matching the thing it was copied from. A
-    caller names such a field in `keep` (the dict KEY whose value passes
-    through, at any depth); the name is the caller's, because only the caller
-    knows which of its fields a reader compares. A kept value is a copy of
-    something that was itself saved through this scrub - the plan's own
-    command - so it adds no machine path the plan did not already refuse.
+    WHAT IT MUST NOT TOUCH IS NAMED BY POSITION. A value the document's reader
+    executes or configures - a gate command, a build command - is not free
+    text: rewritten, it is a command that no longer runs, changed in silence.
+    `exempt` is `exempt_positions`' answer for the document being written, and
+    a value at one of those positions, with everything under it, passes
+    through as it was. A POSITION AND NEVER A KEY NAME: a `gate` key at a depth
+    nothing executes is prose like any other, and an exemption by name would
+    keep a home path there with nobody running it. Keeping such a value out of
+    the document is the job of the door that writes it
+    (`executed_value_refusal`), not of this walk.
     """
     if roots is None:
         roots = _checkout_roots(project)
     if seen is None:
         seen = {}
+    if any(not pattern for pattern in exempt):
+        return value
     if isinstance(value, str):
         if value not in seen:
             seen[value] = redacted_free_text(project, value, roots)
         return seen[value]
     if isinstance(value, dict):
-        return dict((k, v if k in keep
-                     else scrubbed_values(project, v, roots, seen, keep))
+        return dict((k, scrubbed_values(project, v, roots, seen,
+                                        _below(exempt, k)))
                     for k, v in value.items())
     if isinstance(value, list):
-        return [scrubbed_values(project, v, roots, seen, keep) for v in value]
+        return [scrubbed_values(project, v, roots, seen, _below(exempt, i))
+                for i, v in enumerate(value)]
     return value
+
+
+# --- positions a scrub leaves alone -----------------------------------------------
+# One segment of an exempt position that matches ANY key or list index.
+ANY_SEGMENT = "*"
+
+
+def exempt_positions(pointers):
+    """JSON pointers (`/meta/buildCommands`, `/phases/*/testGate`) as the
+    segment tuples `scrubbed_values` walks. `~1` and `~0` are unescaped as in
+    RFC 6901; `*` stands for any one segment."""
+    return tuple(tuple(t.replace("~1", "/").replace("~0", "~")
+                       for t in p.strip("/").split("/")) if p.strip("/") else ()
+                 for p in pointers)
+
+
+def _below(exempt, key):
+    """The positions still live one level below `key`: each pattern whose
+    first segment is `key`, or the wildcard, with that segment taken off."""
+    if not exempt:
+        return ()
+    token = str(key)
+    return tuple(p[1:] for p in exempt
+                 if p and (p[0] == ANY_SEGMENT or p[0] == token))
+
+
+def executed_value_refusal(project, field, value, roots=None):
+    """None when `value` may be written into a field something EXECUTES or
+    CONFIGURES, else the refusal - naming `field`, the shape and the remedy,
+    and never the value.
+
+    THE DOOR'S HALF OF THE EXEMPTION ABOVE. A save leaves a gate or build
+    command as written, because rewriting one breaks it; so a machine path in
+    one is kept out where it is typed, by every verb and endpoint that writes
+    such a field. The remedy is not `check_free_text`'s: a placeholder such as
+    `<home>/...` in a command is a command that cannot run, so what is offered
+    is a spelling that runs on any machine. `tools/check-committed-pii.py`
+    stays the backstop for a hand edit no door saw."""
+    text = _judged_text(value)
+    if text is None:
+        return None
+    if roots is None:
+        roots = _checkout_roots(project)
+    shape = machine_path_shape(text, roots)
+    if shape is None:
+        return None
+    return ("%s is executed as written and carries a machine path (%s): "
+            "refused, nothing written. The plan is committed, and a save "
+            "keeps this value byte for byte rather than rewrite it into a "
+            "command that no longer runs - so spell it repo-relative "
+            "(`python3 tools/run.py`) or by a name PATH resolves (`python3`)."
+            % (field, shape))
 
 
 # --- the cheap pre-reject --------------------------------------------------------

@@ -895,6 +895,30 @@ point:
   which nothing afterwards un-writes. The fail-mode table above still holds for
   both: the journal hook's own failure stays silent and no-op either way, since
   the refusal a caller meets is the verb's door, never the recorder's.
+- **The plan's own save scrubs every string, except a value the plan
+  executes.** Every write of the plan — an index, a shard or a single file —
+  passes each string through the same redaction a row gets, because a red
+  helper's sandbox description or a runner's stderr reaches the plan through
+  callers that composed the text themselves. A value the plan executes or
+  configures is written as given instead: a build command, the node preamble,
+  the full and phase gates, the runtime boot, `gitRoot`, a phase's `testGate`
+  and its derived runner, always-run and smoke entries, and a task's
+  `tests.gate`, in a live phase or a parked proposal alike. Rewriting one would
+  leave a gate that no longer runs, changed with nothing saying so. Those
+  values are named by their position in the plan
+  (`_manifest_io.PLAN_EXECUTED_POSITIONS`), never by a key name, so a field of
+  the same name anywhere else is still scrubbed. What keeps a machine path out
+  of them is the door that writes each one, which refuses it naming the field
+  and a spelling that runs on any machine — repo-relative, or a name `PATH`
+  resolves: `audit-task`'s `--gate` and `--gate-set` on every verb that takes
+  them, a batch file's gates, the panel's save of `meta.buildCommands` and of
+  `executor.worktreeSetup`, and `derive-phase-gate`'s derived entries.
+  `tools/check-committed-pii.py` remains the backstop for a hand edit no door
+  saw. A save that rewrote anything writes one `plan.redact` journal row naming
+  the JSON pointers it rewrote and never their values; `test__manifest_io.py`
+  fails any plan write under `scripts/` whose function does not report its
+  redactions, and holds the rewrites the scrub makes to the committed plans on
+  record, so rewriting historic prose is a decision rather than a side effect.
 - **The writer's own check and the commit-time detector read one shared table
   of regex shapes**, rather than two separately spelled lists that could
   drift apart: a POSIX home directory, a Windows user path, a home directory

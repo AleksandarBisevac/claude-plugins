@@ -89,7 +89,6 @@ _output.install_path()
 
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _areas                 # noqa: E402  (meta.areas registry + shared resolution)
-import _fmt                   # noqa: E402  (plural(): `1 value` / `2 values`)
 import _policy                # noqa: E402  (the capability policy + its resolution)
 import _ui_theme as _theme    # noqa: E402  (the token layer + the theme compiler)
 import _panel_settings        # noqa: E402  (settings-form schema + write allow-lists)
@@ -107,6 +106,7 @@ import _priority              # noqa: E402  (what a valid tier is, and who holds
 import _gate_feed             # noqa: E402  (the plan-gate feed's prune rule, at layer 2 -
 #                                            the SAME rule /audit:logs prune runs)
 import _journal_io            # noqa: E402  (repo_relative_or_token: the redactor, at layer 1)
+import _machine_paths         # noqa: E402  (executed_value_refusal: a command's own door)
 import _branch                # noqa: E402  (where a phase's branch lands, at layer 1)
 import _worktrees             # noqa: E402  (the worktree list, the sweep plan, the runner)
 import _panel_discovery       # noqa: E402  (the inventory AND the portability verdict on it)
@@ -181,7 +181,7 @@ def save_in_layout(path, manifest):
     which sit wherever the split puts them."""
     if not _mio.is_sharded(_mio.read_json(path)):
         return _atomic_write_json(path, manifest)
-    pointers = _mio.redacted_pointers(manifest, _mio.scrubbed_plan(path, manifest))
+    pointers = _mio.planned_redactions(path, manifest)
     _mio.save_sharded(path, manifest)
     if pointers:
         journal_redactions(path, pointers)
@@ -202,13 +202,7 @@ def journal_redactions(path, pointers):
     mod = _journalmod()
     if not project or mod is None or not hasattr(mod, "append"):
         return {"journaled": False, "journaledWhy": "unavailable"}
-    entry = {"action": "plan.redact",
-             "target": path,
-             "summary": "%s held a machine path and %s written without it: %s"
-                        % (_fmt.plural(len(pointers), "value"),
-                           "was" if len(pointers) == 1 else "were",
-                           _output.some_of(pointers)),
-             "actor": {"via": "plan-write"}}
+    entry = _mio.redaction_entry(path, pointers)
     try:
         if hasattr(mod, "append_from_cli_why"):
             written, why = mod.append_from_cli_why(project, entry)
@@ -1420,20 +1414,32 @@ def _fmt_change(row):
                                 side(row.get("from")), side(row.get("to")))
 
 
+# The (target, field) rows a save writes into something that is EXECUTED: the
+# plan's build commands, which every gate entry resolves through, and the
+# command each task tree runs on creation. The plan's save keeps such a value
+# byte for byte (`_manifest_io.executed_positions`), so its refusal offers a
+# spelling that runs rather than a placeholder that would not.
+_EXECUTED_ROWS = frozenset([("meta", "buildCommands"),
+                            ("config", "executor.worktreeSetup")])
+
+
 def _machine_path_findings(project, rows):
     """A refusal per change row whose NEW value carries a machine path.
 
     Every value a panel save writes is one its user typed, so it is caller
     free text and `_journal_io.check_free_text` judges it before anything is
     written - the manifest or config would keep it verbatim, and the journal
-    row repeats it. Only `to` is asked: `from` is what is on disk already, and
-    refusing a save over the value it replaces would leave no way to remove
-    one."""
-    return [why for why in (
-        _journal_io.check_free_text(project, "%s %s" % (r.get("target"),
-                                                       r.get("field")),
-                                    r.get("to"))
-        for r in rows) if why]
+    row repeats it; a row in `_EXECUTED_ROWS` is judged by
+    `_machine_paths.executed_value_refusal` instead. Only `to` is asked:
+    `from` is what is on disk already, and refusing a save over the value it
+    replaces would leave no way to remove one."""
+    def judged(row):
+        key = (row.get("target"), row.get("field"))
+        if key in _EXECUTED_ROWS:
+            return _machine_paths.executed_value_refusal(
+                project, "%s.%s" % key, row.get("to"))
+        return _journal_io.check_free_text(project, "%s %s" % key, row.get("to"))
+    return [why for why in (judged(r) for r in rows) if why]
 
 
 def _journal(project, config, action, target, rows):

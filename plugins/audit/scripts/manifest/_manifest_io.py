@@ -1279,7 +1279,12 @@ def atomic_write_json(path, obj, indent=2):
 
     The pointers are what the caller journals: this module sits beside the
     journal in the layer table and may not write to it, so the news goes UP to
-    a writer that can -- `_panel_write`'s, which every CLI verb reaches.
+    a writer that can, through `report_redactions` - `_panel_write`'s writer
+    for every CLI verb, and each other plan writer in its own function.
+
+    A VALUE THE PLAN EXECUTES IS NOT SCRUBBED (`executed_positions`), because
+    rewriting a command breaks it; the doors that write one refuse a machine
+    path instead.
     """
     clean = scrubbed_plan(path, obj)
     raw_atomic_write_json(path, clean, indent=indent)
@@ -1310,16 +1315,115 @@ def checkout_of(path):
         here = up
 
 
+# --- what the scrub leaves alone ---------------------------------------------------
+# EVERY POSITION IN A PLAN WHOSE VALUE SOMETHING EXECUTES OR CONFIGURES, as the
+# JSON pointer it sits at. Enumerated from the readers, not guessed: every
+# caller of `_evidence_io.resolved_commands` hands it `meta.fullGate`, a
+# phase's `testGate` or a task's `tests.gate`, resolved through
+# `meta.buildCommands` with `meta.nodePreamble` in front;
+# `derive-phase-gate` reads `meta.phaseGate` and writes `testGateDerived`'s
+# runner, always-run and smoke entries off it; sign-off boots
+# `meta.runtimeBoot`; and `meta.gitRoot` is the directory every one of those
+# runs in. A parked proposal carries a whole phase that materialize moves into
+# `phases` as it is, so its gates are gates already.
+#
+# A value at one of these positions is written AS GIVEN, with everything
+# under it: a rewritten interpreter path is a gate that stops running, and a
+# checkout-relative path is a different file once a gate runs with cwd set
+# to a project below the checkout's root. What keeps a machine path out of
+# them is the refusal at each door that writes one
+# (`_machine_paths.executed_value_refusal`), and `tools/check-committed-pii.py`
+# for a hand edit no door saw.
+PHASE_EXECUTED_POSITIONS = ("/testGate", "/testGateDerived/entry",
+                            "/testGateDerived/always", "/testGateDerived/smoke",
+                            "/tasks/*/tests/gate")
+PLAN_EXECUTED_POSITIONS = (
+    ("/meta/buildCommands", "/meta/nodePreamble", "/meta/fullGate",
+     "/meta/phaseGate", "/meta/runtimeBoot", "/meta/gitRoot")
+    + tuple("/phases/*" + p for p in PHASE_EXECUTED_POSITIONS)
+    + tuple("/proposals/*/payload/phase" + p for p in PHASE_EXECUTED_POSITIONS))
+
+
+def executed_positions(document):
+    """The exempt positions of `document`, read off its shape: a whole plan or
+    an index (`meta` or `phases` at the top) takes the plan's table, a shard
+    body (an `id` and a `tasks` list) the phase's, and anything else - a
+    baseline, a cache of board items - none, so every string in it is
+    scrubbed. The writer is handed only a path and a value, and a shard is
+    written both by the layout save and by a verb rewriting one phase in
+    place; the shape is what both of those share."""
+    if not isinstance(document, dict):
+        return ()
+    if "meta" in document or "phases" in document:
+        return _machine_paths.exempt_positions(PLAN_EXECUTED_POSITIONS)
+    if "id" in document and isinstance(document.get("tasks"), list):
+        return _machine_paths.exempt_positions(PHASE_EXECUTED_POSITIONS)
+    return ()
+
+
 def scrubbed_plan(index_path, manifest):
     """`manifest` as a committed file may say it: every string passed through
-    `_machine_paths.scrubbed_values`, in a NEW structure.
+    `_machine_paths.scrubbed_values`, in a NEW structure - except the values
+    at `executed_positions`, which are kept as written.
 
     THE WRITE IS THE ONLY PLACE THIS CAN BE HELD. A red helper's sandbox
     description, a runner's stderr and a hook's rendered change all land in the
     plan through callers that composed the text themselves. Text with no path
     in it comes back unchanged, so a clean plan is written byte for byte as
     before."""
-    return _machine_paths.scrubbed_values(checkout_of(index_path), manifest)
+    return _machine_paths.scrubbed_values(checkout_of(index_path), manifest,
+                                          exempt=executed_positions(manifest))
+
+
+def planned_redactions(path, manifest):
+    """The pointers a save of the ASSEMBLED `manifest` at `path` rewrites,
+    asked before a layout save splits it - the split scatters the values over
+    files, and the news is about values. What a writer journals."""
+    return redacted_pointers(manifest, scrubbed_plan(path, manifest))
+
+
+# --- the news a redacting save owes ---------------------------------------------
+def redaction_entry(path, pointers):
+    """The `plan.redact` journal row for a save of `path` whose scrub rewrote
+    the values at `pointers`: where, never what - the value is what was taken
+    out. One spelling, whichever writer appends it."""
+    n = len(pointers)
+    return {"action": "plan.redact", "target": path,
+            "summary": "%d value%s held a machine path and %s written without "
+                       "it: %s" % (n, "" if n == 1 else "s",
+                                   "was" if n == 1 else "were",
+                                   _output.some_of(pointers)),
+            "actor": {"via": "plan-write"}}
+
+
+def report_redactions(path, pointers, append_from_cli_why, project=None):
+    """Journal a redacting save of `path` -> `(journal file, None)`,
+    `(None, why)` when the save rewrote nothing, or `(False, why)` when the
+    row could not be written. Never raises: the write it reports on has
+    already happened, and the news of it must not undo it.
+
+    `append_from_cli_why` IS THE JOURNAL'S OWN CLAIMING APPEND OF THAT NAME,
+    HANDED IN - named for the one function it may be, so the write guard's
+    claim rule (`test__journal_io.py`'s `pw6`) reads this call as the claimed
+    append it is. This module sits beside the journal in the layer table and may
+    not import it, so a writer above both passes the pointers its save
+    returned through here; `tests/test__manifest_io.py`'s `ex6` reads every
+    plan write in `scripts/` and fails one whose function never does, so the
+    row is the writer's contract and not a duty its caller may forget. A plan
+    outside any checkout has no journal, and nothing is said elsewhere.
+
+    `project` is the writer's own root when it has one - a `--project-dir`
+    below the checkout's root keeps its journal there - and the checkout
+    above `path` otherwise."""
+    if not pointers:
+        return None, "the save rewrote no value"
+    project = project or checkout_of(path)
+    if not project:
+        return False, "the plan sits in no checkout, so it has no journal"
+    try:
+        return append_from_cli_why(project, redaction_entry(path, pointers))
+    except Exception as exc:
+        return False, exc
 
 
 def save_plan_json(path, obj, indent=2):

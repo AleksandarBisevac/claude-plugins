@@ -1804,8 +1804,9 @@ def write_pointer(project, manifest_path, scope, ids, row, session_id=None,
     # held is held, and releasing it here would take it from the run that is
     # still using it.
     refused = None
+    pointers = []
     try:
-        _mio.save_plan_json(path, body)
+        pointers = _mio.save_plan_json(path, body)
     finally:
         if _locks.took(code):
             rcode = _locks.release(project, lock_name, session=session_id,
@@ -1836,6 +1837,10 @@ def write_pointer(project, manifest_path, scope, ids, row, session_id=None,
                       pointer.get("runId"), pointer.get("status")),
         "details": details,
     }, config=config)
+    _mio.report_redactions(
+        path, pointers, project=project,
+        append_from_cli_why=lambda root, entry: _journal_io.append_from_cli_why(
+            root, entry, config=config))
     return {"written": True, "reason": None, "path": path,
             "releaseRefused": refused}
 
@@ -3795,10 +3800,12 @@ def _stamp_since(project, manifest_path, body, meta, derived, refusal):
         return _refused(refusal)
     meta[SINCE_KEY] = derived
     try:
-        _mio.save_plan_json(manifest_path, body)
+        pointers = _mio.save_plan_json(manifest_path, body)
     except Exception as exc:
         return _refused("cannot write %s: %s"
                         % (repo_relative_or_token(project, manifest_path), exc))
+    _mio.report_redactions(manifest_path, pointers,
+                           _journal_io.append_from_cli_why, project=project)
     return {"written": True, "reason": None, "at": derived["at"],
             "path": manifest_path}
 

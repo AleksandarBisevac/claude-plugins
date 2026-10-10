@@ -144,6 +144,23 @@ def _cases(check):
           code1 == 0 and after1 == before
           and "mode is not set" in out1)
 
+    # --- dp-machine: a derived entry is EXECUTED at sign-off and the plan's ---
+    # save keeps it byte for byte, so a machine path in it is refused here.
+    home_smoke = "/".join(("", "Users", "someone", ".venv", "bin",
+                           "python3")) + " -c pass"
+    dm, mm, _basem = _project(root, mode="shadow", smoke=home_smoke)
+    with open(mm, "rb") as fh:
+        before_m = fh.read()
+    codem, outm = _run([mm, "P1"])
+    with open(mm, "rb") as fh:
+        after_m = fh.read()
+    check("dp-machine a derived gate whose smoke entry names a home-directory "
+          "interpreter is REFUSED naming the field and a remedy a command can "
+          "take, the value never echoed and the plan byte-identical: %r"
+          % ((codem, outm[-400:]),),
+          codem != 0 and "testGateDerived.smoke" in outm and "PATH" in outm
+          and "someone" not in outm and after_m == before_m)
+
     # --- dp-listing (tests.add repro): _gather_facts spawns EXACTLY the -----
     # declared listing.related ({paths} filled) and listing.all commands, and
     # never a derived.runner/derived.spelling reading -- red at HEAD, where

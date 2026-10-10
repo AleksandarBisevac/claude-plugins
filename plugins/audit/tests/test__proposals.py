@@ -673,8 +673,47 @@ def _race_cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _redact_cases(check):
+    """A proposal save that scrubs a machine path out of the plan says so in
+    the journal, naming where and never what; a clean save says nothing."""
+    import _journal_io
+    tmp = tempfile.mkdtemp(prefix="audit-prop-redact-")
+    try:
+        subprocess.call(["git", "init", "-q", tmp])
+        os.makedirs(os.path.join(tmp, "docs", "audit"))
+        mp = os.path.join(tmp, "docs", "audit", "audit-plan.json")
+        home = "/".join(("", "Users", "someone", "notes", "probe.md"))
+        payload = _payload("P9")
+        payload["phase"]["tasks"][0]["description"] = "read %s first" % (home,)
+        with io.open(mp, "w", encoding="utf-8") as fh:
+            json.dump(_manifest([_prop("PROP-1", payload=payload),
+                                 _prop("PROP-2", payload=_payload("P8"))]), fh)
+        ok, _info = M.run(mp, "materialize", ["PROP-1"])
+        rows = [r for r in _journal_io.read_all(tmp)
+                if r.get("action") == "plan.redact"]
+        said = " ".join(str(r.get("summary") or "") for r in rows)
+        with io.open(mp, encoding="utf-8") as fh:
+            text = fh.read()
+        check("pr1 a materialize whose payload names a home directory writes "
+              "the plan without it AND one `plan.redact` row naming the "
+              "pointer it rewrote, never the value: %r" % ((ok, said),),
+              ok and "someone" not in text and len(rows) == 1
+              and "/phases/0/tasks/0/description" in said
+              and "someone" not in said)
+        ok2, _info2 = M.run(mp, "drop", ["PROP-2"], reason="not this quarter")
+        rows2 = [r for r in _journal_io.read_all(tmp)
+                 if r.get("action") == "plan.redact"]
+        check("pr2 ALLOW twin: a save with nothing to scrub adds no row - a "
+              "writer that journaled every save would fail here: %r"
+              % ((ok2, len(rows2)),),
+              ok2 and len(rows2) == 1)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _selftest():
     def body(check):
+        _redact_cases(check)
         _cases(check)
         _placeholder_cases(check)
         _race_cases(check)

@@ -177,6 +177,13 @@ def found(line, subject, sha=None, local=False):
     message, or a count that moves between runs, changes what is printed and
     never what is matched.
 
+    A SUBJECT MAY BE A PATH, AND THE BASELINE FILE STORES IT SCRUBBED: it is
+    written through the plan's scrubbing writer, so a home path is stored as
+    the outside token and an in-repo absolute path repo-relative. A baseline
+    therefore compares `stored_key`s - this run's breach spelled the way the
+    file would hold it - on both sides, and a subject the scrub rewrote still
+    matches the next run.
+
     `local` marks a breach read from evidence a clone does not receive - a
     reflog, the stash, a remote-tracking ref, the gitignored usage ledger.
     """
@@ -1916,6 +1923,27 @@ def baseline_key(entry):
             entry.get("clone"))
 
 
+def stored_key(entry, project):
+    """`baseline_key(entry)` spelled the way the baseline FILE holds it.
+
+    The file is written through `_manifest_io.atomic_write_json`, which
+    scrubs every string of machine paths against the checkout `project`
+    names; a key compared raw against one read back from the file would never
+    match a breach whose subject the scrub rewrote, and would report a frozen
+    breach as new for ever. The same redaction applied to both sides is what
+    the match is made on - idempotent on a key already read back from the
+    file."""
+    return tuple(_journal_io.redacted_free_text(project, part)
+                 if isinstance(part, str) else part
+                 for part in baseline_key(entry))
+
+
+def _baseline_project(path):
+    """The checkout the scrubbing writer spells the baseline at `path`
+    against - the same walk the writer takes, so both sides agree."""
+    return _mio.checkout_of(path)
+
+
 def _fingerprint(phase_id, check, line, key, clone):
     return {"phase": str(phase_id), "check": check, "subject": key["subject"],
             "sha": key["sha"], "breach": line,
@@ -1982,7 +2010,7 @@ def _check_bases(result):
     return out
 
 
-def compare_baseline(entries, result, clone=None):
+def compare_baseline(entries, result, clone=None, project=None):
     """Split the baseline and this run's breaches against each other.
 
     Only an entry this run could have seen again is called unmatched. One whose
@@ -1994,11 +2022,11 @@ def compare_baseline(entries, result, clone=None):
     current = fingerprints(result, clone)
     examined = set(str(a["phaseId"]) for a in _answers(result))
     bases = _check_bases(result)
-    known = set(baseline_key(e) for e in entries)
-    now = set(baseline_key(e) for e in current)
+    known = set(stored_key(e, project) for e in entries)
+    now = set(stored_key(e, project) for e in current)
     unmatched, aside = [], {}
     for entry in entries:
-        if baseline_key(entry) in now:
+        if stored_key(entry, project) in now:
             continue
         if entry["phase"] not in examined:
             why = NOT_COMPARED_PHASE
@@ -2012,8 +2040,9 @@ def compare_baseline(entries, result, clone=None):
         aside[why] = aside.get(why, 0) + 1
     return {
         "entries": len(entries),
-        "matched": len([e for e in current if baseline_key(e) in known]),
-        "new": [e for e in current if baseline_key(e) not in known],
+        "matched": len([e for e in current
+                        if stored_key(e, project) in known]),
+        "new": [e for e in current if stored_key(e, project) not in known],
         "unmatched": unmatched,
         "notCompared": sum(aside.values()),
         "notComparedWhy": aside,
@@ -2073,7 +2102,7 @@ def apply_baseline(result, manifest_path, git_root, path=None):
     if why:
         return None, why
     clone = clone_id(git_root)
-    block = compare_baseline(entries, result, clone)
+    block = compare_baseline(entries, result, clone, _baseline_project(path))
     block["clone"] = clone
     block["unmatched"] = explain_unmatched(block["unmatched"], git_root)
     block["path"] = path
@@ -2183,10 +2212,11 @@ def write_baseline(path, result, manifest, git_root):
                           "written) - refused rather than stored under no "
                           "clone, where every other clone would compare them"
                           % (len(local), CLONE_ID_NAME))
-        split = compare_baseline(previous, result, clone)
-        stale = set(baseline_key(e) for e in split["unmatched"])
-        kept = [e for e in previous if baseline_key(e) not in stale]
-        merged = dict((baseline_key(e), e)
+        project = _baseline_project(path)
+        split = compare_baseline(previous, result, clone, project)
+        stale = set(stored_key(e, project) for e in split["unmatched"])
+        kept = [e for e in previous if stored_key(e, project) not in stale]
+        merged = dict((stored_key(e, project), e)
                       for e in kept + fingerprints(result, clone))
         written = [merged[k] for k in sorted(
             merged, key=lambda k: tuple(x or "" for x in k))]

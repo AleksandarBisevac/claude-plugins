@@ -130,6 +130,8 @@ import _loader                       # noqa: E402  (load_hooks_config: the plan
 #                                       hooks/)
 import _manifest_io as _mio          # noqa: E402  (dual-format loader; index
 #                                       lock write target resolution)
+import _machine_paths                # noqa: E402  (executed_value_refusal: a
+#                                       written gate's machine-path door)
 import _manifest_phases as _phases   # noqa: E402  (PHASE_GATE_MODES)
 import _manifest_vocab as _vocab     # noqa: E402  (PHASE_GATE_BASIS: the one
 #                                       "derived-empty" word, read here rather
@@ -487,6 +489,25 @@ def _write_targets(mpath, raw_index, phase_id):
     return paths
 
 
+def _executed_refusals(project, fields):
+    """A refusal per value in `fields` that something executes and that
+    carries a machine path, each naming its field and never its value.
+
+    THE PLAN'S SAVE KEEPS THESE BYTE FOR BYTE (`_manifest_io`'s
+    `PHASE_EXECUTED_POSITIONS`), so a machine path in one would be committed
+    as it is; refusing here, before the write, is what keeps it out. The
+    runner, always-run and smoke entries are copied from `meta.phaseGate`, so
+    a refusal of one points at a hand edit there."""
+    derived = fields.get("testGateDerived") or {}
+    named = [("testGate", v) for v in (fields.get("testGate") or [])]
+    named += [("testGateDerived.entry", derived.get("entry")),
+              ("testGateDerived.smoke", derived.get("smoke"))]
+    named += [("testGateDerived.always", v) for v in (derived.get("always") or [])]
+    return [why for why in (_machine_paths.executed_value_refusal(
+        project, field, value) for field, value in named
+        if isinstance(value, str)) if why]
+
+
 def _write_phase_fields(project, mpath, raw_index, phase_id, fields):
     """Persist `fields` onto the phase's OWN record and nothing else.
 
@@ -623,6 +644,14 @@ def _locked_run(args, project, config, mpath, phase_id, out):
     if mode == "enforce":
         fields["testGate"] = list(result["entries"])
         changes.append("testGate")
+
+    refused = _executed_refusals(project, fields)
+    if refused:
+        out("[derive-phase-gate] REFUSED: the derived gate would carry a "
+            "machine path into a value sign-off executes -- nothing written:")
+        for line in refused:
+            out("FINDING: " + line)
+        return E_INVALID
 
     snap = _panel_write.snapshot(_write_targets(mpath, raw_index, phase_id))
     try:
