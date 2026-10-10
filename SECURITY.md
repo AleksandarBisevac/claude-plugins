@@ -1128,6 +1128,23 @@ point:
   closes that door. A peer session's sidecar is still not read, for the reason it
   never was: honouring its claim would pass a real `sed` into a file that session had
   once appended to.
+- **A write is attributed to a shell command only if it happened inside that
+  command's own window.** `journal-writes` and `guard-bash-writes` used to judge a
+  change against the last thing they remembered (a slot, the previous Bash call's
+  dirty set), so a peer's write — a verb run while this call was open, or a file
+  dirtied minutes before it — was read as this call's. PreToolUse now notes when the
+  call began (`_config.record_call_start`, a small file under `stateDir`, written and
+  never read on that path). The recorder withholds a row for a state a journal row
+  already holds (any session's), and journals one nothing accounts for **without a
+  session id** and with `changed during this command; this session or <other>
+  wrote it` when a peer is evidenced in the window (a journal row of its own stamped
+  inside it, or a live lock it holds); the guard absorbs a path that changed before the
+  start and, for a manifest path a live peer's lock governs, names both candidates and
+  orders no stop unless the command's own text names the write. **What this does not
+  claim:** the evidence for a path with no earlier digest is its mtime, which can be
+  touched; a peer that has written nothing the trail records and holds no lock is not
+  evidenced, so its write inside the window is still read as the call's; and a call
+  with no recorded start keeps the older rule.
 
 So it is a smoke detector, not a vault: it makes a quiet change loud, and an
 accident visible. If your threat model includes an adversary with write access to

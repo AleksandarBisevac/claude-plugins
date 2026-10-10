@@ -1,0 +1,35 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/sweep-selftests.py --spaced": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests": "pass",
+    "python3 tools/bench-hooks.py --gate": "pass",
+    "python3 tools/gate-parity.py": "pass",
+    "python3 tools/check-git-pipeline.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T22:13:09Z",
+    "basis": "`python3 plugins/audit/tests/test_journal_writes.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 137/138 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "Added a shared window helper in hooks/_config.py (writer_key, record_call_start, call_start, changed_in_window, ts_epoch, window_peers, window_note). journal-writes Pre now notes the call start for Bash/mcp (one small atomic write, no read; bench-hooks --gate exit 0). Post sweep: a moved path whose (target, stateHash) matches a non-hook row stamped inside the window gets no row; an unaccounted move with a peer evidenced in the window (other session's row inside it, or live lock) is journaled with sessionId None and 'changed during this command; this session or <peer> wrote it'; no peer -> attributed as before; no start -> old behaviour. guard-bash-writes: new paths whose mtime precedes the call start are absorbed; manifest paths under a live peer's lock that moved in-window get WINDOW_LOCK_TEMPLATE (both candidates, no stop) unless the command text names the write. Tests: wn1-wn3 (journal), wn1-wn4 (guard), cw1-cw4 (_config); so_pre in the existing so group moves its window past earlier rows (second-resolution stamps). Docs: SECURITY.md bullet, PLUGIN-BUILD-GUIDE.md two paragraphs. Hot path adds: a write in Pre; reads of the start file only after a move/new dirty path; the trail read only after a move.  Not run: the --spaced and sweep were run as listed. Note: the unattributed marker is only used when a peer is evidenced; a lone writer stays attributed (otherwise every shell-made manifest write would lose its author).",
+    "descriptive": "A peer's verb write or earlier file change is no longer journaled or alarmed as the current Bash call's own; ambiguous cases name both candidates and order no stop."
+  },
+  "testsAdded": [
+    "test_journal_writes.py wn1",
+    "test_journal_writes.py wn2",
+    "test_journal_writes.py wn3",
+    "test_guard_bash_writes.py wn1",
+    "test_guard_bash_writes.py wn2",
+    "test_guard_bash_writes.py wn3",
+    "test_guard_bash_writes.py wn4",
+    "test__config.py cw1",
+    "test__config.py cw2",
+    "test__config.py cw3",
+    "test__config.py cw4"
+  ],
+  "claims": "claims: (1) hooks/_config.py window helpers are used by both hooks - evidence: grep call sites record_call_start/call_start/changed_in_window; (2) bench-hooks --gate exit 0, sweep exit 0, --spaced exit 0, ruff 0, vermin 0, check-git-pipeline 0; (3) the red proof is the helper's, not mine.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:c216ed35ba79f5467bc6748e58e8aabaaf047367102567d52c3ae3c371d2e7e3\",\"dirtyDigest\":\"sha256:917f5ad2e83261c63d01aab0ac1196c4134f57d2d3067ca1ec0c7708dcc08ccd\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\"PLUGIN-BUILD-GUIDE.md\":\"8665a6a025845ccb\",\"SECURITY.md\":\"9b01e35a4966aa52\",\"plugins/audit/hooks/_config.py\":\"fc94889e27f25fdb\",\"plugins/audit/hooks/guard-bash-writes.py\":\"f6f6870df3eb060b\",\"plugins/audit/hooks/journal-writes.py\":\"8b48dd77eda18e85\",\"plugins/audit/tests/test__config.py\":\"7dc7f0694be7f283\",\"plugins/audit/tests/test_guard_bash_writes.py\":\"f8fa3f0bb0ebcadf\",\"plugins/audit/tests/test_journal_writes.py\":\"e4310f89c8cba610\"},\"head\":\"f6849116\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/guard-bash-writes.py\",\"plugins/audit/hooks/journal-writes.py\",\"plugins/audit/tests/test__config.py\",\"plugins/audit/tests/test_guard_bash_writes.py\",\"plugins/audit/tests/test_journal_writes.py\"],\"scopeDigest\":\"sha256:9c00139534c43dd17d168fbe8d8c444b49eaf4005c8d8f8f6e8d8de50a1dd776\",\"v\":2}"
+}

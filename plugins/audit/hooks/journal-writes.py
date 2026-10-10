@@ -311,12 +311,7 @@ def _writer_key(data):
     sanitises to nothing is still a subagent, named `UNNAMED_AGENT` there,
     never the orchestrator. The main agent's key is the session alone, the name
     every earlier release wrote."""
-    sid = _SAFE_SID.sub("-", str(data.get("session_id") or "")).strip("-.")
-    sid = (sid or "no-session")[:40]
-    if not _config.is_subagent(data):
-        return sid
-    agent = _SAFE_SID.sub("-", _config.agent_of(data)).strip("-.")[:40]
-    return "%s-%s" % (sid, agent or _config.UNNAMED_AGENT)
+    return _config.writer_key(data)
 
 
 def _slot_path(root, cfg, data, rel):
@@ -389,6 +384,11 @@ def pre_cache(data, *, cfg=None, root=None):
     try:
         home = _config.tree_for(data, _config.PROJECT_ONLY, cfg, project=root)
         root, cfg = home["project"], home["cfg"]
+        if _swept_tool(data.get("tool_name")):
+            # Noted before the switch is consulted: the window it opens is read
+            # by guard-bash-writes too, which does not care whether the journal
+            # is on. One small write, no read.
+            _config.record_call_start(root, cfg, data)
         if not _config.journal_enabled(cfg):
             return None            # on Pre, the config on disk IS the pre-image
         if _swept_tool(data.get("tool_name")):
@@ -438,8 +438,12 @@ def _pre_seed_sweep(root, cfg, data):
     stored its derived statuses, a different session's next unrelated Bash call
     derived 147 rows as its own. So a slot whose digest no longer matches the
     file is refreshed here, and what is left for Post is what moved while THIS
-    call ran. A peer writing during that same window is still read as this
-    call's write, which is the residual.
+    call ran. A peer writing during that same window moves the digest too, and
+    the Post pass settles whose it was: a state some journal row already holds
+    gets no row, and a state none holds is journaled without a session id while
+    a peer is evidenced in the window (`_swept_tree`). The residual is a peer
+    whose write has not reached the trail yet and who left no lock: that is
+    still read as this call's write.
 
     A MOVE BETWEEN CALLS IS ABSORBED, whoever made it: this hook records only
     what its own call wrote. A writer with a hook records its own; a move that
@@ -1045,13 +1049,16 @@ def _swept_rows(data, *, cfg=None, root=None):
     rows = [(root, e) for e in unsandboxed_entries(data, cfg=cfg, root=root)]
     enabled = _config.journal_enabled(cfg)
     for troot in _sweep_roots(data, cfg, root):
-        rows.extend(_swept_tree(data, cfg, troot, tool, enabled))
+        rows.extend(_swept_tree(data, cfg, troot, tool, enabled, project=root))
     return rows
 
 
-def _swept_tree(data, cfg, root, tool, enabled):
+def _swept_tree(data, cfg, root, tool, enabled, project=None):
     """The rows ONE tree's recorded paths owe for this call - `root` is that
-    tree, whose slots, trail and manifest are all read from it."""
+    tree, whose slots, trail and manifest are all read from it. `project` is
+    where the call's start was noted (the project's state directory, whichever
+    tree `root` is); it defaults to `root`."""
+    project = project if project is not None else root
     rows = []
     # With the switch off the ONLY path that can still owe a row is the config, and
     # only because of the flip that turned it off - judged against the pre-image, as
@@ -1087,18 +1094,80 @@ def _swept_tree(data, cfg, root, tool, enabled):
             allowed = _config.journal_enabled(old_obj)
         if not allowed:
             continue
+        # A STATE A ROW ALREADY ACCOUNTS FOR WAS WRITTEN BY WHOEVER WROTE THAT ROW.
+        # The slot is the file as of this call's start, so a verb run by a peer
+        # while this call was open moves the digest between Pre and Post, and
+        # this pass read that as this call's write - the verb's completion was
+        # then journaled a second time under the wrong session. The trail knows:
+        # a row for this target whose `stateHash` is the file's digest now is the
+        # record of that state, whichever session appended it.
+        start = _config.call_start(project, cfg, data)
+        if (rel, now_sha) in recorded_states(root, held, start):
+            if enabled:
+                _write_slot(root, cfg, data, rel)
+            continue
         entry = _entry("config.edit" if is_cfg else "manifest.edit",
                        rel, tool, {}, data, root, cfg)
+        # AND A STATE NO ROW ACCOUNTS FOR, WITH A LIVE PEER IN THE WINDOW, IS NOT
+        # CLAIMED FOR THIS SESSION. The write is recorded - the plan did move -
+        # but the row names nobody and says so, because the digest cannot tell
+        # this call's write from the peer's and an id on the row would be a
+        # claim with no basis. With no peer evidenced the call stands as the
+        # author, as it always did; with no start recorded there is no window to
+        # judge by, and the same holds.
+        peers = _config.window_peers(root, cfg, data, start, [rel])
+        if peers:
+            entry["actor"]["sessionId"] = None
         new_obj = (_read_json(os.path.join(str(root), rel))
                    if old_obj is not None else None)
         primary, chained = (_config_rows(entry, old_obj, new_obj) if is_cfg
                             else _manifest_rows(entry, rel, old_obj, new_obj,
                                                 recorded=recorded))
+        if peers:
+            note = _config.window_note(peers)
+            primary["summary"] = "%s (%s)" % (primary["summary"], note)
+            details = dict(primary.get("details") or {})
+            details["reason"] = "; ".join(
+                part for part in (details.get("reason"), note) if part)
+            primary["details"] = details
         rows.append((root, primary))
         rows.extend((root, row) for row in chained)
         if enabled:
             _write_slot(root, cfg, data, rel)
     return rows
+
+
+def recorded_states(root, held, start):
+    """{(target, stateHash)} over the rows stamped inside this call's window,
+    read on first need and kept in `held` for the call.
+
+    INSIDE THE WINDOW ONLY, because a row from before the call accounts for a
+    state that was written before it: a merge brings the branch's rows in with
+    its work, and the state it leaves is byte-identical to one of them - which is
+    the case the completion dedupe above reports on the row, not one that earns
+    silence. Empty when there is no window or the trail cannot be read - which
+    accounts for nothing, so a write is journaled rather than lost."""
+    if "states" not in held:
+        states = set()
+        reader = getattr(_journal_lib(), "read_all", None)
+        try:
+            for row in (reader(str(root))
+                        if callable(reader) and start is not None else []):
+                stamp = _config.ts_epoch(row.get("ts"))
+                actor = row.get("actor") if isinstance(row.get("actor"),
+                                                       dict) else {}
+                # A VERB'S ROW, NOT THIS RECORDER'S OWN: a row this hook wrote
+                # is already handled by the completion dedupe, which says on
+                # the row what it did not repeat, and silencing the move on
+                # its account would take that statement away.
+                if (row.get("stateHash") and stamp is not None
+                        and actor.get("via") != "hook"
+                        and stamp >= start - _config.WINDOW_SLACK_SECONDS):
+                    states.add((row.get("target"), row.get("stateHash")))
+        except Exception:
+            states = set()
+        held["states"] = states
+    return held["states"]
 
 
 def post_entries(data, *, cfg=None, root=None):

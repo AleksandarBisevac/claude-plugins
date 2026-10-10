@@ -61,6 +61,16 @@ the session's directory on every call - compares equal to the watched tree and s
 past the notice. There the `cd` is the evidence: `directory_change_basis` withdraws
 the authorship claim and keeps the finding.
 
+Attribution is bound to the COMMAND'S OWN WINDOW. "New since my last snapshot"
+spans the whole gap since the session's previous Bash call, so a peer's write made
+minutes earlier was handed to whatever ran next. journal-writes' PreToolUse notes
+when the call began (`_config.record_call_start`) and a dirty path that changed
+before that moment is absorbed, never blamed; the manifest paths a live peer's
+lock governs are reported as changed-during-this-command with both candidates
+named and no stop ordered, unless the command's own text names the write. The
+mtime is the evidence here - git offers no earlier digest of a dirty path - and a
+call with no recorded start keeps the older snapshot rule.
+
 Attribution reads the OTHER sessions in this checkout before it blames this one.
 Parallel phases in one working tree are a feature of this product, so "new since
 my last snapshot" was never the same claim as "written by this command". Every
@@ -279,6 +289,19 @@ LOCKED_TEMPLATE = (
     "own version over yours, or yours over its, with no conflict, because one "
     "working tree means git never sees two versions. Stop, tell the human, "
     "and reconcile by hand: `audit-lock.py status` shows who holds what."
+)
+
+# The same finding when this command's window is KNOWN and its own text does not
+# name the write: the file moved while the command ran and a live peer holds the
+# lock, so either of the two could have written it and nothing on disk says which.
+# LOCKED_TEMPLATE claims the command did it and orders a stop; this one states what
+# is established, names both candidates and orders nothing.
+WINDOW_LOCK_TEMPLATE = (
+    "[bash-write-guard] Manifest file(s) governed by a lock another live session "
+    "holds: %s. The lock names its holder and the file moved inside that shell "
+    "command's window, but nothing on disk says which of the two wrote it. This is "
+    "a non-blocking notice; nothing was reverted and nothing needs to stop. "
+    "`audit-lock.py status` shows who holds what."
 )
 
 # The same finding as WARN_TEMPLATE with the authorship claim removed, because the
@@ -1547,13 +1570,9 @@ def _git_blobs(git_root, specs):
 
 
 def _ts_epoch(ts):
-    """A journal row's `%Y-%m-%dT%H:%M:%SZ` stamp as epoch seconds, or None."""
-    import calendar
-    import time
-    try:
-        return calendar.timegm(time.strptime(str(ts), "%Y-%m-%dT%H:%M:%SZ"))
-    except Exception:
-        return None
+    """A journal row's stamp as epoch seconds, or None - `_config.ts_epoch`, the
+    one reading of that format (the window helper there reads the same rows)."""
+    return _config.ts_epoch(ts)
 
 
 def _plugin_rows_writers(mod, committed, current, basename, since, now):
@@ -1884,8 +1903,18 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
     attributed = []
     locked = []
     journalled = []
+    # THIS COMMAND'S OWN WINDOW. `new` is "not in my last snapshot", and that is
+    # the span since the session's PREVIOUS Bash call - however long ago it was,
+    # and whoever wrote in it. PreToolUse noted when THIS call began, and a path
+    # is the call's only if it changed at or after that moment; one dirty since
+    # before it is absorbed (it is already in seenDirty) and never blamed here.
+    # No start recorded means no window, and the loop below behaves as it
+    # always did - `_config` states why that is not "now".
+    start = _config.call_start(root, cfg, data) if new else None
     for rel in new:
         if rel in state["toolEdited"] or rel in state["warned"]:
+            continue
+        if _config.changed_in_window(os.path.join(str(root), rel), start) is False:
             continue
         # THE PLUGIN'S OWN JOURNAL APPENDS (the journal-writes hook) put
         # the journal file into git status too. Skip exactly the files the
@@ -1989,9 +2018,26 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
     parts = []
     if locked:
         state["warned"].extend(r for r, _ in locked)
-        parts.append(LOCKED_TEMPLATE % "; ".join(
-            "%s (%s lock, held by %s — %s)" % (r, c["lock"], c["holder"], c["basis"])
-            for r, c in locked))
+        # With the window known, a path the command's own text does not name is
+        # not claimed for it: the live holder is the other candidate.
+        command = (data.get("tool_input") or {}).get("command")
+        moved = (directory_change_basis(command, data.get("cwd"), tree["watching"])
+                 if start is not None else None)
+        claimed, shared = [], []
+        for r, c in locked:
+            if (start is None or (not moved and writing_statement(
+                    command, data.get("cwd"), tree["watching"], r))):
+                claimed.append((r, c))
+            else:
+                shared.append((r, c))
+        if claimed:
+            parts.append(LOCKED_TEMPLATE % "; ".join(
+                "%s (%s lock, held by %s — %s)"
+                % (r, c["lock"], c["holder"], c["basis"]) for r, c in claimed))
+        if shared:
+            parts.append(WINDOW_LOCK_TEMPLATE % "; ".join(
+                "%s %s" % (r, _config.window_note([c["holder"]]))
+                for r, c in shared))
     if journalled:
         state["warned"].extend(journalled)
         merged, own, tampered = [], [], []

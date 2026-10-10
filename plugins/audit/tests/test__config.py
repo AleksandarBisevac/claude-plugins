@@ -2433,6 +2433,46 @@ def _cases(check):
           "guess: %r" % ([M.copy_destinations(w) for w in _dd_none],),
           all(M.copy_destinations(w) is None for w in _dd_none))
 
+    # (cw) the command's own window: a start noted at Pre, a path judged by it.
+    import tempfile
+    cw_root = tempfile.mkdtemp(prefix="cfg-cw-")
+    try:
+        cw_cfg = M._deep_merge(M.DEFAULTS, {})
+        cw_main = {"session_id": "s1"}
+        cw_sub = {"session_id": "s1", "agent_id": "agent-x"}
+        check("cw1 no recorded start reads as None, never as now: %r"
+              % (M.call_start(cw_root, cw_cfg, cw_main),),
+              M.call_start(cw_root, cw_cfg, cw_main) is None
+              and M.changed_in_window(cw_root, None) is None)
+        M.record_call_start(cw_root, cw_cfg, cw_main, now=1000.0)
+        M.record_call_start(cw_root, cw_cfg, cw_sub, now=2000.0)
+        check("cw2 a start is kept per writer, the main agent apart from a "
+              "subagent of the same session: %r"
+              % ((M.call_start(cw_root, cw_cfg, cw_main),
+                  M.call_start(cw_root, cw_cfg, cw_sub)),),
+              M.call_start(cw_root, cw_cfg, cw_main) == 1000.0
+              and M.call_start(cw_root, cw_cfg, cw_sub) == 2000.0
+              and M.writer_key(cw_main) != M.writer_key(cw_sub))
+        cw_file = os.path.join(cw_root, "f.txt")
+        with open(cw_file, "w", encoding="utf-8") as fh:
+            fh.write("x")
+        os.utime(cw_file, (5000.0, 5000.0))
+        check("cw3 a path is the call's only if it changed at or after the "
+              "start, within the stated slack; an unreadable path is unknown",
+              M.changed_in_window(cw_file, 5000.0 + M.WINDOW_SLACK_SECONDS)
+              is True
+              and M.changed_in_window(cw_file, 5000.0 + M.WINDOW_SLACK_SECONDS
+                                      + 1) is False
+              and M.changed_in_window(os.path.join(cw_root, "gone"), 1.0)
+              is None)
+        check("cw4 the window note names both candidates and orders nothing: %r"
+              % (M.window_note(["sess-A"]),),
+              M.window_note(["sess-A"]) == "changed during this command; this "
+              "session or sess-A wrote it")
+    finally:
+        import shutil
+        shutil.rmtree(cw_root, ignore_errors=True)
+
 
 def _selftest():
     return _harness.run(_cases)

@@ -42,6 +42,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -232,6 +233,75 @@ def _cases(check):
           payload("Bash", sid=s), dirty=["src/shell.ts"])
     _expect("a2 same file again is silent", "silent",
           payload("Bash", sid=s), dirty=["src/shell.ts"])
+
+    # (wn) A PATH THAT BECAME DIRTY BEFORE THIS COMMAND BEGAN IS NEVER THIS
+    # COMMAND'S. A peer wrote src/peer.ts ten minutes ago, between this session's
+    # previous Bash call and this one; this call is not a read-only command the
+    # guard can prove harmless, but it began long after the file moved. The start
+    # PreToolUse noted is the evidence, and the file's mtime is what it is
+    # compared with.
+    (tmp / "src").mkdir(parents=True, exist_ok=True)
+    wn_old = tmp / "src" / "peer.ts"
+    wn_old.write_text("x\n", encoding="utf-8")
+    os.utime(str(wn_old), (time.time() - 600, time.time() - 600))
+    wn_new = tmp / "src" / "mine.ts"
+    wn_new.write_text("y\n", encoding="utf-8")
+    s = "bw-wn"
+    seed(s)
+    _wn_call = payload("Bash", sid=s, command="make build")
+    _config.record_call_start(tmp, cfg, _wn_call, now=time.time() - 5)
+    _expect("wn1 a path dirty since before the command began is not blamed "
+            "on it", "silent", _wn_call, dirty=["src/peer.ts"])
+    _expect("wn2 a path that changed inside the command's window is still "
+            "reported", "warn", _wn_call, dirty=["src/mine.ts"])
+    s = "bw-wn0"
+    seed(s)
+    _expect("wn3 with no start recorded the snapshot rule stands, as it "
+            "always did", "warn",
+            payload("Bash", sid=s, command="make build"),
+            dirty=["src/peer.ts"])
+
+    # wn4/wn5: a manifest shard a live peer's lock governs, changed inside the
+    # window. The command's text does not name the write, so it is not claimed
+    # for the command and no stop is ordered; naming it in the command restores
+    # the claim.
+    import platform as _wn_pf
+    wn_repo = Path(_harness.fixture_root("bash-writes-wnlock-"))
+    (wn_repo / "audit" / "phases").mkdir(parents=True, exist_ok=True)
+    os.environ["CLAUDE_PROJECT_DIR"] = str(wn_repo)
+    wn_cfg = _config._deep_merge(_config.DEFAULTS,
+                                 {"manifestPath": "audit/plan.json"})
+    try:
+        subprocess.run(["git", "init", "-q"], cwd=str(wn_repo), check=True,
+                       capture_output=True, timeout=10)
+        wn_lockdir = _config._load_lock_lib().lock_dir(str(wn_repo))
+        os.makedirs(wn_lockdir, exist_ok=True)
+        with open(os.path.join(wn_lockdir, "phase-P1.lock"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"hostname": _wn_pf.node(), "pid": os.getpid(),
+                       "sessionId": "sess-A", "note": "phase P1",
+                       "startedAt": _config.utc_stamp()}, fh)
+        wn_shard = wn_repo / "audit" / "phases" / "P1.json"
+        wn_shard.write_text('{"id":"P1"}\n', encoding="utf-8")
+        for _wn_cmd, _wn_sid, _wn_want in (
+                ("make build", "wn-B", "non-blocking"),
+                ("echo x > audit/phases/P1.json", "wn-B2", "ANOTHER LIVE SESSION")):
+            _wn_data = {"tool_name": "Bash", "tool_input": {"command": _wn_cmd},
+                        "session_id": _wn_sid, "cwd": str(wn_repo)}
+            M.decide(_wn_data, cfg=wn_cfg, state_dir=sd, dirty=[])
+            _config.record_call_start(wn_repo, wn_cfg, _wn_data,
+                                      now=time.time() - 5)
+            _wn_v, _wn_d = M.decide(_wn_data, cfg=wn_cfg, state_dir=sd,
+                                    dirty=["audit/phases/P1.json"])
+            check("wn4 %s: the shard's change is reported, and %r is what the "
+                  "message says" % (_wn_cmd, _wn_want),
+                  _wn_v == "warn" and _wn_want in _wn_d and "sess-A" in _wn_d
+                  and (("this session or sess-A wrote it" in _wn_d)
+                       == (_wn_want == "non-blocking")),
+                  repr((_wn_v, _wn_d)))
+    finally:
+        os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
+        shutil.rmtree(str(wn_repo), ignore_errors=True)
 
     # (ew) THE EDIT/WRITE STEER IS GONE FROM EVERY NOTICE TEMPLATE. The old
     # wording told a model stopped by this guard to reach for the Edit/Write

@@ -664,6 +664,13 @@ per file per session). Needs a git repo; git errors/timeouts (5 s) are silent. C
 `bashWriteCheck.enabled` (default true). `--selftest` (incl. a real `git init`
 integration case).
 
+**The command's own window.** A path that became dirty before this call began is never this
+call's: `journal-writes`' Pre pass notes the call's start (`_config.record_call_start`) and
+the Bash branch absorbs any new path whose mtime precedes it (`_config.changed_in_window`;
+no recorded start keeps the older snapshot rule). A manifest path governed by a live peer's
+lock that did move inside the window is reported with both candidates named and no stop
+(`WINDOW_LOCK_TEMPLATE`) unless the command's own text names the write.
+
 The authorship half of that warning comes off whenever somebody else could have written the
 path: a peer SESSION (its own state file moved inside the window), this session's own
 background job (no hook fires when one ends), a command that moved the shell with `cd`, and
@@ -800,6 +807,17 @@ cannot be written must not break the write it was recording. A hook rather than 
 instruction on purpose: a model that forgets to log a change leaves a gap that looks exactly
 like a covered-up one. Config `journal.enabled`. `--selftest` (incl. an end-to-end
 append + verify).
+
+**Whose write it was, when the file moved during the call.** On the sweep lane the
+Pre pass also notes when the call began (`_config.record_call_start`, shared with
+`guard-bash-writes`). In Post, a moved path whose new digest is the `stateHash` of a journal
+row for that target stamped inside the window — any session's, so a peer's verb, but not
+this recorder's own rows, whose repeats the completion dedupe already states — gets no row:
+it is already recorded. A move no row accounts for is journaled as before, except that while a peer is
+evidenced in the window (`_config.window_peers`: another session's row stamped inside it,
+or a live lock it holds) the row carries no session id and says `changed during this
+command; this session or <other> wrote it`. A peer that left neither a row nor a lock is
+the stated residual.
 
 **The two passes, and why the tool is not part of the question.** Edit fragments are
 not parseable JSON, so a field-level diff can only come from remembering the file as it

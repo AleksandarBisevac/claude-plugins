@@ -39,8 +39,9 @@ import shlex
 import shutil
 import sys
 import tempfile
+import time
 
-import _harness                                    # sets sys.path for scripts/ + hooks/
+import _harness                                  # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _output                                     # noqa: E402  (posix_rel: the one path spelling)
 import _loader                                     # noqa: E402
@@ -1957,7 +1958,15 @@ def _cases(check):
             return d
 
         def so_pre(sid, agent=None):
-            M.pre_cache(so_data(sid, agent, "PreToolUse"), cfg=so_cfg, root=so)
+            d = so_data(sid, agent, "PreToolUse")
+            M.pre_cache(d, cfg=so_cfg, root=so)
+            # These cases are about WHICH Post writes a completion, in a loop
+            # that finishes inside one second; the journal's stamps have
+            # one-second resolution, so every earlier case's rows would sit
+            # inside this call's window and read as a live peer. The window is
+            # moved past them. The window cases are the `wn` group below, which
+            # sets its starts explicitly.
+            _config.record_call_start(so, so_cfg, d, now=time.time() + 3600)
 
         def so_post(sid, agent=None):
             d = so_data(sid, agent)
@@ -2165,6 +2174,124 @@ def _machine_path_value_cases(check):
         else:
             os.environ["CLAUDE_PROJECT_DIR"] = prev_env
         shutil.rmtree(tmp, ignore_errors=True)
+
+    # (wn) A PEER'S WRITE INSIDE THIS CALL'S WINDOW IS NOT THIS CALL'S. Two
+    # sessions on one checkout: A completes a task through a verb (the file moves
+    # and the verb appends its own row) while B's Bash call is open. B's Post sees
+    # the digest move between its Pre and now.
+    wn = _harness.fixture_root("jw-wn-")
+    wn_prev = {k: os.environ.get(k) for k in
+               ("CLAUDE_PROJECT_DIR", "CLAUDE_CODE_SESSION_ID")}
+    os.environ["CLAUDE_PROJECT_DIR"] = wn
+    os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+    try:
+        wn_rel = "docs/audit/audit-plan.json"
+        wn_abs = os.path.join(wn, wn_rel)
+        os.makedirs(os.path.dirname(wn_abs))
+        wn_cfg = _config._deep_merge(_config.DEFAULTS, {})
+
+        def wn_doc(tag, done=False):
+            return {"meta": {"version": 3}, "phases": [
+                {"id": "P1", "title": "p-" + tag, "status": "in_progress",
+                 "tasks": [{"id": "P1.1", "title": "t",
+                            "status": "done" if done else "in_progress",
+                            "commit": None,
+                            "completedAt": "2026-09-26T11:00:00Z"
+                            if done else None}]}]}
+
+        def wn_write(doc):
+            with open(wn_abs, "w", encoding="utf-8") as fh:
+                json.dump(doc, fh)
+
+        def wn_data(sid, event="PostToolUse"):
+            return {"tool_name": "Bash", "session_id": sid, "cwd": wn,
+                    "hook_event_name": event,
+                    "tool_input": {"command": "ls"}}
+
+        def wn_pre(sid):
+            M.pre_cache(wn_data(sid, "PreToolUse"), cfg=wn_cfg, root=wn)
+
+        def wn_post(sid):
+            d = wn_data(sid)
+            M._append_rows(d, M.post_rows(d, cfg=wn_cfg, root=wn))
+
+        def wn_verb(sid, doc):
+            """A peer's verb: the file moves, then the verb appends its own row
+            - the order `_journal_io.append` is called in by every writer."""
+            wn_write(doc)
+            _journal_io.append(wn, {
+                "action": "task.done", "target": wn_rel,
+                "summary": "P1.1 closed", "actor": {
+                    "sessionId": sid, "via": "cli"}}, wn_cfg)
+
+        def wn_rows():
+            return list(_journal_io.read_all(wn))
+
+        # wn1: the peer's verb is accounted for by its own row - B records nothing.
+        wn_write(wn_doc("1"))
+        wn_pre("sess-B")
+        wn_post("sess-B")                    # seeds B's baseline
+        wn_pre("sess-B")                     # B's command opens...
+        wn_verb("sess-A", wn_doc("1", done=True))
+        _before = len(wn_rows())
+        wn_post("sess-B")                    # ...and closes after A's verb
+        _after = wn_rows()
+        check("wn1 a peer's verb write inside this call's window, already "
+              "journaled by the verb, gets NO row from this session's Post",
+              len(_after) == _before
+              and not [r for r in _after
+                       if (r.get("actor") or {}).get("sessionId") == "sess-B"],
+              repr([(r.get("action"), (r.get("actor") or {}).get("sessionId"))
+                    for r in _after]))
+
+        # wn2: B's own edit in the same window is still journaled - and says it
+        # cannot be told apart from the peer's, rather than carrying B's id.
+        wn_write(wn_doc("2"))
+        wn_pre("sess-B")
+        wn_post("sess-B")
+        wn_pre("sess-B")
+        wn_verb("sess-A", wn_doc("2", done=True))
+        _mark = set(r.get("hash") for r in wn_rows())
+        wn_write(dict(wn_doc("2", done=True), note="B's own edit"))
+        wn_post("sess-B")
+        _new = [r for r in wn_rows() if r.get("hash") not in _mark]
+        _edit = [r for r in _new if r.get("action") == "manifest.edit"]
+        check("wn2 B's own write in the same window is still journaled, with "
+              "no session id and a summary naming both candidates",
+              len(_edit) == 1
+              and not (_edit[0].get("actor") or {}).get("sessionId")
+              and "this session or sess-A wrote it" in _edit[0]["summary"]
+              and not [r for r in _new
+                       if (r.get("actor") or {}).get("sessionId") == "sess-B"],
+              repr([(r.get("action"), r.get("actor"), r.get("summary"))
+                    for r in _new]))
+
+        # wn3: with no peer evidenced the call is still the author.
+        wn_write(wn_doc("3"))
+        wn_pre("sess-C")
+        wn_post("sess-C")
+        wn_pre("sess-C")
+        # The peer rows above are history to this call: its window opens after
+        # them (their stamps have one-second resolution and the cases run inside
+        # a second).
+        _config.record_call_start(wn, wn_cfg, wn_data("sess-C"),
+                                  now=time.time() + 3600)
+        _mark = set(r.get("hash") for r in wn_rows())
+        wn_write(wn_doc("3", done=True))
+        wn_post("sess-C")
+        _new = [r for r in wn_rows() if r.get("hash") not in _mark]
+        check("wn3 a write with no peer evidenced in the window is journaled "
+              "under the writing session, as before",
+              _new and all((r.get("actor") or {}).get("sessionId") == "sess-C"
+                           for r in _new),
+              repr([(r.get("action"), r.get("actor")) for r in _new]))
+    finally:
+        for k, v in wn_prev.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(wn, ignore_errors=True)
 
 
 def _selftest():

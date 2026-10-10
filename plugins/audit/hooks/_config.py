@@ -3494,6 +3494,141 @@ def executor_context_bound_hours(cfg):
     return reading if reading > 0 else None
 
 
+# --- whose change is it: the command's own window -------------------------------
+# Two hooks answer "did THIS tool call write that path" - the journal recorder for
+# the manifest and the config, the bash-write guard for the tree - and each used
+# to answer it against its own memory of the LAST call: a slot refreshed at the
+# call's start in one, `seenDirty` from the session's previous Bash call in the
+# other. A peer that wrote in the gap or inside the call was read as this call's
+# write, in both. The answer is bound to the call itself instead: PreToolUse
+# records when the call started, and a path is the call's only if it changed at or
+# after that moment.
+#
+# EVIDENCE IN ORDER. A digest of the path that a journal row already holds is the
+# strongest (the recorder uses it: a state some row accounts for was written by
+# whoever wrote that row). Where no digest from before the start exists - the
+# guard sees only that git lists a path as dirty - the file's mtime is the
+# evidence, and it is the stated fallback, not an equal: an mtime can be touched,
+# and a filesystem rounds it, so the comparison errs toward `True` (the call
+# keeps the finding) by `WINDOW_SLACK_SECONDS`.
+#
+# NO START RECORDED IS "UNKNOWN", NEVER "NOW". A host that never ran the Pre pass
+# (the hook disabled, a payload the harness did not send) leaves callers with
+# `None`, and every caller keeps its previous behaviour for it rather than
+# inventing a window.
+CALL_START_FILE = "call-start-%s.json"
+WINDOW_SLACK_SECONDS = 2
+_SAFE_KEY = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def writer_key(data):
+    """The session, and the subagent when a subagent made the call - the key
+    per-call state is kept under. Two agents of one session share `session_id`,
+    so a slot keyed by the session alone let one agent's Pre refresh the
+    baseline another agent's running command is judged against. The main
+    agent's key is the session alone."""
+    sid = _SAFE_KEY.sub("-", str((data or {}).get("session_id") or "")).strip("-.")
+    sid = (sid or "no-session")[:40]
+    if not is_subagent(data):
+        return sid
+    agent = _SAFE_KEY.sub("-", agent_of(data)).strip("-.")[:40]
+    return "%s-%s" % (sid, agent or UNNAMED_AGENT)
+
+
+def _call_start_path(root, cfg, data):
+    return os.path.join(str(root), str(cfg.get("stateDir") or DEFAULTS["stateDir"]),
+                        CALL_START_FILE % writer_key(data))
+
+
+def record_call_start(root, cfg, data, now=None):
+    """PreToolUse: note when this writer's call began. Returns the file path, or
+    None when it could not be written - never raises, because a hook that
+    cannot note a start has lost only the window, not the tool call."""
+    try:
+        path = _call_start_path(root, cfg, data)
+        ensure_local_dir(os.path.dirname(path))
+        atomic_write_text(path, json.dumps(
+            {"at": time.time() if now is None else now}))
+        return path
+    except Exception:
+        return None
+
+
+def call_start(root, cfg, data):
+    """When this writer's current call began, as epoch seconds, or None when no
+    Pre pass recorded one (see NO START RECORDED above)."""
+    try:
+        with open(_call_start_path(root, cfg, data), "r", encoding="utf-8") as fh:
+            at = json.load(fh).get("at")
+        return float(at) if isinstance(at, (int, float)) else None
+    except Exception:
+        return None
+
+
+def changed_in_window(path, start):
+    """Did `path` change at or after `start`? True / False, or None when that
+    cannot be told (no start, or the file's mtime cannot be read - a deleted
+    path has none). A caller that gets None keeps the finding."""
+    if start is None:
+        return None
+    try:
+        return os.path.getmtime(str(path)) >= start - WINDOW_SLACK_SECONDS
+    except OSError:
+        return None
+
+
+def ts_epoch(ts):
+    """A journal row's `%Y-%m-%dT%H:%M:%SZ` stamp as epoch seconds, or None."""
+    import calendar
+    try:
+        return calendar.timegm(time.strptime(str(ts), "%Y-%m-%dT%H:%M:%SZ"))
+    except Exception:
+        return None
+
+
+def window_peers(root, cfg, data, start, rels=()):
+    """Other sessions with evidence of writing inside this call's window.
+
+    -> sorted session ids, never this one's. Two kinds of evidence, both read
+    from what the peer itself left: a journal row of its own stamped at or after
+    `start`, and a LIVE lock it holds on one of `rels` (a manifest path - the
+    lock governs only those). Empty means no peer is evidenced, which is not the
+    same as none was there: a peer that wrote nothing the trail records leaves
+    neither.
+
+    The trail is read whole, so this is asked only once something has moved
+    inside the window, never on an ordinary call."""
+    if start is None:
+        return []
+    mine = str((data or {}).get("session_id") or "")
+    peers = set()
+    try:
+        mod = _load_journal_lib()
+        reader = getattr(mod, "read_all", None)
+        for row in (reader(str(root)) if callable(reader) else []):
+            actor = row.get("actor") if isinstance(row.get("actor"), dict) else {}
+            sid = str(actor.get("sessionId") or "")
+            stamp = ts_epoch(row.get("ts"))
+            if (sid and sid != mine and stamp is not None
+                    and stamp >= start - WINDOW_SLACK_SECONDS):
+                peers.add(sid)
+    except Exception:
+        pass
+    manifest_rel = cfg.get("manifestPath") or DEFAULTS["manifestPath"]
+    for rel in rels:
+        conflict = manifest_lock_conflict(root, cfg, manifest_rel, rel, mine)
+        if conflict and conflict["live"]:
+            peers.add(str(conflict["holder"]))
+    return sorted(peers)
+
+
+def window_note(peers):
+    """The sentence for a change that landed inside a command's window while a
+    live peer was evidenced: it names both candidates and orders nothing."""
+    return ("changed during this command; this session or %s wrote it"
+            % ", ".join(peers))
+
+
 # --- utc stamps ---------------------------------------------------------------
 def utc_stamp():
     """The wall-clock stamp every record a hook writes carries — one instant in
