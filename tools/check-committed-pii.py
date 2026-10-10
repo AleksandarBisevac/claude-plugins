@@ -155,6 +155,12 @@ _JOURNAL_RE = re.compile(r"(?:^|/)journal/(?:archive/)?[^/]+\.jsonl$")
 # rolls the evidence ledger over, and an arm for a directory no writer creates
 # would read as coverage of a case that does not exist.
 _EVIDENCE_RE = re.compile(r"(?:^|/)evidence/[^/]+\.jsonl$")
+# THE FILED RETURNS, WHICH THE WRITER SCRUBS AND THIS READS BACK. `_filed_returns.
+# file_once` passes a return through `_machine_paths.scrubbed_values` before it
+# lands, but a copy that arrived another way (an older writer, a hand copy) is
+# committed unread unless the domain reaches it. Same convention-not-derivation
+# limit as the two rules above: `evidence.dir` may be overridden.
+_RETURN_RE = re.compile(r"(?:^|/)evidence/returns/.+\.json$")
 _THEME_RE = re.compile(r"(?:^|/)\.claude/(?:audit\.theme\.json|themes/[^/]+\.json)$")
 # The same stamp `check-rendered-artifacts.py` reads to pin a render's clock; here
 # it is what identifies a file as a rendered report at all, so a repository that
@@ -176,6 +182,8 @@ def domain_of(rel, text):
         return "journal"
     if _EVIDENCE_RE.search(slug):
         return "evidence"
+    if _RETURN_RE.search(slug):
+        return "return"
     if _THEME_RE.search(slug):
         return "theme"
     if (slug.endswith(_REPORT_EXT) and isinstance(text, str)
@@ -614,6 +622,21 @@ def findings(repo=None):
 # `baseline_key`. ONE reason for both rows, said once per row
 # because a row is what a reader looks up. The reason is the user's decision and
 # this is where it is recorded rather than hidden: existing history is left alone.
+# A FILED RETURN THE PHASE-22 SIGN-OFF IS BOUND TO BY CONTENT. Its verdict records
+# `readReturns` as this file's sha256, which `return_signature` takes over the
+# parsed body, so scrubbing the machine paths out of it would change the signature
+# the recorded verdict names. Every other return in the directory was rewritten
+# clean; this one stays as it was read, and the rows below are the finding
+# recorded rather than hidden. Pretty-printed JSON, so a line number is stable
+# the way a journal's is.
+_BOUND_RETURN = ("docs/audit/evidence/returns/P122/"
+                 "09aed798f46fd04e3b7061223197149da7e63a40.reviewer.json")
+_BOUND_RETURN_WHY = (
+    "a reviewer return whose sha256 the P122 sign-off records under "
+    "`readReturns`; rewriting its machine paths would change the signature "
+    "that recorded verdict is bound to, so it is recorded here rather than "
+    "rewritten.")
+
 BASELINE = (
     ("docs/audit/journal/2026-08.3f33caa7-c0c9-4a4e-9c3b.jsonl", 1,
      "journal-actor-host",
@@ -733,6 +756,19 @@ BASELINE = (
      "the description of that task, quoting the matched words to locate the "
      "journal finding it baselines. It states in its own text that no path of "
      "this machine is present, and none is."),
+    (_BOUND_RETURN, 113, "posix-home", _BOUND_RETURN_WHY),
+    (_BOUND_RETURN, 113, "unexpanded-home", _BOUND_RETURN_WHY),
+    (_BOUND_RETURN, 124, "posix-home", _BOUND_RETURN_WHY),
+    (_BOUND_RETURN, 124, "unexpanded-home", _BOUND_RETURN_WHY),
+    (_BOUND_RETURN, 135, "posix-home", _BOUND_RETURN_WHY),
+    (_BOUND_RETURN, 135, "unexpanded-home", _BOUND_RETURN_WHY),
+    (_BOUND_RETURN, 146, "posix-home", _BOUND_RETURN_WHY),
+    (_BOUND_RETURN, 146, "unexpanded-home", _BOUND_RETURN_WHY),
+    (_BOUND_RETURN, 179, "posix-home", _BOUND_RETURN_WHY),
+    (_BOUND_RETURN, 179, "unexpanded-home", _BOUND_RETURN_WHY),
+    (_BOUND_RETURN, 190, "posix-home", _BOUND_RETURN_WHY),
+    (_BOUND_RETURN, 190, "unexpanded-home", _BOUND_RETURN_WHY),
+    (_BOUND_RETURN, 196, "posix-home", _BOUND_RETURN_WHY),
 )
 
 _MIN_REASON = 60          # a reason short enough to be a label is not a reason
@@ -1063,6 +1099,35 @@ def _foreign_cases(check):
               is None
               and domain_of("docs/audit/evidence/summary.json", None) is None
               and domain_of("docs/audit/evidence.jsonl", None) is None)
+
+        # A FILED RETURN, BOTH DIRECTIONS. `_filed_returns.file_once` scrubs a
+        # return at its writer; this is the backstop for the copy that reached the
+        # tree some other way, and it had the same hole the writer had.
+        _ret_dir = "docs/audit/evidence/returns/P9.1/"
+        leak_ret = _fixture_tree([
+            (_ret_dir + "20260101T000000Z.executor.json",
+             '{\n  "outcome": {"technical": "ran in /Users/someone/src/x"}\n}\n')])
+        clean_ret = _fixture_tree([
+            (_ret_dir + "20260101T000000Z.executor.json",
+             '{\n  "outcome": {"technical": "ran in plugins/audit/scripts/x"}\n}\n')])
+        try:
+            lrun, crun2 = scan(leak_ret), scan(clean_ret)
+        finally:
+            from _suite import remove_tree
+            remove_tree(leak_ret)
+            remove_tree(clean_ret)
+        check("q33 a FILED RETURN under evidence/returns is in the domain and a "
+              "home path in it is a finding: %r, %r"
+              % (lrun["surfaces"], [r[2] for r in lrun["rows"]]),
+              lrun["surfaces"] == ["return"]
+              and [(r[1], r[2]) for r in lrun["rows"]] == [(2, "posix-home")])
+        check("q34 ...while one naming only repo-relative paths is read and clean, "
+              "and a json beside the returns directory is not claimed: %r"
+              % (crun2["rows"],),
+              crun2["surfaces"] == ["return"] and crun2["rows"] == []
+              and domain_of(_ret_dir + "a.executor.json", None) == "return"
+              and domain_of("docs/audit/evidence/returns-notes/a.json", None) is None
+              and domain_of("docs/audit/evidence/returns/P9.1/a.txt", None) is None)
 
         check("q17 the OK line trips NONE of this file's own detectors, on both "
               "roots - the line CI prints and the line a `--repo` run prints: %r"
@@ -1502,9 +1567,9 @@ def _cases(check):
     # verdict, and both surfaces this tree actually has must be in it.
     check("q6 the domain over the live tree is not empty and reaches every "
           "surface this repository commits - the journal, the evidence ledger, "
-          "the plan and the rendered reports - so the cases below are judging "
+          "the filed returns, the plan and the rendered reports - so the cases below are judging "
           "something: %d file(s), %r" % (len(_kept), _surfaces),
-          _bad == [] and _surfaces == ["evidence", "journal", "plan", "report"])
+          _bad == [] and _surfaces == ["evidence", "journal", "plan", "report", "return"])
 
     check("q7 every committed artifact is clean except what BASELINE accounts "
           "for: %r" % ([render(r) for r in unbaselined(_live, _anchors)],),

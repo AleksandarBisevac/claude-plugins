@@ -7,7 +7,7 @@
   },
   "redFirst": {
     "at": "2026-10-09T23:19:21Z",
-    "basis": "`sh -c python3 plugins/audit/tests/test__output.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 197/198 cases passed; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main/node_modules and is not watched; the user's ~/.npmrc dropped (every run has a fresh home)",
+    "basis": "`sh -c python3 plugins/audit/tests/test__output.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 197/198 cases passed; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from <outside-repo>, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in <outside-repo> and is not watched; the user's <outside-repo> dropped (every run has a fresh home)",
     "status": "could-not-prove"
   },
   "outcome": {

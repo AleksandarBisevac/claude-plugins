@@ -28,8 +28,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:advance (reviewer dispatch precedes integrate_member); plugins/audit/scripts/status/audit-lookup.py:_diff_lines and compose_reviewer_brief",
         "issue": "In a wave a per-task reviewer (review.perTask always, or signals when a signal fires) is dispatched after the gate and BEFORE the task's bytes are integrated. Its brief's diff is `git diff HEAD -- <files>` read from the phase tree, where the task's change does not exist yet (it lives in the task tree until integrate-task runs), and the reviewer brief carries no tree:/base: lines (wave_tree_lines feeds the executor brief only). The reviewer is shown an empty diff and answers intent/inherited-tests about nothing. Default `phase` mode is unaffected. No case runs a wave with per_task other than phase (_wave_repo takes per_task but every wave case uses the default).",
-        "resolution": "Either point the reviewer brief at the task's tree (tree:, base:, and a diff read with `git -C <tree> diff <base>` plus untracked files) and say so in audit-reviewer.md, or integrate before the reviewer is due. Add a wave case with per_task=always asserting the reviewer brief's diff is non-empty.",
-        "fixTask": "P124.15-k2x"
+        "resolution": "fixed in P124.15-k2x (a7b5de217b55): Either point the reviewer brief at the task's tree (tree:, base:, and a diff read with `git -C <tree> diff <base>` plus untracked files) and say so in audit-reviewer.md, or integrate before the reviewer is due. Add a wave case with per_task=always asserting the reviewer brief's diff is non-empty.",
+        "fixTask": "P124.15-k2x",
+        "commit": "a7b5de217b55",
+        "status": "fixed"
       },
       {
         "id": "P124-R2",
@@ -46,16 +48,20 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:add_tree, step_member, close_wave",
         "issue": "Tree creation is not resumable, which the design promised ('worktrees are found again through their markers'). (a) task-add writes the marker, then runs executor.worktreeSetup (an install, minutes) before returning; a session death or Ctrl-C in that window leaves a marked tree that the driver state does not name. The rerun calls task-add, which refuses 'task X already has a tree', so the run stops and only a manual task-remove recovers it. (b) On a failed setup add_tree records the tree in wave.trees and stops; the next `next` finds the tree recorded and dispatches the executor straight into the half-provisioned tree, never re-running setup, so the 'could not run, no attempt spent' promise turns into a red gate and a spent attempt. (c) close_wave drops wave.trees while a blocked member's tree is kept on disk; unblocking that task into a later wave hits the same 'already has a tree' refusal. All three are loud, none loses bytes. The wc cases crash only after integration.",
-        "resolution": "In add_tree treat the 'already has a tree' refusal for a tree whose marker base equals the wave base as adoption (record it, and re-run setup unless a setup-ok mark is stored), keep an unresolved setup failure in the member's state so the next step retries it, and carry kept trees of blocked members across close_wave. Add a case that kills the driver between task-add and the state write, and one for a failed setup followed by a second next.",
-        "fixTask": "P124.15-k2x"
+        "resolution": "fixed in P124.15-k2x (a7b5de217b55): In add_tree treat the 'already has a tree' refusal for a tree whose marker base equals the wave base as adoption (record it, and re-run setup unless a setup-ok mark is stored), keep an unresolved setup failure in the member's state so the next step retries it, and carry kept trees of blocked members across close_wave. Add a case that kills the driver between task-add and the state write, and one for a failed setup followed by a second next.",
+        "fixTask": "P124.15-k2x",
+        "commit": "a7b5de217b55",
+        "status": "fixed"
       },
       {
         "id": "P124-R4",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:tree_holds_only_integrated, retire_member; plugins/audit/tests/test_drive_phase.py (wu1/wu2)",
         "issue": "The only thing that keeps a discarded undeclared change from being destroyed is tree_holds_only_integrated deciding the tree still holds bytes the phase tree lacks, because retire_member then removes clean trees with `task-remove --force` (which also deletes ignored files). Mutation on a scratch copy: making the comparison never report a difference (`if sides[0] != sides[1]` to `if False`) leaves wv, wr, wc, w1, wz and pf stages all passing. No case answers `discard` and checks the tree survives and is named, so the guard can be deleted without a test failing. By reading, the guard is correct (a path present in the tree and absent from the phase tree compares unequal).",
-        "resolution": "Add a wave case: P1.2 writes an undeclared notes.txt, answer discard, close; assert the task closes, notes.txt is absent from the phase tree, the tree directory still exists with notes.txt in it, and the did-line says 'kept'.",
-        "fixTask": "P124.15-k2x"
+        "resolution": "fixed in P124.15-k2x (a7b5de217b55): Add a wave case: P1.2 writes an undeclared notes.txt, answer discard, close; assert the task closes, notes.txt is absent from the phase tree, the tree directory still exists with notes.txt in it, and the did-line says 'kept'.",
+        "fixTask": "P124.15-k2x",
+        "commit": "a7b5de217b55",
+        "status": "fixed"
       },
       {
         "id": "P124-R5",
@@ -93,7 +99,7 @@
         "resolution": "Say in the worktreeSetup README row that setup must not modify tracked files."
       }
     ],
-    "outcome": "[findings: 9 - 0 high, 4 med, 5 low; 1 with a recorded fix commit]"
+    "outcome": "[findings: 9 - 0 high, 4 med, 5 low; 4 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1128,7 +1134,7 @@
     {
       "id": "P124.15-k2x",
       "title": "a wave survives a crash during tree setup, a blocked member keeps its tree into a later wave, its reviewer reads its own diff, and a discarded change keeps its tree",
-      "status": "in_progress",
+      "status": "done",
       "description": "Findings P124-R1, R3, R4 (med), all in the wave driver. R1: with review.perTask always/signals, a member's reviewer is dispatched before integrate_member, and its brief reads git diff HEAD from the phase tree where the task's bytes are not yet - pass the task tree and base into the reviewer brief (wave_tree_lines feeds only the executor today), or integrate before the reviewer is due; add a wave case with per_task always. R3: tree creation is not resumable as the design promised - add_tree must find an existing tree through its marker (read_provenance with expect_task) instead of task-add refusing \"already has a tree\"; a tree whose setup failed or never finished is re-provisioned (setup re-run) before any dispatch, spending no attempt; close_wave must not drop a blocked member's tree so a later wave adopts it. R4: tree_holds_only_integrated guards a discarded undeclared change from task-remove --force, but no case exercises it (mutating it to never differ left every stage green) - add the discard-then-close case asserting the tree survives and is named. Blocked by the R2 task only because both edit drive-phase.py.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1164,14 +1170,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a7b5de217b55",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "R3: manage-worktrees.py task-add now adopts a tree already marked for the task (adopt_task_tree) instead of refusing 'already has a tree' - the lookup runs before the non-empty-path check; the marker records setup 'pending' until run_setup returns and then its status (provision()), and an adopted tree whose marker does not record a completed setup (ran/none) gets the include and setup again; adoption reports the marker's base. drive-phase.py add_tree records a per-task base (wave.bases) from the verb's answer, no longer records a tree whose setup failed (so the next step re-asks task-add, which adopts it and re-runs setup before dispatch, no attempt spent), and pops keptTrees on adoption; close_wave carries every still-standing tree into state.keptTrees and names a blocked member's tree with its path; retire_member names the kept tree's path. R1: audit-lookup.py wave_tree() returns (tree, base) with the per-task base; the task-mode reviewer brief gets a Tree section and its diff is read as git -C <tree> diff <base> (untracked from the tree too). R4: wt8 discard-then-close case plus wt8m twin. Tests: test_drive_phase stages wt-block (wt1-wt4), wt5-block (wt5-wt6), wt7-block (wt7, wt8, wt8m); test_manage_worktrees ta8 rewritten to the adoption contract, ta8a and su5a added. Red on pre-fix code observed per stage: wt2, wt4, wt5, wt6, wt7, wt8 FAIL. Source mutation of tree_holds_only_integrated to return True in a scratch copy: wt8 FAIL ('tree of P1.2 removed'). Runs: test_drive_phase --selftest 176/176 exit 0; test_manage_worktrees 70/70; test_audit_lookup 79/79; ruff check plugins/audit tools exit 0; tools/sweep-selftests.py exit 0, 326/326 files. PLUGIN-BUILD-GUIDE.md line ~1185 still says a second tree for a task is refused - now false, outside this task's files.",
+        "descriptive": "a wave survives a crash or failed setup during tree setup, a blocked member's tree is adopted by a later wave, a wave reviewer reads its own task's diff, and a discarded change keeps its named tree"
       },
       "startedAt": "2026-10-10T07:13:12Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T07:38:42Z",
+      "verifiedBy": [
+        "test_drive_phase wt1",
+        "test_drive_phase wt2",
+        "test_drive_phase wt3",
+        "test_drive_phase wt4",
+        "test_drive_phase wt5",
+        "test_drive_phase wt6",
+        "test_drive_phase wt7",
+        "test_drive_phase wt8",
+        "test_drive_phase wt8m",
+        "test_manage_worktrees ta8a",
+        "test_manage_worktrees su5a"
+      ],
       "fixes": [
         "P124-R1",
         "P124-R3",
@@ -1182,12 +1200,23 @@
         "runId": "2026-10-10T07:38:41Z.9d3419",
         "status": "passed",
         "at": "2026-10-10T07:38:41Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "a7b5de217b55",
+        "at": "2026-10-10T07:38:42Z",
+        "basis": "a fix task for P124-R1, P124-R3, P124-R4: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-10T07:29:38Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with 6 of 176 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - wt8 (house FAIL): SELFTEST FAILED: 170/176 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P124.16-k2x",
       "title": "check-committed-pii reads filed returns, and the returns already committed carry no machine path",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F618: check-committed-pii's domain (evidence, journal, plan, report) does not read docs/audit/evidence/returns/*.json, so the 16 returns filed this run with machine paths (before P124.14 put the scrub at the returns writer) were committed with no finding - the backstop had the same hole the writer had. Widen the domain to the returns (its own --selftest holds the cases; add red and allow twins), and rewrite each listed return through the scrubbing path (_machine_paths.scrubbed_values, as _filed_returns.file_once now does) so the committed copies are clean; confirm nothing reads a return by a content hash that the rewrite would break (grep the journal and evidence for the return paths) and say what you found. Run check-committed-pii, the sweep and ruff.",
       "files": [
         "tools/check-committed-pii.py",
@@ -1233,16 +1262,22 @@
         "P124.15-k2x"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T07:38:47Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T07:57:45Z.d65a86",
+        "status": "passed",
+        "at": "2026-10-10T07:57:45Z"
+      }
     }
   ],
   "request": "F600 + F599 (owner-mandated, testbed): tasks inside a phase run concurrently in their own worktrees, gated there and integrated serially; task scopes carry their unavoidable companions. One phase per the user (fewer review rounds).",

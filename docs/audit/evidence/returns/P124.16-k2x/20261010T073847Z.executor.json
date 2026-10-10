@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "check-committed-pii": "pass",
+    "check-committed-pii --selftest": "pass",
+    "sweep-selftests": "pass",
+    "ruff": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T07:49:51Z",
+    "basis": "`python3 tools/check-committed-pii.py --selftest` in a throwaway tree at HEAD exited 1, but no case --case names failed an assertion as the task's own: q7 (house FAIL), q26 (house FAIL), q27 (house FAIL), q27b (house FAIL) - SELFTEST FAILED: 39/43 cases passed; --case q33 names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "tools/check-committed-pii.py: new 'return' surface (_RETURN_RE on evidence/returns/**.json), cases q33 (home path in a filed return is a finding) and q34 (repo-relative return clean, near-miss paths not claimed); first red seen before the rule: q33/q34 failed with domain-empty. Rewrote 12 committed returns through _filed_returns.scrubbed_return_text (same as file_once): 13 line-level diffs, JSON parses, key order identical (checked against copies of the originals). P122.6, P124.4 and the P124 reviewer return needed no change (scrubber returned them byte for byte). Content-hash finding: P122.json readReturns binds P122/09aed798...reviewer.json by sha256 (return_signature over the parsed body, 1d753866...); rewriting it would change that to 9b4e9f33..., so I did NOT rewrite it and recorded its 13 (line, detector) findings in BASELINE (row-per-finding, shared reason, kept as a literal tuple so gate-parity still sees the table). The other 15 returns have no sha reference: only file-name mentions in plan/shards/other returns. P124 has no readReturns yet. BASELINE: no existing entry went stale (q8 green). Fixture used x.py once and tripped tool_basename_drift; respelled. Ran: check-committed-pii exit 0 (338 files in domain, 42 findings all baselined), --selftest 43/43, full sweep exit 0 (326/326 files), ruff clean, gate-parity and test__refs green.",
+    "descriptive": "The PII backstop now reads filed returns; 12 committed returns are scrubbed, and the one return a sign-off is hash-bound to is baselined instead of rewritten."
+  },
+  "testsAdded": [
+    "tools/check-committed-pii.py q33",
+    "tools/check-committed-pii.py q34"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:dd60fc0f7fae8464711e9ae5ec45e24cb03eb340d4ef281e888bd2b8780e788d\",\"dirtyDigest\":\"sha256:cab796e8cdb7c820fc0c4c90f31c459c64300f0f1506d60017b6154f44d4b6da\",\"dirtyPaths\":{\"tools/check-committed-pii.py\":\"00633090ffaa449c\"},\"head\":\"a7b5de21\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"docs/audit/evidence/returns/P122.1/20261009T193258Z.executor.json\",\"docs/audit/evidence/returns/P122.10-z4y/20261010T002105Z.executor.json\",\"docs/audit/evidence/returns/P122.10-z4y/20261010T005441Z.executor.json\",\"docs/audit/evidence/returns/P122.11-z4y/20261010T011646Z.executor.json\",\"docs/audit/evidence/returns/P122.11-z4y/20261010T013445Z.executor.json\",\"docs/audit/evidence/returns/P122.2/20261009T194822Z.executor.json\",\"docs/audit/evidence/returns/P122.3/20261009T202501Z.executor.json\",\"docs/audit/evidence/returns/P122.4/20261009T205252Z.executor.json\",\"docs/audit/evidence/returns/P122.6-z4y/20261009T212317Z.executor.json\",\"docs/audit/evidence/returns/P122.7-z4y/20261009T215442Z.executor.json\",\"docs/audit/evidence/returns/P122.8-z4y/20261009T230707Z.executor.json\",\"docs/audit/evidence/returns/P122.9-z4y/20261009T232809Z.executor.json\",\"docs/audit/evidence/returns/P122.9-z4y/20261009T234428Z.executor.json\",\"docs/audit/evidence/returns/P122/09aed798f46fd04e3b7061223197149da7e63a40.reviewer.json\",\"docs/audit/evidence/returns/P124.4/20261010T032202Z.executor.json\",\"docs/audit/evidence/returns/P124/79f02001d457770458000381194ca97b81deaebf.reviewer.json\",\"tools/check-committed-pii.py\"],\"scopeDigest\":\"sha256:05825c0f8e9ffb39bde1912fb252f53855dbb947c0e41573ffbf67c890872d57\",\"v\":2}"
+}
