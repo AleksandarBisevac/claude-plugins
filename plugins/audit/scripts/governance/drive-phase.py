@@ -206,6 +206,9 @@ import _status_facts  # noqa: E402  (ready_tasks: the one readiness rule)
 import _verdict_binding as _vb  # noqa: E402  (phase_binding: whether a held phase
 #                                              gate run is still the one sign-off binds)
 import _wave  # noqa: E402  (select: which ready tasks may run together)
+import _runner_collects  # noqa: E402  (collects: whether a runner takes a test path)
+import _gate_derive  # noqa: E402  (entry_runner: which runner a gate entry invokes)
+import _scope_companions  # noqa: E402  (derive: the runner config a widen declares)
 
 E_OK, E_STOPPED, E_USAGE = 0, 1, 2
 PREFIX = "[drive-phase]"
@@ -288,6 +291,10 @@ STEPS = {
                 "%(why)s",
         "rule": ("widen declares them and re-gates; discard drops them; block "
                  "keeps the tree. Never drop one silently.",)},
+    "decide-scope-gap": {
+        "line": "decide scope-gap %(task)s: %(why)s",
+        "rule": ("widen declares the runner config beside the task's files and "
+                 "selects again; block keeps the task and tells the human.",)},
     "decide-gate-red": {
         "line": "decide gate-red %(task)s: recorded gate red (%(why)s)",
         "rule": ("rerun spends no attempt (GATE COULD NOT RUN); retry spends "
@@ -394,6 +401,9 @@ DECISIONS = {
     # task changed and never declared.
     "integration-refused": (("retry", "block"), ("block",)),
     "undeclared-change": (("widen", "discard", "block"), ("block",)),
+    # Before the start: a test the task declares and its runner will never
+    # collect (`scope_gap`).
+    "scope-gap": (("widen", "block"), ("block",)),
     "review-answer": (("continue",), ("continue",)),
     "stalled": ((), ()),
     # `accept` settles the reviewer answers a human decides and `decline` is
@@ -673,6 +683,60 @@ def render_decision(ctx, pending):
             "answer", phase=ctx["phase"], options="|".join(options),
             reason=(" (%s needs --reason)" % ("/".join(needs),)) if needs else "")
     return instruction("decide", lines)
+
+
+def scope_gap(ctx, state, task):
+    """The task-start preflight: ask the runner of the task's gate whether it
+    collects each declared `tests.add` path. A definite NOT_COLLECTED is the
+    `scope-gap` decision, unless the task already declares the runner config
+    (a widen was answered); COULD_NOT_TELL prints one line and the start goes
+    on. None, or the result to return before any start."""
+    manifest, phase = load_phase(ctx)
+    task = _mio.tasks_by_id(manifest).get(task["id"]) or task
+    tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
+    paths = [p for p in (_phases.tests_add_path(e) for e in tests.get("add") or []
+                         if isinstance(e, str)) if p and _phases.is_suite_path(p)]
+    build = (manifest.get("meta") or {}).get("buildCommands")
+    build = build if isinstance(build, dict) else {}
+    entries, _source = _mio.gate_entries(phase, task)
+    runners = []
+    for entry in entries:
+        runner = _gate_derive.entry_runner(build.get(entry, entry))
+        if runner in _gate_derive.UNIT_RUNNERS and runner not in runners:
+            runners.append(runner)
+    for path in paths:
+        answers = [(r, _runner_collects.collects(path, r, ctx["project"]))
+                   for r in runners]
+        if not answers or any(a["answer"] == _runner_collects.COLLECTED
+                              for _r, a in answers):
+            continue
+        if any(a["answer"] == _runner_collects.COULD_NOT_TELL for _r, a in answers):
+            ctx["did"].append("could not tell whether %s collects %s: %s" % (
+                answers[0][0], path, _clip(answers[0][1]["basis"], 100)))
+            continue
+        runner, got = answers[0]
+        found = _scope_companions.derive(
+            {"tests": [path], "runner": runner, "files": task.get("files") or []},
+            ctx["project"])["companions"]
+        config = found[0]["path"] if found else None
+        if config is None and any(
+                f == c for f in task.get("files") or []
+                for c in _scope_companions_configs(runner)):
+            continue
+        why = "%s does not collect %s (%s); %s" % (
+            runner, path, _clip(got["basis"], 100),
+            "widen adds %s" % (config,) if config
+            else "no runner config file exists to widen")
+        return E_OK, decision(ctx, state, "scope-gap", task, why,
+                              extra={"config": config})
+    return None
+
+
+def _scope_companions_configs(runner):
+    """The file names a runner reads its configuration from."""
+    return {"vitest": _runner_collects.VITEST_CONFIGS + _runner_collects.VITE_CONFIGS,
+            "jest": _runner_collects.JEST_CONFIGS,
+            "pytest": _runner_collects.PYTEST_CONFIG_FILES}.get(runner, ())
 
 
 def start_task(ctx, task):
@@ -1322,6 +1386,11 @@ def wave_step(ctx, state, manifest, phase, width, basis):
                                      key=lambda t: _id_key(t["id"])), width)["wave"]
         if len(picked) < 2:
             return NO_WAVE
+        by_id = _mio.tasks_by_id(manifest)
+        for task_id in picked:
+            stop = scope_gap(ctx, state, by_id[task_id])
+            if stop is not None:
+                return stop
         return open_wave(ctx, state, picked, width, basis)
     return walk_wave(ctx, state)
 
@@ -1339,6 +1408,10 @@ def answer_refusal(ctx, pending, answer, reason, fixes=()):
     if answer in needs and not (reason or "").strip():
         return "--answer %s needs --reason: it is recorded with the %s" % (
             answer, "phase" if pending.get("task") is None else "task")
+    if pending["decision"] == "scope-gap" and answer == "widen" \
+            and not pending.get("config"):
+        return ("no runner config file exists to widen, so --answer widen has "
+                "nothing to declare; answer block")
     if answer == "fix":
         # A finding already naming a fix task that never landed is open, but the
         # verb refuses a second task for it: it is dispositioned, not fixed.
@@ -1420,6 +1493,18 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
             if stop is not None:
                 return stop
         return start_task(ctx, task)
+    if pending["decision"] == "scope-gap":
+        # Declared before the start: the selection runs again, because the
+        # config may belong to a sibling's files, and the preflight now sees
+        # the config declared.
+        files = list(task.get("files") or [])
+        if pending["config"] not in files:
+            files.append(pending["config"])
+        _out, stop = _verb_or_stop(ctx, "audit-task.py", _task_args(
+            ctx, "scope", task["id"], "--files", ",".join(files)))
+        if stop is None:
+            ctx["did"].append("%s widened by %s" % (task["id"], pending["config"]))
+        return stop
     if answer in ("widen", "discard"):
         # Integration asks again with the human's word; a widened scope is
         # declared before it, and the gate is taken again over it after.
@@ -1460,6 +1545,8 @@ def pending_still_applies(manifest, pending):
     task = _mio.tasks_by_id(manifest).get(pending["task"]) or {}
     if pending["decision"] == "review-answer":
         return True
+    if pending["decision"] == "scope-gap":
+        return task.get("status") == "pending"
     return (task.get("status") == "in_progress"
             and start_key(task) == pending.get("start"))
 
@@ -2298,7 +2385,7 @@ def drive_task(ctx, state):
                 "stop-blocked", [task], phase=ctx["phase"], task=task["id"],
                 why=_clip(str(task.get("blockedReason") or "no reason recorded"), 120)))
         if task.get("status") != "in_progress":
-            stop = start_task(ctx, task)
+            stop = scope_gap(ctx, state, task) or start_task(ctx, task)
             if stop is not None:
                 return stop
             continue
@@ -2375,7 +2462,7 @@ def drive_phase(ctx, state, phase):
                                    if t.get("status") not in _mio.TERMINAL],
                 phase=ctx["phase"], why=stalled_why(manifest, phase)))
         if how == "ready":
-            stop = start_task(ctx, task)
+            stop = scope_gap(ctx, state, task) or start_task(ctx, task)
             if stop is not None:
                 return stop
             continue

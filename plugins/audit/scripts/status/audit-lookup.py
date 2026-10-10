@@ -513,6 +513,14 @@ def wave_tree_lines(ctx, phase, task):
             "tree, and the orchestrator commits."]
 
 
+# What the executor owes when a runner's include has to change to collect its
+# test: the preflight stops a task whose test no runner collects, and the
+# executor's edit of the config is the other half. A fix for one directory was
+# repeated by the next task in the testbed, one directory over.
+WIDEN_RULE = ("When you widen a runner's include, widen it for the repo's test "
+              "layout, not for the one directory in front of you.")
+
+
 def compose_executor_brief(manifest, phase, task, ctx, files, gate):
     """The executor's whole brief, as lines. `files` is `brief_lookup`'s payload
     and `gate` the `executor.runsGate` reading with its basis."""
@@ -559,7 +567,8 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
                                           json.dumps(tests.get("expectRedFirst"))),
         "tests.add:"] + (["- %s" % (a,) for a in (tests.get("add") or [])]
                          or ["- none"])
-        + ["gate, %s:" % (whose,)] + gate_lines(manifest, entries))
+        + ["gate, %s:" % (whose,)] + gate_lines(manifest, entries)
+        + ([WIDEN_RULE] if tests.get("add") else []))
     reading = gate["reading"]
     run_gate = "%s %s %s --task %s" % (
         _script(ctx, "governance/run-test-gate.py"), ctx["manifest"], pid, tid)

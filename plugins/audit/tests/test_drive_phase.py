@@ -2821,6 +2821,87 @@ def _wave_crash_cases(check):
           and after["P1.2"].get("commit"))
 
 
+def _preflight_repo(prefix, include, tasks=1):
+    """A one-task fixture shaped like a testbed's P1.3: a vitest config whose
+    `include` is `include` (JS source), a gate running vitest on the one test
+    the task adds, and that test declared in `tests.add`."""
+    root, mpath = _repo(prefix, task_ids=TASKS[:tasks],
+                        gate=("npx vitest run lib/store.test.ts",))
+    with open(os.path.join(root, "vitest.config.ts"), "w") as fh:
+        fh.write("const INCLUDE = %s;\nexport default { test: { include: %s } };\n"
+                 % ("['tests/unit/**/*.test.ts']", include))
+    with open(mpath) as fh:
+        plan = json.load(fh)
+    plan["phases"][0]["tasks"][0]["tests"]["add"] = [
+        "lib/store.test.ts: the store keeps its items"]
+    with open(mpath, "w") as fh:
+        json.dump(plan, fh, indent=2)
+    for argv in (["add", "-A"], ["commit", "-qm", "preflight fixture"]):
+        subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
+                       timeout=60)
+    return root, mpath
+
+
+def _preflight_cases(check):
+    """Task start refuses a declared test the runner will never collect: a
+    definite NOT_COLLECTED is a `scope-gap` decision before any dispatch, and
+    `widen` declares the runner config; a could-not-tell runner prints one line
+    and the run dispatches."""
+    M, why = _load("drive_phase_preflight")
+    if M is None:
+        check("pf1 the driver loads", False, why)
+        return
+    root, mpath = _preflight_repo("pfgap", "['tests/unit/**/*.test.ts']")
+    code, text = _next_wave(M, root, mpath)
+    task = tasks_of(mpath)["P1.1"]
+    check("pf1 a vitest include of tests/unit/** and a test at lib/store.test.ts "
+          "stops at decide scope-gap naming vitest and vitest.config.ts, before "
+          "any dispatch, with the task still pending: %r" % (text,),
+          code == 0 and instruction(text) == ("decide", "scope-gap", None)
+          and "vitest.config.ts" in text and "vitest" in text.split("vitest.config.ts")[0]
+          and "widen|block" in text and not _dispatched(text)
+          and task.get("status") == "pending")
+    said = []
+    with _Env(root):
+        code = M.main(["next", PHASE, mpath, "--project-dir", root, "--answer",
+                       "widen"], out=said.append)
+    after = "\n".join(said)
+    task = tasks_of(mpath)["P1.1"]
+    check("pf2 widen declares the runner config beside the task's files and the "
+          "run goes on to dispatch it: %r %r" % (after, task.get("files")),
+          code == 0 and "vitest.config.ts" in (task.get("files") or [])
+          and "src/f1.txt" in (task.get("files") or [])
+          and _dispatched(after) == ["P1.1"])
+    root, mpath = _preflight_repo("pfblock", "['tests/unit/**/*.test.ts']")
+    _next_wave(M, root, mpath)
+    said = []
+    with _Env(root):
+        code = M.main(["next", PHASE, mpath, "--project-dir", root, "--answer",
+                       "block", "--reason", "the human will widen it by hand"],
+                      out=said.append)
+    check("pf3 block blocks the task and dispatches nothing: %r" % ("\n".join(said),),
+          code == 0 and tasks_of(mpath)["P1.1"].get("status") == "blocked"
+          and not _dispatched("\n".join(said)))
+    root, mpath = _preflight_repo("pfunsure", "INCLUDE")
+    code, text = _next_wave(M, root, mpath)
+    lines = [ln for ln in text.splitlines() if "could not tell" in ln]
+    check("pf4 a runner whose include is a variable could not be read: ONE line "
+          "says so and the run dispatches: %r" % (text,),
+          code == 0 and len(lines) == 1 and _dispatched(text) == ["P1.1"]
+          and "scope-gap" not in text)
+    root, mpath = _preflight_repo("pfwave", "['tests/unit/**/*.test.ts']", tasks=2)
+    cfg_path = os.path.join(root, ".claude", "audit.config.json")
+    with open(cfg_path) as fh:
+        cfg = json.load(fh)
+    cfg["executor"] = {"waveWidth": 2}
+    with open(cfg_path, "w") as fh:
+        json.dump(cfg, fh)
+    code, text = _next_wave(M, root, mpath)
+    check("pf5 the same stop holds at a wave width above 1: %r" % (text,),
+          instruction(text) == ("decide", "scope-gap", None)
+          and not _dispatched(text))
+
+
 def _wave_width_cases(check):
     """A width outside the vocabulary stops the drive by name; `auto` is read
     with its basis; an undeclared path is a decision, and `widen` declares it,
@@ -3033,7 +3114,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dr-block", "_refusal_cases"),
           ("nf-block", "_landing_cases"), ("bk-block", "_blocked_cases"),
           ("wv-block", "_wave_cases"), ("wr-block", "_wave_red_sibling_cases"),
           ("wc-block", "_wave_crash_cases"), ("w1-block", "_width_one_cases"),
-          ("wz-block", "_wave_width_cases"),
+          ("wz-block", "_wave_width_cases"), ("pf-block", "_preflight_cases"),
           ("tx-block", "_text_cases"), ("sb-block", "_stage_cases"))
 
 

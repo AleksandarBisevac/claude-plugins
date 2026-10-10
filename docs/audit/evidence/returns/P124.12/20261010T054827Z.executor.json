@@ -1,0 +1,27 @@
+{
+  "gates": {
+    "test_drive_phase": "pass",
+    "test_audit_lookup": "pass",
+    "test__refs": "pass",
+    "test__deps": "pass",
+    "measure-context --gate": "pass",
+    "ruff": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T05:54:38Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage pf-block` in a throwaway tree at HEAD exited 1 with failing cases pf1 (house FAIL), pf2 (house FAIL), pf3 (house FAIL), pf4 (house FAIL), pf5 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 0/5 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: scope_gap preflight asks _runner_collects.collects per tests.add path for the runner of the task's gate entries; definite NOT_COLLECTED returns decision scope-gap (widen|block) naming the runner config via _scope_companions.derive; COULD_NOT_TELL appends one did-line and the start goes on; skipped when the config is already in files. Called before start_task in drive_phase and drive_task, and for every picked task before open_wave. widen runs audit-task scope --files (existing + config) then the loop re-selects; pending_still_applies/answer_refusal handle the unstarted task. audit-lookup.py: WIDEN_RULE line in the executor brief Tests section when tests.add is non-empty. README followed row for step decide-scope-gap. PLUGIN-BUILD-GUIDE.md module-map fence updated for drive-phase's three new edges (outside declared files; test__deps g1 required it). Tests: pf1-pf5 in test_drive_phase.py (166/166, test_audit_lookup 79/79, test__refs 334/334, test__deps 307/307), measure-context --gate OK, ruff clean, vermin ok. Not run: full sweep.",
+    "descriptive": "A task whose declared test the runner will never collect now stops at decide scope-gap before any executor is spent, at width 1 and in waves."
+  },
+  "testsAdded": [
+    "pf1",
+    "pf2",
+    "pf3",
+    "pf4",
+    "pf5"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:0646cf82e7546501840ef9d7c3afe8ea0161a8e498ac9bd5372779a7ebaf9b82\",\"dirtyDigest\":\"sha256:29c1ed7bdb43cfdf085f76af2b5ae8755d80274d34ffac1205b6d8141c6cc649\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"d46c78feff3f20cc\",\"plugins/audit/README.md\":\"2e9acb89753614f0\",\"plugins/audit/scripts/governance/drive-phase.py\":\"327fda093c021144\",\"plugins/audit/scripts/status/audit-lookup.py\":\"ede5172e43c69205\",\"plugins/audit/tests/test_drive_phase.py\":\"41cab41d16a17b37\"},\"head\":\"ed493ab2\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/README.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:e5f41717b0df540b0a56d53e1713165f88b7298b8016acba391c5e4b21e65bd0\",\"v\":2}"
+}
