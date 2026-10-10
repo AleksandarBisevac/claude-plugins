@@ -31,7 +31,7 @@
     {
       "id": "P123.1",
       "title": "a missing plan is created by the first /audit:phase add, with no placeholder task",
-      "status": "in_progress",
+      "status": "done",
       "description": "F588: on a repo with no plan, /audit:phase add hits _under_lock's 'manifest not found -- run /audit:init first' (exit 2), and the model went into the plugin's source, found seed, created the plan, retargeted the seeded phase, cancelled seed's placeholder and added tasks: 16 turns, 0.83 USD to plan two tasks. F589: _locked_seed hardcodes P1 with a placeholder task P1.1. Make add-phase and the batch add (add --from-file) seed a missing plan themselves (seed's meta, the requested phase as the first phase, no placeholder), and give seed a --no-task form; the missing-manifest refusal stays for the task verbs that need an existing phase. Mind fb10 (phase.md's add section is pinned to at most 8000 bytes and to its heredoc) and test__refs' flag/hint parity. Say it in phase.md, init.md, verbs-in-full.md, README.md's /audit:init and /audit:phase rows, and QUICKSTART.md's cheaper-first-step paragraph.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -67,25 +67,42 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7f5984379554",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py: _under_lock gained create=True (used by cmd_phase_add and _cmd_batch_add); on a missing plan _create_then writes an empty plan from _seed_meta, runs the body, removes the file unless the body returned 0. seed gained --no-task (VERB_FLAGS, parser, _locked_seed). Task verbs still refuse a missing plan. Docs: phase.md (kept the run form at exactly the 4000 ceiling, one short line), init.md, verbs-in-full.md, README.md two rows, QUICKSTART.md. New stage fp-block with fp1-fp6 in test_audit_task.py. Full test_audit_task selftest was 950/951 only because of fb15 (the measure-context ceiling), which I fixed; fb-block+fp-block rerun 22/22; test__refs 334/334; the full selftest was not rerun after the fix.",
+        "descriptive": "A first phase on a repo with no plan is created in one verb call with no placeholder task; seed gets --no-task."
       },
       "startedAt": "2026-10-10T08:12:45Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T08:28:15Z",
+      "verifiedBy": [
+        "fp1",
+        "fp2",
+        "fp3",
+        "fp4",
+        "fp5",
+        "fp6"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T08:28:13Z.f3cb2e",
         "status": "passed",
         "at": "2026-10-10T08:28:13Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "7f5984379554",
+        "at": "2026-10-10T08:28:15Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T08:20:14Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage fp-block` in a throwaway tree at HEAD exited 1 with failing cases fp1 (house FAIL), fp2 (house FAIL), fp6 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 3/6 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
       "id": "P123.2",
       "title": "a drive that stops releases the phase lock it took",
-      "status": "in_progress",
+      "status": "blocked",
       "description": "F591: drive-phase.drive calls take_lock first; when audit-task start (or done, record_gate, commit_signoff, land) exits non-zero, drive_task and drive_phase return the stop directly and the lock is released only in finish/finish_task, reached only on done. So any stop after take_lock strands phase-<id>, which status later reads as abandoned. Release on every stop path that this invocation took the lock on (one exit point, not one release per arm), and give an index-lock exit 3 from audit-task its own followed rule instead of the generic 'stopped'. Keep STEPS in step with the README's followed table if a rule is added (_refs.followed_anchor_drift). Update orchestrator.md's concurrency-lock release rule.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -125,7 +142,8 @@
       "startedAt": "2026-10-10T08:12:48Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "blockedReason": "F619: the wave submit reads the task tree's stale plan; running it from the project dir instead was denied by the auto-mode classifier as a bypass, rightly. Work is done and kept in the task tree; unblock after P123.39 (the F619 fix) lands and the executor files from its own tree."
     },
     {
       "id": "P123.3",
