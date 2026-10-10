@@ -161,6 +161,7 @@ claude-plugins/                           # this repo (personal, public)
           _runner_output.py               # every reading of what a test runner printed: its summary line (how many checks ran) and the lines naming a failing check
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs; the one POSIX sh (and its PATH) every plan command runs under, or a refusal - never cmd.exe
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
+          _wave.py                        # which ready tasks may run together (declared files provably disjoint; an empty declaration runs alone) and what an overlap between two is - mergeable, or a lockfile that is not
           _verdict_binding.py             # the ONE rule for whether a recorded gate verdict binds the declared work now - a task commit's, a sign-off's, and whether `done` or close-phase may close over the newest verdict (one that no longer holds refuses)
           stamp-verification.py           # the CLI over it: take a stamp, or grade one - current / stale (naming the field) / unestablished; `red` proves a red-first in a throwaway tree
           derive-phase-gate.py            # observes a phase's version answer, its two importer listings, changed/red-suite paths and the plan gate's exempt verdict, hands them to _gate_derive.derive, and records phase.testGateDerived (+ testGate in enforce mode) under the index lock
@@ -344,6 +345,7 @@ L3:
   _usage_routing -> _manifest_io, _output, _usage_core
   _usage_spend -> _output, _usage_core
   _warning_groups -> _fmt, _manifest_io, _output
+  _wave -> _output, _task_outputs
 
 L4:
   _ado_fetch -> _ado_drift, _output
@@ -4338,6 +4340,21 @@ off or the row will not write. The digest reads
 the declared files' content and nothing wider: a gate row records no content digest of undeclared
 paths, which is the stamp's `content` field alone. Its cases are
 `plugins/audit/tests/test__verdict_binding.py`.
+
+### `plugins/audit/scripts/governance/_wave.py`
+Which ready tasks may run together, and what an overlap between two is.
+
+Pure functions over task dicts (`id`, `files`), so the driver's wave step, the integration step and
+the tests ask one rule. `select(tasks, width)` takes the ready tasks in the order the caller wants
+them run and adds each one that fits the width and whose declared files are disjoint from those
+already chosen; it returns the wave and, for every task left out, why (`width`, `overlap` with whom,
+or `undeclared`). **A task declaring no files runs alone**: the declaration is the only proof of
+disjointness, and none was given. A width that is not an integer of at least 1 is a `ValueError`,
+because `"auto"` is the caller's to resolve and a zero must not read as "run nothing, successfully".
+`overlap(a, b)` is `None` or a record naming both tasks, the paths both reach and whether the
+overlap is mergeable; a lockfile among them (`is_non_mergeable`) makes it refused whatever else is
+shared. Whether two paths touch is `_task_outputs.covers` and nowhere here. Its cases are
+`plugins/audit/tests/test__wave.py`.
 
 ### `plugins/audit/scripts/governance/_tree_stamp.py`
 Which tree was this, and is it still that one.

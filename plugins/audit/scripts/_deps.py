@@ -359,6 +359,13 @@ LAYERS = (
      # point reaching another entry point is the KNOWN_LAYER_DEBT shape this
      # table exists to keep rare. Both consumers are L7.
      "_tree_stamp",
+     # `_wave` answers "which ready tasks may run together, and what is an
+     # overlap between two" - pure functions over task dicts. It sits
+     # above `_task_outputs` (L2) only because it reads `_task_outputs.covers`, the one rule
+     # for a declared path, instead of spelling a second one; a same-layer edge
+     # is not a downward edge. Its consumers are the driver and the integration
+     # step, both at L7.
+     "_wave",
      # `_status_facts` is `audit-status.py`'s machine-readable half: the rollup,
      # readiness, the submodule preflight and the gate. Same reasoning and the same
      # floor - `_manifest_io`/`_areas` at L1 below it, `_panel_state` at L5 above it.

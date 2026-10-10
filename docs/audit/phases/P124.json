@@ -1,7 +1,7 @@
 {
   "id": "P124",
   "title": "A phase runs its ready tasks as waves, and task scopes carry their companions",
-  "status": "pending",
+  "status": "in_progress",
   "description": "F600 (high) and F599 (med) from the danuvia testbed. Design, prior art, roles and decisions: quality-gates-internal plans/2026-10-09-f600-f599-waves-design.md (D1 unset width = 1 and init writes auto; D3 re-gate only on path overlap; D7 the plan-gate binding is agent-written).",
   "desiredOutcome": "A phase runs its ready disjoint tasks concurrently, each gated in its own worktree and integrated serially onto the phase tree with conflicting or undeclared overlaps refused by name, width 1 reproduces 3.2.0 exactly, and a task's scope carries the dependency, locale and runner-config files its change cannot avoid.",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "cdb30bd66ee41ff8b81e194d6bd063860d157ebf",
+  "branch": "audit/p124-a-phase-runs-its-ready-tasks-a",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,7 +29,7 @@
     {
       "id": "P124.1",
       "title": "wave selection and overlap classification are pure functions over the plan",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F600 design A1 (quality-gates-internal plans/2026-10-09-f600-f599-waves-design.md, section 4.1 step 1). select(tasks, width) and overlap(a, b) over task dicts, through _task_outputs.covers; lockfiles are non-mergeable. The caller passes ready tasks in id order.",
       "files": [
         "plugins/audit/scripts/governance/_wave.py",
@@ -61,16 +61,22 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T02:33:59Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T02:52:30Z.37b81c",
+        "status": "passed",
+        "at": "2026-10-10T02:52:30Z"
+      }
     },
     {
       "id": "P124.2",
@@ -618,5 +624,12 @@
     }
   ],
   "request": "F600 + F599 (owner-mandated, testbed): tasks inside a phase run concurrently in their own worktrees, gated there and integrated serially; task scopes carry their unavoidable companions. One phase per the user (fewer review rounds).",
-  "openChoices": []
+  "openChoices": [],
+  "reviewPerTask": "phase",
+  "claim": {
+    "sessionId": "0a7c2fcc-df20-4990-96d6-d56b52648faf",
+    "branch": "audit/p124-a-phase-runs-its-ready-tasks-a",
+    "at": "2026-10-10T02:33:59Z"
+  },
+  "startedAt": "2026-10-10T02:33:59Z"
 }
