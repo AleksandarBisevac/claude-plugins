@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "test__wave": "pass",
+    "test__deps": "pass",
+    "test__output": "pass",
+    "ruff": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T02:36:08Z",
+    "basis": "`python3 plugins/audit/tests/test__wave.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: ModuleNotFoundError: No module named '_wave'; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "Reviewed the already-applied diff (_wave.py select/overlap/is_non_mergeable via _task_outputs.covers, test__wave w1-w7c, _deps LAYERS entry, guide tree line/section, test__output lists). Since P122 _wave renders at L3 (below _task_outputs L2), so I corrected the stale LAYERS comment that said L2/L1, and regenerated the guide module-map fence from _deps.py --render (now includes '_wave -> _output, _task_outputs' under L3 and _machine_paths at L1). Ran: test__wave --selftest 14/14, test__deps 307/307, test__output 225/225 (all pass), ruff check plugins/audit tools exit 0. Full sweep/vermin not run (own-tests reading).",
+    "descriptive": "Wave selection and overlap classification are pure, tested functions; layer table and guide map current."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__wave.py w1-w7c"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:74396af3c9d7a57e5d74d3326132f8a021d6015160c4e4688d40b47a2de4dd6b\",\"dirtyDigest\":\"sha256:32c4f168fc2871d712c7e8bd7f2bf3aab3a6e705e36ed1704541af53b6d8aa2f\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"583740956123635b\",\"plugins/audit/scripts/_deps.py\":\"0c9b5892e16bee28\",\"plugins/audit/scripts/governance/_wave.py\":\"2e8916db6713872f\",\"plugins/audit/tests/test__output.py\":\"11ef13d4b752c92d\",\"plugins/audit/tests/test__wave.py\":\"9cf55969a1924687\"},\"head\":\"cdb30bd6\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/_deps.py\",\"plugins/audit/scripts/governance/_wave.py\",\"plugins/audit/tests/test__output.py\",\"plugins/audit/tests/test__wave.py\"],\"scopeDigest\":\"sha256:7428690517a3fdd82413e7687bc14b3fd538a8e94251cfefd33c12a39c73f022\",\"v\":2}"
+}
