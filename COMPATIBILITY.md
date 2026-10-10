@@ -406,6 +406,14 @@ is still true of a nested key.
   the filed-return rule in *closing against a commit with no review behind it* below, and
   `start`, `done` and `signoff` refuse a `review.perTask` value outside the vocabulary
   wherever neither the task nor its phase records a key.
+
+  **`executor.waveWidth`, `executor.worktreeSetup` and `executor.worktreeRoot` keep it.**
+  An absent `waveWidth` means 1 — one task at a time in the phase tree, the drive every
+  config ran before the key existed, with no worktree made and no new journal row
+  written — and an absent `worktreeSetup` or `worktreeRoot` is read only once a wave
+  runs. `/audit:init` writes `"waveWidth": "auto"` into a config it *creates*, and never
+  into one that already exists, so waves are new behaviour only for a project set up
+  from this release on.
 - **When two keys can express the same thing, which one wins is written down.**
   `planGate` beats `enforce`, and that precedence does not change without a major
   release. A superseded key is kept and documented, never silently reinterpreted.

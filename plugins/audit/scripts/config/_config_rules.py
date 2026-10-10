@@ -89,7 +89,11 @@ PORTABILITY_MODES = ("strict", "warn", "off")
 # Mirror of hooks/_config.py RUNS_GATE_MODES (that module stays the source of
 # truth for `executor_gate_policy`); the selftest below pins the two together,
 # the same shape PLAN_GATE_MODES above mirrors PLAN_GATE_TIERS.
-KNOWN_EXECUTOR = {"runsGate", "maxHours"}
+KNOWN_EXECUTOR = {"runsGate", "maxHours", "waveWidth", "worktreeSetup",
+                  "worktreeRoot"}
+# The one word `executor.waveWidth` takes besides a whole number: as many tasks
+# at once as the machine has cores less two, resolved by the driver.
+WAVE_WIDTH_AUTO = "auto"
 RUNS_GATE_MODES = ("never", "own-tests", "full")
 # Mirror of hooks/_config.py REVIEW_PER_TASK_MODES, pinned the same way: where a
 # task's three review answers are given - by a reviewer per task, by the phase
@@ -123,6 +127,31 @@ def review_per_task_mode(config, defaults=None):
     return None, ("review.perTask is %r, not one of %s - fix the config "
                   "(/audit:doctor names it); it is not read as the default"
                   % (mode, ", ".join(REVIEW_PER_TASK_MODES)))
+
+
+def _valid_wave_width(value):
+    """A whole number of at least 1 - never a bool, which Python counts as one
+    - or the word `auto`."""
+    if value == WAVE_WIDTH_AUTO and isinstance(value, str):
+        return True
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 1
+
+
+def wave_width_setting(config):
+    """`(value, problem)` - `executor.waveWidth` as `config` sets it: an int of
+    at least 1, `"auto"`, or 1 when the key is absent, which is the one task at
+    a time every config ran before the key existed. `(None, problem)` for any
+    other value: a width of 0 would read as "run nothing, successfully", so it
+    is refused rather than read as the default."""
+    block = (config or {}).get("executor")
+    if not isinstance(block, dict) or "waveWidth" not in block:
+        return 1, None
+    value = block["waveWidth"]
+    if _valid_wave_width(value):
+        return value, None
+    return None, ("executor.waveWidth is %r, not a whole number of at least 1 "
+                  "or %r - fix the config (/audit:doctor names it); it is not "
+                  "read as the default" % (value, WAVE_WIDTH_AUTO))
 
 
 def portability_mode(config, defaults=None):
@@ -503,6 +532,17 @@ def _check_executor(executor, findings, warnings):
                             "value outside this vocabulary is refused rather "
                             "than read as the default, the same shape "
                             "executor.runsGate uses above")
+    if "waveWidth" in executor and not _valid_wave_width(executor["waveWidth"]):
+        findings.append("executor.waveWidth must be a whole number of at least 1 "
+                        "or %r - a width of 0 would read as a drive that runs "
+                        "nothing, successfully" % (WAVE_WIDTH_AUTO,))
+    for key in ("worktreeSetup", "worktreeRoot"):
+        if key in executor and not (isinstance(executor[key], str)
+                                    and executor[key].strip()):
+            findings.append("executor.%s must be a non-empty string - leave the "
+                            "key out for %s" % (key, "no setup command"
+                                                 if key == "worktreeSetup" else
+                                                 "the directory above the git root"))
 
 
 def _check_review(review, findings, warnings):

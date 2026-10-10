@@ -650,6 +650,14 @@ which layout was written and why the question was not worth asking yet.
    shards atomically, then re-validates the result and restores the backup on any failure. If it
    refuses, the single file you just wrote is what stays on disk — report the refusal and the
    layout the user actually has, never the layout they asked for.
+5. **If `.claude/audit.config.json` does not exist, create it with
+   `{"executor": {"waveWidth": "auto"}}`** (plus `manifestPath`/`gitRoot` when step 3 decided
+   them), so a new project runs ready tasks with disjoint files as waves — each in a worktree of
+   its own, the core count less two at a time. **A config that already exists is left as it is:**
+   an absent `waveWidth` means one task at a time, and writing the key into a config the user
+   already has would change what their runs do. Then run
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/config/validate-config.py" .claude/audit.config.json`
+   and say in the report that waves are on and that `"waveWidth": 1` turns them off.
 
 ## 8. Report
 

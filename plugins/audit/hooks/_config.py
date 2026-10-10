@@ -122,6 +122,15 @@ Config keys (all optional; defaults in DEFAULTS below):
         uses for its own key and for the same reason — zero, negative or
         garbled is a mistake nobody meant, and folding it into the default
         would make the mistake look like a decision.
+  executor.waveWidth     int|"auto" — how many ready tasks with disjoint
+        declared files the phase driver runs at once, each in a worktree of its
+        own. 1 (the default) is one task at a time in the phase tree; "auto" is
+        the core count less two, at least 1. Anything else is REFUSED by the
+        driver rather than read as 1. No hook reads it.
+  executor.worktreeSetup str   — a command run in each new task worktree;
+        unset means none. No hook reads it.
+  executor.worktreeRoot  str   — where task worktrees are created; unset means
+        the directory above the git root. No hook reads it.
   review.perTask          str   — where a task's three review answers are
         given. One of REVIEW_PER_TASK_MODES: "phase" (the default — no
         reviewer per task; `done` records the intent as `deferred` and the
@@ -338,7 +347,12 @@ DEFAULTS = {
     # "maxHours" bounds continuing the SAME agent across tasks, never a single
     # task's own runtime — see executor_context_bound_hours below and the
     # "executor.maxHours" entry above for why 3.
-    "executor": {"runsGate": "own-tests", "maxHours": 3},
+    #
+    # "waveWidth" 1 is one task at a time in the phase tree, the drive every
+    # config ran before the key existed; "worktreeSetup" and "worktreeRoot" ship
+    # unset (no setup command; the directory above the git root), so an absent
+    # key changes nothing.
+    "executor": {"runsGate": "own-tests", "maxHours": 3, "waveWidth": 1},
     # Where a task's three review answers - the intent binding, the red-first
     # grade, the inherited-test question - are given: "phase" (shipped) carries
     # them to the phase review at sign-off, "always" spawns a reviewer per task,

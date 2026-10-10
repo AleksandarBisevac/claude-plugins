@@ -49,6 +49,15 @@ def _cases(check):
               "findings and returned 0 would still look right",
               M.main([path]) == 1)
         with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"executor": {"waveWidth": 0}}, fh)
+        check("cc1w a config whose executor.waveWidth is 0 exits 1: a width of "
+              "nothing is a finding, never a drive that runs no task",
+              M.main([path]) == 1)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"executor": {"waveWidth": "auto"}}, fh)
+        check("cc1a a config whose executor.waveWidth is 'auto' exits 0",
+              M.main([path]) == 0)
+        with open(path, "w", encoding="utf-8") as fh:
             fh.write("{not json")
         check("cc2 an unparseable file exits 2, not 1: it is a usage failure, "
               "not an invalid config", M.main([path]) == 2)

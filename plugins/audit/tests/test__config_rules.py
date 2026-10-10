@@ -338,6 +338,27 @@ def _cases(check):
           "regression runsGate's KNOWN_EXECUTOR entry already guards: %r"
           % (w,),
           not w)
+    # --- executor.waveWidth, worktreeSetup, worktreeRoot ------------------------
+    # How many ready disjoint tasks the driver runs at once, and where their trees
+    # live and how they are set up. An absent width is 1, today's drive; a width
+    # of 0 would read as "run nothing, successfully", so it is refused by name.
+    for _w in (1, 2, 16, "auto"):
+        f, w = M.validate_config({"executor": {"waveWidth": _w}})
+        check("ww1 executor.waveWidth %r validates clean and is a known key: %r"
+              % (_w, (f, w)), not f and not w)
+    for _bad in (0, -1, 1.5, "2", "AUTO", True, None, [2]):
+        f, w = M.validate_config({"executor": {"waveWidth": _bad}})
+        check("ww2 executor.waveWidth %r is a FINDING, not a silent width: %r"
+              % (_bad, f), any("executor.waveWidth" in x for x in f))
+    f, w = M.validate_config({"executor": {"worktreeSetup": "npm ci",
+                                           "worktreeRoot": "../trees"}})
+    check("ww3 executor.worktreeSetup and worktreeRoot as non-empty strings "
+          "validate clean and are known keys: %r" % ((f, w),), not f and not w)
+    for _key in ("worktreeSetup", "worktreeRoot"):
+        for _bad in ("", "  ", 3, ["npm ci"]):
+            f, w = M.validate_config({"executor": {_key: _bad}})
+            check("ww4 executor.%s %r is a FINDING: %r" % (_key, _bad, f),
+                  any("executor.%s" % (_key,) in x for x in f))
     f, w = M.validate_config({"journal": {"strictManifestState": "ask"}})
     check("journal.strictManifestState 'ask' is a legal, known key",
           not f and not w)

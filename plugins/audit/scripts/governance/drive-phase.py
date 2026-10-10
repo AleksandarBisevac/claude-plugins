@@ -69,10 +69,25 @@ driver recorded rather than making its own, which is why a task takes four
 requests and not three: the gate cannot be folded into the reviewer's dispatch
 without the reviewer being briefed before the measurement it is handed exists.
 
-ONE TASK AT A TIME, IN ID ORDER, EVEN WHEN SEVERAL ARE READY. A recorded gate run
-while sibling executors edit the same tree measures their half-finished work, and
-a gate that must not overlap another run is the half of a wave that cannot be
-parallel; `next_task` is the one place that choice is made.
+ONE TASK AT A TIME IN THE PHASE TREE, IN ID ORDER. A recorded gate run while
+sibling executors edit the same tree measures their half-finished work, so two
+tasks never share it; `next_task` is the one place the serial choice is made.
+
+SEVERAL AT ONCE ONLY IN TREES OF THEIR OWN - A WAVE. `executor.waveWidth` above 1
+(an int, or `auto`: the core count less two) lets `next` open a wave when no task
+is in progress and `_wave.select` picks two or more ready tasks with disjoint
+declared files. Each member is started and given a detached worktree at the
+phase HEAD (`manage-worktrees.py task-add`), and one print dispatches every
+member's executor together. Each `next` walks the members in id order through
+the same `advance`, with the gate measured in the member's tree (`run-test-gate.py
+--tree`) and its stamp graded there; before the close, `integrate-task.py`
+carries the tree's bytes into the phase tree, a re-gate runs on the phase tree
+when the integration overlapped a sibling or cannot say, and the close is the
+serial one. A member's decision is parked while a sibling still has a step due,
+so a red sibling holds back no green one. A closed member's tree is taken down
+when it holds nothing the phase tree lacks; when every member is terminal or
+blocked the wave ends and the next is selected. An absent width, or 1, never
+reaches any of this: the drive is the serial one, row for row.
 
 WHAT THE DRIVER KEEPS: one file per phase under `stateDir/drive/`, holding what no
 verb records - which brief it handed to an agent for which start, whether it
@@ -190,6 +205,7 @@ import _areas  # noqa: E402  (resolve_review_skill: whether the phase review has
 import _status_facts  # noqa: E402  (ready_tasks: the one readiness rule)
 import _verdict_binding as _vb  # noqa: E402  (phase_binding: whether a held phase
 #                                              gate run is still the one sign-off binds)
+import _wave  # noqa: E402  (select: which ready tasks may run together)
 
 E_OK, E_STOPPED, E_USAGE = 0, 1, 2
 PREFIX = "[drive-phase]"
@@ -230,6 +246,9 @@ RELEASED = "lock released"
 # is here with a rule that is not empty. A rule printed on a success step costs
 # bytes inside `INSTRUCTION_BYTES` on every task, so each is one short line.
 DISPATCH_RULE = "Description starts with the id; dispatch nothing alongside."
+# A wave's dispatches are one print, one line per member: sent together, each
+# member works in its own tree, and the next `next` reads every return.
+WAVE_RULE = "dispatch these together in one message; then next"
 UNBLOCK_RULE = ("A blocked task moves only on a human's yes, then next again; "
                 "each task's remedy is named above.")
 # The remedy line under a blocked stop, one entry per blocked task, rendered by
@@ -257,6 +276,18 @@ STEPS = {
     "dispatch-reviewer": {
         "line": "dispatch %(agent)s %(task)s model=%(model)s brief=%(brief)s",
         "rule": (DISPATCH_RULE,)},
+    "dispatch-wave": {
+        "line": "dispatch %(agent)s %(task)s model=%(model)s brief=%(brief)s",
+        "rule": (WAVE_RULE,)},
+    "decide-integration-refused": {
+        "line": "decide integration-refused %(task)s: %(why)s",
+        "rule": ("retry recuts its tree at the phase HEAD and spends an attempt; "
+                 "block keeps the tree and tells the human.",)},
+    "decide-undeclared-change": {
+        "line": "decide undeclared-change %(task)s: changed outside its files: "
+                "%(why)s",
+        "rule": ("widen declares them and re-gates; discard drops them; block "
+                 "keeps the tree. Never drop one silently.",)},
     "decide-gate-red": {
         "line": "decide gate-red %(task)s: recorded gate red (%(why)s)",
         "rule": ("rerun spends no attempt (GATE COULD NOT RUN); retry spends "
@@ -358,6 +389,11 @@ DECISIONS = {
     "no-reviewer-return": (("redispatch", "not-asked"), ("not-asked",)),
     "high-risk": (("confirm", "block"), ("block",)),
     "no-change": (("no-change", "retry"), ("no-change",)),
+    # A wave member's integration onto the phase tree: refused by name (a
+    # conflict, a lockfile, a dirty phase tree), or owed a word on paths the
+    # task changed and never declared.
+    "integration-refused": (("retry", "block"), ("block",)),
+    "undeclared-change": (("widen", "discard", "block"), ("block",)),
     "review-answer": (("continue",), ("continue",)),
     "stalled": ((), ()),
     # `accept` settles the reviewer answers a human decides and `decline` is
@@ -678,11 +714,13 @@ def project_relative(ctx, path):
     return path if rel.startswith("..") else rel.replace(os.sep, "/")
 
 
-def record_gate(ctx, phase, task):
-    """`(code, stdout, stderr)` of the task's recorded gate run."""
+def record_gate(ctx, phase, task, tree=None):
+    """`(code, stdout, stderr)` of the task's recorded gate run - measured in
+    `tree` when the task runs in a tree of its own, and recorded in the
+    project's ledger either way."""
     return run_verb(ctx, "run-test-gate.py", [
         ctx["manifest"], phase["id"], "--task", task["id"], "--record",
-        "--project-dir", ctx["project"]])
+        "--project-dir", ctx["project"]] + (["--tree", tree] if tree else []))
 
 
 def moved_fields(result):
@@ -699,13 +737,15 @@ def moved_fields(result):
     return moved
 
 
-def grade_stamp(ctx, stamp):
-    """The did-line clause for the executor's stamp, graded against the tree now:
-    current, stale with the fields that moved, or why it could not be graded."""
+def grade_stamp(ctx, stamp, tree=None):
+    """The did-line clause for the executor's stamp, graded against the tree it
+    was taken in as it stands now - the task's own tree in a wave, else the
+    phase tree: current, stale with the fields that moved, or why it could not
+    be graded."""
     if not isinstance(stamp, str) or not stamp.strip():
         return "stamp not graded (the return carries none)"
     code, out, err = run_verb(ctx, "stamp-verification.py", [
-        "compare", "--project", ctx["gitRoot"], "--stamp", stamp, "--json"])
+        "compare", "--project", tree or ctx["gitRoot"], "--stamp", stamp, "--json"])
     try:
         result = json.loads(out)
     except ValueError:
@@ -768,9 +808,11 @@ def close_task(ctx, state, phase, task, intent_basis=None):
     return None
 
 
-def advance(ctx, state, manifest, phase, task):
+def advance(ctx, state, manifest, phase, task, tree=None):
     """The next due step for the task the drive is on; None when the drive goes
-    on to the next task, else what to print."""
+    on to the next task, else what to print. `tree` is the task's own worktree
+    when it runs in a wave: its gate is measured there, its stamp graded there,
+    and its bytes are integrated into the phase tree before the close."""
     executor, problem = filed(ctx, task, "executor")
     if problem:
         return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], problem)
@@ -793,7 +835,8 @@ def advance(ctx, state, manifest, phase, task):
     # whatever the key: a task whose review is carried to the phase still owes
     # the measurement its close and its commit are bound to.
     if (reviewer is None or not due) and not _marked(state, "gated", task):
-        code, out, err = record_gate(ctx, phase, task)
+        code, out, err = (record_gate(ctx, phase, task, tree=tree) if tree
+                          else record_gate(ctx, phase, task))
         if code == 1:
             said = [ln for ln in (out + err).splitlines() if "GATE" in ln]
             return decision(ctx, state, "gate-red", task,
@@ -805,7 +848,8 @@ def advance(ctx, state, manifest, phase, task):
         banners = gate_banners(out + err)
         ctx["did"].append("gate %s green%s" % (task["id"], " (%s)" % (
             "; ".join(banners),) if banners else ""))
-        ctx["did"].append(grade_stamp(ctx, executor.get("stamp")))
+        ctx["did"].append(grade_stamp(ctx, executor.get("stamp"), tree)
+                          if tree else grade_stamp(ctx, executor.get("stamp")))
     if due and reviewer is None:
         return dispatch(ctx, state, phase, task, "reviewer")
     if task.get("risk") == "high" and not _marked(state, "confirmed", task):
@@ -814,6 +858,10 @@ def advance(ctx, state, manifest, phase, task):
         _mark(state, "confirmed", task)
         write_state(ctx, state)
         ctx["did"].append("high-risk %s confirmed in advance" % (task["id"],))
+    if tree:
+        said = integrate_member(ctx, state, phase, task)
+        if said is not None:
+            return said
     if key == "signals" and not due:
         return close_task(ctx, state, phase, task, intent_basis=(
             "review.perTask signals: no signal fired - red-first proved and the "
@@ -864,6 +912,418 @@ def confirmed_in_advance(ctx, phase_id):
             else [i.strip() for i in ids.split(",")]
         covered.update(i for i in (ids[:-1] if clipped else ids) if i)
     return covered
+
+
+# --- waves: ready disjoint tasks, each in a tree of its own ---------------------
+# The journal actions a wave writes. Free strings, as every action is; the `wv`
+# cases pin the sequence one wave writes.
+WAVE_START, WAVE_DONE = "wave.start", "wave.done"
+TASK_WORKTREE = "task.worktree"
+TASK_INTEGRATED, TASK_INTEGRATION_REFUSED = "task.integrated", "task.integration.refused"
+# `integrate-task.py`'s exit codes and its state file's name. An entry point may
+# not import another, so they are mirrored here; the `wv`/`wc` cases drive the
+# real verb, which is what goes red if either drifts.
+INTEGRATE_REFUSED, INTEGRATE_DECIDE = 1, 3
+INTEGRATION_STATE = "audit-wave-integration.json"
+# `manage-worktrees.py task-add`'s exit when the tree was made and its declared
+# setup failed in it: could-not-run, never a red.
+SETUP_FAILED = 6
+# Returned by `wave_step` when no wave applies, so the serial step runs; None
+# already means "a step was taken, go round again".
+NO_WAVE = object()
+
+
+def wave_width(config):
+    """`(width, basis, problem)` - how many tasks run at once, and the words
+    that say why: `executor.waveWidth` as `_config_rules.wave_width_setting`
+    reads it, with `auto` resolved to the core count less two (at least 1). A
+    value outside the vocabulary is `(None, None, problem)`, never 1."""
+    value, problem = _config_rules.wave_width_setting(config)
+    if problem:
+        return None, None, problem
+    executor = (config or {}).get("executor")
+    if value != _config_rules.WAVE_WIDTH_AUTO:
+        said = ("executor.waveWidth %d" % (value,)
+                if isinstance(executor, dict) and "waveWidth" in executor
+                else "executor.waveWidth absent, so 1")
+        return value, said, None
+    cores = os.cpu_count()
+    if not cores:
+        return 1, "auto: the core count is unknown, so 1", None
+    return max(1, cores - 2), "auto: %d cores less two" % (cores,), None
+
+
+def _id_key(task_id):
+    """A task id in natural order: `P1.10` after `P1.9`, not after `P1.1`."""
+    return [(0, int(part), "") if part.isdigit() else (1, 0, part)
+            for part in re.split(r"[.]", str(task_id))]
+
+
+def wave_row(ctx, action, summary, details):
+    """One journal row for a wave step, written the way a plugin script run
+    from Bash writes one. A row the journal would not take is said on the
+    did-line rather than dropped."""
+    entry = {"action": action, "summary": summary, "details": details,
+             "target": _output.posix_rel(ctx["manifest"], ctx["project"]),
+             "actor": {"sessionId": os.environ.get("CLAUDE_CODE_SESSION_ID"),
+                       "via": "cli"}}
+    written, why = _journal_io.append_from_cli_why(ctx["project"], entry)
+    if not written:
+        ctx["did"].append("journal row %s not written (%s)" % (action, why))
+
+
+def tree_path(ctx, task_id):
+    """`--path` for a task's tree when `executor.worktreeRoot` names a root -
+    `<root>/<repo>-<taskId>`, a relative root read from the git root - else None,
+    and `task-add` places it beside the git root."""
+    root = ((ctx["config"] or {}).get("executor") or {}).get("worktreeRoot")
+    if not isinstance(root, str) or not root.strip():
+        return None
+    root = os.path.abspath(os.path.join(ctx["gitRoot"], root))
+    safe = re.sub(r"[^A-Za-z0-9._-]", "-", str(task_id)).strip(".-") or "task"
+    return os.path.join(root, "%s-%s" % (os.path.basename(ctx["gitRoot"]), safe))
+
+
+def add_tree(ctx, state, task):
+    """`(path, None)` - the task's tree, made detached at the wave's base and
+    recorded - or `(None, stop)`."""
+    wave = state["wave"]
+    args = ["task-add", ctx["manifest"], task["id"], "--base", wave["base"],
+            "--project", ctx["project"], "--json"]
+    where = tree_path(ctx, task["id"])
+    if where:
+        args += ["--path", where]
+    code, out, err = run_verb(ctx, "manage-worktrees.py", args)
+    try:
+        made = json.loads(out)
+    except ValueError:
+        made = {}
+    path = made.get("path") if isinstance(made, dict) else None
+    if code == SETUP_FAILED and path:
+        wave["trees"][task["id"]] = path
+        write_state(ctx, state)
+        return None, _stopped(ctx, "the tree of %s was made, and its setup did "
+                              "not complete - could not run, not red, and no "
+                              "attempt is spent: %s" % (
+                                  task["id"], _clip(made.get("error") or "", 200)))
+    if code != 0 or not path:
+        return None, relay_refusal(ctx, "manage-worktrees.py", code, out + err)
+    wave["trees"][task["id"]] = path
+    write_state(ctx, state)
+    setup = (made.get("setup") or {}).get("status") or "none"
+    wave_row(ctx, TASK_WORKTREE, "%s: a worktree of its own at %s (setup %s)" % (
+        task["id"], wave["base"][:12], setup), {
+            "taskId": task["id"], "phaseId": ctx["phase"], "commit": wave["base"],
+            "mode": "setup %s" % (setup,)})
+    ctx["did"].append("tree for %s" % (task["id"],))
+    return path, None
+
+
+def reopen_integration(ctx, task_id):
+    """Let `integrate-task.py` carry a task's tree again after a new start: its
+    state calls (task, base) done once, so the entry is marked reopened. The
+    paths stay, so the bytes the last integration placed are still read as
+    this task's, not as a stray change in the phase tree."""
+    try:
+        done = subprocess.run(["git", "-C", ctx["gitRoot"], "rev-parse",
+                               "--git-path", INTEGRATION_STATE],
+                              capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return
+    rel = done.stdout.strip()
+    path = rel if os.path.isabs(rel) else os.path.join(ctx["gitRoot"], rel)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            body = json.load(fh)
+    except (OSError, ValueError):
+        return
+    entry = ((body.get("tasks") if isinstance(body, dict) else None) or {}).get(task_id)
+    if not isinstance(entry, dict) or entry.get("status") != "done":
+        return
+    entry["status"] = "reopened"
+    _mio.atomic_write_text(path, json.dumps(body, indent=2, sort_keys=True) + "\n")
+
+
+def integrate_member(ctx, state, phase, task):
+    """Carry a wave member's tree into the phase tree once per start, and
+    re-gate on the phase tree where the integration overlapped a sibling or
+    cannot say whether it did. None when the close may run, else the decision
+    or the stop."""
+    held = _marked(state, "integrated", task)
+    if held is None:
+        prior = (state.get("integrated") or {}).get(task["id"])
+        if prior:
+            reopen_integration(ctx, task["id"])
+        word = _marked(state, "undeclared", task) or {}
+        if word.get("answer") == "widen":
+            files = list(task.get("files") or [])
+            files += [p for p in word.get("paths") or [] if p not in files]
+            _out, stop = _verb_or_stop(ctx, "audit-task.py", _task_args(
+                ctx, "scope", task["id"], "--files", ",".join(files)))
+            if stop is not None:
+                return stop
+            ctx["did"].append("%s widened by %d path(s)" % (
+                task["id"], len(word.get("paths") or [])))
+        args = [ctx["manifest"], task["id"], "--project", ctx["project"], "--json"]
+        if word.get("answer"):
+            args += ["--undeclared", word["answer"]]
+        code, out, err = run_verb(ctx, "integrate-task.py", args)
+        try:
+            answer = json.loads(out)
+        except ValueError:
+            answer = None
+        if not isinstance(answer, dict):
+            return relay_refusal(ctx, "integrate-task.py", code, out + err)
+        if code == INTEGRATE_DECIDE:
+            paths = (answer.get("decision") or {}).get("paths") or []
+            return decision(ctx, state, "undeclared-change", task,
+                            _clip(", ".join(paths), 120), extra={"paths": paths})
+        if code == INTEGRATE_REFUSED:
+            refused = answer.get("refused") or {}
+            wave_row(ctx, TASK_INTEGRATION_REFUSED, "%s: integration refused "
+                     "(%s): %s" % (task["id"], refused.get("kind"),
+                                   ", ".join(refused.get("paths") or [])), {
+                         "taskId": task["id"], "phaseId": ctx["phase"],
+                         "mode": refused.get("kind"),
+                         "changes": [{"id": t, "field": "task"}
+                                     for t in refused.get("tasks") or []]
+                         + [{"id": p, "field": "path"}
+                            for p in refused.get("paths") or []]})
+            return decision(ctx, state, "integration-refused", task, _clip(
+                "%s, %s (tasks %s)" % (refused.get("kind"), ", ".join(
+                    refused.get("paths") or []) or "no path",
+                    ", ".join(refused.get("tasks") or [])), 140))
+        if code != 0:
+            return relay_refusal(ctx, "integrate-task.py", code, out + err)
+        regate = answer.get("regate")
+        if word.get("answer") == "widen":
+            regate = True
+        held = {"regate": regate}
+        _mark(state, "integrated", task, held)
+        write_state(ctx, state)
+        wave_row(ctx, TASK_INTEGRATED, "%s: %d path(s) integrated%s" % (
+            task["id"], len(answer.get("paths") or []),
+            "; overlaps %s" % (", ".join(answer.get("overlapWith") or []),)
+            if answer.get("overlapWith") else ""), {
+                "taskId": task["id"], "phaseId": ctx["phase"],
+                "commit": answer.get("base"), "parent": answer.get("headBefore"),
+                "mode": "regate %s" % ({True: "true", False: "false"}.get(
+                    regate, "unknown"),),
+                "changes": [{"id": p, "field": "path"}
+                            for p in answer.get("paths") or []]})
+        ctx["did"].append("integrated %s%s" % (task["id"], " (already)"
+                                               if answer.get("already") else ""))
+    if held.get("regate") is not False and not _marked(state, "regated", task):
+        code, out, err = record_gate(ctx, phase, task)
+        if code == 1:
+            said = [ln for ln in (out + err).splitlines() if "GATE" in ln]
+            return decision(ctx, state, "gate-red", task, (
+                "re-gate on the phase tree: %s" % (
+                    said[0].strip() if said else "exit 1",))[:80])
+        if code != 0:
+            return relay_refusal(ctx, "run-test-gate.py", code, out + err)
+        _mark(state, "regated", task)
+        write_state(ctx, state)
+        ctx["did"].append("re-gate %s green" % (task["id"],))
+    return None
+
+
+def tree_holds_only_integrated(ctx, tree):
+    """True when every path the tree changed holds the bytes the phase tree
+    holds - nothing in it would be lost with it; False when one differs; None
+    when git could not say."""
+    try:
+        done = subprocess.run(["git", "-C", tree, "status", "--porcelain", "-z",
+                               "--untracked-files=all", "--no-renames"],
+                              capture_output=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    for item in done.stdout.split(b"\0"):
+        rel = item[3:].decode("utf-8", "replace")
+        if not rel:
+            continue
+        sides = []
+        for root in (tree, ctx["gitRoot"]):
+            try:
+                with open(os.path.join(root, rel), "rb") as fh:
+                    sides.append(fh.read())
+            except OSError:
+                sides.append(None)
+        if sides[0] != sides[1]:
+            return False
+    return True
+
+
+def retire_member(ctx, state, task):
+    """Take down a closed member's tree when it holds nothing the phase tree
+    lacks; otherwise keep it and say so. A blocked member's tree is kept for
+    whoever unblocks it. None, or the stop."""
+    wave = state["wave"]
+    tree = (wave.get("trees") or {}).get(task["id"])
+    if not tree or task["id"] in (wave.get("retired") or []):
+        return None
+    if task.get("status") not in _mio.TERMINAL:
+        return None
+    wave.setdefault("retired", []).append(task["id"])
+    clean = tree_holds_only_integrated(ctx, tree) if os.path.isdir(tree) else True
+    if clean is not True:
+        write_state(ctx, state)
+        ctx["did"].append("tree of %s kept (%s)" % (task["id"], "it holds bytes the "
+                                                    "phase tree lacks" if clean is False
+                                                    else "git could not describe it"))
+        return None
+    if os.path.isdir(tree):
+        _out, stop = _verb_or_stop(ctx, "manage-worktrees.py", [
+            "task-remove", ctx["manifest"], task["id"], "--project", ctx["project"],
+            "--force"])
+        if stop is not None:
+            return stop
+    wave["trees"].pop(task["id"], None)
+    write_state(ctx, state)
+    ctx["did"].append("tree of %s removed" % (task["id"],))
+    return None
+
+
+def drop_tree(ctx, state, task_id):
+    """Take a member's tree down whatever it holds - a retry the human chose
+    recuts it at the phase HEAD - so the walk makes a fresh one. None, or the
+    stop."""
+    wave = state.get("wave") or {}
+    tree = (wave.get("trees") or {}).get(task_id)
+    if not tree:
+        return None
+    if os.path.isdir(tree):
+        _out, stop = _verb_or_stop(ctx, "manage-worktrees.py", [
+            "task-remove", ctx["manifest"], task_id, "--project", ctx["project"],
+            "--force"])
+        if stop is not None:
+            return stop
+    wave["trees"].pop(task_id, None)
+    wave["base"] = git_head(ctx) or wave.get("base")
+    write_state(ctx, state)
+    return None
+
+
+def open_wave(ctx, state, picked, width, basis):
+    """Record a wave of `picked` at the phase HEAD, and its `wave.start` row."""
+    base = git_head(ctx)
+    if not base:
+        return _stopped(ctx, "git named no HEAD in %s, so a wave has no commit to "
+                        "cut its trees from" % (ctx["gitRoot"],))
+    number = int(state.get("waves") or 0) + 1
+    state["waves"] = number
+    state["wave"] = {"id": "%s-w%d" % (ctx["phase"], number), "base": base,
+                     "tasks": list(picked), "width": width, "widthBasis": basis,
+                     "trees": {}, "parked": {}}
+    write_state(ctx, state)
+    wave_row(ctx, WAVE_START, "%s: %s at width %d (%s), base %s" % (
+        state["wave"]["id"], ", ".join(picked), width, basis, base[:12]), {
+            "phaseId": ctx["phase"], "commit": base, "basis": basis,
+            "mode": "width %d" % (width,),
+            "changes": [{"id": t, "field": "task"} for t in picked]})
+    ctx["did"].append("wave of %s at width %d (%s)" % (", ".join(picked), width, basis))
+    return None
+
+
+def close_wave(ctx, state, manifest):
+    """Every member is terminal or blocked: the `wave.done` row, and the wave
+    dropped so the next one is selected."""
+    wave = state.pop("wave")
+    by_id = _mio.tasks_by_id(manifest)
+    ended = [(t, (by_id.get(t) or {}).get("status")) for t in wave["tasks"]]
+    write_state(ctx, state)
+    wave_row(ctx, WAVE_DONE, "%s: %s" % (wave["id"], ", ".join(
+        "%s %s" % pair for pair in ended)), {
+            "phaseId": ctx["phase"], "commit": wave.get("base"),
+            "changes": [{"id": t, "field": "status", "to": s} for t, s in ended]})
+    ctx["did"].append("wave %s done" % (wave["id"],))
+
+
+def step_member(ctx, state, task_id):
+    """One member's due steps until it prints something or stops moving:
+    `("dispatch", instruction)`, `("parked", None)`, `("idle", None)` or
+    `("stop", stop)`."""
+    for _ in range(8):
+        manifest, phase = load_phase(ctx)
+        task = _mio.tasks_by_id(manifest).get(task_id) or {}
+        status = task.get("status")
+        if status in _mio.TERMINAL:
+            stop = retire_member(ctx, state, task)
+            return ("stop", stop) if stop is not None else ("idle", None)
+        if status == "blocked":
+            return "idle", None
+        parked = (state["wave"].get("parked") or {}).get(task_id)
+        if parked is not None:
+            if pending_still_applies(manifest, parked):
+                return "parked", None
+            state["wave"]["parked"].pop(task_id, None)
+            write_state(ctx, state)
+        if status != "in_progress":
+            stop = start_task(ctx, task)
+            if stop is not None:
+                return "stop", stop
+            continue
+        tree = (state["wave"].get("trees") or {}).get(task_id)
+        if not tree:
+            tree, stop = add_tree(ctx, state, task)
+            if stop is not None:
+                return "stop", stop
+        said = advance(ctx, state, manifest, phase, task, tree=tree)
+        if said is None:
+            continue
+        if isinstance(said, tuple):
+            return "stop", said
+        if said["kind"] == "decide":
+            state["wave"].setdefault("parked", {})[task_id] = state.pop("pending")
+            write_state(ctx, state)
+            return "parked", None
+        return "dispatch", said
+    return "idle", None
+
+
+def walk_wave(ctx, state):
+    """Every member's due steps in id order: one print of every dispatch that
+    is due, else - when nothing else is - the first parked decision, else None
+    once the wave is through."""
+    sent = []
+    for task_id in sorted(state["wave"]["tasks"], key=_id_key):
+        kind, said = step_member(ctx, state, task_id)
+        if kind == "stop":
+            return said
+        if kind == "dispatch":
+            sent.append(said["lines"][0])
+    if sent:
+        return instruction("dispatch", sent + list(STEPS["dispatch-wave"]["rule"]))
+    manifest, _phase = load_phase(ctx)
+    by_id = _mio.tasks_by_id(manifest)
+    parked = state["wave"].get("parked") or {}
+    for task_id in sorted(parked, key=_id_key):
+        if pending_still_applies(manifest, parked[task_id]):
+            state["pending"] = parked.pop(task_id)
+            write_state(ctx, state)
+            return render_decision(ctx, state["pending"])
+    if all((by_id.get(t) or {}).get("status") in _mio.TERMINAL + ("blocked",)
+           for t in state["wave"]["tasks"]):
+        close_wave(ctx, state, manifest)
+    return None
+
+
+def wave_step(ctx, state, manifest, phase, width, basis):
+    """The wave's step: walk the one open, else open one when no task is in
+    progress and `_wave.select` picks two or more ready tasks. NO_WAVE when
+    neither applies, so the serial step runs."""
+    if not state.get("wave"):
+        if width < 2 or any(t.get("status") == "in_progress" for t in _tasks(phase)):
+            return NO_WAVE
+        ready = set(_status_facts.ready_tasks(manifest))
+        picked = _wave.select(sorted((t for t in _tasks(phase) if t["id"] in ready),
+                                     key=lambda t: _id_key(t["id"])), width)["wave"]
+        if len(picked) < 2:
+            return NO_WAVE
+        return open_wave(ctx, state, picked, width, basis)
+    return walk_wave(ctx, state)
 
 
 # --- answering a decision ---------------------------------------------------------
@@ -953,7 +1413,20 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
         # again; the task is not re-started, so no attempt is spent.
         return None
     if answer == "retry":
+        if pending["decision"] == "integration-refused":
+            # The tree was cut from a base the phase tree has moved past; the
+            # retry is cut from the phase HEAD, so its work starts from there.
+            stop = drop_tree(ctx, state, task["id"])
+            if stop is not None:
+                return stop
         return start_task(ctx, task)
+    if answer in ("widen", "discard"):
+        # Integration asks again with the human's word; a widened scope is
+        # declared before it, and the gate is taken again over it after.
+        _mark(state, "undeclared", task, {"answer": answer,
+                                          "paths": list(pending.get("paths") or [])})
+        write_state(ctx, state)
+        return None
     if answer == "redispatch":
         (state.get("dispatched-reviewer") or {}).pop(task["id"], None)
         write_state(ctx, state)
@@ -1879,9 +2352,19 @@ def drive(ctx, answer=None, reason=None, fixes=()):
 
 def drive_phase(ctx, state, phase):
     """The steps of the whole phase, from wherever its tasks stand: start and
-    advance each in turn, then sign-off once every one is terminal."""
+    advance each in turn - or, at a width above 1, a wave of them at once -
+    then sign-off once every one is terminal."""
+    width, basis, problem = wave_width(ctx["config"])
+    if problem:
+        return _stopped(ctx, problem)
     for _ in range(4 * len(_tasks(phase)) + 4):
         manifest, phase = load_phase(ctx)
+        if width > 1 or state.get("wave"):
+            said = wave_step(ctx, state, manifest, phase, width, basis)
+            if said is None:
+                continue
+            if said is not NO_WAVE:
+                return _as_result(said)
         task, how = next_task(manifest, phase)
         if task is None:
             if all(t.get("status") in _mio.TERMINAL for t in _tasks(phase)):
@@ -1953,10 +2436,11 @@ def already_filed(ctx, task):
     return project_relative(ctx, path) if path and os.path.exists(path) else None
 
 
-def red_block(ctx, task, args, cmd):
+def red_block(ctx, task, args, cmd, tree=None):
     """`(block, None)` - the helper's `redFirst` block for `task` - or
     `(None, stop)`. A test that passed without the fix gets no block from the
-    helper, and so no filing: the work is to fix the test."""
+    helper, and so no filing: the work is to fix the test. `tree` is the
+    task's own worktree in a wave, whose test files and HEAD the red run reads."""
     extra = []
     for flag, values in (("--case", args.case), ("--introduces", args.introduces)):
         for value in values:
@@ -1964,7 +2448,7 @@ def red_block(ctx, task, args, cmd):
     if args.deps_from:
         extra += ["--deps-from", args.deps_from]
     code, out, err = run_verb(ctx, "stamp-verification.py", [
-        "red", "--project", ctx["gitRoot"], "--manifest", ctx["manifest"],
+        "red", "--project", tree or ctx["gitRoot"], "--manifest", ctx["manifest"],
         "--task", task["id"], "--json"] + extra + ["--"] + list(cmd))
     try:
         payload = json.loads(out)
@@ -1978,11 +2462,12 @@ def red_block(ctx, task, args, cmd):
     return block, None
 
 
-def take_stamp(ctx, task):
+def take_stamp(ctx, task, tree=None):
     """`(line, None)` - the `audit-stamp:` line for the tree now, over the task's
-    declared files - or `(None, stop)` when the take names no tree."""
+    declared files - or `(None, stop)` when the take names no tree. The tree is
+    the task's own worktree in a wave, else the phase tree."""
     code, out, err = run_verb(ctx, "stamp-verification.py", [
-        "take", "--project", ctx["gitRoot"], "--manifest", ctx["manifest"],
+        "take", "--project", tree or ctx["gitRoot"], "--manifest", ctx["manifest"],
         "--task", task["id"], "--json"])
     try:
         taken = json.loads(out)
@@ -1997,8 +2482,31 @@ def take_stamp(ctx, task):
     if not head:
         return None, _stopped(ctx, "the stamp is missing - git named no HEAD for "
                               "%s, so the stamp binds the claims to no tree. "
-                              "Nothing filed." % (ctx["gitRoot"],))
+                              "Nothing filed." % (tree or ctx["gitRoot"],))
     return line, None
+
+
+def submit_tree(ctx, phase, task):
+    """`(tree, None)` - the worktree the driver's open wave gave `task`, or None
+    when the task runs in the phase tree - or `(None, stop)` when the wave names
+    a tree that is gone. Read from the driver's state, never from the agent's
+    working directory: an agent's shell does not stay where it was put."""
+    hc = _loader.load_hooks_config(modname="audit__config")
+    state_dir = str(hc.state_dir(pathlib.Path(ctx["project"]), ctx["config"] or {}))
+    path = _fr.drive_state_path(state_dir, phase["id"])
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            state = json.load(fh)
+    except (OSError, ValueError):
+        return None, None
+    tree = (((state if isinstance(state, dict) else {}).get("wave") or {})
+            .get("trees") or {}).get(task["id"])
+    if not tree:
+        return None, None
+    if not os.path.isdir(tree):
+        return None, _stopped(ctx, "the wave gave %s the tree %s, and it is gone. "
+                              "Nothing filed." % (task["id"], tree))
+    return tree, None
 
 
 def submit(ctx, manifest, args, cmd, text):
@@ -2032,13 +2540,17 @@ def submit(ctx, manifest, args, cmd, text):
             return _stopped(ctx, "the executor return for %s is already filed for "
                             "this start (%s) and stays as filed. Nothing run."
                             % (task["id"], held))
+        tree, stop = submit_tree(ctx, phase, task)
+        if stop is not None:
+            return stop
         if cmd:
-            block, stop = red_block(ctx, task, args, cmd)
+            block, stop = (red_block(ctx, task, args, cmd, tree) if tree
+                           else red_block(ctx, task, args, cmd))
             if stop is not None:
                 return stop
             body["redFirst"] = block
             ctx["did"].append("red-first %s" % (block.get("status"),))
-        line, stop = take_stamp(ctx, task)
+        line, stop = take_stamp(ctx, task, tree) if tree else take_stamp(ctx, task)
         if stop is not None:
             return stop
         body["stamp"] = line

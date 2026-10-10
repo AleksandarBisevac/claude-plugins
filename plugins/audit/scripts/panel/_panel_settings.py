@@ -284,6 +284,20 @@ FIELD_HELP = {
         "a reviewer per task before its close. signals spawns one only where the "
         "task's red-first proof was not proved or its return disagrees with the "
         "recorded gate.",
+    "executor.waveWidth":
+        "How many ready tasks whose declared files do not overlap the phase drive "
+        "runs at once, each in a worktree of its own, integrated onto the phase "
+        "tree one at a time. A whole number, or auto for the core count less two. "
+        "Unset or 1 runs one task at a time in the phase tree, as before; 0 or "
+        "any other word stops the drive by name.",
+    "executor.worktreeSetup":
+        "A command run inside each new task worktree before its executor starts - "
+        "typically the dependency install. Unset runs none. A setup that fails is "
+        "reported as could-not-run, never as a red gate, and spends no attempt.",
+    "executor.worktreeRoot":
+        "The directory task worktrees are made in, relative to the git root. Unset "
+        "uses the directory above the git root. A directory inside the project is "
+        "refused, because a tree there would be judged as the project itself.",
     "executor.maxHours":
         "How many hours a single spawned executor may be continued onto further "
         "tasks — never re-spawned — before the orchestrator prefers handing it "
@@ -602,6 +616,12 @@ SETTINGS_GROUPS = (
              "kind": "enum", "enum": "runsGate"},
             {"path": "executor.maxHours", "label": "Hours before an agent hands back",
              "kind": "number", "min": 0},
+            {"path": "executor.waveWidth", "label": "Tasks run at once",
+             "kind": "text", "placeholder": "1, or auto"},
+            {"path": "executor.worktreeSetup", "label": "Setup run in each task tree",
+             "kind": "text", "placeholder": "none"},
+            {"path": "executor.worktreeRoot", "label": "Where task trees are made",
+             "kind": "text", "placeholder": "beside the git root"},
         ),
     },
     {
