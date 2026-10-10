@@ -1182,8 +1182,10 @@ reported. A phase can be merged early and still be running.
 
 **`task-add` and `task-remove` are the same account for a task.** `task-add <taskId> --base <sha>` cuts a
 detached tree at a resolved commit, outside the project, and writes a marker naming the task, its
-phase, the base and the phase tree; a second tree for a task that already has one is refused, because
-`task-remove` finds its tree by that marker and a duplicate would be unreachable. The sweep keeps a
+phase, the base and the phase tree. A task that already has a marked tree gets that tree back at its
+recorded base, with its setup run again unless the marker records it completed, so a drive that
+crashed mid-setup resumes instead of stopping; there is never a second tree, because `task-remove`
+finds its tree by that marker and a duplicate would be unreachable. The sweep keeps a
 task tree and names the task.
 
 **Exit 5 means there was nothing to examine.** A sweep that looked at nothing and a sweep that

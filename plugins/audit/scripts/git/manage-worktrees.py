@@ -42,7 +42,10 @@ Usage:
 
   A TASK TREE is a worktree for one task of a parallel wave: detached at `--base`
   (the phase HEAD), OUTSIDE the project directory, and marked with the task it
-  belongs to. `task-add` refuses a root inside the project; `task-remove` takes down
+  belongs to. `task-add` refuses a root inside the project, and hands back a tree
+  already marked for the task (at the base its marker records) instead of making a
+  second one, running its setup again unless the marker says it completed;
+  `task-remove` takes down
   only a tree whose marker names THIS task, refuses a dirty one without `--force`,
   and the sweep never removes one.
 
@@ -113,6 +116,12 @@ E_OK, E_FAIL, E_USAGE, E_NO_BASIS, E_NOTHING = 0, 1, 2, 4, 5
 E_SETUP = 6
 
 SETUP_TIMEOUT = 900
+# What a task marker records of its setup: `pending` from the moment the marker is
+# written until the setup returns, then `run_setup`'s status. A tree is handed
+# back as it stands only when that status is a completed one; `kept` is the
+# status an adopted tree reports for a setup it did not run again.
+SETUP_PENDING, SETUP_KEPT = "pending", "kept"
+SETUP_COMPLETE = ("ran", "none")
 INCLUDE_FILE = ".worktreeinclude"
 # Never COPIED, and never linked in its place: a dependency tree is the setup
 # command's to install, and a task that adds a dependency must not change its
@@ -603,23 +612,24 @@ def do_task_add(git_root, manifest, task_id, base, project=None, path=None, run=
                                      % (target, os.path.abspath(root)),
                             "remedy": "a task tree lives OUTSIDE the project "
                                       "directory; pass --path to a sibling of it"}
-    if os.path.isdir(target) and os.listdir(target):
-        return E_FAIL, {"error": "%s already exists and is not empty" % (target,),
-                        "remedy": "pass --path to name somewhere else, or clear it "
-                                  "by hand once you have read it"}
     listing = _wt.list_worktrees(git_root, run=run)
     if listing["error"]:
         return E_NO_BASIS, {"error": listing["error"]}
+    # A tree already marked for this task is ADOPTED, never refused and never
+    # doubled: the marker is written before the environment goes in, so a run
+    # that died in between, a setup that failed, and a tree a closed wave kept
+    # for a blocked task are all found here, by the marker, and resumed.
     for rec in listing["trees"]:
         if rec.get("isMain") or not rec.get("path"):
             continue
         held = _wt.read_provenance(rec.get("path"), run=run, expect_task=str(task_id))
         if held["ours"] is True:
-            return E_FAIL, {"error": "task %s already has a tree: %s"
-                                     % (task_id, rec.get("path")),
-                            "remedy": "`task-remove` takes one tree down by its "
-                                      "marker, so a second tree would be unreachable "
-                                      "by it; remove the first, or integrate it"}
+            return adopt_task_tree(git_root, rec.get("path"), held, setup,
+                                   setup_timeout, run=run)
+    if os.path.isdir(target) and os.listdir(target):
+        return E_FAIL, {"error": "%s already exists and is not empty" % (target,),
+                        "remedy": "pass --path to name somewhere else, or clear it "
+                                  "by hand once you have read it"}
     code, out, err = fn(git_root, ["rev-parse", "--verify", "--quiet",
                                    "%s^{commit}" % (base,)])
     if code is None:
@@ -634,23 +644,37 @@ def do_task_add(git_root, manifest, task_id, base, project=None, path=None, run=
         return E_NO_BASIS, {"error": err, "argv": argv}
     if code != 0:
         return E_FAIL, {"error": (err or out or "").strip(), "argv": argv}
-    marker, why = _write_record(
-        target, {"createdBy": _wt.PROVENANCE_MARK, "phaseId": phase_id,
-                 "taskId": str(task_id), "base": sha,
-                 "phaseTree": os.path.abspath(git_root), "at": _now()}, run=run)
-    # The environment goes in AFTER the marker (a failed setup leaves a tree that
-    # `task-remove` can still take down) and the include BEFORE the setup (a setup
-    # may need the `.env` the include brings).
+    record = {"createdBy": _wt.PROVENANCE_MARK, "phaseId": phase_id,
+              "taskId": str(task_id), "base": sha,
+              "phaseTree": os.path.abspath(git_root), "at": _now(),
+              "setup": SETUP_PENDING}
+    marker, why = _write_record(target, record, run=run)
+    answer = {"path": target, "task": str(task_id), "phaseId": phase_id,
+              "base": sha, "argv": argv, "provenance": marker,
+              "provenanceWhy": why,
+              "note": ("marked for task %s, so `task-remove` may take it down"
+                       % (task_id,) if marker else
+                       "the plugin could NOT record the task marker (%s), so "
+                       "`task-remove` will not take this tree down; remove it "
+                       "by hand" % (why,))}
+    return provision(git_root, target, record, answer, setup, setup_timeout, run=run)
+
+
+def provision(git_root, target, record, answer, setup, setup_timeout, run=None):
+    """(exit, answer) -- the include and the setup put into a marked tree, and
+    the setup's outcome written back into its marker.
+
+    The environment goes in AFTER the marker (a failed setup leaves a tree that
+    `task-remove` can still take down) and the include BEFORE the setup (a setup
+    may need the `.env` the include brings). The marker says `pending` until the
+    setup returns, so a run that dies in between leaves a tree the next
+    `task-add` provisions again rather than one it hands out half-made.
+    """
     included = copy_worktree_include(git_root, target)
     ran = run_setup(setup, target, timeout=setup_timeout)
-    answer = {"path": target, "task": str(task_id), "phaseId": phase_id,
-                  "base": sha, "argv": argv, "provenance": marker,
-                  "provenanceWhy": why, "include": included, "setup": ran,
-                  "note": ("marked for task %s, so `task-remove` may take it down"
-                           % (task_id,) if marker else
-                           "the plugin could NOT record the task marker (%s), so "
-                           "`task-remove` will not take this tree down; remove it "
-                           "by hand" % (why,))}
+    if answer.get("provenance"):
+        _write_record(target, dict(record, setup=ran["status"]), run=run)
+    answer = dict(answer, include=included, setup=ran)
     if ran["status"] in ("failed", "timeout"):
         # COULD-NOT-RUN, not red: the task's code never executed in this tree, so
         # nothing about the task is known and no attempt is spent on it.
@@ -664,6 +688,24 @@ def do_task_add(git_root, manifest, task_id, base, project=None, path=None, run=
                                ": " + ran["output"][-300:] if ran["output"] else ""))
         return E_SETUP, answer
     return E_OK, answer
+
+
+def adopt_task_tree(git_root, path, held, setup, setup_timeout, run=None):
+    """(exit, answer) -- the tree already marked for this task, handed back at
+    the base its marker records, with its setup run again unless the marker
+    says the setup completed. A marker from before the setup was recorded says
+    nothing about it, so it is provisioned again too."""
+    record = held["record"]
+    answer = {"path": os.path.abspath(path), "task": record.get("taskId"),
+              "phaseId": record.get("phaseId"), "base": record.get("base"),
+              "adopted": True, "provenance": held["basis"], "provenanceWhy": "",
+              "note": "adopted: the tree marked for task %s already exists"
+                      % (record.get("taskId"),)}
+    if record.get("setup") in SETUP_COMPLETE:
+        return E_OK, dict(answer, include=None, setup={
+            "command": setup, "status": SETUP_KEPT, "exitCode": None,
+            "seconds": 0.0, "output": "", "recorded": record.get("setup")})
+    return provision(git_root, path, record, answer, setup, setup_timeout, run=run)
 
 
 def do_task_remove(git_root, manifest, task_id, force=False, run=None):
@@ -829,6 +871,9 @@ def render(verb, answer, out=print):
     if ran is not None:
         out("  setup:   %s" % ("none configured (executor.worktreeSetup is absent)"
                               if ran["status"] == "none" else
+                              "completed when the tree was made (%s); not run "
+                              "again" % (ran.get("recorded"),)
+                              if ran["status"] == SETUP_KEPT else
                               "%s in %.1fs: %s" % (ran["status"], ran["seconds"],
                                                    ran["command"])))
 

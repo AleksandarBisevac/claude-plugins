@@ -2593,11 +2593,13 @@ _OWN_DIFF = ("import subprocess, sys\n"
 WAVE_LINE_BYTES = 200
 
 
-def _wave_repo(prefix, width, red=(), per_task="phase"):
+def _wave_repo(prefix, width, red=(), per_task="phase", setup=None,
+               spare_file=False):
     """A two-task fixture whose config sets `executor.waveWidth` to `width`
     (left out when None) and roots task trees in a fixture directory of their
     own, and whose tasks' gates are the own-diff check - or a gate that always
-    fails, for each id in `red`."""
+    fails, for each id in `red`. `setup` is `executor.worktreeSetup`, and
+    `spare_file` commits a third source file, for a task added later."""
     root, mpath = _repo(prefix, task_ids=TASKS[:2], per_task=per_task)
     trees = os.path.realpath(_harness.fixture_root("drive-trees-%s-" % (prefix,)))
     cfg_path = os.path.join(root, ".claude", "audit.config.json")
@@ -2606,6 +2608,11 @@ def _wave_repo(prefix, width, red=(), per_task="phase"):
     executor = {"worktreeRoot": trees}
     if width is not None:
         executor["waveWidth"] = width
+    if setup is not None:
+        executor["worktreeSetup"] = setup
+    if spare_file:
+        with open(os.path.join(root, "src", "f3.txt"), "w") as fh:
+            fh.write("v0\n")
     cfg["executor"] = executor
     with open(cfg_path, "w") as fh:
         json.dump(cfg, fh)
@@ -2982,6 +2989,250 @@ def _wave_width_cases(check):
           and os.path.isfile(os.path.join(root, "notes.txt")))
 
 
+# --- a wave member's tree outlives a crash, a failed setup and a block ----------
+# The setup every case below declares: it appends the directory it ran in to a
+# log outside the fixture, so the log is the evidence a tree was provisioned -
+# and, while a flag file exists, it removes the flag and fails instead, once.
+_SETUP = ("import os, sys\n"
+          "flag, log = sys.argv[1], sys.argv[2]\n"
+          "if os.path.exists(flag):\n"
+          "    os.remove(flag)\n"
+          "    sys.exit(3)\n"
+          "with open(log, 'a') as fh:\n"
+          "    fh.write(os.path.realpath(os.getcwd()) + '\\n')\n")
+
+
+def _setup_fixture(prefix, fail_first=False):
+    """`(command, log)` - an `executor.worktreeSetup` running `_SETUP`, which
+    fails its first run when `fail_first`."""
+    aux = os.path.realpath(_harness.fixture_root("drive-setup-%s-" % (prefix,)))
+    script = os.path.join(aux, "setup.py")
+    flag, log = os.path.join(aux, "fail-once"), os.path.join(aux, "provisioned.log")
+    with open(script, "w") as fh:
+        fh.write(_SETUP)
+    if fail_first:
+        with open(flag, "w") as fh:
+            fh.write("fail the first setup\n")
+    return '"%s" "%s" "%s" "%s"' % (sys.executable, script, flag, log), log
+
+
+def _provisioned(log):
+    """The trees the setup completed in, in order."""
+    try:
+        with open(log) as fh:
+            return [ln.strip() for ln in fh if ln.strip()]
+    except OSError:
+        return []
+
+
+def _tree_expected(root, task_id):
+    """Where `tree_path` puts a task's tree in a `_wave_repo` fixture."""
+    with open(os.path.join(root, ".claude", "audit.config.json")) as fh:
+        where = json.load(fh)["executor"]["worktreeRoot"]
+    return os.path.join(where, "%s-%s" % (os.path.basename(root), task_id))
+
+
+def _brief_of(root, text, task_id, role="executor"):
+    """The text of the brief one dispatch line of `text` names for `task_id`."""
+    for line in text.splitlines():
+        hit = _DISPATCH.match(line)
+        brief = _BRIEF.search(line)
+        if hit and brief and hit.group(1).endswith(role) and hit.group(2) == task_id:
+            with open(os.path.join(root, *brief.group(1).split("/"))) as fh:
+                return fh.read()
+    return ""
+
+
+def _wave_resume_cases(check):
+    """Tree setup resumes through the marker: a crash inside the setup and a
+    setup that failed both leave a marked tree that the next drive finds and
+    provisions again before any dispatch, spending no attempt."""
+    M, why = _load("drive_phase_wave_resume")
+    if M is None:
+        check("wt1 the driver loads", False, why)
+        return
+    cmd, log = _setup_fixture("crash")
+    root, mpath = _wave_repo("wavesetupcrash", 2, setup=cmd)
+    tree = _tree_expected(root, "P1.1")
+    MW = _loader.load_script("manage-worktrees.py", "mw_crash_in_setup", cache=False)
+
+    def die_in_setup(command, cwd, timeout=None):
+        raise RuntimeError("the session died inside the setup of %s" % (cwd,))
+    MW.run_setup = die_in_setup
+    real_run = M.run_verb
+    crashes = []
+
+    def crash_once(ctx, script, args, stdin=None):
+        # The real verb, in this process, dying where the session would: after
+        # the marker is written and before the setup returns.
+        if script == "manage-worktrees.py" and args[:1] == ["task-add"] \
+                and args[2] == "P1.1" and not crashes:
+            crashes.append(args)
+            MW.main(list(args), out=lambda *_a: None)
+        return real_run(ctx, script, args, stdin=stdin)
+    M.run_verb = crash_once
+    crashed = None
+    try:
+        _next_wave(M, root, mpath)
+    except RuntimeError as exc:
+        crashed = str(exc)
+    finally:
+        M.run_verb = real_run
+    marked = MW._wt.read_provenance(tree, expect_task="P1.1") \
+        if os.path.isdir(tree) else {}
+    check("wt1 the fixture crashed where it means to: the tree of P1.1 exists and "
+          "is marked for it, its setup never completed, and the driver recorded "
+          "no tree: %r %r %r" % (crashed, marked.get("ours"), _provisioned(log)),
+          crashed and marked.get("ours") is True and not _provisioned(log)
+          and not _tree_of(root, "P1.1")
+          and _attempts(mpath, "P1.1") == 1)
+    code, resumed = _next_wave(M, root, mpath)
+    check("wt2 the next drive finds that tree through its marker, runs its setup "
+          "again before dispatching, and spends no attempt: %r %r %r"
+          % (resumed, _provisioned(log), _attempts(mpath, "P1.1")),
+          code == 0 and _dispatched(resumed) == ["P1.1", "P1.2"]
+          and os.path.realpath(_tree_of(root, "P1.1") or "-") == os.path.realpath(tree)
+          and os.path.realpath(tree) in _provisioned(log)
+          and _attempts(mpath, "P1.1") == 1)
+
+    cmd, log = _setup_fixture("fail", fail_first=True)
+    root, mpath = _wave_repo("wavesetupfail", 2, setup=cmd)
+    tree = _tree_expected(root, "P1.1")
+    code, first = _next_wave(M, root, mpath)
+    check("wt3 a setup that fails stops the drive as could-not-run, dispatching "
+          "nothing, with the tree kept: %r" % (first,),
+          code != 0 and "setup" in first and not _dispatched(first)
+          and os.path.isdir(tree) and not _provisioned(log))
+    code, second = _next_wave(M, root, mpath)
+    check("wt4 the next drive runs the failed setup again before it dispatches "
+          "the task, in the same tree, and spends no attempt: %r %r"
+          % (second, _provisioned(log)),
+          code == 0 and "P1.1" in _dispatched(second)
+          and os.path.realpath(tree) in _provisioned(log)
+          and _attempts(mpath, "P1.1") == 1)
+
+
+def _wave_adopt_cases(check):
+    """A blocked member's tree is kept when its wave closes, and a later wave
+    that runs the task again adopts it - at the base it was cut from."""
+    M, why = _load("drive_phase_wave_adopt")
+    if M is None:
+        check("wt5 the driver loads", False, why)
+        return
+    root, mpath = _wave_repo("waveadopt", 2, red=("P1.1",), spare_file=True)
+
+    def one_attempt(plan):
+        plan["phases"][0]["tasks"][0]["maxAttempts"] = 1
+    _commit_plan(root, mpath, one_attempt, "one attempt for P1.1")
+    _code, first = _next_wave(M, root, mpath)
+    for t in _dispatched(first):
+        _file_wave_executor(root, mpath, t)
+    _next_wave(M, root, mpath)
+    tree = _tree_of(root, "P1.1")
+    base = (_drive_state(root).get("wave") or {}).get("base")
+    said = []
+    with _Env(root):
+        M.main(["next", PHASE, mpath, "--project-dir", root, "--answer", "block",
+                "--reason", "the gate is red"], out=said.append)
+    blocked = "\n".join(said)
+    state = _drive_state(root)
+    check("wt5 when the wave closes over a blocked member, its tree is kept on "
+          "disk, recorded, and named: %r %r" % (blocked, state.get("keptTrees")),
+          tree and not state.get("wave") and os.path.isdir(tree)
+          and (state.get("keptTrees") or {}).get("P1.1") == tree
+          and tree in blocked
+          and tasks_of(mpath)["P1.1"].get("status") == "blocked")
+    with _Env(root):
+        unblocked = _verb(root, "audit-task.py", [
+            "unblock", "P1.1", mpath, "--project-dir", root, "--reason",
+            "the human: run it again"])
+        added = _verb(root, "audit-task.py", [
+            "add", "a third file", mpath, "--project-dir", root, "--phase", PHASE,
+            "--files", "src/f3.txt", "--description", "change src/f3.txt",
+            "--gate", '"%s" check_own.py src/f3.txt' % (sys.executable,), "--json"])
+    code, again = _next_wave(M, root, mpath)
+    wave = _drive_state(root).get("wave") or {}
+    brief = _brief_of(root, again, "P1.1")
+    check("wt6 a later wave that runs the task again adopts the kept tree, and "
+          "its executor's brief names that tree and the base it was cut at, not "
+          "the new wave's: %r %r %r" % (again, (unblocked[0], added[0]),
+                                        wave.get("base")),
+          code == 0 and "P1.1" in _dispatched(again)
+          and len(_dispatched(again)) == 2
+          and _tree_of(root, "P1.1") == tree and wave.get("base") != base
+          and ("tree: %s" % (tree,)) in brief and ("base: %s" % (base,)) in brief
+          and "P1.1" not in (_drive_state(root).get("keptTrees") or {}))
+
+
+def _discard_run(M, prefix):
+    """A wave where P1.2 also writes an undeclared file, answered `discard`:
+    `(tree, the answer's print, state after)`."""
+    root, mpath = _wave_repo(prefix, 2)
+    _code, first = _next_wave(M, root, mpath)
+    tree = _tree_of(root, "P1.2")
+    if tree:
+        with open(os.path.join(tree, "notes.txt"), "w") as fh:
+            fh.write("written by P1.2, declared by nobody\n")
+    for t in _dispatched(first):
+        _file_wave_executor(root, mpath, t)
+    _code, second = _next_wave(M, root, mpath)
+    said = []
+    with _Env(root):
+        M.main(["next", PHASE, mpath, "--project-dir", root, "--answer",
+                "discard"], out=said.append)
+    return (root, mpath, tree, instruction(second), "\n".join(said),
+            _drive_state(root))
+
+
+def _wave_review_discard_cases(check):
+    """A per-task reviewer in a wave reads its own task's diff, from its tree
+    and base; a discarded undeclared change keeps its tree, named."""
+    M, why = _load("drive_phase_wave_review")
+    if M is None:
+        check("wt7 the driver loads", False, why)
+        return
+    root, mpath = _wave_repo("wavereview", 2, per_task="always")
+    _code, first = _next_wave(M, root, mpath)
+    for t in _dispatched(first):
+        _file_wave_executor(root, mpath, t)
+    code, second = _next_wave(M, root, mpath)
+    base = (_drive_state(root).get("wave") or {}).get("base")
+    briefs = dict((t, _brief_of(root, second, t, role="reviewer"))
+                  for t in ("P1.1", "P1.2"))
+    trees = dict((t, _tree_of(root, t)) for t in ("P1.1", "P1.2"))
+    check("wt7 under review.perTask always each wave member's reviewer is "
+          "dispatched with a brief naming its task tree and base, whose diff "
+          "holds that task's own change and not its sibling's: %r %r"
+          % (second, dict((t, b[-600:]) for t, b in briefs.items())),
+          code == 0 and _dispatched(second, "reviewer") == ["P1.1", "P1.2"]
+          and all(trees.values()) and base
+          and all(("tree: %s" % (trees[t],)) in briefs[t]
+                  and ("base: %s" % (base,)) in briefs[t]
+                  and ("+changed by %s" % (t,)) in briefs[t] for t in trees)
+          and "+changed by P1.2" not in briefs["P1.1"])
+
+    root, mpath, tree, asked, answered, state = _discard_run(M, "wavediscard")
+    check("wt8 answering discard closes the task, keeps its tree with the "
+          "undeclared bytes in it and out of the phase tree, and names the tree "
+          "where it is kept: %r %r %r" % (asked, answered, state.get("keptTrees")),
+          asked == ("decide", "undeclared-change", None)
+          and tasks_of(mpath)["P1.2"].get("status") == "done"
+          and tree and os.path.isfile(os.path.join(tree, "notes.txt"))
+          and not os.path.exists(os.path.join(root, "notes.txt"))
+          and tree in answered
+          and (state.get("keptTrees") or {}).get("P1.2") == tree)
+    # RED TWIN for `tree_holds_only_integrated`: a guard that never reports a
+    # difference takes the tree down with the discarded bytes in it.
+    mutant, _w = _load("drive_phase_wave_discard_mutant")
+    mutant.tree_holds_only_integrated = lambda ctx, tree: True
+    _r, mpath_m, tree_m, _a, answered_m, _s = _discard_run(mutant, "wavediscardm")
+    check("wt8m RED TWIN: a driver whose guard never sees a difference removes "
+          "the discarded change's tree, so wt8's predicate fails for it: %r"
+          % (answered_m,),
+          tree_m and not os.path.isdir(tree_m)
+          and tasks_of(mpath_m)["P1.2"].get("status") == "done")
+
+
 # The 3.2.0 drive of two tasks under `review.perTask: always`, read off its
 # did-lines (commit SHAs written as <sha>) and the journal's action sequence.
 # Taken from a drive by the v3.2.0 plugin itself; `w1` holds width 1 and an
@@ -3138,7 +3389,10 @@ STAGES = (("dp-block", "_drive_cases"), ("dr-block", "_refusal_cases"),
           ("nf-block", "_landing_cases"), ("bk-block", "_blocked_cases"),
           ("wv-block", "_wave_cases"), ("wr-block", "_wave_red_sibling_cases"),
           ("wc-block", "_wave_crash_cases"), ("w1-block", "_width_one_cases"),
-          ("wz-block", "_wave_width_cases"), ("pf-block", "_preflight_cases"),
+          ("wz-block", "_wave_width_cases"),
+          ("wt-block", "_wave_resume_cases"), ("wt5-block", "_wave_adopt_cases"),
+          ("wt7-block", "_wave_review_discard_cases"),
+          ("pf-block", "_preflight_cases"),
           ("tx-block", "_text_cases"), ("sb-block", "_stage_cases"))
 
 

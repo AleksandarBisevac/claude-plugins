@@ -1049,8 +1049,11 @@ def tree_path(ctx, task_id):
 
 
 def add_tree(ctx, state, task):
-    """`(path, None)` - the task's tree, made detached at the wave's base and
-    recorded - or `(None, stop)`."""
+    """`(path, None)` - the task's tree, made detached at the wave's base, or
+    the one already marked for it adopted at the base it was cut from, and
+    recorded with that base - or `(None, stop)`. A tree whose setup did not
+    complete is not recorded: the next step asks `task-add` again, which finds
+    it by its marker and runs the setup again before anything is dispatched."""
     wave = state["wave"]
     args = ["task-add", ctx["manifest"], task["id"], "--base", wave["base"],
             "--project", ctx["project"], "--json"]
@@ -1064,22 +1067,27 @@ def add_tree(ctx, state, task):
         made = {}
     path = made.get("path") if isinstance(made, dict) else None
     if code == SETUP_FAILED and path:
-        wave["trees"][task["id"]] = path
-        write_state(ctx, state)
-        return None, _stopped(ctx, "the tree of %s was made, and its setup did "
+        return None, _stopped(ctx, "the tree of %s is made, and its setup did "
                               "not complete - could not run, not red, and no "
-                              "attempt is spent: %s" % (
-                                  task["id"], _clip(made.get("error") or "", 200)))
+                              "attempt is spent; the next run sets it up again: "
+                              "%s" % (task["id"], _clip(made.get("error") or "", 200)))
     if code != 0 or not path:
         return None, relay_refusal(ctx, "manage-worktrees.py", code, out + err)
+    base = made.get("base") or wave["base"]
     wave["trees"][task["id"]] = path
+    wave.setdefault("bases", {})[task["id"]] = base
+    (state.get("keptTrees") or {}).pop(task["id"], None)
+    if not state.get("keptTrees"):
+        state.pop("keptTrees", None)
     write_state(ctx, state)
     setup = (made.get("setup") or {}).get("status") or "none"
-    wave_row(ctx, TASK_WORKTREE, "%s: a worktree of its own at %s (setup %s)" % (
-        task["id"], wave["base"][:12], setup), {
-            "taskId": task["id"], "phaseId": ctx["phase"], "commit": wave["base"],
-            "mode": "setup %s" % (setup,)})
-    ctx["did"].append("tree for %s" % (task["id"],))
+    adopted = "adopted, " if made.get("adopted") else ""
+    wave_row(ctx, TASK_WORKTREE, "%s: a worktree of its own at %s (%ssetup %s)" % (
+        task["id"], base[:12], adopted, setup), {
+            "taskId": task["id"], "phaseId": ctx["phase"], "commit": base,
+            "mode": "%ssetup %s" % (adopted, setup)})
+    ctx["did"].append("tree for %s%s" % (task["id"], " adopted at %s" % (path,)
+                                         if adopted else ""))
     return path, None
 
 
@@ -1234,9 +1242,9 @@ def retire_member(ctx, state, task):
     clean = tree_holds_only_integrated(ctx, tree) if os.path.isdir(tree) else True
     if clean is not True:
         write_state(ctx, state)
-        ctx["did"].append("tree of %s kept (%s)" % (task["id"], "it holds bytes the "
-                                                    "phase tree lacks" if clean is False
-                                                    else "git could not describe it"))
+        ctx["did"].append("tree of %s kept at %s (%s)" % (
+            task["id"], tree, "it holds bytes the phase tree lacks" if clean is False
+            else "git could not describe it"))
         return None
     if os.path.isdir(tree):
         _out, stop = _verb_or_stop(ctx, "manage-worktrees.py", [
@@ -1265,6 +1273,7 @@ def drop_tree(ctx, state, task_id):
         if stop is not None:
             return stop
     wave["trees"].pop(task_id, None)
+    (wave.get("bases") or {}).pop(task_id, None)
     wave["base"] = git_head(ctx) or wave.get("base")
     write_state(ctx, state)
     return None
@@ -1293,11 +1302,21 @@ def open_wave(ctx, state, picked, width, basis):
 
 def close_wave(ctx, state, manifest):
     """Every member is terminal or blocked: the `wave.done` row, and the wave
-    dropped so the next one is selected."""
+    dropped so the next one is selected. A tree still standing - a blocked
+    member's, or one holding bytes the phase tree lacks - is carried into
+    `keptTrees` and named, never dropped with the wave: `task-add` adopts a
+    blocked member's tree by its marker when a later wave runs the task."""
     wave = state.pop("wave")
     by_id = _mio.tasks_by_id(manifest)
     ended = [(t, (by_id.get(t) or {}).get("status")) for t in wave["tasks"]]
+    kept = dict(wave.get("trees") or {})
+    if kept:
+        state.setdefault("keptTrees", {}).update(kept)
     write_state(ctx, state)
+    for task_id in sorted(kept, key=_id_key):
+        if task_id not in (wave.get("retired") or []):
+            ctx["did"].append("tree of %s kept for a later wave at %s" % (
+                task_id, kept[task_id]))
     wave_row(ctx, WAVE_DONE, "%s: %s" % (wave["id"], ", ".join(
         "%s %s" % pair for pair in ended)), {
             "phaseId": ctx["phase"], "commit": wave.get("base"),

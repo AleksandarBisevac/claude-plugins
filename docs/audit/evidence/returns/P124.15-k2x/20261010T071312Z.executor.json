@@ -1,0 +1,32 @@
+{
+  "gates": {
+    "test_drive_phase": "pass",
+    "test_audit_lookup": "pass",
+    "test_manage_worktrees": "pass",
+    "ruff": "pass",
+    "selftests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T07:29:38Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with 6 of 176 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - wt8 (house FAIL): SELFTEST FAILED: 170/176 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "R3: manage-worktrees.py task-add now adopts a tree already marked for the task (adopt_task_tree) instead of refusing 'already has a tree' - the lookup runs before the non-empty-path check; the marker records setup 'pending' until run_setup returns and then its status (provision()), and an adopted tree whose marker does not record a completed setup (ran/none) gets the include and setup again; adoption reports the marker's base. drive-phase.py add_tree records a per-task base (wave.bases) from the verb's answer, no longer records a tree whose setup failed (so the next step re-asks task-add, which adopts it and re-runs setup before dispatch, no attempt spent), and pops keptTrees on adoption; close_wave carries every still-standing tree into state.keptTrees and names a blocked member's tree with its path; retire_member names the kept tree's path. R1: audit-lookup.py wave_tree() returns (tree, base) with the per-task base; the task-mode reviewer brief gets a Tree section and its diff is read as git -C <tree> diff <base> (untracked from the tree too). R4: wt8 discard-then-close case plus wt8m twin. Tests: test_drive_phase stages wt-block (wt1-wt4), wt5-block (wt5-wt6), wt7-block (wt7, wt8, wt8m); test_manage_worktrees ta8 rewritten to the adoption contract, ta8a and su5a added. Red on pre-fix code observed per stage: wt2, wt4, wt5, wt6, wt7, wt8 FAIL. Source mutation of tree_holds_only_integrated to return True in a scratch copy: wt8 FAIL ('tree of P1.2 removed'). Runs: test_drive_phase --selftest 176/176 exit 0; test_manage_worktrees 70/70; test_audit_lookup 79/79; ruff check plugins/audit tools exit 0; tools/sweep-selftests.py exit 0, 326/326 files. PLUGIN-BUILD-GUIDE.md line ~1185 still says a second tree for a task is refused - now false, outside this task's files.",
+    "descriptive": "a wave survives a crash or failed setup during tree setup, a blocked member's tree is adopted by a later wave, a wave reviewer reads its own task's diff, and a discarded change keeps its named tree"
+  },
+  "testsAdded": [
+    "test_drive_phase wt1",
+    "test_drive_phase wt2",
+    "test_drive_phase wt3",
+    "test_drive_phase wt4",
+    "test_drive_phase wt5",
+    "test_drive_phase wt6",
+    "test_drive_phase wt7",
+    "test_drive_phase wt8",
+    "test_drive_phase wt8m",
+    "test_manage_worktrees ta8a",
+    "test_manage_worktrees su5a"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:c42a985fb286d563e9386cd4f335c4398bbbc3247deafb20bf6b6e126d350250\",\"dirtyDigest\":\"sha256:01fe803c099c687765b604da234d4ccc72cc52d256fc7f26e2448c70a5cfbe79\",\"dirtyPaths\":{\"plugins/audit/scripts/git/manage-worktrees.py\":\"6685992ca2aa2677\",\"plugins/audit/scripts/governance/drive-phase.py\":\"012abaa09cbe54dd\",\"plugins/audit/scripts/status/audit-lookup.py\":\"78603b9c3570c0c2\",\"plugins/audit/tests/test_drive_phase.py\":\"ea316af17a331cc4\",\"plugins/audit/tests/test_manage_worktrees.py\":\"99906c422ddd4c72\"},\"head\":\"3d6156a5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/git/manage-worktrees.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"plugins/audit/tests/test_audit_lookup.py\",\"plugins/audit/tests/test_drive_phase.py\",\"plugins/audit/tests/test_manage_worktrees.py\"],\"scopeDigest\":\"sha256:75b1fc963bcea4e78b27ab54c646574fd9fd917c8f8777935a6ca5cbe6e664b0\",\"v\":2}"
+}

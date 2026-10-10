@@ -36,8 +36,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:take_stamp (tree branch)",
         "issue": "take_stamp passes `--project <task tree> --manifest <phase tree manifest>`. stamp-verification's recorder_exclusion labels a manifest outside the project root by its ABSOLUTE path, so every wave executor stamp stores `\"manifest\": \"<absolute machine path>/docs/audit/audit-plan.json\"` (reproduced against a scratch repo plus linked worktree: the stamp and the content note both carry the absolute path, and the note reports every recorder path as 'could not be left out'). file-return writes that text verbatim into the committed executor return with no scrub, so a wave run commits a machine path into evidence: the class P122 removed, and what tools/check-committed-pii.py exists to refuse. Serial runs are unaffected (manifest inside the root, label is relative). wv4 only asserts the return was filed.",
-        "resolution": "Give take a way to store the project-relative label of the phase tree's manifest when the measured tree is a task tree (or compute the label against the phase tree and pass the tree only as the digest root), and add a wave case asserting the filed stamp's manifest field is relative and the return holds no absolute path.",
-        "fixTask": "P124.14-k2x"
+        "resolution": "fixed in P124.14-k2x (3d6156a580f8): Give take a way to store the project-relative label of the phase tree's manifest when the measured tree is a task tree (or compute the label against the phase tree and pass the tree only as the digest root), and add a wave case asserting the filed stamp's manifest field is relative and the return holds no absolute path.",
+        "fixTask": "P124.14-k2x",
+        "commit": "3d6156a580f8",
+        "status": "fixed"
       },
       {
         "id": "P124-R3",
@@ -91,7 +93,7 @@
         "resolution": "Say in the worktreeSetup README row that setup must not modify tracked files."
       }
     ],
-    "outcome": "[findings: 9 - 0 high, 4 med, 5 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 9 - 0 high, 4 med, 5 low; 1 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1050,7 +1052,7 @@
     {
       "id": "P124.14-k2x",
       "title": "committed executor and reviewer returns are scrubbed at their writer, and a wave stamp labels its manifest relative",
-      "status": "in_progress",
+      "status": "done",
       "description": "Finding P124-R2 (med), the third recurrence of the machine-path class (F538, F604, P122-R1): take_stamp passes --project <task tree> --manifest <phase tree manifest>, stamp-verification labels a manifest outside the project root by its absolute path, and file-return writes the stamp verbatim into the committed return under docs/audit/evidence/returns, which no scrub covers. Two layers: (1) the stamp names the manifest relative to the phase tree's checkout (or by its repo-relative path), never absolute; (2) the invariant - every committed file under docs/audit (returns included) is written through the scrubbing writer; extend _output's raw_json_writer_violations lint (or add one) so a write of a returns file that bypasses it is a finding, with a red-first allow case. Find where returns are written (file-return in audit-task / _filed_returns) and route it.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1089,14 +1091,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3d6156a580f8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Layer 1: stamp-verification.recorder_exclusion labels a manifest outside the project by its place in its own checkout (_own_checkout_rel), and reads it back as the project's copy on both sides (take and compare), so the stamp carries no absolute path. Layer 2 (invariant): _filed_returns.file_once now scrubs the JSON through _machine_paths.scrubbed_values (scrubbed_return_text; clean text is written byte for byte), so every filed return, task or phase, executor or reviewer, is scrubbed at its one writer. New lint _output.returns_writer_violations: a function that builds a return path (return_path/return_rel/phase_return_rel) and writes a file itself is a finding; the home writer must still call the scrub; a tree without the home is BLIND. Tests: wv4a in test_drive_phase (red before: stamp manifest was the absolute phase-tree path and the tree path appeared in the filed return), rp11/rp12 (scrub + allow twin) in test__filed_returns, sr210/sr211 in test_stamp_verification, rw1-rw5 in test__output. PLUGIN-BUILD-GUIDE.md module map fence regenerated for the new _filed_returns -> _machine_paths edge. Full sweep: 324/326 files ok; the two red are tools/prove-gates.py (c1, a4: returns_writer_violations has no row) and test__deps g1 (fixed afterwards by the guide fence, test__deps now 307/307). NOT DONE, REFUSED BY THE PLAN GATE: tools/prove-gates.py is outside this task's files and the gate refused the edit (P18.6 etc. done). The orchestrator must add two rows after the raw_json_writer_violations rows: red ('returns_writer_violations', S+'_output.py','replace','def returns_writer_violations(script_dir=None):','def returns_writer_violations(script_dir=None):\\n    return []',OUT,'rw1') and allow ('returns_writer_violations',S+'_output.py','replace','            if built and wrote:','            if built or wrote:',OUT,'rw2'). Also: already-committed returns under docs/audit/evidence/returns (P122.*, P124.4 ...) still carry machine paths from before this fix; not touched (outside files).",
+        "descriptive": "A committed return is scrubbed of machine paths at its one writer, a wave stamp names its manifest relative, and a lint keeps a second route from reopening the class."
       },
       "startedAt": "2026-10-10T06:43:17Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T07:12:01Z",
+      "verifiedBy": [
+        "wv4a (test_drive_phase)",
+        "rp11, rp12 (test__filed_returns)",
+        "sr210, sr211 (test_stamp_verification)",
+        "rw1-rw5 (test__output)"
+      ],
       "fixes": [
         "P124-R2"
       ],
@@ -1105,12 +1112,23 @@
         "runId": "2026-10-10T07:12:00Z.5c95d2",
         "status": "passed",
         "at": "2026-10-10T07:12:00Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "3d6156a580f8",
+        "at": "2026-10-10T07:12:01Z",
+        "basis": "a fix task for P124-R2: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-10T07:03:33Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 167 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - wv4a (house FAIL): SELFTEST FAILED: 166/167 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P124.15-k2x",
       "title": "a wave survives a crash during tree setup, a blocked member keeps its tree into a later wave, its reviewer reads its own diff, and a discarded change keeps its tree",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Findings P124-R1, R3, R4 (med), all in the wave driver. R1: with review.perTask always/signals, a member's reviewer is dispatched before integrate_member, and its brief reads git diff HEAD from the phase tree where the task's bytes are not yet - pass the task tree and base into the reviewer brief (wave_tree_lines feeds only the executor today), or integrate before the reviewer is due; add a wave case with per_task always. R3: tree creation is not resumable as the design promised - add_tree must find an existing tree through its marker (read_provenance with expect_task) instead of task-add refusing \"already has a tree\"; a tree whose setup failed or never finished is re-provisioned (setup re-run) before any dispatch, spending no attempt; close_wave must not drop a blocked member's tree so a later wave adopts it. R4: tree_holds_only_integrated guards a discarded undeclared change from task-remove --force, but no case exercises it (mutating it to never differ left every stage green) - add the discard-then-close case asserting the tree survives and is named. Blocked by the R2 task only because both edit drive-phase.py.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1118,7 +1136,8 @@
         "plugins/audit/scripts/status/audit-lookup.py",
         "plugins/audit/tests/test_audit_lookup.py",
         "plugins/audit/scripts/git/manage-worktrees.py",
-        "plugins/audit/tests/test_manage_worktrees.py"
+        "plugins/audit/tests/test_manage_worktrees.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1143,6 +1162,77 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-10T07:13:12Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "fixes": [
+        "P124-R1",
+        "P124-R3",
+        "P124-R4"
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T07:38:41Z.9d3419",
+        "status": "passed",
+        "at": "2026-10-10T07:38:41Z"
+      }
+    },
+    {
+      "id": "P124.16-k2x",
+      "title": "check-committed-pii reads filed returns, and the returns already committed carry no machine path",
+      "status": "pending",
+      "description": "F618: check-committed-pii's domain (evidence, journal, plan, report) does not read docs/audit/evidence/returns/*.json, so the 16 returns filed this run with machine paths (before P124.14 put the scrub at the returns writer) were committed with no finding - the backstop had the same hole the writer had. Widen the domain to the returns (its own --selftest holds the cases; add red and allow twins), and rewrite each listed return through the scrubbing path (_machine_paths.scrubbed_values, as _filed_returns.file_once now does) so the committed copies are clean; confirm nothing reads a return by a content hash that the rewrite would break (grep the journal and evidence for the return paths) and say what you found. Run check-committed-pii, the sweep and ruff.",
+      "files": [
+        "tools/check-committed-pii.py",
+        "docs/audit/evidence/returns/P122.1/20261009T193258Z.executor.json",
+        "docs/audit/evidence/returns/P122.10-z4y/20261010T002105Z.executor.json",
+        "docs/audit/evidence/returns/P122.10-z4y/20261010T005441Z.executor.json",
+        "docs/audit/evidence/returns/P122.11-z4y/20261010T011646Z.executor.json",
+        "docs/audit/evidence/returns/P122.11-z4y/20261010T013445Z.executor.json",
+        "docs/audit/evidence/returns/P122.2/20261009T194822Z.executor.json",
+        "docs/audit/evidence/returns/P122.3/20261009T202501Z.executor.json",
+        "docs/audit/evidence/returns/P122.4/20261009T205252Z.executor.json",
+        "docs/audit/evidence/returns/P122.6-z4y/20261009T212317Z.executor.json",
+        "docs/audit/evidence/returns/P122.7-z4y/20261009T215442Z.executor.json",
+        "docs/audit/evidence/returns/P122.8-z4y/20261009T230707Z.executor.json",
+        "docs/audit/evidence/returns/P122.9-z4y/20261009T232809Z.executor.json",
+        "docs/audit/evidence/returns/P122.9-z4y/20261009T234428Z.executor.json",
+        "docs/audit/evidence/returns/P122/09aed798f46fd04e3b7061223197149da7e63a40.reviewer.json",
+        "docs/audit/evidence/returns/P124.4/20261010T032202Z.executor.json",
+        "docs/audit/evidence/returns/P124/79f02001d457770458000381194ca97b81deaebf.reviewer.json"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-committed-pii.py: a filed return under docs/audit/evidence/returns naming a home path is a finding, and one with only repo-relative paths is clean"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P124.15-k2x"
+      ],
+      "dependsOn": [],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,
@@ -1152,12 +1242,7 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": [],
-      "fixes": [
-        "P124-R1",
-        "P124-R3",
-        "P124-R4"
-      ]
+      "verifiedBy": []
     }
   ],
   "request": "F600 + F599 (owner-mandated, testbed): tasks inside a phase run concurrently in their own worktrees, gated there and integrated serially; task scopes carry their unavoidable companions. One phase per the user (fewer review rounds).",

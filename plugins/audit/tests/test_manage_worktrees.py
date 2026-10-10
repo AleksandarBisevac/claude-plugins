@@ -197,13 +197,20 @@ def _task_cases(check, root):
           repr((code, ans)))
 
     second = path + "-again"
-    code, ans = M.do_task_add(proj, TASK_PLAN, "P1.1", base, project=proj,
+    code, ans = M.do_task_add(proj, TASK_PLAN, "P1.1", head, project=proj,
                               path=second)
-    check("ta8 a SECOND tree for a task that already has one is refused (exit 1), "
-          "names the tree it would duplicate, and creates nothing - at another "
-          "path, since the default path is already refused as non-empty",
-          code == M.E_FAIL and os.path.basename(path) in (ans.get("error") or "")
-          and not os.path.exists(second), repr((code, ans)))
+    check("ta8 task-add for a task that already has a tree ADOPTS it (exit 0): "
+          "the existing path, at the base its marker records rather than the "
+          "one asked for, and nothing is created at the other path",
+          code == 0 and ans.get("adopted") is True
+          and os.path.realpath(ans.get("path") or "-") == os.path.realpath(path)
+          and ans.get("base") == base and not os.path.exists(second),
+          repr((code, ans)))
+    check("ta8a ...and a tree whose marker records a completed setup is not set "
+          "up again",
+          rec.get("setup") == "none"
+          and (ans.get("setup") or {}).get("status") == M.SETUP_KEPT,
+          repr((rec, ans.get("setup"))))
 
     # --- the sweep, over the same real tree -------------------------------------
     with open(os.path.join(path, "b.txt"), "w") as fh:
@@ -326,6 +333,19 @@ def _env_cases(check, root):
     check("su5 ...and the tree is kept and marked, so task-remove can take it down "
           "- a failed setup is not a half-deleted tree",
           os.path.isdir(t3) and ans.get("provenance"), repr(ans)[:300])
+    failed_rec = (M._wt.read_provenance(t3, expect_task="P1.1").get("record") or {})
+    code, ans = M.do_task_add(proj, TASK_PLAN, "P1.1", base, project=proj,
+                              path=tree(31), setup=_py(
+                                  "open('setup-again.txt','w').write('ok')"))
+    again_rec = (M._wt.read_provenance(t3, expect_task="P1.1").get("record") or {})
+    check("su5a ...and the next task-add adopts THAT tree, runs the setup again in "
+          "it, and records the completed setup in its marker",
+          failed_rec.get("setup") == "failed" and code == 0
+          and ans.get("adopted") is True
+          and os.path.realpath(ans.get("path") or "-") == os.path.realpath(t3)
+          and os.path.isfile(os.path.join(t3, "setup-again.txt"))
+          and not os.path.exists(tree(31)) and again_rec.get("setup") == "ran",
+          repr((failed_rec.get("setup"), code, ans, again_rec.get("setup")))[:500])
     check("su6 ...and the include was copied BEFORE the setup ran (the setup may "
           "need .env): a setup that reads it passes",
           M.do_task_remove(proj, TASK_PLAN, "P1.1", force=True)[0] == 0

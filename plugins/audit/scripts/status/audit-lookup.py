@@ -494,19 +494,31 @@ def _verbatim(text, absent):
     return [text] if isinstance(text, str) and text.strip() else [absent]
 
 
-def wave_tree_lines(ctx, phase, task):
-    """The lines that tell a wave member where it works: its own tree, the
-    commit the tree was cut at, and the rules that follow from it. Read from the
-    driver's state, where `add_tree` records the tree; a task with no tree there
-    - width 1, or a phase not driven in waves - gets no line at all."""
+def wave_tree(ctx, phase, task):
+    """`(tree, base)` of a wave member - its own tree and the commit that tree
+    was cut at - read from the driver's state, where `add_tree` records both;
+    `(None, None)` for a task with no tree there (width 1, or a phase not
+    driven in waves). The base is the task's own, since an adopted tree keeps
+    the base it was cut from while its wave was cut later."""
     body, _problem = _fr.drive_state(ctx["state"], str(phase.get("id")))
     wave = body.get("wave") if isinstance(body.get("wave"), dict) else {}
     trees = wave.get("trees") if isinstance(wave.get("trees"), dict) else {}
     tree = trees.get(str(task.get("id")))
     if not isinstance(tree, str) or not tree:
+        return None, None
+    bases = wave.get("bases") if isinstance(wave.get("bases"), dict) else {}
+    return tree, bases.get(str(task.get("id"))) or wave.get("base")
+
+
+def wave_tree_lines(ctx, phase, task):
+    """The lines that tell a wave member where it works: its own tree, the
+    commit the tree was cut at, and the rules that follow from it; none for a
+    task `wave_tree` finds no tree for."""
+    tree, base = wave_tree(ctx, phase, task)
+    if tree is None:
         return []
     return ["tree: %s" % (tree,),
-            "base: %s" % (wave.get("base"),),
+            "base: %s" % (base,),
             "You work in this tree, not the project's. Begin every command "
             "with `cd %s &&`, and edit only files under it." % (tree,),
             "Never commit there: the driver carries your bytes into the phase "
@@ -664,17 +676,21 @@ def executor_return_lines(manifest, phase, task, ctx):
             + note)
 
 
-def _diff_lines(ctx, files):
-    """The working tree's change to `files`, read from git, or why it is not."""
+def _diff_lines(ctx, files, tree=None, base=None):
+    """The change to `files`, read from git, or why it is not: the phase
+    tree's against HEAD, or - for a wave member, whose bytes are in its own
+    tree until the driver integrates them - `tree`'s against `base`."""
     paths = [_vocab._strip_line_suffix(f) for f in files or []
              if isinstance(f, str)]
-    command = "git diff HEAD -- %s" % (" ".join(paths),)
+    where, against = (tree, base) if tree else (ctx["gitRoot"], "HEAD")
+    command = "git %sdiff %s -- %s" % ("-C %s " % (tree,) if tree else "",
+                                       against, " ".join(paths))
     try:
-        done = subprocess.run(["git", "-C", ctx["gitRoot"], "diff", "HEAD", "--"]
+        done = subprocess.run(["git", "-C", where, "diff", against, "--"]
                               + paths, stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, timeout=60)
         untracked = subprocess.run(
-            ["git", "-C", ctx["gitRoot"], "ls-files", "--others",
+            ["git", "-C", where, "ls-files", "--others",
              "--exclude-standard", "--"] + paths,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
     except (OSError, subprocess.SubprocessError) as exc:
@@ -718,7 +734,14 @@ def compose_reviewer_brief(manifest, phase, task, ctx, filed):
         "task.testEvidence) - read that as absent, not as passed."])
     lines += _section("Gate commands, %s" % (whose,),
                       gate_lines(manifest, entries))
-    lines += _section("The diff", _diff_lines(ctx, task.get("files")))
+    tree, base = wave_tree(ctx, phase, task)
+    if tree is not None:
+        lines += _section("Tree", [
+            "tree: %s" % (tree,), "base: %s" % (base,),
+            "This task ran in a tree of its own and its bytes are not in the "
+            "phase tree yet; the diff below is read in that tree against that "
+            "base. Read its files there, not in the project."])
+    lines += _section("The diff", _diff_lines(ctx, task.get("files"), tree, base))
     lines += _section("Your return", [
         "File the return object agents/audit-reviewer.md declares - your one "
         "write. %s:" % (RETURN_ON_STDIN,),
