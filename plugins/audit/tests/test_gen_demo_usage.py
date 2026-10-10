@@ -258,8 +258,41 @@ def _cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _newline_cases(check):
+    """The example usage ledger is committed and diffed against a fresh run, so
+    its bytes may not depend on the platform that wrote them."""
+    import test__journal_io as J
+    tmp = tempfile.mkdtemp(prefix="gdu-nl-")
+    try:
+        rows = [{"ts": "2026-06-02T09:00:00Z", "tokens": 1},
+                {"ts": "2026-07-02T09:00:00Z", "tokens": 2}]
+        probe = os.path.join(tmp, "probe.txt")
+
+        def plain():
+            with open(probe, "w", encoding="utf-8") as fh:
+                fh.write("a\nb\n")
+        J._under_crlf_default(plain)
+        check("gnl2 THE SIMULATION BITES: a text-mode write naming no newline "
+              "writes CRLF under it, so the case below can fail: %r"
+              % (J._bytes_of(probe),),
+              J._bytes_of(probe) == b"a\r\nb\r\n")
+        written = J._under_crlf_default(lambda: M.write_ledger(rows, tmp))
+        raw = b"".join(J._bytes_of(p) for p in written)
+        check("gnl3 the demo usage ledger is written with LF under a CRLF "
+              "default: %d files, %d bytes, %d carriage returns"
+              % (len(written), len(raw), raw.count(b"\r")),
+              len(written) == 2 and raw.count(b"\n") == 2 and b"\r" not in raw)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _all_cases(check):
+    _cases(check)
+    _newline_cases(check)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    return _harness.run(_all_cases)
 
 
 if __name__ == "__main__":

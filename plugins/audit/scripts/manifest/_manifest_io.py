@@ -1203,15 +1203,17 @@ def atomic_write_text(path, text):
     name nobody else holds, which is the whole reason this is a function rather
     than three lines repeated beside each state file.
 
-    Text mode, so the platform's line endings -- the shape every state file
-    this plugin writes already has. `_deps.state_write_violations()` refuses an
+    LF ON EVERY PLATFORM (`newline="\n"`): the plan, its shards and the usage
+    ledger are committed, and a text-mode handle writes CRLF on Windows, so the
+    same document would differ byte for byte between two machines and read as a
+    change in git. `_deps.state_write_violations()` refuses an
     `os.replace` outside the sanctioned writers it lists, this one among them.
     """
     d = os.path.dirname(path) or "."
     os.makedirs(d, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
         os.replace(tmp, path)
     finally:
@@ -1352,7 +1354,7 @@ def ensure_claude_ignored(claude_dir, rows):
         if not missing:
             return True
         os.makedirs(claude_dir, exist_ok=True)
-        with open(gi, "a", encoding="utf-8") as fh:
+        with open(gi, "a", encoding="utf-8", newline="\n") as fh:
             if content and not content.endswith("\n"):
                 fh.write("\n")
             for base, note in missing:

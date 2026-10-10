@@ -102,6 +102,27 @@ def _beside_git_cases(check):
           and env["Path"] == "C:\\Windows\\System32"
           and same is env and other is env and inherited is None)
 
+    # The same promise at the call BOTH spawn sites make, `shell_invocation`:
+    # the resolver is swapped for one that answers the plain POSIX shell, so the
+    # promise is read on every platform instead of only where no beside-git
+    # shell exists. The seam is restored whether or not the calls raise.
+    real_resolve = M.resolve_sh
+    M.resolve_sh = lambda *a, **k: (M.POSIX_SH, None)
+    try:
+        passed = {"KEEP": "me"}
+        none_out = M.shell_invocation("true")
+        dict_out = M.shell_invocation("true", passed)
+    finally:
+        M.resolve_sh = real_resolve
+    check("pg18i `shell_invocation` hands back the env it was given: `None` "
+          "stays `None` and a passed dict comes back as THE SAME OBJECT, so a "
+          "child of `/bin/sh` starts exactly as it did before the wrapper "
+          "existed (mutation: have shell_invocation copy the env -> red): %r"
+          % ((none_out, dict_out),),
+          none_out[0] == [M.POSIX_SH, "-c", "true"] and none_out[1] is None
+          and none_out[2] is None
+          and dict_out[1] is passed and dict_out[2] is None)
+
     root = "C:\\Windows"
     check("pg19 THE SYSTEM DIRECTORY IS JUDGED THE WAY WINDOWS SPELLS IT, case "
           "and separator folded: `c:/WINDOWS/System32/sh.exe` is under "

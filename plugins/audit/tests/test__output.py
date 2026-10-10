@@ -834,6 +834,90 @@ def _cases(check):
           "files the pending table names: %r" % (M.bare_output_cut_violations(),),
           M.bare_output_cut_violations() == [])
 
+    # ------------------------------------ text-mode writes name their newline
+    nw = tempfile.mkdtemp(prefix="audit-newline-")
+    try:
+        def _nw(name, text):
+            with open(os.path.join(nw, name), "w", encoding="utf-8") as fh:
+                fh.write(text)
+        _nw("bare.py", 'def f(p):\n'
+                       '    with open(p, "w", encoding="utf-8") as fh:\n'
+                       '        fh.write("x")\n')
+        _nw("fd.py", 'import os\n'
+                     'def f(fd):\n'
+                     '    return os.fdopen(fd, "w", encoding="utf-8")\n')
+        _nw("kw.py", 'def f(p):\n'
+                     '    return open(p, mode="a", encoding="utf-8")\n')
+        _nw("plus.py", 'import io\n'
+                       'def f(p):\n'
+                       '    return io.open(p, "r+")\n')
+        _nw("named.py", 'import os\n'
+                        'def f(p, fd):\n'
+                        '    a = open(p, "w", encoding="utf-8", newline="\\n")\n'
+                        '    b = os.fdopen(fd, "w", encoding="utf-8", newline="")\n'
+                        '    return a, b\n')
+        _nw("binary.py", 'def f(p):\n'
+                         '    return open(p, "wb")\n')
+        _nw("read.py", 'def f(p):\n'
+                       '    return open(p, "r", encoding="utf-8")\n')
+        _nw("dynamic.py", 'def f(p, m):\n'
+                          '    return open(p, m)\n')
+        nw_got = dict((n, l) for n, l, _w in
+                      M.text_write_newline_violations((nw,), ()))
+        check("nw1 a text-mode open for writing with no newline is reported by "
+              "file and line, whether it is open, os.fdopen, a keyword mode or "
+              "an update mode: %r" % (sorted(nw_got.items()),),
+              nw_got.get("bare.py") == 2 and nw_got.get("fd.py") == 3
+              and nw_got.get("kw.py") == 2 and nw_got.get("plus.py") == 3)
+        check("nw2 ...and the allow cases are silent - a newline named by "
+              "keyword on either opener, a binary handle, a read, and a mode "
+              "the lint cannot read; each is the one an over-wide rule "
+              "convicts first: %r" % (sorted(nw_got),),
+              not ({"named.py", "binary.py", "read.py", "dynamic.py"}
+                   & set(nw_got)))
+        nw_held = M.text_write_newline_violations(
+            (nw,), ("bare.py", "read.py"))
+        check("nw3 a pending row silences its file, and a row naming a file "
+              "that holds no such write is itself reported, so the table can "
+              "only shrink: %r" % (nw_held,),
+              not [h for h in nw_held if h[0] == "bare.py"]
+              and [h for h in nw_held if h[0] == "read.py" and h[1] == 0])
+    finally:
+        shutil.rmtree(nw, ignore_errors=True)
+    check("nw4 ...and the real tree opens no text handle for writing without "
+          "a newline beyond the files the pending table names: %r"
+          % (M.text_write_newline_violations(),),
+          M.text_write_newline_violations() == [])
+
+    # --------------------------- a shell script finds its dir on any $0
+    sd = tempfile.mkdtemp(prefix="audit-shself-")
+    try:
+        def _sd(name, text):
+            with open(os.path.join(sd, name), "w", encoding="utf-8") as fh:
+                fh.write(text)
+        _sd("case.sh", '#!/bin/sh\ncase "$0" in\n  */*) here=${0%/*} ;;\nesac\n')
+        _sd("dirname.sh", '#!/bin/sh\nhere=$(dirname "$0")\n')
+        _sd("cut.sh", '#!/bin/sh\nhere=${0%/*}\n')
+        _sd("good.sh", '#!/bin/sh\nself=$0\ncase "$self" in\n  */*) h=${self%/*} ;;\nesac\n')
+        _sd("comment.sh", '#!/bin/sh\n# case "$0" in */*) and dirname "$0"\nx=1\n')
+        _sd("notsh.txt", 'dirname "$0"\n')
+        sd_got = M.sh_self_dir_violations(sd)
+        sd_files = sorted(set(v[0] for v in sd_got))
+        check("sd1 a shell script that works out its directory from a raw $0 "
+              "is reported - by a case, by dirname and by a pattern cut, "
+              "naming the line: %r" % (sd_got,),
+              [v for v in sd_got if v[0] == "case.sh"][0][1] == 2
+              and "dirname.sh" in sd_files and "cut.sh" in sd_files)
+        check("sd2 ...and the allow cases are silent - the normalised copy, a "
+              "comment that names the pattern, and a file that is not a "
+              "script: %r" % (sd_files,),
+              not ({"good.sh", "comment.sh", "notsh.txt"} & set(sd_files)))
+    finally:
+        shutil.rmtree(sd, ignore_errors=True)
+    check("sd3 ...and no tracked script in the real tree reads its own "
+          "directory from a raw $0: %r" % (M.sh_self_dir_violations(),),
+          M.sh_self_dir_violations() == [])
+
     # ------------------------------------------- the raw JSON writer, by name
     rw = tempfile.mkdtemp(prefix="audit-rawjson-")
     try:

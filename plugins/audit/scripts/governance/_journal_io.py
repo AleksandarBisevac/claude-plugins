@@ -522,7 +522,7 @@ def writer_token(project, config=None):
     minted = os.urandom(8).hex()
     try:
         mod.ensure_local_dir(state)
-        with open(path, "w", encoding="utf-8") as fh:
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
             json.dump({"token": minted}, fh)
     except Exception:
         # NOT `return minted`. An unpersisted token is a NEW writer id on the
@@ -720,7 +720,7 @@ def _worktree_key_uncached(where):
         pass
     minted = os.urandom(8).hex()
     try:
-        with open(path, "w", encoding="utf-8") as fh:
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(minted + "\n")
     except Exception:
         return None
@@ -827,7 +827,7 @@ def record_plugin_write(project, config, writer, path):
     wrote.append(rel)
     try:
         mod.ensure_local_dir(os.path.dirname(slot))
-        with open(slot, "w", encoding="utf-8") as fh:
+        with open(slot, "w", encoding="utf-8", newline="\n") as fh:
             json.dump({PLUGIN_WRITE_KEY: wrote}, fh)
     except Exception:
         return None
@@ -1119,9 +1119,14 @@ def _break_stale(lock):
         fd = os.open(breaker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         os.close(fd)
     except OSError as exc:
-        if exc.errno != errno.EEXIST:
+        # Windows answers a create racing the unlink of the previous breaker
+        # with a permission error instead of "exists": the name is being
+        # released by another waiter, which is the same refusal, and the caller
+        # retries within its deadline rather than failing the append.
+        if exc.errno not in (errno.EEXIST, errno.EACCES) \
+                and not isinstance(exc, PermissionError):
             raise
-        if _is_stale(breaker):
+        if exc.errno == errno.EEXIST and _is_stale(breaker):
             _clear_stale_breaker(breaker)
         return False
     try:

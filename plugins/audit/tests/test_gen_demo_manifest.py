@@ -1457,7 +1457,35 @@ def _history_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _newline_cases(check):
+    """The example evidence ledger is committed and diffed against a fresh run,
+    so its bytes may not depend on the platform that wrote them."""
+    import test__journal_io as J
+    tmp = tempfile.mkdtemp(prefix="gdm-nl-")
+    try:
+        probe = os.path.join(tmp, "probe.txt")
+
+        def plain():
+            with open(probe, "w", encoding="utf-8") as fh:
+                fh.write("a\nb\n")
+        J._under_crlf_default(plain)
+        check("gnl0 THE SIMULATION BITES: a text-mode write naming no newline "
+              "writes CRLF under it, so the case below can fail: %r"
+              % (J._bytes_of(probe),),
+              J._bytes_of(probe) == b"a\r\nb\r\n")
+        m = M.generate(n_phases=4, n_tasks=3, seed=11)
+        written = J._under_crlf_default(lambda: M.write_evidence(m, tmp))
+        raw = b"".join(J._bytes_of(p) for p in written)
+        check("gnl1 the demo evidence ledger is written with LF under a CRLF "
+              "default: %d files, %d bytes, %d carriage returns"
+              % (len(written), len(raw), raw.count(b"\r")),
+              bool(written) and raw.count(b"\n") > 0 and b"\r" not in raw)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _all_cases(check):
+    _newline_cases(check)
     _cases(check)
     _history_cases(check)
     _boot_wait_cases(check)

@@ -268,7 +268,7 @@ def write_ledger(rows, out_dir):
     written = []
     for month, group in sorted(by_month.items()):
         path = os.path.join(out_dir, "%s.jsonl" % month)
-        with open(path, "w", encoding="utf-8") as fh:
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
             for row in group:
                 fh.write(json.dumps(row, separators=(",", ":"), sort_keys=True) + "\n")
         written.append(path)

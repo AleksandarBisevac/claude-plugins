@@ -29,8 +29,18 @@
 # `git checkout examples/acme-store docs/index.html`.
 set -e
 
-case "$0" in
-  */*) here=${0%/*} ;;
+# Separators are normalised first (builtins only): a Windows caller hands Git's
+# sh a $0 with backslashes and no slash at all, which reads as "run from the cwd".
+self=
+rest=$0
+while :; do
+  case "$rest" in
+    *\\*) self=$self${rest%%\\*}/; rest=${rest#*\\} ;;
+    *)    self=$self$rest; break ;;
+  esac
+done
+case "$self" in
+  */*) here=${self%/*} ;;
   *)   here=. ;;
 esac
 root=$(cd "$here/.." && pwd)

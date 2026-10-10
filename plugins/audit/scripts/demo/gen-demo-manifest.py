@@ -2377,7 +2377,7 @@ def write_evidence(manifest, out_dir):
     for month in sorted(months):
         name = "%s.%s.jsonl" % (month, EVIDENCE_WRITER)
         path = os.path.join(directory, name)
-        with open(path, "w", encoding="utf-8") as fh:
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
             for row in _evidence_io.chain_file(months[month], name):
                 fh.write(_journal_io.canonical(row) + "\n")
         written.append(path)

@@ -34,7 +34,18 @@
 # the dirt itself is what is being proven.
 set -u
 
-here=$(dirname "$0")
+self=
+rest=$0
+while :; do
+  case "$rest" in
+    *\\*) self=$self${rest%%\\*}/; rest=${rest#*\\} ;;
+    *)    self=$self$rest; break ;;
+  esac
+done
+case "$self" in
+  */*) here=${self%/*} ;;
+  *)   here=. ;;
+esac
 root=$(cd "$here/.." && pwd)
 cd "$root" || exit 2
 

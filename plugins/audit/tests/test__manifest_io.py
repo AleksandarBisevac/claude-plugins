@@ -1597,8 +1597,43 @@ def _writer_contract_cases(check):
           len(sites) > 5 and not silent and not stale)
 
 
+def _newline_cases(check):
+    """The plan, its shards and the usage backfill are committed, so the bytes
+    the atomic writers leave may not depend on the platform that wrote them."""
+    import test__journal_io as J
+    tmp = tempfile.mkdtemp(prefix="mio-nl-")
+    try:
+        probe = os.path.join(tmp, "probe.txt")
+
+        def plain():
+            with open(probe, "w", encoding="utf-8") as fh:
+                fh.write("a\nb\n")
+        J._under_crlf_default(plain)
+        check("mnl0 THE SIMULATION BITES: a text-mode write naming no newline "
+              "writes CRLF under it, so the cases below can fail: %r"
+              % (J._bytes_of(probe),),
+              J._bytes_of(probe) == b"a\r\nb\r\n")
+        text_path = os.path.join(tmp, "sub", "t.jsonl")
+        J._under_crlf_default(
+            lambda: M.atomic_write_text(text_path, '{"a":1}\n{"b":2}\n'))
+        check("mnl1 atomic_write_text writes LF under a CRLF default: %r"
+              % (J._bytes_of(text_path),),
+              J._bytes_of(text_path) == b'{"a":1}\n{"b":2}\n')
+        json_path = os.path.join(tmp, "plan.json")
+        J._under_crlf_default(
+            lambda: M.atomic_write_json(json_path, {"k": [1, 2], "z": "v"}))
+        raw = J._bytes_of(json_path)
+        check("mnl2 ...and so does the JSON writer built on it, a multi-line "
+              "document whose every newline must be a bare LF: %d newlines, "
+              "%d carriage returns" % (raw.count(b"\n"), raw.count(b"\r")),
+              raw.count(b"\n") > 1 and b"\r" not in raw)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _selftest():
     def body(check):
+        _newline_cases(check)
         _executed_cases(check)
         _corpus_cases(check)
         _writer_contract_cases(check)

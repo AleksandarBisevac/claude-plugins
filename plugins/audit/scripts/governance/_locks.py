@@ -623,7 +623,7 @@ def _write_lock(path, info):
     d = os.path.dirname(path)
     fd, tmp = tempfile.mkstemp(dir=d, prefix=".lock-", suffix=".tmp")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(info, fh)
         os.replace(tmp, path)
     except Exception:
@@ -664,7 +664,7 @@ def _link_into_place(tmp, path, link, info):
         if os.path.exists(path):
             raise FileExistsError("already exists: %s" % (path,))
         fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(info, fh)
 
 
@@ -700,7 +700,7 @@ def _claim(path, info, link=os.link):
     try:
         fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".",
                                    prefix=".claim-", suffix=".tmp")
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(info, fh)
         # mkstemp is private to its creator; a lock the whole machine consults
         # has to be readable by whoever else is about to ask about it.

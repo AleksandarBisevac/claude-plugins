@@ -55,8 +55,20 @@
 # reaches the prompt below. For the half that is not, the reader is
 # `/audit:doctor`: a launcher that never ran leaves no running-copy stamp on disk,
 # and it reports hooks that have never fired.
-case "$0" in
-  */*) dir=${0%/*} ;;
+# Separators are normalised first, in builtins only: a Windows caller hands this
+# `sh` a $0 spelled with backslashes (`C:\...\py-launch.sh`) and no `/` at all,
+# which the slash test below would read as "run from the cwd". Parameter expansion
+# has no substitution, so each backslash is peeled off and replaced by a slash.
+self=
+rest=$0
+while :; do
+  case "$rest" in
+    *\\*) self=$self${rest%%\\*}/; rest=${rest#*\\} ;;
+    *)    self=$self$rest; break ;;
+  esac
+done
+case "$self" in
+  */*) dir=${self%/*} ;;
   *)   dir=. ;;
 esac
 script="$dir/$1"

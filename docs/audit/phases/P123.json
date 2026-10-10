@@ -1784,7 +1784,7 @@
     {
       "id": "P123.23",
       "title": "A layout migration's backup lands in an ignored place, never beside the plan",
-      "status": "in_progress",
+      "status": "done",
       "description": "`migrate-manifest.py` copies the original to `<manifest>.bak-<UTC>` beside the plan (and retires a shard dir as `<dir>.bak-<UTC>`), and nothing the plugin writes ignores that name, so a committed-looking copy of the plan sits next to it. Park restore points under the plugin's private `.claude/` area with a targeted ignore line, reusing one ignore-line writer (today `panel-server._ensure_panel_files_ignored`, moved to a shared helper both call); update every doc that names the location (layout.md, init.md regenerate/split, README) and the doctor's restore remedy. Regression: an in-place migration leaves no new untracked file beside the manifest, `git check-ignore` matches the backup, and a failed migration still restores from it. Faults: F363.",
       "files": [
         "plugins/audit/scripts/manifest/migrate-manifest.py",
@@ -1827,25 +1827,44 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "92f738a98500",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added _mio.ensure_claude_ignored (shared ignore-line writer), backup_dir_for, ensure_backup_dir and BACKUP_DIR_NAME in _manifest_io.py; panel-server._ensure_panel_files_ignored now delegates to the shared writer. migrate-manifest.py parks the manifest backup and the retired shard dir under <checkout>/.claude/audit-backups/ (git-ignored by a targeted 'audit-backups/' line), warning when the line cannot be written. New _backup_cases (bk1-bk8: nothing untracked beside the plan, check-ignore matches, targeted line, reverse parks shards, failed migration restores) plus updated existing path assumptions. Docs updated: layout.md, init.md (regenerate + split), README, PLUGIN-BUILD-GUIDE.md, and the doctor restore remedy text in _doctor_setup.py. python3 tools/sweep-selftests.py exit 0; ruff clean. No test change needed in test__doctor_setup.py or test__manifest_io.py (both unmodified; manifest_io selftest passes).",
+        "descriptive": "A layout migration's restore points land in an ignored .claude/audit-backups directory instead of beside the plan."
       },
       "startedAt": "2026-10-10T19:20:53Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T19:35:20Z",
+      "verifiedBy": [
+        "bk1",
+        "bk2",
+        "bk3",
+        "bk4",
+        "bk5",
+        "bk6",
+        "bk7",
+        "bk8"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T19:35:19Z.dff17c",
         "status": "passed",
         "at": "2026-10-10T19:35:19Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "92f738a98500",
+        "at": "2026-10-10T19:35:20Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T19:26:37Z",
+        "basis": "`python3 plugins/audit/tests/test_migrate_manifest.py --selftest` in a throwaway tree at HEAD exited 1 with 4 of 5 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bk1 (house FAIL), bk2 (house FAIL), bk3 (house FAIL), bk4 (house FAIL): SELFTEST FAILED: 0/5 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.24",
       "title": "Scripts find their dir on any path spelling, committed files are LF, Windows edges pinned",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(F582) `examples/report.sh` and `plugins/audit/hooks/py-launch.sh` find their own dir with `case \"$0\" in */*)`, which a backslash `$0` (no `/`) defeats; `tools/verify.sh`/`tools/redfirst.sh` use `dirname \"$0\"` unchecked. One POSIX-sh idiom everywhere that normalises backslashes first - in py-launch.sh with builtins only (parameter expansion, no `tr`), per CLAUDE.md - and a lint over every tracked `.sh`; probe py-launch.sh with a backslash path. (F585) three writers of committed files write text mode with platform newlines: `_manifest_io.atomic_write_text` (manifest JSON, usage backfill), `gen-demo-manifest.py` (example evidence .jsonl), `gen-demo-usage.py` (example usage .jsonl); write `newline=\"\\n\"` and add an AST lint over scripts/ for a text-mode write open without newline=, with the CRLF-default simulation case from test__journal_io's nl-block. (F546 a,b) test__proc_group pg18 asserts `None stays None` only for `shell_env`; add `shell_invocation('true')[1] is None` / `is d` identity at the call both spawn sites make. test_import_evidence i39/i40 skip with `absent=not linked`, so the 'skipped where the mechanism exists' protection cannot fire; fall back to a directory junction (`_winapi.CreateJunction`) and skip only when both are absent. (F546 c is already fixed: `import-evidence._is_under` accepts the spelled or the resolved path.) Regression: py-launch.sh started as a drive-letter, backslash-separateda drive-letter, backslash-separated $0 resolves its dir; CRLF-default simulation writes LF bytes. Also F615 (CI windows, sl4): a breaker that loses the .lock.break race with PermissionError/EACCES retries the acquire within the deadline instead of refusing the append; a case simulates the Windows denial. Faults: F582, F585, F546, F615.",
       "files": [
         "examples/report.sh",
@@ -1870,7 +1889,8 @@
         "plugins/audit/tests/test__journal_io.py",
         "plugins/audit/tests/test__locks.py",
         "plugins/audit/tests/test_gen_demo_*.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/gate-parity.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1902,16 +1922,22 @@
         "P123.23"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T19:35:21Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T20:07:52Z.18b384",
+        "status": "passed",
+        "at": "2026-10-10T20:07:52Z"
+      }
     },
     {
       "id": "P123.25",

@@ -2198,6 +2198,161 @@ def bare_output_cut_violations(dirs=None, pending=None):
     return sorted(violations)
 
 
+# --- text-mode writes name their newline ---------------------------------------
+# A text-mode handle opened for writing translates "\n" to the platform's line
+# ending, so on Windows a committed file comes out CRLF and differs byte for byte
+# from the same document written on another machine. The writers of committed or
+# byte-compared files pass `newline="\n"`; this lint finds the ones that do not.
+NEWLINE_OPENERS = frozenset(("open", "fdopen"))
+# Where `newline` sits positionally in each opener's signature.
+_NEWLINE_POSITION = {"open": 4, "fdopen": 5}
+# Files under scripts/ that still open a text handle for writing without naming
+# the newline: {file: why it is not converted yet}. A row is a debt and not a
+# permission: it is reported once the file holds no such open, so the table can
+# only shrink. Everything the plan, its shards, the journal, evidence or a filed
+# return is written through already names its newline.
+NEWLINE_PENDING = {
+    "git/manage-worktrees.py": "the worktree provenance record, written into "
+                               "git's admin directory and never committed",
+    "governance/_invariants.py": "scratch copies of plan files read out of a "
+                                 "commit, and the clone-id token under git's "
+                                 "common directory; none is committed",
+    "governance/run-test-gate.py": "the gate's own captured-output log under "
+                                   "the plugin-local directory",
+    "governance/stamp-verification.py": "stub files and the owner record in a "
+                                        "throwaway verification tree",
+    "panel/_panel_runstate.py": "the panel's run counter under the "
+                                "plugin-local directory",
+    "panel/panel-server.py": "the panel's log truncation and its owner-only "
+                             "pidfile",
+    "report/render-report.py": "the rendered HTML and Markdown report, which "
+                               "the committed example is compared against byte "
+                               "for byte - the first row to convert once the "
+                               "file is in a task's scope",
+    "usage/usage_ledger.py": "the ledger directory's self-ignoring marker "
+                             "file, which is not itself committed",
+}
+_NEWLINE_WRITE = ("a text-mode open for writing that names no `newline` - on "
+                  "Windows it writes CRLF into a file other machines write "
+                  "with LF; pass newline=\"\\n\"")
+
+
+def _opener_name(call):
+    """`open` / `fdopen` for `open(...)`, `io.open(...)` and `os.fdopen(...)`, else ''."""
+    name = _call_name(call)
+    return name if name in NEWLINE_OPENERS else ""
+
+
+def _text_write_mode(call, opener):
+    """True when `call` is a literal text-mode mode that writes, appends or creates."""
+    mode = None
+    if len(call.args) > 1 and isinstance(call.args[1], ast.Constant):
+        mode = call.args[1].value
+    for kw in call.keywords:
+        if kw.arg == "mode" and isinstance(kw.value, ast.Constant):
+            mode = kw.value.value
+    if not isinstance(mode, str) or "b" in mode:
+        return False
+    return any(c in mode for c in "wax+")
+
+
+def _names_newline(call, opener):
+    if any(kw.arg == "newline" or kw.arg is None for kw in call.keywords):
+        return True
+    return len(call.args) > _NEWLINE_POSITION[opener]
+
+
+def text_write_newline_violations(dirs=None, pending=None):
+    """(filename, line, what) for a text-mode open for writing with no `newline`.
+
+    THE SHAPE: `open(...)`, `io.open(...)` or `os.fdopen(...)` whose mode is a
+    string literal naming a write, an append, an exclusive create or an update and
+    no `b`, called without a `newline=` keyword (or a positional one). Files in
+    `pending` are the debt: silenced while they hold such an open, reported once
+    they hold none.
+
+    WHAT IT CANNOT SEE: a mode that is not a literal, a handle opened through a
+    wrapper, `Path.write_text` (which takes no newline argument before Python
+    3.10 - the floor here is 3.8), `tempfile` handles, a `**kwargs` forward
+    (read as naming one), and any file outside `dirs` - `hooks/` is not in the
+    default. So a clean result means "none of this shape here", not "no file is
+    written with the wrong ending".
+    """
+    dirs = dirs if dirs is not None else (SCRIPTS_DIR,)
+    pending = set(NEWLINE_PENDING if pending is None else pending)
+    violations, holding = [], set()
+    for d in dirs:
+        for name, path in lint_py_files(d):
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    tree = ast.parse(fh.read(), filename=name)
+            except (OSError, SyntaxError):
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                opener = _opener_name(node)
+                if not opener or not _text_write_mode(node, opener) \
+                        or _names_newline(node, opener):
+                    continue
+                holding.add(name)
+                if name not in pending:
+                    violations.append((name, node.lineno, _NEWLINE_WRITE))
+    violations.extend((name, 0, "NEWLINE_PENDING names a file that holds no "
+                       "newline-less text write any more - delete the row")
+                      for name in sorted(pending) if name not in holding)
+    return sorted(violations)
+
+
+# --- a shell script finds its own directory on any spelling of $0 -------------
+# `case "$0" in */*)` reads a Windows caller's backslash-only `$0` as "no
+# directory", and `dirname "$0"` is handed the same string unchecked. The one
+# idiom everywhere normalises separators first (see hooks/py-launch.sh).
+_SH_SELF_DIR_SHAPES = (
+    (r'\bcase\s+"?\$\{?0\}?"?\s+in\b',
+     'case on "$0" - normalise the separators into a variable first and match that'),
+    (r'\bdirname\s+"?\$\{?0\}?"?',
+     'dirname of "$0" - it does not see a backslash separator'),
+    (r'\$\{0[%#]',
+     'a pattern cut of "$0" - cut the normalised copy instead'),
+)
+_SH_SKIP_DIRS = frozenset((".git", "node_modules", "__pycache__"))
+
+
+def sh_self_dir_violations(root=None):
+    """(relpath, line, what) for every `.sh` under `root` that works out its own
+    directory from a raw `$0`.
+
+    WHAT IT CANNOT SEE: a script that reaches `$0` through another variable
+    (`me=$0`), a script that never works out its own directory, and any file that
+    is not named `*.sh`. Comment lines are skipped, so a comment may name the
+    pattern it explains.
+    """
+    import re                       # lazy: hooks import this module on every call
+    root = root if root is not None else REPO_ROOT
+    shapes = [(re.compile(p), what) for p, what in _SH_SELF_DIR_SHAPES]
+    found = []
+    for base, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in _SH_SKIP_DIRS)
+        for fname in sorted(filenames):
+            if not fname.endswith(".sh"):
+                continue
+            path = os.path.join(base, fname)
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    lines = fh.read().splitlines()
+            except (OSError, UnicodeDecodeError):
+                continue
+            rel = posix_rel(path, root)
+            for number, line in enumerate(lines, 1):
+                if line.lstrip().startswith("#"):
+                    continue
+                for pattern, what in shapes:
+                    if pattern.search(line):
+                        found.append((rel, number, what))
+    return sorted(found)
+
+
 # --- the raw JSON writer, by name only ----------------------------------------
 # `_manifest_io.atomic_write_json` scrubs every string of machine paths before it
 # writes, and that is the default because a rule each caller must remember is the

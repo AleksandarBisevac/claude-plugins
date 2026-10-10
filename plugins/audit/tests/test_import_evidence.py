@@ -62,6 +62,40 @@ import _loader                                     # noqa: E402
 M = _loader.load_script("import-evidence.py", modname="import_evidence")
 
 
+def _link_directory(target, link):
+    """Make `link` a second spelling of the directory `target`, and say how.
+
+    `"symlink"` when `os.symlink` made it, `"junction"` when it refused and a
+    directory junction (`_winapi.CreateJunction`, which needs no privilege) did,
+    `None` when neither could. A Windows account without the symlink privilege
+    refuses the first and still has the second, so a case that skipped on the
+    first refusal alone skipped on machines that could run it.
+    """
+    try:
+        os.symlink(target, link, target_is_directory=True)
+        return "symlink"
+    except (OSError, NotImplementedError, AttributeError):
+        pass
+    try:
+        import _winapi
+        _winapi.CreateJunction(target, link)
+        return "junction"
+    except (ImportError, AttributeError, OSError):
+        return None
+
+
+def _can_link_directories():
+    """True when this platform has a mechanism for `_link_directory` to try -
+    judged by the mechanism, as the product reads it, never by a refusal."""
+    if hasattr(os, "symlink"):
+        return True
+    try:
+        import _winapi
+        return hasattr(_winapi, "CreateJunction")
+    except ImportError:
+        return False
+
+
 def _manifest():
     return {"meta": {"version": 2},
             "phases": [{"id": "P1", "title": "One", "status": "in_progress",
@@ -701,16 +735,36 @@ def _cases(check):
         real19 = os.path.join(base19, "real")
         link19 = os.path.join(base19, "link")
         os.makedirs(real19)
-        linked = True
+        # A symlink the account is not allowed to make must fall back to a
+        # junction wherever the platform has one - and to None only where it
+        # has not - so the skip below cannot fire on a machine that could run
+        # the cases it guards.
+        held_symlink, junc = os.symlink, os.path.join(base19, "junc")
+
+        def refused(*_args, **_kwargs):
+            raise OSError("symlink privilege not held")
+        os.symlink = refused
         try:
-            os.symlink(real19, link19, target_is_directory=True)
-        except (OSError, NotImplementedError):
-            linked = False
+            how = _link_directory(real19, junc)
+        finally:
+            os.symlink = held_symlink
+        try:
+            import _winapi
+            has_junction = hasattr(_winapi, "CreateJunction")
+        except ImportError:
+            has_junction = False
+        check("i39j a refused symlink falls back to a directory junction where "
+              "the platform has one, and to nothing where it has none: %r"
+              % (how,),
+              how == ("junction" if has_junction else None)
+              and (how is None or os.path.samefile(junc, real19)))
+        linked = _link_directory(real19, link19) is not None
         if not linked:
             _harness.skip(check, "i39-i40 one project printed one way through "
                           "a second spelling of its directory",
-                          "os.symlink refused to make a directory link here",
-                          not linked)
+                          "neither os.symlink nor a directory junction exists "
+                          "here",
+                          not _can_link_directories())
         else:
             def spelled_project(name):
                 for sub in (".claude", os.path.join("docs", "audit")):
@@ -852,16 +906,13 @@ def _cases(check):
                      encoding="utf-8") as fh:
             fh.write(json.dumps(_manifest(), indent=2))
         link41 = os.path.join(t41, "docs", "audit")
-        linked41 = True
-        try:
-            os.symlink(outside41, link41, target_is_directory=True)
-        except (OSError, NotImplementedError):
-            linked41 = False
+        linked41 = _link_directory(outside41, link41) is not None
         if not linked41:
             _harness.skip(check, "i41 a manifest whose directory is a link "
                           "out of its project prints a pair it accepts back",
-                          "os.symlink refused to make a directory link here",
-                          not hasattr(os, "symlink"))
+                          "neither os.symlink nor a directory junction exists "
+                          "here",
+                          not _can_link_directories())
         else:
             mp41 = os.path.join(link41, "audit-plan.json")
             code41, told41 = learn_command(

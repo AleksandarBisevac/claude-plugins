@@ -481,6 +481,21 @@ TABLE = (
   "def bare_output_cut_violations(dirs=None, pending=None):\n"
   "    return []",
   OUT, "bc1"),
+ # The newline rule, crippled. It is what keeps a committed file from being
+ # written CRLF on Windows, and a version reporting nothing reads exactly like
+ # a tree whose every text-mode write names its newline.
+ ("text_write_newline_violations", S + "_output.py", "replace",
+  "def text_write_newline_violations(dirs=None, pending=None):",
+  "def text_write_newline_violations(dirs=None, pending=None):\n"
+  "    return []",
+  OUT, "nw1"),
+ # The shell-script rule, crippled. It is what keeps a script from finding its
+ # own directory in a way a backslash-only $0 defeats.
+ ("sh_self_dir_violations", S + "_output.py", "replace",
+  "def sh_self_dir_violations(root=None):",
+  "def sh_self_dir_violations(root=None):\n"
+  "    return []",
+  OUT, "sd1"),
  # The returns-writer rule, crippled. It is what keeps a filed return - a
  # committed file under docs/audit - from being written past the scrub, and a
  # version reporting nothing reads exactly like a tree whose returns are clean.
@@ -1472,6 +1487,25 @@ ALLOW = (
  ("ts_order_violations", S + "_output.py", "replace",
   "                if (named, where) in allowed:\n                    continue\n",
   "", OUT, "to3"),
+ # The newline rule, widened to binary handles: a `wb` handle has no newline
+ # translation to name, and convicting it would teach authors to route around.
+ ("text_write_newline_violations", S + "_output.py", "replace",
+  "    if not isinstance(mode, str) or \"b\" in mode:",
+  "    if not isinstance(mode, str):", OUT, "nw2"),
+ # ...and its pending table ignored: a file the table names while it still
+ # holds such a write would be convicted anyway.
+ ("text_write_newline_violations", S + "_output.py", "replace",
+  "                if name not in pending:\n"
+  "                    violations.append((name, node.lineno, _NEWLINE_WRITE))",
+  "                if True:\n"
+  "                    violations.append((name, node.lineno, _NEWLINE_WRITE))",
+  OUT, "nw3"),
+ # The shell-script rule, widened to comments: a comment may name the pattern
+ # it explains, and convicting it would make the explanation unwritable.
+ ("sh_self_dir_violations", S + "_output.py", "replace",
+  "                if line.lstrip().startswith(\"#\"):\n"
+  "                    continue\n",
+  "", OUT, "sd2"),
  # The returns-writer rule, widened: a function that only builds a return path
  # without writing one is not a bypass, and convicting it would push readers of
  # the path into the writer.
@@ -1712,6 +1746,7 @@ ALLOW = (
   "    strays = [name for name in left if name != sentinel]",
   "    strays = list(left)",
   "tools/sweep-selftests.py", substr("touches nothing")),
+# --- the quiet half, continued: the copy and removal rows ---------------------
  # --- The quiet half of the copy-comparison -----------------------------------
  # THE NARROWING IS THE DOCSTRING, and it is the same shape again. The two copies
  # of `remove_tree` are REQUIRED to describe themselves differently - one carries

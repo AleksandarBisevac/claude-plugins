@@ -168,6 +168,27 @@ def _drive(sh, launcher, script, mode, path_entry, stdin=PAYLOAD):
             "err": err.decode("utf-8", "replace"), "code": proc.returncode}
 
 
+def _drive_as(sh, launcher_path, dollar0, script, mode, path_entry, cwd):
+    """Run the launcher's TEXT with `dollar0` as its `$0`, however it is spelled.
+
+    A backslash-only `$0` cannot be reached by naming a file to `sh` on a machine
+    whose separator is a slash - there is no such file - so the launcher's body
+    goes in as the `-c` command and the name goes in as `$0`, which is exactly
+    the value Git's sh on Windows hands it.
+    """
+    with io.open(launcher_path, encoding="utf-8") as fh:
+        body = fh.read()
+    env = dict(os.environ)
+    env["PATH"] = path_entry
+    argv = sh if isinstance(sh, list) else [sh]
+    proc = subprocess.Popen(argv + ["-c", body, dollar0, script, mode],
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, env=env, cwd=cwd)
+    out, err = proc.communicate(PAYLOAD.encode("utf-8"))
+    return {"out": out.decode("utf-8", "replace"),
+            "err": err.decode("utf-8", "replace"), "code": proc.returncode}
+
+
 def _control(sh, control_script, path_entry):
     """Ask `sh` the ONE question that has nothing to do with the launcher: can
     it be driven here at all, through the exact plumbing `_drive()` uses for
@@ -388,6 +409,29 @@ def _cases(check):
           "so one sentence covering them would tell a reader nothing to act on: "
           "%r" % (reasons,),
           len(set(reasons)) == len(reasons) and all(reasons))
+
+    # ------------------------------------- a $0 spelled with backslashes only
+    rel_bs = _drive_as(sh, fixture_launcher, "hooks\\py-launch.sh", "hook.py",
+                       "ask", real_dir, root)
+    check("pl20 a `$0` spelled with backslashes and NO slash (what Git's sh on "
+          "Windows is handed) still names the launcher's directory - read as "
+          "'run from the cwd' it looked for the hook beside the cwd, found none "
+          "and prompted on a healthy install: %r" % (rel_bs,),
+          rel_bs["out"] == MARKER + PAYLOAD and rel_bs["code"] == 0)
+
+    abs_bs = _drive_as(sh, fixture_launcher,
+                       fixture_launcher.replace("/", "\\"), "hook.py", "ask",
+                       real_dir, os.path.dirname(root))
+    check("pl21 ...and an ABSOLUTE all-backslash `$0` (a drive letter on "
+          "Windows) resolves from another working directory too: %r"
+          % (abs_bs,),
+          abs_bs["out"] == MARKER + PAYLOAD and abs_bs["code"] == 0)
+
+    mixed_bs = _drive_as(sh, fixture_launcher, "hooks\\.\\py-launch.sh",
+                         "hook.py", "ask", real_dir, root)
+    check("pl22 ...and a `$0` mixing the two separators resolves the same: %r"
+          % (mixed_bs,),
+          mixed_bs["out"] == MARKER + PAYLOAD and mixed_bs["code"] == 0)
 
     # ------------------------------------------------------- what is under test
     with io.open(LAUNCHER, "rb") as fh:

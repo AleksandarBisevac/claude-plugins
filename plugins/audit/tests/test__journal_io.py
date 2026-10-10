@@ -3425,6 +3425,50 @@ def _stale_lock_cases(check):
               "propagates and no claim file is left beside the lock: %r" % (_ki,),
               _ki[0][0] == "interrupted"
               and not [n for n in _ki[5] if n != "interrupted.jsonl.lock.break"])
+
+        # Windows answers a breaker create that races the previous breaker's
+        # unlink with a permission error, not "exists". The denial is simulated
+        # on any platform by an os.open that refuses the breaker name.
+        _lock = os.path.join(tmp, "denied.jsonl.lock")
+        with open(_lock, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write("{}")
+        _real_open = os.open
+
+        def _denying(refusal):
+            def _open(path, flags, *args, **kwargs):
+                if str(path).endswith(".break"):
+                    raise refusal
+                return _real_open(path, flags, *args, **kwargs)
+            return _open
+        _outcomes = []
+        for _refusal in (PermissionError(errno.EACCES, "Permission denied"),
+                         OSError(errno.EACCES, "Permission denied")):
+            os.open = _denying(_refusal)
+            try:
+                _outcomes.append(M._break_stale(_lock))
+            except OSError as exc:
+                _outcomes.append("raised %s" % (exc,))
+            finally:
+                os.open = _real_open
+        check("sl9 a breaker create refused with a permission error - the "
+              "Windows spelling of losing the .lock.break race - is a lost race: "
+              "the waiter answers False so its acquire retries inside the "
+              "deadline, breaks nothing, and the lock is untouched: %r"
+              % (_outcomes,),
+              _outcomes == [False, False] and os.path.exists(_lock))
+        os.open = _denying(OSError(errno.ENOSPC, "No space left on device"))
+        try:
+            M._break_stale(_lock)
+            _other = "returned"
+        except OSError as exc:
+            _other = exc.errno
+        finally:
+            os.open = _real_open
+        # The second direction: a refusal that is NOT a lost race still raises,
+        # so catching permission errors did not turn into catching everything.
+        check("sl10 ...and a breaker create refused for any other reason is "
+              "still raised, not swallowed as a lost race: %r" % (_other,),
+              _other == errno.ENOSPC)
     finally:
         _harness.remove_tree(tmp)
 
