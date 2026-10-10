@@ -1961,7 +1961,7 @@
     {
       "id": "P123.25",
       "title": "The loader probe never writes into the shared scripts/ tree, so no suite races it",
-      "status": "in_progress",
+      "status": "done",
       "description": "`test__loader.py` writes `_loader_probe_a/` and `_loader_probe_b/` into the REAL `scripts/` because `_loader.script_index()` has no root seam, while `test__journal_io._scripts_modules()` walks `SCRIPTS_DIR` with os.walk and skips only __pycache__; under the parallel sweep the walk lists a probe file and then fails to open it (seen in P117.4's and P118.14's task gates). Structural fix: give `script_index()` (and the `_output.script_files()` walk it builds on) a root argument, point the probe at a temp copy, and route test__journal_io's walk through `_output.py_files()` (which already excludes `LOADER_PROBE_DIR`). Regression: the loader cases leave scripts/ untouched (listing before == after); the journal walk holds no probe path even when one is planted. Faults: F560.",
       "files": [
         "plugins/audit/scripts/_loader.py",
@@ -1998,25 +1998,38 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "90b2e3290352",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_loader.script_index/script_path/load_script gained a root seam (uncached when given; _output.script_files already had root so _output needed only a docstring fix). test__loader probe now runs under a mkdtemp root and a final case asserts the scripts/ listing is identical before and after. test__journal_io._scripts_modules now goes through _output.lint_py_files (py_files itself does NOT exclude probe dirs; lint_py_files does) with a root seam; new case pw8 plants _loader_probe_x/planted.py and asserts only the sibling is listed. python3 tools/sweep-selftests.py exit 0 (330/330 files); ruff check plugins/audit tools passes; test__loader 32/32, test__journal_io 259/259. Disclosure: test__loader.py was edited via a python heredoc script rather than the Edit tool (rule slip). PLUGIN-BUILD-GUIDE.md needed no change (no text claims a missing root seam). Not run: vermin, claude plugin validate, shots/interactive (own-tests scope).",
+        "descriptive": "The loader probe no longer writes into the shared scripts/ tree, so parallel suites cannot race it."
       },
       "startedAt": "2026-10-10T20:07:53Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T20:24:05Z",
+      "verifiedBy": [
+        "test__loader: probe against temp root, scripts/ listing unchanged",
+        "test__journal_io: pw8 planted probe file not listed"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T20:24:04Z.894190",
         "status": "passed",
         "at": "2026-10-10T20:24:04Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "90b2e3290352",
+        "at": "2026-10-10T20:24:05Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression mode, expectRedFirst false: fix implemented first, then tests locking it",
+        "at": "n/a"
       }
     },
     {
       "id": "P123.26",
       "title": "Suites pass with a space and a non-suffix symlink in TMPDIR and the interpreter path",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Reproduced on main (HEAD export, TMPDIR and venv interpreter under a path with a space; all green without the space): test_guard_secrets_read 23 reds (tt2, tt3, ww5, ww7a, ww10a, lq7 x4, sm17, we12, xs0, xs1, xs3, xs4, lw2, lw3, lw8, lw10-lw13), test__config tr7, test_journal_writes tf3/tf4, test_stamp_verification sr44. The ones read so far build commands with an unquoted `%s` path (`\"cd %s && ...\"`), which is a different command to the shell - a fixture defect. Triage every red: quote fixture paths with shlex.quote where the test means one word; any red that survives quoting is a product fail-open (a guard reading a quoted spaced path wrongly) and is handed to the guard-readers task with its repro, not fixed here. Then add a sweep leg that runs with TMPDIR containing a space AND reached through a symlink whose target is not a suffix-extension of the link, so the class stays measured, described in every document gate-parity compares. Regression: the leg is green on the fixed tree and red on main. Faults: F543.",
       "files": [
         "plugins/audit/tests/test_guard_secrets_read.py",
@@ -2061,16 +2074,22 @@
         "P123.24"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T20:24:06Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T21:03:31Z.6b2dbc",
+        "status": "passed",
+        "at": "2026-10-10T21:03:31Z"
+      }
     },
     {
       "id": "P123.27",

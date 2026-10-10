@@ -33,6 +33,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import json
 import os
 import re
+import shlex
 import sys
 import tempfile
 import time
@@ -514,13 +515,15 @@ def _two_tree_cases(check):
         check("tt1 an uncovered file of the main checkout, whose plan runs "
               "nothing, is allowed at its warn tier: %r" % (alone[:1],),
               alone[0] == "allow")
-        both = run("echo x > src/undeclared.ts; echo y > %s" % wt_file)
+        both = run("echo x > src/undeclared.ts; echo y > %s"
+                   % shlex.quote(wt_file))
         check("tt2 the same command also writing the linked worktree's "
               "uncovered file - whose phase runs - is refused, naming the "
               "worktree file: the first file's tier does not grade the second: "
               "%r" % (both[:1] + (both[1][:200],),),
               both[0] == "block" and "linked worktree" in both[1])
-        flipped = run("echo y > %s; echo x > src/undeclared.ts" % wt_file)
+        flipped = run("echo y > %s; echo x > src/undeclared.ts"
+                      % shlex.quote(wt_file))
         check("tt3 ...in either order: %r" % (flipped[:1],),
               flipped[0] == "block")
     finally:
@@ -776,7 +779,7 @@ def _wrapped_write_cases(check):
             ("bash -c that only lists", "bash -c \"ls src\""),
             ("eval that only echoes", "eval \"echo hi\""),
             ("a copy OUT of the tree",
-             "cp src/app.py %s" % (outside / "x.py")),
+             "cp src/app.py %s" % shlex.quote(str(outside / "x.py"))),
             ("a program that only reads the journal",
              "python3 -c \"print(len(open('%s').read()))\"" % journal),
             ("a heredoc program that only reads the journal",
@@ -786,7 +789,7 @@ def _wrapped_write_cases(check):
             ("a commit message naming a copy",
              "git commit -m \"cp x src/app.py\""),
             ("a copy of the journal out to a scratch file",
-             "cp %s %s" % (journal, outside / "rows.txt")),
+             "cp %s %s" % (journal, shlex.quote(str(outside / "rows.txt")))),
         )
         for name, cmd in twins:
             sid = sid_of("ww5", name)
@@ -932,7 +935,7 @@ def _handed_spelling_cases(check, root, outside, journal, shell, same_as_bare,
     for name, cmd in (
             ("a copy whose landed name is no source file", "cp notes.md src"),
             ("a copy onto an existing directory outside the tree",
-             "cp src/app.py %s" % outside),
+             "cp src/app.py %s" % shlex.quote(str(outside))),
             ("a copy onto a name that is no directory and no source file",
              "cp notes.py src-backup")):
         sid = sid_of("ww7a", name)
@@ -1048,7 +1051,8 @@ def _handed_spelling_cases(check, root, outside, journal, shell, same_as_bare,
             ("backticks inside double quotes",
              "x=\"`echo x > src/ww.py`\""),
             ("a heredoc fed to a shell, its target absolute",
-             "bash <<'EOF'\necho x > %s/src/ww.py\nEOF" % root),
+             "bash <<'EOF'\necho x > %s\nEOF"
+             % shlex.quote("%s/src/ww.py" % root)),
             ("a heredoc program shelling out",
              "python3 - <<'PY'\nimport os\nos.system('echo x > src/ww.py')\nPY"),
             ("find running a shell per file",
@@ -1078,8 +1082,8 @@ def _handed_spelling_cases(check, root, outside, journal, shell, same_as_bare,
     # grades the same redirect a second time at the outer directory.
     sid = sid_of("ww11", "cd-out")
     _spend_slot(root, cfg, sid)
-    got = shell(sid, "bash -c \"cd %s && echo x > ww.py\"" % outside,
-                use_cfg=deny_cfg)
+    got = shell(sid, "bash -c \"cd %s && echo x > ww.py\""
+                % shlex.quote(str(outside)), use_cfg=deny_cfg)
     check("ww11 a handed `cd` out of the tree followed by a redirect is "
           "allowed at the deny tier", got[0] == "allow", got)
     sid = sid_of("ww11a", "cd-in")
@@ -1207,7 +1211,8 @@ def _live_quoted_cases(check, root, outside, journal, shell, same_as_bare,
             ("a program printing a redirect",
              "python3 -c \"print('x > src/ww.py')\""),
             ("a handed cd out of the tree",
-             "bash -c \"cd %s && echo x > ww.py\"" % outside)):
+             "bash -c \"cd %s && echo x > ww.py\""
+             % shlex.quote(str(outside)))):
         got = at_deny("lq3-" + name, cmd)
         check("lq3 %s is allowed at the deny tier" % name,
               got[0] == "allow", got)
@@ -1282,7 +1287,7 @@ def _live_quoted_cases(check, root, outside, journal, shell, same_as_bare,
             ("mkdir, then a copy of no source file",
              "mkdir src/new && cp notes.md src/new"),
             ("ln -s onto a directory outside the tree, then a copy",
-             "ln -s %s lnk && cp notes.py lnk" % outside),
+             "ln -s %s lnk && cp notes.py lnk" % shlex.quote(str(outside))),
             ("a directory made AFTER the copy", "cp notes.py src/late; mkdir src/late")):
         got = at_deny("lq6a-" + name, cmd)
         check("lq6a %s is allowed at the deny tier" % name,
@@ -1295,22 +1300,25 @@ def _live_quoted_cases(check, root, outside, journal, shell, same_as_bare,
     docs = outside / "docs-only"
     docs.mkdir(exist_ok=True)
     (docs / "readme.md").write_text("r\n", encoding="utf-8")
+    q_pkg = shlex.quote(str(pkg))
+    q_docs = shlex.quote(str(docs))
     for name, cmd, target in (
-            ("cp -r onto an existing directory", "cp -r %s src" % pkg,
+            ("cp -r onto an existing directory", "cp -r %s src" % q_pkg,
              "src/pkg/m.py"),
-            ("cp -R onto a new name", "cp -R %s src/pkg2" % pkg, "src/pkg2/m.py"),
-            ("cp -a onto an existing directory", "cp -a %s src" % pkg,
+            ("cp -R onto a new name", "cp -R %s src/pkg2" % q_pkg,
+             "src/pkg2/m.py"),
+            ("cp -a onto an existing directory", "cp -a %s src" % q_pkg,
              "src/pkg/m.py"),
-            ("mv of a directory", "mv %s src/moved" % pkg, "src/moved/m.py")):
+            ("mv of a directory", "mv %s src/moved" % q_pkg, "src/moved/m.py")):
         got = at_deny("lq7-" + name, cmd)
         check("lq7 %s is refused naming a file inside it" % name,
               got[0] == "block" and ("gate: %s\n" % target) in got[1], got)
     for name, cmd in (
             ("cp -r of a directory holding no source file",
-             "cp -r %s src" % docs),
+             "cp -r %s src" % q_docs),
             ("cp -r of a source directory out of the tree",
-             "cp -r src %s" % (outside / "copy")),
-            ("cp without -r of a directory", "cp %s src" % pkg)):
+             "cp -r src %s" % shlex.quote(str(outside / "copy"))),
+            ("cp without -r of a directory", "cp %s src" % q_pkg)):
         got = at_deny("lq7a-" + name, cmd)
         check("lq7a %s is allowed at the deny tier" % name,
               got[0] == "allow", got)
@@ -1331,7 +1339,7 @@ def _live_quoted_cases(check, root, outside, journal, shell, same_as_bare,
           all(v[0] == "block" and journal in v[1] for _t, v in got), got)
     for name, cmd in (
             ("--output out of the tree",
-             "git diff --output=%s" % (outside / "d.patch")),
+             "git diff --output=%s" % shlex.quote(str(outside / "d.patch"))),
             ("a pathspec and no --output", "git diff -- src/ww.py"),
             ("--output after --, a pathspec", "git diff -- --output=src/ww.py")):
         got = at_deny("lq8a-" + name, cmd)
@@ -1347,6 +1355,12 @@ def _away_root():
     slug and its length, and the feed's bounded `file` cell lost its tail.
     Never created: those cases grade a path, and no read reaches the disk."""
     return Path(os.path.abspath(os.sep + "guard-secrets-away-%d" % os.getpid()))
+
+
+def _quoted(*paths):
+    """Each path as one shell word, for a `%s` fixture command: a fixture root
+    may hold a space, and an unquoted one is a different command."""
+    return tuple(shlex.quote(str(p)) for p in paths)
 
 
 def _out_tree(top, dirs, files, ext):
@@ -1395,10 +1409,10 @@ def _lw_copy_cost_cases(check, lw, bash):
         _out_tree(out / name, dirs, 0, ".txt")
     counts = {}
     for label, cmd in (
-            ("cp small", "cp -rT %s %s" % (small, out / "small-copy")),
-            ("cp big", "cp -rT %s %s" % (big, out / "big-copy")),
-            ("mv small", "mv -T %s %s" % (small, out / "small-moved")),
-            ("mv big", "mv -T %s %s" % (big, out / "big-moved"))):
+            ("cp small", "cp -rT %s %s" % _quoted(small, out / "small-copy")),
+            ("cp big", "cp -rT %s %s" % _quoted(big, out / "big-copy")),
+            ("mv small", "mv -T %s %s" % _quoted(small, out / "small-moved")),
+            ("mv big", "mv -T %s %s" % _quoted(big, out / "big-moved"))):
         counts[label] = _git_calls(lambda: bash(lw["main"], cmd))
     check("lw10 a directory copied or moved whole between two directories "
           "outside the project is allowed, and costs as many git calls for "
@@ -1409,8 +1423,8 @@ def _lw_copy_cost_cases(check, lw, bash):
           dict((k, (v[0], v[1][0])) for k, v in counts.items()))
     two_roots, _got = _git_calls(lambda: bash(
         lw["main"], "cp -r %s %s; cp -r %s %s"
-        % (out / "big-moved", out / "again-1", out / "big-moved",
-           out / "again-2")))
+        % _quoted(out / "big-moved", out / "again-1", out / "big-moved",
+                  out / "again-2")))
     check("lw10a ...and two destination roots cost no more than twice one",
           0 < two_roots <= 2 * counts["cp big"][0],
           (two_roots, counts["cp big"][0]))
@@ -1418,8 +1432,8 @@ def _lw_copy_cost_cases(check, lw, bash):
     # repository is that worktree's business, so the copy is still expanded
     # file by file and graded against the worktree's own plan.
     pkg = _out_tree(out / "pkg", 1, 1, ".ts")
-    verdict, why = bash(lw["main"], "cp -r %s %s"
-                        % (pkg, os.path.join(lw["wt"], "src", "pkg")))
+    verdict, why = bash(lw["main"], "cp -r %s %s" % _quoted(
+        pkg, os.path.join(lw["wt"], "src", "pkg")))
     check("lw11 a recursive copy into a linked worktree is still read file by "
           "file, refused under the WORKTREE's running phase naming the file "
           "it lands as", verdict == "block" and "P48" in why
@@ -1439,7 +1453,7 @@ def _lw_wide_copy_cases(check, lw, bash, out):
         source = _out_tree(out / ("wide-src-" + label), dirs, 2, ".ts")
         dest = Path(lw["wt"]) / ("wide-dest-" + label)
         _out_tree(dest, dirs, 0, ".ts")
-        cmd = "cp -rT %s %s" % (source, dest)
+        cmd = "cp -rT %s %s" % _quoted(source, dest)
         counts[label] = _git_calls(lambda: bash(lw["main"], cmd))
         hits[label] = [(h["rel"], str(h["root"])) for h in M._source_write_hit(
             cmd, Path(lw["main"]), cfg, lw["main"])["hits"]]
@@ -1465,7 +1479,7 @@ def _lw_wide_copy_cases(check, lw, bash, out):
     subprocess.run(["git", "init", "-q", str(nested)], check=True,
                    capture_output=True, timeout=30)
     probe = _out_tree(out / "nested-src", 1, 1, ".ts")
-    cmd = "cp %s %s; cp %s %s" % (
+    cmd = "cp %s %s; cp %s %s" % _quoted(
         probe / "d00" / "f00.ts", Path(lw["wt"]) / "src" / "x1.ts",
         probe / "d00" / "f00.ts", nested / "lib" / "x2.ts")
     got = bash(lw["main"], cmd)
@@ -2644,8 +2658,8 @@ def _cases(check):
           all(ok and got[0] == "allow" for ok, got in _sm16), repr(_sm16))
     _expect("sm17 ...while THIS shard named by absolute path is still refused",
           "block",
-          sub("sed -i 's/a/b/' %s" % (tmp / "docs" / "audit" / "phases"
-                                      / "P1.json",)))
+          sub("sed -i 's/a/b/' %s" % shlex.quote(
+              str(tmp / "docs" / "audit" / "phases" / "P1.json"))))
     _ok_sm, _got_sm = _harness.attempt(
         M.decide, sub("sed -i 's/x/y/' docs/audit/phases/P1.json"), cfg=cfg)
     _m_sm = _got_sm[1] if _ok_sm else str(_got_sm)
@@ -3439,7 +3453,7 @@ def _cases(check):
             "python3 -c \"open('%s','w').write('x')\"" % rel,
             "python3 - <<'PY'" + chr(10) + "open('%s','w').write('x')" % rel
             + chr(10) + "PY",
-            "sed -i 's/a/b/' %s" % rel,
+            "sed -i 's/a/b/' %s" % shlex.quote(rel),
         )
 
     def _agree(rel, use_cfg):
@@ -3699,7 +3713,8 @@ def _cases(check):
               "&&` first, which moves the shell before the write runs - the "
               "second of the two spellings that used to be refused",
               "allow",
-              _bash_at("cd %s && %s" % (_cw_outside, _cw_write), str(tmp)),
+              _bash_at("cd %s && %s" % (shlex.quote(str(_cw_outside)),
+                                        _cw_write), str(tmp)),
               use_cfg=cfg_enforced)
         _expect("cw3 the control: the identical relative name from the "
               "SESSION's own directory is still refused - cw1/cw2 are not "
@@ -4071,6 +4086,7 @@ def _cases(check):
     tmp_x = Path(tempfile.mkdtemp(prefix="guard-secrets-outside-"))
     try:
         _out_x = str(tmp_x / "probe.py")
+        _out_q = shlex.quote(_out_x)
         # xs0 IS THE PRECONDITION THE OTHERS ALL READ, and it is here because it
         # was false on windows for as long as this block existed. The `sed -i`
         # branch extracts its targets with `_PATHY_TOKEN`, whose class held no
@@ -4084,11 +4100,11 @@ def _cases(check):
         check("xs0 the whole absolute path reaches the containment test - the "
               "sed branch's extraction carries it as ONE token, which is the "
               "precondition every case below reads: %r"
-              % (M._shell_write_targets("sed -i 's/a/b/' %s" % _out_x),),
-              M._shell_write_targets("sed -i 's/a/b/' %s" % _out_x) == [_out_x])
+              % (M._shell_write_targets("sed -i 's/a/b/' %s" % _out_q),),
+              M._shell_write_targets("sed -i 's/a/b/' %s" % _out_q) == [_out_x])
         _expect("xs1 a shell write into a file OUTSIDE the repository is "
                 "allowed - the shell-write twin of require-plan's r1",
-                "allow", bash("sed -i 's/a/b/' %s" % _out_x),
+                "allow", bash("sed -i 's/a/b/' %s" % _out_q),
                 use_cfg=cfg_enforced)
         _expect("xs2 ...and an in-repo source file is still refused on the same "
                 "tier, so xs1 is not this branch quietly switching off",
@@ -4097,7 +4113,7 @@ def _cases(check):
         check("xs3 the hit function itself is the thing that changed: it names "
               "the in-repo path and declines to name the out-of-repo one, "
               "which is what xs1/xs2 read downstream",
-              M._source_write_hit("sed -i 's/a/b/' %s" % _out_x, str(tmp),
+              M._source_write_hit("sed -i 's/a/b/' %s" % _out_q, str(tmp),
                                   cfg_enforced, str(tmp))["hit"] is None
               and M._source_write_hit("sed -i 's/a/b/' src/app.ts", str(tmp),
                                       cfg_enforced, str(tmp))["hit"]
@@ -4105,7 +4121,7 @@ def _cases(check):
         check("xs4 a command writing BOTH keeps the in-repo finding - declining "
               "the out-of-scope target must skip that target, never abandon "
               "the scan",
-              M._source_write_hit("sed -i 's/a/b/' %s src/app.ts" % _out_x,
+              M._source_write_hit("sed -i 's/a/b/' %s src/app.ts" % _out_q,
                                   str(tmp), cfg_enforced, str(tmp))["hit"]
               == "src/app.ts")
         # xs5/xs6 REPRODUCE THE WINDOWS SPELLINGS ON EVERY PLATFORM, because what
@@ -4692,9 +4708,10 @@ def _cases(check):
                 ("lw1 standing in the worktree", _lw["wt"],
                  _lw_sed + "src/undeclared.ts"),
                 ("lw2 walking into it with `cd`", _lw["main"],
-                 "cd %s && %ssrc/undeclared.ts" % (_lw["wt"], _lw_sed)),
+                 "cd %s && %ssrc/undeclared.ts" % (shlex.quote(_lw["wt"]),
+                                                   _lw_sed)),
                 ("lw3 naming it by absolute path", _lw["main"],
-                 _lw_sed + _lw_wt_file),
+                 _lw_sed + shlex.quote(_lw_wt_file)),
                 ("lw4 through an interpreter write", _lw["wt"],
                  "python3 -c \"open('src/undeclared.ts','w').write('x')\""),
             ]
@@ -4722,7 +4739,8 @@ def _cases(check):
             _lw_else = os.path.join(_lw["root"], "elsewhere")
             os.makedirs(_lw_else, exist_ok=True)
             _v, _why = _lw_bash(_lw["main"],
-                                "cd %s && %sprobe.ts" % (_lw_else, _lw_sed))
+                                "cd %s && %sprobe.ts"
+                                % (shlex.quote(_lw_else), _lw_sed))
             check("lw7 a write outside EVERY tree, reached by `cd`, is still "
                   "nobody's plan - the re-root widens to a worktree of this "
                   "repository and to nothing else", _v == "allow",
@@ -4735,7 +4753,7 @@ def _cases(check):
                 M.decide, {"tool_name": "Bash", "session_id": "lw",
                            "agent_id": "agent-lw", "cwd": _lw["main"],
                            "tool_input": {"command": "sed -i 's/a/b/' %s"
-                                          % _lw_man}}, cfg=cfg)
+                                          % shlex.quote(_lw_man)}}, cfg=cfg)
             check("lw8 a SUBAGENT's shell write into a linked worktree's "
                   "manifest is refused as the plan it is, not skipped as a "
                   "path outside the project", _ok8 and _got8[0] == "block"
@@ -4744,7 +4762,8 @@ def _cases(check):
                 M.decide, {"tool_name": "Bash", "session_id": "lw",
                            "agent_id": "agent-lw", "cwd": _lw["main"],
                            "tool_input": {"command": "sed -i 's/a/b/' %s"
-                                          % os.path.join(_lw["wt"], "notes.md")}},
+                                          % shlex.quote(os.path.join(
+                                              _lw["wt"], "notes.md"))}},
                 cfg=cfg)
             check("lw9 ...while the same subagent's write into a worktree file "
                   "that is NOT the plan is not refused as one - the arm keys on "

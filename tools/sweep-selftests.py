@@ -7,6 +7,7 @@ sweeps that used to exist.
     tools/sweep-selftests.py --jobs 1            # serial, for a bisect
     tools/sweep-selftests.py --encoding cp1252   # the "can it print" pass
     tools/sweep-selftests.py --quiet             # failures and totals; no per-file lines
+    tools/sweep-selftests.py --spaced            # TMPDIR and interpreter under a spaced symlink
     tools/sweep-selftests.py --selftest          # this file's own cases
 
 WHY THIS EXISTS. The sweep was written twice - once in `tools/verify.sh` and once
@@ -128,6 +129,56 @@ CONTRACT = re.compile(r"(\d+)/(\d+) cases passed")
 # on forever. Neither old copy had one, so a hung selftest was indistinguishable
 # from a slow machine and the sweep simply never returned.
 DEFAULT_TIMEOUT = 300
+
+# THE SPACED LEG. A user's temp directory, home or virtualenv can sit under a path
+# holding a space, and a path reached through a link is spelled two ways by
+# `realpath`. Every suite here had only ever run under a space-free temp root, so a
+# fixture that built a shell command from an unquoted path was a different command
+# on such a machine and nothing here could say so. `--spaced` runs the whole sweep
+# with `TMPDIR` (and its two Windows spellings) under a path holding a space that is
+# reached through a symlink whose target is NOT the link's own suffix-extension -
+# `/tmp` -> `/private/tmp` is the shape macOS already tests, and it is the easy one
+# - and with the interpreter itself launched through a spaced path, which is how a
+# virtualenv under a spaced directory looks to a child that re-runs `sys.executable`.
+#
+# A FILE EXEMPT FROM THE LEG NAMES WHY. Most rows are a product defect that a
+# fixture cannot be quoted around: the suite is red because the code it tests reads
+# a path holding a space wrongly. The rest are fixtures this leg was introduced
+# without the files to repair. Either way the row is a debt with its cause written
+# down, and it leaves the table when the cause does. Each row is checked to still
+# name a swept file.
+_SCRUB_SPLITS_AT_SPACE = (
+    "the machine-path scrub ends a path at its first space, so a checkout root "
+    "that holds one is replaced only up to there and the rest of the path is "
+    "kept beside the outside token (`<outside-repo> b/...`): a product defect in "
+    "the scrub, which this suite's fixtures surface and cannot quote around")
+
+SPACED_EXEMPT = {
+    "plugins/audit/tests/test__evidence_io.py": _SCRUB_SPLITS_AT_SPACE,
+    "plugins/audit/tests/test__journal_io.py": _SCRUB_SPLITS_AT_SPACE,
+    "plugins/audit/tests/test__machine_paths.py": _SCRUB_SPLITS_AT_SPACE,
+    "plugins/audit/tests/test__manifest_io.py": _SCRUB_SPLITS_AT_SPACE,
+    "plugins/audit/tests/test_audit_task.py": _SCRUB_SPLITS_AT_SPACE,
+    "plugins/audit/tests/_harness.py":
+        "two of its cases split a child's printed temp listing on whitespace, so "
+        "a temp path holding a space reads as two words: a fixture defect in the "
+        "harness itself, outside the files the leg was introduced with",
+    # Assembled, because `.claude/hooks/` is not among the trees the basename lint
+    # resolves a `.py` literal against, and this is a reference to a swept file.
+    "/".join((".claude", "hooks", "guard-release")) + ".py":
+        "two of its cases build `cd <worktree>` and `git -C <worktree>` with the "
+        "path unquoted, so a worktree under a spaced root is a different command: "
+        "a fixture defect in a file the leg was introduced without",
+    "plugins/audit/tests/test_guard_secrets_read.py":
+        "the plan-gate shell reader does not grade a redirect whose quoted target "
+        "is an absolute path holding a space (`echo y > '/a b/src/x.ts'` is "
+        "allowed where the same spelling without the space is blocked), so the "
+        "cases that redirect into such a path stay red under quoting",
+    "plugins/audit/tests/test_stamp_verification.py":
+        "`child_env` names a path under the shared root inside an option string "
+        "only when the word is a bare absolute path, so a quoted `--require "
+        "'/a b/setup.js'` in NODE_OPTIONS is kept without being named in the basis",
+}
 
 
 # --- discovery ----------------------------------------------------------------
@@ -445,8 +496,31 @@ def child_debris(work, home):
 
 
 # --- running (impure) and grading (pure) --------------------------------------
+def spaced_layout(holder):
+    """`(scratch, interpreter)` built inside `holder` for the spaced leg.
+
+    `scratch` holds a space and is reached THROUGH a symlink (`holder/via` ->
+    `holder/real`), so its resolved spelling is `holder/real/...`: the link's name
+    is not a suffix of the target's, the opposite of `/tmp` -> `/private/tmp`.
+    `interpreter` is a symlink to `sys.executable` under a directory that holds a
+    space, which keeps a virtualenv's behaviour (the environment is found from the
+    path the interpreter was started by, not from where the link points).
+    Raises OSError where symlinks cannot be made.
+    """
+    real = os.path.join(holder, "real")
+    os.makedirs(real)
+    os.symlink(real, os.path.join(holder, "via"))
+    scratch = os.path.join(holder, "via", "s p")
+    os.makedirs(scratch)
+    pydir = os.path.join(holder, "py dir")
+    os.makedirs(pydir)
+    interpreter = os.path.join(pydir, "python3")
+    os.symlink(sys.executable, interpreter)
+    return scratch, interpreter
+
+
 def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
-            pycache=None, environ=None):
+            pycache=None, environ=None, spaced=False):
     """Run one file's `--selftest` in a scratch directory and report what happened.
 
     Split from `grade` on purpose: everything below this line is a decision about
@@ -504,6 +578,18 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     scratch = tempfile.mkdtemp(prefix="sw-")
     home = tempfile.mkdtemp(prefix="sh-")
     owned = [scratch, home]
+    interpreter = sys.executable
+    if spaced:
+        # `scratch` becomes the HOLDER and the child's directory moves inside it, so
+        # the one removal below takes the whole layout.
+        try:
+            holder = scratch
+            scratch, interpreter = spaced_layout(holder)
+        except OSError as exc:
+            for root in owned:
+                remove_tree(root)
+            return {"path": rel_path, "code": None, "debris": [],
+                    "output": "could not build the spaced layout: %s" % (exc,)}
     for name in TEMP_VARS:
         env[name] = scratch
     env.update(home_env(home))
@@ -513,7 +599,7 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     env["PYTHONPYCACHEPREFIX"] = pycache
     for root in (scratch, home):
         io.open(os.path.join(root, SENTINEL), "wb").write(SENTINEL_BYTES)
-    argv = [sys.executable, os.path.join(repo, rel_path), "--selftest"]
+    argv = [interpreter, os.path.join(repo, rel_path), "--selftest"]
     try:
         done = subprocess.run(argv, cwd=scratch, env=env, stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, timeout=timeout)
@@ -623,8 +709,14 @@ def default_jobs(cpus=None):
     return max(1, cpus - 2)
 
 
+def exempt_row(rel_path, reason):
+    """The row for a file the spaced leg does not run: ok, no cases, the reason."""
+    return {"path": rel_path, "ok": True, "why": None, "cases": 0,
+            "skipped": False, "output": "", "exempt": reason}
+
+
 def sweep(paths, covered, jobs=None, repo=None, encoding=None,
-          timeout=DEFAULT_TIMEOUT):
+          timeout=DEFAULT_TIMEOUT, spaced=False):
     """Run every path and return one graded row per file, sorted by path.
 
     Sorted on the way out rather than printed on the way in: completion order is
@@ -640,10 +732,14 @@ def sweep(paths, covered, jobs=None, repo=None, encoding=None,
     """
     jobs = jobs or default_jobs()
     rows = []
+    exempt = SPACED_EXEMPT if spaced else {}
+    rows.extend(exempt_row(p, exempt[p]) for p in paths if p in exempt)
+    paths = [p for p in paths if p not in exempt]
     pycache = tempfile.mkdtemp(prefix="sp-run-")
     try:
         with futures.ThreadPoolExecutor(max_workers=jobs) as pool:
-            pending = [pool.submit(run_one, p, repo, encoding, timeout, pycache)
+            pending = [pool.submit(run_one, p, repo, encoding, timeout, pycache,
+                                   None, spaced)
                        for p in paths]
             for fut in futures.as_completed(pending):
                 ran = fut.result()
@@ -676,12 +772,22 @@ def _render_tail(rows, bad, skipped, total_cases, out):
     if bad:
         for row in bad:
             out.write("FAIL  %s: %s\n" % (row["path"], row["why"]))
+    for row in rows:
+        if row.get("exempt"):
+            out.write("EXEMPT %s: %s\n" % (row["path"], row["exempt"]))
     out.write("%d/%d files ok, %d migrated to tests/, %d cases\n"
               % (len(rows) - len(bad), len(rows), len(skipped), total_cases))
     return 1 if bad else 0
 
 
-def render(rows, jobs, encoding=None, stream=None):
+def _leg_label(encoding, spaced):
+    """The heading a leg prints under, so two legs' logs are told apart."""
+    if encoding:
+        return "encoding pass (%s)" % (encoding,)
+    return "spaced sweep" if spaced else "sweep"
+
+
+def render(rows, jobs, encoding=None, stream=None, spaced=False):
     """Print the table, then every failure IN FULL, then the summary. Returns exit.
 
     THE LOUD FORM, UNCHANGED: one line per file whatever it did, because a
@@ -693,10 +799,12 @@ def render(rows, jobs, encoding=None, stream=None):
     total_cases = sum(r["cases"] for r in rows)
     skipped = [r for r in rows if r["skipped"]]
 
-    label = "encoding pass (%s)" % (encoding,) if encoding else "sweep"
+    label = _leg_label(encoding, spaced)
     out.write("%s: %d files, %d workers\n" % (label, len(rows), jobs))
     for row in rows:
-        if row["skipped"]:
+        if row.get("exempt"):
+            out.write("  exempt  %-58s not run on this leg\n" % (row["path"],))
+        elif row["skipped"]:
             out.write("  ok      %-58s cases live in tests/\n" % (row["path"],))
         elif row["ok"]:
             out.write("  ok      %-58s %d cases\n" % (row["path"], row["cases"]))
@@ -705,7 +813,7 @@ def render(rows, jobs, encoding=None, stream=None):
     return _render_tail(rows, bad, skipped, total_cases, out)
 
 
-def render_quiet(rows, jobs, encoding=None, stream=None):
+def render_quiet(rows, jobs, encoding=None, stream=None, spaced=False):
     """Print every failure, the totals, and nothing per passing file.
 
     Measured across this release's agent transcripts, shell output is the
@@ -722,7 +830,7 @@ def render_quiet(rows, jobs, encoding=None, stream=None):
     total_cases = sum(r["cases"] for r in rows)
     skipped = [r for r in rows if r["skipped"]]
 
-    label = "encoding pass (%s)" % (encoding,) if encoding else "sweep"
+    label = _leg_label(encoding, spaced)
     out.write("%s: %d files, %d workers\n" % (label, len(rows), jobs))
     return _render_tail(rows, bad, skipped, total_cases, out)
 
@@ -750,6 +858,12 @@ def main(argv):
     # `--quiet` keeps the failures and the totals and drops the rest. A human
     # bisecting a red run still has the loud form, unchanged, as the default.
     quiet = "--quiet" in argv
+    spaced = "--spaced" in argv
+    if spaced and os.name == "nt":
+        sys.stderr.write("sweep-selftests: --spaced needs symlinks the Windows "
+                         "runner does not grant; refusing rather than reporting "
+                         "a leg that did not run\n")
+        return 2
 
     paths = sweep_files()
     covered = covered_paths()
@@ -763,8 +877,10 @@ def main(argv):
                          "migrated-file rules below would assert nothing. Run "
                          "`_output.py --covered` and find out why.\n")
         return 2
-    rows = sweep(paths, covered, jobs=jobs, encoding=encoding, timeout=timeout)
-    return (render_quiet if quiet else render)(rows, jobs, encoding=encoding)
+    rows = sweep(paths, covered, jobs=jobs, encoding=encoding, timeout=timeout,
+                 spaced=spaced)
+    return (render_quiet if quiet else render)(rows, jobs, encoding=encoding,
+                                               spaced=spaced)
 
 
 # --- selftest -----------------------------------------------------------------
@@ -1381,6 +1497,76 @@ def _cases(check):
           % (removal_helper_drift("x = 1\n", _one),),
           "no module-level" in (removal_helper_drift("x = 1\n", _one) or "")
           and "no module-level" in (removal_helper_drift(_one, "x = 1\n") or ""))
+
+    # -- the spaced leg ---------------------------------------------------------
+    sp_work = tempfile.mkdtemp(prefix="sweep-spaced-")
+    try:
+        sp_holder = os.path.join(sp_work, "h")
+        os.makedirs(sp_holder)
+        sp_scratch, sp_interp = spaced_layout(sp_holder)
+        sp_real = os.path.realpath(sp_scratch)
+        sp_rel_link = os.path.relpath(sp_scratch, sp_holder)
+        sp_rel_real = os.path.relpath(sp_real, os.path.realpath(sp_holder))
+        check("sp1 the spaced scratch holds a space and is reached THROUGH a "
+              "symlink whose target is not a suffix-extension of the link: the "
+              "link spells %r and the resolved path spells %r, so a fixture "
+              "that compares or rebuilds one spelling from the other is caught "
+              "where `/tmp` -> `/private/tmp` would hide it"
+              % (sp_rel_link, sp_rel_real),
+              " " in sp_scratch and os.path.islink(os.path.dirname(sp_scratch))
+              and sp_rel_link != sp_rel_real
+              and not sp_real.endswith(sp_scratch)
+              and sp_rel_real.split(os.sep)[0] != sp_rel_link.split(os.sep)[0])
+        sp_ran = subprocess.run([sp_interp, "-c", "print(6 * 7)"],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        check("sp2 the interpreter the leg hands a child sits under a directory "
+              "holding a space and still starts: %r %r"
+              % (sp_interp, sp_ran.stdout),
+              " " in sp_interp and sp_ran.returncode == 0
+              and sp_ran.stdout.strip() == b"42")
+
+        sp_child = os.path.join(sp_work, "spaced_child")
+        io.open(sp_child, "w", encoding="utf-8").write(
+            "import os, subprocess, sys\n"
+            "tmp = os.environ['TMPDIR']\n"
+            "bare = subprocess.run('test -d ' + tmp, shell=True).returncode\n"
+            "word = subprocess.run('test -d ' + __import__('shlex').quote(tmp),"
+            " shell=True).returncode\n"
+            "sys.stdout.write('TMP=' + tmp + '\\nBARE=%d\\nQUOTED=%d\\n'"
+            " % (bare, word))\n"
+            "sys.stdout.write('fixture: 1/1 cases passed\\n')\n")
+        sp_got = dict(line.split("=", 1) for line in run_one(
+            sp_child, timeout=60, spaced=True)["output"].splitlines()
+            if "=" in line)
+        check("sp3 a child run with `spaced` sees a TMPDIR holding a space and "
+              "a link, an UNQUOTED path in a shell command is a different "
+              "command there (exit %s) while the quoted word names the "
+              "directory (exit %s) - the defect class the leg exists to keep "
+              "measured: %r"
+              % (sp_got.get("BARE"), sp_got.get("QUOTED"), sp_got.get("TMP")),
+              " " in sp_got.get("TMP", "") and "/via/" in sp_got.get("TMP", "")
+              and sp_got.get("BARE") not in (None, "0")
+              and sp_got.get("QUOTED") == "0")
+
+        sp_exempt = sorted(SPACED_EXEMPT)[0]
+        sp_rows = sweep([sp_exempt], covered, jobs=1, repo=sp_work, timeout=30,
+                        spaced=True)
+        sp_plain = sweep([sp_exempt], covered, jobs=1, repo=sp_work, timeout=30)
+        check("sp4 a file the spaced leg exempts is reported as exempt with its "
+              "reason and is not run there (it does not exist in this scratch "
+              "repository, so running it would be red), while the same path on "
+              "the ordinary leg IS run: %r" % (sp_rows,),
+              len(sp_rows) == 1 and sp_rows[0]["ok"]
+              and sp_rows[0].get("exempt") == SPACED_EXEMPT[sp_exempt]
+              and len(sp_plain) == 1 and not sp_plain[0]["ok"])
+        sp_swept = set(sweep_files())
+        check("sp5 every exemption names a file the sweep reaches and carries a "
+              "reason, so a row cannot outlive its file or excuse it silently: "
+              "%r" % (sorted(set(SPACED_EXEMPT) - sp_swept),),
+              set(SPACED_EXEMPT) <= sp_swept
+              and all(len(r) > 40 for r in SPACED_EXEMPT.values()))
+    finally:
+        remove_tree(sp_work)
 
 
 

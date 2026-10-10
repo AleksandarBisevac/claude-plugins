@@ -258,6 +258,15 @@ python3 tools/sweep-selftests.py --selftest
 # dropping it fails by the leg's flags.
 python3 tools/sweep-selftests.py --encoding cp1252
 
+# ...and again with TMPDIR under a path holding a space that is reached through a
+# symlink, and the interpreter started through a spaced path. Every suite had run
+# only under a space-free temp root, so a fixture that builds a shell command from
+# an unquoted path was a different command on a machine whose temp directory or
+# virtualenv sits under one. The leg is posix-only (the runner refuses where
+# symlinks are not granted) and `verify.sh --fast` skips it. A suite it cannot run
+# is listed in `SPACED_EXEMPT` with the reason, and the run prints each one.
+python3 tools/sweep-selftests.py --spaced
+
 # the meta-gate: this list, verify.sh and ci.yml describe one gate set, and they had
 # drifted in both directions at once before anything compared them. All THREE are
 # compared now, and this document was the last one added — while claiming to be the

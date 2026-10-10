@@ -35,6 +35,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import sys
 import tempfile
@@ -1758,7 +1759,7 @@ def _cases(check):
             _tf_bash = {"tool_name": "Bash", "session_id": "tf-b",
                         "cwd": _tf["main"], "tool_input": {
                             "command": "cd %s && python3 audit-task.py done "
-                                       "P41.1" % _tf["wt"]}}
+                                       "P41.1" % shlex.quote(_tf["wt"])}}
             M.pre_cache(_tf_bash, cfg=_tf_cfg)
             _tf_finish("P41.1", "b" * 40)
             _ok, _rows = _harness.attempt(_tf_post_rows, _tf_bash, cfg=_tf_cfg)

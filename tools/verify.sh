@@ -301,6 +301,20 @@ else
   run "selftests on a legacy code page" \
     python3 tools/sweep-selftests.py --encoding cp1252
 fi
+# THE SWEEP ONCE MORE, WITH `TMPDIR` UNDER A PATH HOLDING A SPACE, reached through a
+# symlink, and the interpreter started through a spaced path. Every suite had run only
+# under a space-free temp root, so a fixture building a shell command from an
+# unquoted path was a different command on a machine whose temp or virtualenv sits
+# under one, and nothing here could say so. CI runs this leg (posix runners only);
+# `--fast` skips it for the reason it skips the code-page leg, and says so.
+if [ "$FAST" -eq 1 ]; then
+  printf '  %-44s%s\n' "selftests under a spaced, linked TMPDIR" "skipped (--fast)"
+  RESULTS="$RESULTS
+  skip  selftests under a spaced, linked TMPDIR (--fast)"
+else
+  run "selftests under a spaced, linked TMPDIR" \
+    python3 tools/sweep-selftests.py --spaced
+fi
 # The meta-gate. This file, ci.yml, CONTRIBUTING.md and CLAUDE.md are hand-maintained
 # descriptions of one gate set, and they had drifted in both directions before anyone
 # measured it; a gate named by one and not another now fails by name. Both documents

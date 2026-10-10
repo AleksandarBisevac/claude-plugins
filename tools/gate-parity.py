@@ -2358,6 +2358,10 @@ AUDITED_EXEMPTIONS = {
     # RETIRED one alike so the list may only shrink and only deliberately.
     "KNOWN_LAYER_DEBT": ("reason", "plugins/audit/tests/test__deps.py r2"),
     "EXCLUDED": ("live", "plugins/audit/tests/test__refs.py t2"),
+    # The files the spaced sweep leg does not run. The sweep's own `sp5` reports a
+    # row naming a file the sweep no longer reaches, or one with no reason; whether
+    # the sentence is still true is not judged.
+    "SPACED_EXEMPT": ("live", "tools/sweep-selftests.py sp5"),
 }
 
 # ...and the tables the shape reaches that excuse nothing. `{subject: sentence}` is

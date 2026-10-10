@@ -1,0 +1,28 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/sweep-selftests.py --spaced": "pass",
+    "python3 tools/sweep-selftests.py --selftest": "pass",
+    "python3 tools/gate-parity.py": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task, expectRedFirst false. Reds watched before the fix under a spaced + symlinked TMPDIR and a spaced symlinked interpreter: test_guard_secrets_read (tt2 tt3 ww5 ww7a ww10a lq7x4 sm17 we12 xs0 xs1 xs3 xs4 lw2 lw3 lw8 lw10-lw13), test__config tr7, test_journal_writes tf3 tf4, test_stamp_verification sr44.",
+    "at": "2026-10-10 (first reproduction run, before the edits)"
+  },
+  "outcome": {
+    "technical": "Quoted fixture paths with shlex.quote in test__config (tr7), test_journal_writes (tf3/tf4), test_guard_secrets_read (all listed sites except 3), test_stamp_verification (sr44 NODE_OPTIONS). Added tools/sweep-selftests.py --spaced leg: spaced_layout builds TMPDIR 'holder/via/s p' where via -> holder/real (non-suffix symlink) plus an interpreter symlink under 'py dir'; refuses on Windows (exit 2); SPACED_EXEMPT table with reasons, printed in the tail; 5 new selftest cases sp1-sp5 (sweep selftest 60/60). Wired the leg in tools/verify.sh (skipped by --fast), ci.yml (non-Windows step), CONTRIBUTING.md and CLAUDE.md; gate-parity AUDITED_EXEMPTIONS row for SPACED_EXEMPT (instrument: sp5); gate-parity reports both runners run the same legs. Gates: default sweep exit 0 (330/330 files), --spaced sweep exit 0 (330/330 files, exempt files not run), ruff exit 0, vermin exit 0, gate-parity exit 0. SURVIVING REDS UNDER QUOTING (product fail-opens, NOT fixed, exempted from the leg with reasons, to hand to the guard-readers task): (1) plan-gate shell reader (guard-secrets-read / require-plan path) does not grade a redirect whose QUOTED target is an absolute path containing a space: `echo y > '<root with space>/main-P48/src/undeclared.ts'` -> allow, while the same with no space -> block, and `sed -i ... '<same>'` -> block. Cases still red: tt2, tt3, ww10a in test_guard_secrets_read. (2) stamp-verification.py child_env/_TOKEN_SPLIT: a quoted `--require '/a b/setup.js'` option string under the shared root is not NAMED (sr44 red). NEW REDS FOUND BY THE LEG IN FILES OUTSIDE MY SCOPE (exempted, not edited): the machine-path scrub ends a path at its first space, leaving `<outside-repo> b/...` (test__machine_paths mp2, test__journal_io ft4, test__evidence_io sc1, test__manifest_io ws1, test_audit_task ff17 fm1) - a product privacy gap; _harness.py fr2/sr5 split a child's output with .split() (fixture); .claude/hooks/guard-release.py gr34/gr34c build `cd %s` / `git -C %s` unquoted (fixture; file has another task's uncommitted diff, untouched). Not run: the Windows leg of the spaced sweep (symlinks).",
+    "descriptive": "The sweep now has a spaced, symlinked TMPDIR and interpreter leg wired into verify.sh and CI; four suites' fixtures are quoted, and the defects that quoting cannot cure are exempted by name with their repro."
+  },
+  "testsAdded": [
+    "tools/sweep-selftests.py sp1",
+    "tools/sweep-selftests.py sp2",
+    "tools/sweep-selftests.py sp3",
+    "tools/sweep-selftests.py sp4",
+    "tools/sweep-selftests.py sp5"
+  ],
+  "claims": "claims:\n- The spaced leg is red on main: not run against a HEAD export of the runner (HEAD has no --spaced); evidence is the first reproduction of the four suites red under the same layout before my edits, quoted in redFirst.basis.\n- The leg is green on the fixed tree: `python3 tools/sweep-selftests.py --spaced --quiet` exit 0, 330/330 files, with the listed files exempt rather than passing.\n- Not claimed: the Windows leg, and any claim that the exempted suites pass spaced.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:1057ec50af0d0108fb6d3f2313ac22490e5520b861429f550e49935a260c0e84\",\"dirtyDigest\":\"sha256:82be9387e676feefc5e6cdd383b07c37b783770426bead12fb05a1a80b6332a5\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\".github/workflows/ci.yml\":\"35394999851536c0\",\"CLAUDE.md\":\"b1a1c9cedc38bef1\",\"CONTRIBUTING.md\":\"69db2b122ce01def\",\"plugins/audit/tests/test__config.py\":\"e65c7cc79630e6dc\",\"plugins/audit/tests/test_guard_secrets_read.py\":\"939ecdb7007e7a15\",\"plugins/audit/tests/test_journal_writes.py\":\"b45cf1ce59cd8fcd\",\"plugins/audit/tests/test_stamp_verification.py\":\"196b4b21a6920890\",\"tools/gate-parity.py\":\"c638b562c7f3b85e\",\"tools/sweep-selftests.py\":\"9a530a83d6146025\",\"tools/verify.sh\":\"ececa90d7b9832c1\"},\"head\":\"90b2e329\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".github/workflows/ci.yml\",\"CLAUDE.md\",\"CONTRIBUTING.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/tests/test__config.py\",\"plugins/audit/tests/test_guard_secrets_read.py\",\"plugins/audit/tests/test_journal_writes.py\",\"plugins/audit/tests/test_stamp_verification.py\",\"tools/gate-parity.py\",\"tools/sweep-selftests.py\",\"tools/verify.sh\"],\"scopeDigest\":\"sha256:3592202d2c48aac60798a8022ec4e4e32b6f65628c5c596e50a7cf56b68ad839\",\"v\":2}"
+}

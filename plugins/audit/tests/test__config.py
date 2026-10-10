@@ -60,6 +60,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import glob
 import json
 import os
+import shlex
 import sys
 import time
 from pathlib import Path
@@ -1480,7 +1481,8 @@ def _cases(check):
               (_tm_edge_calls, len(_tm_edges), _tm_linked,
                _tm_got4 if not _tm_ok4 else
                [(t["rel"], t["basis"]) for t in _tm_got4[len(_tm_wide):]]))
-        _cd = M.effective_cwd("cd %s && sed -i x f.ts" % wlink, str(wprim))
+        _cd = M.effective_cwd("cd %s && sed -i x f.ts" % shlex.quote(str(wlink)),
+                              str(wprim))
         _spaced = os.path.join(str(wprim), "linked worktree")
         check("tr7 effective_cwd reads a literal `cd` - the reading every hook "
               "that places a Bash command now shares - and declines one it "

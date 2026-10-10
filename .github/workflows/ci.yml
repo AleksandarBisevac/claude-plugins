@@ -201,6 +201,18 @@ jobs:
         # does - so the skip the step above needs would only narrow this one. The
         # runner encodes that difference in `grade(..., encoding_pass=True)`, and its
         # own case g5 is the one that pins the two passes as two questions.
+      - name: ...and again with a spaced, symlinked TMPDIR and interpreter path
+        if: runner.os != 'Windows'
+        shell: bash
+        run: python tools/sweep-selftests.py --spaced
+        # A user's temp directory or virtualenv can sit under a path holding a space,
+        # reached through a link, and a fixture that builds a shell command from an
+        # unquoted path is a different command there. Every suite had only ever run
+        # under a space-free root, so the class was invisible until a user met it.
+        # Symlinks need a privilege the Windows runner does not grant by default, so
+        # the leg is posix-only and the runner refuses (exit 2) rather than
+        # reporting a leg it did not run. The files it does not run are listed in
+        # `SPACED_EXEMPT` with a reason each, and the run prints them.
       - name: Launcher resolves an interpreter (python3 -> python -> py)
         shell: bash
         run: |

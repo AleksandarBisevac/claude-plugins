@@ -1204,7 +1204,8 @@ def _budget_cases(check):
           naming == ["NODE_OPTIONS", "NOTE", "PYTEST_ADDOPTS"]
           and all(k in kept for k in env) and dropped == [])
     held = os.environ.get("NODE_OPTIONS")
-    os.environ["NODE_OPTIONS"] = "--require %s" % (os.path.join(root, "setup.js"),)
+    os.environ["NODE_OPTIONS"] = "--require %s" % (
+        shlex.quote(os.path.join(root, "setup.js")),)
     try:
         _c, got_n = _red(root, man, [py, "tests/test_mine.py"])
     finally:
