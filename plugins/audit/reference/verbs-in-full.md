@@ -337,6 +337,31 @@ while each finding it names still names it: a `resolve-finding` that points one 
 task, or a `move` taking the task away from its findings, ends it, and the landing then
 refuses the task until a phase review answers it.
 
+A fix task is scoped from its findings: `files` is every path the findings' `file` text
+names — a comma list, `X.tsx:4 and Y.tsx:71`, a line range with a comma inside its suffix —
+once each and without the line suffix. A finding that names a test file that does not exist
+yet, or whose resolution asks for a test and whose directory shows where tests live (it
+already holds a `.test.` or `.spec.` file), makes the task `tdd` with that file in
+`tests.add`, unless `--tests-mode` was passed; a finding that asks for a test where the repo
+shows no place for one leaves the task as it was and says so in a task note. The gate sends
+each path to the runner that takes it: a project whose gate names vitest and playwright
+runs a unit test under vitest and an e2e spec under playwright, never the other way round,
+and an entry left with no path is dropped rather than left to run the whole suite. The
+companions below apply to a fix task too, and a test outside the runner's include widens
+the runner's config.
+
+#### `--introduces dependency:<name>|user-strings` — the files a change cannot avoid
+
+`add` and `scope` take `--introduces`, repeatable: `dependency:<name>` for a package the
+task adds, `user-strings` for text a user reads. The caller states the kind of change; the
+paths come from the repository — the nearest package manifest and the lockfile on disk (an
+absent lockfile adds nothing and is said), or every locale file of the one message directory
+(none or two candidates adds nothing and is said). Each companion is appended to `files`
+and keyed in `fileIndex`, listed in the report with its basis, written to the task's notes
+on `add`, and carried in the journal row's summary. A path the task already declares is not
+added twice, and a call without the flag changes nothing. Any other value is refused by name.
+On a started task `scope --introduces` is a widening and is taken as one.
+
 #### `--bug <bugId>` — the fix task of a bug, with the discipline its files imply
 
 `add --bug BUG-3` materializes the task that fixes an open bug: it writes `task.bugId`, and in

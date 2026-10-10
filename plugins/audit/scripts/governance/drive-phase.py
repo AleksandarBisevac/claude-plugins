@@ -1812,15 +1812,16 @@ def add_fix_tasks(ctx, phase, fixes):
     by_id = dict((f.get("id"), f) for f in open_findings(phase))
     for fid in fixes:
         found = by_id.get(fid) or {}
-        path = str(found.get("file") or "").split(":", 1)[0].strip()
+        # NO `--files` HERE: `add --fixes` reads every path the finding names (a
+        # comma list, `X:4 and Y:71`, a line range) off the finding itself, where
+        # this used to cut the text at its first colon and scope one file of
+        # several.
         args = ["add", _clip("fix %s: %s" % (fid, found.get("issue") or ""), 80),
                 ctx["manifest"], "--project-dir", ctx["project"],
                 "--phase", phase["id"], "--fixes", fid, "--description",
                 "%s\n\nResolution asked: %s" % (found.get("issue") or "",
                                                 found.get("resolution") or ""),
                 "--json"]
-        if path:
-            args += ["--files", path]
         out, stop = _verb_or_stop(ctx, "audit-task.py", args)
         if stop is not None:
             return stop

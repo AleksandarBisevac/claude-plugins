@@ -400,6 +400,10 @@ import _gate_derive           # noqa: E402  (is_shared_key, path_scoped_sibling,
                               # one ask the same three questions, so both entry
                               # points share one body instead of two that could
                               # drift)
+import _scope_companions      # noqa: E402  (derive: the files a change cannot avoid - the
+                              # manifest and lockfile, the locale files, the runner
+                              # config - read off the repo and never guessed, so
+                              # `--introduces` and a fix task's scope add them)
 import _id_refs               # noqa: E402  (rename: one id rewritten everywhere the plan
                               # points at it - `move`'s references, from the one list of
                               # fields that hold an id)
@@ -2187,11 +2191,15 @@ def _not_journaled_line(jres, what):
             % (what, jres.get("journaledReason") or "no reason recorded"))
 
 
-def _journal_add(project, config, mpath, task_id, phase_id, title, healed):
-    """The `task.add` row: what was added, where, and what the write healed."""
+def _journal_add(project, config, mpath, task_id, phase_id, title, healed,
+                 basis=""):
+    """The `task.add` row: what was added, where, what the write healed, and the
+    basis of every companion file the scope gained beyond what was declared."""
     summary = "%s added to %s: %s" % (task_id, phase_id, title)
     if healed:
         summary += "; " + "; ".join(_panel_write._fmt_change(r) for r in healed)
+    if basis:
+        summary += "; " + basis
     return _journal_row(project, config, mpath, "task.add", summary,
                         {"taskId": task_id, "phaseId": phase_id})
 
@@ -2216,7 +2224,8 @@ def _scope_details(task_id, phase_id, rows, attempt):
     return details
 
 
-def _journal_scope(project, config, mpath, task_id, phase_id, changes, task):
+def _journal_scope(project, config, mpath, task_id, phase_id, changes, task,
+                   basis=""):
     """The `task.scope` row: which fields moved, to what, and under which attempt.
 
     `changes` is the allow-listed shape `_journal_io.DETAILS_KEYS` already
@@ -2255,11 +2264,12 @@ def _journal_scope(project, config, mpath, task_id, phase_id, changes, task):
     which paths the scope gained, and which commands the next attempt will run.
     """
     attempt = _mio.recorded_attempt(task)
+    tail = "; " + basis if basis else ""
     if not _started(task):
         return _journal_row(
             project, config, mpath, "task.scope",
-            "%s scoped in %s: %s"
-            % (task_id, phase_id, _fields_of(changes)),
+            "%s scoped in %s: %s%s"
+            % (task_id, phase_id, _fields_of(changes), tail),
             _scope_details(task_id, phase_id, changes, attempt))
     # A DIFFERENT EVENT DESERVES A DIFFERENT SENTENCE. `audit-journal list`
     # prints the summary and nothing else, so a mid-run widening that read like
@@ -2272,9 +2282,9 @@ def _journal_scope(project, config, mpath, task_id, phase_id, changes, task):
             continue
         written.append(_journal_row(
             project, config, mpath, "task.scope",
-            "%s %s in %s %s: %s"
+            "%s %s in %s %s: %s%s"
             % (task_id, event, phase_id, _attempt_phrase(task),
-               _fields_of(rows)),
+               _fields_of(rows), tail if event == "WIDENED" else ""),
             _scope_details(task_id, phase_id, rows, attempt)))
     # THE WORST ANSWER WINS. Every row above records part of one write, so a call
     # that got one row onto the trail and lost the other has NOT been journaled,
@@ -2416,8 +2426,20 @@ def _failing_from_lookup(project, phase, run_id):
     return row, None
 
 
+def _point(shape, build, paths, project, runner_aware):
+    """`(entries, suffix)` - the sibling's shape re-pointed at `paths`, and the
+    sentence to append to the gate's basis. A fix task's paths are sent to the
+    runner that takes each (`_gate_derive.repointed_by_runner`); every other task
+    keeps the plain re-point, so a plan with one runner reads as it always did."""
+    if not runner_aware:
+        return _repointed(shape, build, paths), ""
+    entries, notes = _gate_derive.repointed_by_runner(shape, build, paths,
+                                                      project or ".")
+    return entries, ("; " + "; ".join(notes)) if notes else ""
+
+
 def _ordinary_task_gate(shape, owner, wide, build, add_paths, files, mode,
-                        meta, phase):
+                        meta, phase, project=None, runner_aware=False):
     """The three ordinary defaults (`tests.add`, `files`, the phase's wide
     gate), gate-only's own suite-filtered arm included -- split out of
     `_task_gate` so a `--failing-from` call that cannot narrow anything falls
@@ -2430,16 +2452,19 @@ def _ordinary_task_gate(shape, owner, wide, build, add_paths, files, mode,
                       "project's spelling off" % (phase.get("id"),)), \
             "phase-no-spelling"
     if add_paths:
-        return (_repointed(shape, build, add_paths),
-                "narrowed to this task's tests.add paths, in %s's spelling"
-                % (owner,), "tests.add")
+        entries, more = _point(shape, build, add_paths, project, runner_aware)
+        return (entries,
+                "narrowed to this task's tests.add paths, in %s's spelling%s"
+                % (owner, more), "tests.add")
     if files:
         if mode == "gate-only":
             suite_files = [p for p in files if _phases.is_suite_path(p)]
             if suite_files:
-                return (_repointed(shape, build, suite_files),
-                        "narrowed to this task's files, in %s's spelling"
-                        % (owner,), "files")
+                entries, more = _point(shape, build, suite_files, project,
+                                       runner_aware)
+                return (entries,
+                        "narrowed to this task's files, in %s's spelling%s"
+                        % (owner, more), "files")
             always = _phases.phase_gate_default(
                 meta if isinstance(meta, dict) else {})["always"]
             if always:
@@ -2453,8 +2478,9 @@ def _ordinary_task_gate(shape, owner, wide, build, add_paths, files, mode,
                     "%s's gate entries that name no path, carried through -- "
                     "this task's files name no suite path to narrow %s's gate "
                     "at" % (owner, owner), "gate-only-no-suite")
-        return (_repointed(shape, build, files),
-                "narrowed to this task's files, in %s's spelling" % (owner,),
+        entries, more = _point(shape, build, files, project, runner_aware)
+        return (entries,
+                "narrowed to this task's files, in %s's spelling%s" % (owner, more),
                 "files")
     return wide, ("the phase's testGate, wide -- %s is path-scoped but this "
                   "task names no file to point a gate at" % (owner,)), \
@@ -2581,7 +2607,7 @@ def _failed_step_entries(steps):
 
 
 def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
-                            failing_row, project=None):
+                            failing_row, project=None, runner_aware=False):
     """`(gate, basis, source)` for `add` ALONE -- `_task_gate` plus the
     failed-first `--failing-from` arm, kept in its own function rather than
     folded into `_task_gate` so `seed` (which shares every other arm) never
@@ -2628,7 +2654,8 @@ def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
     wide, meta, build, shape, owner = _task_gate_setup(phase, assembled)
     if not args.failing_from:
         return _ordinary_task_gate(shape, owner, wide, build, add_paths,
-                                   files, mode, meta, phase)
+                                   files, mode, meta, phase, project,
+                                   runner_aware)
     if shape is not None:
         suites = (_evidence_io.named_failing_suites(failing_row.get("steps"))
                   if failing_row else [])
@@ -2636,10 +2663,11 @@ def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
                        else _root_spelled_suites(suites, project or "."))
         if pinned:
             union = _union_paths(pinned, add_paths)
-            return (_repointed(shape, build, union),
+            entries, more = _point(shape, build, union, project, runner_aware)
+            return (entries,
                     "narrowed to the suite(s) run %s named as failing, "
                     "union with this task's tests.add paths, in %s's "
-                    "spelling" % (args.failing_from, owner),
+                    "spelling%s" % (args.failing_from, owner, more),
                     "failing-from-run:%s" % (args.failing_from,))
         if not suites:
             why = ("run %s's failed steps named no suite as failing (a tail "
@@ -2671,12 +2699,13 @@ def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
                "narrow --failing-from %s against"
                % (phase.get("id"), args.failing_from))
     gate, basis, source = _ordinary_task_gate(
-        shape, owner, wide, build, add_paths, files, mode, meta, phase)
+        shape, owner, wide, build, add_paths, files, mode, meta, phase, project,
+        runner_aware)
     return gate, "%s, so falling through: %s" % (why, basis), source
 
 
 def _build_task(task_id, title, args, phase, assembled, failing_row=None,
-                project=None):
+                project=None, companions=(), runner_aware=False):
     """`(task, unnamed, gateBasis)` -- the new task, fully template-initialized
     (every field from the conventions' New task template, exactly once, in
     _TEMPLATE_KEYS order), the `tests.add` entries that named no file, and the
@@ -2703,7 +2732,12 @@ def _build_task(task_id, title, args, phase, assembled, failing_row=None,
     # gate needs was produced one line too late and thrown away.
     files = _union_paths(_split_csv(args.files), add_paths)
     gate, gate_basis, gate_source = _failing_from_task_gate(
-        args, phase, assembled, add_paths, files, mode, failing_row, project)
+        args, phase, assembled, add_paths, files, mode, failing_row, project,
+        runner_aware)
+    # THE COMPANIONS JOIN `files` AFTER THE GATE IS DERIVED: a manifest or a
+    # lockfile is in scope because the change cannot avoid it, and it is not a
+    # path any runner should be pointed at.
+    files = _union_paths(files, [c["path"] for c in companions])
     task = {
         "id": task_id,
         "title": title,
@@ -2796,6 +2830,122 @@ def _bug_for_add(assembled, bug_id):
     return bug, None
 
 
+# --- what a fix task's scope is built from -----------------------------------------
+# A review finding names its file in free text: `a.tsx, b.tsx, c.tsx`, `X.tsx:4 and
+# Y.tsx:71`, `lib/a.ts:291-294,308`. The driver used to cut that at the first colon,
+# so a fix task covered one file of several and was widened by hand every time.
+_FINDING_PATH = re.compile(r"^[\w@.\-/\[\]()]+\.[A-Za-z][A-Za-z0-9]*$")
+_ASKS_FOR_TEST = re.compile(
+    r"\b(?:add|write|create|introduce|cover|include)\b[^.;\n]{0,60}?"
+    r"\b(?:tests?|specs?|test cases?)\b", re.IGNORECASE)
+
+
+def _finding_paths(text):
+    """The paths a finding's `file` text names, in order, once each, with no line
+    suffix. A token is a path when it is a path-shaped word with an alphabetic
+    extension, so `308` (the tail of a line list), `and` and `e.g.` name nothing."""
+    out = []
+    for token in re.split(r"[\s,;]+", str(text or "")):
+        token = token.strip("`'\"").rstrip(".:")
+        path = _vocab._strip_line_suffix(token)
+        if _FINDING_PATH.match(path) and path not in out:
+            out.append(path)
+    return out
+
+
+def _colocated_test(project, path):
+    """The test file a source `path` would have beside it - `Why.test.tsx` for
+    `components/Why.tsx` - when its directory already holds a `.test.` or `.spec.`
+    file, which is the repo showing where its tests live; else None. Never a
+    guess at a convention the directory does not show."""
+    head, _, base = path.rpartition("/")
+    stem, dot, ext = base.rpartition(".")
+    folder = os.path.join(project, *head.split("/")) if head else project
+    if not dot or not os.path.isdir(folder):
+        return None
+    if not any(".test." in n or ".spec." in n for n in os.listdir(folder)):
+        return None
+    return "%s%s.test.%s" % (head + "/" if head else "", stem, ext)
+
+
+def _fix_scope(targets, project):
+    """`{"paths", "newTests", "asksForTest", "unplaced"}` for the findings `--fixes`
+    names: every path they name that can be a `files` entry; the new test files -
+    those a finding names that do not exist yet, and the one a finding's
+    RESOLUTION asks for, placed beside its source when the directory shows where
+    tests live; and the findings that ask for a test the repo gives no place for.
+    The prose reading is confined to the resolution - the sentence that says what
+    to do - and only ever defaults a mode the caller did not pick."""
+    paths, asking = [], []
+    for entry in targets:
+        mine = [p for p in _finding_paths(entry.get("file"))
+                if not _path_problems([p])]
+        paths.extend(p for p in mine if p not in paths)
+        if _ASKS_FOR_TEST.search(str(entry.get("resolution") or "")):
+            asking.append((str(entry.get("id")), mine))
+    exists = lambda p: os.path.exists(os.path.join(project, *p.split("/")))
+    new_tests = [p for p in paths if _fr.is_test_path(p) and not exists(p)]
+    unplaced = []
+    for fid, mine in asking:
+        if any(_fr.is_test_path(p) for p in mine):
+            continue
+        placed = next((t for t in (_colocated_test(project, p) for p in mine)
+                       if t and not exists(t)), None)
+        if placed is None:
+            unplaced.append(fid)
+        elif placed not in new_tests:
+            new_tests.append(placed)
+    return {"paths": paths + [t for t in new_tests if t not in paths],
+            "newTests": new_tests, "unplaced": unplaced,
+            "asksForTest": [fid for fid, _m in asking]}
+
+
+def _introduces_intent(values):
+    """`(intent, refusal)` for `--introduces`: `dependency:<name>` (repeatable) and
+    `user-strings`. Anything else is refused by name rather than ignored - an
+    unrecognised kind of change owes no companion, and silence would say it does."""
+    deps, strings, bad = [], False, []
+    for raw in _split_csv(values):
+        if raw == "user-strings":
+            strings = True
+        elif raw.startswith("dependency:") and raw[len("dependency:"):].strip():
+            deps.append(raw[len("dependency:"):].strip())
+        else:
+            bad.append(raw)
+    if bad:
+        return None, ("[audit-task] --introduces takes `dependency:<name>` (the flag "
+                      "may repeat for several) or `user-strings`, not %s. Nothing "
+                      "written." % (", ".join(repr(b) for b in bad),))
+    return {"dependencies": deps, "userStrings": strings}, None
+
+
+def _companions_for(project, files, intent, tests_by_runner=None):
+    """`(companions, notes)` - `_scope_companions.derive` over `files`, once for the
+    kinds `--introduces` named and once per runner for the test paths that runner is
+    gated on. Each companion is `{"path", "kind", "basis"}`; a path already in
+    `files` is not returned."""
+    companions, notes = [], []
+    asks = [dict(intent or {})] + [{"tests": paths, "runner": runner}
+                                   for runner, paths in sorted((tests_by_runner or {}).items())]
+    for ask in asks:
+        if not (ask.get("dependencies") or ask.get("userStrings") or ask.get("tests")):
+            continue
+        ask["files"] = list(files)
+        got = _scope_companions.derive(ask, project)
+        for item in got["companions"]:
+            if item["path"] not in [c["path"] for c in companions]:
+                companions.append(item)
+        notes.extend(got["notes"])
+    return companions, notes
+
+
+def _companion_basis(companions):
+    """One sentence per companion, joined: the basis a journal row and a report
+    line carry, because a path added without its reason is a guess."""
+    return "; ".join("companion %s (%s): %s" % (c["path"], c["kind"], c["basis"])
+                     for c in companions)
+
+
 def _fixes_targets(assembled, phase, fixes):
     """`(findings, None)` - the review findings `--fixes` names, each of the new
     task's own phase and naming no task yet - or `(None, refusal)` naming every
@@ -2879,6 +3029,10 @@ def _locked_add(args, project, config, mpath, title, out):
     if refusal:
         out(refusal)
         return E_USAGE
+    intent, refusal = _introduces_intent(args.introduces)
+    if refusal:
+        out(refusal)
+        return E_USAGE
     failing_row = None
     if args.failing_from:
         failing_row, refusal = _failing_from_lookup(project, phase,
@@ -2904,10 +3058,50 @@ def _locked_add(args, project, config, mpath, title, out):
             args = argparse.Namespace(**vars(args))
             args.tests_mode, bug_note = _bug_fix_discipline(bug)
 
+    fix_notes = []
+    if fixes:
+        # A FIX TASK IS SCOPED FROM ITS FINDINGS: every path they name, and the
+        # discipline they ask for when the caller picked none. A finding that
+        # names a test file that does not exist yet, or whose resolution says to
+        # add a test, is a red-first task - it used to be gate-only, with a gate
+        # that could not run the test the finding asked for.
+        scope = _fix_scope(targets, project)
+        args = argparse.Namespace(**vars(args))
+        args.files = list(args.files or []) + scope["paths"]
+        if scope["paths"]:
+            fix_notes.append("scope: %s, every path the finding(s) %s name"
+                             % (", ".join(scope["paths"]), ", ".join(fixes)))
+        if scope["unplaced"]:
+            fix_notes.append(
+                "the resolution of %s asks for a test, but names no test file and "
+                "its directory shows no test convention to place one by; name the "
+                "case with `scope --tests-mode tdd --tests-add \"<path>: <what it "
+                "asserts>\"`" % ", ".join(scope["unplaced"]))
+        if args.tests_mode is None and scope["newTests"]:
+            args.tests_mode = "tdd"
+            if not args.tests_add:
+                args.tests_add = ["%s: red-first case for %s" % (p, ", ".join(fixes))
+                                  for p in scope["newTests"]]
+            fix_notes.append("tdd, not gate-only: %s is a test the finding(s) "
+                             "ask for that does not exist yet"
+                             % ", ".join(scope["newTests"]))
+    declared = _union_paths(_split_csv(args.files), _tests_add_paths(args.tests_add)[0])
+    by_runner = {}
+    if fixes:
+        _w, _m, build, shape, _o = _task_gate_setup(phase, assembled)
+        if shape is not None:
+            suite_paths = [p for p in declared if _phases.is_suite_path(p)]
+            got_runners, _n = _gate_derive.paths_by_runner(shape, build, suite_paths, project)
+            by_runner = dict((r, ps) for r, ps in got_runners.items()
+                             if r in _gate_derive.UNIT_RUNNERS and ps)
+    companions, companion_notes = _companions_for(project, declared, intent, by_runner)
     task_id = _allocate_id(assembled, phase_id, _mint_suffix(mpath, assembled))
     task, unnamed_add, gate_basis = _build_task(task_id, title, args, phase,
                                                 assembled, failing_row,
-                                                project)
+                                                project, companions,
+                                                runner_aware=bool(fixes))
+    for text in fix_notes + ([_companion_basis(companions)] if companions else []):
+        task.setdefault("notes", []).append({"at": _utc_now(), "text": text})
     if args.bug:
         # RECIPROCAL, in this one write: the validator refuses a task naming a
         # bug whose taskId does not name the task back.
@@ -2915,7 +3109,7 @@ def _locked_add(args, project, config, mpath, title, out):
         bug["status"] = "in_progress"
         bug["taskId"] = task_id
     if bug_note:
-        task["notes"] = [{"at": _utc_now(), "text": bug_note}]
+        task.setdefault("notes", []).append({"at": _utc_now(), "text": bug_note})
     if fixes:
         # ONE WRITE, BOTH HALVES: the task's `fixes` and each finding's
         # `fixTask`, which is what lets the task close `not-asked` under
@@ -2974,7 +3168,7 @@ def _locked_add(args, project, config, mpath, title, out):
         return E_INVALID
 
     jres = _journal_add(project, config, mpath, task_id, phase_id, title,
-                        healed)
+                        healed, _companion_basis(companions))
     waiting = _waiting_on(assembled, task)
     index_note = _index_dirty_note(written, mpath, project, phase_id)
     git_root = os.path.abspath(os.path.join(project,
@@ -3003,6 +3197,8 @@ def _locked_add(args, project, config, mpath, title, out):
                   # comparing a phase's basis with a task's is comparing one
                   # kind of answer.
                   "testGateBasis": gate_basis,
+                  "companions": companions,
+                  "companionNotes": companion_notes,
                   "gateDirectories": _gate_directory_notes(
                       project, task["tests"]["gate"], assembled.get("meta")),
                   "ready": not waiting, "waitingOn": waiting}
@@ -3052,6 +3248,10 @@ def _locked_add(args, project, config, mpath, title, out):
         out(_empty_task_gate_note(False))
     if task["files"]:
         out("  files: %d (fileIndex updated)" % len(task["files"]))
+    for item in companions:
+        out("  companion: %s -- %s" % (item["path"], item["basis"]))
+    for note in companion_notes:
+        out("  companion note: %s" % (note,))
     unnamed_note = _unnamed_add_note(unnamed_add)
     if unnamed_note:
         out(unnamed_note)
@@ -7532,14 +7732,18 @@ def _locked_scope(args, project, config, mpath, tid, out):
     # value of either is an instruction rather than an absence: `--depends-on ""`
     # is how the field is emptied, which is `retarget --area ""`'s spelling and
     # the reason this flag needed no `--depends-on-clear` twin.
+    intent, refusal = _introduces_intent(args.introduces)
+    if refusal:
+        out(refusal)
+        return E_USAGE
     if not files and args.tests_mode is None and not args.tests_add \
             and not args.gate and not args.gate_clear and not args.description \
             and args.risk is None and args.blocked_by is None \
-            and args.depends_on is None:
+            and args.depends_on is None and not args.introduces:
         out("[audit-task] scope needs --files (and may take --tests-mode / "
             "--tests-add / --gate / --gate-clear / --description / --risk / "
-            "--blocked-by / --depends-on) -- a scope call that changes nothing "
-            "is a lock taken for no reason")
+            "--blocked-by / --depends-on / --introduces) -- a scope call that "
+            "changes nothing is a lock taken for no reason")
         return E_USAGE
 
     was_files = list(node.get("files") or [])
@@ -7657,6 +7861,21 @@ def _locked_scope(args, project, config, mpath, tid, out):
             changes.append({"id": tid, "field": "files",
                             "from": before_union, "to": now_files})
             node["files"] = now_files
+    companions, companion_notes = [], []
+    if args.introduces:
+        # AFTER `files` and `tests.add` have both landed on the node, so the
+        # derivation reads the scope this call ends with. The companions are only
+        # ever UNIONED in: a started task takes them as the widening they are.
+        companions, companion_notes = _companions_for(
+            project, list(node.get("files") or []), intent)
+        before_comp = list(node.get("files") or [])
+        now_comp = _union_paths(before_comp, [c["path"] for c in companions])
+        if before_comp != now_comp:
+            changes.append({"id": tid, "field": "files",
+                            "from": before_comp, "to": now_comp})
+            node["files"] = now_comp
+        else:
+            companions = []
     if args.gate or args.gate_clear:
         now_gate = [] if args.gate_clear else list(args.gate)
         if was_gate != now_gate:
@@ -7809,7 +8028,8 @@ def _locked_scope(args, project, config, mpath, tid, out):
             out("FINDING: " + line)
         return E_INVALID
 
-    jres = _journal_scope(project, config, mpath, tid, phase_id, changes, node)
+    jres = _journal_scope(project, config, mpath, tid, phase_id, changes, node,
+                          _companion_basis(companions))
     index_note = _index_dirty_note(written, mpath, project, phase_id)
     git_root = os.path.abspath(os.path.join(project,
                                             (config or {}).get("gitRoot") or "."))
@@ -7841,6 +8061,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
                   # `files` list that resulted, and nothing in it says a case
                   # file the task declares is outside it.
                   "testsAddNamingNoFile": list(unnamed_add),
+                  "companions": companions, "companionNotes": companion_notes,
                   "ready": not waiting, "waitingOn": waiting}
         result.update(jres)
         result.update(stdin_notes_key(args))
@@ -7853,6 +8074,10 @@ def _locked_scope(args, project, config, mpath, tid, out):
     for row in changes:
         out("  %s: %s -> %s" % (row["field"], json.dumps(row["from"]),
                                 json.dumps(row["to"])))
+    for item in companions:
+        out("  companion: %s -- %s" % (item["path"], item["basis"]))
+    for note in companion_notes:
+        out("  companion note: %s" % (note,))
     if widened:
         # THE BASIS FOR AN ACCEPTANCE THAT USED TO BE A REFUSAL. A reader
         # of this transcript has to be able to tell a scope written BEFORE the
@@ -11555,7 +11780,7 @@ VERB_FLAGS = {
     "add": ("phase", "skills", "model", "files", "outputs", "risk",
             "blocked_by", "depends_on", "description", "tests_mode",
             "tests_add", "gate", "gate_clear", "dry_run", "failing_from",
-            "from_file", "fixes", "bug"),
+            "from_file", "fixes", "bug", "introduces"),
     "add-phase": ("phase_id", "outcome", "description", "area", "review_skill",
                   "blocked_by", "gate", "gate_clear", "park"),
     "cancel": ("reason",),
@@ -11576,7 +11801,7 @@ VERB_FLAGS = {
     # was computed at, which keys the file.
     "file-return": ("role", "head"),
     "scope": ("files", "tests_mode", "tests_add", "gate", "gate_clear",
-              "description", "risk", "blocked_by", "depends_on"),
+              "description", "risk", "blocked_by", "depends_on", "introduces"),
     "retarget": ("gate", "gate_clear", "gate_drop", "gate_set", "area",
                  "outcome", "description", "rename"),
     # `seed` writes where nothing exists yet, so it has no target to describe,
@@ -11689,6 +11914,15 @@ def build_parser():
     # what it edits: a comma list like `--files`, and anchored at a literal
     # directory name so a plan cannot declare the whole tree and switch the plan
     # gate off through the door built to keep it on.
+    # `add` and `scope`. The kind of change the task makes, which is a JUDGEMENT the
+    # caller owns; the files it implies are read off the repo by
+    # `_scope_companions`. Repeatable, one value per flag.
+    p.add_argument("--introduces", action="append", default=None,
+                   metavar="KIND",
+                   help="add, scope: a change the task makes whose files its "
+                        "description does not name - `dependency:<name>` (the "
+                        "package manifest and the lockfile on disk) or "
+                        "`user-strings` (every locale file); the flag may repeat")
     p.add_argument("--outputs", default=None)
     p.add_argument("--risk", choices=["low", "med", "high"], default=None)
     p.add_argument("--blocked-by", dest="blocked_by", action="append", default=None,

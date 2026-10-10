@@ -52,6 +52,7 @@ markdown fences), each element:
 
 {"title": "...", "category": "<dimension>", "severity": "low|med|high",
  "files": ["path[:lines]", ...],
+ "introduces": {"dependencies": ["name", ...], "userStrings": false},
  "coupledPaths": [{"path": "path[:lines]",
                    "shared": "the store, wire shape or generated type both sides touch"},
                   ...],
@@ -68,6 +69,15 @@ orchestrator's model choice and human-confirmation gates).
 wrong somewhere else. Keep them disjoint: a path already in `files` is not a
 coupled path, and the orchestrator — not you — decides which coupled paths the
 task must own.
+
+`introduces` says what KIND of change the fix is, which is a judgement only you can
+make from the code in front of you: `dependencies` names every package the fix adds
+(the orchestrator turns each into the package manifest and the lockfile on disk), and
+`userStrings` is `true` when the fix adds or changes text a user reads (it becomes every
+locale file). You judge; you do not name the files — the manifest, the lockfile and
+the locale files are read off the repository, never guessed. `{"dependencies": [],
+"userStrings": false}` is the answer for a fix that adds neither, and a fix that
+adds a dependency you did not flag still widens its scope mid-run.
 
 `coveringTests` is neither of those, and it OVERLAPS `files` by design: a test
 file is not work the fix has to do, it is what can already say the fix went

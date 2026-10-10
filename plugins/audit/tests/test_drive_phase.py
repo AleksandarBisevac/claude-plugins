@@ -1867,6 +1867,26 @@ def _fix_review_cases(check):
           code == 0 and instruction(text) == TRIAGE
           and "--answer re-review" not in text and fix_id not in text)
     _rereview_scope_cases(check)
+    _fix_scope_cases(check, M)
+
+
+def _fix_scope_cases(check, M):
+    """The fix task the drive adds covers every path its finding names, where it
+    used to cover the text up to the first colon."""
+    multi = dict(FINDINGS[0], file="src/f1.txt:1 and src/f2.txt:9, src/f3.txt")
+    for label, finding, want in (("fs1 three paths in one finding", multi,
+                                  ["src/f1.txt", "src/f2.txt", "src/f3.txt"]),
+                                 ("fs2 ALLOW: one path with a line", FINDINGS[0],
+                                  ["src/f1.txt"])):
+        root, mpath = _repo("fixscope-" + label[:3], task_ids=TASKS[:1],
+                            per_task="phase")
+        answers = iter([["--answer", "fix", "--fix", "P1-R1"]])
+        drive(M, root, mpath, findings=[finding],
+              answer=lambda kind, text: next(answers, False))
+        fix = [t for t in tasks_of(mpath).values() if t.get("fixes") == ["P1-R1"]]
+        got = fix[0].get("files") if fix else None
+        check("%s: the fix task's `files` is every path the finding names: %r"
+              % (label, got), got == want)
 
 
 def _head_of_brief(root, rel):

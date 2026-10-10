@@ -72,6 +72,10 @@ import _evidence_io                  # noqa: E402  (subject_key: the one
 #                                       reading of "which row is THIS phase's",
 #                                       asked here rather than re-derived from
 #                                       a row's raw scope/phaseId pair)
+import _runner_collects              # noqa: E402  (collects: which runner takes
+#                                       a path - asked, never guessed from a
+#                                       file name, so a fix task's paths reach
+#                                       the runner that will run them)
 
 
 # THE SAME ALIAS `audit-task.py` HELD before these bodies moved: `_phases.
@@ -202,6 +206,124 @@ def repointed(entries, build, paths):
                 placed = True
         out.append(" ".join(rebuilt))
     return out
+
+
+
+# --- one path, one runner ---------------------------------------------------------
+# A gate that names two runners (vitest for unit tests, playwright for e2e) was
+# re-pointed by handing EVERY path to EVERY path-scoped entry: vitest was asked to
+# run an e2e spec and playwright a unit test, each finds no tests, and the gate is
+# red for a reason that has nothing to do with the work. `repointed_by_runner` asks
+# `_runner_collects` which unit runner takes a path and gives it to that entry.
+#
+# playwright is not a runner `_runner_collects` can read, so it is the runner of
+# the paths no unit runner takes AND that sit where e2e specs live - a path no
+# runner claims is not guessed onto it.
+UNIT_RUNNERS = ("vitest", "jest", "pytest")
+E2E_RUNNER = "playwright"
+E2E_SEGMENTS = ("e2e", "e2e-tests", "playwright")
+
+
+def entry_runner(entry):
+    """The test runner a gate entry invokes - `vitest`, `jest`, `pytest` or
+    `playwright` - or None for an entry that names none (`npm test -- x`, a
+    lint). Read off the entry's own words, through a package runner
+    (`pnpm exec playwright`) or a module flag (`python3 -m pytest`) alike."""
+    for _raw, value in _phases.shell_words(entry):
+        base = (value or "").replace("\\", "/").rsplit("/", 1)[-1]
+        if base == "py.test":
+            return "pytest"
+        if base in UNIT_RUNNERS or base == E2E_RUNNER:
+            return base
+    return None
+
+
+def _e2e_like(path):
+    parts = path.replace("\\", "/").split("/")
+    return (any(seg in E2E_SEGMENTS for seg in parts[:-1])
+            or ".e2e." in parts[-1])
+
+
+def _runners_for(path, unit_runners, has_e2e, project, lister):
+    """`(runners, note)` - which of the shape's runners take `path`, and the
+    sentence saying why none does when none does."""
+    if not _phases.is_suite_path(path):
+        if has_e2e and _e2e_like(path):
+            return [], ("%s is not a test file, and no runner in this gate can "
+                        "run a helper under an e2e directory" % path)
+        return list(unit_runners), None
+    answers = [(r, _runner_collects.collects(path, r, project, lister=lister)["answer"])
+               for r in unit_runners]
+    taken = [r for r, a in answers if a == _runner_collects.COLLECTED]
+    if taken:
+        return taken, None
+    if has_e2e and _e2e_like(path):
+        if _phases.subject_of(path) is None:
+            return [], ("%s sits under an e2e directory but is not named as a "
+                        "test, and no runner in this gate can run a helper" % path)
+        return [E2E_RUNNER], None
+    return [r for r, a in answers if a != _runner_collects.NOT_COLLECTED] \
+        or list(unit_runners), None
+
+
+def _scoped_runners(entries, build):
+    """`[(entry, runner)]` for every path-scoped entry (a shared key and an entry
+    naming no path are not), `runner` None when it names no known one."""
+    return [(e, entry_runner(e)) for e in entries
+            if not is_shared_key(e, build)
+            and any(_phases.shell_word_path(v) for _r, v in _phases.shell_words(e))]
+
+
+def paths_by_runner(entries, build, paths, project, lister=None):
+    """`({runner: [paths]}, notes)` - which of the gate's known runners takes each
+    path. One known runner takes every suite path (there is nothing to tell apart,
+    and a source file is not a test it could be refused); none gives `{}`. A path no
+    runner takes is a note."""
+    known = set(r for _e, r in _scoped_runners(entries, build) if r)
+    if not known:
+        return {}, []
+    if len(known) == 1:
+        return {next(iter(known)): [p for p in paths if _phases.is_suite_path(p)]}, []
+    unit = [r for r in UNIT_RUNNERS if r in known]
+    has_e2e = E2E_RUNNER in known
+    given, notes = {}, []
+    for path in paths:
+        runners, why = _runners_for(path, unit, has_e2e, project, lister)
+        if not runners:
+            notes.append(why or "%s is taken by no runner in this gate" % path)
+        for runner in runners:
+            given.setdefault(runner, []).append(path)
+    return given, notes
+
+
+def repointed_by_runner(entries, build, paths, project, lister=None):
+    """`(entries, notes)` - `repointed`, but each path-scoped entry of a KNOWN
+    runner is given only the paths that runner takes (`paths_by_runner`).
+
+    NOTHING TO TELL APART MEANS THE OLD ANSWER: with fewer than two known runners
+    in `entries` this is `repointed` and says nothing, so a one-runner project
+    gets byte for byte what it always got. An entry naming no known runner
+    (`npm test -- x`) keeps every path for the same reason.
+
+    AN ENTRY LEFT WITH NO PATH IS DROPPED, never kept: a path-scoped command
+    with its path removed runs the whole suite, which is the opposite of what
+    narrowing asked for. Each drop, and each path no entry takes, is a note.
+    """
+    scoped = dict(_scoped_runners(entries, build))
+    if len(set(r for r in scoped.values() if r)) < 2:
+        return repointed(entries, build, paths), []
+    given, notes = paths_by_runner(entries, build, paths, project, lister)
+    out = []
+    for entry in entries:
+        runner = scoped.get(entry)
+        if runner is None:
+            out.extend(repointed([entry], build, paths))
+        elif given.get(runner):
+            out.extend(repointed([entry], build, given[runner]))
+        else:
+            notes.append("no %s entry kept: none of %s is a path %s takes"
+                         % (runner, ", ".join(paths), runner))
+    return out, notes
 
 
 # --- the newest red phase-scope row --------------------------------------------

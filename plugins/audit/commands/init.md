@@ -228,7 +228,10 @@ Every prompt must include:
 - **Hard rules** (restated even though the agent knows them): read-only; NEVER read secret
   files (`.env`, credentials, keys) — names only; skip vendored/generated code.
 - **Return format**: ONLY a JSON array of findings, each
-  `{"title", "category", "severity": "low|med|high", "files": ["path[:lines]"], "coupledPaths": [{"path", "shared"}], "coveringTests": [{"path", "covers"}], "evidence", "suggestedFix", "suggestedTests": [".."], "risk": "low|med|high"}`.
+  `{"title", "category", "severity": "low|med|high", "files": ["path[:lines]"], "introduces": {"dependencies": ["name"], "userStrings": false}, "coupledPaths": [{"path", "shared"}], "coveringTests": [{"path", "covers"}], "evidence", "suggestedFix", "suggestedTests": [".."], "risk": "low|med|high"}`.
+- **What the fix introduces**: `introduces` is the explorer's judgement of the kind of change
+  — the packages it adds and whether it adds user-facing text. It names no file: step 5.3
+  turns it into the files the change cannot avoid.
 - **Coupling**: `coupledPaths` is what else is on the same data path as the files a finding
   names — another module reading or writing the same store, the other side of the same
   request/response or event shape, another file built from the same schema or generated type.
@@ -404,6 +407,18 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
      has the codebase as its scope and the gate then permits every edit and guards nothing.
      A coupled path that is real work but not THIS task's work is a separate task with
      `dependsOn` pointing here — never an extra path on this one.
+
+     **Companions: pass what the finding introduces, never type the lockfile.** A task that adds a
+     dependency edits the package manifest and the lockfile; one that adds user-facing text edits
+     every locale file. A scope built from the finding's `files` alone omits them and the task
+     widens itself mid-run. So when the finding's `introduces` is not empty, add the task with
+     `--introduces dependency:<name>` (the flag repeats, once per package) and/or
+     `--introduces user-strings`: `audit-task.py` reads the repository, writes the companions
+     into `files` and `fileIndex`, and records each one's basis in the task and in the journal
+     row. An absence is an answer it reports — no lockfile, no locale directory, two candidate
+     locale directories — and nothing is added for it. A finding whose `introduces` is empty
+     adds no flag, and nothing about its scope changes. `/audit:task scope <id> --introduces …`
+     does the same for a task that already exists.
 
      **Never route a task at files inside a git submodule** (paths under a `.gitmodules` entry):
      the orchestrator commits from the parent repo and cannot stage submodule-internal files. If a

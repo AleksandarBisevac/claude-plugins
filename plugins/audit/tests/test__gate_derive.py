@@ -138,6 +138,101 @@ def _quoting_cases(check, build):
 
 
 # --- cases --------------------------------------------------------------------
+# --- the runner each path is gated by --------------------------------------------
+# The testbed's shape: a pnpm Next.js repo whose gate names vitest AND playwright.
+# A re-point that hands every path to every entry runs vitest on an e2e spec and
+# playwright on a unit test - both find no tests - so each path goes to the runner
+# that collects it, asked of `_runner_collects`.
+VITEST_NARROW = "export default defineConfig({ test: { include: ['tests/unit/**/*.test.ts'] } });\n"
+VITEST_WIDE = ("export default defineConfig({ test: { include: "
+               "['tests/unit/**/*.test.ts', 'e2e/**/*.spec.ts'] } });\n")
+TESTBED_SHAPE = ["lint", "pnpm vitest run tests/unit/a.test.ts",
+                 "pnpm playwright test e2e/a.spec.ts"]
+TESTBED_BUILD = {"lint": "pnpm lint"}
+
+
+def _vitest_repo(config=VITEST_NARROW):
+    root = tempfile.mkdtemp(prefix="gate-derive-rg-")
+    with open(os.path.join(root, "vitest.config.ts"), "w") as fh:
+        fh.write(config)
+    return root
+
+
+def _runner_cases(check):
+    import shutil
+    check("rg1 `entry_runner` names the runner a gate entry invokes, through a "
+          "package runner or a module flag, and None for an entry that names none: %r"
+          % ([M.entry_runner(e) for e in (
+              "pnpm vitest run a.test.ts", "pnpm exec playwright test x.spec.ts",
+              "python3 -m pytest tests/test_a.py", "npx jest a.test.js",
+              "npm test -- a.ts", "pnpm lint")],),
+          [M.entry_runner(e) for e in (
+              "pnpm vitest run a.test.ts", "pnpm exec playwright test x.spec.ts",
+              "python3 -m pytest tests/test_a.py", "npx jest a.test.js",
+              "npm test -- a.ts", "pnpm lint")]
+          == ["vitest", "playwright", "pytest", "jest", None, None])
+    root = _vitest_repo()
+    try:
+        got, notes = M.repointed_by_runner(
+            TESTBED_SHAPE, TESTBED_BUILD,
+            ["tests/unit/b.test.ts", "e2e/b.spec.ts"], root)
+        check("rg2 a unit test goes to vitest alone and an e2e spec to playwright "
+              "alone, the shared key carried through: %r" % (got,),
+              got == ["lint", "pnpm vitest run tests/unit/b.test.ts",
+                      "pnpm playwright test e2e/b.spec.ts"])
+        got, notes = M.repointed_by_runner(
+            TESTBED_SHAPE, TESTBED_BUILD, ["e2e/b.spec.ts"], root)
+        check("rg3 only an e2e spec: the vitest entry is DROPPED, not left naming "
+              "no path (which would run the whole suite), and a note says so: %r"
+              % ((got, notes),),
+              got == ["lint", "pnpm playwright test e2e/b.spec.ts"]
+              and any("vitest" in n and "e2e/b.spec.ts" in n for n in notes))
+        got, notes = M.repointed_by_runner(
+            TESTBED_SHAPE, TESTBED_BUILD,
+            ["src/x.ts", "e2e/b.spec.ts", "e2e/helpers/design-parity.ts"], root)
+        check("rg4 a source file goes to the unit runner only, and an e2e helper "
+              "(a file playwright cannot run) to none, said in a note: %r"
+              % ((got, notes),),
+              got == ["lint", "pnpm vitest run src/x.ts",
+                      "pnpm playwright test e2e/b.spec.ts"]
+              and any("design-parity.ts" in n for n in notes))
+        got, notes = M.repointed_by_runner(
+            ["pnpm vitest run tests/unit/a.test.ts"], TESTBED_BUILD,
+            ["e2e/b.spec.ts"], root)
+        check("rg5 ALLOW: one runner in the shape is the old re-point, every path "
+              "to it and no note - there is nothing to tell apart: %r" % ((got, notes),),
+              got == ["pnpm vitest run e2e/b.spec.ts"] and notes == [])
+        got, notes = M.repointed_by_runner(
+            ["npm test -- tests/unit/a.test.ts"], TESTBED_BUILD,
+            ["e2e/b.spec.ts"], root)
+        check("rg6 ALLOW: an entry naming no known runner keeps every path: %r"
+              % ((got, notes),), got == ["npm test -- e2e/b.spec.ts"])
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+    wide = _vitest_repo(VITEST_WIDE)
+    try:
+        got, notes = M.repointed_by_runner(
+            TESTBED_SHAPE, TESTBED_BUILD, ["e2e/b.spec.ts"], wide)
+        check("rg7 a config that includes e2e/ makes vitest collect the spec, so "
+              "vitest gets it and playwright does not: %r" % ((got, notes),),
+              "pnpm vitest run e2e/b.spec.ts" in got
+              and not any("playwright" in e for e in got))
+    finally:
+        shutil.rmtree(wide, ignore_errors=True)
+    bare = tempfile.mkdtemp(prefix="gate-derive-rg-")
+    try:
+        got, notes = M.repointed_by_runner(
+            TESTBED_SHAPE, TESTBED_BUILD,
+            ["tests/unit/b.test.ts", "e2e/b.spec.ts"], bare)
+        check("rg8 vitest's default include collects both spellings when no config "
+              "narrows it, and an e2e spec is still playwright's too - the "
+              "unit runner's COLLECTED answer wins, so the spec runs under vitest "
+              "alone: %r" % ((got, notes),),
+              got == ["lint", "pnpm vitest run tests/unit/b.test.ts e2e/b.spec.ts"])
+    finally:
+        shutil.rmtree(bare, ignore_errors=True)
+
+
 def _cases(check):
     build = {"unit": "npm test -- ph.test.ts", "lint": "eslint ."}
 
@@ -156,6 +251,7 @@ def _cases(check):
           M.repointed(["npm test -- ph.test.ts"], build, ["src/a.test.ts"])
           == ["npm test -- src/a.test.ts"])
     _quoting_cases(check, build)
+    _runner_cases(check)
 
     # --- mode absent: no derivation at all ------------------------------------
     no_mode = _manifest(meta={"buildCommands": build},

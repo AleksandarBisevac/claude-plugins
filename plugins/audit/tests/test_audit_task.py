@@ -102,7 +102,8 @@ _STAGE_PREFIX = "audit-task-stages-"
 # `meta.phaseGate.exclude` names), pg (the same phase-gate derivation,
 # driven through `add-phase` itself), ps (the full run's stages: every
 # slice staged, a silent block named, a replayed block read as run here),
-# ff (`add --failing-from <runId>`
+# cz (`--introduces` companions, and the scope, discipline and per-runner
+# gate of a fix task), ff (`add --failing-from <runId>`
 # gates a fix task on the suites a red sign-off run's own steps NAMED as
 # failing).
 def _at_kit(tmp):
@@ -15309,6 +15310,235 @@ def _bug_fix_discipline_cases(check):
         shutil.rmtree(root, ignore_errors=True)
 
 
+def _introduces_cases(check):
+    """`--introduces` writes the files a change cannot avoid, and a fix task gets
+    every path its finding names, the companions, the discipline it asks for and
+    a gate that sends each path to the runner that takes it.
+
+    THE FIXTURE IS THE TESTBED'S SHAPE: a pnpm Next.js repo whose vitest config
+    includes only `tests/unit/`, whose gate names vitest AND playwright, and
+    whose locales are `messages/{en,sr}.json`. Every group has its allow twin -
+    the derivation that adds a lockfile nobody asked for, or widens vitest for an
+    e2e spec, is the over-firing mutation and only a case expecting nothing sees it."""
+    import io
+    root = _harness.fixture_root("audit-task-ic-")
+    sibling_gate = ["lint", "pnpm vitest run tests/unit/a.test.ts",
+                    "pnpm playwright test e2e/a.spec.ts"]
+
+    def write(proj, rel, text="{}"):
+        full = os.path.join(proj, *rel.split("/"))
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "w") as fh:
+            fh.write(text)
+
+    def finding(fid, file, issue="i", resolution="r"):
+        return {"id": fid, "severity": "med", "file": file, "issue": issue,
+                "resolution": resolution}
+
+    def project(name, findings=()):
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        _panel_write._atomic_write_json(
+            os.path.join(proj, ".claude", "audit.config.json"),
+            {"manifestPath": "docs/audit/audit-plan.json"})
+        for rel in ("package.json", "pnpm-lock.yaml", "proxy.ts",
+                    "messages/en.json", "messages/sr.json", "playwright.config.ts"):
+            write(proj, rel)
+        write(proj, "vitest.config.ts", "export default defineConfig({ test: { "
+              "include: ['tests/unit/**/*.test.ts'] } });\n")
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        _panel_write._atomic_write_json(mpath, {
+            "meta": {"version": 2, "buildCommands": {"test": "true", "lint": "true"}},
+            "phases": [{"id": "P1", "title": "P1", "status": "in_progress",
+                        "testGate": ["lint"],
+                        "tasks": [{"id": "P1.1", "title": "sibling",
+                                   "status": "cancelled", "description": "d",
+                                   "files": ["tests/unit/a.test.ts"],
+                                   "tests": {"mode": "gate-only", "add": [],
+                                             "expectRedFirst": False,
+                                             "gate": sibling_gate}}],
+                        "review": {"findings": list(findings)}}],
+            "fileIndex": {"tests/unit/a.test.ts": ["P1.1"]}, "bugs": []})
+        return proj, mpath
+
+    def verb(proj, *argv):
+        lines, real = [], sys.stdin
+        sys.stdin = io.StringIO("")
+        try:
+            code = M.main(list(argv) + ["--project-dir", proj], out=lines.append)
+        finally:
+            sys.stdin = real
+        return code, "\n".join(str(x) for x in lines)
+
+    def tasks(mpath):
+        return dict((t["id"], t) for t in
+                    _mio.load_manifest(mpath)["phases"][0]["tasks"])
+
+    def summaries(proj, action):
+        jm = _panel_write._journalmod()
+        return [r.get("summary") or "" for r in (jm.read_all(proj) if jm else [])
+                if r.get("action") == action]
+
+    def index(mpath):
+        return _mio.load_manifest(mpath).get("fileIndex") or {}
+
+    try:
+        proj, mpath = project("dep")
+        code, text = verb(proj, "add", "Add next-intl", "--phase", "P1", "--files",
+                          "proxy.ts", "--introduces", "dependency:next-intl")
+        t = tasks(mpath).get("P1.2") or {}
+        check("cz1 add --introduces dependency:next-intl on a pnpm repo writes "
+              "package.json and pnpm-lock.yaml into `files` AND `fileIndex`, after "
+              "the declared file: %r" % ((code, t.get("files"), text[-300:]),),
+              code == 0 and t.get("files") == ["proxy.ts", "package.json", "pnpm-lock.yaml"]
+              and index(mpath).get("package.json") == ["P1.2"]
+              and index(mpath).get("pnpm-lock.yaml") == ["P1.2"])
+        rows = summaries(proj, "task.add")
+        check("cz2 ...and the journal row carries the basis that made each a "
+              "companion, naming the lockfile and the dependency: %r" % (rows,),
+              len(rows) == 1 and "pnpm-lock.yaml" in rows[0] and "next-intl" in rows[0])
+
+        proj, mpath = project("dep-allow")
+        code, text = verb(proj, "add", "Plain", "--phase", "P1", "--files", "proxy.ts")
+        t = tasks(mpath).get("P1.2") or {}
+        check("cz3 ALLOW: without the flag nothing is added - files is what was "
+              "declared and the index holds no companion: %r" % ((t.get("files"),),),
+              code == 0 and t.get("files") == ["proxy.ts"]
+              and "package.json" not in index(mpath)
+              and "companion" not in " ".join(summaries(proj, "task.add")))
+
+        before = open(mpath, "rb").read()
+        code, text = verb(proj, "add", "Bad", "--phase", "P1", "--files", "proxy.ts",
+                          "--introduces", "banana")
+        check("cz4 an --introduces value that is neither dependency:<name> nor "
+              "user-strings is refused by name, writing nothing: %r"
+              % ((code, text[:200]),),
+              code == M.E_USAGE and "banana" in text
+              and open(mpath, "rb").read() == before)
+
+        proj, mpath = project("scope")
+        verb(proj, "add", "Strings", "--phase", "P1", "--files", "proxy.ts")
+        code, text = verb(proj, "scope", "P1.2", "--introduces", "user-strings")
+        t = tasks(mpath).get("P1.2") or {}
+        check("cz5 scope --introduces user-strings widens the task onto every "
+              "locale file in the one message directory, in `files` and "
+              "`fileIndex`, with the basis in the journal row: %r"
+              % ((code, t.get("files"), summaries(proj, "task.scope")),),
+              code == 0 and t.get("files") == ["proxy.ts", "messages/en.json", "messages/sr.json"]
+              and index(mpath).get("messages/sr.json") == ["P1.2"]
+              and any("locale" in r and "messages/en.json" in r
+                      for r in summaries(proj, "task.scope")))
+        code, text = verb(proj, "scope", "P1.2", "--introduces", "user-strings")
+        check("cz6 ALLOW: the same call again is a no-op - the companions are "
+              "already in `files`, so nothing is rewritten: %r" % ((code, text[:200]),),
+              code == 0 and "scoped in" not in text
+              and (tasks(mpath).get("P1.2") or {}).get("files")
+              == ["proxy.ts", "messages/en.json", "messages/sr.json"])
+
+        # ---- a fix task: every path its finding names -----------------------
+        for label, file, want in (
+                ("a comma list", "components/A.tsx, components/B.tsx, components/C.tsx",
+                 ["components/A.tsx", "components/B.tsx", "components/C.tsx"]),
+                ("two paths joined by `and`, each with a line", "X.tsx:4 and Y.tsx:71",
+                 ["X.tsx", "Y.tsx"]),
+                ("line ranges, one with a comma inside its suffix",
+                 "lib/a.ts:291-294,308 and lib/b.ts:5-9", ["lib/a.ts", "lib/b.ts"]),
+                ("one path (the allow case)", "lib/one.ts:12", ["lib/one.ts"])):
+            proj, mpath = project("fx-" + str(len(want)) + file[:3].strip(),
+                                  [finding("P1-R1", file)])
+            code, text = verb(proj, "add", "Fix", "--phase", "P1", "--fixes", "P1-R1")
+            got = (tasks(mpath).get("P1.2") or {}).get("files")
+            check("cz7 a finding naming %s gives the fix task every path, none "
+                  "twice, no line suffix: %r" % (label, (code, got, text[-200:])),
+                  code == 0 and got == want)
+
+        proj, mpath = project("fx-gate", [finding(
+            "P1-R1", "tests/unit/b.test.ts and e2e/b.spec.ts",
+            resolution="Add a test asserting the heading renders")])
+        code, text = verb(proj, "add", "Fix", "--phase", "P1", "--fixes", "P1-R1")
+        t = tasks(mpath).get("P1.2") or {}
+        gate = (t.get("tests") or {}).get("gate")
+        check("cz8 a finding naming a unit test and an e2e spec: vitest is given "
+              "the unit test and playwright the spec, never the other way round: %r"
+              % ((code, gate),),
+              code == 0 and gate == ["lint", "pnpm vitest run tests/unit/b.test.ts",
+                                     "pnpm playwright test e2e/b.spec.ts"])
+        check("cz9 ...and the e2e spec did NOT widen vitest's config, because "
+              "vitest was never asked to run it: %r" % (t.get("files"),),
+              "vitest.config.ts" not in (t.get("files") or []))
+
+        proj, mpath = project("fx-e2e-only", [finding("P1-R1", "e2e/only.spec.ts")])
+        code, text = verb(proj, "add", "Fix", "--phase", "P1", "--fixes", "P1-R1",
+                          "--tests-mode", "regression",
+                          "--tests-add", "e2e/only.spec.ts: the spec")
+        gate = ((tasks(mpath).get("P1.2") or {}).get("tests") or {}).get("gate")
+        check("cz10 only an e2e spec: the vitest entry is dropped from the gate "
+              "rather than left to run the whole unit suite: %r" % ((code, gate),),
+              code == 0 and gate == ["lint", "pnpm playwright test e2e/only.spec.ts"])
+
+        proj, mpath = project("fx-outside", [finding("P1-R1", "tests/other/new.test.ts")])
+        code, text = verb(proj, "add", "Fix", "--phase", "P1", "--fixes", "P1-R1")
+        t = tasks(mpath).get("P1.2") or {}
+        check("cz11 a fix task whose new test sits outside vitest's include gets "
+              "the runner config as a companion, with its basis in the journal: "
+              "%r" % ((code, t.get("files"), summaries(proj, "task.add")),),
+              code == 0 and "vitest.config.ts" in (t.get("files") or [])
+              and any("vitest.config.ts" in r for r in summaries(proj, "task.add")))
+
+        proj, mpath = project("fx-intro", [finding("P1-R1", "proxy.ts")])
+        code, text = verb(proj, "add", "Fix", "--phase", "P1", "--fixes", "P1-R1",
+                          "--introduces", "dependency:zod")
+        check("cz12 --introduces and --fixes together: the fix task is widened "
+              "onto the manifest and the lockfile too: %r"
+              % ((code, (tasks(mpath).get("P1.2") or {}).get("files")),),
+              code == 0 and (tasks(mpath).get("P1.2") or {}).get("files")
+              == ["proxy.ts", "package.json", "pnpm-lock.yaml"])
+
+        # ---- the discipline a finding asks for -------------------------------
+        proj, mpath = project("fx-tdd", [
+            finding("P1-R1", "components/Why.tsx",
+                    resolution="Add a regression test that covers the empty state"),
+            finding("P1-R2", "tests/unit/new.test.ts"),
+            finding("P1-R3", "components/Plain.tsx", resolution="Rename the prop"),
+            finding("P1-R4", "lib/x.ts", resolution="Add a test for the parser")])
+        write(proj, "components/Other.test.tsx")
+        verb(proj, "add", "Fix 1", "--phase", "P1", "--fixes", "P1-R1")
+        verb(proj, "add", "Fix 2", "--phase", "P1", "--fixes", "P1-R2")
+        verb(proj, "add", "Fix 3", "--phase", "P1", "--fixes", "P1-R3")
+        verb(proj, "add", "Fix 4", "--phase", "P1", "--fixes", "P1-R4")
+        got = tasks(mpath)
+        modes = [(got[i]["tests"]["mode"], got[i]["tests"]["expectRedFirst"])
+                 for i in ("P1.2", "P1.3", "P1.4", "P1.5")]
+        check("cz13 a finding whose resolution asks for a test (placed beside its "
+              "source, where the directory already keeps tests) and one naming a "
+              "test file that does not exist yet are tdd and red-first; one that "
+              "asks for neither, and one that asks where the repo shows no place "
+              "for a test, stay gate-only: %r" % (modes,),
+              modes == [("tdd", True), ("tdd", True), ("gate-only", False),
+                        ("gate-only", False)])
+        check("cz14 ...the new test file is named in tests.add and in `files`, so "
+              "the gate runs it: %r" % (got["P1.2"]["tests"],),
+              got["P1.2"]["tests"]["add"][0].startswith("components/Why.test.tsx")
+              and "components/Why.test.tsx" in got["P1.2"]["files"]
+              and "components/Why.test.tsx" in " ".join(got["P1.2"]["tests"]["gate"]))
+        notes = " ".join(n.get("text", "") for n in got["P1.5"].get("notes") or [])
+        check("cz14b ...and the finding that asks for a test with no place to put "
+              "it says so on the task rather than going silent: %r" % (notes,),
+              "P1-R4" in notes and "tests-add" in notes)
+        proj, mpath = project("fx-chosen", [finding(
+            "P1-R1", "components/Why.tsx", resolution="Add a test for the label")])
+        verb(proj, "add", "Fix", "--phase", "P1", "--fixes", "P1-R1",
+             "--tests-mode", "gate-only")
+        check("cz15 ALLOW: a --tests-mode the caller chose is never overridden by "
+              "what the finding's prose seems to ask: %r"
+              % (((tasks(mpath).get("P1.2") or {}).get("tests") or {}).get("mode"),),
+              ((tasks(mpath).get("P1.2") or {}).get("tests") or {}).get("mode")
+              == "gate-only")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def _stage_runner_cases(check):
     """The full run's machinery: every slice is staged, a block whose process
     reports nothing is a named failure, and a replayed block reads exactly as
@@ -15370,6 +15600,7 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("io-block", "_index_only_cases"),
           ("fd-block", "_finding_disposition_cases"),
           ("bf-block", "_bug_fix_discipline_cases"),
+          ("cz-block", "_introduces_cases"),
           ("ps-block", "_stage_runner_cases"),
           ("of-block", "_open_finding_shape_cases"))
 

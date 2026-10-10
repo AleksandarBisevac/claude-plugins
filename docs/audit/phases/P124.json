@@ -674,7 +674,7 @@
     {
       "id": "P124.10",
       "title": "a task's unavoidable companion files are derived from its intent and the repo layout",
-      "status": "in_progress",
+      "status": "done",
       "description": "F599 design B2.",
       "files": [
         "plugins/audit/scripts/manifest/_scope_companions.py",
@@ -711,32 +711,49 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ffe783088571",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Reviewed the prepared _scope_companions.py against P124.9's committed _runner_collects API (collects(), COLLECTED/NOT_COLLECTED/COULD_NOT_TELL, VITEST_CONFIGS/VITE_CONFIGS/JEST_CONFIGS/PYTEST_CONFIG_FILES all exist; module is at scripts/governance/). Changed the __main__ stub to _output.selftest_requested(sys.argv[1:]). Removed the rust and go ECOSYSTEMS rows: no case covered them and they were beyond the B2 row; node and python stay (covered by dep cases). The guide module-map needed no regeneration (test__deps passes). Ran: test__scope_companions 30/30, test__runner_collects 94/94, test__deps 307/307, test__output 225/225 (all exit 0), ruff check plugins/audit tools clean.",
+        "descriptive": "derive() now yields a task's unavoidable companions (manifest and lockfile on disk, locale files, runner config) with a basis each and every absence reported, node and python only."
       },
       "startedAt": "2026-10-10T05:07:22Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T05:18:07Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__scope_companions.py (30 cases)"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T05:18:06Z.9b7332",
         "status": "passed",
         "at": "2026-10-10T05:18:06Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "ffe783088571",
+        "at": "2026-10-10T05:18:07Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T05:09:29Z",
+        "basis": "`python3 plugins/audit/tests/test__scope_companions.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: ModuleNotFoundError: No module named '_scope_companions'; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
       "id": "P124.11",
       "title": "planning writes companions: add/scope --introduces, the explorer field, init synthesis, and fix tasks from findings",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F599 design B3. Also F607's scope half: a fix task from add --fixes gets every path its finding names, plus companions.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/agents/audit-explorer.md",
         "plugins/audit/commands/init.md",
         "plugins/audit/tests/test_audit_task.py",
-        "plugins/audit/reference/verbs-in-full.md"
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "plugins/audit/tests/test__gate_derive.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -764,16 +781,22 @@
         "P124.10",
         "P124.7"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T05:18:07Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T05:48:25Z.a6766a",
+        "status": "passed",
+        "at": "2026-10-10T05:48:25Z"
+      }
     },
     {
       "id": "P124.12",
