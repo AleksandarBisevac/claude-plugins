@@ -1,0 +1,31 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/README.md:445",
+   "issue": "The /audit:worktree row still says 'a second tree for the same task is refused'. P124.15-k2x changed task-add to adopt a tree already marked for the task (manage-worktrees.py do_task_add -> adopt_task_tree), and PLUGIN-BUILD-GUIDE.md was updated to say so. The README is shipped user-facing text and now contradicts the code.",
+   "resolution": "Reword the row: a task that already has a marked tree gets that tree back at its recorded base, with its setup run again unless the marker records it completed."},
+  {"id": 2, "severity": "low", "file": "plugins/audit/scripts/governance/drive-phase.py:1311-1319",
+   "issue": "close_wave moves every tree still standing into state.keptTrees, including a done member's tree kept because it holds a discarded undeclared change. Only a later task-add for that same task pops the entry, and a done task is never re-added, so the entry stays in the driver state for the life of the phase and is named once, in the wave-closing print. Nothing later lists a kept tree for a human to clean up.",
+   "resolution": "Name keptTrees again in the sign-off hand-off or in /audit:doctor, or record the path on the task's journal row, so a discarded change's tree is findable after the print scrolls away."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Re-review of the three fix tasks since 79f02001. R2 is closed. take_stamp's manifest label is now relative to the checkout holding it (stamp-verification._own_checkout_rel, read back as the project's copy on both sides). file_once, the one writer of a committed return, passes the JSON through _machine_paths.scrubbed_values, and returns_writer_violations keeps a second route from reopening it. It has red and allow rows in tools/prove-gates.py and the real-tree pin rw5. wv4a asserts the filed return holds neither the project's nor the task tree's path. R1 is closed: audit-lookup.wave_tree returns the member's own tree and base, compose_reviewer_brief adds a Tree section, and _diff_lines reads git -C <tree> diff <base>. wt7 ran green here under review.perTask always, with each reviewer's brief holding only its own task's change. R3 is closed: do_task_add finds a marked tree before the non-empty-path check and adopts it; the marker records setup as pending until the setup returns and then its status, so a crash or a failed setup is re-provisioned before dispatch with no attempt spent (wt1-wt4); close_wave carries a blocked member's tree into keptTrees and add_tree adopts it at the base its marker records (wt5, wt6). integrate-task reads the base from the marker, so an adopted tree cut at an older base integrates against that base, not the new wave's. R4 is closed: wt8 exercises discard-then-close and asserts the tree survives, holds the undeclared bytes and is named; wt8m is a red twin that replaces tree_holds_only_integrated and sees the tree removed. P124.16-k2x does what its description asked: a 'return' surface with q33 and q34 twins, twelve returns rewritten through the scrub, the one hash-bound P122 return baselined. check-committed-pii exits 0 here. No machine-path or debug residue found in the changed lines. Two lows are batched above.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "mode: phase; intent.redFirst is not-attempted for the phase. The per-task answers are in tasks[].",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "mode: phase; the question is asked per owed task. P124.16-k2x's tests.gate leads with python3 tools/sweep-selftests.py, which runs the whole project, so the answer there is not-asked too."
+ },
+ "verdict": "findings",
+ "tasks": [
+  {"id": "P124.16-k2x", "commit": "23df25733a2b",
+   "answer": "matches",
+   "note": "tools/check-committed-pii.py gains _RETURN_RE and the 'return' domain arm, with q33 (a home path in a filed return is a finding at line 2) and q34 (a repo-relative return is read and clean; returns-notes/ and a .txt under returns/ are not claimed), and q6 now requires the 'return' surface in the live domain. Twelve committed returns are rewritten through the same scrub file_once uses; each shows one or two basis lines changed and parses as JSON. In P122.json the readReturns block binds 09aed798 by sha256; it is baselined with a shared reason, and the other P122 return was not in the rewrite list and carries no finding. Only P122.json carries readReturns shas, so the executor's claim that nothing else reads a return by content hash holds. check-committed-pii exits 0 here with every finding baselined. Throwaway temp paths such as /private/var/folders/... still appear in some rewritten returns because the scrub treats them as non-identifying; that is the scrub's decision and is not charged to this diff.",
+   "missing": [],
+   "redFirst": "could-not-prove",
+   "redFirstBasis": "Echoing the filed word. The recorded basis is that check-committed-pii --selftest at HEAD exited 1 on q7, q26, q27, q27b, none of them the task's own, and that --case q33 names no case that failed an assertion in this run. The executor's narrative that q33/q34 failed with domain-empty before the rule is its own account, not a graded red. Nothing handed to me shows q33 or q34 failing an assertion, so I do not upgrade it.",
+   "inheritedTests": "not-asked",
+   "inheritedTestsBasis": "tests.gate's first command is python3 tools/sweep-selftests.py, which runs every selftest in the project. The other gate commands (validate-manifest, claude plugin validate, audit-status --gate, render-report, ruff and vermin, the two node checks) do not select a bounded test set. The question does not reach a whole-project run, so it is not asked."}
+ ]
+}
