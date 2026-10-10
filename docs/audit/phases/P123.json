@@ -1939,7 +1939,7 @@
     {
       "id": "P123.36",
       "title": "The release guard finds git and gh past assignments, wrappers, global options and sh -c",
-      "status": "in_progress",
+      "status": "blocked",
       "description": "Probed on main (`_publishers`): `GH_REPO=x gh release create v1`, `env GH_REPO=x gh release create v1`, `git --git-dir=.git tag v1`, `git -c user.name=x tag v1`, `sudo git tag v1` and `bash -c 'git tag v3'` all return [] - missed denies; `-C`, subshells, heredoc data, quoted text and the listing forms are already handled (the heredoc/listing/unrelated-repo halves of F524 are closed on main). Find the program past leading assignments and wrappers with `_config.program_candidates`, accept git's global options (`-C`, `-c`, `--git-dir=`, `--work-tree=`, ...) before the verb, and read `sh -c`/`bash -c`/eval arguments with `_config.handed_commands`. Deny half first, every spelling above pinned red-first; then confirm the allow cases (`grep 'git tag' f`, heredoc text, `git tag --sort=-creatordate`) stay allowed. `tools/bench-hooks.py --gate` after. Faults: F524. GUARD COMMAND-READING CODE: written by the orchestrator with the user's permission (auto mode off when possible); if the API refuses, record it verbatim and hand the remainder to the human.",
       "files": [
         ".claude/hooks/guard-release.py"
@@ -1977,7 +1977,8 @@
       "startedAt": "2026-10-10T08:29:15Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "blockedReason": "Waves cannot run on this repo with the installed 3.2.0 hooks: the plan gate predates the task-tree binding (P124.5, ships in 3.3.0), so it reads the task tree's stale plan and refuses edits, and the wave submit hits F619. Work so far is kept in the task tree; re-run at executor.waveWidth 1 in the phase tree, starting from the tree's work."
     },
     {
       "id": "P123.37",
