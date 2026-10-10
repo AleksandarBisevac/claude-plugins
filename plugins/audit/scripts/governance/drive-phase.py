@@ -2823,9 +2823,10 @@ def project_context(args):
                               or os.getcwd())
     named = args.manifest
     # A brief prints the manifest relative to the project, and an agent's shell
-    # may stand anywhere; a relative path that is not there from here is read
-    # from the project it names.
-    if named and not os.path.isabs(named) and not os.path.exists(named):
+    # may stand anywhere - a wave member's own tree holds a committed copy of
+    # the same relative path - so a relative path is always read from the
+    # project it names, never from the cwd.
+    if named and not os.path.isabs(named):
         named = os.path.join(project, named)
     found = _mio.resolve_manifest(project, named)
     if not found.get("path"):

@@ -636,17 +636,28 @@ RETURN_ON_STDIN = ("Put the return object in place of the middle line and run "
                    "stdin and nothing is written to disk")
 
 
-def submit_command(ctx, node_id, role, tail=""):
+def submit_command(ctx, node_id, role, tail="", in_tree=False):
     """The resolved `drive-phase.py submit` an agent's last act runs, as a
-    fenced block carrying the return on stdin in a quoted heredoc."""
-    return "\n".join([
+    fenced block carrying the return on stdin in a quoted heredoc. A task in a
+    tree of its own gets the phase tree's manifest spelled absolutely, and a
+    line saying the command runs from the project: its own tree holds a
+    committed copy of the relative path, with the task still pending."""
+    manifest = ctx["manifest"]
+    if in_tree:
+        manifest = os.path.join(ctx["project"], manifest)
+    block = [
         "```sh",
         "%s submit %s --role %s %s --project-dir %s%s <<'%s'" % (
             _script(ctx, "governance/drive-phase.py"), node_id, role,
-            ctx["manifest"], ctx["project"], tail, RETURN_DELIMITER),
+            manifest, ctx["project"], tail, RETURN_DELIMITER),
         "<the return object, as JSON>",
         RETURN_DELIMITER,
-        "```"])
+        "```"]
+    if in_tree:
+        block.append("Run this command from the project (%s), not from your "
+                     "tree: the plan it files against is the project's."
+                     % (ctx["project"],))
+    return "\n".join(block)
 
 
 def executor_return_lines(manifest, phase, task, ctx):
@@ -672,7 +683,8 @@ def executor_return_lines(manifest, phase, task, ctx):
     return (["Your last act files the return object agents/audit-executor.md "
              "declares - it checks the shape, runs the red-first helper on the "
              "command after `--`, takes the stamp and files the return once. %s:"
-             % (RETURN_ON_STDIN,), submit_command(ctx, tid, "executor", tail)]
+             % (RETURN_ON_STDIN,), submit_command(ctx, tid, "executor", tail,
+                            wave_tree(ctx, phase, task)[0] is not None)]
             + note)
 
 
@@ -745,7 +757,7 @@ def compose_reviewer_brief(manifest, phase, task, ctx, filed):
     lines += _section("Your return", [
         "File the return object agents/audit-reviewer.md declares - your one "
         "write. %s:" % (RETURN_ON_STDIN,),
-        submit_command(ctx, tid, "reviewer")])
+        submit_command(ctx, tid, "reviewer", "", tree is not None)])
     return lines
 
 

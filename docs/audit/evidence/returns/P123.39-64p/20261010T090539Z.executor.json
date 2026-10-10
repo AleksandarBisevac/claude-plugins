@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "test_drive_phase --selftest": "pass",
+    "test_audit_lookup --selftest": "pass",
+    "ruff check plugins/audit tools": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T10:03:40Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 181 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ds9w (house FAIL): SELFTEST FAILED: 180/181 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "drive-phase.py project_context: dropped the os.path.exists clause so every relative manifest joins --project-dir (submit resolves through project_context). audit-lookup.py submit_command gained in_tree: a wave task's executor and reviewer briefs print the project's absolute manifest and a line saying the command runs from the project. Cases: ds9w/ds9x/ds9y (test_drive_phase.py), bf42 and width-1 allow twin bf43 (test_audit_lookup.py). test_drive_phase 181/181, test_audit_lookup 81/81, ruff clean. Left guard-release.py alone.",
+    "descriptive": "A wave executor's submit files against the project's plan from wherever its shell stands."
+  },
+  "testsAdded": [
+    "ds9w",
+    "ds9x",
+    "ds9y",
+    "bf42",
+    "bf43"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:fd9de05cdeb47b1725acce409dac938721726d3acdac1a40ab4991cc3b2b9146\",\"dirtyDigest\":\"sha256:07a22fe05d810569b2025d95b29c1dda24add6d4999e0ec435d23a8c9966f60f\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\"plugins/audit/scripts/governance/drive-phase.py\":\"da79f5a08231d014\",\"plugins/audit/scripts/status/audit-lookup.py\":\"b07766d59cbe57de\",\"plugins/audit/tests/test_audit_lookup.py\":\"2eea4485ac3d8fe8\",\"plugins/audit/tests/test_drive_phase.py\":\"093fb8e1d408b1d4\"},\"head\":\"bab5e0a4\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"plugins/audit/tests/test_audit_lookup.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:10dab85bdc3c8c2eceba9625c08fc8b7be7b08ec58bfc42bfcf6532c510f08cf\",\"v\":2}"
+}

@@ -999,6 +999,31 @@ def _submit_cases(check):
           and not os.path.exists(os.path.join(elsewhere, "docs", "audit",
                                               "audit-plan.json")))
 
+    # A wave executor stands in its task tree, which holds its own committed
+    # copy of the same relative manifest with the task still pending; the
+    # filing belongs to the plan of the project it names.
+    root, mpath, _t = _started(M, "waveproj")
+    _edit(root, "P1.1", "changed\n")
+    decoy, dpath = _repo("wavetree", task_ids=TASKS[:1])
+    rel = os.path.relpath(mpath, root)
+    for label, cwd, want in (("ds9w a relative manifest is read from --project-dir, "
+                              "never from the task tree the shell stands in", decoy, True),
+                             ("ds9x THE ALLOW TWIN: the shell standing in the "
+                              "project itself files the same way", root, True)):
+        if os.path.exists(_filed_path(mpath, "P1.1") or "-"):
+            os.remove(_filed_path(mpath, "P1.1"))
+        with _Env(root):
+            done_w = subprocess.run(
+                _script(DRIVER) + ["submit", "P1.1", "--role", "executor", rel,
+                                   "--project-dir", root],
+                cwd=cwd, input=json.dumps(_executor_body("P1.1")),
+                capture_output=True, text=True, timeout=120)
+        check("%s: %r" % (label, (done_w.returncode, done_w.stdout + done_w.stderr)),
+              (done_w.returncode == 0) == want
+              and os.path.exists(_filed_path(mpath, "P1.1") or "-") == want)
+    check("ds9y the decoy tree's own plan was left alone",
+          os.path.isfile(dpath) and not os.path.exists(_filed_path(dpath, "P1.1") or "-"))
+
     # The phase review files through the same door, keyed on its head.
     root, mpath = _repo("phasereturn", task_ids=TASKS[:1], per_task="phase")
     drive(M, root, mpath, phase_review=False)

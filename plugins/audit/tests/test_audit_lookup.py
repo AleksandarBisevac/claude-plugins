@@ -1227,6 +1227,17 @@ def _brief_cases(check):
               ln.startswith(("tree:", "base:")) for ln in plain_text.splitlines())
           and "cd " not in plain_text and "never commit" not in plain_text.lower())
 
+    abs_manifest = os.path.join(proj_w, "docs", "audit", "audit-plan.json")
+    check("bf42 a wave task's submit block spells the phase tree's manifest "
+          "absolutely and says the command runs from the project: %r"
+          % (wave_text[-400:],),
+          (" submit P1.1 --role executor %s --project-dir " % (abs_manifest,)) in wave_text
+          and "Run this command from the project" in wave_text)
+    check("bf43 THE ALLOW TWIN: at width 1 the submit block keeps the relative "
+          "manifest and carries no run-from-the-project line: %r" % (plain_text[-300:],),
+          " submit P1.1 --role executor docs/audit/audit-plan.json --project-dir "
+          in plain_text and "Run this command from the project" not in plain_text)
+
     code6, said6 = brief(proj, mpath, "P1", "executor")
     check("bf11 a phase id asked for a task's role, or a task id for the "
           "phase's, is a miss rather than a brief about the wrong thing: %r"

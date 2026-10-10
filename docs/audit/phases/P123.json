@@ -1034,7 +1034,7 @@
       "id": "P123.18",
       "title": "Red-first helper reads replacements right, derives --introduces, and marks its own block",
       "status": "pending",
-      "description": "(F535) `stamp-verification._replaces` reads Assign/AugAssign/AnnAssign targets and setattr only: a `for New.<case> in [...]` or `with ... as New.<case>` target also replaces the case and HEAD's red is still credited through it, while a bare `New.<case>: int` (AnnAssign with no value, binds nothing) is refused. Read For/AsyncFor and With/AsyncWith targets as replacements; count an AnnAssign only with a value; PLUGIN-BUILD-GUIDE tells an author to wrap with the decorator form. (F573) executors rarely pass `--introduces`, so a test red on a missing symbol grades could-not-prove; have `drive-phase.py submit` derive the introduced symbols from the task's diff (new top-level def/class/assignment names in the declared source files) and pass them to the red helper, with the executor brief naming the flag only as an override. (F576) `_filed_returns.helper_red_first` recognises the helper's block by its wording, so a hand-typed block in those words is filed as computed; `drive-phase.py submit` marks the block it fills (a `source` field or the helper output's digest) and the filing verb trusts the mark, not the words. Regression: T3/T4 (for/with targets) refused; bare annotation proves; a missing-symbol red with no flag grades proved when the diff introduces the symbol; a hand-typed block in the helper's words is not treated as the helper's. Also F613 (testbed P3.1/P5.2/P6.1, and this repo P124.1): a JS missing-module failure (Vite \"Failed to resolve import\", jest \"Cannot find module\", node ERR_MODULE_NOT_FOUND) whose path resolves to a declared file is a missing-symbol red - one per-runner table of missing-module spellings, not a second Python-only list. Also the house runner shape seen on this repo in P124.1/P124.2: a suite whose body aborts on the missing symbol (an AttributeError or TypeError from the task's new name, printing SELFTEST FAILED: N-1/N) is graded \"no test was collected or none reached an assertion\"; an abort naming the task's introduced symbol, or a declared file, is a missing-symbol red. And: --introduces refuses a hyphenated entry-point name (integrate-task), so a new CLI script cannot name its own symbol; a new file the task declares (untracked at HEAD) is itself the introduced thing. Faults: F535, F573, F576, F613.",
+      "description": "(F535) `stamp-verification._replaces` reads Assign/AugAssign/AnnAssign targets and setattr only: a `for New.<case> in [...]` or `with ... as New.<case>` target also replaces the case and HEAD's red is still credited through it, while a bare `New.<case>: int` (AnnAssign with no value, binds nothing) is refused. Read For/AsyncFor and With/AsyncWith targets as replacements; count an AnnAssign only with a value; PLUGIN-BUILD-GUIDE tells an author to wrap with the decorator form. (F573) executors rarely pass `--introduces`, so a test red on a missing symbol grades could-not-prove; have `drive-phase.py submit` derive the introduced symbols from the task's diff (new top-level def/class/assignment names in the declared source files) and pass them to the red helper, with the executor brief naming the flag only as an override. (F576) `_filed_returns.helper_red_first` recognises the helper's block by its wording, so a hand-typed block in those words is filed as computed; `drive-phase.py submit` marks the block it fills (a `source` field or the helper output's digest) and the filing verb trusts the mark, not the words. Regression: T3/T4 (for/with targets) refused; bare annotation proves; a missing-symbol red with no flag grades proved when the diff introduces the symbol; a hand-typed block in the helper's words is not treated as the helper's. Also F613 (testbed P3.1/P5.2/P6.1, and this repo P124.1): a JS missing-module failure (Vite \"Failed to resolve import\", jest \"Cannot find module\", node ERR_MODULE_NOT_FOUND) whose path resolves to a declared file is a missing-symbol red - one per-runner table of missing-module spellings, not a second Python-only list. Also the house runner shape seen on this repo in P124.1/P124.2: a suite whose body aborts on the missing symbol (an AttributeError or TypeError from the task's new name, printing SELFTEST FAILED: N-1/N) is graded \"no test was collected or none reached an assertion\"; an abort naming the task's introduced symbol, or a declared file, is a missing-symbol red. And: --introduces refuses a hyphenated entry-point name (integrate-task), so a new CLI script cannot name its own symbol; a new file the task declares (untracked at HEAD) is itself the introduced thing. Faults: F535, F573, F576, F613. Also F621: an inline suite (test and implementation in one file) is red-proved by applying only the added test hunks to HEAD, or graded could-not-prove with that reason - never refused as \"fix the test\"; add/scope pick regression for such a file by default.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1690,7 +1690,7 @@
     {
       "id": "P123.30",
       "title": "The panel's api() fetch is bounded, so a stalled server reads as no answer, not a hang",
-      "status": "in_progress",
+      "status": "done",
       "description": "CI run 37875405209 hung six hours in the screenshot step after 'composition: confirmed'; P121.14 added the stall watch and job time bounds, but `ui/panel/core.js` `api()` still awaits `fetch` with no timeout, the only unbounded wait on that path. Bound it with an AbortSignal timeout and treat a timeout like a rejected fetch (a write resolves to the NO_ANSWER refusal, a read rejects with noAnswer), keeping the server-offline semantics. Regression (vitest): a fetch that never settles resolves a write to the no-answer refusal and rejects a read after the bound; an answer before the bound is unchanged. Faults: F587.",
       "files": [
         "plugins/audit/scripts/ui/panel/core.js",
@@ -1749,19 +1749,33 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "bab5e0a455a3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Edited plugins/audit/scripts/ui/panel/core.js: api() now races fetch (with an AbortController signal) and the json() body read against one setTimeout of API_BOUND_MS (60000, const added after NO_ANSWER); on timeout it aborts, a write resolves to {ok:false,noAnswer:true,findings:[NO_ANSWER]}, a read rejects with an Error carrying noAnswer and cause; the timer is cleared in finally; doc comment gained a paragraph. Review of the proposal: it bounded only the fetch, so a server that sent headers and stalled the body would still hang; I put the body read inside the same race (a non-JSON body still rejects as before). vitest server-offline 12/12 pass (3 new were red before, 3 failed/9 passed, per attempt 1). test__panel_page 490/490, test__panel_ui 89/89 pass. test__refs 332/334: only sc1/sc2 red (screenshots record the old panel build) - the orchestrator must re-capture screenshots; I did not run browser gates. ruff clean. test__panel_page.py not edited (no pin needed changing).",
+        "descriptive": "The panel's api() gives up on a silent server after 60 s and reads it as no answer instead of hanging."
       },
       "startedAt": "2026-10-10T09:05:38Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T09:53:01Z",
+      "verifiedBy": [
+        "server-offline.test.mjs: a fetch that never settles - resolves a WRITE to the no-answer refusal",
+        "rejects a READ with noAnswer",
+        "allow twin: an answer before the bound is unchanged, timer cleared"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T09:53:00Z.e77cda",
         "status": "passed",
         "at": "2026-10-10T09:53:00Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "bab5e0a455a3",
+        "at": "2026-10-10T09:53:01Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T09:40:35Z",
+        "basis": "`npx vitest run tools/ui-tests/server-offline.test.mjs` in a throwaway tree at HEAD exited 1 with 2 of 12 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - resolves a WRITE to the no-answer refusal once the bound passes (AssertionError: expected +0 to be 1 // Object.is equality) and 1 more: Tests  3 failed | 9 passed (12); run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
@@ -2035,7 +2049,7 @@
     {
       "id": "P123.36",
       "title": "The release guard finds git and gh past assignments, wrappers, global options and sh -c",
-      "status": "in_progress",
+      "status": "cancelled",
       "description": "Probed on main (`_publishers`): `GH_REPO=x gh release create v1`, `env GH_REPO=x gh release create v1`, `git --git-dir=.git tag v1`, `git -c user.name=x tag v1`, `sudo git tag v1` and `bash -c 'git tag v3'` all return [] - missed denies; `-C`, subshells, heredoc data, quoted text and the listing forms are already handled (the heredoc/listing/unrelated-repo halves of F524 are closed on main). Find the program past leading assignments and wrappers with `_config.program_candidates`, accept git's global options (`-C`, `-c`, `--git-dir=`, `--work-tree=`, ...) before the verb, and read `sh -c`/`bash -c`/eval arguments with `_config.handed_commands`. Deny half first, every spelling above pinned red-first; then confirm the allow cases (`grep 'git tag' f`, heredoc text, `git tag --sort=-creatordate`) stay allowed. `tools/bench-hooks.py --gate` after. Faults: F524. GUARD COMMAND-READING CODE: written by the orchestrator with the user's permission (auto mode off when possible); if the API refuses, record it verbatim and hand the remainder to the human.",
       "files": [
         ".claude/hooks/guard-release.py"
@@ -2068,12 +2082,18 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: Correction to note 1: tests.mode could NOT be moved (the verb refuses re-judging an attempted task). Cancelled and re-added as a regression task carrying the same work: the guard's suite is inline in its implementation file, so the red-first helper cannot show red (F621); the red was observed by running gr70 on the unfixed file (99/100)."
       },
       "startedAt": "2026-10-10T09:05:39Z",
-      "completedAt": null,
+      "completedAt": "2026-10-10T09:53:56Z",
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "notes": [
+        {
+          "at": "2026-10-10T09:53:43Z",
+          "text": "tests.mode moved tdd -> regression: the release guard's suite is inline in the same file as its implementation (.claude/hooks/guard-release.py), so the red-first helper lays the file over HEAD with the fix in it and can never show red (F621). The red was observed by running the new cases on the unfixed file: gr70 failed (99/100), gr70b passed, before the reader change."
+        }
+      ]
     },
     {
       "id": "P123.37",
@@ -2221,7 +2241,12 @@
       "startedAt": "2026-10-10T09:05:39Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T10:11:56Z.09d661",
+        "status": "passed",
+        "at": "2026-10-10T10:11:56Z"
+      }
     },
     {
       "id": "P123.40-64p",
@@ -2311,6 +2336,48 @@
       "blockedBy": [
         "P123.6-z4y"
       ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.42-64p",
+      "title": "The release guard finds git and gh past assignments, wrappers, global options and sh -c (re-added as regression: inline suite)",
+      "status": "pending",
+      "description": "F524's missed-deny half (re-added from P123.36, cancelled because its tdd mode cannot be proved for an inline suite - F621). guard-release._publishers reads each clause by its shell words: sh -c/eval operands are read recursively through _config._handed_command, the program is found past assignments and wrappers by _config.program_candidates, git's global options are skipped (-C chain kept; --git-dir/--work-tree make the tree unreadable, the loud answer), and an unclosed quote falls back to the anchored patterns. GUARD COMMAND-READING CODE: written by the orchestrator under the user's permission. The red was observed on the unfixed file (gr70 failed, 99/100).",
+      "files": [
+        ".claude/hooks/guard-release.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          ".claude/hooks/guard-release.py: gr70 refuses each missed spelling; gr70b keeps wrapped reads, lists, deletes and quoted text allowed"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
       "dependsOn": [],
       "attempts": 0,
       "maxAttempts": 3,
