@@ -216,8 +216,13 @@ def _file_executor(root, mpath, task_id, over=None):
     driver's `submit`, as a command the way an agent runs it. Returns its
     `(code, text)`."""
     _edit(root, task_id, "changed by %s\n" % (task_id,))
+    # A tdd task's red-first block is the helper's, so `submit` refuses one
+    # with no test command: a fix task the drive adds over a finding naming a
+    # source file is tdd, and this fixture has no suite to prove a red with,
+    # so the helper is asked over `true` and files what it can say.
+    tdd = ((tasks_of(mpath).get(task_id) or {}).get("tests") or {}).get("mode") == "tdd"
     return _verb(root, DRIVER, ["submit", task_id, "--role", "executor", mpath,
-                                "--project-dir", root],
+                                "--project-dir", root] + (["--", "true"] if tdd else []),
                  stdin=json.dumps(_executor_body(task_id, over)))
 
 
@@ -643,6 +648,63 @@ def _rerun_cases(check):
           "two answers are not the same answer under two names: %r"
           % ((retry, before, _attempts(mpath, "P1.1")),),
           retry == 0 and _attempts(mpath, "P1.1") == (before or 0) + 1)
+
+
+def _gate_calls(module):
+    """Wrap `module.run_verb` so each `run-test-gate.py` call is kept as
+    `(args, output)` - which flags it was given, and what it printed."""
+    calls = []
+    real = module.run_verb
+
+    def kept(ctx, script, args, stdin=None):
+        code, out, err = real(ctx, script, args, stdin=stdin)
+        if script == "run-test-gate.py":
+            calls.append((list(args), out + err))
+        return code, out, err
+    module.run_verb = kept
+    return calls
+
+
+def _rerun_measures_cases(check):
+    """`--answer rerun` on a red gate is a request to MEASURE: the gate run it
+    leads to is given `--no-reuse`, so a red verdict is never repeated back as
+    the answer to a rerun, and the mark is spent on that one run - the next
+    plain gate run may repeat a verdict again."""
+    M, why = _load("drive_phase_rerun_measures")
+    if M is None:
+        check("rm1 the driver loads", False, why)
+        return
+    calls = _gate_calls(M)
+    root, mpath = _repo("rerun-measures", task_ids=TASKS[:1], gate=("false",))
+    run = drive(M, root, mpath, cap=3)
+    first = run["steps"][-1]
+    code, text = _next(M, root, mpath, "--answer", "rerun")
+    rerun_call = calls[1] if len(calls) > 1 else ([], "")
+    check("rm1 a rerun after a red gate runs the gate with --no-reuse, and what "
+          "it printed is a measurement - no GATE VERDICT REUSED line: %r"
+          % ((first, code, rerun_call[0], rerun_call[1][-300:]),),
+          first == ("decide", "gate-red", None) and code == 0
+          and len(calls) == 2 and "--no-reuse" in rerun_call[0]
+          and "GATE VERDICT REUSED" not in rerun_call[1]
+          and "REUSED" not in text)
+    state = _drive_state(root)
+    check("rm2 the rerun mark is spent on that run: none is left in the drive "
+          "state once the gate measured: %r" % (state.get("rerun"),),
+          not (state.get("rerun") or {}).get("P1.1"))
+    # The decision the measured run printed is taken back out, so the next
+    # plain `next` meets the gate step afresh, as it would after a decision
+    # that no longer applies.
+    state.pop("pending", None)
+    with open(os.path.join(root, ".claude", "state", "drive", "%s.json"
+                           % (PHASE,)), "w", encoding="utf-8") as fh:
+        json.dump(state, fh)
+    _next(M, root, mpath)
+    plain = calls[2] if len(calls) > 2 else (["--no-reuse"], "")
+    check("rm3 THE TWIN: the next plain gate run is given no --no-reuse, and on "
+          "this unchanged tree it repeats the recorded red - so the reuse rm1 "
+          "avoided is real here, and the mark was spent once: %r"
+          % ((plain[0], plain[1][:200]),),
+          "--no-reuse" not in plain[0] and "GATE VERDICT REUSED" in plain[1])
 
 
 def _single_task_cases(check):
@@ -1984,6 +2046,136 @@ def _fix_scope_cases(check, M):
               % (label, got), got == want)
 
 
+# Two med findings for one triage; the second carries ` :400`, the text the
+# argv prose check refuses as a flag value and stdin never sees as one.
+COLON_FINDINGS = [
+    {"severity": "med", "file": "src/f1.txt", "issue": "f1 says too little",
+     "resolution": "say what changed"},
+    {"severity": "med", "file": "src/f1.txt", "issue": "the bound reads 1 :400",
+     "resolution": "keep the bound at :400 bytes"}]
+
+
+def _triage_with(M, prefix, findings):
+    """A one-task phase under `phase`, driven to the triage over `findings`:
+    `(root, mpath)`."""
+    root, mpath = _repo(prefix, task_ids=TASKS[:1], per_task="phase")
+    drive(M, root, mpath, findings=findings, answer=None)
+    return root, mpath
+
+
+def _fix_batch_cases(check):
+    """`--answer fix` hands every named finding to ONE `add --from-file -` call
+    on stdin: no finding's text passes through argv, and the batch lands whole
+    or not at all."""
+    M, why = _load("drive_phase_fix_batch")
+    if M is None:
+        check("fb1 the driver loads", False, why)
+        return
+    seen = _counting(M)
+    root, mpath = _triage_with(M, "fix-batch", COLON_FINDINGS)
+    code, text = _next(M, root, mpath, "--answer", "fix", "--fix", "P1-R1,P1-R2")
+    tasks = tasks_of(mpath)
+    fixes = sorted(tuple(t.get("fixes") or ()) for t in tasks.values()
+                   if t.get("fixes"))
+    found = dict((f.get("id"), f.get("fixTask")) for f in
+                 (_phase_of(mpath).get("review") or {}).get("findings") or [])
+    check("fb1 --answer fix over two findings, one whose text carries ' :400', "
+          "adds a fix task for each in ONE add call, each finding naming its "
+          "task back, and the drive goes on to dispatch: %r"
+          % ((code, seen.get(("audit-task.py", "add")), fixes, found, text[-300:]),),
+          code == 0 and seen.get(("audit-task.py", "add")) == 1
+          and fixes == [("P1-R1",), ("P1-R2",)]
+          and all(found.get(f) for f in ("P1-R1", "P1-R2"))
+          and instruction(text)[0] == "dispatch")
+    fix_id = instruction(text)[2]
+    mode = ((tasks.get(fix_id) or {}).get("tests") or {}).get("mode")
+    code_s, text_s = _file_executor(root, mpath, fix_id)
+    path = _filed_path(mpath, fix_id)
+    filed = json.loads(_read(path).decode("utf-8")) if path and os.path.exists(path) else {}
+    red = filed.get("redFirst") or {}
+    check("fb3 the fix task over a finding naming only source is tdd, and with no "
+          "test file declared its executor return is still filed - red-first "
+          "`could-not-prove`, carrying the helper's own refusal - rather than "
+          "stopping every submit: %r" % ((mode, code_s, red, text_s[-200:]),),
+          mode == "tdd" and code_s == 0 and red.get("status") == "could-not-prove"
+          and "declares no test file" in (red.get("basis") or "")
+          and red.get("at"))
+
+    mutant, _w = _load("drive_phase_fix_batch_bad")
+    real_verb = mutant.run_verb
+
+    def spoil_second(ctx, script, args, stdin=None):
+        # The second task of the batch names a finding the phase never had,
+        # which the verb refuses: the whole batch must be refused with it.
+        if script == "audit-task.py" and list(args)[:1] == ["add"] and stdin:
+            doc = json.loads(stdin)
+            if len(doc.get("tasks") or []) > 1:
+                doc["tasks"][1]["fixes"] = ["P1-R9"]
+                stdin = json.dumps(doc)
+        return real_verb(ctx, script, args, stdin=stdin)
+    mutant.run_verb = spoil_second
+    root_b, mpath_b = _triage_with(mutant, "fix-batch-bad", COLON_FINDINGS)
+    before = sorted(tasks_of(mpath_b))
+    code_b, text_b = _next(mutant, root_b, mpath_b, "--answer", "fix", "--fix",
+                           "P1-R1,P1-R2")
+    found_b = [f.get("fixTask") for f in
+               (_phase_of(mpath_b).get("review") or {}).get("findings") or []]
+    check("fb2 a batch whose second task the verb refuses writes neither task: "
+          "the drive stops with the verb's refusal, and no finding names a fix "
+          "task: %r" % ((code_b, sorted(tasks_of(mpath_b)), found_b, text_b[-300:]),),
+          code_b != 0 and sorted(tasks_of(mpath_b)) == before
+          and found_b == [None, None] and "P1-R9" in text_b)
+
+
+def _handed_triage_cases(check):
+    """A triage whose every med+ open finding a human already handed to a fix
+    task (`add --fixes` by hand) is satisfied without an answer: the drive runs
+    those tasks, and the triage comes back after them. A finding handed to a
+    live fix task is offered neither `fix` nor a sign-off disposition."""
+    M, why = _load("drive_phase_handed")
+    if M is None:
+        check("ht1 the driver loads", False, why)
+        return
+
+    def hand_fix(root, mpath, fid):
+        with _Env(root):
+            code, out = _verb(root, "audit-task.py", [
+                "add", "fix %s by hand" % (fid,), mpath, "--project-dir", root,
+                "--phase", PHASE, "--fixes", fid, "--tests-mode", "gate-only",
+                "--gate", "true", "--json"])
+        try:
+            return json.loads(out).get("id")
+        except ValueError:
+            return "refused: %s" % (out[-200:],)
+
+    root, mpath = _triage_with(M, "handed", FINDINGS[:2])
+    fix_id = hand_fix(root, mpath, "P1-R1")
+    code, text = _next(M, root, mpath)
+    check("ht1 once the one med finding names a pending fix task added by hand, "
+          "the pending triage is satisfied without an answer: the next `next` "
+          "dispatches that task's executor instead of printing the triage: %r"
+          % ((fix_id, code, text[-300:]),),
+          code == 0 and instruction(text) == ("dispatch", "executor", fix_id))
+
+    root_t, mpath_t = _triage_with(M, "handed-low", FINDINGS[:2])
+    low_id = hand_fix(root_t, mpath_t, "P1-R2")
+    code_t, text_t = _next(M, root_t, mpath_t)
+    offered = [ln for ln in text_t.splitlines() if "[fix|leave]" in ln]
+    check("ht2 THE TWIN: with the med finding still unhanded the triage stays "
+          "pending - and the low finding handed to %s is no longer offered for "
+          "a fix: %r" % (low_id, (code_t, offered)),
+          code_t == 0 and instruction(text_t) == TRIAGE
+          and any("P1-R1" in ln for ln in offered)
+          and not any("P1-R2" in ln for ln in offered))
+    code_r, text_r = _next(M, root_t, mpath_t, "--answer", "fix", "--fix",
+                           "P1-R2")
+    check("ht3 --answer fix naming the handed finding is refused with the "
+          "'already names a fix task' wording, not 'not open': %r"
+          % ((code_r, text_r),),
+          code_r == M.E_USAGE and "P1-R2 already names a fix task" in text_r
+          and "not open" not in text_r)
+
+
 def _head_of_brief(root, rel):
     with open(os.path.join(root, *rel.split("/"))) as fh:
         found = _HEAD_LINE.search(fh.read())
@@ -2626,8 +2818,17 @@ def _open_finding_cases(check):
     stuck = M.answer_refusal({"phase": PHASE}, pending, "fix", None,
                              ["F-nochange"])
     check("of4 --answer fix over a finding naming a task that never landed is "
-          "refused by the driver, which offers disposition: %r" % (stuck,),
-          bool(stuck) and "not open: F-nochange" in stuck)
+          "refused by the driver, which says the finding already names a fix "
+          "task and is dispositioned at sign-off - never that it is not open, "
+          "since it is: %r" % (stuck,),
+          bool(stuck) and "F-nochange already names a fix task (P1.4)" in stuck
+          and "dispositioned at sign-off" in stuck and "not open" not in stuck)
+    unknown = M.answer_refusal({"phase": PHASE}, pending, "fix", None,
+                               ["F-gone"])
+    check("of4b THE TWIN: a finding the triage does not hold at all is still "
+          "refused as not open, not as naming a fix task: %r" % (unknown,),
+          bool(unknown) and "not open: F-gone" in unknown
+          and "already names" not in unknown)
     free = M.answer_refusal({"phase": PHASE}, pending, "fix", None, ["F-none"])
     check("of5 --answer fix over a finding no task names is not refused: %r"
           % (free,), free is None)
@@ -3459,6 +3660,8 @@ def _house_suite(cases):
 STAGES = (("dp-block", "_drive_cases"), ("dr-block", "_refusal_cases"),
           ("dd-block", "_decide_cases"), ("ct-block", "_continue_cases"),
           ("dd3-block", "_rerun_cases"),
+          ("rm-block", "_rerun_measures_cases"),
+          ("fx-block", "_fix_batch_cases"), ("ht-block", "_handed_triage_cases"),
           ("dt-block", "_single_task_cases"), ("dl-block", "_lock_stop_cases"),
           ("dk-block", "_key_cases"), ("ds-block", "_submit_cases"),
           ("dsm-block", "_submit_mutant_cases"), ("sg-block", "_signoff_cases"),

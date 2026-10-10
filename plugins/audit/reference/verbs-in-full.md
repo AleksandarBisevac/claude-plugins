@@ -346,13 +346,37 @@ names — a comma list, `X.tsx:4 and Y.tsx:71`, a line range with a comma inside
 once each and without the line suffix. A finding that names a test file that does not exist
 yet, or whose resolution asks for a test and whose directory shows where tests live (it
 already holds a `.test.` or `.spec.` file), makes the task `tdd` with that file in
-`tests.add`, unless `--tests-mode` was passed; a finding that asks for a test where the repo
-shows no place for one leaves the task as it was and says so in a task note. The gate sends
+`tests.add`. Otherwise the mode is the one `--bug` derives: `regression`, with the reason
+in a task note, when every path the findings name is a test file, else `tdd`. `gate-only`
+is never a default — only a `--tests-mode` the caller passed, which always wins. A finding
+that asks for a test where the repo shows no place for one says so in a task note. The gate sends
 each path to the runner that takes it: a project whose gate names vitest and playwright
 runs a unit test under vitest and an e2e spec under playwright, never the other way round,
 and an entry left with no path is dropped rather than left to run the whole suite. The
 companions below apply to a fix task too, and a test outside the runner's include widens
 the runner's config.
+
+**Several fix tasks at once go in one batch on stdin**, never one `--fixes` call per
+finding with its text on argv, where a value like ` :400` is refused part-way through and
+some findings are left with a task while the rest are not. `add --from-file -` with a
+`phase` of `{"id": "<the phase>"}` alone adds its tasks to that phase, and a task's
+`fixes` is written exactly as `--fixes` writes it — scope, discipline and the finding's
+`fixTask`, in the one write — so the batch lands whole or not at all:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" add --from-file - --json <<'FIXES'
+{"phase": {"id": "P3"},
+ "tasks": [{"title": "fix P3-R1: <issue>", "description": "<issue and resolution>",
+            "fixes": ["P3-R1"]},
+           {"title": "fix P3-R2: <issue>", "fixes": ["P3-R2"],
+            "tests": {"mode": "gate-only"}}]}
+FIXES
+```
+
+It takes no `request` or `openChoices` — those are written when a phase is planned — and
+refuses, writing nothing, a phase that is done or signed off, a finding outside it, one
+already naming a fix task, and one finding named by two tasks of the batch. `/audit:phase`'s
+drive answers `--answer fix` through this form.
 
 #### `--introduces dependency:<name>|user-strings` — the files a change cannot avoid
 
@@ -1591,7 +1615,7 @@ Omit `id`: the script takes the **highest** `P<n>` in use and adds one, over liv
 phases and every id a parked proposal reserves. Over a plan holding `P0`, `P1` and `P3`, the next id is `P4`, and never the `P2` the gap makes look free:
 a gap is a phase that happened, and `meta.branch` derives branch names from the id.
 Optional on a task: `key`, `outputs`, `risk`, `model`, `skills`, `tests.gate`,
-`blockedBy`. A `key` is the name the batch's other tasks use in `dependsOn` or
+`blockedBy`, and `fixes` (the review findings it fixes, written as `--fixes` writes them). A `key` is the name the batch's other tasks use in `dependsOn` or
 `blockedBy` before the task has an id; every other reference names an id the plan
 already holds.
 

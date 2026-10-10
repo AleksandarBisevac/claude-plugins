@@ -2826,14 +2826,22 @@ def _bug_fix_discipline(bug):
     red-first helper grades with.
     """
     files = [str(f) for f in (bug.get("files") or []) if str(f).strip()]
-    paths = [_vocab._strip_line_suffix(f) for f in files]
+    return _paths_discipline([_vocab._strip_line_suffix(f) for f in files],
+                             bug.get("id"))
+
+
+def _paths_discipline(paths, named_by):
+    """`(mode, note)` for a fix whose defect lies in `paths`, as `named_by` (a
+    bug or the findings a fix task names) names them: `regression` and the
+    reason when every one is a test path, else `tdd` and no note. The one rule
+    a bug's fix task and a finding's fix task are both given."""
     if not paths or not all(_fr.is_test_path(p) for p in paths):
         return "tdd", None
     return "regression", (
         "regression, not tdd: every file %s names is a test file (%s), so the "
         "defect is in the test itself and a red-first run at HEAD would pass "
         "with the fixed test; the gate proves it by the suite running"
-        % (bug.get("id"), ", ".join(paths)))
+        % (named_by, ", ".join(paths)))
 
 
 def _bug_for_add(assembled, bug_id):
@@ -2917,6 +2925,62 @@ def _fix_scope(targets, project):
     return {"paths": paths + [t for t in new_tests if t not in paths],
             "newTests": new_tests, "unplaced": unplaced,
             "asksForTest": [fid for fid, _m in asking]}
+
+
+def _unit_runner_paths(phase, assembled, project, declared):
+    """`{runner: [suite path, ...]}` - the unit runners of `phase`'s gate shape
+    and the declared suite paths each would be pointed at; {} when the gate has
+    no shape to read. A fix task asks it so a new test outside a runner's
+    include gets that runner's config as a companion."""
+    _w, _m, build, shape, _o = _task_gate_setup(phase, assembled)
+    if shape is None:
+        return {}
+    suite_paths = [p for p in declared if _phases.is_suite_path(p)]
+    got, _n = _gate_derive.paths_by_runner(shape, build, suite_paths, project)
+    return dict((r, ps) for r, ps in got.items()
+                if r in _gate_derive.UNIT_RUNNERS and ps)
+
+
+def _fix_task_args(args, targets, project, fixes):
+    """`(args, notes)` for a task fixing the findings `targets` (`fixes`, their
+    ids): `args` copied, widened onto every path the findings name, with the
+    discipline they ask for when the caller picked none, and the notes that
+    say why. `add --fixes` and a batch task's `fixes` both come through here.
+
+    A FIX TASK IS SCOPED FROM ITS FINDINGS. A finding naming a test file that
+    does not exist yet, or whose resolution says to add a test, is a red-first
+    task with that file as its case. Otherwise the mode is the one a bug's fix
+    task is given (`_paths_discipline`): regression when every path is a test,
+    else tdd - a fix task used to default to gate-only, and a finding asking
+    for a new test was handed a gate that could not run it. Gate-only is the
+    caller's to ask for, never a default."""
+    scope = _fix_scope(targets, project)
+    args = argparse.Namespace(**vars(args))
+    args.files = list(args.files or []) + scope["paths"]
+    notes = []
+    if scope["paths"]:
+        notes.append("scope: %s, every path the finding(s) %s name"
+                     % (", ".join(scope["paths"]), ", ".join(fixes)))
+    if scope["unplaced"]:
+        notes.append(
+            "the resolution of %s asks for a test, but names no test file and "
+            "its directory shows no test convention to place one by; name the "
+            "case with `scope --tests-mode tdd --tests-add \"<path>: <what it "
+            "asserts>\"`" % ", ".join(scope["unplaced"]))
+    if args.tests_mode is not None:
+        return args, notes
+    if scope["newTests"]:
+        args.tests_mode = "tdd"
+        if not args.tests_add:
+            args.tests_add = ["%s: red-first case for %s" % (p, ", ".join(fixes))
+                              for p in scope["newTests"]]
+        notes.append("tdd, not gate-only: %s is a test the finding(s) ask for "
+                     "that does not exist yet" % ", ".join(scope["newTests"]))
+        return args, notes
+    args.tests_mode, note = _paths_discipline(scope["paths"], ", ".join(fixes))
+    if note:
+        notes.append(note)
+    return args, notes
 
 
 def _introduces_intent(values):
@@ -3079,40 +3143,9 @@ def _locked_add(args, project, config, mpath, title, out):
 
     fix_notes = []
     if fixes:
-        # A FIX TASK IS SCOPED FROM ITS FINDINGS: every path they name, and the
-        # discipline they ask for when the caller picked none. A finding that
-        # names a test file that does not exist yet, or whose resolution says to
-        # add a test, is a red-first task - it used to be gate-only, with a gate
-        # that could not run the test the finding asked for.
-        scope = _fix_scope(targets, project)
-        args = argparse.Namespace(**vars(args))
-        args.files = list(args.files or []) + scope["paths"]
-        if scope["paths"]:
-            fix_notes.append("scope: %s, every path the finding(s) %s name"
-                             % (", ".join(scope["paths"]), ", ".join(fixes)))
-        if scope["unplaced"]:
-            fix_notes.append(
-                "the resolution of %s asks for a test, but names no test file and "
-                "its directory shows no test convention to place one by; name the "
-                "case with `scope --tests-mode tdd --tests-add \"<path>: <what it "
-                "asserts>\"`" % ", ".join(scope["unplaced"]))
-        if args.tests_mode is None and scope["newTests"]:
-            args.tests_mode = "tdd"
-            if not args.tests_add:
-                args.tests_add = ["%s: red-first case for %s" % (p, ", ".join(fixes))
-                                  for p in scope["newTests"]]
-            fix_notes.append("tdd, not gate-only: %s is a test the finding(s) "
-                             "ask for that does not exist yet"
-                             % ", ".join(scope["newTests"]))
+        args, fix_notes = _fix_task_args(args, targets, project, fixes)
     declared = _union_paths(_split_csv(args.files), _tests_add_paths(args.tests_add)[0])
-    by_runner = {}
-    if fixes:
-        _w, _m, build, shape, _o = _task_gate_setup(phase, assembled)
-        if shape is not None:
-            suite_paths = [p for p in declared if _phases.is_suite_path(p)]
-            got_runners, _n = _gate_derive.paths_by_runner(shape, build, suite_paths, project)
-            by_runner = dict((r, ps) for r, ps in got_runners.items()
-                             if r in _gate_derive.UNIT_RUNNERS and ps)
+    by_runner = _unit_runner_paths(phase, assembled, project, declared) if fixes else {}
     companions, companion_notes = _companions_for(project, declared, intent, by_runner)
     task_id = _allocate_id(assembled, phase_id, _mint_suffix(mpath, assembled))
     task, unnamed_add, gate_basis = _build_task(task_id, title, args, phase,
@@ -6997,7 +7030,8 @@ BATCH_KEYS = ("request", "openChoices", "phase", "tasks")
 BATCH_PHASE_KEYS = ("id", "title", "desiredOutcome", "description", "testGate",
                     "blockedBy", "area", "reviewSkill")
 BATCH_TASK_KEYS = ("key", "title", "description", "files", "outputs", "risk",
-                   "model", "skills", "tests", "dependsOn", "blockedBy")
+                   "model", "skills", "tests", "dependsOn", "blockedBy",
+                   "fixes")
 BATCH_TESTS_KEYS = ("mode", "add", "gate")
 _RISKS = ("low", "med", "high")
 _TEST_MODES = ("tdd", "regression", "gate-only")
@@ -7084,7 +7118,7 @@ def _batch_task_problems(task, where):
                        % (where, key))
     if "description" in task and not isinstance(task["description"], str):
         out.append("%s.description must be a string" % (where,))
-    for key in ("files", "outputs", "dependsOn", "blockedBy"):
+    for key in ("files", "outputs", "dependsOn", "blockedBy", "fixes"):
         if key in task and not _is_text_list(task[key]):
             out.append("%s.%s must be a list of non-empty strings" % (where, key))
     if "skills" in task and not (task["skills"] is None
@@ -7114,14 +7148,22 @@ def batch_problems(doc):
     if not isinstance(doc, dict):
         return ["the file must hold one JSON object"]
     out = _unknown_keys(doc, BATCH_KEYS, "the file")
-    if not _is_text(doc.get("request")):
-        out.append("`request` must be the request's text as the human typed "
-                   "it, non-empty")
-    choices = doc.get("openChoices")
-    if not isinstance(choices, list) or not all(_is_text(c) for c in choices):
-        out.append("`openChoices` must be a list of the choices the request "
-                   "left open, each a non-empty string - [] when it left none")
-    out.extend(_batch_phase_problems(doc.get("phase")))
+    if batch_appends(doc):
+        # The request and its open choices belong to the phase's planning,
+        # written when it was minted; a batch adding to it has neither to say.
+        out.extend("`%s` is the planning of a new phase; a batch whose `phase` "
+                   "is `{\"id\": ...}` alone adds tasks to that phase and "
+                   "carries none" % (key,)
+                   for key in ("request", "openChoices") if key in doc)
+    else:
+        if not _is_text(doc.get("request")):
+            out.append("`request` must be the request's text as the human typed "
+                       "it, non-empty")
+        choices = doc.get("openChoices")
+        if not isinstance(choices, list) or not all(_is_text(c) for c in choices):
+            out.append("`openChoices` must be a list of the choices the request "
+                       "left open, each a non-empty string - [] when it left none")
+        out.extend(_batch_phase_problems(doc.get("phase")))
     tasks = doc.get("tasks")
     if not isinstance(tasks, list) or not tasks:
         out.append("`tasks` must be a non-empty list")
@@ -7132,7 +7174,21 @@ def batch_problems(doc):
     dups = sorted(set(k for k in keys if keys.count(k) > 1 and isinstance(k, str)))
     if dups:
         out.append("task keys must be unique; repeated: %s" % (", ".join(dups),))
+    fixed = [f for t in tasks if isinstance(t, dict) and _is_text_list(t.get("fixes"))
+             for f in t["fixes"]]
+    twice = sorted(set(f for f in fixed if fixed.count(f) > 1))
+    if twice:
+        out.append("a finding takes one fix task; fixed by more than one task of "
+                   "the batch: %s" % (", ".join(twice),))
     return out
+
+
+def batch_appends(doc):
+    """Whether `doc` adds its tasks to a phase the plan holds - its `phase` is
+    `{"id": ...}` and nothing else - rather than minting a new phase."""
+    phase = doc.get("phase") if isinstance(doc, dict) else None
+    return isinstance(phase, dict) and list(phase) == ["id"] \
+        and _is_text(phase["id"])
 
 
 def _batch_from_file(path):
@@ -7261,8 +7317,9 @@ def _batch_task_args(task, keys):
 
 def _locked_batch_add(args, project, config, mpath, doc, out):
     """Everything between acquire and release for `add --from-file`: read,
-    allocate the phase and every task, refuse before the first write, write
-    once, validate once from disk, roll back on findings, journal, report."""
+    allocate the phase - or find the one a `{"id": ...}` phase names - and
+    every task, refuse before the first write, write once, validate once from
+    disk, roll back on findings, journal, report."""
     try:
         raw_index = _mio.read_json(mpath)
         assembled = _mio.load_manifest(mpath)
@@ -7281,28 +7338,37 @@ def _locked_batch_add(args, project, config, mpath, doc, out):
             out("FINDING: " + line)
         return E_INVALID
 
-    spec = doc["phase"]
-    pid = spec["id"].strip() if "id" in spec else _allocate_phase_id(assembled)
-    refusal = _phase_id_refusal(assembled, raw_index, pid)
-    if refusal:
-        out(refusal)
-        return E_USAGE
-    gate, gate_basis = _batch_phase_gate(spec, assembled)
-    area = spec.get("area")
-    phase = _build_phase(pid, spec["title"].strip(), {
-        "description": spec.get("description") or "",
-        "outcome": spec["desiredOutcome"],
-        "blocked_by": spec.get("blockedBy") or [],
-        "area": [area] if isinstance(area, str) else (area or []),
-        "review_skill": spec.get("reviewSkill")}, gate)
-    phase["request"] = doc["request"]
-    phase["openChoices"] = list(doc["openChoices"])
-    side = _side_branch(mpath, assembled)
-    warn_side = side["suffix"] is not None and not _side_branch_warned(
-        project, config, mpath, side["branch"])
-    assembled.setdefault("phases", []).append(phase)
+    appends = batch_appends(doc)
+    side, warn_side, gate, gate_basis = None, False, None, None
+    if appends:
+        phase = _resolve_phase(assembled, doc["phase"]["id"].strip(), out)
+        if isinstance(phase, int):
+            return phase
+        pid = phase["id"]
+        phase.setdefault("tasks", [])
+    else:
+        spec = doc["phase"]
+        pid = spec["id"].strip() if "id" in spec else _allocate_phase_id(assembled)
+        refusal = _phase_id_refusal(assembled, raw_index, pid)
+        if refusal:
+            out(refusal)
+            return E_USAGE
+        gate, gate_basis = _batch_phase_gate(spec, assembled)
+        area = spec.get("area")
+        phase = _build_phase(pid, spec["title"].strip(), {
+            "description": spec.get("description") or "",
+            "outcome": spec["desiredOutcome"],
+            "blocked_by": spec.get("blockedBy") or [],
+            "area": [area] if isinstance(area, str) else (area or []),
+            "review_skill": spec.get("reviewSkill")}, gate)
+        phase["request"] = doc["request"]
+        phase["openChoices"] = list(doc["openChoices"])
+        side = _side_branch(mpath, assembled)
+        warn_side = side["suffix"] is not None and not _side_branch_warned(
+            project, config, mpath, side["branch"])
+        assembled.setdefault("phases", []).append(phase)
     suffix = _mint_suffix(mpath, assembled)
-    ids = []
+    ids, first = [], len(phase["tasks"])
     for _task in doc["tasks"]:
         # A placeholder per task, so the next allocation counts the one before.
         ids.append(_allocate_id(assembled, pid, suffix))
@@ -7326,19 +7392,20 @@ def _locked_batch_add(args, project, config, mpath, doc, out):
             out("  - %s %s %r" % (where, field, ref))
         return E_USAGE
 
+    bases, refusal = _batch_build_tasks(doc, ids, keys, phase, first, assembled,
+                                        project)
+    if refusal:
+        out(refusal)
+        return E_USAGE
     fidx = assembled.setdefault("fileIndex", {})
-    for i, (spec_task, tid) in enumerate(zip(doc["tasks"], ids)):
-        task, _unnamed, _basis = _build_task(
-            tid, spec_task["title"].strip(), _batch_task_args(spec_task, keys),
-            phase, assembled, None, project)
-        phase["tasks"][i] = task
+    for task in phase["tasks"][first:]:
         for fpath in task["files"]:
             entry = fidx.setdefault(_vocab._strip_line_suffix(fpath), [])
-            if tid not in entry:
-                entry.append(tid)
+            if task["id"] not in entry:
+                entry.append(task["id"])
 
     snap = _snapshot(_write_paths(project, mpath, raw_index, pid,
-                                  new_phase=phase))
+                                  new_phase=None if appends else phase))
     try:
         written = _write_add(project, mpath, raw_index, assembled, pid, True)
     except Exception as exc:
@@ -7360,29 +7427,39 @@ def _locked_batch_add(args, project, config, mpath, doc, out):
             out("FINDING: " + line)
         return E_INVALID
 
-    jrows = [_journal_phase_add(project, config, mpath, pid, phase["title"],
-                                phase["desiredOutcome"],
-                                side["branch"] if side["suffix"] else None)]
+    jrows = [] if appends else [_journal_phase_add(
+        project, config, mpath, pid, phase["title"], phase["desiredOutcome"],
+        side["branch"] if side["suffix"] else None)]
     jrows.extend(_journal_add(project, config, mpath, task["id"], pid,
-                              task["title"], []) for task in phase["tasks"])
+                              task["title"], [], basis)
+                 for task, basis in zip(phase["tasks"][first:], bases))
     unjournaled = [r for r in jrows if not r.get("journaled")
                    and r.get("journaledWhy") == "failed"]
     index_note = _index_dirty_note(written, mpath, project, pid)
     if args.as_json:
         result = {"ok": True, "id": pid, "phase": phase, "tasks": ids,
                   "written": written, "testGateBasis": gate_basis,
+                  "appended": appends,
                   "warnings": _wg.collapse_machine(warnings, written_manifest),
                   "journaled": not unjournaled}
         result.update(project_basis_key(args))
         result.update(_index_dirty_key(index_note))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
-    out("[audit-task] phase %s added with %s -- %s"
-        % (pid, ", ".join(ids), phase["title"]))
-    out("  outcome: %s" % phase["desiredOutcome"])
-    out("  gate: %s (%s)" % (", ".join(gate) if gate else "none", gate_basis))
-    out("  request: saved verbatim as phase.request; open choices: %s"
-        % ("; ".join(phase["openChoices"]) or "none, as the file says",))
+    if appends:
+        out("[audit-task] %s added to %s" % (", ".join(ids), pid))
+        for task in phase["tasks"][first:]:
+            out("  %s tests.mode %s%s -- %s" % (
+                task["id"], task["tests"]["mode"],
+                " fixes %s" % (", ".join(task["fixes"]),) if task.get("fixes")
+                else "", task["title"]))
+    else:
+        out("[audit-task] phase %s added with %s -- %s"
+            % (pid, ", ".join(ids), phase["title"]))
+        out("  outcome: %s" % phase["desiredOutcome"])
+        out("  gate: %s (%s)" % (", ".join(gate) if gate else "none", gate_basis))
+        out("  request: saved verbatim as phase.request; open choices: %s"
+            % ("; ".join(phase["openChoices"]) or "none, as the file says",))
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if unjournaled:
@@ -7394,6 +7471,50 @@ def _locked_batch_add(args, project, config, mpath, doc, out):
         for line in _side_branch_warning(pid, side):
             out(line)
     return 0
+
+
+def _batch_build_tasks(doc, ids, keys, phase, first, assembled, project):
+    """Build every task of the batch in place of its placeholder at
+    `phase["tasks"][first:]`: `(bases, None)` - the companion basis each task's
+    journal row carries - or `(None, refusal)` before anything is written.
+
+    A TASK'S `fixes` IS WRITTEN AS `add --fixes` WRITES IT: the findings must be
+    the phase's own and name no fix task yet, the task is scoped and given its
+    discipline by `_fix_task_args`, and `task.fixes` and each finding's
+    `fixTask` are set in this one write - so a batch of fix tasks lands whole or
+    not at all, where one call per finding could stop part-way."""
+    bases, bad = [], []
+    for i, (spec_task, tid) in enumerate(zip(doc["tasks"], ids)):
+        args = _batch_task_args(spec_task, keys)
+        fixes = list(spec_task.get("fixes") or [])
+        targets, refusal = _fixes_targets(assembled, phase, fixes)
+        if refusal:
+            bad.append("tasks[%d]: %s" % (i, refusal))
+            continue
+        notes, companions = [], []
+        if fixes:
+            args, notes = _fix_task_args(args, targets, project, fixes)
+            declared = _union_paths(_split_csv(args.files),
+                                    _tests_add_paths(args.tests_add)[0])
+            companions, _cn = _companions_for(
+                project, declared, None,
+                _unit_runner_paths(phase, assembled, project, declared))
+        task, _unnamed, _basis = _build_task(
+            tid, spec_task["title"].strip(), args, phase, assembled, None,
+            project, companions, runner_aware=bool(fixes))
+        basis = _companion_basis(companions) if companions else ""
+        for text in notes + ([basis] if basis else []):
+            task.setdefault("notes", []).append({"at": _utc_now(), "text": text})
+        if fixes:
+            task["fixes"] = fixes
+            for entry in targets:
+                entry["fixTask"] = tid
+        phase["tasks"][first + i] = task
+        bases.append(basis)
+    if bad:
+        return None, ("[audit-task] REFUSED: the batch names a fix the plan cannot "
+                      "take -- nothing written:\n  - %s" % ("\n  - ".join(bad),))
+    return bases, None
 
 
 # --- a phase minted on a side branch ---------------------------------------------
@@ -12490,6 +12611,11 @@ def _dispatch(args, argv, out):
     # a different story about the same flag by a different verb -- and the story
     # they are told now is the true one, from the check above, which is that the
     # verb never reads it.
+    if args.command == "add" and args.from_file is not None:
+        # The batch form takes no title, so its lone positional is the
+        # manifest - moved BEFORE the prose checks, which would otherwise grade
+        # a manifest path as a title and refuse it as a machine path.
+        _manifest_from_positional(args)
     stop = resolve_briefs(args, out)
     if stop is None:
         stop = resolve_verbatim_values(args, out)

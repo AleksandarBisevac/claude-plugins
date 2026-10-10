@@ -15569,13 +15569,14 @@ def _introduces_cases(check):
         got = tasks(mpath)
         modes = [(got[i]["tests"]["mode"], got[i]["tests"]["expectRedFirst"])
                  for i in ("P1.2", "P1.3", "P1.4", "P1.5")]
-        check("cz13 a finding whose resolution asks for a test (placed beside its "
-              "source, where the directory already keeps tests) and one naming a "
-              "test file that does not exist yet are tdd and red-first; one that "
-              "asks for neither, and one that asks where the repo shows no place "
-              "for a test, stay gate-only: %r" % (modes,),
-              modes == [("tdd", True), ("tdd", True), ("gate-only", False),
-                        ("gate-only", False)])
+        check("cz13 a fix task's discipline is the rule `--bug` uses when the "
+              "caller picked none: a finding whose resolution asks for a test, one "
+              "naming a test file that does not exist yet, one asking for neither "
+              "and one asking where the repo shows no place for a test all name a "
+              "source file, so each is tdd and red-first - none is gate-only: %r"
+              % (modes,),
+              modes == [("tdd", True), ("tdd", True), ("tdd", True),
+                        ("tdd", True)])
         check("cz14 ...the new test file is named in tests.add and in `files`, so "
               "the gate runs it: %r" % (got["P1.2"]["tests"],),
               got["P1.2"]["tests"]["add"][0].startswith("components/Why.test.tsx")
@@ -15740,6 +15741,137 @@ def _first_plan_cases(check):
           and findings == [])
 
 
+def _batch_fix_cases(check):
+    """`add --from-file -` adding fix tasks to a phase that exists: a batch
+    whose `phase` is `{"id": ...}` alone appends its tasks there, and a task's
+    `fixes` is written as `--fixes` writes it - `task.fixes` and each finding's
+    `fixTask` in the same write - with the discipline `--bug` derives when the
+    task names no mode. The whole batch lands or none of it does."""
+    root = _harness.fixture_root("audit-task-bx-")
+
+    def write(proj, rel, text="x\n"):
+        full = os.path.join(proj, *rel.split("/"))
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "w") as fh:
+            fh.write(text)
+
+    def project(name):
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        _panel_write._atomic_write_json(
+            os.path.join(proj, ".claude", "audit.config.json"),
+            {"manifestPath": "docs/audit/audit-plan.json"})
+        for rel in ("src/a.py", "src/b.py", "tests/test_a.py"):
+            write(proj, rel)
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        findings = [
+            {"id": "P1-R1", "severity": "med", "file": "src/a.py",
+             "issue": "the bound reads 1 :400",
+             "resolution": "keep the bound at :400 bytes"},
+            {"id": "P1-R2", "severity": "med", "file": "tests/test_a.py",
+             "issue": "the case asserts nothing", "resolution": "assert it"},
+            {"id": "P1-R3", "severity": "low", "file": "src/b.py",
+             "issue": "b is slow", "resolution": "cache it"}]
+        _panel_write._atomic_write_json(mpath, {
+            "meta": {"version": 2, "buildCommands": {"test": "true"}},
+            "phases": [{"id": "P1", "title": "P1", "status": "in_progress",
+                        "testGate": ["test"],
+                        "tasks": [{"id": "P1.1", "title": "a", "status": "done",
+                                   "description": "d", "files": ["src/a.py"],
+                                   "commit": "a" * 40,
+                                   "tests": {"mode": "gate-only", "add": [],
+                                             "expectRedFirst": False,
+                                             "gate": ["test"]}}],
+                        "review": {"findings": findings}}],
+            "fileIndex": {"src/a.py": ["P1.1"]}, "bugs": []})
+        return proj, mpath
+
+    def fix_doc(*tasks):
+        return json.dumps({"phase": {"id": "P1"}, "tasks": list(tasks)})
+
+    def state(mpath):
+        ph = _mio.load_manifest(mpath)["phases"][0]
+        return (dict((t["id"], t) for t in ph["tasks"]),
+                dict((f["id"], f.get("fixTask"))
+                     for f in (ph.get("review") or {}).get("findings") or []))
+
+    try:
+        proj, mpath = project("whole")
+        code, txt = _cli_in(["add", "--from-file", "-"], proj, fix_doc(
+            {"title": "fix P1-R1", "fixes": ["P1-R1"],
+             "description": "the bound reads 1 :400\n\nResolution asked: keep "
+                            "the bound at :400 bytes"},
+            {"title": "fix P1-R2", "fixes": ["P1-R2"]},
+            {"title": "fix P1-R3", "fixes": ["P1-R3"],
+             "tests": {"mode": "gate-only"}}))
+        tasks, named = state(mpath)
+        new = sorted(t for t in tasks if t != "P1.1")
+        modes = [((tasks.get(t) or {}).get("tests") or {}).get("mode") for t in new]
+        notes = " ".join(n.get("text", "") for t in new
+                         for n in (tasks.get(t) or {}).get("notes") or [])
+        check("bx1 a batch on stdin naming the phase by id alone appends a fix "
+              "task per entry, its text with ' :400' kept verbatim, each task "
+              "carrying `fixes` and each finding naming its task back, in one "
+              "write that validates: %r" % ((code, txt[-300:], new, named),),
+              code == 0 and len(new) == 3
+              and [(tasks[t].get("fixes")) for t in new]
+              == [["P1-R1"], ["P1-R2"], ["P1-R3"]]
+              and [named.get(f) for f in ("P1-R1", "P1-R2", "P1-R3")] == new
+              and ":400" in (tasks[new[0]].get("description") or "")
+              and M._validator().validate(_mio.load_manifest(mpath))[0] == [])
+        check("bx2 a fix task naming a source file is tdd, one naming only a test "
+              "file is regression with the reason on the task, and a mode the "
+              "batch names is kept - gate-only only when asked for: %r"
+              % ((modes, notes[:300]),),
+              modes == ["tdd", "regression", "gate-only"]
+              and "regression, not tdd" in notes)
+
+        proj, mpath = project("refused")
+        before = _plan_bytes(proj)
+        code, txt = _cli_in(["add", "--from-file", "-"], proj, fix_doc(
+            {"title": "fix P1-R1", "fixes": ["P1-R1"]},
+            {"title": "fix nothing", "fixes": ["P1-R9"]}))
+        check("bx3 a batch whose second task names a finding the phase does not "
+              "hold is refused whole: nothing written, the first finding names "
+              "no task, and the refusal names the bad one: %r"
+              % ((code, txt[-300:]),),
+              code == M.E_USAGE and "P1-R9" in txt
+              and _plan_bytes(proj) == before
+              and state(mpath)[1].get("P1-R1") is None)
+
+        proj, mpath = project("twice")
+        before = _plan_bytes(proj)
+        code, txt = _cli_in(["add", "--from-file", "-"], proj, fix_doc(
+            {"title": "fix P1-R1", "fixes": ["P1-R1"]},
+            {"title": "fix P1-R1 again", "fixes": ["P1-R1"]}))
+        check("bx4 two tasks of one batch fixing the same finding are refused, "
+              "nothing written: %r" % ((code, txt[-300:]),),
+              code == M.E_USAGE and "P1-R1" in txt
+              and _plan_bytes(proj) == before)
+
+        proj, mpath = project("single")
+        lines = []
+        real = sys.stdin
+        sys.stdin = io.StringIO("")
+        try:
+            got = [M.main(["add", "Fix %s" % (fid,), "--phase", "P1", "--fixes",
+                           fid, "--project-dir", proj] + extra, out=lines.append)
+                   for fid, extra in (("P1-R1", []), ("P1-R2", []),
+                                      ("P1-R3", ["--tests-mode", "gate-only"]))]
+        finally:
+            sys.stdin = real
+        tasks, _named = state(mpath)
+        modes = [((tasks.get(t) or {}).get("tests") or {}).get("mode")
+                 for t in ("P1.2", "P1.3", "P1.4")]
+        check("bx5 `add --fixes` derives the same discipline as the batch: tdd "
+              "over a source file, regression over only a test file, and the "
+              "caller's gate-only kept: %r" % ((got, modes),),
+              got == [0, 0, 0] and modes == ["tdd", "regression", "gate-only"])
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("at3-block", "_flag_cases"), ("at4-block", "_start_cases"),
           ("at5-block", "_close_cases"), ("at6-block", "_group_cases"),
@@ -15754,7 +15886,8 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("cz-block", "_introduces_cases"),
           ("ps-block", "_stage_runner_cases"),
           ("of-block", "_open_finding_shape_cases"),
-          ("fp-block", "_first_plan_cases"))
+          ("fp-block", "_first_plan_cases"),
+          ("bx-block", "_batch_fix_cases"))
 
 
 if __name__ == "__main__":

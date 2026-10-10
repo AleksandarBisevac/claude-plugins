@@ -26,6 +26,9 @@ sign-off** are in `reference/execute-task.md` and `reference/phase-signoff.md`.
   merge back (ff, else confirmed `--no-ff`) → release lock.
 - **On trouble:** unmet blockers → skip; gates red → retry to `maxAttempts` → `blocked`; gates
   can't run (infra) → don't burn an attempt, human action item; interrupted → `/audit:resume`.
+  **A `rerun` answer measures:** the step driver marks it for that start and gives the next
+  gate run `--no-reuse`, spending the mark on that one run — a rerun answered by `GATE VERDICT
+  REUSED` would hand the same red decision straight back, and nothing would have run.
 - **One task per agent, bounded:** continuing a running agent onto its next task is preferred
   below `executor.maxHours` (default 3); at or past it, hand back with a summary and spawn fresh
   — `reference/execute-task.md`'s continuation rule.

@@ -580,7 +580,7 @@
     {
       "id": "P123.8",
       "title": "Every migrated stub asks selftest_requested(), and the lint sees a local argv name too",
-      "status": "in_progress",
+      "status": "done",
       "description": "P122.8 added `_output.selftest_requested(argv)` and `selftest_argv_violations()`, whose docstring says it cannot see a stub that reads `--selftest` off a local name bound to `sys.argv`. Four stubs do exactly that (`if \"--selftest\" in argv:` in migrate-manifest's, merge-manifest's, usage/_usage_bench's and render-report's `__main__`). None forwards a command today, but the invariant was every stub. Convert the four to `selftest_requested(...)`, and widen `selftest_argv_violations()` to flag a membership test of `--selftest` against any name bound from `sys.argv` (including a slice) inside a migrated stub, with its prove-gates row (red: plant `argv = sys.argv[1:]` / `\"--selftest\" in argv` in one stub; allow: the helper call). Faults: P122-R5.",
       "files": [
         "plugins/audit/scripts/manifest/migrate-manifest.py",
@@ -621,25 +621,37 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "def0f5175211",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Dropped the value heuristic and _VALUELESS_FLAGS from _output.selftest_requested: --selftest now counts anywhere before the first `--` (return SELFTEST_FLAG in own_args(argv)). sfl4 rewritten to the new rule (--note --selftest, --bench --selftest, --note x --selftest all True); sfl3 keeps the `--` boundary pinned. Ran test__output 245/245, test__usage_bench 10/10, test_render_report 294/294, test_drive_phase 184/184 (each printed ALL PASS), ruff check plugins/audit tools exit 0.",
+        "descriptive": "Stubs recognise --selftest in any position before `--`, restoring bn8/bn1 while keeping the forwarded-command boundary."
       },
       "startedAt": "2026-10-10T12:57:25Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T13:09:29Z",
+      "verifiedBy": [
+        "sfl4 (rewritten)"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T13:09:28Z.8b5578",
         "status": "passed",
         "at": "2026-10-10T13:09:28Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "def0f5175211",
+        "at": "2026-10-10T13:09:29Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T13:01:31Z",
+        "basis": "`python3 plugins/audit/tests/test__output.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 245 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sfl4 (house FAIL), sfl9 (house FAIL), sfl7 (house FAIL): SELFTEST FAILED: 242/245 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.9",
       "title": "A fix batch lands whole from stdin, rerun re-measures, and fix refusals say the truth",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(F606) `drive-phase.add_fix_tasks` calls `audit-task.py add` once per finding and passes the finding's issue and resolution on argv as `--description`; the argv prose check refused a text holding \" :400\" (\"whitespace before a mark that hugs the word in front of it\") and the batch stopped with only some findings given a task. Hand the whole batch over in ONE `add --from-file -` call on stdin, where no shell rewrites a value: add `fixes` to `BATCH_TASK_KEYS` so a batch task writes `task.fixes` and each finding's `fixTask` in the same write `--fixes` does today, and the batch lands all or nothing. (F607, the discipline half only - the every-path scope half is P124's b3) a fix task defaults to gate-only, so a finding asking for a new test got gate [lint, typecheck]. Derive a fix task's mode with the rule `--bug` already uses (`_bug_tests_mode`: every named file a test path -> regression with its note, else tdd); gate-only only when the caller passes it. (F608, recurred on P4) `--answer rerun` on a gate-red decision returns None and the next task gate reuses the red verdict (\"GATE VERDICT REUSED ... nothing ran here\"), so the decision comes back unchanged and the operator ran `run-test-gate.py --no-reuse --record` by hand. A rerun answer measures: mark it in the drive state for that start and pass `--no-reuse` to the next gate run, consuming the mark once. (P122-R15) the `--answer fix` refusal prints \"not open: F\" for a finding that is open but already names a fix task - say that it already names a fix task and is dispositioned at sign-off; reword the `run_signoff` comment that still says \"a finding no fix task names\", and drop the guard that restates `accepted-open`/`carried` after `open_findings` (now in `_manifest_phases`) has already excluded them. Name the batch form in verbs-in-full.md and the rerun rule in orchestrator.md. Also F617: a pending triage is satisfied without an answer once every med+ open finding names a pending/in-progress fix task (added by hand with add --fixes); the drive runs them, re-reviews, re-triages; such a finding is offered neither fix nor accept-open. Faults: F606, F607, F608, P122-R15, F617.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -679,16 +691,22 @@
         "P123.3"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T13:09:30Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T13:39:14Z.05593a",
+        "status": "passed",
+        "at": "2026-10-10T13:39:14Z"
+      }
     },
     {
       "id": "P123.10",

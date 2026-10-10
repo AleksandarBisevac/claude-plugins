@@ -159,6 +159,7 @@ This module carries no `--selftest` of its own; its cases live in
 Stdlib only, Python 3.8 compatible.
 """
 import argparse
+import datetime
 import json
 import os
 import pathlib
@@ -591,6 +592,16 @@ def _marked(state, kind, task):
     return entry.get("value") if entry.get("start") == start_key(task) else None
 
 
+def _spend(state, kind, task):
+    """`_marked`, and the mark dropped: a mark that holds for ONE use."""
+    held = _marked(state, kind, task)
+    marks = state.get(kind) or {}
+    marks.pop(task["id"], None)
+    if not marks:
+        state.pop(kind, None)
+    return held
+
+
 # --- reading the plan -------------------------------------------------------------
 def load_phase(ctx):
     """`(manifest, phase)` read fresh: every verb the driver calls writes."""
@@ -788,13 +799,29 @@ def project_relative(ctx, path):
     return path if rel.startswith("..") else rel.replace(os.sep, "/")
 
 
-def record_gate(ctx, phase, task, tree=None):
+def record_gate(ctx, phase, task, tree=None, no_reuse=False):
     """`(code, stdout, stderr)` of the task's recorded gate run - measured in
     `tree` when the task runs in a tree of its own, and recorded in the
-    project's ledger either way."""
+    project's ledger either way. `no_reuse` measures even where an earlier
+    verdict on the same tree could be repeated: what a `rerun` asks for."""
     return run_verb(ctx, "run-test-gate.py", [
         ctx["manifest"], phase["id"], "--task", task["id"], "--record",
-        "--project-dir", ctx["project"]] + (["--tree", tree] if tree else []))
+        "--project-dir", ctx["project"]] + (["--tree", tree] if tree else [])
+        + (["--no-reuse"] if no_reuse else []))
+
+
+def task_gate(ctx, state, phase, task, tree=None):
+    """The task's recorded gate run, measured afresh when a `rerun` answer
+    marked this start - the mark is spent on this one run, so a later plain run
+    may repeat a verdict again. A rerun the gate answered by repeating the red
+    it was asked about would hand the same decision straight back."""
+    kw = {}
+    if tree:
+        kw["tree"] = tree
+    if _spend(state, "rerun", task):
+        kw["no_reuse"] = True
+        write_state(ctx, state)
+    return record_gate(ctx, phase, task, **kw)
 
 
 def moved_fields(result):
@@ -909,8 +936,7 @@ def advance(ctx, state, manifest, phase, task, tree=None):
     # whatever the key: a task whose review is carried to the phase still owes
     # the measurement its close and its commit are bound to.
     if (reviewer is None or not due) and not _marked(state, "gated", task):
-        code, out, err = (record_gate(ctx, phase, task, tree=tree) if tree
-                          else record_gate(ctx, phase, task))
+        code, out, err = task_gate(ctx, state, phase, task, tree)
         if code == 1:
             said = [ln for ln in (out + err).splitlines() if "GATE" in ln]
             return decision(ctx, state, "gate-red", task,
@@ -1196,7 +1222,7 @@ def integrate_member(ctx, state, phase, task):
         ctx["did"].append("integrated %s%s" % (task["id"], " (already)"
                                                if answer.get("already") else ""))
     if held.get("regate") is not False and not _marked(state, "regated", task):
-        code, out, err = record_gate(ctx, phase, task)
+        code, out, err = task_gate(ctx, state, phase, task)
         if code == 1:
             said = [ln for ln in (out + err).splitlines() if "GATE" in ln]
             return decision(ctx, state, "gate-red", task, (
@@ -1442,21 +1468,34 @@ def answer_refusal(ctx, pending, answer, reason, fixes=()):
         return ("no runner config file exists to widen, so --answer widen has "
                 "nothing to declare; answer block")
     if answer == "fix":
-        # A finding already naming a fix task that never landed is open, but the
-        # verb refuses a second task for it: it is dispositioned, not fixed.
-        open_ids = [f.get("id") for f in pending.get("findings") or []
-                    if not f.get("fixTask")]
-        unknown = [f for f in fixes if f not in open_ids]
-        if not fixes or unknown:
-            return ("--answer fix names the findings to fix with --fix, from the "
-                    "open ones: %s%s" % (", ".join(open_ids) or "none",
-                                         "; not open: %s" % (", ".join(unknown),)
-                                         if unknown else ""))
+        return fix_refusal(pending, fixes)
     elif fixes:
         return "--fix belongs to --answer fix"
     if pending["decision"] == "triage":
         return triage_refusal(pending, answer)
     return None
+
+
+def fix_refusal(pending, fixes):
+    """`--answer fix` refused for the findings it names, or None. A finding
+    that already names a fix task - landed never, or still to run - is open,
+    but the verb refuses it a second task: it is said to name one, and to be
+    dispositioned at sign-off, never to be "not open" when it is."""
+    found = list(pending.get("findings") or []) + list(pending.get("handed") or [])
+    named = dict((f.get("id"), f.get("fixTask")) for f in found if f.get("fixTask"))
+    open_ids = [f.get("id") for f in pending.get("findings") or []
+                if not f.get("fixTask")]
+    taken = [f for f in fixes if f in named]
+    unknown = [f for f in fixes if f not in open_ids and f not in named]
+    if fixes and not taken and not unknown:
+        return None
+    said = ["--answer fix names the findings to fix with --fix, from the open "
+            "ones no fix task names: %s" % (", ".join(open_ids) or "none",)]
+    said += ["%s already names a fix task (%s), so it is dispositioned at "
+             "sign-off rather than given a second" % (f, named[f]) for f in taken]
+    if unknown:
+        said.append("not open: %s" % (", ".join(unknown),))
+    return "; ".join(said)
 
 
 def triage_refusal(pending, answer):
@@ -1512,7 +1551,10 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
         return keep_record(ctx, phase)
     if answer == "rerun":
         # The gate is not marked as run for this start, so the drive measures
-        # again; the task is not re-started, so no attempt is spent.
+        # again - with `--no-reuse`, through the mark `task_gate` spends - and
+        # the task is not re-started, so no attempt is spent.
+        _mark(state, "rerun", task)
+        write_state(ctx, state)
         return None
     if answer == "retry":
         if pending["decision"] == "integration-refused":
@@ -1796,6 +1838,43 @@ def open_findings(phase):
     return [f for f in _phases.open_findings(phase) if f.get("id")]
 
 
+# The fields of an open finding the triage carries in its pending decision.
+TRIAGE_FINDING_KEYS = ("id", "severity", "file", "issue", "fixTask")
+
+
+def live_fix_task(phase, finding):
+    """The task the finding's `fixTask` names while it is still to run -
+    pending or in progress - else None. A fix task that never landed (closed
+    --no-change, cancelled) leaves the finding open for a disposition; a live
+    one is the finding's answer, still being carried out."""
+    tid = finding.get("fixTask")
+    if not tid:
+        return None
+    return next((t for t in _tasks(phase) if t.get("id") == tid
+                 and t.get("status") in ("pending", "in_progress")), None)
+
+
+def triage_findings(phase):
+    """`(offered, handed)` - the open findings the triage offers a word on,
+    and those already handed to a live fix task, which it offers neither `fix`
+    nor a sign-off disposition: their answer is the task, and the drive runs
+    it before the triage comes back."""
+    offered, handed = [], []
+    for finding in open_findings(phase):
+        entry = dict((k, finding.get(k)) for k in TRIAGE_FINDING_KEYS)
+        (handed if live_fix_task(phase, finding) else offered).append(entry)
+    return offered, handed
+
+
+def triage_handed_off(phase):
+    """Whether a pending triage is satisfied without an answer: some open
+    finding names a live fix task - added by hand with `add --fixes` - and no
+    med-or-worse finding is left unhanded. The drive then runs those tasks,
+    and the review and the triage come after them."""
+    offered, handed = triage_findings(phase)
+    return bool(handed) and all(f.get("severity") == "low" for f in offered)
+
+
 def _clip(text, width):
     data = (text or "").encode("utf-8")
     if len(data) <= width:
@@ -1817,6 +1896,10 @@ def render_triage(ctx, pending):
         lines.append(_clip("  %s %s %s - %s [fix|leave]" % (
             f.get("id"), f.get("severity"), f.get("file"), f.get("issue")),
             TRIAGE_LINE_BYTES))
+    for f in pending.get("handed") or []:
+        lines.append(_clip("  %s %s - handed to %s, which runs before sign-off"
+                           % (f.get("id"), f.get("severity"), f.get("fixTask")),
+                           TRIAGE_LINE_BYTES))
     for a in answers:
         lines.append(_clip("  %s %s - %s" % (a.get("who"), a.get("what"),
                                              a.get("note") or "no note"),
@@ -1885,8 +1968,7 @@ def triage(ctx, state, manifest, phase):
             write_state(ctx, state)
             ctx["did"].append("phase review again: %s owed" % (", ".join(owed[:3]),))
             return dispatch_phase_review(ctx, state, phase)
-    keys = ("id", "severity", "file", "issue", "fixTask")
-    still = [dict((k, f.get(k)) for k in keys) for f in open_findings(phase)]
+    still, handed = triage_findings(phase)
     # A settlement counts for the content it was given for: an answer settled
     # by name alone is put to the human again, so its accept records the
     # signature the sign-off verb honours.
@@ -1897,8 +1979,8 @@ def triage(ctx, state, manifest, phase):
     said = ("the phase review returned `%s`" % ((review or {}).get("verdict")
                                                  or "no verdict",)
             if review is not None else "no phase review is due")
-    extra = {"findings": still, "answers": answers, "fixesAfter": after,
-             "head": (mark.get("head") or "")[:12]}
+    extra = {"findings": still, "handed": handed, "answers": answers,
+             "fixesAfter": after, "head": (mark.get("head") or "")[:12]}
     if ctx.get("advance") is not None:
         reason = ctx.pop("advance")
         if advance_applies(review, extra):
@@ -1938,29 +2020,36 @@ def advance_admissible(phase):
 
 
 def add_fix_tasks(ctx, phase, fixes):
-    """A task for each named finding through `audit-task.py add --fixes`, in one
-    call each; None, or the stop."""
+    """A task for each named finding, every one in ONE `audit-task.py add
+    --from-file -` call; None, or the stop.
+
+    THE BATCH GOES ON STDIN, WHERE NO VALUE IS A FLAG. A finding's issue and
+    resolution are free text, and passed one call each as `--description` the
+    argv prose check refused a text holding ` :400` part-way through, leaving
+    some findings with a task and the rest without. The batch form writes each
+    task's `fixes` and each finding's `fixTask` as `--fixes` does, scopes each
+    task from every path its finding names, and lands whole or not at all."""
     by_id = dict((f.get("id"), f) for f in open_findings(phase))
+    tasks = []
     for fid in fixes:
         found = by_id.get(fid) or {}
-        # NO `--files` HERE: `add --fixes` reads every path the finding names (a
-        # comma list, `X:4 and Y:71`, a line range) off the finding itself, where
-        # this used to cut the text at its first colon and scope one file of
-        # several.
-        args = ["add", _clip("fix %s: %s" % (fid, found.get("issue") or ""), 80),
-                ctx["manifest"], "--project-dir", ctx["project"],
-                "--phase", phase["id"], "--fixes", fid, "--description",
-                "%s\n\nResolution asked: %s" % (found.get("issue") or "",
-                                                found.get("resolution") or ""),
-                "--json"]
-        out, stop = _verb_or_stop(ctx, "audit-task.py", args)
-        if stop is not None:
-            return stop
-        try:
-            added = json.loads(out).get("id")
-        except ValueError:
-            added = None
-        ctx["did"].append("fix task %s added for %s" % (added or "?", fid))
+        tasks.append({"title": _clip("fix %s: %s" % (fid, found.get("issue") or ""), 80),
+                      "description": "%s\n\nResolution asked: %s" % (
+                          found.get("issue") or "", found.get("resolution") or ""),
+                      "fixes": [fid]})
+    out, stop = _verb_or_stop(ctx, "audit-task.py", [
+        "add", ctx["manifest"], "--project-dir", ctx["project"], "--from-file",
+        "-", "--json"], stdin=json.dumps({"phase": {"id": phase["id"]},
+                                          "tasks": tasks}))
+    if stop is not None:
+        return stop
+    try:
+        added = json.loads(out).get("tasks") or []
+    except ValueError:
+        added = []
+    for i, fid in enumerate(fixes):
+        ctx["did"].append("fix task %s added for %s"
+                          % (added[i] if i < len(added) else "?", fid))
     return None
 
 
@@ -2168,13 +2257,13 @@ def run_signoff(ctx, state, phase):
     summary = signoff_summary(state, phase, head)
     args = ["signoff", phase["id"], ctx["manifest"], "--project-dir",
             ctx["project"], "--verdict", "passed", "--summary", summary]
-    # THE HUMAN'S WORDS ARE THE DISPOSITION. A `sign-off` answered over a
-    # finding no fix task names is the human accepting it open, and the verb
-    # refuses a sign-off that leaves one unsaid, so each is recorded with the
-    # reason the answer carried.
-    for finding in open_findings(phase):
-        if finding.get("status") not in ("accepted-open", "carried"):
-            args += ["--accept-open", "%s=%s" % (finding["id"], summary)]
+    # THE HUMAN'S WORDS ARE THE DISPOSITION. A `sign-off` answered over an
+    # open finding - one no fix task landed for - is the human accepting it
+    # open, and the verb refuses a sign-off that leaves one unsaid, so each is
+    # recorded with the reason the answer carried. A finding handed to a fix
+    # task still to run is not offered one: that task is its answer.
+    for finding in triage_findings(phase)[0]:
+        args += ["--accept-open", "%s=%s" % (finding["id"], summary)]
     mark = state.get("phaseReview") or {}
     if mark.get("head"):
         args += ["--review-outcome", "phase review filed at head %s"
@@ -2454,6 +2543,27 @@ def drive(ctx, answer=None, reason=None, fixes=()):
     return code, said
 
 
+def refresh_triage(ctx, state, phase, pending):
+    """The pending triage as the plan stands now, or None when it no longer
+    waits on anyone. A fix task added by hand since it was printed answers the
+    finding it names: with every med-or-worse finding handed to one, the triage
+    is satisfied and the drive goes on to run them; otherwise the handed ones
+    leave the offered list, so `--answer fix` is never offered for a finding
+    the verb would refuse a second task."""
+    if triage_handed_off(phase):
+        state.pop("pending", None)
+        write_state(ctx, state)
+        ctx["did"].append("triage satisfied: %s handed to fix task(s) to run" % (
+            ", ".join(f.get("id") for f in triage_findings(phase)[1]),))
+        return None
+    offered, handed = triage_findings(phase)
+    if offered != pending.get("findings") or handed != (pending.get("handed") or []):
+        pending = dict(pending, findings=offered, handed=handed)
+        state["pending"] = pending
+        write_state(ctx, state)
+    return pending
+
+
 def drive_locked(ctx, state, answer, reason, fixes):
     """The body of `drive`, run with the phase lock held."""
     manifest, phase = load_phase(ctx)
@@ -2462,6 +2572,8 @@ def drive_locked(ctx, state, answer, reason, fixes):
         state.pop("pending", None)
         write_state(ctx, state)
         pending = None
+    if pending and pending["decision"] == "triage":
+        pending = refresh_triage(ctx, state, phase, pending)
     if ctx.get("only") and pending and pending.get("task") != ctx["only"]:
         return E_STOPPED, ("%s %s: stopped - this phase's drive waits on a %s "
                            "decision; answer it with next %s first"
@@ -2577,6 +2689,20 @@ def already_filed(ctx, task):
     return project_relative(ctx, path) if path and os.path.exists(path) else None
 
 
+def _utc_stamp():
+    return datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ")
+
+
+def declares_test(task):
+    """Whether `task` names a test file - in `files` or as a `tests.add` case -
+    for the red-first helper to copy over HEAD."""
+    tests = task.get("tests") or {}
+    named = [str(f) for f in task.get("files") or []] + [
+        str(a).split(":", 1)[0] for a in tests.get("add") or []]
+    return any(_fr.is_test_path(p.strip()) for p in named)
+
+
 def red_block(ctx, task, args, cmd, tree=None):
     """`(block, None)` - the helper's `redFirst` block for `task` - or
     `(None, stop)`. A test that passed without the fix gets no block from the
@@ -2594,6 +2720,16 @@ def red_block(ctx, task, args, cmd, tree=None):
     try:
         payload = json.loads(out)
     except ValueError:
+        if not declares_test(task):
+            # A PROOF THE PLAN GAVE NOTHING TO MAKE WITH. A tdd task naming no
+            # test file - a fix task over a finding that names only source -
+            # has no case to copy over HEAD, and the helper refuses before
+            # anything runs. That is `could-not-prove` with its words, filed so
+            # the reviewer reads it, rather than a stop no return can pass.
+            return {"status": "could-not-prove", "at": _utc_stamp(),
+                    "basis": "%s declares no test file in `files` or `tests.add`, "
+                             "so no red could be run; the helper said: %s"
+                             % (task["id"], " ".join((out + err).split()))}, None
         return None, relay_refusal(ctx, "stamp-verification.py", code, out + err)
     block = payload.get("redFirst") if isinstance(payload, dict) else None
     if not isinstance(block, dict):
