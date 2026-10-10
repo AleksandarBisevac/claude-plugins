@@ -1576,6 +1576,45 @@ def _cases(check):
           all(c and "measured" in c and "whole-bearing" not in c
               for c in _above))
 
+    # --- the environment a task tree is given (A8) --------------------------------
+    _env = M._setup.check_worktree_env
+
+    def _env_rows(cfg, platform, answers, git_root="C:/work/repo"):
+        def ask(root, argv):
+            return answers.get(" ".join(argv), (1, ""))
+        rep = M.Report()
+        _env(rep, cfg, git_root, platform=platform, ask=ask)
+        return [r for r in rep.rows if r["check"] == "worktree env"]
+
+    _unset = {"ls-files": (0, "src/a.py\nsome/very/long/path/to/file.txt\n")}
+    _rows = _env_rows({}, "win32", _unset)
+    _lp = [r for r in _rows if "core.longpaths" in r["detail"]]
+    check("core.longpaths UNSET on Windows is named, as a warning with the command "
+          "that sets it: %r" % (_lp,),
+          len(_lp) == 1 and _lp[0]["level"] == "WARNING"
+          and "unset" in _lp[0]["detail"] and "core.longpaths true" in (_lp[0]["fix"] or ""))
+    _rows_t = _env_rows({}, "win32", dict(_unset, **{"config --get core.longpaths":
+                                                    (0, "true\n")}))
+    check("SECOND DIRECTION: core.longpaths true on Windows is not a warning: %r"
+          % (_rows_t,),
+          not any(r["level"] != "OK" for r in _rows_t)
+          and any("core.longpaths" in r["detail"] for r in _rows_t))
+    check("off Windows no row claims anything about core.longpaths: %r"
+          % (_env_rows({}, "linux", _unset),),
+          not any("core.longpaths" in r["detail"]
+                  for r in _env_rows({}, "linux", _unset)))
+    _none = [r for r in _env_rows({}, "linux", {}) if "worktreeSetup" in r["detail"]]
+    check("with NO executor.worktreeSetup the doctor says so, naming the key and "
+          "what a tree then lacks: %r" % (_none,),
+          len(_none) == 1 and "not set" in _none[0]["detail"]
+          and "dependencies" in _none[0]["detail"])
+    _set = [r for r in _env_rows({"executor": {"worktreeSetup": "npm ci"}}, "linux", {})
+            if "worktreeSetup" in r["detail"]]
+    check("SECOND DIRECTION: with a setup configured the row names the command, not "
+          "the absence: %r" % (_set,),
+          len(_set) == 1 and "npm ci" in _set[0]["detail"]
+          and "not set" not in _set[0]["detail"])
+
 
 def _selftest():
     return _harness.run(_cases)

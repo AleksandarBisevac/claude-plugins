@@ -121,6 +121,7 @@ def _cases(check):
     try:
         _run_cases(check, root)
         _task_cases(check, root)
+        _env_cases(check, root)
     finally:
         _harness.remove_tree(root)
 
@@ -234,6 +235,137 @@ def _task_cases(check, root):
     ns2 = p2.parse_args(["task-remove", "m.json", "P1.1", "--force"])
     check("tr4 both verbs parse under their own names",
           ns.verb == "task-add" and ns.base == base and ns2.force is True)
+
+def _py(code):
+    """A shell command running `code` under this interpreter - the same spelling on
+    a POSIX shell and on cmd, so the cases below hold on both CI platforms."""
+    return '"%s" -c "%s"' % (sys.executable, code)
+
+
+def _env_cases(check, root):
+    """The environment a task tree is given: `.worktreeinclude` and the declared setup.
+    Real git again - the claims are about which files exist in the tree afterwards."""
+    proj = os.path.join(root, "envproj")
+    os.makedirs(os.path.join(proj, "build"))
+    os.makedirs(os.path.join(proj, "node_modules", "x"))
+    _g(proj, "init", "-q", "-b", "dev")
+    files = {".gitignore": ".env\n*.key\nbuild/\nnode_modules/\n",
+             "a.txt": "tracked\n"}
+    for name, body in files.items():
+        with open(os.path.join(proj, name), "w") as fh:
+            fh.write(body)
+    _g(proj, "add", "-A")
+    _g(proj, "commit", "-qm", "base")
+    base = _g(proj, "rev-parse", "HEAD")[1]
+    ignored = {".env": "TOKEN=abc\n", "other.key": "KEY\n",
+               os.path.join("build", "o.js"): "built\n",
+               os.path.join("node_modules", "x", "i.js"): "dep\n"}
+    for name, body in dict(ignored, **{".env.local": "NOT-IGNORED\n"}).items():
+        with open(os.path.join(proj, name), "w") as fh:
+            fh.write(body)
+    with open(os.path.join(proj, ".worktreeinclude"), "w") as fh:
+        fh.write(".env\n.env.local\nbuild/*.js\n**/i.js\n")
+
+    def tree(n):
+        return os.path.join(root, "envtree-%s" % (n,))
+
+    # --- .worktreeinclude -------------------------------------------------------
+    t1 = tree(1)
+    code, ans = M.do_task_add(proj, TASK_PLAN, "P1.1", base, project=proj, path=t1)
+    inc = ans.get("include") or {}
+    got = lambda rel: os.path.isfile(os.path.join(t1, rel))
+    check("wi1 an ignored file the include lists is COPIED into the tree, with its "
+          "bytes", code == 0 and got(".env")
+          and open(os.path.join(t1, ".env")).read() == ignored[".env"]
+          and got(os.path.join("build", "o.js")), repr(ans)[:400])
+    check("wi2 ...a listed file git does NOT ignore is not copied (the tree has its "
+          "own checkout of tracked files; an untracked, un-ignored file is not "
+          "'ignored')", not got(".env.local"), repr(inc))
+    check("wi3 ...an ignored file the include does NOT list stays out",
+          not got("other.key"), repr(inc))
+    check("wi4 ...node_modules is never copied even when a pattern reaches it, and "
+          "the result names the skip - no symlink stands in for it either",
+          not os.path.lexists(os.path.join(t1, "node_modules"))
+          and any("node_modules" in str(x) for x in inc.get("skipped") or []),
+          repr(inc))
+    check("wi5 ...the result lists exactly what was copied, in sorted order, nothing more",
+          inc.get("copied") == [".env", "build/o.js"], repr(inc))
+    M.do_task_remove(proj, TASK_PLAN, "P1.1", force=True)
+
+    # --- setup ------------------------------------------------------------------
+    t2 = tree(2)
+    cmd = _py("import os,time;time.sleep(0.3);"
+              "open('setup-ran.txt','w').write(os.getcwd())")
+    code, ans = M.do_task_add(proj, TASK_PLAN, "P1.1", base, project=proj, path=t2,
+                              setup=cmd)
+    st = ans.get("setup") or {}
+    ran_in = ""
+    if os.path.isfile(os.path.join(t2, "setup-ran.txt")):
+        ran_in = open(os.path.join(t2, "setup-ran.txt")).read()
+    check("su1 the setup runs IN THE TREE - its marker file is in the tree, with the "
+          "tree as its working directory, and not in the project",
+          code == 0 and os.path.realpath(ran_in) == os.path.realpath(t2)
+          and not os.path.exists(os.path.join(proj, "setup-ran.txt")), repr((code, st)))
+    check("su2 ...its duration is on the result, measured (the command sleeps 0.3 "
+          "s, so a constant or a missing figure cannot pass)",
+          st.get("status") == "ran" and isinstance(st.get("seconds"), float)
+          and 0.3 <= st["seconds"] < 60, repr(st))
+    check("su3 ...a setup that succeeds is not reported as could-not-run",
+          "couldNotRun" not in ans, repr(ans)[:300])
+    M.do_task_remove(proj, TASK_PLAN, "P1.1", force=True)
+
+    t3 = tree(3)
+    code, ans = M.do_task_add(proj, TASK_PLAN, "P1.1", base, project=proj, path=t3,
+                              setup=_py("import sys;sys.exit(3)"))
+    st = ans.get("setup") or {}
+    check("su4 a setup that fails is COULD-NOT-RUN: its own exit code (not the "
+          "generic failure), flagged, and it spends no attempt",
+          code == M.E_SETUP and ans.get("couldNotRun") is True
+          and ans.get("spendsAttempt") is False and st.get("status") == "failed"
+          and st.get("exitCode") == 3, repr((code, ans))[:400])
+    check("su5 ...and the tree is kept and marked, so task-remove can take it down "
+          "- a failed setup is not a half-deleted tree",
+          os.path.isdir(t3) and ans.get("provenance"), repr(ans)[:300])
+    check("su6 ...and the include was copied BEFORE the setup ran (the setup may "
+          "need .env): a setup that reads it passes",
+          M.do_task_remove(proj, TASK_PLAN, "P1.1", force=True)[0] == 0
+          and M.do_task_add(proj, TASK_PLAN, "P1.1", base, project=proj,
+                            path=tree(4), setup=_py(
+                                "import sys,os;sys.exit(0 if os.path.exists('.env') "
+                                "else 4)"))[0] == 0)
+    M.do_task_remove(proj, TASK_PLAN, "P1.1", force=True)
+
+    code, ans = M.do_task_add(proj, TASK_PLAN, "P1.1", base, project=proj,
+                              path=tree(5), setup=None)
+    check("su7 no setup configured: the tree is made, and the result SAYS there was "
+          "none (status none) rather than omitting the question",
+          code == 0 and (ans.get("setup") or {}).get("status") == "none",
+          repr(ans.get("setup")))
+    M.do_task_remove(proj, TASK_PLAN, "P1.1", force=True)
+
+    code, ans = M.do_task_add(proj, TASK_PLAN, "P1.1", base, project=proj,
+                              path=tree(6), setup=_py("import time;time.sleep(30)"),
+                              setup_timeout=1)
+    check("su8 a setup that outlives its timeout is also could-not-run, naming the "
+          "timeout - not a hang",
+          code == M.E_SETUP and (ans.get("setup") or {}).get("status") == "timeout",
+          repr(ans)[:300])
+    M.do_task_remove(proj, TASK_PLAN, "P1.1", force=True)
+
+    cfgdir = os.path.join(proj, ".claude")
+    os.makedirs(cfgdir)
+    with open(os.path.join(cfgdir, "audit.config.json"), "w") as fh:
+        json.dump({"executor": {"worktreeSetup": "echo hi"}}, fh)
+    check("su9 the setup command is read from executor.worktreeSetup in the "
+          "project's config",
+          M.read_worktree_setup(proj) == ("echo hi", ""), repr(M.read_worktree_setup(proj)))
+    with open(os.path.join(cfgdir, "audit.config.json"), "w") as fh:
+        fh.write("{ not json")
+    cmd, why = M.read_worktree_setup(proj)
+    check("su10 an unreadable config is not 'no setup': the reason comes back so the "
+          "caller can say it", cmd is None and why, repr((cmd, why)))
+    check("su11 no config file at all is a plain none, with no reason",
+          M.read_worktree_setup(os.path.join(root, "nowhere")) == (None, ""))
 
 
 def _run_cases(check, root):

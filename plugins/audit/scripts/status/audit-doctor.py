@@ -138,6 +138,7 @@ read_settings = _setup.read_settings
 sandbox_state = _setup.sandbox_state
 env_deny_rules = _setup.env_deny_rules
 check_git = _setup.check_git
+check_worktree_env = _setup.check_worktree_env
 check_config = _setup.check_config
 check_plan_gate = _setup.check_plan_gate
 check_manifest = _setup.check_manifest
@@ -203,6 +204,7 @@ def diagnose(project, deep=False, transcript_path=None):
     check_plugin_files(rep, project)
     cfg, cfg_mod = check_config(rep, project)
     git_root = check_git(rep, project, cfg)
+    check_worktree_env(rep, cfg, git_root)
     manifest_rel, manifest = check_manifest(rep, project, cfg)
     check_plan_gate(rep, project, cfg, cfg_mod, manifest_rel)
     check_submodules(rep, project, cfg, manifest, git_root)

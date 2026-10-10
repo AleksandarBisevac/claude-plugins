@@ -1037,6 +1037,71 @@ def check_submodules(rep, project, cfg, manifest, git_root):
         rep.ok("submodules", "no task files inside the %d submodule(s)" % len(paths))
 
 
+# --- checks: the environment of a task tree ----------------------------------------
+WINDOWS_PATH_LIMIT = 260
+
+
+def _ask_git(git_root, argv):
+    """(returncode, stdout), or (None, why) when git could not be run at all. A
+    non-zero code is returned, not raised: `git config --get` exits 1 for an UNSET
+    key, which is an answer."""
+    try:
+        proc = subprocess.run(["git", "-C", git_root] + list(argv),
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              timeout=_INTEGRITY_TIMEOUT)
+    except Exception as exc:
+        return None, exc.__class__.__name__
+    return proc.returncode, proc.stdout.decode("utf-8", "replace")
+
+
+def check_worktree_env(rep, cfg, git_root, platform=None, ask=None):
+    """What a task worktree starts with: its setup, and whether Windows can hold it.
+
+    A tree is a fresh checkout, so it has no installed dependencies unless
+    `executor.worktreeSetup` makes them. The absent key is SAID, not skipped: a doctor
+    that stays quiet over "no setup" reads as a clean bill for a tree that will fail
+    its first import. On Windows the second question is `core.longpaths` -- the root
+    plus the longest tracked path against the 260-character limit -- and nothing is
+    claimed about it elsewhere.
+
+    `platform` and `ask` are seams (`sys.platform`, a git runner): the Windows branch
+    must be testable on the machine that is not Windows.
+    """
+    ask = ask or _ask_git
+    platform = sys.platform if platform is None else platform
+    block = (cfg or {}).get("executor")
+    setup = block.get("worktreeSetup") if isinstance(block, dict) else None
+    if isinstance(setup, str) and setup.strip():
+        rep.ok("worktree env", "executor.worktreeSetup runs in each task tree: %s"
+               % (setup.strip(),))
+    else:
+        rep.ok("worktree env",
+               "executor.worktreeSetup is not set, so a task tree is a bare "
+               "checkout: no dependencies are installed in it, and only "
+               ".worktreeinclude files are copied in")
+    if not str(platform).startswith("win") or not git_root:
+        return
+    code, text = ask(git_root, ["config", "--get", "core.longpaths"])
+    if code is None:
+        rep.warn("worktree env", "git would not say whether core.longpaths is set (%s)"
+                 % (text,))
+        return
+    value = text.strip().lower()
+    code_ls, listing = ask(git_root, ["ls-files"])
+    longest = max((len(p) for p in listing.splitlines()), default=0) if code_ls == 0 else None
+    reach = ("; the git root is %d characters and the longest tracked path %d, so a "
+             "tree beside it reaches about %d against the %d-character limit"
+             % (len(git_root), longest, len(git_root) + 1 + longest,
+                WINDOWS_PATH_LIMIT)) if longest is not None else ""
+    if code == 0 and value in ("true", "1", "yes", "on"):
+        rep.ok("worktree env", "core.longpaths is true%s" % (reach,))
+    else:
+        rep.warn("worktree env",
+                 "core.longpaths is %s on this Windows machine%s"
+                 % (value if code == 0 and value else "unset", reach),
+                 "git config --global core.longpaths true")
+
+
 # --- cli ------------------------------------------------------------------------
 if __name__ == "__main__":
     from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command

@@ -178,6 +178,16 @@ monorepo where git lives in a subdirectory.
   write rules — the design document quotes its read rules only — so check the `/sandbox`
   panel for where writes are allowed before you run phases in parallel with it on.
   [SECURITY.md](SECURITY.md) says which layer holds which guarantee.
+- **Give a task worktree its dependencies** — a task worktree is a fresh checkout, so
+  nothing is installed in it. Set `executor.worktreeSetup` in `.claude/audit.config.json`
+  to the command that installs them (for example `npm ci`); it runs inside the worktree,
+  never in your project, and its duration is printed beside the result. A setup that
+  fails marks the task *could not run*: nothing was tested and no attempt is spent.
+  Untracked files the worktree needs, such as `.env`, are listed in a `.worktreeinclude`
+  at the repository root, in `.gitignore` syntax as Claude Code reads it: only files that
+  match a pattern *and* are gitignored are copied. `node_modules` is never copied or
+  symlinked; the setup command installs it. `/audit:doctor` says when no setup is
+  configured, and on Windows whether `core.longpaths` is set.
 - **Depend on it** — [COMPATIBILITY.md](COMPATIBILITY.md): what an upgrade promises
   about the manifest and the config files you own.
 - **See it without installing** — the [worked example](examples/) ships a script for

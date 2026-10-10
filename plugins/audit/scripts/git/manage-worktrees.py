@@ -58,6 +58,10 @@ Exit codes:
   4  it could not be ASKED -- git would not describe the worktrees. NOT 0 with an
      empty list: an unreadable list rendered as "no worktrees" is the clean sheet
      this whole file exists to avoid
+  6  `task-add` only: the tree exists and is marked, but the declared
+     `executor.worktreeSetup` failed or timed out in it. COULD-NOT-RUN -- not a red,
+     and no attempt is spent on it. The answer carries the setup's exit code, its
+     duration and the tail of its output
   5  THERE WAS NOTHING TO EXAMINE -- git listed no linked worktree, or none whose
      branch this plan names. Its own sentinel, and the one that matters most: a
      sweep that examined nothing and a sweep that examined every worktree and found
@@ -71,7 +75,9 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
+import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -101,6 +107,17 @@ import _manifest_io as _mio                                          # noqa: E40
 import _worktrees as _wt                                             # noqa: E402
 
 E_OK, E_FAIL, E_USAGE, E_NO_BASIS, E_NOTHING = 0, 1, 2, 4, 5
+# `task-add` made the tree and the declared setup did not complete in it. Its own
+# code: the task never ran, so it is neither a red nor a spent attempt, and folding
+# it into E_FAIL would make "the environment is broken" read as "the code is".
+E_SETUP = 6
+
+SETUP_TIMEOUT = 900
+INCLUDE_FILE = ".worktreeinclude"
+# Never COPIED, and never linked in its place: a dependency tree is the setup
+# command's to install, and a task that adds a dependency must not change its
+# siblings' trees.
+NEVER_COPY = ("node_modules",)
 
 VERBS = ("list", "add", "remove", "sweep", "task-add", "task-remove")
 
@@ -444,7 +461,126 @@ def _find_task(manifest, task_id):
     return None, None
 
 
-def do_task_add(git_root, manifest, task_id, base, project=None, path=None, run=None):
+def read_worktree_setup(project):
+    """(command, why) -- `executor.worktreeSetup` from the project's config.
+
+    (None, "") when there is no config or no such key: nothing was declared, and
+    that is an answer. (None, reason) when the file exists and cannot be read --
+    "unreadable" must not collapse into "no setup", because the tree would then be
+    handed out without the environment the operator asked for and nothing would say
+    so. A value that is not a non-empty string is refused the same way.
+    """
+    path = os.path.join(project or ".", ".claude", "audit.config.json")
+    if not os.path.isfile(path):
+        return None, ""
+    try:
+        with io.open(path, encoding="utf-8") as fh:
+            cfg = json.load(fh)
+    except Exception as exc:
+        return None, "%s is unreadable (%s), so executor.worktreeSetup is unknown" % (
+            path, exc)
+    block = cfg.get("executor") if isinstance(cfg, dict) else None
+    if not isinstance(block, dict) or "worktreeSetup" not in block:
+        return None, ""
+    cmd = block["worktreeSetup"]
+    if not isinstance(cmd, str) or not cmd.strip():
+        return None, "executor.worktreeSetup in %s must be a non-empty string" % (path,)
+    return cmd, ""
+
+
+def _included_files(git_root):
+    """(paths, why) -- untracked files that `.worktreeinclude` lists AND git ignores.
+
+    The format is Claude Code's (docs: code.claude.com/docs/en/worktrees, "Copy
+    gitignored files into worktrees"): `.gitignore` syntax, and only a file that
+    matches a pattern and is also gitignored is copied. Matching is git's own
+    (`ls-files --others --ignored --exclude-from`), not a second implementation of
+    gitignore; the ignored half is `check-ignore`, because a listed pattern also
+    matches untracked files that nothing ignores.
+    """
+    spec = os.path.join(git_root, INCLUDE_FILE)
+    if not os.path.isfile(spec):
+        return [], ""
+    try:
+        listed = subprocess.run(
+            ["git", "-C", git_root, "ls-files", "-z", "--others", "--ignored",
+             "--exclude-from=%s" % (spec,)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
+        if listed.returncode != 0:
+            return [], "git ls-files failed: %s" % (
+                listed.stderr.decode("utf-8", "replace").strip(),)
+        if not listed.stdout:
+            return [], ""
+        ign = subprocess.run(["git", "-C", git_root, "check-ignore", "-z", "--stdin"],
+                             input=listed.stdout, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, timeout=120)
+    except Exception as exc:
+        return [], "%s" % (exc,)
+    # check-ignore exits 1 when NOTHING matched, which is an answer, not a failure.
+    if ign.returncode not in (0, 1):
+        return [], "git check-ignore failed: %s" % (
+            ign.stderr.decode("utf-8", "replace").strip(),)
+    return sorted(p for p in ign.stdout.decode("utf-8", "replace").split("\0") if p), ""
+
+
+def copy_worktree_include(git_root, target):
+    """{copied, skipped, error} -- the listed ignored files, copied into `target`.
+
+    A skip is NAMED, never dropped: a symlink is not followed out of the project and
+    a path under a never-copy directory is the setup command's to provide.
+    """
+    paths, why = _included_files(git_root)
+    out = {"copied": [], "skipped": [], "error": why}
+    for rel in paths:
+        parts = rel.replace("\\", "/").split("/")
+        src = os.path.join(git_root, *parts)
+        if any(part in NEVER_COPY for part in parts):
+            out["skipped"].append("%s (a dependency tree is the setup command's)" % rel)
+            continue
+        if os.path.islink(src) or not os.path.isfile(src):
+            out["skipped"].append("%s (not a regular file)" % rel)
+            continue
+        dest = os.path.join(target, *parts)
+        try:
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            shutil.copy2(src, dest)
+        except Exception as exc:
+            out["skipped"].append("%s (%s)" % (rel, exc))
+            continue
+        out["copied"].append("/".join(parts))
+    return out
+
+
+def run_setup(command, cwd, timeout=SETUP_TIMEOUT):
+    """{command, status, exitCode, seconds, output} -- `command` run in `cwd`.
+
+    `status` is one of none | ran | failed | timeout. `cwd` is the TREE, always: the
+    caller passes the task tree, so an install lands there and the project is never
+    the working directory. The duration is a monotonic clock around the child, and
+    it is measured for a failure too -- a setup that burns its timeout and dies is
+    the figure the cost ceiling most needs.
+    """
+    if not command:
+        return {"command": None, "status": "none", "exitCode": None,
+                "seconds": 0.0, "output": ""}
+    began = time.monotonic()
+    try:
+        done = subprocess.run(command, shell=True, cwd=cwd, timeout=timeout,
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        status, code, out = ("ran" if done.returncode == 0 else "failed",
+                             done.returncode, done.stdout)
+    except subprocess.TimeoutExpired as exc:
+        status, code, out = "timeout", None, exc.stdout or b""
+    except Exception as exc:
+        status, code, out = "failed", None, ("%s" % (exc,)).encode("utf-8")
+    text = out.decode("utf-8", "replace").strip()
+    return {"command": command, "status": status, "exitCode": code,
+            "seconds": round(time.monotonic() - began, 3),
+            "output": text[-2000:]}
+
+
+def do_task_add(git_root, manifest, task_id, base, project=None, path=None, run=None,
+                setup=None, setup_timeout=SETUP_TIMEOUT):
     """(exit, answer) -- a detached worktree at `base` for one task, outside the project.
 
     Every refusal is asked BEFORE git is called, and `base` is resolved to a full
@@ -502,14 +638,32 @@ def do_task_add(git_root, manifest, task_id, base, project=None, path=None, run=
         target, {"createdBy": _wt.PROVENANCE_MARK, "phaseId": phase_id,
                  "taskId": str(task_id), "base": sha,
                  "phaseTree": os.path.abspath(git_root), "at": _now()}, run=run)
-    return E_OK, {"path": target, "task": str(task_id), "phaseId": phase_id,
+    # The environment goes in AFTER the marker (a failed setup leaves a tree that
+    # `task-remove` can still take down) and the include BEFORE the setup (a setup
+    # may need the `.env` the include brings).
+    included = copy_worktree_include(git_root, target)
+    ran = run_setup(setup, target, timeout=setup_timeout)
+    answer = {"path": target, "task": str(task_id), "phaseId": phase_id,
                   "base": sha, "argv": argv, "provenance": marker,
-                  "provenanceWhy": why,
+                  "provenanceWhy": why, "include": included, "setup": ran,
                   "note": ("marked for task %s, so `task-remove` may take it down"
                            % (task_id,) if marker else
                            "the plugin could NOT record the task marker (%s), so "
                            "`task-remove` will not take this tree down; remove it "
                            "by hand" % (why,))}
+    if ran["status"] in ("failed", "timeout"):
+        # COULD-NOT-RUN, not red: the task's code never executed in this tree, so
+        # nothing about the task is known and no attempt is spent on it.
+        answer["couldNotRun"] = True
+        answer["spendsAttempt"] = False
+        answer["error"] = ("the setup command %s in %s after %.1fs%s; the tree is "
+                           "kept and marked" % (
+                               "timed out" if ran["status"] == "timeout"
+                               else "exited %s" % (ran["exitCode"],),
+                               target, ran["seconds"],
+                               ": " + ran["output"][-300:] if ran["output"] else ""))
+        return E_SETUP, answer
+    return E_OK, answer
 
 
 def do_task_remove(git_root, manifest, task_id, force=False, run=None):
@@ -665,6 +819,18 @@ def render(verb, answer, out=print):
     for key in ("path", "task", "base", "branch", "parent", "removed", "note"):
         if answer.get(key):
             out("  %-8s %s" % (key + ":", answer[key]))
+    inc = answer.get("include")
+    if inc is not None:
+        out("  include: %d file(s) copied%s" % (
+            len(inc["copied"]), "; " + inc["error"] if inc["error"] else ""))
+        for item in inc["skipped"]:
+            out("           skipped %s" % (item,))
+    ran = answer.get("setup")
+    if ran is not None:
+        out("  setup:   %s" % ("none configured (executor.worktreeSetup is absent)"
+                              if ran["status"] == "none" else
+                              "%s in %.1fs: %s" % (ran["status"], ran["seconds"],
+                                                   ran["command"])))
 
 
 # --- cli -------------------------------------------------------------------------
@@ -776,8 +942,12 @@ def main(argv, out=print):
     elif args.verb == "add":
         code, answer = do_add(git_root, manifest, args.phase, path=args.path)
     elif args.verb == "task-add":
+        setup, setup_why = read_worktree_setup(project)
+        if setup_why:
+            out("[worktrees] %s" % (setup_why,))
+            return E_FAIL
         code, answer = do_task_add(git_root, manifest, args.task, args.base,
-                                   project=project, path=args.path)
+                                   project=project, path=args.path, setup=setup)
     elif args.verb == "task-remove":
         code, answer = do_task_remove(git_root, manifest, args.task,
                                       force=args.force)

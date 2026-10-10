@@ -299,7 +299,7 @@
     {
       "id": "P124.5",
       "title": "the plan gate binds a task worktree to its task, reading the task from the phase tree",
-      "status": "in_progress",
+      "status": "done",
       "description": "F600 design A7 and D7 (agent-written, tree resolution - not command parsing). A marker that cannot be proved refuses every edit in that tree (guards fail loud). Mutation-probe the tb cases, which were never seen red because their functions were new.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -335,25 +335,38 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "bc319735692b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Reviewed the prepared diff (_config.py task_binding/bound_worktrees, require-plan.py steps 1c and 2c, SECURITY.md) as own work; no code changes needed. Mutation-probed tb1-tb7 in a scratch copy of plugins/ (not the shared tree) with seven single mutations (marker name, ordinary-checkout return, no-marker return, phase-marker taskId check, unreadable-marker error, phaseTree isdir check, bound_worktrees empty return): all seven went red. tb1,tb2,tb3(+tb4),tb5,tb7 by named assertion failure; tb4 and tb6 mutants went red by crash (KeyError taskId / TypeError None path) inside the case, not by a named FAIL line. Runs: test_require_plan --selftest 214/214, test__config --selftest 300/300, bench-hooks --gate within budget on 3.12/3.13 (3.11 not measured, no interpreter), ruff clean. prove-gates --list: no row names this binding (it is a hook decision, not a lint), none needed.",
+        "descriptive": "A task worktree is bound to its task by marker, read from the phase tree's plan; unprovable markers refuse every edit, and the phase tree refuses files held by a bound worktree."
       },
       "startedAt": "2026-10-10T03:35:30Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T03:56:12Z",
+      "verifiedBy": [
+        "test_require_plan.py bt group",
+        "test__config.py tb1-tb7"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T03:56:11Z.cad630",
         "status": "passed",
         "at": "2026-10-10T03:56:11Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "bc319735692b",
+        "at": "2026-10-10T03:56:12Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T03:37:07Z",
+        "basis": "`python3 plugins/audit/tests/test_require_plan.py --selftest` in a throwaway tree at HEAD exited 1 with 5 of 214 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bt1 (house FAIL), bt2 (house FAIL), bt4 (house FAIL), bt5 (house FAIL), bt7 (house FAIL): SELFTEST FAILED: 209/214 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P124.6",
       "title": "a task worktree gets its environment: .worktreeinclude copies and an executor.worktreeSetup command, and the doctor reports it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F600 design A8 and D6. Wire check_worktree_env into audit-doctor diagnose. The executor.worktreeSetup key is declared by the config task (a5).",
       "files": [
         "plugins/audit/scripts/git/manage-worktrees.py",
@@ -390,16 +403,22 @@
       "dependsOn": [
         "P124.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T03:56:12Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T04:05:24Z.ac301a",
+        "status": "passed",
+        "at": "2026-10-10T04:05:24Z"
+      }
     },
     {
       "id": "P124.7",

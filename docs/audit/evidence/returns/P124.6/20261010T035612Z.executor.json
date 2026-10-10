@@ -1,0 +1,25 @@
+{
+  "gates": {
+    "test_manage_worktrees": "pass",
+    "test_audit_doctor": "pass",
+    "test__doctor_report": "pass",
+    "test__doctor_setup": "pass",
+    "ruff check plugins/audit tools": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T03:57:11Z",
+    "basis": "`python3 plugins/audit/tests/test_manage_worktrees.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 58 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - wi1 (house FAIL), wi4 (house FAIL), wi5 (house FAIL): SELFTEST FAILED: 54/58 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "Wired check_worktree_env into audit-doctor.py (alias + call in diagnose after check_git) and added it to the aliased dict in test__doctor_report.py. Reviewed the prep diff against P124.2's committed do_task_add: the setup/include additions sit after the marker write and the second-tree refusal is untouched; executor.worktreeSetup is only read (read_worktree_setup returns (None,'') when config or key absent, so nothing changes; unreadable config or non-string value is refused loudly). Selftests: test_manage_worktrees 68/68, test_audit_doctor 169/169, test__doctor_report 24/24, test__doctor_setup 92/92 (each run with --selftest, exit 0); ruff check plugins/audit tools passed.",
+    "descriptive": "A task worktree now gets .worktreeinclude copies and the optional worktreeSetup run in the tree (failure = could-not-run, no attempt spent), and the doctor reports it."
+  },
+  "testsAdded": [
+    "test_manage_worktrees su1-su11",
+    "test_manage_worktrees wi1-wi5",
+    "test_audit_doctor worktree env cases",
+    "test__doctor_report aliased check_worktree_env"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:f711e33a7d14b8975b9b62d172c967a7fac75fc5025a6ae9d2f423b4b4ad9f03\",\"dirtyDigest\":\"sha256:f39cf617cfa293e9de9f3829a5d8803dff334aeffe71db10b4ddf1cba87724b8\",\"dirtyPaths\":{\"QUICKSTART.md\":\"b09ba3eb0226fb11\",\"plugins/audit/scripts/git/manage-worktrees.py\":\"19c5421f6cca8467\",\"plugins/audit/scripts/status/_doctor_setup.py\":\"036cf16458d9d33c\",\"plugins/audit/scripts/status/audit-doctor.py\":\"5da07eef2dedb529\",\"plugins/audit/tests/test__doctor_report.py\":\"d762e09d527c8230\",\"plugins/audit/tests/test_audit_doctor.py\":\"dd6ea5b3f36fb4db\",\"plugins/audit/tests/test_manage_worktrees.py\":\"ef223e4e12dbcd82\"},\"head\":\"bc319735\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"QUICKSTART.md\",\"plugins/audit/scripts/git/manage-worktrees.py\",\"plugins/audit/scripts/status/_doctor_setup.py\",\"plugins/audit/scripts/status/audit-doctor.py\",\"plugins/audit/tests/test__doctor_report.py\",\"plugins/audit/tests/test__doctor_setup.py\",\"plugins/audit/tests/test_audit_doctor.py\",\"plugins/audit/tests/test_manage_worktrees.py\"],\"scopeDigest\":\"sha256:8861967aa0f7b74e55029e1d7ebd25b9354f78cd4dd15785b210500f91603b49\",\"v\":2}"
+}
