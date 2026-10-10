@@ -23,11 +23,11 @@ below spends anything (AskUserQuestion):
   codebase, and a synthesized set of phases to approve before anything is written.
 - **Just the smallest plan** — run
   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" seed [manifestPath]`
-  and stop. It writes one phase and one task, with a gate that is either an honestly
+  and stop (`--no-task` leaves the placeholder task out). It writes one phase and one task, with a gate that is either an honestly
   empty one or whatever `--gate "<command>"` names — never a guessed one — and turns
   the plan gate from observing (nothing to check against) to advisory in the one
   call. The phases the interview below produces are for when there is real work to
-  describe; a plan that looks complete and describes work nobody agreed to teaches
+  describe (to plan a first phase, `/audit:phase add` creates the missing plan itself); a plan that looks complete and describes work nobody agreed to teaches
   its reader that the manifest is decoration.
 
 If a file already exists at `manifestPath`, first print any parked proposals it

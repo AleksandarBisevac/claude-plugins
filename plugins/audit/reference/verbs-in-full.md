@@ -1614,6 +1614,8 @@ materialized with `/audit:propose materialize` after this branch merges. The fir
 phase minted on a side branch prints a WARNING naming `--park`; relay it verbatim — it
 is addressed to the user.
 
+**On a project with no plan yet**, this batch and `add-phase` create it themselves — `seed`'s `meta`, the requested phase as `P1`, no placeholder task — and a refused call leaves no plan behind; the task verbs still refuse a missing plan. `seed --no-task` writes the phase alone.
+
 **One phase with no tasks yet**, or a parked one, is the single-phase verb — the same
 template, refusals and rollback:
 

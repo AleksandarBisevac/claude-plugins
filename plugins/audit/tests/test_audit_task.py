@@ -15589,6 +15589,98 @@ def _open_finding_shape_cases(check):
           "legacy string it cannot hold one for: %r" % (got,), got == ["A", "B"])
 
 
+def _first_plan_cases(check):
+    """A project with no plan: `add-phase` and `add --from-file` write the plan
+    themselves (seed's meta and index, the requested phase first, no placeholder
+    task), `seed --no-task` writes a phase with no task, and the verbs that need
+    an existing phase still refuse."""
+    root = _harness.fixture_root("audit-task-fp-")
+
+    def project(name):
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        _panel_write._atomic_write_json(
+            os.path.join(proj, ".claude", "audit.config.json"),
+            {"manifestPath": "docs/audit/audit-plan.json"})
+        return proj, os.path.join(proj, "docs", "audit", "audit-plan.json")
+
+    proj, mpath = project("phase")
+    code, txt = _cli(["add-phase", "First", "--outcome", "it works",
+                      "--project-dir", proj], proj)
+    plan = _mio.load_manifest(mpath) if os.path.isfile(mpath) else {}
+    phases = plan.get("phases") or []
+    findings = M._validator().validate(plan)[0] if plan else ["no plan"]
+    check("fp1 add-phase on a project with no plan writes the plan: seed's "
+          "meta, exactly the requested phase as P1, and no task at all: %r"
+          % ((code, txt, [(p.get("id"), len(p.get("tasks") or []))
+                          for p in phases]),),
+          code == 0 and [p.get("id") for p in phases] == ["P1"]
+          and phases[0].get("title") == "First"
+          and phases[0].get("desiredOutcome") == "it works"
+          and phases[0].get("tasks") == []
+          and (plan.get("meta") or {}).get("branchPrefix") == "audit"
+          and (plan.get("meta") or {}).get("buildCommands") == {}
+          and plan.get("fileIndex") == {} and findings == [])
+
+    proj, mpath = project("batch")
+    path = os.path.join(proj, "plan-batch.json")
+    doc = _batch_doc()
+    for t in doc["tasks"]:
+        t.pop("dependsOn", None)
+    doc["tasks"][1]["dependsOn"] = ["sum"]
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(doc))
+    code, txt = _cli(["add", "--from-file", path, "--project-dir", proj], proj)
+    plan = _mio.load_manifest(mpath) if os.path.isfile(mpath) else {}
+    phases = plan.get("phases") or []
+    findings = M._validator().validate(plan)[0] if plan else ["no plan"]
+    check("fp2 add --from-file on a project with no plan writes the plan, the "
+          "requested phase as P1 and exactly its two tasks, and no placeholder "
+          "P1.1 beside them: %r"
+          % ((code, txt, [[t.get("id"), t.get("title")]
+                          for p in phases for t in p.get("tasks") or []]),),
+          code == 0 and [p.get("id") for p in phases] == ["P1"]
+          and [t.get("title") for t in phases[0].get("tasks")]
+          == ["sum in integer cents", "document the rounding"]
+          and (plan.get("fileIndex") or {}).get("src/b.ts") == ["P1.1"]
+          and findings == [])
+
+    proj, mpath = project("refused")
+    path = os.path.join(proj, "plan-batch.json")
+    bad = _batch_doc()
+    bad["tasks"][0]["dependsOn"] = ["P9.9"]
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(bad))
+    code, txt = _cli(["add", "--from-file", path, "--project-dir", proj], proj)
+    check("fp3 SECOND DIRECTION: a batch refused after the plan would have "
+          "been created leaves no plan behind: %r" % ((code, txt),),
+          code != 0 and not os.path.exists(mpath))
+
+    proj, mpath = project("no-outcome")
+    code, txt = _cli(["add-phase", "First", "--project-dir", proj], proj)
+    check("fp4 a refused add-phase on a project with no plan creates no plan: "
+          "%r" % ((code, txt),), code == M.E_USAGE and not os.path.exists(mpath))
+
+    proj, mpath = project("task")
+    code, txt = _cli(["add", "A task", "--phase", "P1", "--project-dir", proj],
+                     proj)
+    check("fp5 the task verbs still refuse a missing plan and write nothing: "
+          "%r" % ((code, txt),),
+          code == M.E_USAGE and "manifest not found" in txt
+          and not os.path.exists(mpath))
+
+    proj, mpath = project("no-task")
+    code, txt = _cli(["seed", "Only a phase", "--no-task", "--project-dir",
+                      proj], proj)
+    plan = _mio.load_manifest(mpath) if os.path.isfile(mpath) else {}
+    phases = plan.get("phases") or []
+    findings = M._validator().validate(plan)[0] if plan else ["no plan"]
+    check("fp6 seed --no-task writes the phase and no task: %r"
+          % ((code, txt),),
+          code == 0 and len(phases) == 1 and phases[0].get("tasks") == []
+          and findings == [])
+
+
 STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("at3-block", "_flag_cases"), ("at4-block", "_start_cases"),
           ("at5-block", "_close_cases"), ("at6-block", "_group_cases"),
@@ -15602,7 +15694,8 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("bf-block", "_bug_fix_discipline_cases"),
           ("cz-block", "_introduces_cases"),
           ("ps-block", "_stage_runner_cases"),
-          ("of-block", "_open_finding_shape_cases"))
+          ("of-block", "_open_finding_shape_cases"),
+          ("fp-block", "_first_plan_cases"))
 
 
 if __name__ == "__main__":

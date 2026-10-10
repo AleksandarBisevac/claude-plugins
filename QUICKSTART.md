@@ -87,7 +87,7 @@ Nothing to audit yet, or just want the guards live before you decide what goes i
 the plan? `/audit:init` offers a cheaper first step: the smallest manifest that
 validates — one phase, one task, an honestly empty gate or the one you name — in
 one call, no interview. Come back and run the full audit above whenever there is
-real work to describe.
+real work to describe. To plan a first phase directly, `/audit:phase add` creates the missing plan itself.
 
 ```
 /audit:status

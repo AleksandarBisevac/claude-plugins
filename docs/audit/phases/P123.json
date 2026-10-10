@@ -1,7 +1,7 @@
 {
   "id": "P123",
   "title": "A first-time user's plan, run and landing do what they said",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Testbed faults from the danuvia-software run on 3.2.0: F588, F589, F595, F591, F594, F593. Each was hit by a real first-time user.",
   "desiredOutcome": "On a fresh repo a first phase is planned in one verb call with no placeholder, /audit:run never runs less or more than the user named, a stopped drive leaves no lock behind, the gate's evidence lands in the project's own directory, and a single-checkout landing leaves the user on the branch the work landed on.",
   "testGate": [
@@ -17,8 +17,8 @@
   "blockedBy": [
     "P122"
   ],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "6575226053d1f69e448e6801f5d900a03a6aa3d2",
+  "branch": "audit/p123-a-first-time-user-s-plan-run-a",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -31,7 +31,7 @@
     {
       "id": "P123.1",
       "title": "a missing plan is created by the first /audit:phase add, with no placeholder task",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F588: on a repo with no plan, /audit:phase add hits _under_lock's 'manifest not found -- run /audit:init first' (exit 2), and the model went into the plugin's source, found seed, created the plan, retargeted the seeded phase, cancelled seed's placeholder and added tasks: 16 turns, 0.83 USD to plan two tasks. F589: _locked_seed hardcodes P1 with a placeholder task P1.1. Make add-phase and the batch add (add --from-file) seed a missing plan themselves (seed's meta, the requested phase as the first phase, no placeholder), and give seed a --no-task form; the missing-manifest refusal stays for the task verbs that need an existing phase. Mind fb10 (phase.md's add section is pinned to at most 8000 bytes and to its heredoc) and test__refs' flag/hint parity. Say it in phase.md, init.md, verbs-in-full.md, README.md's /audit:init and /audit:phase rows, and QUICKSTART.md's cheaper-first-step paragraph.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -65,21 +65,27 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T08:12:45Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T08:28:13Z.f3cb2e",
+        "status": "passed",
+        "at": "2026-10-10T08:28:13Z"
+      }
     },
     {
       "id": "P123.2",
       "title": "a drive that stops releases the phase lock it took",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F591: drive-phase.drive calls take_lock first; when audit-task start (or done, record_gate, commit_signoff, land) exits non-zero, drive_task and drive_phase return the stop directly and the lock is released only in finish/finish_task, reached only on done. So any stop after take_lock strands phase-<id>, which status later reads as abandoned. Release on every stop path that this invocation took the lock on (one exit point, not one release per arm), and give an index-lock exit 3 from audit-task its own followed rule instead of the generic 'stopped'. Keep STEPS in step with the README's followed table if a rule is added (_refs.followed_anchor_drift). Update orchestrator.md's concurrency-lock release rule.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -109,16 +115,17 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T08:12:48Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P123.3",
@@ -898,7 +905,7 @@
     {
       "id": "P123.17",
       "title": "The panel's gate-catches payload reports an unreadable evidence ledger instead of []",
-      "status": "pending",
+      "status": "in_progress",
       "description": "`panel/_panel_usage._gate_catches_payload` wraps the evidence read in `except Exception: return []` and also ignores `read_rows(...)`'s own read problem (`.get('rows') or []`), so an unreadable ledger is indistinguishable from a project with no gate history. Latent: no UI reads `gateCatches` yet. Ship `{catches, readError}` with the same readError shape and sentence the evidence tab uses, before any UI reads it; `_usage_shape`'s default becomes the empty-but-readable value. Regression: a read that raises (or a ledger with an undecodable file) yields readError and no catches; an empty ledger yields no catches and no error. Faults: F525.",
       "files": [
         "plugins/audit/scripts/panel/_panel_usage.py",
@@ -927,16 +934,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T08:12:51Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P123.18",
@@ -2048,6 +2056,58 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P123.39-64p",
+      "title": "a wave executor's submit files against the phase tree's plan from wherever it is run",
+      "status": "pending",
+      "description": "F619, found live in P123's first wave: the brief's submit block names docs/audit/audit-plan.json relatively and the brief's rule makes every command start with cd <task tree>, so the manifest resolves to the task tree's committed shard where the task is still pending, and audit-task refuses the filing as \"records no start\". Fix: (1) drive-phase submit resolves a relative manifest under --project-dir (project_context's rule), never the cwd; (2) the wave brief's submit block carries the phase tree's absolute manifest and says this command runs from the project. Red-first as in tests.add, plus the width-1 allow twin.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a submit run from inside the task tree with a relative manifest files the return against the phase tree's plan"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
-  ]
+  ],
+  "reviewPerTask": "phase",
+  "claim": {
+    "sessionId": "0a7c2fcc-df20-4990-96d6-d56b52648faf",
+    "branch": "audit/p123-a-first-time-user-s-plan-run-a",
+    "at": "2026-10-10T08:12:45Z"
+  },
+  "startedAt": "2026-10-10T08:12:45Z"
 }

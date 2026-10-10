@@ -46,6 +46,7 @@ Omit `id`: over a plan holding `P0`, `P1` and `P3`, the next id is `P4`, and nev
 `--park`, or no tasks yet: `S/manifest/audit-task.py" add-phase "<title>" --outcome "<..>"` with the flags. On a
 phase branch, ask first: work the phase needs is `/audit:task add --phase <id>`; new work is
 `add-phase ... --park`. **`/audit:phase add --risk` is refused** - a phase carries no risk.
+No plan yet: created, no placeholder.
 Exit 3 (index lock held): stop; 4 (looks abandoned): ask the human before `--takeover`.
 
 ## Subcommand: `retarget <phaseId>`

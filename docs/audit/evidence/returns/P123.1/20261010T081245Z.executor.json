@@ -1,0 +1,27 @@
+{
+  "gates": {
+    "own-test fp-block + fb-block (test_audit_task.py --stage)": "pass",
+    "test__refs.py --selftest": "pass",
+    "ruff on the two py files": "pass",
+    "tools/measure-context.py --gate (phase run form 4000/4000)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T08:20:14Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage fp-block` in a throwaway tree at HEAD exited 1 with failing cases fp1 (house FAIL), fp2 (house FAIL), fp6 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 3/6 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "audit-task.py: _under_lock gained create=True (used by cmd_phase_add and _cmd_batch_add); on a missing plan _create_then writes an empty plan from _seed_meta, runs the body, removes the file unless the body returned 0. seed gained --no-task (VERB_FLAGS, parser, _locked_seed). Task verbs still refuse a missing plan. Docs: phase.md (kept the run form at exactly the 4000 ceiling, one short line), init.md, verbs-in-full.md, README.md two rows, QUICKSTART.md. New stage fp-block with fp1-fp6 in test_audit_task.py. Full test_audit_task selftest was 950/951 only because of fb15 (the measure-context ceiling), which I fixed; fb-block+fp-block rerun 22/22; test__refs 334/334; the full selftest was not rerun after the fix.",
+    "descriptive": "A first phase on a repo with no plan is created in one verb call with no placeholder task; seed gets --no-task."
+  },
+  "testsAdded": [
+    "fp1",
+    "fp2",
+    "fp3",
+    "fp4",
+    "fp5",
+    "fp6"
+  ],
+  "claims": "claims: no numbers written into prose; the doc lines state behaviour only and the behaviour is pinned by fp1-fp6.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:c8d2d4ab894fab4bcfe3ba7dd7fd8c0b50db4fae0c8e3dd4137abf18c244d278\",\"dirtyDigest\":\"sha256:65eb02020f9c1ca0c30edc34a88c2a0f45df1c8992052f3263abe83e2df70f66\",\"dirtyPaths\":{\"QUICKSTART.md\":\"4b292f6f2ded73dc\",\"plugins/audit/README.md\":\"65ec86ddf3b67433\",\"plugins/audit/commands/init.md\":\"4f19b2d969b359c7\",\"plugins/audit/commands/phase.md\":\"0367963f8b344371\",\"plugins/audit/reference/verbs-in-full.md\":\"ac3cb758ef84174d\",\"plugins/audit/scripts/manifest/audit-task.py\":\"092b1a0069683dfc\",\"plugins/audit/tests/test_audit_task.py\":\"3772b132428e483d\"},\"head\":\"65752260\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"QUICKSTART.md\",\"plugins/audit/README.md\",\"plugins/audit/commands/init.md\",\"plugins/audit/commands/phase.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:6dd21d24f8d58ea0b33985178207843cf01af900648cfa379e73e5f9846f0c8f\",\"v\":2}"
+}

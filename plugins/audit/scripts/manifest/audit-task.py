@@ -71,7 +71,7 @@ Usage:
                 [--rename TITLE|-]
                 [--description TEXT|-] [--project-dir DIR] [--takeover] [--json]
   audit-task.py seed ["<phase title>"] [manifest]
-                [--gate CMD ... | --gate-clear]
+                [--gate CMD ... | --gate-clear] [--no-task]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py settle [manifest]
                 [--project-dir DIR] [--takeover] [--json]
@@ -161,8 +161,9 @@ Usage:
   `blockedReason`, and an append-only `{at, text}` entry on `notes[]` - the
   one thing a started task still takes, since `scope --description` refuses
   a task that has started.
-  `seed` is the one verb here that WRITES WHERE NOTHING WAS: every other verb
-  refuses when the manifest is missing, and this one refuses the opposite way,
+  `seed` is the one verb here that WRITES WHERE NOTHING WAS (`add-phase` and
+  `add --from-file` also create a missing plan, with no placeholder task): every
+  other verb refuses when the manifest is missing, and this one refuses the opposite way,
   when one is already there -- pointing the caller at `add`/`add-phase` or
   /audit:init instead of overwriting it. What it writes is deliberately the
   smallest thing that validates: one phase, one task, and a `testGate` derived
@@ -7174,7 +7175,8 @@ def _cmd_batch_add(args, out):
         return E_USAGE
     return _under_lock(args, project, out,
                        lambda config, mpath: _locked_batch_add(
-                           args, project, config, mpath, doc, out))
+                           args, project, config, mpath, doc, out),
+                       create=True)
 
 
 def _batch_phase_gate(spec, assembled):
@@ -7483,7 +7485,7 @@ def _park_phase(args, project, config, mpath, raw_index, assembled, phase, side,
 
 
 # --- the doors ------------------------------------------------------------------
-def _under_lock(args, project, out, body, must_exist=True):
+def _under_lock(args, project, out, body, must_exist=True, create=False):
     """Config, manifest path, the index lock, `body`, release.
 
     ONE copy for every verb. The lock comes BEFORE the read: ids are allocated
@@ -7507,6 +7509,15 @@ def _under_lock(args, project, out, body, must_exist=True):
     flag is what keeps the lock, the config read and the release in one place
     for both directions rather than `seed` growing a near-duplicate of this
     function for the one line that differs.
+
+    `create` IS FOR THE TWO VERBS THAT PLAN A PHASE (`add-phase`, `add
+    --from-file`): on a project with no plan they write the plan first, from
+    `_seed_meta` and with no phase, and the body then adds the requested phase
+    as the first one -- so a first phase is one verb call and no placeholder
+    task has to be written and cancelled. The plan is REMOVED again when the
+    body returns anything but 0 or raises, so a refusal on a project with no
+    plan leaves no plan behind. The verbs that need an existing phase keep
+    `must_exist`.
     """
     args.project_basis = _panel_write.standing_elsewhere(resolve_basis(args))
     if args.project_basis["note"] and not args.as_json:
@@ -7515,7 +7526,8 @@ def _under_lock(args, project, out, body, must_exist=True):
     mpath = (os.path.abspath(args.manifest) if args.manifest
              else _panel_write._manifest_path(project, config))
     exists = os.path.isfile(mpath)
-    if must_exist and not exists:
+    creating = create and must_exist and not exists
+    if must_exist and not exists and not creating:
         out("[audit-task] manifest not found: %s -- run /audit:init first"
             % mpath)
         return E_USAGE
@@ -7528,6 +7540,8 @@ def _under_lock(args, project, out, body, must_exist=True):
     if isinstance(lock, int):
         return lock
     try:
+        if creating:
+            return _create_then(project, mpath, body, config, out)
         return body(config, mpath)
     finally:
         # A RELEASE THE LOCK DECLINES IS THE ONLY NOTICE THIS RUN GETS THAT
@@ -7536,6 +7550,28 @@ def _under_lock(args, project, out, body, must_exist=True):
         # about the note: the payload stays one parseable object.
         _release_lock(lock, out=(_panel_write.stderr_line if args.as_json
                                  else out))
+
+
+def _create_then(project, mpath, body, config, out):
+    """Write the empty plan `_seed_meta` describes at `mpath`, run `body`
+    against it, and take the file away again unless `body` returned 0."""
+    plan = {"meta": _seed_meta(project), "phases": [], "fileIndex": {},
+            "bugs": []}
+    try:
+        _mio.save_single_file(mpath, plan)
+    except Exception as exc:
+        out("[audit-task] write failed: %s" % exc)
+        return E_INVALID
+    code = E_INVALID
+    try:
+        code = body(config, mpath)
+    finally:
+        if code != 0:
+            try:
+                os.remove(mpath)
+            except OSError:
+                pass
+    return code
 
 
 def cmd_phase_add(args, out):
@@ -7558,7 +7594,8 @@ def cmd_phase_add(args, out):
         return E_USAGE
     return _under_lock(args, project, out,
                        lambda config, mpath: _locked_phase_add(
-                           args, project, config, mpath, title, out))
+                           args, project, config, mpath, title, out),
+                       create=True)
 
 
 def _locked_scope(args, project, config, mpath, tid, out):
@@ -11661,12 +11698,14 @@ def _locked_seed(args, project, config, mpath, out):
     phase = _seed_phase(pid, phase_title, gate)
     assembled["phases"].append(phase)
 
-    task_id = pid + ".1"
-    task_gate, _task_gate_sentence, task_gate_word = _task_gate(
-        args, phase, assembled, [], [])
-    task = _seed_task(task_id, DEFAULT_SEED_TASK_TITLE, task_gate,
-                      task_gate_word)
-    phase["tasks"].append(task)
+    task_id = None
+    task_gate_word = None
+    if not args.no_task:
+        task_id = pid + ".1"
+        task_gate, _task_gate_sentence, task_gate_word = _task_gate(
+            args, phase, assembled, [], [])
+        phase["tasks"].append(_seed_task(task_id, DEFAULT_SEED_TASK_TITLE,
+                                         task_gate, task_gate_word))
 
     vm = _validator()
     broken = _refuse_broken_install(vm, out)
@@ -11696,8 +11735,8 @@ def _locked_seed(args, project, config, mpath, out):
         return E_INVALID
 
     jres = _journal_row(project, config, mpath, "plan.seed",
-                        "seeded the smallest honest plan: %s (%s)"
-                        % (pid, task_id),
+                        "seeded the smallest honest plan: %s%s"
+                        % (pid, " (%s)" % task_id if task_id else ""),
                         {"phaseId": pid, "taskId": task_id})
     if args.as_json:
         result = {"ok": True, "phaseId": pid, "taskId": task_id,
@@ -11710,7 +11749,8 @@ def _locked_seed(args, project, config, mpath, out):
         return 0
     out("[audit-task] seeded the smallest honest plan at %s" % mpath)
     out("  phase %s: %s" % (pid, phase_title))
-    out("  task %s: %s" % (task_id, DEFAULT_SEED_TASK_TITLE))
+    if task_id:
+        out("  task %s: %s" % (task_id, DEFAULT_SEED_TASK_TITLE))
     out("  gate: %s (%s)" % (", ".join(gate) if gate else "none", gate_basis))
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
@@ -11807,7 +11847,7 @@ VERB_FLAGS = {
     # `seed` writes where nothing exists yet, so it has no target to describe,
     # tag or rename -- only the one pair every gate-bearing verb offers, for a
     # caller who already knows the real command.
-    "seed": ("gate", "gate_clear"),
+    "seed": ("gate", "gate_clear", "no_task"),
     # `next-id` prints an id and writes nothing; `--phase` is the phase a task id
     # belongs to, and the only flag it reads.
     "next-id": ("phase",),
@@ -11902,6 +11942,10 @@ def build_parser():
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
+    p.add_argument("--no-task", dest="no_task", action="store_true",
+                   default=False,
+                   help="seed: write the phase alone, without the placeholder "
+                        "task")
     p.add_argument("--park", action="store_true", default=False,
                    help="add-phase: write the phase as a parked proposal instead, to "
                         "materialize on the development branch after this branch merges")
