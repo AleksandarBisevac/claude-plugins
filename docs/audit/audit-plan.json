@@ -776,6 +776,12 @@
       "title": "A first-time user's plan, run and landing do what they said",
       "status": "pending",
       "shard": "phases/P123.json"
+    },
+    {
+      "id": "P124",
+      "title": "A phase runs its ready tasks as waves, and task scopes carry their companions",
+      "status": "pending",
+      "shard": "phases/P124.json"
     }
   ],
   "fileIndex": {
@@ -1058,7 +1064,8 @@
       "P118.20-v7t",
       "P118.21-v7t",
       "P118.22-v7t",
-      "P118.23-v7t"
+      "P118.23-v7t",
+      "P124.7"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -1268,7 +1275,12 @@
       "P122.2",
       "P122.3",
       "P122.9-z4y",
-      "P122.11-z4y"
+      "P122.11-z4y",
+      "P124.1",
+      "P124.2",
+      "P124.4",
+      "P124.9",
+      "P124.10"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1279,7 +1291,8 @@
       "P103.14-xi3",
       "P110.4-exo",
       "P110.5-exo",
-      "P123.1"
+      "P123.1",
+      "P124.6"
     ],
     "README.md": [
       "P2.3",
@@ -1292,7 +1305,8 @@
       "P103.9",
       "P103.14-xi3",
       "P112.1-uce",
-      "P118.9"
+      "P118.9",
+      "P124.8"
     ],
     "SECURITY.md": [
       "P2.2",
@@ -1343,7 +1357,8 @@
       "P108.15-4gh",
       "P108.16-4gh",
       "P108.18-4gh",
-      "P108.20-4gh"
+      "P108.20-4gh",
+      "P124.5"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -1600,7 +1615,10 @@
       "P123.1",
       "P123.3",
       "P123.4",
-      "P122.6-z4y"
+      "P122.6-z4y",
+      "P124.2",
+      "P124.7",
+      "P124.12"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -1645,14 +1663,16 @@
       "P118.9",
       "P118.14-v7t",
       "P119.3-g0k",
-      "P119.6-g0k"
+      "P119.6-g0k",
+      "P124.8"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
       "P31.8",
       "P32.5",
       "P32.2",
-      "P34.6"
+      "P34.6",
+      "P124.11"
     ],
     "plugins/audit/agents/audit-reviewer.md": [
       "P4.1",
@@ -1675,7 +1695,8 @@
       "P118.9",
       "P119.3-g0k",
       "P119.5-g0k",
-      "P119.9-g0k"
+      "P119.9-g0k",
+      "P124.8"
     ],
     "plugins/audit/commands/audit.md": [
       "P1.6",
@@ -1739,7 +1760,9 @@
       "P80.12",
       "P80.21-rtb",
       "P118.9",
-      "P123.1"
+      "P123.1",
+      "P124.7",
+      "P124.11"
     ],
     "plugins/audit/commands/layout.md": [
       "P57.1",
@@ -1815,7 +1838,8 @@
       "P118.16-v7t",
       "P119.2-g0k",
       "P123.1",
-      "P122.6-z4y"
+      "P122.6-z4y",
+      "P124.8"
     ],
     "plugins/audit/commands/propose.md": [
       "P31.2",
@@ -1860,7 +1884,8 @@
       "P106.7-b6f",
       "P118.9",
       "P118.14-v7t",
-      "P123.3"
+      "P123.3",
+      "P124.8"
     ],
     "plugins/audit/commands/status.md": [
       "P7.1",
@@ -1978,7 +2003,8 @@
       "P75.3-j5h",
       "P75.4-j5h",
       "P118.9",
-      "P123.4"
+      "P123.4",
+      "P124.2"
     ],
     "plugins/audit/hooks/_config.py": [
       "P1.1",
@@ -2038,7 +2064,9 @@
       "P108.20-4gh",
       "P118.6",
       "P121.5",
-      "P122.1"
+      "P122.1",
+      "P124.5",
+      "P124.7"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -2225,7 +2253,8 @@
       "P72.1",
       "P108.4",
       "P108.7-4gh",
-      "P122.1"
+      "P122.1",
+      "P124.5"
     ],
     "plugins/audit/reference/execute-task.md": [
       "P55.21",
@@ -2381,7 +2410,9 @@
       "P118.9",
       "P118.14-v7t",
       "P122.2",
-      "P123.2"
+      "P123.2",
+      "P124.3",
+      "P124.8"
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
@@ -2417,7 +2448,8 @@
       "P47.1",
       "P56.4",
       "P104.2",
-      "P118.6"
+      "P118.6",
+      "P124.7"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -2523,7 +2555,11 @@
       "P118.3",
       "P123.6-z4y",
       "P122.8-z4y",
-      "P122.9-z4y"
+      "P122.9-z4y",
+      "P124.1",
+      "P124.4",
+      "P124.9",
+      "P124.10"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -2595,7 +2631,8 @@
     "plugins/audit/scripts/config/_config_rules.py": [
       "P47.1",
       "P118.6",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.7"
     ],
     "plugins/audit/scripts/config/_help.py": [
       "P10.2",
@@ -2666,7 +2703,8 @@
       "P74.1",
       "P74.2-qq5",
       "P123.4",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.2"
     ],
     "plugins/audit/scripts/git/close-phase.py": [
       "P18.3",
@@ -2726,7 +2764,9 @@
       "P69.4-j6r",
       "P74.2-qq5",
       "P102.10",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.2",
+      "P124.6"
     ],
     "plugins/audit/scripts/governance/_evidence_io.py": [
       "P29.4",
@@ -2788,7 +2828,8 @@
       "P123.5",
       "P122.8-z4y",
       "P122.9-z4y",
-      "P122.10-z4y"
+      "P122.10-z4y",
+      "P124.3"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -3063,7 +3104,8 @@
       "P122.2",
       "P123.5",
       "P122.8-z4y",
-      "P122.10-z4y"
+      "P122.10-z4y",
+      "P124.3"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -3399,7 +3441,8 @@
       "P122.7-z4y",
       "P122.8-z4y",
       "P122.10-z4y",
-      "P122.11-z4y"
+      "P122.11-z4y",
+      "P124.11"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -3735,7 +3778,8 @@
       "P109.2",
       "P110.5-exo",
       "P122.8-z4y",
-      "P122.9-z4y"
+      "P122.9-z4y",
+      "P124.6"
     ],
     "plugins/audit/scripts/status/_doctor_trail.py": [
       "P36.9",
@@ -3814,7 +3858,8 @@
       "P81.17-j7p",
       "P102.10",
       "P118.10",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.6"
     ],
     "plugins/audit/scripts/status/audit-lookup.py": [
       "P56.3",
@@ -3835,7 +3880,9 @@
       "P119.5-g0k",
       "P119.6-g0k",
       "P119.9-g0k",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.8",
+      "P124.12"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -4077,7 +4124,8 @@
       "P118.6",
       "P121.5",
       "P122.1",
-      "P122.5-z4y"
+      "P122.5-z4y",
+      "P124.5"
     ],
     "plugins/audit/tests/test__deps.py": [
       "P32.5",
@@ -4140,7 +4188,8 @@
       "P64.2"
     ],
     "plugins/audit/tests/test__doctor_report.py": [
-      "P53.5"
+      "P53.5",
+      "P124.6"
     ],
     "plugins/audit/tests/test__doctor_setup.py": [
       "P54.3",
@@ -4159,7 +4208,8 @@
       "P86.1",
       "P94.1",
       "P109.2",
-      "P110.5-exo"
+      "P110.5-exo",
+      "P124.6"
     ],
     "plugins/audit/tests/test__doctor_trail.py": [
       "P20.6",
@@ -4479,7 +4529,11 @@
       "P123.6-z4y",
       "P122.8-z4y",
       "P122.9-z4y",
-      "P122.10-z4y"
+      "P122.10-z4y",
+      "P124.1",
+      "P124.4",
+      "P124.9",
+      "P124.10"
     ],
     "plugins/audit/tests/test__panel_composition.py": [
       "P18.7",
@@ -4718,7 +4772,8 @@
       "P23.3",
       "P63.7",
       "P74.1",
-      "P74.2-qq5"
+      "P74.2-qq5",
+      "P124.2"
     ],
     "plugins/audit/tests/test_audit_doctor.py": [
       "P18.6",
@@ -4730,7 +4785,8 @@
       "P80.9",
       "P81.6",
       "P81.17-j7p",
-      "P118.10"
+      "P118.10",
+      "P124.6"
     ],
     "plugins/audit/tests/test_audit_journal.py": [
       "P34.3",
@@ -4776,7 +4832,8 @@
       "P118.14-v7t",
       "P119.5-g0k",
       "P119.6-g0k",
-      "P119.9-g0k"
+      "P119.9-g0k",
+      "P124.8"
     ],
     "plugins/audit/tests/test_audit_status.py": [
       "P25.2",
@@ -4923,7 +4980,8 @@
       "P122.6-z4y",
       "P122.7-z4y",
       "P122.10-z4y",
-      "P122.11-z4y"
+      "P122.11-z4y",
+      "P124.11"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -5199,7 +5257,9 @@
       "P64.1",
       "P69.1",
       "P69.4-j6r",
-      "P74.2-qq5"
+      "P74.2-qq5",
+      "P124.2",
+      "P124.6"
     ],
     "plugins/audit/tests/test_merge_manifest.py": [
       "P60.2",
@@ -5291,7 +5351,8 @@
       "P108.4",
       "P108.7-4gh",
       "P122.1",
-      "P122.5-z4y"
+      "P122.5-z4y",
+      "P124.5"
     ],
     "plugins/audit/tests/test_resolve_branch.py": [
       "P64.1"
@@ -5354,7 +5415,8 @@
       "P119.6-g0k",
       "P122.2",
       "P123.5",
-      "P122.10-z4y"
+      "P122.10-z4y",
+      "P124.3"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
@@ -5420,7 +5482,8 @@
       "P121.16-eof"
     ],
     "plugins/audit/tests/test_validate_config.py": [
-      "P47.1"
+      "P47.1",
+      "P124.7"
     ],
     "plugins/audit/tests/test_validate_manifest.py": [
       "P32.2",
@@ -5841,7 +5904,8 @@
       "P74.5-qq5",
       "P74.6-qq5",
       "P81.10",
-      "P100.2"
+      "P100.2",
+      "P124.3"
     ],
     "plugins/audit/scripts/governance/record-outside-run.py": [
       "P74.9-qq5",
@@ -6720,7 +6784,9 @@
       "P123.3",
       "P122.8-z4y",
       "P122.6-z4y",
-      "P122.11-z4y"
+      "P122.11-z4y",
+      "P124.7",
+      "P124.12"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -6744,10 +6810,13 @@
       "P123.3",
       "P122.8-z4y",
       "P122.6-z4y",
-      "P122.11-z4y"
+      "P122.11-z4y",
+      "P124.7",
+      "P124.12"
     ],
     "plugins/audit/tests/test__config_rules.py": [
-      "P118.6"
+      "P118.6",
+      "P124.7"
     ],
     "plugins/audit/scripts/manifest/_filed_returns.py": [
       "P118.3",
@@ -6795,7 +6864,8 @@
       "P123.1",
       "P123.3",
       "P123.4",
-      "P122.7-z4y"
+      "P122.7-z4y",
+      "P124.11"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
@@ -6881,6 +6951,30 @@
     ],
     "plugins/audit/tests/test__machine_paths.py": [
       "P122.9-z4y"
+    ],
+    "plugins/audit/scripts/governance/_wave.py": [
+      "P124.1"
+    ],
+    "plugins/audit/tests/test__wave.py": [
+      "P124.1"
+    ],
+    "plugins/audit/scripts/git/integrate-task.py": [
+      "P124.4"
+    ],
+    "plugins/audit/tests/test_integrate_task.py": [
+      "P124.4"
+    ],
+    "plugins/audit/scripts/governance/_runner_collects.py": [
+      "P124.9"
+    ],
+    "plugins/audit/tests/test__runner_collects.py": [
+      "P124.9"
+    ],
+    "plugins/audit/scripts/manifest/_scope_companions.py": [
+      "P124.10"
+    ],
+    "plugins/audit/tests/test__scope_companions.py": [
+      "P124.10"
     ]
   },
   "bugs": [
