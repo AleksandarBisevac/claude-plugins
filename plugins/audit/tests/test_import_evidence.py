@@ -902,6 +902,30 @@ def _cases(check):
               code42 == 0
               and told42 == spelled(canon_manifest(mp42), "run-y3",
                                     os.path.realpath(d42)))
+
+        # --- a row whose ts names no moment is imported, and NAMED ----------
+        d43, _mp43 = project()
+        name43 = "2026-02.ci-w43.jsonl"
+        data43, _ = _shard_bytes(name43, [
+            {"runId": "run-dated", "v": 1, "status": "passed",
+             "ts": "2026-02-01T10:00:00+02:00"},
+            {"runId": "run-undated", "v": 1, "status": "passed",
+             "ts": "last tuesday"}])
+        code43, answer43 = M.import_shard(d43, write_shard(name43, data43))
+        told43 = []
+        M.render(answer43, out=told43.append)
+        check("i43 a shard row whose ts names no moment is imported, NOT "
+              "refused - the run happened and its verdict is evidence - and it "
+              "is named as undated, because every reader orders by moment and "
+              "will never call it newest: %r %r" % (code43, told43),
+              code43 == 0 and answer43.get("undated") == ["run-undated"]
+              and any("run-undated" in line and "no moment" in line
+                      for line in told43))
+        check("i44 SECOND DIRECTION: a row stamped with an offset names a "
+              "moment and is not listed as undated - a note that fired on every "
+              "spelling but the Z form would be read past: %r"
+              % (answer43.get("undated"),),
+              "run-dated" not in (answer43.get("undated") or []))
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

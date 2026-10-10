@@ -489,6 +489,14 @@ TABLE = (
   "def returns_writer_violations(script_dir=None):\n"
   "    return []",
   OUT, "rw1"),
+ # The text-ordered-timestamp rule, crippled. It is what keeps a new reader from
+ # ordering rows by how a stamp is spelled, and a version reporting nothing
+ # reads exactly like a tree that orders every stamp by its moment.
+ ("ts_order_violations", S + "_output.py", "replace",
+  "def ts_order_violations(script_dir=None, hooks_dir=None, table=None):",
+  "def ts_order_violations(script_dir=None, hooks_dir=None, table=None):\n"
+  "    return []",
+  OUT, "to1"),
  # The one-project-resolver rule, met by a new site in the real tree: a project
  # taken as dirname of a manifest path is the shape that sited a gate's record in
  # `docs/audit/docs/audit`, and the live-tree case has to see it.
@@ -1452,6 +1460,18 @@ ALLOW = (
  # authors to route around the lint.
  ("bare_output_cut_violations", S + "_output.py", "replace",
   "sl.upper.value < OUTPUT_CUT_MIN", "sl.upper.value < 0", OUT, "bc2"),
+ # The text-ordered-timestamp rule, widened from a `ts` read in place to one
+ # inside ANY call: `stamp_moment(r.get("ts"))` is the moment the stamp names,
+ # the fix itself, and `to2`'s fixture holds `_evidence_io`'s helpers built on it.
+ ("ts_order_violations", S + "_output.py", "replace",
+  "    if isinstance(node, ast.Call) and _called_name(node) == \"str\" \\\n",
+  "    if isinstance(node, ast.Call) and _called_name(node) != \"get\" \\\n",
+  OUT, "to2"),
+ # ...and its table ignored: a site the table names with its reason would be
+ # convicted anyway, and `to3`'s fixture holds one.
+ ("ts_order_violations", S + "_output.py", "replace",
+  "                if (named, where) in allowed:\n                    continue\n",
+  "", OUT, "to3"),
  # The returns-writer rule, widened: a function that only builds a return path
  # without writing one is not a bypass, and convicting it would push readers of
  # the path into the writer.

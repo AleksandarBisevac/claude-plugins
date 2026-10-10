@@ -2409,6 +2409,154 @@ def returns_writer_violations(script_dir=None):
     return sorted(violations)
 
 
+# --- a timestamp ordered as text ------------------------------------------------
+# A row's `ts` is ordered by the MOMENT it names - `_evidence_io.oldest_first`,
+# `newest_row` and `stamp_moment` on the ledger, `_journal_io.row_moment` on the
+# trail - because text orders a stamp by its spelling: `10:30+02:00` sorts after
+# `09:30Z` though it is an hour earlier, and `09:30:00.5Z` before `09:30:00Z`.
+TS_FIELD = "ts"
+_ORDERING_CALLS = ("sorted", "max", "min", "sort")
+_ORDERING_OPS = (ast.Lt, ast.LtE, ast.Gt, ast.GtE)
+# (file, innermost function, reason) - a site allowed to order `ts` as text. A
+# row is a statement about code that EXISTS: one whose site no longer does is
+# reported. `tools/gate-parity.py`'s `AUDITED_EXEMPTIONS` classifies this table.
+TS_ORDER_SITES = (
+    ("scripts/demo/gen-demo-usage.py", "generate",
+     "a usage ledger row's `ts` is an hour bucket, `YYYY-MM-DDTHH` in UTC "
+     "(`_usage_core.hour_bucket`) - one fixed-width spelling, so its text order "
+     "IS its time order, and the committed demo ledger is this sort's bytes."),
+)
+
+
+def _is_ts_text(node):
+    """Whether `node` IS a `ts` field's value, read as it stands: `x["ts"]` or
+    `x.get("ts", ...)`, also wrapped in `str(...)` or `... or default`. A value
+    computed FROM it - `stamp_moment(x.get("ts"))` - is not: that is the moment
+    the stamp names, which is what an order should be taken over."""
+    if isinstance(node, ast.Call) and _called_name(node) == "str" \
+            and len(node.args) == 1:
+        return _is_ts_text(node.args[0])
+    if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or):
+        return _is_ts_text(node.values[0])
+    if isinstance(node, ast.Subscript):
+        key = node.slice
+        key = getattr(key, "value", key) if type(key).__name__ == "Index" else key
+        return isinstance(key, ast.Constant) and key.value == TS_FIELD
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
+            and node.func.attr == "get" and node.args:
+        first = node.args[0]
+        return isinstance(first, ast.Constant) and first.value == TS_FIELD
+    return False
+
+
+def _ordered_by_ts(expr):
+    """Whether the values `expr` orders are a `ts` field's text: the element of
+    a comprehension, each branch of an `or`, each member of a tuple key, or the
+    expression itself. A comprehension's FILTER orders nothing and is not read."""
+    if isinstance(expr, (ast.ListComp, ast.GeneratorExp, ast.SetComp)):
+        return _ordered_by_ts(expr.elt)
+    if isinstance(expr, ast.BoolOp) and isinstance(expr.op, ast.Or):
+        return any(_ordered_by_ts(v) for v in expr.values)
+    if isinstance(expr, (ast.Tuple, ast.List)):
+        return any(_ordered_by_ts(e) for e in expr.elts)
+    if isinstance(expr, ast.Lambda):
+        return _ordered_by_ts(expr.body)
+    if isinstance(expr, ast.Call) and _called_name(expr) == "itemgetter":
+        return any(isinstance(a, ast.Constant) and a.value == TS_FIELD
+                   for a in expr.args)
+    return _is_ts_text(expr)
+
+
+def _ts_text_orders(tree):
+    """`(line, innermost function or "<module>", what)` for every order taken
+    over a `ts` field's text in one parsed module."""
+    found = []
+
+    def judge(node, where):
+        if isinstance(node, ast.Call) and _called_name(node) in _ORDERING_CALLS:
+            keyed = [k.value for k in node.keywords if k.arg == "key"]
+            if any(_ordered_by_ts(k) for k in keyed):
+                found.append((node.lineno, where, "%s() keyed on a ts field's "
+                              "text" % (_called_name(node),)))
+            elif _called_name(node) != "sort" and not keyed \
+                    and any(_ordered_by_ts(a) for a in node.args):
+                found.append((node.lineno, where, "%s() over ts fields' text"
+                              % (_called_name(node),)))
+        elif isinstance(node, ast.Compare) \
+                and any(isinstance(op, _ORDERING_OPS) for op in node.ops) \
+                and any(_is_ts_text(side)
+                        for side in [node.left] + list(node.comparators)):
+            found.append((node.lineno, where, "an ordering comparison on a ts "
+                                              "field's text"))
+
+    def visit(node, where):
+        for child in ast.iter_child_nodes(node):
+            inner = where
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                inner = child.name
+            judge(child, where)
+            visit(child, inner)
+
+    visit(tree, "<module>")
+    return found
+
+
+def ts_order_violations(script_dir=None, hooks_dir=None, table=None):
+    """(file, what) for every `sorted`/`max`/`min`/`.sort` keyed on - or taken
+    over - a `ts` field's text, and every `<`/`<=`/`>`/`>=` with one as an
+    operand, at a site `TS_ORDER_SITES` does not name; and every table row
+    whose site no longer does.
+
+    THE INVARIANT, NOT A LIST OF READERS. Text order and time order agree only
+    while every writer spells a stamp the same way, and the readers that relied
+    on it were found one at a time - a newest red row, a full run's age, a
+    report's run list, a watermark, the journal's read order and its merge.
+    Routing them through one moment reader closes the class; this lint keeps a
+    new reader from re-opening it.
+
+    QUIET ON THE MOMENT READERS BY CONSTRUCTION, with no table row: an order
+    over `stamp_moment(r.get("ts"))` is an order over a number, and a `ts` read
+    that orders nothing (a filter, an equality, a label) is not an order.
+
+    WHAT IT CANNOT SEE: a stamp bound to a name first and ordered later
+    (`stamps.append(r["ts"])` then `min(stamps)`), a field holding a stamp under
+    another name (`completedAt`, `startedAt`), and an order taken by a helper
+    whose own body never names `ts`. A clean result means "no order is taken
+    over a `ts` field read in place"."""
+    script_dir = script_dir or SCRIPTS_DIR
+    hooks_dir = hooks_dir if hooks_dir is not None else HOOKS_DIR
+    table = TS_ORDER_SITES if table is None else table
+    allowed = set((f, fn) for f, fn, _why in table)
+    seen = set()
+    violations = []
+    for kind, directory in (("scripts", script_dir), ("hooks", hooks_dir)):
+        if not directory or not os.path.isdir(directory):
+            continue
+        for rel, path in lint_py_files(directory):
+            named = "%s/%s" % (kind, rel)
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    tree = ast.parse(fh.read(), filename=rel)
+            except (OSError, SyntaxError):
+                continue
+            for line, where, what in _ts_text_orders(tree):
+                seen.add((named, where))
+                if (named, where) in allowed:
+                    continue
+                violations.append(
+                    (named, "line %d (%s): %s - order by the moment it names "
+                            "(_evidence_io.oldest_first / newest_row / "
+                            "stamp_moment, _journal_io.row_moment), or add a "
+                            "TS_ORDER_SITES row saying why text order is right "
+                            "here" % (line, where, what)))
+    for f, fn, _why in table:
+        if (f, fn) not in seen:
+            violations.append((f, "TS_ORDER_SITES names %s, which no longer "
+                                  "orders a ts field's text - drop the row"
+                               % (fn,)))
+    return sorted(violations)
+
+
 # --- selftest-flag check ------------------------------------------------------
 _SELFTEST_ARGV = ("a stub reads `--selftest` off sys.argv, which matches the flag "
                   "inside a forwarded test command too; ask "

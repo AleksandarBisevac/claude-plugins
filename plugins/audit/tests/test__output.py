@@ -3597,10 +3597,83 @@ def _project_of_manifest_cases(check):
           M.manifest_dirname_project_violations() == [])
 
 
+def _ts_order_cases(check):
+    """`ts_order_violations`: an order or a comparison taken on a `ts` field's
+    TEXT is reported, and one taken through a moment reader is not."""
+    import shutil
+    import tempfile
+    to = tempfile.mkdtemp(prefix="audit-ts-order-")
+    try:
+        def _to(rel, text):
+            full = os.path.join(to, *rel.split("/"))
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w", encoding="utf-8") as fh:
+                fh.write(text)
+
+        _to("planted.py", "def newest(rows):\n"
+                          "    return max(r['ts'] for r in rows)\n")
+        _to("keyed.py", "def order(rows):\n"
+                        "    rows.sort(key=lambda r: str(r.get('ts') or ''))\n"
+                        "    return sorted(rows, key=lambda r: r['ts'])\n")
+        _to("compared.py", "def later(a, b):\n"
+                           "    return a.get('ts') >= b.get('ts')\n")
+        # The helpers' own shapes: every `ts` read sits inside a moment reader.
+        _to("governance/_evidence_io.py",
+            "def _ts_moment(row):\n"
+            "    return stamp_moment(row.get('ts'))\n"
+            "def oldest_first(rows):\n"
+            "    keyed = [(_ts_moment(r), r) for r in rows]\n"
+            "    return sorted(keyed, key=lambda pair: pair[0])\n"
+            "def newer(a, b):\n"
+            "    return stamp_moment(a.get('ts')) > stamp_moment(b['ts'])\n"
+            "def row_ts(row):\n"
+            "    return min(_usage_core.parse_ts(r.get('ts')) for r in row)\n")
+        # Equality and a ts read outside any ordering are not orders.
+        _to("equal.py", "def same(a, b):\n"
+                        "    return a.get('ts') == b.get('ts')\n"
+                        "def label(r):\n"
+                        "    return 'at %s' % (r.get('ts'),)\n")
+        _to("listed.py", "def legacy(rows):\n"
+                         "    return max(r['ts'] for r in rows)\n")
+        table = (("scripts/listed.py", "legacy", "a planted exception"),
+                 ("scripts/gone.py", "vanished", "a site deleted since"))
+        hits = M.ts_order_violations(to, "", table=table)
+        files = sorted(set(f for f, _w in hits))
+        check("to1 a planted max(r['ts']) is reported, and so are a sort and a "
+              "sorted keyed on a ts field's text and a >= between two ts "
+              "values: %r" % (hits,),
+              {"scripts/planted.py", "scripts/keyed.py",
+               "scripts/compared.py"} <= set(files)
+              and len([h for h in hits if h[0] == "scripts/keyed.py"]) == 2)
+        check("to2 ALLOW: _evidence_io's helpers - every ts read inside a "
+              "moment reader - are quiet, and so is an equality and a ts read "
+              "that orders nothing; a lint that convicted any of these would be "
+              "a lint that convicts the fix: %r" % (files,),
+              "scripts/governance/_evidence_io.py" not in files
+              and "scripts/equal.py" not in files)
+        check("to3 a table row silences its site, and a row whose site no "
+              "longer orders on ts text is itself reported: %r" % (hits,),
+              "scripts/listed.py" not in files
+              and any(f == "scripts/gone.py" and "vanished" in w
+                      for f, w in hits))
+    finally:
+        shutil.rmtree(to, ignore_errors=True)
+    real = M.ts_order_violations()
+    check("to4 ...and the real tree orders no ts by its text outside the "
+          "sites TS_ORDER_SITES names: %r" % (real,),
+          real == [])
+    check("to5 ...the real _evidence_io, whose helpers ARE the moment order, "
+          "is quiet by construction and not by a table row: %r"
+          % ([r for r in M.TS_ORDER_SITES if "_evidence_io" in r[0]],),
+          not [r for r in M.TS_ORDER_SITES if "_evidence_io" in r[0]]
+          and not [h for h in real if "_evidence_io" in h[0]])
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _project_of_manifest_cases(check)
+        _ts_order_cases(check)
     return _harness.run(body)
 
 

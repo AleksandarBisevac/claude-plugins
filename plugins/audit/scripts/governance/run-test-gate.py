@@ -2538,7 +2538,7 @@ def render_reuse(res, out=print):
     if res["status"] == "failed":
         out("GATE RED: %s" % ", ".join(res.get("failed") or []))
         return E_FAIL
-    if res["status"] != "passed":
+    if _ev.row_is_red(res):
         # REACHABLE THROUGH THIS FUNCTION AND NOT THROUGH `main`, which only ever
         # repeats a `REUSABLE_STATUS` word. Refusing loudly rather than falling
         # through to the green line is what stops a word added to one of those
@@ -4081,9 +4081,10 @@ def _say_who_else_was_running(project, res, row, out=print):
         # one is said as that, never counted as the crowd nor as solitude.
         unsure = _ev.undecided_neighbours(rows, row, _ev.RUNNER_GATE, seams)
         if unsure:
-            out("  machine:  whether %s ran alongside this run is not knowable from "
-                "whole-second stamps - they meet in one second, in an order no "
-                "writer's chain records%s"
+            out("  machine:  whether %s ran alongside this run is not knowable - "
+                "their whole-second stamps meet this run's in one second, in an "
+                "order no writer's chain records, or they carry no window at "
+                "all%s"
                 % (", ".join(str(o.get("runId") or "?") for o in unsure),
                    "" if seams is not None else
                    " (%s, so no chain was read as one writer's order)"
@@ -4470,7 +4471,8 @@ def _run_full(project, args, manifest, out=print):
                                            run_id, out=out)
     if args.as_json:
         out(json.dumps(res, indent=2, sort_keys=True))
-        return E_OK if res["status"] == "passed" else E_FAIL
+        # `row_is_red` is the one reading of "did this run pass".
+        return E_FAIL if _ev.row_is_red(res) else E_OK
     out("[run-test-gate] full gate: %d command(s)" % (len(commands),))
     code = (render_quiet if args.quiet else render)(res, out=out)
     recorded = (res.get("recorded") or {}).get("recorded")
@@ -4910,8 +4912,9 @@ def main(argv, out=print):
         # not enforced, and a machine reader that wants to act on it has the
         # field. Folding it in here would make the decision this entry declined.
         # `treeMutatedForeign` is absent for the same reason and a second one -
-        # it is the half nothing can attribute.
-        return E_OK if res["status"] == "passed" else E_FAIL
+        # it is the half nothing can attribute. `row_is_red` is the one reading
+        # of "did this run pass", so this exit and the ledger's agree.
+        return E_FAIL if _ev.row_is_red(res) else E_OK
     # WHOSE gate ran is printed, not left to be inferred from the id: under
     # `--task` a task with no gate of its own is measured by the PHASE's, and a
     # reader who assumed otherwise would credit the wrong declaration. So a

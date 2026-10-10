@@ -4279,8 +4279,71 @@ def _scrub_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _moment_order_cases(check):
+    """Every place the trail orders rows by `ts` orders them by the MOMENT the
+    stamp names. Each fixture puts an offset or a fractional stamp where its
+    text and its moment disagree: 10:30+02:00 is 08:30Z, an hour BEFORE a
+    09:30Z row whose text sorts first."""
+    early = "2026-03-01T10:30:00+02:00"
+    late = "2026-03-01T09:30:00Z"
+    root = _harness.fixture_root("journal-moment-order-")
+    try:
+        M.append(root, {"action": "x.early", "actor": "p", "ts": early,
+                        "target": "a"})
+        M.append(root, {"action": "x.late", "actor": "p", "ts": late,
+                        "target": "a"})
+        got = [r.get("action") for r in M.read_all(root)]
+        check("jmo1 read_all hands rows back oldest MOMENT first - the offset "
+              "row was written first and IS first, though its text sorts "
+              "after: %r" % (got,),
+              got == ["x.early", "x.late"])
+    finally:
+        _harness.remove_tree(root)
+
+    _order = [r["side"] for r in M._merge_tails([{"ts": early, "side": "ours"}],
+                                                [{"ts": late, "side": "theirs"}])]
+    check("jmo2 the merge interleave takes the EARLIER moment first, not the "
+          "smaller spelling: %r" % (_order,),
+          _order == ["ours", "theirs"])
+    _order = [r["side"] for r in M._merge_tails(
+        [{"ts": "2026-03-01T09:30:00.500Z", "side": "ours"}],
+        [{"ts": late, "side": "theirs"}])]
+    check("jmo3 ...and half a second into 09:30:00 comes after 09:30:00 sharp, "
+          "though '.' sorts before 'Z': %r" % (_order,),
+          _order == ["theirs", "ours"])
+
+    _cands = [("one.jsonl", 0, {"ts": early, "stateHash": "sha-early"}),
+              ("two.jsonl", 0, {"ts": late, "stateHash": "sha-late"})]
+    _top = M.newest_anchor(_cands)
+    check("jmo4 the anchor for a target is its newest row by MOMENT, so the "
+          "file is compared with the hash written LAST: %r" % (_top,),
+          _top[1] == "sha-late" and _top[0] == late)
+
+    _counts = {"shared": 1, "oursOnly": 1, "theirsOnly": 1,
+               "oursDigest": "d1", "theirsDigest": "d2"}
+    # Far enough ahead that both beat the clock: 2999-01-01T01:00+05:00 is
+    # 2998-12-31T20:00Z, an hour BEFORE the Z row whose text sorts first.
+    _marker = M._merge_marker(
+        [{"ts": "2999-01-01T01:00:00+05:00", "action": "a"},
+         {"ts": "2998-12-31T21:00:00Z", "action": "b"}], "f.jsonl", None,
+        _counts)
+    check("jmo5 a merge marker lands at the LATEST moment of the rows it "
+          "describes, never at the greatest spelling, which here is an hour "
+          "earlier: %r" % (_marker.get("ts"),),
+          _marker.get("ts") == "2998-12-31T21:00:00Z")
+    _now_marker = M._merge_marker([{"ts": late, "action": "a"}], "f.jsonl",
+                                  None, _counts)
+    check("jmo6 SECOND DIRECTION: rows all in the past leave the marker at NOW, "
+          "not at the newest row: %r" % (_now_marker.get("ts"),),
+          _now_marker.get("ts") != late
+          and str(_now_marker.get("ts")).endswith("Z"))
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _moment_order_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

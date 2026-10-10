@@ -1037,7 +1037,7 @@
     {
       "id": "P123.14",
       "title": "covering_key loads _task_outputs once per process and not at all for an empty map",
-      "status": "in_progress",
+      "status": "done",
       "description": "(P122-R9) `hooks/_config.covering_key` calls `_load_scripts_module('_task_outputs', ...)` on every call, re-executing the module and its `_output` import each time, and guard-bash-writes asks it once per written path; it loads even when `file_map` is empty. Cache the module the way `_LEDGER_LIB` is cached (tried once, kept), and return None before loading when the map is empty. Confirm with `tools/bench-hooks.py --gate`. Faults: P122-R9.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -1071,25 +1071,38 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4eddbe5c08e2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "hooks/_config.py: added _TASK_RULE_LIB + _task_rule() (tried once, kept, like _LEDGER_LIB); covering_key returns None before loading when file_map is empty and uses _task_rule(); in_progress_outputs and covering_output use it too. tests/test__config.py: ck3 resets/restores the cache around its patch; new ck4 (empty map -> None, zero loads) and ck5 (two calls -> one load). Before the fix the selftest raised AttributeError on _TASK_RULE_LIB (292/293); after: 304/304, exit 0. bench-hooks.py --gate exit 0 (3.11 not measured, no interpreter). No import edge changed, so PLUGIN-BUILD-GUIDE.md untouched. Note: a python heredoc edit to _config.py was refused by the plan gate; redone with the Edit tool.",
+        "descriptive": "covering_key loads _task_outputs once per process and not at all for an empty map."
       },
       "startedAt": "2026-10-10T15:17:01Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T15:26:12Z",
+      "verifiedBy": [
+        "ck4 covering_key over an empty map answers None and loads nothing",
+        "ck5 two covering_key calls load _task_outputs once"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T15:26:11Z.4ab8d4",
         "status": "passed",
         "at": "2026-10-10T15:26:11Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "4eddbe5c08e2",
+        "at": "2026-10-10T15:26:12Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T15:18:12Z",
+        "basis": "`python3 plugins/audit/tests/test__config.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 292/293 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
       "id": "P123.15",
       "title": "Every evidence and journal ts ordering goes through one moment reader, held by a lint",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(F530) readers order or compare evidence/journal `ts` as TEXT outside `_evidence_io.oldest_first/newest_row/stamp_moment`, all confirmed on main: `_gate_derive` (newest failed row per phase, `>=` on text), `_doctor_trail` (full-scope candidates sorted on `str(ts)`), `_evidence_view` (`sorted(... str(ts) ...)`), `_doctor_completions` (`min(str(ts))` watermark), `_journal_io` (read order, merge interleave, `max` on text at two sites); `_evidence_io._epoch` is a further moment parser (Z form only), and `_classified` SKIPS a windowless other row (`if o_start is None: continue`), so `contested_by`/`shared_the_machine` answer as if that run never happened; `run-test-gate` spells 'did this run pass' inline (`res[\"status\"] == \"passed\"` on its --json paths) instead of `_evidence_io.row_is_red`. Route each through the one moment reader (the journal side through a parse at its own layer, `_usage_core.parse_ts` permitting), fold `_epoch` into `stamp_moment`, report a windowless other run as undecided, and add an `_output` lint that flags sorted/max/min keyed on a `ts` field and ordering comparisons between ts values outside the helper (an allow-list row per justified exception, and a prove-gates row). Decide and record whether import-evidence refuses a shard whose ts does not parse. Re-render the committed artifacts if their bytes change. (F537, the project-resolution half the draft carried, is folded into P123.5.) Faults: F530.",
       "files": [
         "plugins/audit/scripts/governance/_gate_derive.py",
@@ -1114,7 +1127,10 @@
         "examples/acme-store/acme-store-audit.html",
         "docs/demo-large.html",
         "docs/index.html",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/_deps.py",
+        "tools/gate-parity.py",
+        "plugins/audit/scripts/governance/record-outside-run.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1147,16 +1163,22 @@
         "P123.8"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T15:26:13Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T16:12:21Z.800d1c",
+        "status": "passed",
+        "at": "2026-10-10T16:12:21Z"
+      }
     },
     {
       "id": "P123.16",
@@ -1288,7 +1310,7 @@
       "id": "P123.18",
       "title": "Red-first helper reads replacements right, derives --introduces, and marks its own block",
       "status": "pending",
-      "description": "(F535) `stamp-verification._replaces` reads Assign/AugAssign/AnnAssign targets and setattr only: a `for New.<case> in [...]` or `with ... as New.<case>` target also replaces the case and HEAD's red is still credited through it, while a bare `New.<case>: int` (AnnAssign with no value, binds nothing) is refused. Read For/AsyncFor and With/AsyncWith targets as replacements; count an AnnAssign only with a value; PLUGIN-BUILD-GUIDE tells an author to wrap with the decorator form. (F573) executors rarely pass `--introduces`, so a test red on a missing symbol grades could-not-prove; have `drive-phase.py submit` derive the introduced symbols from the task's diff (new top-level def/class/assignment names in the declared source files) and pass them to the red helper, with the executor brief naming the flag only as an override. (F576) `_filed_returns.helper_red_first` recognises the helper's block by its wording, so a hand-typed block in those words is filed as computed; `drive-phase.py submit` marks the block it fills (a `source` field or the helper output's digest) and the filing verb trusts the mark, not the words. Regression: T3/T4 (for/with targets) refused; bare annotation proves; a missing-symbol red with no flag grades proved when the diff introduces the symbol; a hand-typed block in the helper's words is not treated as the helper's. Also F613 (testbed P3.1/P5.2/P6.1, and this repo P124.1): a JS missing-module failure (Vite \"Failed to resolve import\", jest \"Cannot find module\", node ERR_MODULE_NOT_FOUND) whose path resolves to a declared file is a missing-symbol red - one per-runner table of missing-module spellings, not a second Python-only list. Also the house runner shape seen on this repo in P124.1/P124.2: a suite whose body aborts on the missing symbol (an AttributeError or TypeError from the task's new name, printing SELFTEST FAILED: N-1/N) is graded \"no test was collected or none reached an assertion\"; an abort naming the task's introduced symbol, or a declared file, is a missing-symbol red. And: --introduces refuses a hyphenated entry-point name (integrate-task), so a new CLI script cannot name its own symbol; a new file the task declares (untracked at HEAD) is itself the introduced thing. Faults: F535, F573, F576, F613. Also F621: an inline suite (test and implementation in one file) is red-proved by applying only the added test hunks to HEAD, or graded could-not-prove with that reason - never refused as \"fix the test\"; add/scope pick regression for such a file by default.",
+      "description": "(F535) `stamp-verification._replaces` reads Assign/AugAssign/AnnAssign targets and setattr only: a `for New.<case> in [...]` or `with ... as New.<case>` target also replaces the case and HEAD's red is still credited through it, while a bare `New.<case>: int` (AnnAssign with no value, binds nothing) is refused. Read For/AsyncFor and With/AsyncWith targets as replacements; count an AnnAssign only with a value; PLUGIN-BUILD-GUIDE tells an author to wrap with the decorator form. (F573) executors rarely pass `--introduces`, so a test red on a missing symbol grades could-not-prove; have `drive-phase.py submit` derive the introduced symbols from the task's diff (new top-level def/class/assignment names in the declared source files) and pass them to the red helper, with the executor brief naming the flag only as an override. (F576) `_filed_returns.helper_red_first` recognises the helper's block by its wording, so a hand-typed block in those words is filed as computed; `drive-phase.py submit` marks the block it fills (a `source` field or the helper output's digest) and the filing verb trusts the mark, not the words. Regression: T3/T4 (for/with targets) refused; bare annotation proves; a missing-symbol red with no flag grades proved when the diff introduces the symbol; a hand-typed block in the helper's words is not treated as the helper's. Also F613 (testbed P3.1/P5.2/P6.1, and this repo P124.1): a JS missing-module failure (Vite \"Failed to resolve import\", jest \"Cannot find module\", node ERR_MODULE_NOT_FOUND) whose path resolves to a declared file is a missing-symbol red - one per-runner table of missing-module spellings, not a second Python-only list. Also the house runner shape seen on this repo in P124.1/P124.2: a suite whose body aborts on the missing symbol (an AttributeError or TypeError from the task's new name, printing SELFTEST FAILED: N-1/N) is graded \"no test was collected or none reached an assertion\"; an abort naming the task's introduced symbol, or a declared file, is a missing-symbol red. And: --introduces refuses a hyphenated entry-point name (integrate-task), so a new CLI script cannot name its own symbol; a new file the task declares (untracked at HEAD) is itself the introduced thing. Faults: F535, F573, F576, F613. Also F621: an inline suite (test and implementation in one file) is red-proved by applying only the added test hunks to HEAD, or graded could-not-prove with that reason - never refused as \"fix the test\"; add/scope pick regression for such a file by default. And: --case with a hyphenated case id (dg-red-moment) is not matched against a FAIL line that names it (seen P123.15) - match the id as the house runner prints it.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
         "plugins/audit/scripts/governance/drive-phase.py",

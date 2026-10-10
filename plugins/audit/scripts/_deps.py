@@ -139,11 +139,13 @@ LAYERS = (
     # It reaches nothing but `_output`, and it is down here because `_journal_io`,
     # which sits in the layer above, sizes a field from it, while the git wrappers
     # and the ADO calls quote through it.
-    ("_machine_paths", "_excerpt"),
+    # `_usage_core` joins them: it reaches only `_output`, and the journal reads
+    # a row's moment through its `parse_ts`, so it sits below `_journal_io`.
+    ("_machine_paths", "_excerpt", "_usage_core"),
     # _deps (this module) imports only _output, the safe_stdio guard - same as every
     # other member of this layer - so it belongs beside them, not in a layer of its own.
     ("_ui_theme", "_loader", "_fmt", "_cli_fmt", "_manifest_io", "_areas", "_policy",
-     "_usage_core", "_deps", "_refs",
+     "_deps", "_refs",
      # `_branch` answers where a phase's branch forks from and what it is called.
      # It reaches nothing but `_output` - it is arithmetic over the manifest dict
      # plus a git-ref regex - and it sits at L1 because the validator (L2), the

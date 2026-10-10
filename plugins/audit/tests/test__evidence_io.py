@@ -3839,10 +3839,74 @@ def _project_config_cases(check):
         _harness.remove_tree(base)
 
 
+def _moment_reader_cases(check):
+    """The window reader and the order reader read one moment, and a run with
+    no window is never read as a run that did not happen."""
+    # The same instant in three spellings: an offset, a fraction of a second,
+    # and the Z form every writer here produces.
+    _z = {"runId": "Z", "ts": "2026-09-01T10:10:00Z",
+          M.STARTED_KEY: "2026-09-01T10:00:00Z"}
+    _off = {"runId": "OFF", "ts": "2026-09-01T12:10:00+02:00",
+            M.STARTED_KEY: "2026-09-01T12:00:00+02:00"}
+    _frac = {"runId": "FRAC", "ts": "2026-09-01T10:10:00.400Z",
+             M.STARTED_KEY: "2026-09-01T10:00:00.400Z"}
+    check("mw1 a window stamped with an offset is the SAME window as its Z "
+          "spelling, and its ends agree with stamp_moment - the window reader "
+          "and the order reader read one moment: %r / %r / %r"
+          % (M.window_of(_z)[:2], M.window_of(_off)[:2],
+             M.stamp_moment(_off["ts"])),
+          M.window_of(_off)[:2] == M.window_of(_z)[:2]
+          and M.window_of(_off)[1] == M.stamp_moment(_off["ts"]))
+    check("mw2 ...and a fractional stamp names the whole second it fell in, "
+          "the unit `overlap_state` reasons in, rather than no window at all: "
+          "%r" % (M.window_of(_frac),),
+          M.window_of(_frac)[:2] == M.window_of(_z)[:2])
+    check("mw3 SECOND DIRECTION: a stamp naming no moment still places a row "
+          "in no window - a reader that widened to accept anything would put "
+          "it somewhere: %r" % (M.window_of({"runId": "B", "ts": "soon",
+                                             "durationMs": 5})[0],),
+          M.window_of({"runId": "B", "ts": "soon", "durationMs": 5})[0] is None
+          and M.window_of({"runId": "D", "ts": "2026-09-01",
+                           "durationMs": 5})[0] is None)
+
+    _mine = {"runId": "MINE", "ts": "2026-09-01T10:10:00Z",
+             M.STARTED_KEY: "2026-09-01T10:00:00Z"}
+    _blind = {"runId": "BLIND", "ts": "not a moment",
+              M.RUNNER_KEY: M.RUNNER_OUTSIDE}
+    contesting, basis = M.contested_by([_blind], _mine)
+    check("mw4 an outside run with NO window makes contested_by answer "
+          "undecided (None), never an empty list - an empty list says this "
+          "run was alone, and nothing placed that run anywhere: %r / %r"
+          % (contesting, basis),
+          contesting is None and "BLIND" in basis)
+    verdict = M.attribution_of(_mine, [_blind])
+    check("mw5 ...so the verdict is not claimed as this run's own: %r"
+          % (verdict,),
+          verdict["attributed"] is None and "BLIND" in verdict["basis"])
+    check("mw6 ...and the gate-side question reports it as undecided too, "
+          "not as solitude: %r"
+          % (_ids(M.undecided_neighbours(
+              [dict(_blind, **{M.RUNNER_KEY: M.RUNNER_GATE})], _mine,
+              M.RUNNER_GATE)),),
+          _ids(M.undecided_neighbours(
+              [dict(_blind, **{M.RUNNER_KEY: M.RUNNER_GATE})], _mine,
+              M.RUNNER_GATE)) == ["BLIND"])
+    _far = {"runId": "FAR", "ts": "2026-08-01T10:10:00Z",
+            M.STARTED_KEY: "2026-08-01T10:00:00Z",
+            M.RUNNER_KEY: M.RUNNER_OUTSIDE}
+    contesting, _basis = M.contested_by([_far], _mine)
+    check("mw7 SECOND DIRECTION: an outside run with a window a month away "
+          "still leaves this run alone - an empty list, not undecided: %r"
+          % (contesting,),
+          contesting == []
+          and M.attribution_of(_mine, [_far])["attributed"] is True)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _project_config_cases(check)
+        _moment_reader_cases(check)
     return _harness.run(body)
 
 

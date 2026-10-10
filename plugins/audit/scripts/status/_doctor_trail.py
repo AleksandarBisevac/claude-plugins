@@ -56,7 +56,6 @@ This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__doctor_trail.py` - see
 `plugins/audit/tests/_harness.py`.
 """
-import calendar
 import json
 import os
 import pathlib
@@ -1486,13 +1485,12 @@ FULL_RUN_CHECK = "full run"
 
 
 def _run_age(ts):
-    """A recorded run's own `ts` (`%Y-%m-%dT%H:%M:%SZ`), read the way `_age`
-    above already turns seconds into a reader's phrase - or None when the
-    timestamp is not that shape, which the caller says out loud rather than
-    printing an age for a run whose `ts` it could not parse."""
-    try:
-        epoch = calendar.timegm(time.strptime(str(ts), "%Y-%m-%dT%H:%M:%SZ"))
-    except Exception:
+    """A recorded run's own `ts`, read as a moment by `_evidence_io.stamp_moment`
+    and turned into a reader's phrase the way `_age` above does - or None when
+    it names no moment, which the caller says out loud rather than printing an
+    age for a run whose `ts` it could not parse."""
+    epoch = _evidence_io.stamp_moment(ts)
+    if epoch is None:
         return None
     return _age(time.time() - epoch)
 
@@ -1599,9 +1597,9 @@ def check_full_run(rep, project, manifest_rel, manifest, git_root, config=None):
                  if isinstance(row, dict)
                  and row.get("scope") == _evidence_io.FULL_SCOPE
                  and row.get("runId") in run_ids]
-    candidates.sort(key=lambda row: str(row.get("ts") or ""), reverse=True)
-    if candidates:
-        newest = candidates[0]
+    # Newest by the MOMENT `ts` names, never by its text.
+    newest = _evidence_io.newest_row(candidates)
+    if newest is not None:
         head = (newest.get("testedState") or {}).get("head")
         age = _run_age(newest.get("ts"))
         rep.ok(FULL_RUN_CHECK,

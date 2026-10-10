@@ -1659,6 +1659,44 @@ def _cases(check):
     finally:
         shutil.rmtree(full_whole, ignore_errors=True)
 
+    # --- check_full_run: the newest run is the newest MOMENT -------------------
+    # Two whole runs, each the answer for one phase: run-first (head = the first
+    # commit) is NEWER by the clock at 03:00Z, run-second (head = the second
+    # commit) is OLDER at 04:30+02:00 = 02:30Z - and its text sorts after.
+    full_moment = _harness.fixture_root("doctor-trail-full-run-moment-")
+    try:
+        os.makedirs(os.path.join(full_moment, "docs", "audit"))
+        mrel = "docs/audit/audit-plan.json"
+        repo = _real_two_commits(os.path.join(full_moment, "repo"))
+        _full_row(full_moment, "run-second", "2026-01-02T04:30:00+02:00",
+                 repo["second"], ["echo x"])
+        _full_row(full_moment, "run-first", "2026-01-02T03:00:00Z",
+                 repo["first"], ["echo x"])
+        two_whole = {"meta": {"fullGate": ["echo x"]},
+                     "phases": [{"id": "P1", "status": "done",
+                                 "mergedAt": "2026-01-01T00:00:00Z",
+                                 "mergedHead": repo["first"]},
+                                {"id": "P2", "status": "done",
+                                 "mergedAt": "2026-01-01T00:00:00Z",
+                                 "mergedHead": repo["second"]}]}
+        rep = base.Report()
+        M.check_full_run(rep, full_moment, mrel, two_whole, repo["root"])
+        check("dfr8 the run the OK row names as newest is the newest by the "
+              "clock, not by its spelling - an offset stamp an hour and a half "
+              "earlier must not be called newest: %r"
+              % (_detail(rep, "full run"),),
+              _levels(rep, "full run") == ["OK"]
+              and "run-first" in _detail(rep, "full run")
+              and "run-second" not in _detail(rep, "full run"))
+        check("dfr9 ...and an offset stamp still reads as an age, never as a "
+              "run whose time could not be parsed: %r"
+              % (M._run_age("2026-01-02T04:30:00+02:00"),),
+              M._run_age("2026-01-02T04:30:00+02:00") is not None
+              and M._run_age("2026-01-02T04:30:00+02:00")
+              == M._run_age("2026-01-02T02:30:00Z"))
+    finally:
+        shutil.rmtree(full_moment, ignore_errors=True)
+
     # --- check_full_run: the SAME phases every other surface asks about -------
     # The doctor, the status, the report and the panel all read this same
     # fixture. It carries the phases a second reading of "merged" would

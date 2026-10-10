@@ -2343,6 +2343,10 @@ AUDITED_EXEMPTIONS = {
     # and a row whose site no longer does; whether its reason is true it does not
     # judge.
     "MANIFEST_DIRNAME_PROJECTS": ("live", "manifest_dirname_project_violations"),
+    # `ts_order_violations` reports a site that orders evidence or journal rows by
+    # their `ts` text instead of the moment reader, and a row whose site no
+    # longer does; whether its reason is true it does not judge.
+    "TS_ORDER_SITES": ("live", "ts_order_violations"),
     # ...and the two whose instrument is a CASE rather than a function. This tree's
     # suites lint other files' source, so an auditor living in one is not a lesser
     # auditor - `r2` is the strongest row in this table, refusing a NEW debt and a

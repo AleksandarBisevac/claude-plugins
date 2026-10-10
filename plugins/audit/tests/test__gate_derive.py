@@ -506,6 +506,28 @@ def _cases(check):
           "the oldest row instead -> red): %r"
           % (M.newest_red_phase_row(rows, "P1"),),
           M.newest_red_phase_row(rows, "P1") == row_failed_new)
+    # An offset puts the LATER moment at the smaller spelling: 10:30+02:00 is
+    # 08:30Z, so the Z row an hour later is newest while it sorts first as text.
+    row_red_offset = {"scope": "phase", "phaseId": "P1", "status": "failed",
+                      "ts": "2026-01-06T10:30:00+02:00", "steps": []}
+    row_red_later = {"scope": "phase", "phaseId": "P1", "status": "failed",
+                     "ts": "2026-01-06T09:30:00Z", "steps": []}
+    check("dg-red-moment the newest red row is the newest MOMENT, not the "
+          "greatest spelling - an offset stamp an hour earlier must not win: "
+          "%r" % (M.newest_red_phase_row([row_red_later, row_red_offset],
+                                         "P1"),),
+          M.newest_red_phase_row([row_red_later, row_red_offset], "P1")
+          is row_red_later
+          and M.newest_red_phase_row([row_red_offset, row_red_later], "P1")
+          is row_red_later)
+    row_red_frac = {"scope": "phase", "phaseId": "P1", "status": "failed",
+                    "ts": "2026-01-06T09:30:00.900Z", "steps": []}
+    check("dg-red-fraction ...and a fractional second is later than the whole "
+          "second it falls in, which text also orders the other way ('.' sorts "
+          "before 'Z'): %r"
+          % (M.newest_red_phase_row([row_red_frac, row_red_later], "P1"),),
+          M.newest_red_phase_row([row_red_frac, row_red_later], "P1")
+          is row_red_frac)
 
     # --- dg-nonerelated: the RELATED listing named NONE while the ALL --------
     # listing named SOME - the arm contributes nothing, with a printed reason

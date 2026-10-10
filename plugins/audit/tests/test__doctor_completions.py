@@ -80,6 +80,32 @@ def _cases(check):
           M._hours_between("2026-01-01T00:00:00",
                            "2026-01-01T12:00:00") == 12.0)
 
+    check("dc3m two spellings of ONE moment are zero hours apart - an offset "
+          "is part of the instant, not text to cut off: %r"
+          % (M._hours_between("2026-01-01T02:00:00+02:00",
+                              "2026-01-01T00:00:00Z"),),
+          M._hours_between("2026-01-01T02:00:00+02:00",
+                           "2026-01-01T00:00:00Z") == 0.0)
+
+    # ------------------------------------------- receipts: the watermark moment
+    # 10:30+02:00 is 08:30Z, the EARLIER receipt, though it is the greater text.
+    _early = {"action": "task.complete", "ts": "2026-03-01T10:30:00+02:00",
+              "details": {"taskId": "P1.1"}}
+    _late = {"action": "task.complete", "ts": "2026-03-01T09:00:00Z",
+             "details": {"taskId": "P1.2"}}
+    _got = M.receipts([_late, _early])
+    check("dc-wm1 the watermark is the EARLIEST receipt by moment, not the "
+          "least spelling: %r" % (_got["watermark"],),
+          _got["watermark"] == "2026-03-01T10:30:00+02:00")
+    _frac = {"action": "task.complete", "ts": "2026-03-01T08:30:00.250Z",
+             "details": {"taskId": "P1.3"}}
+    _got = M.receipts([_frac, _early])
+    check("dc-wm2 ...and a receipt a quarter second into 08:30Z is later than "
+          "one at 08:30:00 sharp spelled with an offset, though its text "
+          "sorts first: %r"
+          % (_got["watermark"],),
+          _got["watermark"] == "2026-03-01T10:30:00+02:00")
+
     # ----------------------------------------------------- check_completions
     have_git = bool(shutil.which("git"))
     if not have_git:
@@ -131,6 +157,17 @@ def _cases(check):
               "predate the first completion record"
               not in _detail(rep, "completions")
               and "carry no commit SHA" in _detail(rep, "completions"))
+
+        # 01:00+02:00 on the first is 23:00Z the day BEFORE the first record
+        # (00:00Z on the first), though its text sorts after that record's.
+        mf = _manifest([_task("P1.1", completedAt="2026-03-01T01:00:00+02:00")])
+        rep = base.Report()
+        M.check_completions(rep, tmp, {}, mf, mrel, None)
+        check("dc7m a close stamped with an offset that puts it BEFORE the "
+              "watermark predates the era, whatever its text compares as: %r"
+              % (_detail(rep, "completions"),),
+              "predate the first completion record"
+              in _detail(rep, "completions"))
 
         mf = _manifest([_task("P9.9", completedAt="2026-05-01T00:00:00Z")])
         rep = base.Report()

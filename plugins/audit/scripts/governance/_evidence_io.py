@@ -54,7 +54,9 @@ This module carries no `--selftest` of its own; its cases live in
 import binascii
 import calendar
 import hashlib
+import math
 import os
+import re
 import sys
 import time
 
@@ -1847,16 +1849,33 @@ def write_pointer(project, manifest_path, scope, ids, row, session_id=None,
 
 # --- who ran it, when, and who else was running --------------------------------
 def _epoch(text):
-    """`%Y-%m-%dT%H:%M:%SZ` as epoch seconds, or None when it is not that shape.
+    """A stamp naming a time of day, as the WHOLE epoch second it fell in, or
+    None when it names no such moment.
+
+    `stamp_moment` READS IT, so a window and an order agree about when a run
+    happened: a stamp with an offset or a fractional second places a run in
+    the same second its Z spelling does, where a parser of the Z form alone
+    left that run with no window at all. The second is floored because
+    `overlap_state` reasons in whole seconds - a stamp names the second an
+    instant fell in. A bare date is refused (`day_start=False`): it names a
+    day, not the second a run ended, and a window built from midnight would be
+    a guess recorded as an overlap. So is a time with NO ZONE (`Z` or an
+    offset): `parse_ts` reads one as UTC, which is right for a stamp a machine
+    wrote and a time zone wrong for a start somebody typed in local time.
 
     None rather than a substitute: a stamp this cannot read is a row that cannot
     take part in an overlap question, and a zero would put it at the start of the
     epoch where it would overlap nothing and look like an answer.
     """
-    try:
-        return calendar.timegm(time.strptime(str(text), "%Y-%m-%dT%H:%M:%SZ"))
-    except Exception:
+    if not isinstance(text, str) or not _ZONED.search(text.strip()):
         return None
+    moment = stamp_moment(text, day_start=False)
+    return None if moment is None else int(math.floor(moment))
+
+
+# A stamp's trailing zone designator - what `_epoch` requires before it reads
+# the stamp at all. Not a parser: `stamp_moment` does the reading.
+_ZONED = re.compile(r"(?:[Zz]|[+-]\d{2}:?\d{2})$")
 
 
 def runner_of(row):
@@ -2073,7 +2092,9 @@ def _classified(rows, row, runner, seams=None):
     THE WINDOWS DECIDE FIRST and the chain is asked only about a pair they leave
     undecided, with its lookups built once for the pass: a reader runs on every
     recorded gate run over the ledger's whole life, and a chain walk per pair
-    made that quadratic in rows nobody's windows ever met."""
+    made that quadratic in rows nobody's windows ever met. An OTHER run with
+    no window of its own is undecided outright: its stamps place it nowhere,
+    so neither overlap nor its absence is known."""
     start, end, basis = window_of(row)
     if start is None:
         return (None, None, basis)
@@ -2088,6 +2109,10 @@ def _classified(rows, row, runner, seams=None):
             continue
         o_start, o_end, _why = window_of(other)
         if o_start is None:
+            # NO WINDOW IS NOT "NOT RUNNING". Nothing places that run before,
+            # inside or after this one, so it is undecided - skipping it read
+            # as a run that never happened, and answered "alone".
+            unsure.append(other)
             continue
         state = overlap_state((start, end), (o_start, o_end))
         if state == OVERLAP_UNDECIDED:
@@ -2103,18 +2128,43 @@ def _classified(rows, row, runner, seams=None):
 
 
 def undecided_neighbours(rows, row, runner, seams=None):
-    """The OTHER runs by `runner` whose window whole-second stamps cannot place
-    either side of `row`'s (`OVERLAP_UNDECIDED`) - reported apart from the runs
-    that did overlap, so a surface says it cannot tell rather than that the
-    window was shared, or that nobody else ran. `[]` when `row` has no window."""
+    """The OTHER runs by `runner` that cannot be placed either side of `row`'s
+    window - whole-second stamps meeting in one second (`OVERLAP_UNDECIDED`),
+    or a run with no window at all - reported apart from the runs that did
+    overlap, so a surface says it cannot tell rather than that the window was
+    shared, or that nobody else ran. `[]` when `row` has no window."""
     return _classified(rows, row, runner, seams)[1] or []
+
+
+def _undecided_basis(basis, unsure):
+    """`basis`, extended by why each of `unsure` could not be placed."""
+    named = ", ".join(
+        "%s (%s)" % (str(o.get("runId") or "?"),
+                     "no window: %s" % (window_of(o)[2],)
+                     if window_of(o)[0] is None else
+                     "its whole-second stamps meet this run's in one second")
+        for o in unsure)
+    return ("%s; whether %s ran outside this gate in the same window is not "
+            "knowable" % (basis, named))
 
 
 def contested_by(rows, row):
     """`(contesting, basis)` — the runs from OUTSIDE this gate whose window
-    overlaps `row`'s. `overlapping_runs` with the runner decided, so no caller
-    can ask the outside question and get the machine one."""
-    return overlapping_runs(rows, row, RUNNER_OUTSIDE)
+    overlaps `row`'s, with the runner decided, so no caller can ask the outside
+    question and get the machine one.
+
+    THREE ANSWERS, AND `[]` IS ONLY ONE OF THEM. A non-empty list names the
+    rivals. `[]` says no outside run could have shared the window. `None` says
+    the question has no answer: `row` has no window, or - with no rival found -
+    an outside run could not be placed either side of it (`undecided_neighbours`),
+    because a run nothing places is not a run that did not happen, and reading
+    it as `[]` claimed this run was alone."""
+    found, unsure, basis = _classified(rows, row, RUNNER_OUTSIDE)
+    if found is None or found:
+        return (found, basis)
+    if unsure:
+        return (None, _undecided_basis(basis, unsure))
+    return ([], basis)
 
 
 def shared_the_machine(rows, row, seams=None):
@@ -2155,16 +2205,10 @@ def attribution_of(row, rows):
     """
     contesting, basis = contested_by(rows, row)
     if contesting is None:
+        # NEITHER CLAIM IS MADE: this run has no window, or an outside run could
+        # not be placed either side of it, so the verdict is not asserted as
+        # this run's - and not as contested either.
         return {"attributed": None, "contested": [], "basis": basis}
-    unsure = undecided_neighbours(rows, row, RUNNER_OUTSIDE)
-    if not contesting and unsure:
-        # NEITHER CLAIM IS MADE: whether that suite ran alongside this one is not
-        # in the whole-second stamps, so the verdict is not asserted as this run's.
-        return {"attributed": None, "contested": [],
-                "basis": "%s; whether %s ran outside this gate in the same window is "
-                         "not knowable from whole-second stamps"
-                         % (basis, ", ".join(str(o.get("runId") or "?")
-                                             for o in unsure))}
     if not contesting:
         return {"attributed": True, "contested": [],
                 "basis": "%s; no run from outside this gate shares that window"
@@ -2608,18 +2652,20 @@ def merged_phase(phase):
 _DATE_ONLY = "%Y-%m-%d"
 
 
-def stamp_moment(text):
+def stamp_moment(text, day_start=True):
     """A stamp as epoch seconds, or None when it names no moment.
 
-    THE ONE MOMENT READ this module orders by: `_usage_core.parse_ts`, plus an
-    ISO date with no time (`2026-09-01`), read as the START of that day in
-    UTC. A hand-written `evidenceSince.at` is often a date, and the start of
+    THE ONE MOMENT READ this module orders and windows by: `_usage_core.parse_ts`,
+    plus an ISO date with no time (`2026-09-01`), read as the START of that day
+    in UTC. A hand-written `evidenceSince.at` is often a date, and the start of
     the day is the earliest moment it can mean - so a boundary read from it
     can only move earlier, never later in silence. Kept here rather than in
-    `parse_ts`, whose other callers read stamps a machine wrote.
+    `parse_ts`, whose other callers read stamps a machine wrote. With
+    `day_start=False` a bare date names no moment, for a reader (`_epoch`)
+    that needs the second a run ended rather than the day it ended on.
     """
     moment = _usage_core.parse_ts(text)
-    if moment is not None or not isinstance(text, str):
+    if moment is not None or not isinstance(text, str) or not day_start:
         return moment
     day = text.strip()
     if len(day) != len("0000-00-00"):

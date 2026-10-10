@@ -106,7 +106,8 @@ STAMP = "%Y-%m-%dT%H:%M:%SZ"
 
 # --- the window ----------------------------------------------------------------
 def parse_stamp(text):
-    """`%Y-%m-%dT%H:%M:%SZ` as epoch seconds, or None when it is not that shape.
+    """An ISO stamp carrying a zone (`Z` or an offset) as epoch seconds, or None
+    when it names no moment - a bare date, or a time with no zone.
 
     IT IS THE LEDGER'S OWN READING AND NOT A SECOND ONE. `_evidence_io` is what
     turns a row's stamps back into a window, so a writer that parsed them its own

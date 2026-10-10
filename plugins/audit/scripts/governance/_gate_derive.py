@@ -336,16 +336,15 @@ def newest_red_phase_row(rows, phase_id):
     is added here because a phase whose newest run went green owes a derivation
     nothing further to narrow around: an OLD failure a later green run already
     superseded would understate a gate that has since been fixed.
+
+    NEWEST BY THE MOMENT `ts` NAMES (`_evidence_io.newest_row`), never by its
+    text: an offset or a fractional second orders apart from its spelling, and
+    a tie goes to the row read later.
     """
-    best = None
-    for row in (rows or []):
-        if not isinstance(row, dict) or row.get("status") != "failed":
-            continue
-        if _evidence_io.subject_key(row) != ("phase", str(phase_id)):
-            continue
-        if best is None or str(row.get("ts") or "") >= str(best.get("ts") or ""):
-            best = row
-    return best
+    return _evidence_io.newest_row([
+        row for row in (rows or [])
+        if isinstance(row, dict) and row.get("status") == "failed"
+        and _evidence_io.subject_key(row) == ("phase", str(phase_id))])
 
 
 # --- the phase-level derivation --------------------------------------------------

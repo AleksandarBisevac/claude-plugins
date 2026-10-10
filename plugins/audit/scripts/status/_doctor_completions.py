@@ -26,7 +26,6 @@ import os
 import shutil
 import subprocess
 import sys
-import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -65,16 +64,15 @@ _load = _base._load
 # --- checks: completion records -------------------------------------------------
 def _hours_between(a, b):
     """Hours between two ISO timestamps, or None when either cannot be read —
-    an unreadable timestamp is a reason to say nothing, not to accuse."""
-    try:
-        import calendar
+    an unreadable timestamp is a reason to say nothing, not to accuse.
 
-        def parse(s):
-            return calendar.timegm(time.strptime(str(s)[:19],
-                                                 "%Y-%m-%dT%H:%M:%S"))
-        return abs(parse(a) - parse(b)) / 3600.0
-    except Exception:
+    Each is read as the moment it names (`_evidence_io.stamp_moment`), so an
+    offset counts as part of the instant rather than as text cut off the end."""
+    first = _evidence_io.stamp_moment(a)
+    second = _evidence_io.stamp_moment(b)
+    if first is None or second is None:
         return None
+    return abs(first - second) / 3600.0
 
 
 def _check_commit_trail(rep, manifest, git_root):
@@ -220,6 +218,9 @@ def receipts(rows):
     The watermark is the first receipt of either kind: a plan whose every close
     went through the verb carries no `task.complete` at all, and reading that as
     "an older plugin wrote this history" left its hand edits unreported.
+    "First" is by the MOMENT each `ts` names (`_evidence_io.oldest_first`),
+    and the watermark is that receipt's `ts` as written; a receipt whose `ts`
+    names no moment is never the watermark while one that does exists.
     """
     mine = [r for r in rows or [] if r.get("action") in RECEIPT_ACTIONS]
     tasks, done_at, row_ts, row_file = set(), {}, {}, {}
@@ -238,9 +239,26 @@ def receipts(rows):
         if r.get("_file"):
             row_file.setdefault(tid, r["_file"])
     return {"rows": mine,
-            "watermark": (min(str(r.get("ts") or "") for r in mine)
-                          if mine else None),
+            "watermark": _first_stamp(mine),
             "tasks": tasks, "doneAt": done_at, "ts": row_ts, "file": row_file}
+
+
+def _first_stamp(rows):
+    """The `ts` text of the earliest row of `rows` by moment, or None for no
+    rows. Only when no row's `ts` names a moment is an undated one returned."""
+    ordered = _evidence_io.oldest_first(rows)
+    dated = [r for r in ordered if _evidence_io.stamp_moment(r.get("ts")) is not None]
+    first = (dated or ordered or [None])[0]
+    return None if first is None else str(first.get("ts") or "")
+
+
+def _before(stamp, watermark):
+    """Whether `stamp` names a moment BEFORE `watermark`'s - True only when
+    both name one. A close nothing can place before the first receipt stays
+    in the era and is checked: leaving it out would excuse it in silence."""
+    moment = _evidence_io.stamp_moment(stamp)
+    mark = _evidence_io.stamp_moment(watermark)
+    return moment is not None and mark is not None and moment < mark
 
 
 def has_receipt(got, task):
@@ -294,7 +312,7 @@ def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
         if task.get("status") != "done":
             continue
         completed = task.get("completedAt")
-        if not isinstance(completed, str) or completed < watermark:
+        if not isinstance(completed, str) or _before(completed, watermark):
             pre_era += 1            # older history: out of scope by watermark
             continue
         done.append(task)

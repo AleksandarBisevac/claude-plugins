@@ -109,13 +109,16 @@ def _rows_for(rows, scope, subject_id):
     BY `ts` AND NOT BY FILE ORDER, which is `_evidence_io.latest_by_subject`'s
     rule and is adopted rather than re-decided: rows land in one file per writer
     per month, so two worktrees produce two files whose concatenation is in no
-    meaningful order at all.
+    meaningful order at all. By the MOMENT each `ts` names
+    (`_evidence_io.oldest_first`, reversed), so an offset or a fractional
+    second orders apart from its spelling; a row whose `ts` will not parse
+    comes last.
     """
     mine = [r for r in rows
             if isinstance(r, dict) and r.get("scope") == scope
             and str(r.get("taskId") if scope == "task" else r.get("phaseId"))
             == str(subject_id)]
-    return sorted(mine, key=lambda r: str(r.get("ts") or ""), reverse=True)
+    return list(reversed(_evidence_io.oldest_first(mine)))
 
 
 def _view_for(holder, phase, scope, by_run, rows, boundary=None,

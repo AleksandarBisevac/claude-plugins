@@ -994,11 +994,32 @@ def _full_run_cases(check):
         _harness.remove_tree(root)
 
 
+def _moment_order_cases(check):
+    """A subject's runs are listed newest MOMENT first, whatever spelling each
+    `ts` carries - an offset or a fractional second orders apart from its text."""
+    # 10:30+02:00 is 08:30Z - an hour BEFORE the Z row it sorts after as text.
+    offset = {"runId": "R-off", "ts": "2026-08-01T10:30:00+02:00",
+              "scope": "task", "taskId": "P1.1", "status": "failed"}
+    later = {"runId": "R-later", "ts": "2026-08-01T09:30:00Z",
+             "scope": "task", "taskId": "P1.1", "status": "passed"}
+    got = [r["runId"] for r in M._rows_for([offset, later], "task", "P1.1")]
+    check("evm1 the run an hour later by the clock is listed first, though "
+          "its spelling sorts before the offset one: %r" % (got,),
+          got == ["R-later", "R-off"])
+    frac = {"runId": "R-frac", "ts": "2026-08-01T09:30:00.500Z",
+            "scope": "task", "taskId": "P1.1", "status": "passed"}
+    got = [r["runId"] for r in M._rows_for([frac, later], "task", "P1.1")]
+    check("evm2 ...and a run half a second into that same second is newer "
+          "still, though '.' sorts before 'Z': %r" % (got,),
+          got == ["R-frac", "R-later"])
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _graded_cases(check)
         _full_run_cases(check)
+        _moment_order_cases(check)
     return _harness.run(body)
 
 

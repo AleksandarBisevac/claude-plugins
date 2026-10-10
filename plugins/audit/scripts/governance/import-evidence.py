@@ -30,6 +30,12 @@ reader of the directory counts rows, so the same run twice is counted twice.
 A ledger that cannot be read in full refuses the import rather than reading as
 empty - the check could not be made, and that is what the refusal says.
 
+A ROW WHOSE `ts` NAMES NO MOMENT IS IMPORTED AND NAMED, NOT REFUSED. Every
+reader orders runs by the moment `_evidence_io.stamp_moment` reads, and places
+such a row before every dated one; the run still happened and its verdict is
+still evidence, so refusing would discard it to report a fact the import can
+state instead. `undated_runs` lists those rows and the report prints each.
+
 WHAT A RED FULL ROW ASKS OF YOU. A CI build records its full run and throws
 its checkout away, so nothing learned from a red full run could be kept there.
 After a successful import this command prints, for each imported row that is
@@ -119,7 +125,21 @@ def _empty_answer(basename):
     on the branch that never sets it."""
     return {"imported": False, "alreadyImported": False, "path": None,
            "basename": basename, "runIds": [], "refused": "", "duplicates": [],
-           "learnFrom": []}
+           "learnFrom": [], "undated": []}
+
+
+def undated_runs(rows):
+    """The runIds of `rows` whose `ts` names no moment
+    (`_evidence_io.stamp_moment`), in shard order.
+
+    IMPORTED, AND NAMED - NOT REFUSED. Every reader of the ledger orders runs
+    by the moment their `ts` names and places a row naming none where it can
+    never be called newest; the run still happened, and its verdict is
+    evidence a refusal would throw away. What a refusal would have bought is
+    the reader learning that this run is never ordered after a dated one, and
+    naming it on the import says exactly that without discarding it."""
+    return [str(r.get("runId") or "?") for r in rows
+            if _ev.stamp_moment(r.get("ts")) is None]
 
 
 def learn_from_commands(rows, manifest_path, project):
@@ -271,10 +291,9 @@ def import_shard(project, shard_path, config=None, manifest_path=None):
     if verdict["findings"]:
         answer["refused"] = verdict["findings"][0]
         return E_FAIL, answer
-    run_ids = [str(row.get("runId") or "?") for row in rows
-              if not row.get("_unparseable")]
-    learn = (learn_from_commands([r for r in rows if not r.get("_unparseable")],
-                                 manifest_path, project)
+    parsed = [r for r in rows if not r.get("_unparseable")]
+    run_ids = [str(row.get("runId") or "?") for row in parsed]
+    learn = (learn_from_commands(parsed, manifest_path, project)
              if manifest_path else [])
     directory = _ev.evidence_dir(project, config)
     dest = os.path.join(directory, basename)
@@ -292,6 +311,7 @@ def import_shard(project, shard_path, config=None, manifest_path=None):
             answer["path"] = dest
             answer["runIds"] = run_ids
             answer["learnFrom"] = learn
+            answer["undated"] = undated_runs(parsed)
             return E_OK, answer
         answer["refused"] = (
             "%s already holds a different file under this name - the chain's "
@@ -335,6 +355,7 @@ def import_shard(project, shard_path, config=None, manifest_path=None):
     answer["path"] = dest
     answer["runIds"] = run_ids
     answer["learnFrom"] = learn
+    answer["undated"] = undated_runs(parsed)
     return E_OK, answer
 
 
@@ -351,6 +372,10 @@ def render(answer, out=print):
             % (PREFIX, answer["basename"], len(answer["runIds"])))
     for run_id in answer["runIds"]:
         out("  runId %s" % (run_id,))
+    for run_id in answer.get("undated") or []:
+        out("  runId %s carries a ts naming no moment: it is in the ledger, "
+            "and no reader orders it after a run whose ts names one"
+            % (run_id,))
     out("  %s" % (AUTHENTICATION_NOTE,))
     for command in answer.get("learnFrom") or []:
         out("%s a red full run is learned from here, not where it ran: %s"

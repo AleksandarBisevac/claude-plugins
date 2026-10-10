@@ -294,6 +294,7 @@ L0:
 L1:
   _excerpt -> _output
   _machine_paths -> _output
+  _usage_core -> _output
 
 L2:
   _ado_connect -> _excerpt, _output
@@ -311,7 +312,7 @@ L2:
   _filed_returns -> _machine_paths, _output
   _fmt -> _output
   _id_refs -> _output
-  _journal_io -> _excerpt, _machine_paths, _output
+  _journal_io -> _excerpt, _machine_paths, _output, _usage_core
   _loader -> _output
   _locks -> _output
   _manifest_io -> _machine_paths, _output
@@ -326,7 +327,6 @@ L2:
   _runner_output -> _output
   _task_outputs -> _output
   _ui_theme -> _output
-  _usage_core -> _output
   _worktrees -> _output
 
 L3:
@@ -1286,6 +1286,15 @@ other files' parsers, the hook's own docstring) is neither reported nor exempted
 `add_subparsers()` are outside it: an unknown verb is the top parser's error, which the
 hook already carries. Entry points that read `sys.argv` by hand build no parser and are
 outside it too.
+
+**`ts_order_violations()` holds the timestamp-order rule**: no `sorted`, `max`, `min` or
+`.sort` is keyed on (or taken over) a `ts` field's text, and no `<`/`<=`/`>`/`>=` has one as
+an operand, outside a `TS_ORDER_SITES` row naming its reason. Text orders a stamp by its
+spelling - an offset or a fractional second sorts apart from its moment - so evidence rows
+are ordered through `_evidence_io.oldest_first`/`newest_row`/`stamp_moment` and journal rows
+through `_journal_io.row_moment`. An order over `stamp_moment(r.get("ts"))` is an order over a
+number and is quiet with no row; a stamp bound to a name before it is ordered is outside what
+the lint reads, and its docstring says so.
 
 It is also **the anchor**, and that is why it is the one file that never moves.
 `SCRIPTS_DIR`, `PLUGIN_ROOT`, `HOOKS_DIR`, `TESTS_DIR` and `REPO_ROOT` are the single

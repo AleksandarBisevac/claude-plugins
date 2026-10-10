@@ -209,6 +209,7 @@ from _machine_paths import (MACHINE_PATH_SHAPES, MACHINE_PATH_TOKEN_START,  # no
                             repo_relative_or_token, scrubbed_values,
                             _checkout_roots, _judged_text)
 import _excerpt  # noqa: E402  (MAX_CHARS: how much one quoted tool output may come to)
+import _usage_core  # noqa: E402  (parse_ts: the one stamp parser, read as a moment)
 
 ROW_VERSION = 1
 # A row carrying a `details` block is v2. The version names the SHAPE of one row,
@@ -905,8 +906,29 @@ def journal_files(directory):
         return []
 
 
+def row_moment(row):
+    """`row`'s `ts` as epoch seconds (`_usage_core.parse_ts`), or None when it
+    names no moment.
+
+    THE TRAIL'S MOMENT READ, so every order taken over journal rows is an
+    order of instants: compared as TEXT, a stamp carrying an offset or a
+    fractional second sorts by its spelling - `10:30+02:00` after `09:30Z`,
+    though it is an hour earlier. The evidence ledger's `stamp_moment` reads
+    through the same parser."""
+    return _usage_core.parse_ts(row.get("ts")) if isinstance(row, dict) else None
+
+
+def _moment_key(row):
+    """A sort key placing rows whose `ts` names no moment FIRST, then the rest
+    by that moment - an unreadable stamp never sorts after a readable one."""
+    moment = row_moment(row)
+    return (moment is not None, moment if moment is not None else 0.0)
+
+
 def read_all(project, config=None):
-    """Every row in the journal, oldest first, each tagged with its file."""
+    """Every row in the journal, oldest first BY MOMENT (`row_moment`), each
+    tagged with its file; rows naming no moment first, and a tie by file name
+    and then read order."""
     directory = journal_dir(project, config)
     out = []
     for path in journal_files(directory):
@@ -917,7 +939,7 @@ def read_all(project, config=None):
             r = dict(r)
             r["_file"] = os.path.basename(path)
             out.append(r)
-    out.sort(key=lambda r: (str(r.get("ts") or ""), r.get("_file") or ""))
+    out.sort(key=lambda r: _moment_key(r) + (r.get("_file") or "",))
     return out
 
 
@@ -981,8 +1003,8 @@ def session_index(project, config=None):
                 sids.append(str(actor["sessionId"]))
             if actor.get("envSessionId"):
                 esids.append(str(actor["envSessionId"]))
-            if row.get("ts"):
-                stamps.append(str(row["ts"]))
+            if row_moment(row) is not None:
+                stamps.append((row_moment(row), str(row["ts"])))
         writer = writer_of(os.path.basename(path))
         known = set(sids) | set(esids)
         # A worktree-keyed file is `<session writer>.wt-<key>`: still the
@@ -991,8 +1013,9 @@ def session_index(project, config=None):
                               or writer.startswith("%s.%s" % (env_writer,
                                                              WORKTREE_MARK)))
         entry = {"file": where, "writer": writer, "rows": len(rows),
-                 "first": min(stamps) if stamps else None,
-                 "last": max(stamps) if stamps else None,
+                 # By moment; the stamp as written is what is shown.
+                 "first": min(stamps)[1] if stamps else None,
+                 "last": max(stamps)[1] if stamps else None,
                  "sessionIds": _counted(sids), "envSessionIds": _counted(esids),
                  "mine": mine}
         out["files"].append(entry)
@@ -1801,29 +1824,37 @@ def _tie_faults(ours_tail, theirs_tail, target_of=None):
     either order reads the same.
 
     CROSS-SIDE ONLY. Two rows within one tail sharing a timestamp are already in a
-    recorded order that the chain fixes, and this must not disturb it."""
+    recorded order that the chain fixes, and this must not disturb it.
+
+    A TIE IS ONE MOMENT (`row_moment`), not one spelling: `12:00+02:00` and
+    `10:00Z` are the same instant, so they tie. Each entry's `ts` is the stamp
+    as the first of `ours`' rows at that moment spells it. The caller has
+    already refused a row naming no moment."""
     target_of = target_of or row_target
-    ours_at, theirs_at = {}, {}
+    ours_at, theirs_at, spelled = {}, {}, {}
     for row in ours_tail:
-        ours_at.setdefault(str(row.get("ts") or ""), []).append(row)
+        ours_at.setdefault(row_moment(row), []).append(row)
+        spelled.setdefault(row_moment(row), str(row.get("ts") or ""))
     for row in theirs_tail:
-        theirs_at.setdefault(str(row.get("ts") or ""), []).append(row)
+        theirs_at.setdefault(row_moment(row), []).append(row)
     refusals, identical, ordered = [], 0, []
-    for stamp in sorted(set(ours_at) & set(theirs_at)):
-        mine = sorted(row_content(r) for r in ours_at[stamp])
-        yours = sorted(row_content(r) for r in theirs_at[stamp])
+    for moment in sorted(m for m in set(ours_at) & set(theirs_at)
+                         if m is not None):
+        stamp = spelled[moment]
+        mine = sorted(row_content(r) for r in ours_at[moment])
+        yours = sorted(row_content(r) for r in theirs_at[moment])
         if mine == yours:
             # Both sides' rows, because both are KEPT: a count of one side would
             # under-report what the note is about by half.
             identical += len(mine) + len(yours)
-            seq_mine = [row_content(r) for r in ours_at[stamp]]
-            seq_yours = [row_content(r) for r in theirs_at[stamp]]
+            seq_mine = [row_content(r) for r in ours_at[moment]]
+            seq_yours = [row_content(r) for r in theirs_at[moment]]
             ordered.append({"ts": stamp, "identical": True,
                             "first": ("ours" if seq_mine <= seq_yours
                                       else "theirs"),
                             "firstRows": [], "thenRows": []})
             continue
-        if _disjoint(ours_at[stamp], theirs_at[stamp], target_of):
+        if _disjoint(ours_at[moment], theirs_at[moment], target_of):
             first = "ours" if mine < yours else "theirs"
             lead, follow = (mine, yours) if first == "ours" else (yours, mine)
             ordered.append({"ts": stamp, "first": first, "identical": False,
@@ -1870,15 +1901,18 @@ def _merge_tails(ours, theirs, theirs_first=()):
     is the failure this verb exists to avoid. Two pointers can only ever advance,
     so each side comes out in exactly the order it went in.
 
-    A tie takes from `ours` first unless its timestamp is in `theirs_first`.
+    A tie takes from `ours` first unless its MOMENT is in `theirs_first`.
     That is safe rather than arbitrary: a tie whose contents differ on a shared
     target was already refused by `_tie_faults`, a tie that says the same thing
     reads the same in either order, and a tie over disjoint targets was given
-    its order there, by a rule that does not depend on which side is which."""
+    its order there, by a rule that does not depend on which side is which.
+
+    Timestamps are compared as the MOMENTS they name (`_moment_key`), never as
+    text; the caller has already refused a row naming none."""
     out, i, j = [], 0, 0
     while i < len(ours) and j < len(theirs):
-        mine, yours = str(ours[i].get("ts") or ""), str(theirs[j].get("ts") or "")
-        if yours < mine or (yours == mine and yours in theirs_first):
+        mine, yours = _moment_key(ours[i]), _moment_key(theirs[j])
+        if yours < mine or (yours == mine and yours[1] in theirs_first):
             out.append(theirs[j])
             j += 1
         else:
@@ -1946,16 +1980,21 @@ def _merge_marker(rows, name, actor, counts, ordered=()):
     has one home -- this is a journal row like any other, and a merge writing its
     own private shape would be the second opinion this module is arranged against.
 
-    Its timestamp is the LATEST of now and the last row's, so the marker can never
-    land before the rows it describes on a machine whose clock disagrees with the
-    one that wrote them."""
+    Its timestamp is the LATEST of now and the newest row's, BY MOMENT
+    (`row_moment`), so the marker can never land before the rows it describes on
+    a machine whose clock disagrees with the one that wrote them. A row's stamp
+    is kept as it is spelled when it wins."""
     if not rows:
         return None
-    latest = max([str(r.get("ts") or "") for r in rows] or [""])
-    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    now = time.time()
+    dated = [r for r in rows if row_moment(r) is not None]
+    newest = max(dated, key=row_moment) if dated else None
+    stamp = (str(newest.get("ts")) if newest is not None
+             and row_moment(newest) > now
+             else time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)))
     marker = _normalise({
         "action": MERGE_ACTION, "target": "",
-        "ts": latest if latest > now else now,
+        "ts": stamp,
         "summary": merge_summary(rows, name, counts, ordered),
         "actor": actor if isinstance(actor, dict) else {"via": MERGE_VIA}})
     marker["stateHash"] = None
@@ -2036,10 +2075,11 @@ def merge_rows(ours, theirs, name, actor=None, torn=(), target_of=None,
         return out
     ours_tail, theirs_tail = ours[shared:], theirs[shared:]
     out["oursOnly"], out["theirsOnly"] = len(ours_tail), len(theirs_tail)
-    undated = [r for r in ours_tail + theirs_tail if not str(r.get("ts") or "")]
+    undated = [r for r in ours_tail + theirs_tail if row_moment(r) is None]
     if undated:
         out["refusals"].append(
-            "%d divergent row(s) carry no timestamp, and timestamp order is the "
+            "%d divergent row(s) carry no timestamp naming a moment, and "
+            "timestamp order is the "
             "only order a merge has between the two copies -- there is nowhere "
             "to put them: %s"
             % (len(undated),
@@ -2063,7 +2103,7 @@ def merge_rows(ours, theirs, name, actor=None, torn=(), target_of=None,
             % ("ours" if not theirs_tail else "theirs", MERGE_ACTION))
         return out
     out["divergent"] = True
-    first = set(o["ts"] for o in ordered if o["first"] == "theirs")
+    first = set(row_moment(o) for o in ordered if o["first"] == "theirs")
     union = list(ours[:shared]) + _merge_tails(ours_tail, theirs_tail, first)
     chained, relinked = _rechain(union, name)
     out["relinkedAfter"] = chained[shared - 1]["hash"]
@@ -2838,11 +2878,16 @@ def newest_anchor(candidates):
         directory differently reach one verdict.
     The winner's `stateHash` is then compared with the file like any other; a
     merge row whose hash does not match is drift, as any row's is.
+
+    NEWEST IS A MOMENT (`_moment_key`), never a spelling: an offset or a
+    fractional second orders apart from its text, and a row naming no moment
+    is newest only when no row names one. The `ts` returned is the winner's,
+    as written.
     """
-    top = max(str(row.get("ts") or "") for _where, _i, row in candidates)
+    top = max(_moment_key(row) for _where, _i, row in candidates)
     last = {}
     for where, i, row in candidates:
-        if str(row.get("ts") or "") != top:
+        if _moment_key(row) != top:
             continue
         if where not in last or i > last[where][0]:
             last[where] = (i, row)
@@ -2850,7 +2895,7 @@ def newest_anchor(candidates):
         last.items(),
         key=lambda item: (item[1][1].get("action") == EVIDENCE_MERGE_ACTION,
                           row_content(item[1][1]), item[0]))
-    return (top, row.get("stateHash"), where)
+    return (str(row.get("ts") or ""), row.get("stateHash"), where)
 
 
 def verify(project, config=None):
