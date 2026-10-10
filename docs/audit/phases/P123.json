@@ -1625,7 +1625,7 @@
     {
       "id": "P123.30",
       "title": "The panel's api() fetch is bounded, so a stalled server reads as no answer, not a hang",
-      "status": "pending",
+      "status": "blocked",
       "description": "CI run 37875405209 hung six hours in the screenshot step after 'composition: confirmed'; P121.14 added the stall watch and job time bounds, but `ui/panel/core.js` `api()` still awaits `fetch` with no timeout, the only unbounded wait on that path. Bound it with an AbortSignal timeout and treat a timeout like a rejected fetch (a write resolves to the NO_ANSWER refusal, a read rejects with noAnswer), keeping the server-offline semantics. Regression (vitest): a fetch that never settles resolves a write to the no-answer refusal and rejects a read after the bound; an answer before the bound is unchanged. Faults: F587.",
       "files": [
         "plugins/audit/scripts/ui/panel/core.js",
@@ -1655,16 +1655,18 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T08:29:12Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "blockedReason": "Waves cannot run on this repo with the installed 3.2.0 hooks: the plan gate predates the task-tree binding (P124.5, ships in 3.3.0), so it reads the task tree's stale plan and refuses edits, and the wave submit hits F619. Work so far is kept in the task tree; re-run at executor.waveWidth 1 in the phase tree, starting from the tree's work."
     },
     {
       "id": "P123.31",
@@ -1937,7 +1939,7 @@
     {
       "id": "P123.36",
       "title": "The release guard finds git and gh past assignments, wrappers, global options and sh -c",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Probed on main (`_publishers`): `GH_REPO=x gh release create v1`, `env GH_REPO=x gh release create v1`, `git --git-dir=.git tag v1`, `git -c user.name=x tag v1`, `sudo git tag v1` and `bash -c 'git tag v3'` all return [] - missed denies; `-C`, subshells, heredoc data, quoted text and the listing forms are already handled (the heredoc/listing/unrelated-repo halves of F524 are closed on main). Find the program past leading assignments and wrappers with `_config.program_candidates`, accept git's global options (`-C`, `-c`, `--git-dir=`, `--work-tree=`, ...) before the verb, and read `sh -c`/`bash -c`/eval arguments with `_config.handed_commands`. Deny half first, every spelling above pinned red-first; then confirm the allow cases (`grep 'git tag' f`, heredoc text, `git tag --sort=-creatordate`) stay allowed. `tools/bench-hooks.py --gate` after. Faults: F524. GUARD COMMAND-READING CODE: written by the orchestrator with the user's permission (auto mode off when possible); if the API refuses, record it verbatim and hand the remainder to the human.",
       "files": [
         ".claude/hooks/guard-release.py"
@@ -1965,16 +1967,17 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T08:29:15Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P123.37",
@@ -2079,7 +2082,7 @@
     {
       "id": "P123.39-64p",
       "title": "a wave executor's submit files against the phase tree's plan from wherever it is run",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F619, found live in P123's first wave: the brief's submit block names docs/audit/audit-plan.json relatively and the brief's rule makes every command start with cd <task tree>, so the manifest resolves to the task tree's committed shard where the task is still pending, and audit-task refuses the filing as \"records no start\". Fix: (1) drive-phase submit resolves a relative manifest under --project-dir (project_context's rule), never the cwd; (2) the wave brief's submit block carries the phase tree's absolute manifest and says this command runs from the project. Red-first as in tests.add, plus the width-1 allow twin.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2110,16 +2113,17 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T08:29:18Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     }
   ],
   "reviewPerTask": "phase",
