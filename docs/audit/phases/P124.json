@@ -1,7 +1,7 @@
 {
   "id": "P124",
   "title": "A phase runs its ready tasks as waves, and task scopes carry their companions",
-  "status": "in_progress",
+  "status": "done",
   "description": "F600 (high) and F599 (med) from the danuvia testbed. Design, prior art, roles and decisions: quality-gates-internal plans/2026-10-09-f600-f599-waves-design.md (D1 unset width = 1 and init writes auto; D3 re-gate only on path overlap; D7 the plan-gate binding is agent-written).",
   "desiredOutcome": "A phase runs its ready disjoint tasks concurrently, each gated in its own worktree and integrated serially onto the phase tree with conflicting or undeclared overlaps refused by name, width 1 reproduces 3.2.0 exactly, and a task's scope carries the dependency, locale and runner-config files its change cannot avoid.",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "cdb30bd66ee41ff8b81e194d6bd063860d157ebf",
   "branch": "audit/p124-a-phase-runs-its-ready-tasks-a",
-  "mergedAt": null,
+  "mergedAt": "2026-10-10T08:09:18Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -1409,5 +1409,6 @@
     "runId": "2026-10-10T08:08:39Z.c7c63b",
     "status": "passed",
     "at": "2026-10-10T08:08:39Z"
-  }
+  },
+  "mergedHead": "33214f499de6e1d6a281d51973bea5031cf63734"
 }
