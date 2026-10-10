@@ -2,10 +2,10 @@
 """
 The command around the manifest rules: read a file, print findings, pick an exit code.
 
-The rules themselves are `_manifest_rules.py` (layer 2), imported below. They used
+The rules themselves are `_manifest_rules.py`, imported below. They used
 to live in this file, and moving them was not tidying: four modules needed
 `validate()` and reached it through `_loader.load_script("validate-manifest.py")`,
-which is an L5 helper and three L7 peers all loading an L7 entry point — four of
+which is a helper and three peers all loading an entry point — four of
 the seventeen edges `_deps.KNOWN_LAYER_DEBT` recorded. A rule four modules share
 belongs below all four of them, not beside one.
 

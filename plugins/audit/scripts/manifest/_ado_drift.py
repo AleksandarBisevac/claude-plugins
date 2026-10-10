@@ -86,7 +86,7 @@ UNKNOWN = "unknown"
 CLASSES = (LOCAL_AHEAD, EXTERNAL_CHANGE, UNKNOWN)
 
 # What a link's `origin` may say - ALIASES, not copies. The vocabulary belongs to
-# `_manifest_vocab` (L1), where the validator that refuses a misspelled one reads
+# `_manifest_vocab`, where the validator that refuses a misspelled one reads
 # it; a second tuple here would be a second answer, and the first time they
 # disagreed the manifest would be the thing that told us. Absent stays a third
 # state that is deliberately not in the tuple: it means unrecorded, and it is said

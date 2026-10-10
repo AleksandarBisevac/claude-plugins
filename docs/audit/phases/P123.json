@@ -2499,7 +2499,7 @@
     {
       "id": "P123.32",
       "title": "No prose states a count a command prints, and CLAUDE.md states the under-ten rule",
-      "status": "in_progress",
+      "status": "done",
       "description": "Three author-enforced prose-number leftovers, all confirmed on main. (F316) ratio claims the lint deliberately cannot read: `_deps.py` ('Fourteen of the fifteen sites are converted'), `tests/_harness.py` header ('17 of the 18 detail-carrying files'), `test_remind_tdd.py` docstring ('Twelve of the 48 suites'), `test__panel_page.py` ('# 8 of 40 can be coloured.', 'fails at 17 of 353 with this feature switched off', and the label 'a fixed 3 left 10 of the 72, 6 left 5, 8 left 2, 16 left none'), plus the twin comment in `ui/panel/usage-model.js` ('when only 8 of 40 can be coloured'). Repair is the rule's own: delete the number and keep the pointer; the `test__panel_page.py` measurement table is made a value the case computes and prints in its detail rather than reworded. The lint fixtures in test__output.py/test__deps.py that quote these phrases are inputs and stay, and so does the quotation in `_output.py`'s own WHAT IT CANNOT SEE comment, which documents the shape. (F544a) the `_worktrees` LAYERS comment in `_deps.py` says 'FOUR surfaces need the SAME answer' and names four importers while more import it - delete the count, keep the reason (more than one layer needs the same answer). (F562) CLAUDE.md says `_numeral_span()` 'reads both spellings, for every shape it knows' while its docstring says bare number words under ten are off by default - state the exception and point at the docstring's reason. Regression: the prose lints stay green and `grep -nE \"Fourteen of the fifteen|17 of the 18|Twelve of the 48|8 of 40|17 of 353|10 of the 72\"` over non-fixture files is empty. Faults: F316, F544, F562.",
       "files": [
         "plugins/audit/scripts/_deps.py",
@@ -2539,25 +2539,37 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "95e29ccfda3a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Deleted the ratio/count prose in _deps.py, _harness.py, test_remind_tdd.py, test__panel_page.py and usage-model.js; the fo2 case now prints a per-cap leftover table it derives its assertions from (test__panel_page 490/490); the _worktrees LAYERS comment drops its count; CLAUDE.md states the under-ten exception of _numeral_span. The usage-model.js comment edit moved the panel source digest, so the screenshots were re-captured by the orchestrator (node tools/capture-screenshots.mjs, exit 0); after that python3 tools/sweep-selftests.py exit 0 (331/331 files ok) and --spaced exit 0 (331/331 files ok); ruff exit 0; vermin exit 0. The regression grep over non-fixture files is empty.",
+        "descriptive": "No prose states a count a command prints, and CLAUDE.md states the under-ten rule."
       },
       "startedAt": "2026-10-10T22:53:22Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T23:19:35Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__panel_page.py: fo2 (prints the per-cap leftover table it derives from)"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T23:19:33Z.7971ce",
         "status": "passed",
         "at": "2026-10-10T23:19:33Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "95e29ccfda3a",
+        "at": "2026-10-10T23:19:35Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task, expectRedFirst false",
+        "at": "n/a"
       }
     },
     {
       "id": "P123.33",
       "title": "Every layer number written in prose is checked against _deps.LAYERS or not written",
-      "status": "pending",
+      "status": "in_progress",
       "description": "P122.9 gave `_machine_paths` a layer of its own, so every running-prose mention of another module's layer above it - \"`name` (layer N)\", \"`name` (LN)\" - is now one too low (some were already off by two). Measured on main at 9b9b9dd1 by matching those two shapes against `_deps.LAYERS`: 116 stale mentions in 25 files, most of them in `_deps.py`'s own LAYERS comments; the prep note's 'seven doctor/gate docstrings' was the visible tip. `layer_doc_drift` (lyd1) grades only a module's OPENING 'Layer N' claim about itself and leaves running prose alone on purpose, which is exactly where the rot sits - the F-prose class of a number a table already holds. Invariant: a layer number in prose is checked or not written. Add the check for every mention shape it can read reliably (\"`name` (layer N)\", \"`name` (LN)\", \"this file (LN)\") in docstrings and comments under scripts/ and hooks/, beside `layer_doc_drift` in `_deps.py`, with a prove-gates row (red: plant a wrong number; allow: a correct one). Repair by deleting the number wherever the layer is not the argument (keep the pointer to the module), and correcting it where the sentence's argument is the layer. Re-derive the count with the new check, never from this description. Faults: prep-layer-prose. Also: _deps.py close-phase comment still says it never moves HEAD; P123.4 made a clean single checkout switch to the parent after the merge - say so.",
       "files": [
         "plugins/audit/scripts/_deps.py",
@@ -2587,7 +2599,12 @@
         "plugins/audit/scripts/report/_report_md.py",
         "plugins/audit/scripts/report/_report_page.py",
         "plugins/audit/scripts/report/render-report.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/manifest/migrate-manifest.py",
+        "plugins/audit/scripts/manifest/validate-manifest.py",
+        "plugins/audit/scripts/report/_report_usage.py",
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "docs/screenshots"
       ],
       "tests": {
         "mode": "tdd",
@@ -2616,16 +2633,22 @@
         "P123.32"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T23:19:35Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T23:47:36Z.935062",
+        "status": "passed",
+        "at": "2026-10-10T23:47:36Z"
+      }
     },
     {
       "id": "P123.34",
@@ -2681,14 +2704,15 @@
       "id": "P123.35",
       "title": "Shared command readers keep floor candidates and read escapes as the shell does, pinned",
       "status": "pending",
-      "description": "(F542) `_config.program_candidates` returns `(fallback, fallback)` when an inner wrapper is uncertain, discarding the floor candidates collected from an exact outer wrapper; return them with the fallback. The secrets guard's here-string no-raise lines are covered by no test (b5h12a stays green with them deleted) - add a row that reaches them and prove it red with them removed. (F547) `_config.effective_cwd`'s cd reader, probed on main: `cd a\\\\ b` resolves `a\\ b` (the shell reads an escaped backslash and a word break - return no answer), `cd [x]` resolves literally though SECURITY.md says a glob is unresolvable (add `[` to `UNRESOLVED_MARKS` or document), `cd \\-d` keeps the backslash; state the double-quote reduction limit in the docstring; add test__config unit rows for the escape and for literal Windows backslashes. Also take any product fail-open the spaced-paths triage hands over (a guard reading a quoted spaced path wrongly). Red-first each. Also F614: a shell-write refusal names the rule that refused it (the plan gate), not the hook that hosts the check. Faults: F542, F547, F614. GUARD COMMAND-READING CODE: written by the orchestrator with the user's permission (auto mode off when possible); if the API refuses, record it verbatim and hand the remainder to the human.",
+      "description": "(F542) `_config.program_candidates` returns `(fallback, fallback)` when an inner wrapper is uncertain, discarding the floor candidates collected from an exact outer wrapper; return them with the fallback. The secrets guard's here-string no-raise lines are covered by no test (b5h12a stays green with them deleted) - add a row that reaches them and prove it red with them removed. (F547) `_config.effective_cwd`'s cd reader, probed on main: `cd a\\\\ b` resolves `a\\ b` (the shell reads an escaped backslash and a word break - return no answer), `cd [x]` resolves literally though SECURITY.md says a glob is unresolvable (add `[` to `UNRESOLVED_MARKS` or document), `cd \\-d` keeps the backslash; state the double-quote reduction limit in the docstring; add test__config unit rows for the escape and for literal Windows backslashes. Also the product fail-open the spaced-paths triage handed over: the plan gate's shell reader does not grade a redirect whose QUOTED target is an absolute path containing a space (`echo y > '<root with space>/src/undeclared.ts'` allowed in the deny tier while the unspaced twin and `sed -i` into the spaced path are blocked; test_guard_secrets_read tt2, tt3, ww10a) - fix it and remove that file's SPACED_EXEMPT row in tools/sweep-selftests.py. And: a heredoc or interpreter write after `cd <dir> &&` must be graded at the path relative to <dir> (a declared file written as `cd plugins/audit && python3 - <<EOF` with `scripts/x.py` was refused as undeclared, quoting the unprefixed path) - red-first both ways, in scope allowed, out of scope refused naming the full path. Red-first each. Also F614: a shell-write refusal names the rule that refused it (the plan gate), not the hook that hosts the check. Faults: F542, F547, F614, F622, F625. GUARD COMMAND-READING CODE: written by the orchestrator with the user's permission (auto mode off when possible); if the API refuses, record it verbatim and hand the remainder to the human.",
       "files": [
         "plugins/audit/hooks/_config.py",
         "plugins/audit/hooks/guard-secrets-read.py",
         "plugins/audit/tests/test__config.py",
         "plugins/audit/tests/test_guard_secrets_read.py",
         "SECURITY.md",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/sweep-selftests.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -3053,9 +3077,10 @@
       "id": "P123.42-64p",
       "title": "The release guard finds git and gh past assignments, wrappers, global options and sh -c (re-added as regression: inline suite)",
       "status": "pending",
-      "description": "F524's missed-deny half (re-added from P123.36, cancelled because its tdd mode cannot be proved for an inline suite - F621). guard-release._publishers reads each clause by its shell words: sh -c/eval operands are read recursively through _config._handed_command, the program is found past assignments and wrappers by _config.program_candidates, git's global options are skipped (-C chain kept; --git-dir/--work-tree make the tree unreadable, the loud answer), and an unclosed quote falls back to the anchored patterns. GUARD COMMAND-READING CODE: written by the orchestrator under the user's permission. The red was observed on the unfixed file (gr70 failed, 99/100).",
+      "description": "F524's missed-deny half (re-added from P123.36, cancelled because its tdd mode cannot be proved for an inline suite - F621). guard-release._publishers reads each clause by its shell words: sh -c/eval operands are read recursively through _config._handed_command, the program is found past assignments and wrappers by _config.program_candidates, git's global options are skipped (-C chain kept; --git-dir/--work-tree make the tree unreadable, the loud answer), and an unclosed quote falls back to the anchored patterns. GUARD COMMAND-READING CODE: written by the orchestrator under the user's permission. The red was observed on the unfixed file (gr70 failed, 99/100). Also (F628, fixture): the suite's gr34/gr34c build `cd %s` and `git -C %s` with an unquoted path - quote with shlex.quote, then remove guard-release.py's SPACED_EXEMPT row in tools/sweep-selftests.py so the spaced leg runs it. Faults add: F628.",
       "files": [
-        ".claude/hooks/guard-release.py"
+        ".claude/hooks/guard-release.py",
+        "tools/sweep-selftests.py"
       ],
       "tests": {
         "mode": "regression",

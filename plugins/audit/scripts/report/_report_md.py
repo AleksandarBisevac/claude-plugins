@@ -23,10 +23,10 @@ Imports go one way only: `_report_html` (fragment helpers) and `_usage_markdown`
 (the Usage block's own twin) are below this file; it must never import
 `_report_page` or render-report.
 
-It reads `_usage_md` from `_usage_markdown` (layer 4) rather than through
+It reads `_usage_md` from `_usage_markdown` rather than through
 `_report_usage`, and that is a layer fact rather than a preference: when the
-Usage section was cut into five, its assembly moved to layer 5 — beside this
-file, not below it — so reaching the twin through the assembly would be a
+Usage section was cut into five, its assembly moved to this module's own layer
+— beside this file, not below it — so reaching the twin through the assembly would be a
 sideways edge. Going to the twin directly is both legal and the shorter
 sentence: the report's Markdown renderer calls the Usage section's Markdown
 renderer.

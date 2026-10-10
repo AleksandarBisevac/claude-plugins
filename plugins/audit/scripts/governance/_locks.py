@@ -17,8 +17,8 @@ working tree, for as long as one append takes, and declines rather than waits.
 
 WHY IT IS ITS OWN MODULE. Those three scripts each reached the verdict by loading
 `audit-lock.py` through `_loader`, and `_deps.layer_violations()` reads a
-`_loader` call as a real edge — so `_panel_state` (L5) and two L7 commands
-pointing at an L7 entry point were three of the seventeen entries in
+`_loader` call as a real edge — so `_panel_state` and two entry-point commands
+pointing at an entry point were three of the seventeen entries in
 `KNOWN_LAYER_DEBT`. A liveness rule four callers share is not an entry point's
 private business; it belongs at the bottom of the graph where all four can import
 it, which is layer 1. Moving the CALL into a new module that then loaded

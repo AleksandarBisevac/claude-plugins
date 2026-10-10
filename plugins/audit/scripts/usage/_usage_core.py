@@ -554,7 +554,7 @@ def heatmap(rows):
 # The three readers every analytics pass starts from: one row's tokens, one row's
 # cost, and the plan's tasks by id. They arrived here with the U3.2 split of
 # `_usage_analytics.py`, and the layer is the reason. The four passes that file
-# was cut into all sit at layer 2 so that `usage_ledger` (layer 3) can import
+# was cut into all sit at layer 2 so that `usage_ledger` can import
 # them, and a module at layer 2 may not import a peer - so anything more than one
 # of them needs has to live at layer 1 or below, which is where this module
 # already was. `_tokens` also needs `TOKEN_KEYS`, defined above, so a new layer-1

@@ -23,7 +23,7 @@ import at 3 or below:
 WHAT MADE THE SPLIT POSSIBLE, since it was blocked on this and not on effort. Two
 things had to move, and neither was `_stamp`/`_settled`:
 
-  * `_cores()` was a positional 4-tuple bundling `_manifest_rules` (layer 3) with
+  * `_cores()` was a positional 4-tuple bundling `_manifest_rules` with
     three modules that have nothing to do with it. A shared base holding that tuple
     could only sit at 4 -- leaving no layer for the five modules that read it, and
     forcing an eighth layer that would have recorded a grab-bag accessor rather than
@@ -70,7 +70,7 @@ BOUNDARY DECISIONS -- read-side code that touched names the write path also uses
     in that table had. It now imports `_report_html` directly. What is left is
     the half with no downward home: `render_report` wants the WHOLE pipeline
     ending in files on disk, and that pipeline bottoms out at `_report_page`
-    (layer 6), above this module's layer 5. See the entry itself for why moving
+    (layer 7), above this module's layer 6. See the entry itself for why moving
     this module up, or inverting the call, both relocate the edge rather than
     retire it.
 

@@ -769,7 +769,7 @@ def _lockmod():
     """`_locks`, at layer 1 -- where this lock is taken, judged and given back.
 
     A plain import rather than a `_loader.load_script("audit-lock.py")`: that was
-    this file (L7) loading an L7 peer, one of the edges `_deps.KNOWN_LAYER_DEBT`
+    this file loading another entry point, one of the edges `_deps.KNOWN_LAYER_DEBT`
     recorded. Still a function, because `acquire_lock` below reads it as "the
     module that owns the verdict" and there is one caller for a reason."""
     return _locks

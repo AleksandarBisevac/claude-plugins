@@ -1060,9 +1060,9 @@ def _verified_line(fr):
     nothing recorded to say.
 
     `fr` IS `entry.get("fullRun")`, ALREADY RESOLVED DATA, never a ledger row or
-    a git question: render-report.py (layer 7) computed `answer`/`basis`/`runId`/
-    `head`/`mergedHead`/`phaseId`/`testGateBasis`, and `_evidence_view` (layer 3)
-    added the sign-off counts beside it. This module (layer 2) may not touch git
+    a git question: render-report.py computed `answer`/`basis`/`runId`/
+    `head`/`mergedHead`/`phaseId`/`testGateBasis`, and `_evidence_view`
+    added the sign-off counts beside it. This module may not touch git
     or the ledger, so every word below is read off `fr` and nothing else.
 
     `fr is None` FOR EVERY PHASE WHENEVER THIS PLAN NAMES NO `meta.fullGate` AT

@@ -106,9 +106,9 @@ _MIGRATE_FINDING_BUDGET = 1200
 # --- migration ------------------------------------------------------------------
 def _load_validator():
     """The manifest rules. A plain module now, not a `_loader.load_script` of
-    `validate-manifest.py`: that was this file (L7) loading an L7 peer, one of the
-    edges `_deps.KNOWN_LAYER_DEBT` recorded, and the rules moved to layer 2 so
-    both of us could import the one implementation instead."""
+    `validate-manifest.py`: that was this file loading another entry point, one of the
+    edges `_deps.KNOWN_LAYER_DEBT` recorded, and the rules moved into a module
+    so both of us could import the one implementation instead."""
     return _manifest_rules
 
 

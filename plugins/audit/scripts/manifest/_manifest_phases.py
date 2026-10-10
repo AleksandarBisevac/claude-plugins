@@ -851,7 +851,7 @@ def _add_tracked(obj, where, findings, warnings):
 # IT LIVES BESIDE THE WALK, and beside the red-first-naming rule about the same
 # field, because
 # those two are what a reader has to compare. The first draft put it in
-# `_manifest_rules` (L3) with a walk of its own, which was a THIRD pass over the
+# `_manifest_rules` with a walk of its own, which was a THIRD pass over the
 # tasks and a second expression of `mode == "tdd" and status not in TERMINAL` -- and
 # the two had already drifted apart on `expectRedFirst` before anybody read them
 # together. `_manifest_rules` re-exports both names, so every caller and the L7 ->

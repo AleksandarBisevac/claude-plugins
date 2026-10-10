@@ -603,6 +603,11 @@ TABLE = (
  ("layer_doc_drift", S + "status/_doctor_policy.py", "replace",
   "`check_policy` is what sets this module's floor:",
   "Layer 5, and `check_policy` is what sets this module's floor:", DEP, "lyd1"),
+ # A wrong number planted beside a real module name in a shipped docstring: the
+ # shape the prose carried when a module gained a layer of its own.
+ ("layer_mention_drift", S + "status/_doctor_ado.py", "replace",
+  "`_doctor_report` for the collector",
+  "`_doctor_report` (layer 9) for the collector", DEP, "lmd1"),
  # The defect is a PAIR - a function nothing names, and a docstring saying
  # something depends on it - so the mutation has to plant both halves at once. A
  # probe function planted in a shipped module is exactly that: nothing calls it,
@@ -1563,6 +1568,11 @@ ALLOW = (
  # really do have the caller they describe. Raise the threshold so nothing is
  # ever skipped and the rule convicts every one of them - the honest-docstring
  # direction, measured on this tree rather than imagined.
+ # The comparison is the whole rule: make it unconditional and every mention is
+ # convicted, correct ones included - the allow case (a right number is silent).
+ ("layer_mention_drift", S + "_deps.py", "replace",
+  "                if claimed != actual:\n",
+  "                if True:\n", DEP, "lmd3"),
  ("uncalled_helper_claims", S + "_deps.py", "replace",
   "            if counts.get(node.name, 0) > 1:\n                continue\n",
   "            if counts.get(node.name, 0) > 10 ** 6:\n                continue\n",

@@ -2,10 +2,10 @@
 """
 The command around the config rules: read a file, print findings, pick an exit code.
 
-The rules themselves are `_config_rules.py` (layer 2), imported below. They used
+The rules themselves are `_config_rules.py`, imported below. They used
 to live in this file, and moving them was not tidying: three modules needed them
 and reached this entry point through `_loader.load_script("validate-config.py")` —
-`_panel_settings` (layer 2!), `_panel_state` (layer 5) and `audit-doctor` (layer 7),
+`_panel_settings`, `_panel_state` and `audit-doctor`,
 three of the seventeen edges `_deps.KNOWN_LAYER_DEBT` recorded, and the
 `_panel_settings` one was the deepest inversion in the table.
 

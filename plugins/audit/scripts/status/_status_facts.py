@@ -9,7 +9,7 @@ shared. This module is that first half, and `audit-status.py` is the command tha
 prints it.
 
 WHY THE SPLIT EXISTS. Three modules wanted the facts and none of them wanted the
-rendering: `_panel_state` (layer 5) needs `rollup` for the panel's overview,
+rendering: `_panel_state` needs `rollup` for the panel's overview,
 `audit-doctor` needs `submodule_conflicts` for its preflight, and `render-report`
 needs `evaluate_gate` for the verdict at the top of the report. All three reached
 them the only way a hyphenated entry point can be reached —
@@ -20,7 +20,7 @@ low enough because everything here reaches only `_manifest_io` and `_areas` at
 layer 1.
 
 THE REPORT'S GATE VERDICT IS THE CASE WORTH KNOWING ABOUT. `render-report.py`
-computes the verdict at layer 7 and INJECTS it into `_report_page` (layer 6),
+computes the verdict and INJECTS it into `_report_page`,
 specifically so a helper never reaches up to an entry point for it. That dance was
 forced by the gate living inside a command; `evaluate_gate` and `DEFAULT_GATE` are
 here now, so the constraint is gone even though the injection stayed — changing

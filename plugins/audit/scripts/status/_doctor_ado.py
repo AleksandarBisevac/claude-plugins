@@ -21,8 +21,8 @@ without a pause, so an unannounced bounded wait is indistinguishable from a hang
 for as long as the bound. The wording borrows `fetch-ado-items`' "bound %ds per
 query" rather than inventing a second way to talk about a timeout.
 
-Layer 4: it reads `_doctor_report` (layer 2) for the collector, `_ado_drift`
-(layer 2) for the link walk and `_ado_tracked` (layer 1) for whether an item
+Layer 4: it reads `_doctor_report` for the collector, `_ado_drift`
+for the link walk and `_ado_tracked` for whether an item
 belongs on a board at all, and reaches nothing else. The walk used to be a
 second copy here - including the `id: true` trap - and one walk is why the
 doctor's count and the sync command's table cannot disagree about what is linked;

@@ -116,7 +116,7 @@ PROP_ID_RE = re.compile(r"^PROP-\d+%s$" % (ID_SUFFIX,))
 # writes is a value nothing tests. ABSENT is the third state and is deliberately
 # not spelled here: it means unrecorded, every surface says so, and defaulting it
 # to "created" would put this plugin's name on a card somebody else made. The
-# vocabulary lives at this layer because `_ado_drift` (L2) and this validator both
+# vocabulary lives at this layer because `_ado_drift` and this validator both
 # need it, and a second tuple over there would be a second answer.
 ADO_ORIGIN_CREATED = "created"
 ADO_ORIGIN_IMPORTED = "imported"

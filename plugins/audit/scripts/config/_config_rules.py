@@ -16,8 +16,8 @@ in `KNOWN_LAYER_DEBT` were this one file being loaded as a library — one of th
 from LAYER 2, the deepest inversion in the table.
 
 That deepest one is also why `_panel_settings` moved from layer 2 to layer 3 in
-the same change. These rules import `_policy` (layer 1) and therefore cannot sit
-below layer 2; a consumer AT layer 2 would still be a same-layer edge, which the
+the same change. These rules import `_policy` (layer 2) and therefore cannot sit
+below layer 3; a consumer AT layer 3 would still be a same-layer edge, which the
 lint counts as not-strictly-downward and is right to. Moving one module up was
 the whole cost — `_panel_settings` reaches nothing at L3 and nothing at L3
 reaches it — where inserting a layer would have renumbered the table for an edge

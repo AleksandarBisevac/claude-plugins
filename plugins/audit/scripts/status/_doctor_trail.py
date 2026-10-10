@@ -32,8 +32,8 @@ nothing must not fail a build for having no history yet - and one occurrence is
 never printed as a pattern.
 
 Layer 5, and the ledger is what sets the floor: `check_ledger` runtime-loads
-`usage_ledger` (layer 3), so this cannot sit below 4. `_journal_io` (layer 1) and
-`_evidence_io` (layer 2) are imported rather than loaded - the trail's library
+`usage_ledger`, so this cannot sit below it. `_journal_io` and
+`_evidence_io` are imported rather than loaded - the trail's library
 half came out from under `audit-journal.py` for exactly that reason, and the
 gate-pattern check reads the same evidence tally `propose-gates.py` folds into a
 plan proposal rather than re-deriving it a second time.

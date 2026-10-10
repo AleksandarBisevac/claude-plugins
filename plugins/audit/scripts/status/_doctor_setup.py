@@ -676,8 +676,8 @@ def check_config(rep, project):
                     % (path, cfg["_configError"]),
                     "fix the JSON; /audit:* commands refuse until it parses")
     else:
-        # `_config_rules` (layer 2), imported at the top rather than `_load(...)`-ed:
-        # this file (L7) loading `validate-config.py` (L7) was one of the edges
+        # `_config_rules`, imported at the top rather than `_load(...)`-ed:
+        # this file loading `validate-config.py` was one of the edges
         # `_deps.KNOWN_LAYER_DEBT` recorded.
         with open(path, "r", encoding="utf-8") as fh:
             raw = json.load(fh)
@@ -792,9 +792,9 @@ def check_manifest(rep, project, cfg):
         return manifest_rel, None
 
     # `_manifest_rules`, imported at the top rather than `_load(...)`-ed here:
-    # this file (L7) loading `validate-manifest.py` (L7) was one of the edges
-    # `_deps.KNOWN_LAYER_DEBT` recorded, and the rules now sit at layer 2 where
-    # every consumer can import the one implementation.
+    # this file loading `validate-manifest.py` was one of the edges
+    # `_deps.KNOWN_LAYER_DEBT` recorded, and the rules now sit in a module every
+    # consumer can import the one implementation from.
     findings, warnings = _manifest_rules.validate(manifest)
     n_phases = len(manifest.get("phases") or [])
     # Counted through layer 1 rather than by hand, and the difference is not
@@ -1012,8 +1012,8 @@ def check_submodules(rep, project, cfg, manifest, git_root):
     gitmodules = os.path.join(git_root, ".gitmodules")
     if not os.path.exists(gitmodules):
         return
-    # `_status_facts` (layer 2), imported at the top rather than `_load(...)`-ed:
-    # this file (L7) loading `audit-status.py` (L7) was one of the edges
+    # `_status_facts`, imported at the top rather than `_load(...)`-ed:
+    # this file loading `audit-status.py` was one of the edges
     # `_deps.KNOWN_LAYER_DEBT` recorded. Only the FACTS are wanted here — the
     # ~600 lines of human rendering that used to come with them never were.
     try:

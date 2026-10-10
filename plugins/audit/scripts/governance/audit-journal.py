@@ -44,8 +44,8 @@ reads from Bash -- so the mapping goes in the rows and this prints it.
 
 The trail itself -- the row shape, the hash chain, where a journal lives, and what
 `verify` actually checks -- is `_journal_io.py` at layer 1, imported below. It used
-to be this file's body, and moving it was not tidying: `_help` (layer 3) and
-`audit-doctor` (layer 7) both needed it and both reached this entry point through
+to be this file's body, and moving it was not tidying: `_help` and
+`audit-doctor` both needed it and both reached this entry point through
 `_loader`, two of the seventeen edges `_deps.KNOWN_LAYER_DEBT` recorded, and
 `hooks/_config.py` was loading the whole command on every tool call to resolve one
 directory path.
@@ -86,7 +86,7 @@ import _journal_io  # noqa: E402  (the trail this command is a front end for)
 import _evidence_io  # noqa: E402  (the OTHER chained record `verify` now reads)
 
 # The trail, under the names this command has always called it by. NOT copies:
-# `_journal_io` (layer 1) owns every one of them, and `tests/test_audit_journal.py`
+# `_journal_io` owns every one of them, and `tests/test_audit_journal.py`
 # asks for them by hand, case by case, about the trail AS THIS COMMAND SEES IT.
 # `tests/test__journal_io.py` pins each name to be that module's own object, so a
 # second implementation here fails a case rather than drifting.

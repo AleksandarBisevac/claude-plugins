@@ -564,8 +564,8 @@ def status_index(manifest):
     resolves through.
 
     Lives here, beside the other traversals, because it had two consumers that
-    cannot import each other: `_status_facts` (L2) builds readiness from it and
-    `_manifest_crossrefs` (L2) needs the same answer to say whether a PINNED
+    cannot import each other: `_status_facts` builds readiness from it and
+    `_manifest_crossrefs` needs the same answer to say whether a PINNED
     phase is waiting on something unfinished. Two walks would be two answers,
     and the tie-breaks below are exactly the kind of detail one copy learns and
     the other does not.

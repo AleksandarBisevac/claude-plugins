@@ -580,6 +580,47 @@ def _cases(check):
     finally:
         shutil.rmtree(ld_tmp, ignore_errors=True)
 
+    # --------------------------- layer_mention_drift: running prose vs LAYERS
+    # `layer_doc_drift` grades only a module's opening claim about itself, and
+    # leaves a sentence naming ANOTHER module's layer alone on purpose - which is
+    # where the numbers rotted when a module was given a layer of its own and
+    # everything above it moved up by one.
+    check("lmd1 the shipped tree carries no layer number in a docstring or comment "
+          "that LAYERS disagrees with: %r" % (M.layer_mention_drift()[:3],),
+          M.layer_mention_drift() == [])
+
+    lm_tmp = tempfile.mkdtemp(prefix="audit-deps-layermention-")
+    try:
+        lm_layers = (("_output",), ("_manifest_io", "_probe_mention"), ("_other",))
+
+        def _lm(body):
+            """Judge one module body against a small LAYERS naming `_manifest_io` at 1."""
+            with open(os.path.join(lm_tmp, "_probe_mention.py"), "w",
+                      encoding="utf-8") as fh:
+                fh.write(body)
+            return M.layer_mention_drift(lm_tmp, hooks_dir=os.path.join(lm_tmp, "none"),
+                                         layers=lm_layers)
+
+        wrong = _lm('"""Reads `_manifest_io` (layer 3) for the plan."""\n')
+        check("lmd2 a docstring giving another module the wrong layer is named, "
+              "with BOTH numbers: %r" % (wrong,),
+              len(wrong) == 1 and "layer 3" in wrong[0][1] and "layer 1" in wrong[0][1])
+        check("lmd3 ...and the same sentence with the right number is silent",
+              _lm('"""Reads `_manifest_io` (layer 1) for the plan."""\n') == [])
+        check("lmd4 the (LN) spelling in a comment is read too, and wrong is named",
+              len(_lm("# reaches `_other` (L1) for the names\nX = 1\n")) == 1
+              and _lm("# reaches `_other` (L2) for the names\nX = 1\n") == [])
+        check("lmd5 'this file (LN)' is graded against the module's own layer",
+              len(_lm("# this file (L2) is a leaf\nX = 1\n")) == 1
+              and _lm("# this file (L1) is a leaf\nX = 1\n") == [])
+        check("lmd6 a sentence wrapped across two comment lines is still read",
+              len(_lm("# reaches `_other`\n# (L1) for the names\nX = 1\n")) == 1)
+        check("lmd7 a layer number in a string that is neither docstring nor "
+              "comment is not prose and is left alone",
+              _lm('X = "`_other` (L1)"\n') == [])
+    finally:
+        shutil.rmtree(lm_tmp, ignore_errors=True)
+
     # ------------------------------- uncalled_helper_claims: a consumer that is not
     # `_evidence_io.in_evidence` opened "needed for the same reason: a guard that
     # asks ... has to be able to name the record" while nothing anywhere called it.

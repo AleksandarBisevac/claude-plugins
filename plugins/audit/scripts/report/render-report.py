@@ -121,10 +121,10 @@ _SCRIPT = _report_ui.SCRIPT
 
 
 def _load_status_lib():
-    """`_status_facts` (layer 2) — the gate's own conditions and verdict.
+    """`_status_facts` — the gate's own conditions and verdict.
 
     A plain import now, not a `_loader.load_script("audit-status.py")`: that was
-    this file (L7) loading an L7 peer, one of the edges `_deps.KNOWN_LAYER_DEBT`
+    this file loading another entry point, one of the edges `_deps.KNOWN_LAYER_DEBT`
     recorded, and it pulled ~600 lines of terminal rendering in behind one call
     to `evaluate_gate`. Kept as a function because `_verdict` below reads it as
     "the module that owns the gate" and the suite substitutes it."""
@@ -266,11 +266,11 @@ render_md = _report_md.render_md
 
 
 # --- the gate verdict -----------------------------------------------------------
-# The gate's conditions and verdict are `_status_facts` (layer 2), imported
+# The gate's conditions and verdict are `_status_facts`, imported
 # straight above; this used to say the gate was reached through `_loader` as an
 # edge the debt table records, which is the shape it had before that module came
 # down a layer — and the sentence beside `_load_status_lib` already said so.
-# The verdict is still computed HERE and injected into `_report_page` (layer 6)
+# The verdict is still computed HERE and injected into `_report_page`
 # rather than fetched from inside it, but the reason is no longer a layer rule:
 # what `_report_page` would be reaching for is the CLI gate's own word, and a
 # renderer that composed a second opinion out of the same facts is what the

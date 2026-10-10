@@ -26,8 +26,8 @@ exactly as it did before this module existed — which is the case that goes red
 `sort_key` ever becomes unconditional.
 
 WHY LAYER 1. `_branch` is the precedent and `_deps.LAYERS` states the reason in the
-same words: four surfaces need the SAME answer — `_status_facts` (L2) for the ready
-list, `_manifest_crossrefs` (L2) for the findings, `_panel_composition` (L4) for the
+same words: four surfaces need the SAME answer — `_status_facts` for the ready
+list, `_manifest_crossrefs` for the findings, `_panel_composition` for the
 control, and `set-priority.py` for the write. A second expression of the order would
 be a second order. So this reaches nothing but `_output`: it is arithmetic over
 plain dicts, it opens no file and holds no module state.

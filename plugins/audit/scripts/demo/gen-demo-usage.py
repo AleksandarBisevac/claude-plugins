@@ -112,7 +112,7 @@ TIER_TO_MODEL = {
 }
 DEFAULT_MODEL = "claude-sonnet-5"
 
-# `_demo_cast` (layer 1) owns these: `gen-demo-manifest.py` hands the same
+# `_demo_cast` owns these: `gen-demo-manifest.py` hands the same
 # identities out as area owners, and the demo's whole point is that the doctor's
 # owner-versus-ledger join has something to match. Spelled here under the name
 # this file has always used, because `generate()`'s default argument is part of

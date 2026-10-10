@@ -316,8 +316,8 @@ def check_locks(rep, git_root, project, manifest_rel):
         rep.ok("locks", "no audit locks held")
         return
     try:
-        # `_locks` (layer 1), imported at the top rather than `_load(...)`-ed:
-        # this file (L7) loading `audit-lock.py` (L7) was one of the edges
+        # `_locks`, imported at the top rather than `_load(...)`-ed:
+        # this file loading `audit-lock.py` was one of the edges
         # `_deps.KNOWN_LAYER_DEBT` recorded. The `try` stays — `collect` shells
         # out to git, and a git that hangs or a lock dir that cannot be listed is
         # still the failure this arm reports.

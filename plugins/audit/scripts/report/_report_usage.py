@@ -56,11 +56,11 @@ one consumer that now reaches past this file — it imports `_usage_markdown`
 directly, which is what keeps it strictly below the Usage section's assembly
 rather than beside it.
 
-This module moved from layer 4 to layer 5, and that is the whole structural cost
-of the split: `_usage_overview`/`_usage_detail`/`_usage_markdown` sit at layer 4
-above `_usage_viz`, so their only consumer has to sit above them. `_report_page`
-(L6) and render-report (L7) are still strictly above; `_report_md` stays at L5
-beside this file, with no edge either way.
+This module moved up a layer, and that is the whole structural cost of the
+split: `_usage_overview`/`_usage_detail`/`_usage_markdown` sit above `_usage_viz`,
+so their only consumer has to sit above them. `_report_page` and render-report
+are still strictly above; `_report_md` stays beside this file, with no edge
+either way.
 
 This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__report_usage.py` - see

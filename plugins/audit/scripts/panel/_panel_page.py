@@ -26,9 +26,9 @@ one line earlier and the served page loses a substitution while every case here
 still passes; `pg1` is the case that goes red for exactly that, and it is the only
 one that can.
 
-WHERE THIS SITS. Layer 4, beside `_panel_discovery` and `_report_usage`: it reaches
-`usage_ledger` (L3, for the cost-band constant), `_panel_ui` and `_panel_settings`
-(L2), `_ui_theme` and `_loader` (L1), and nothing else. It must never import
+WHERE THIS SITS. Its layer is `_deps.LAYERS`' to state: it reaches
+`usage_ledger` (for the cost-band constant), `_panel_ui` and `_panel_settings`,
+`_ui_theme` and `_loader`, and nothing else. It must never import
 `_panel_state`, `_panel_write`, `_panel_discovery` or panel-server — one of its
 cases says so — which is also why the cases that mix a page claim with a server
 call (build_state, _run_status, help_field, the route slices) stayed behind rather

@@ -16,7 +16,7 @@ the first receipt's ts. Zero receipts means an older plugin wrote this history,
 and that is one ok line rather than a nag.
 
 Layer 5, for the same reason `_doctor_trail` is: it runtime-loads `usage_ledger`
-(layer 3) for the coverage arm. `_journal_io` (layer 1) is imported, not loaded.
+for the coverage arm. `_journal_io` is imported, not loaded.
 
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__doctor_completions.py` - see

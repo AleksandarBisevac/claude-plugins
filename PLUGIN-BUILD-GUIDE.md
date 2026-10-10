@@ -1527,10 +1527,15 @@ the build on any document that states the rule and then carves an exception out 
 with a layer, and now it has to be the layer `LAYERS` gives it. Two documents said `Layer 5` for
 a module the table had already moved off, both were true when written, and nothing compared
 either to the table — a stale ARGUMENT costs the next reader more than no argument does. Only a
-module's claim about ITSELF is judged, anchored at the start of a docstring line, so one module
-correctly citing another's layer in running prose is left alone; the allow row in
-`tools/prove-gates.py` is what holds that line, because a pattern widened to catch the prose
-convicts dozens of accurate sentences.
+module's claim about ITSELF is judged, anchored at the start of a docstring line, so that
+check leaves running prose alone; the allow row in `tools/prove-gates.py` is what holds that
+line, because a pattern widened to catch the prose convicts accurate sentences.
+`layer_mention_drift()` is the other half: running prose is where a number rotted when one
+module gained a layer of its own and everything above it moved up, so a layer written beside a
+module name (`` `name` (layer N) ``, `` `name` (LN) ``, or `this file (LN)`) in a docstring or comment
+is graded against `LAYERS`. The invariant is that a layer number in prose is checked or not
+written, and the repair is to delete the number unless the layer is the sentence's argument.
+Other wordings are not read, so those stay author-enforced.
 `doc_prose_numbers()` runs `_output`'s prose-number rule over every `.md` this repo keeps — the
 derived set described under `_output.py` above, product documents included — and it **delegates**
 to `_output._prose_number_claim` rather than restating the shapes, because a second copy of the
