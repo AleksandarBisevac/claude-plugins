@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "sweep-selftests": "pass",
+    "ruff": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression mode, expectRedFirst false: fix implemented first, then tests locking it",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "_loader.script_index/script_path/load_script gained a root seam (uncached when given; _output.script_files already had root so _output needed only a docstring fix). test__loader probe now runs under a mkdtemp root and a final case asserts the scripts/ listing is identical before and after. test__journal_io._scripts_modules now goes through _output.lint_py_files (py_files itself does NOT exclude probe dirs; lint_py_files does) with a root seam; new case pw8 plants _loader_probe_x/planted.py and asserts only the sibling is listed. python3 tools/sweep-selftests.py exit 0 (330/330 files); ruff check plugins/audit tools passes; test__loader 32/32, test__journal_io 259/259. Disclosure: test__loader.py was edited via a python heredoc script rather than the Edit tool (rule slip). PLUGIN-BUILD-GUIDE.md needed no change (no text claims a missing root seam). Not run: vermin, claude plugin validate, shots/interactive (own-tests scope).",
+    "descriptive": "The loader probe no longer writes into the shared scripts/ tree, so parallel suites cannot race it."
+  },
+  "testsAdded": [
+    "test__loader: probe against temp root, scripts/ listing unchanged",
+    "test__journal_io: pw8 planted probe file not listed"
+  ],
+  "claims": "claims:\n- the loader cases leave scripts/ untouched: last test__loader case compares os.walk listings before/after, passing in the 32/32 run\n- the journal walk excludes a planted probe path: pw8 in test__journal_io, 259/259 passing",
+  "stamp": "audit-stamp: {\"content\":\"sha256:770160dcfae2cec402a8a38c97017fcce848985be7624426d21ab8726fce7c40\",\"dirtyDigest\":\"sha256:df7458e001b4156df17e4efa0f671287a9199b1e6b3582e5c7aecdaf85f23323\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\"plugins/audit/scripts/_loader.py\":\"2c9bdb21f83156b2\",\"plugins/audit/scripts/_output.py\":\"aeacad6f43795c30\",\"plugins/audit/tests/test__journal_io.py\":\"2794d3002e19ad87\",\"plugins/audit/tests/test__loader.py\":\"c8a8f9a4153b9cd4\"},\"head\":\"162c8f03\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/_loader.py\",\"plugins/audit/scripts/_output.py\",\"plugins/audit/tests/test__journal_io.py\",\"plugins/audit/tests/test__loader.py\"],\"scopeDigest\":\"sha256:2f974fe9fe6e2be43633f5cd82a1bcf56e4b8c5a4aa727ab52331949269ed108\",\"v\":2}"
+}

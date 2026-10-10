@@ -1864,7 +1864,7 @@
     {
       "id": "P123.24",
       "title": "Scripts find their dir on any path spelling, committed files are LF, Windows edges pinned",
-      "status": "in_progress",
+      "status": "done",
       "description": "(F582) `examples/report.sh` and `plugins/audit/hooks/py-launch.sh` find their own dir with `case \"$0\" in */*)`, which a backslash `$0` (no `/`) defeats; `tools/verify.sh`/`tools/redfirst.sh` use `dirname \"$0\"` unchecked. One POSIX-sh idiom everywhere that normalises backslashes first - in py-launch.sh with builtins only (parameter expansion, no `tr`), per CLAUDE.md - and a lint over every tracked `.sh`; probe py-launch.sh with a backslash path. (F585) three writers of committed files write text mode with platform newlines: `_manifest_io.atomic_write_text` (manifest JSON, usage backfill), `gen-demo-manifest.py` (example evidence .jsonl), `gen-demo-usage.py` (example usage .jsonl); write `newline=\"\\n\"` and add an AST lint over scripts/ for a text-mode write open without newline=, with the CRLF-default simulation case from test__journal_io's nl-block. (F546 a,b) test__proc_group pg18 asserts `None stays None` only for `shell_env`; add `shell_invocation('true')[1] is None` / `is d` identity at the call both spawn sites make. test_import_evidence i39/i40 skip with `absent=not linked`, so the 'skipped where the mechanism exists' protection cannot fire; fall back to a directory junction (`_winapi.CreateJunction`) and skip only when both are absent. (F546 c is already fixed: `import-evidence._is_under` accepts the spelled or the resolved path.) Regression: py-launch.sh started as a drive-letter, backslash-separateda drive-letter, backslash-separated $0 resolves its dir; CRLF-default simulation writes LF bytes. Also F615 (CI windows, sl4): a breaker that loses the .lock.break race with PermissionError/EACCES retries the acquire within the deadline instead of refusing the append; a case simulates the Windows denial. Faults: F582, F585, F546, F615.",
       "files": [
         "examples/report.sh",
@@ -1924,25 +1924,44 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "162c8f03429c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Shell: py-launch.sh, examples/report.sh, examples/panel.sh, tools/redfirst.sh, tools/verify.sh normalise backslashes in $0 with builtins only (loop over parameter expansion) before taking the dir. New lints in _output.py: sh_self_dir_violations (every .sh under the repo; flags case on $0, dirname of $0, ${0%/#} cuts; comments skipped) and text_write_newline_violations (AST over scripts/: open/io.open/os.fdopen text-mode write/append/update with no newline), with NEWLINE_PENDING as a shrink-only pending table {file: reason}, stale rows reported. Newline fixes (newline=LF) in _manifest_io.atomic_write_text and gitignore append, gen-demo-manifest evidence writer, gen-demo-usage ledger writer, plus _journal_io (3 sites) and _locks (3 sites). NEWLINE_PENDING rows are the undeclared files: manage-worktrees, _invariants, run-test-gate, stamp-verification, _panel_runstate, panel-server, render-report (rendered HTML/MD compared byte for byte - first to convert, outside this task's files), usage_ledger. F615: _journal_io._break_stale treats a PermissionError/EACCES on the breaker create as a lost race (returns False so the acquire retries), other errnos still raise. F546: test__proc_group pg18i pins shell_invocation identity for env None and a passed dict (resolver swapped to POSIX shell so it is platform independent); test_import_evidence gains _link_directory (symlink, then _winapi.CreateJunction) and skips i39-i41 only when neither mechanism exists, with i39j covering the fallback. Followers: prove-gates rows nw1/nw2/nw3 and sd1/sd2 (+ a section marker, file passed the navigability bound), gate-parity AUDITED_EXEMPTIONS NEWLINE_PENDING and NOT_AN_EXEMPTION _SH_SELF_DIR_SHAPES. Verified: tools/sweep-selftests.py exit 0 (330/330 files ok); gate-parity exit 0; ruff and vermin exit 0. prove-gates.py --only refused (REFUSED DIRTY, the tree is dirty by design), so each new lint was mutated in a scratch copy under the scratchpad instead: crippling text_write_newline_violations -> nw1,nw3 red; dropping the b-mode skip -> nw2,nw4 red; ignoring pending -> nw3,nw4 red; crippling sh_self_dir_violations -> sd1 raised; dropping the comment skip -> sd2 red. One slip: a first attempt wrote test_py_launch.py through a python3 heredoc and the classifier refused it; I did not retry that, redid every edit with Edit. Not run: claude plugin validate, validate-manifest, the browser gates; PLUGIN-BUILD-GUIDE.md untouched (no new .py).",
+        "descriptive": "Scripts find their directory on a backslash-only $0, committed demo/plan writers emit LF, two new lints keep both from returning, and the Windows lock-break denial retries instead of refusing."
       },
       "startedAt": "2026-10-10T19:35:21Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T20:07:53Z",
+      "verifiedBy": [
+        "test_py_launch.py pl20 pl21 pl22",
+        "test__manifest_io.py mnl0 mnl1 mnl2",
+        "test_gen_demo_manifest.py gnl0 gnl1",
+        "test_gen_demo_usage.py gnl2 gnl3",
+        "test__output.py nw1 nw2 nw3 nw4 sd1 sd2 sd3",
+        "test__proc_group.py pg18i",
+        "test_import_evidence.py i39j",
+        "test__journal_io.py sl9 sl10"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T20:07:52Z.18b384",
         "status": "passed",
         "at": "2026-10-10T20:07:52Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "162c8f03429c",
+        "at": "2026-10-10T20:07:53Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T19:59:41Z",
+        "basis": "`python3 plugins/audit/tests/test_py_launch.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 22 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pl20 (house FAIL): SELFTEST FAILED: 19/22 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.25",
       "title": "The loader probe never writes into the shared scripts/ tree, so no suite races it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "`test__loader.py` writes `_loader_probe_a/` and `_loader_probe_b/` into the REAL `scripts/` because `_loader.script_index()` has no root seam, while `test__journal_io._scripts_modules()` walks `SCRIPTS_DIR` with os.walk and skips only __pycache__; under the parallel sweep the walk lists a probe file and then fails to open it (seen in P117.4's and P118.14's task gates). Structural fix: give `script_index()` (and the `_output.script_files()` walk it builds on) a root argument, point the probe at a temp copy, and route test__journal_io's walk through `_output.py_files()` (which already excludes `LOADER_PROBE_DIR`). Regression: the loader cases leave scripts/ untouched (listing before == after); the journal walk holds no probe path even when one is planted. Faults: F560.",
       "files": [
         "plugins/audit/scripts/_loader.py",
@@ -1977,16 +1996,22 @@
         "P123.24"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T20:07:53Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T20:24:04Z.894190",
+        "status": "passed",
+        "at": "2026-10-10T20:24:04Z"
+      }
     },
     {
       "id": "P123.26",
@@ -3057,6 +3082,62 @@
           "plugins/audit/tests/test_commit_task_work.py: a tracked file clean at start, modified during the attempt and declared by no in_progress task is refused at commit naming it; the same file dirty before start is not refused as this attempt's",
           "plugins/audit/tests/test_drive_phase.py: a close over such a path stops and does not print 'closed'",
           "plugins/audit/tests/test_drive_phase.py: dispatch printed, then audit-task scope on the started task, then next re-prints the dispatch rather than deciding no-executor-return, and no attempt is spent"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.46-64p",
+      "title": "Every text write states its newline: the pending list is empty and hooks are read too",
+      "status": "pending",
+      "description": "Follow-up to the Windows-leftovers task, which added text_write_newline_violations with a shrink-only NEWLINE_PENDING table naming the files outside its scope. Convert every pending row so the table is EMPTY (and the table is removed, or kept as an empty shrink-only list with its stale-row check): render-report.py first - it writes the rendered report and its Markdown twin, which are committed and compared byte for byte, so a Windows render writes CRLF the comparison refuses - then manage-worktrees, _invariants, run-test-gate, stamp-verification, _panel_runstate, panel-server and usage_ledger. Each write states newline explicitly (\"\\n\" for anything read back or committed; a write whose platform newline is genuinely wanted says newline=None with a comment saying why, which the lint accepts as stated). Extend the lint's walk to plugins/audit/hooks/ (and .claude/hooks/ if the shared walk reaches it) and fix what it finds there. Regression: the CRLF-default simulation (the nl-block shape in test__journal_io) over render-report's writer produces LF bytes; the lint flags a hooks/ file with a bare text-mode write open; NEWLINE_PENDING carries no row. Faults: F585.",
+      "files": [
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/scripts/report/render-report.py",
+        "plugins/audit/tests/test_render_report.py",
+        "plugins/audit/scripts/git/manage-worktrees.py",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/scripts/panel/_panel_runstate.py",
+        "plugins/audit/scripts/panel/panel-server.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/hooks",
+        "tools/gate-parity.py",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_render_report.py: under a CRLF-default text mode the rendered HTML and Markdown are written with LF bytes",
+          "plugins/audit/tests/test__output.py: text_write_newline_violations flags a bare text-mode write open in a hooks/ file, and NEWLINE_PENDING holds no row"
         ],
         "expectRedFirst": true,
         "gate": [

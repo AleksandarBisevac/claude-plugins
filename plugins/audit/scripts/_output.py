@@ -544,9 +544,9 @@ def lint_py_files(directory):
 
     THE DIFFERENCE IS WHO IS ASKING. `py_files` answers "what .py files exist",
     and RESOLUTION depends on that being the whole truth: `_loader.script_index()`
-    walks it, and `test__loader.py` proves depth-independent resolution by writing
-    two files under one basename into the REAL scripts/ tree - filtering them out
-    of `py_files` broke exactly that, which is how this function came to exist.
+    walks it, and `test__loader.py` proves depth-independent resolution with two
+    files under one basename - filtering them out of `py_files` would break exactly
+    that, which is why this is a separate function.
 
     A LINT is asking a different question: what does this repository CARRY. A pair
     of files that exists for the width of one `finally` is not carried by anyone,

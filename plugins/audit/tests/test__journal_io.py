@@ -61,15 +61,15 @@ def _module_consts_and_funcs(tree):
     return consts, funcs
 
 
-def _scripts_modules():
-    """Every `.py` under `scripts/`, wherever it sits. `__pycache__` is not source."""
-    out = []
-    for dirpath, dirs, files in os.walk(_harness.SCRIPTS_DIR):
-        dirs[:] = [d for d in dirs if d != "__pycache__"]
-        for name in sorted(files):
-            if name.endswith(".py"):
-                out.append(os.path.join(dirpath, name))
-    return sorted(out)
+def _scripts_modules(root=None):
+    """Every `.py` under `scripts/`, wherever it sits.
+
+    Goes through `_output.lint_py_files()`, the walk that skips the loader's probe
+    directories, so a probe file that is planted and removed is never listed here.
+    `root` is a seam for the case that plants one."""
+    return sorted(path for _rel, path in
+                  _output.lint_py_files(root if root is not None
+                                        else _harness.SCRIPTS_DIR))
 
 
 def _journal_append_sites(path):
@@ -798,6 +798,24 @@ def _cases(check):
               % (_journal_append_sites(_lists),),
               _journal_append_sites(_lists) == []
               and os.path.basename(_lists) not in _seen)
+        # THE WALK HOLDS NO LOADER PROBE: a file planted under a probe directory
+        # (what another suite creates and removes mid-run) is not listed, while a
+        # sibling file beside it is - so the exclusion is narrow, not a walk of nothing.
+        _probe_root = tempfile.mkdtemp(prefix="journal-walk-")
+        try:
+            os.makedirs(os.path.join(_probe_root, _output.LOADER_PROBE_DIR + "_x"))
+            _planted = os.path.join(_probe_root, _output.LOADER_PROBE_DIR + "_x",
+                                    "planted.py")
+            _kept = os.path.join(_probe_root, "kept.py")
+            for _p in (_planted, _kept):
+                with open(_p, "w", encoding="utf-8") as _fh:
+                    _fh.write("X = 1\n")
+            _walked = _scripts_modules(_probe_root)
+            check("pw8 a planted _loader_probe_x file under the walk root is not "
+                  "listed, and the ordinary file beside it is: %r" % (_walked,),
+                  _walked == [_kept])
+        finally:
+            _harness.remove_tree(_probe_root)
 
         _uuid = "3f33caa7-c0c9-4a4e-9c3b-a6dbf4d111b9"
         check("r12 a real session id is byte-identical to what it always was, and "

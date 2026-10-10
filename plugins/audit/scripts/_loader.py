@@ -151,7 +151,7 @@ def load(path, modname=None, cache=True):
 
 
 # --- resolving a basename ---------------------------------------------------
-def script_index(refresh=False):
+def script_index(refresh=False, root=None):
     """`{basename: [abspath, ...]}` for every `.py` under `scripts/`, at ANY depth.
 
     BUILT FROM `_output.script_files()`, not from its own walk, and that is the
@@ -171,16 +171,29 @@ def script_index(refresh=False):
     a dict of `name -> path` would keep whichever the walk happened to see last and
     there would be nothing left to report. `_deps._module_files()` carries the same
     list-not-entry decision for the same reason, one directory scan earlier.
+
+    `root` is a TEST SEAM and is never cached, as `_output.script_files(root=)`
+    is not: a fixture directory is indexed fresh every call and neither reads nor
+    writes the real tree's memo. A case that needs a file one directory down
+    copies what it needs into a temp directory and passes that, instead of
+    writing into the shared `scripts/`.
     """
+    if root is not None:
+        return _index_of(_output.script_files(root=root))
     if refresh or _INDEX_KEY not in _INDEX:
-        index = {}
-        for rel, path in _output.script_files(refresh=refresh):
-            index.setdefault(os.path.basename(rel), []).append(os.path.abspath(path))
-        _INDEX[_INDEX_KEY] = index
+        _INDEX[_INDEX_KEY] = _index_of(_output.script_files(refresh=refresh))
     return _INDEX[_INDEX_KEY]
 
 
-def script_path(basename):
+def _index_of(files):
+    """`{basename: [abspath, ...]}` for `(relname, path)` pairs."""
+    index = {}
+    for rel, path in files:
+        index.setdefault(os.path.basename(rel), []).append(os.path.abspath(path))
+    return index
+
+
+def script_path(basename, root=None):
     """The absolute path of `basename` WHEREVER it sits under `scripts/`.
 
     RAISES, NEVER GUESSES. Three refusals, and there is no fallback join behind any
@@ -215,7 +228,7 @@ def script_path(basename):
                          "basename - the folders under scripts/ are labels, not "
                          "namespaces - so the directory you spelled would be "
                          "dropped rather than honoured" % (text,))
-    index = script_index()
+    index = script_index(root=root)
     found = index.get(text) or []
     if not found:
         raise ImportError("audit plugin: no script named %r among the %d .py file(s) "
@@ -223,7 +236,7 @@ def script_path(basename):
                           "at all - a tree that is not there - which is a different "
                           "problem from a misspelled name)"
                           % (text, sum(len(paths) for paths in index.values()),
-                             _output.SCRIPTS_DIR))
+                             root if root is not None else _output.SCRIPTS_DIR))
     if len(found) > 1:
         raise ImportError("audit plugin: the basename %r is claimed by %d files "
                           "(%s) - `import` and _loader both resolve by basename, so "
@@ -234,7 +247,7 @@ def script_path(basename):
     return found[0]
 
 
-def load_script(basename, modname=None, cache=True):
+def load_script(basename, modname=None, cache=True, root=None):
     """`load()` of `basename` WHEREVER it sits under `scripts/`.
 
     BY BASENAME, NOT BY DIRECTORY, and that is the half that lets a file move. The
@@ -249,7 +262,7 @@ def load_script(basename, modname=None, cache=True):
     `script_path` for why a retry against `SCRIPTS_DIR` would turn a typo into a
     plausible-looking error about a path nothing ever put a file at.
     """
-    return load(script_path(basename), modname=modname, cache=cache)
+    return load(script_path(basename, root=root), modname=modname, cache=cache)
 
 
 def load_hooks_config(modname=None, cache=True):

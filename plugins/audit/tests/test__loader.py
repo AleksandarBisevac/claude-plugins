@@ -11,15 +11,13 @@ path, and the two hyphenated-script test files reach their subject through
 failing to import, not as this file going red - which is why the whole sweep, not
 just this suite, is the check that matters after touching it.
 
-THE PROBE FIXTURE IS WRITTEN INTO THE REAL `scripts/` TREE, and there is no other
-place it could go. `script_index()` deliberately has no `root` seam - it is built
-from `_output.script_files()` precisely so the index and `install_path()`'s
-directory list can never be pointed at two different trees - so "a basename one
-directory down still resolves" is a claim that can only be tested by putting a `.py`
-one directory down. Two throwaway directories are created, refreshed into the index,
-asserted about, and removed in a `finally` with a final refresh; the last case checks
-that the tree and the index are back to what they were, because a fixture that
-outlives its case is one the next case silently inherits.
+THE PROBE FIXTURE LIVES UNDER A TEMP ROOT handed to `script_index(root=)` /
+`script_path(root=)` / `load_script(root=)`, never in the shared `scripts/` tree:
+other suites walk that tree in parallel and a probe file listed by one and removed by
+another fails to open. "A basename one directory down still resolves" needs a `.py`
+one directory down, and a temp root gives it one. The last case checks that
+`scripts/` lists exactly as before, because a fixture that leaks is one the next
+case silently inherits.
 
 ONE EXPRESSION HAD TO CHANGE, because it named the file it lives in. Case 4 loads
 one file under two spellings (`x.py` and `./x.py`) to prove both hit one cache
@@ -75,11 +73,8 @@ def _raised(fn, *args):
 def _probe_dir(root, subdir, basename, body):
     """Write `<root>/<subdir>/<basename>` with `body`, and return its path.
 
-    A throwaway `.py` under a REAL subdirectory of `scripts/` is the only fixture
-    that can prove depth-independent resolution, because `script_index()` is built
-    off the one real walk and takes no root seam - deliberately, so that the index
-    and `install_path()`'s directory list cannot be pointed at two different trees.
-    Every caller deletes it in a `finally` and refreshes the index on both sides.
+    A throwaway `.py` under a subdirectory of a temp root is what proves
+    depth-independent resolution. Every caller removes the root in a `finally`.
     """
     directory = os.path.join(root, subdir)
     if not os.path.isdir(directory):
@@ -88,6 +83,17 @@ def _probe_dir(root, subdir, basename, body):
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(body)
     return path
+
+
+def _listing(root):
+    """Sorted relative path of every file and directory under `root`, skipping
+    `__pycache__`, which the interpreter writes on its own schedule."""
+    out = []
+    for dirpath, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d != "__pycache__"]
+        out.extend(os.path.relpath(os.path.join(dirpath, n), root)
+                   for n in dirs + files)
+    return sorted(out)
 
 
 # --- cases --------------------------------------------------------------------
@@ -252,32 +258,36 @@ def _cases(check):
           "file under a directory that does not exist, and must still raise",
           _raised(M.script_path, "usage/_ui_theme.py")[0] is ValueError)
 
-    # --- 11. depth and collision, on a real subdirectory of scripts/ ----------
+    # --- 11. depth and collision, on a real subdirectory of a TEMP root --------
     # The mechanism cannot be proved on a flat tree: every "at any depth" claim
     # here is vacuously true until a file actually sits one directory down. The
-    # fixture is written into the REAL scripts/ tree because `script_index()`
-    # takes no root seam by design, and is removed in `finally` with the index
-    # refreshed on both sides so no later case in this process sees it.
+    # fixture lives under a temp root handed to `root=`, so the shared `scripts/`
+    # is never written and no parallel suite can list a probe file that is gone
+    # by the time it opens it.
     _probe_a = "_loader_probe_a"
     _probe_b = "_loader_probe_b"
     _probe_name = "loader_depth_probe.py"
+    _before = _listing(here)
+    _tmp = tempfile.mkdtemp(prefix="loader-probe-")
     try:
-        _pa = _probe_dir(here, _probe_a, _probe_name, "PROBE = 'a'\n")
-        M.script_index(refresh=True)
+        _pa = _probe_dir(_tmp, _probe_a, _probe_name, "PROBE = 'a'\n")
         check("script_path(): a .py one directory down resolves by BARE BASENAME - "
-              "the folders under scripts/ are labels, not namespaces: %r"
-              % (os.path.relpath(M.script_path(_probe_name), here),),
-              os.path.realpath(M.script_path(_probe_name)) == os.path.realpath(_pa))
+              "the folders under a root are labels, not namespaces: %r"
+              % (os.path.relpath(M.script_path(_probe_name, root=_tmp), _tmp),),
+              os.path.realpath(M.script_path(_probe_name, root=_tmp))
+              == os.path.realpath(_pa))
         _probe_mod = M.load_script(_probe_name, modname="loader_depth_probe",
-                                   cache=False)
+                                   cache=False, root=_tmp)
         check("load_script(): ...and it LOADS that file, so the whole path from a "
               "bare basename to a module object is depth-independent",
               getattr(_probe_mod, "PROBE", None) == "a"
               and os.path.realpath(_probe_mod.__file__) == os.path.realpath(_pa))
+        check("script_index(root=): the real tree's memo is not touched by a "
+              "fixture root, and the real index never lists the probe",
+              _probe_name not in M.script_index())
 
-        _pb = _probe_dir(here, _probe_b, _probe_name, "PROBE = 'b'\n")
-        M.script_index(refresh=True)
-        _coll_type, _coll_msg = _raised(M.script_path, _probe_name)
+        _pb = _probe_dir(_tmp, _probe_b, _probe_name, "PROBE = 'b'\n")
+        _coll_type, _coll_msg = _raised(M.script_path, _probe_name, _tmp)
         check("script_path(): two files claiming one basename is an ImportError, "
               "not a coin flip. Picking whichever the walk saw first is the ONE "
               "failure this design can produce silently - the wrong module under "
@@ -286,21 +296,20 @@ def _cases(check):
         check("script_path(): ...and the message names BOTH paths, because "
               "'a collision' the reader cannot locate is a message that only says "
               "a problem exists",
-              _pa in _coll_msg and _pb in _coll_msg)
+              os.path.abspath(_pa) in _coll_msg and os.path.abspath(_pb) in _coll_msg)
         check("load_script(): a collision refuses the LOAD too - the refusal lives "
               "in the resolver, so it cannot be routed around by the loader",
-              _raised(M.load_script, _probe_name)[0] is ImportError)
+              _raised(M.load_script, _probe_name, None, True, _tmp)[0] is ImportError)
     finally:
-        for _d in (_probe_a, _probe_b):
-            shutil.rmtree(os.path.join(here, _d), ignore_errors=True)
-        M.script_index(refresh=True)
+        shutil.rmtree(_tmp, ignore_errors=True)
 
-    check("the probe tree is gone and the index is back to what the real tree "
-          "says - a fixture that outlives its case is a fixture the next case "
-          "silently inherits",
-          _probe_name not in M.script_index()
+    check("the shared scripts/ tree is exactly what it was before the probe "
+          "cases - no probe directory was written there, and the index still "
+          "says what the real tree says",
+          _listing(here) == _before
           and not os.path.isdir(os.path.join(here, _probe_a))
           and not os.path.isdir(os.path.join(here, _probe_b))
+          and _probe_name not in M.script_index()
           and set(M.script_index()) == set(_index))
 
 
