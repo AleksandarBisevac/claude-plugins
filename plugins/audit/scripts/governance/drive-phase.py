@@ -880,7 +880,10 @@ def answer_refusal(ctx, pending, answer, reason, fixes=()):
         return "--answer %s needs --reason: it is recorded with the %s" % (
             answer, "phase" if pending.get("task") is None else "task")
     if answer == "fix":
-        open_ids = [f.get("id") for f in pending.get("findings") or []]
+        # A finding already naming a fix task that never landed is open, but the
+        # verb refuses a second task for it: it is dispositioned, not fixed.
+        open_ids = [f.get("id") for f in pending.get("findings") or []
+                    if not f.get("fixTask")]
         unknown = [f for f in fixes if f not in open_ids]
         if not fixes or unknown:
             return ("--answer fix names the findings to fix with --fix, from the "
@@ -1182,9 +1185,11 @@ def record_findings(ctx, phase, found):
 
 
 def open_findings(phase):
-    """The phase review's findings no fix task names yet, in plan order."""
-    return [f for f in (phase.get("review") or {}).get("findings") or []
-            if isinstance(f, dict) and f.get("id") and not f.get("fixTask")]
+    """The phase review's findings still open, in plan order. What open means
+    is `_manifest_phases.open_findings` and nothing here restates it: a finding
+    whose fix task never landed (closed --no-change, cancelled) is open to the
+    verb, so it is offered for a disposition the verb will accept."""
+    return [f for f in _phases.open_findings(phase) if f.get("id")]
 
 
 def _clip(text, width):
@@ -1276,8 +1281,8 @@ def triage(ctx, state, manifest, phase):
             write_state(ctx, state)
             ctx["did"].append("phase review again: %s owed" % (", ".join(owed[:3]),))
             return dispatch_phase_review(ctx, state, phase)
-    still = [dict((k, f.get(k)) for k in ("id", "severity", "file", "issue"))
-             for f in open_findings(phase)]
+    keys = ("id", "severity", "file", "issue", "fixTask")
+    still = [dict((k, f.get(k)) for k in keys) for f in open_findings(phase)]
     # A settlement counts for the content it was given for: an answer settled
     # by name alone is put to the human again, so its accept records the
     # signature the sign-off verb honours.

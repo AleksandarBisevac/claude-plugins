@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "test__deps": "pass",
+    "test__manifest_phases": "pass",
+    "test_drive_phase": "pass",
+    "test_audit_task": "pass",
+    "ruff": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T01:49:41Z",
+    "basis": "`sh -c python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases of1 (house FAIL), of2 (house FAIL), of4 (house FAIL), of3 (house FAIL), but none is the task's own (of1 a finding naming a fix task closed --no-change (no commit) is offered for disposition at sign-off, with the finding no task names and the one whose task never landed; landed, fixed and carried ones are not: ['F-none', 'F-fixed', 'F-carried']: the runner locates it in no declared test file; of2 the driver's open set is the verb's, id for id: ['F-none', 'F-fixed', 'F-carried']: the runner locates it in no declared test file; of4 --answer fix over a finding naming a task that never landed is refused by the driver, which offers disposition: None: the runner locates it in no declared test file; of3 a phase whose findings are all settled offers none: [{'id': 'F-fixed', 'status': 'fixed'}]: the runner locates it in no declared test file) - a case is the task's only when the runner locates it in a declared test file (plugins/audit/tests/test_drive_phase.py, plugins/audit/tests/test_audit_task.py, plugins/audit/tests/test__manifest_phases.py) whose named class defines it, with no identical def in HEAD's test files - SELFTEST FAILED: 134/138 cases passed; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in /Users/aleksandarbisevac/Desktop/personal/claude-plugins-main/node_modules and is not watched; the user's ~/.npmrc dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "Moved SETTLED_STATUS and open_findings(phase) into _manifest_phases.py (pin case of1 in test__manifest_phases.py, ids renamed fa..fe to clear the register-citation lint rc16). audit-task.py aliases both (SETTLED_STATUS = _phases.SETTLED_STATUS; open_findings = _phases.open_findings). drive-phase.open_findings now calls _phases.open_findings; the _loader.load_script line is gone, so test__deps r2 is satisfied with no KNOWN_LAYER_DEBT entry. Ran selftests: test__deps 307/307, test__manifest_phases 122/122, test_drive_phase 138/138, test_audit_task 926/926 (all exit 0), ruff check plugins/audit tools clean. PLUGIN-BUILD-GUIDE.md untouched this attempt; g1 did not ask for regeneration.",
+    "descriptive": "The driver and the verb now read one open-finding predicate owned by _manifest_phases, with no layer debt."
+  },
+  "testsAdded": [
+    "test__manifest_phases of1",
+    "test_drive_phase of1 (no-change fix task offered for disposition)"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:19c6b3c10012be0f10076e1eb227368719a72458252561b1150d660b41ef133a\",\"dirtyDigest\":\"sha256:89decfbe3194586df91b3a7b4626a8f19e962766cac7b0dc52b42356408f143a\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"2b1b1a8144ee38aa\",\"plugins/audit/scripts/governance/drive-phase.py\":\"311f4dd04071e604\",\"plugins/audit/scripts/manifest/_manifest_phases.py\":\"c443ea89b87184ee\",\"plugins/audit/scripts/manifest/audit-task.py\":\"ef53de1cb6fd8c59\",\"plugins/audit/tests/test__manifest_phases.py\":\"4d06e6cff8bfb940\",\"plugins/audit/tests/test_audit_task.py\":\"143eb13550856690\",\"plugins/audit/tests/test_drive_phase.py\":\"dda0e0dc6aedb649\"},\"head\":\"43585dfd\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/manifest/_manifest_phases.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test__manifest_phases.py\",\"plugins/audit/tests/test_audit_task.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:23e6a20cc56dbf715a06462eed33946e234f81a3b757f6ddff0439d2a051b708\",\"v\":2}"
+}

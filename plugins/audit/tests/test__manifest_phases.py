@@ -1222,6 +1222,20 @@ def _cases(check):
           "has no own entries: %r" % (_og_borrowed,),
           _og_borrowed == [])
 
+    # --- what an open finding is -------------------------------------------
+    _of_ph = {"review": {"findings": [
+        {"id": "fa", "status": "fixed"},
+        {"id": "fb", "fixTask": "P0.9"},
+        {"id": "fc", "fixTask": "P0.9", "commit": "abc"},
+        {"id": "fd", "status": "carried"},
+        {"id": "fe"}, "legacy string"]}}
+    _of_ids = [f["id"] for f in M.open_findings(_of_ph)]
+    check("of1 a finding naming a fix task with no commit is open, as is one "
+          "with no disposition; fixed, carried and fix-plus-commit are settled, "
+          "and a legacy string is not counted: %r" % (_of_ids,),
+          _of_ids == ["fb", "fe"] and M.open_findings({}) == []
+          and M.SETTLED_STATUS == ("fixed", "accepted-open", "carried"))
+
 
 def _selftest():
     return _harness.run(_cases)

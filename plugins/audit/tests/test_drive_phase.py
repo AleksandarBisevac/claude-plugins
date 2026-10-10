@@ -2477,6 +2477,49 @@ def _rereview_scope_cases(check):
           got == ["P1.4"])
 
 
+def _open_finding_cases(check):
+    """The driver offers a sign-off the findings the verb would refuse it over:
+    the one predicate is the verb's, so a fix task with no commit is still open."""
+    M, why = _load("drive_phase_open_findings")
+    if M is None:
+        check("of1 the driver loads", False, why)
+        return
+    verb = _loader.load_script("audit-task.py", "audit_task_of")
+    shapes = [
+        {"id": "F-none", "severity": "med"},
+        {"id": "F-nochange", "fixTask": "P1.4"},
+        {"id": "F-cancelled", "fixTask": "P1.5", "status": "open"},
+        {"id": "F-landed", "fixTask": "P1.6", "commit": "a" * 40},
+        {"id": "F-fixed", "status": "fixed"},
+        {"id": "F-carried", "status": "carried"}]
+    phase = {"id": PHASE, "review": {"findings": shapes}}
+    got = [f["id"] for f in M.open_findings(phase)]
+    check("of1 a finding naming a fix task closed --no-change (no commit) is "
+          "offered for disposition at sign-off, with the finding no task names "
+          "and the one whose task never landed; landed, fixed and carried "
+          "ones are not: %r" % (got,),
+          got == ["F-none", "F-nochange", "F-cancelled"])
+    check("of2 the driver's open set is the verb's, id for id: %r" % (got,),
+          got == [f["id"] for f in verb.open_findings(phase)])
+    # The other direction: a finding that IS settled by a landed fix is never
+    # offered, so an over-wide predicate fails here.
+    settled = {"id": PHASE, "review": {"findings": [shapes[3], shapes[4]]}}
+    # The stuck-drive half: the verb refuses `add --fixes` for a finding that
+    # already names a task, so the driver must not take `fix` for it.
+    pending = {"decision": "triage", "findings": [
+        {"id": "F-none"}, {"id": "F-nochange", "fixTask": "P1.4"}]}
+    stuck = M.answer_refusal({"phase": PHASE}, pending, "fix", None,
+                             ["F-nochange"])
+    check("of4 --answer fix over a finding naming a task that never landed is "
+          "refused by the driver, which offers disposition: %r" % (stuck,),
+          bool(stuck) and "not open: F-nochange" in stuck)
+    free = M.answer_refusal({"phase": PHASE}, pending, "fix", None, ["F-none"])
+    check("of5 --answer fix over a finding no task names is not refused: %r"
+          % (free,), free is None)
+    check("of3 a phase whose findings are all settled offers none: %r"
+          % (M.open_findings(settled),), M.open_findings(settled) == [])
+
+
 def _landing_word_cases(check):
     """A stamp close-phase left uncommitted is named where the drive reports
     the landing."""
@@ -2565,6 +2608,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dr-block", "_refusal_cases"),
           ("dc4-block", "_reuse_gate_cases"), ("gr-block", "_stale_gate_cases"),
           ("gr4-block", "_stale_reaccept_cases"),
           ("di-block", "_decline_breach_cases"),
+          ("of-block", "_open_finding_cases"),
           ("nf-block", "_landing_cases"), ("bk-block", "_blocked_cases"),
           ("tx-block", "_text_cases"), ("sb-block", "_stage_cases"))
 

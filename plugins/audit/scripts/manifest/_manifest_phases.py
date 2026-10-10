@@ -1091,6 +1091,22 @@ def is_suite_path(path):
             or any(seg in TEST_DIRS for seg in path_segments(path)))
 
 
+# --- what an open finding is ----------------------------------------------------
+# A finding is SETTLED when it names a status from this table or a fix commit; an
+# entry that is neither is open, and a sign-off must say what became of it.
+SETTLED_STATUS = ("fixed", "accepted-open", "carried")
+
+
+def open_findings(phase):
+    """The findings of `phase`'s review that are neither fixed nor carrying a
+    recorded disposition. Legacy string findings have no field to hold one and
+    are not counted. The verb and the driver both ask this one function."""
+    review = phase.get("review") if isinstance(phase.get("review"), dict) else {}
+    return [f for f in (review.get("findings") or [])
+            if isinstance(f, dict) and f.get("status") not in SETTLED_STATUS
+            and not (f.get("fixTask") and f.get("commit"))]
+
+
 def gate_entry_paths(entry):
     """Every file path a gate entry NAMES, in the order they appear in it.
 

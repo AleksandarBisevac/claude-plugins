@@ -386,7 +386,7 @@ L6:
 
 L7:
   _live_copy -> _branch, _invariants, _locks, _manifest_io, _output, _scoped_commit, _status_facts, _worktrees
-  _panel_write -> _ado_parent, _ado_tracked, _areas, _branch, _config_rules, _gate_feed, _journal_io, _locks, _manifest_io, _output, _panel_discovery, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme, _warning_groups, _worktrees
+  _panel_write -> _ado_parent, _ado_tracked, _areas, _branch, _config_rules, _fmt, _gate_feed, _journal_io, _locks, _manifest_io, _output, _panel_discovery, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme, _warning_groups, _worktrees
   _report_page -> _fmt, _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage, _status_facts
 
 L8:
@@ -424,8 +424,8 @@ L8:
   record-outside-run -> _claude_home, _evidence_io, _journal_io, _manifest_io, _output
   record-risk-confirmation -> _claude_home, _journal_io, _manifest_io, _output
   render-report -> _areas, _evidence_io, _evidence_view, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
-  repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output
-  repair-tests-add -> _journal_io, _locks, _manifest_io, _manifest_rules, _output
+  repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output, _panel_write
+  repair-tests-add -> _journal_io, _locks, _manifest_io, _manifest_rules, _output, _panel_write
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
@@ -1361,8 +1361,10 @@ before a committed file keeps it: the shapes (a home directory, a Windows user p
 slug, an escaped path, a scratch directory, an unexpanded `~/`), the checkout-root test,
 `repo_relative_or_token`, `redacted_free_text`, and `scrubbed_values`, which runs that redaction
 over every string of a nested structure and returns a new one. **It is its own layer because two
-committed writers need it and cannot import each other:** `_manifest_io` scrubs a plan at its
-shard and index writer, `_journal_io` scrubs a row before it is hashed and `_evidence_io` scrubs a
+committed writers need it and cannot import each other:** `_manifest_io` scrubs at
+`atomic_write_json`, the one JSON writer every plan, shard and index write reaches - the
+unscrubbed `raw_atomic_write_json` is reached only from the sites `_output.RAW_JSON_WRITERS`
+names, held by `raw_json_writer_violations()` - `_journal_io` scrubs a row before it is hashed and `_evidence_io` scrubs a
 ledger row before it is chained, and the first two are layer-mates. `_journal_io` re-exports the
 names its callers and `tools/check-committed-pii.py` have always used, as the same objects.
 `may_hold_path` is the cheap pre-reject: a string with none of the characters a machine path

@@ -929,7 +929,7 @@
     {
       "id": "P122.10-z4y",
       "title": "every write of a committed plan file is scrubbed by default; only a byte-exact copy uses the raw writer, by name",
-      "status": "in_progress",
+      "status": "done",
       "description": "Finding P122-R1 (high), a recurrence of the F604 class inside this phase: P122.9 scrubbed only inside _manifest_io's own writers and _panel_write's plan writer, but audit-task.py's single writer behind add/start/done/file-return/signoff (_write_add) still calls the raw _panel_write atomic write, and so do set-priority, repair-commits, repair-tests-add and _proposals. Patching each caller is the instance; the class closes with an invariant: the low-level JSON writer used for plan, shard, index, journal and evidence files scrubs by default (it already knows the target path; derive the checkout root from it, as scrubbed_plan does), and a write that must stay byte-exact (migrate-json-encoding, close-phase's snapshot restore) calls an explicitly named raw writer with a one-line reason. Add an AST lint in _output.py: outside _manifest_io, nothing calls the raw writer except the named byte-exact sites (an allow-list with reasons), with a red-first allow case. While there: a save that redacts a value says so in a journal row (P122-R3's silent rewrite of historic prose), and the evidence keep-list exempts only steps[].command, not any key named command at any depth (P122-R11).",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_io.py",
@@ -977,14 +977,18 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "43585dfdcb7e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Attempt 2, on top of attempt 1's uncommitted invariant (scrub-by-default _manifest_io.atomic_write_json, raw_atomic_write_json by name, _output.raw_json_writer_violations + RAW_JSON_WRITERS). Followers fixed: (1) tools/prove-gates.py gains a red row (cripple raw_json_writer_violations to `return []`, case rj1) and an ALLOW row (ignore the allow-list: `if (named, where) not in allowed:` -> `if True:`, case rj2). Both proven by RUNNING them, in a throwaway copy of the working tree committed in a scratch repo (redfirst.sh refuses a dirty file in the shared tree): `python3 tools/prove-gates.py --only raw_json_writer` -> red: RED rj1, rj3, rj4 (1 of 1 proven red); allow: RED rj2, rj5 (1 of 1 proven quiet). prove-gates --selftest 37/37. (2) tools/gate-parity.py: RAW_JSON_WRITERS added to AUDITED_EXEMPTIONS as (\"live\", \"raw_json_writer_violations\") - the lint reports an unlisted reach and a row whose site no longer reaches the writer, but does not judge the reason, so `live` not `reason`; gate-parity --selftest 114/114 (p0, ea1, ea4-ea7 green). (3) test_run_test_gate.py rv5: cause found, it is NOT a quoted-path rewrite nor the returned pointers. rv5 built its spaced plan by COPYING `mp` after rv2 had run the printed retarget remedy; that remedy writes through audit-task -> _panel_write -> the now-scrubbing writer, which rewrote the buildCommands' in-checkout absolute paths (`<root>/say.py`, `<root>/dup.txt`) repo-relative to `root`'s checkout (probe: atomic_write_json of a command `<py> <root>/say.py <root>/dup.txt 0` reads back `<py> say.py dup.txt 0`). Copied into the `with space` checkout, those relative steps name files that do not exist there, both steps fail, no SAME SUITE line, no remedy. The product behaviour is the established plan-scrub (save_sharded/save_single_file already did it since P122.9; gate steps run with cwd=project, so repo-relative is equivalent there). Fix: the fixture writes the spaced plan fresh via `_plan(gate, at=spaced)` instead of copying a document the product rewrote; rv5 mutation (unquoted path) still distinguishes. test_run_test_gate --selftest 492/492. Gates run once on the final tree: `python3 tools/sweep-selftests.py` exit 0, 318/318 files ok, 14857 cases; `python3 tools/check-committed-pii.py` exit 0; `ruff check plugins/audit tools` exit 0 (All checks passed!); test_audit_task --selftest 925/925. Findings for the orchestrator (not fixed, out of scope): the plan scrub also rewrites meta.buildCommands, so (a) a gate command naming an interpreter under a home directory (pyenv, <outside-repo>) is turned into the outside token and stops being runnable, and (b) when --project-dir is a SUBDIRECTORY of the git checkout, in-repo paths become relative to the checkout root while steps run with cwd=project - both pre-date this attempt (P122.9's save_sharded scrub) but the writer change widens their reach to every CLI verb.",
+        "descriptive": "Scrub-by-default plan writer's followers fixed: prove-gates red+allow rows proven, RAW_JSON_WRITERS classified, rv5 fixture no longer copies a plan the scrub rewrote; full sweep, PII check and ruff green."
       },
       "startedAt": "2026-10-10T00:54:41Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T01:16:46Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py fm1 done --from-return whose filed redFirst basis names the real project root and a temp-root path writes neither into the shard",
+        "plugins/audit/tests/test__output.py rj1-rj5",
+        "tools/prove-gates.py rows raw_json_writer_violations red(rj1) and allow(rj2)"
+      ],
       "fixes": [
         "P122-R1"
       ],
@@ -993,18 +997,33 @@
         "runId": "2026-10-10T01:16:36Z.5f8ced",
         "status": "passed",
         "at": "2026-10-10T01:16:36Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "43585dfdcb7e",
+        "at": "2026-10-10T01:16:46Z",
+        "basis": "a fix task for P122-R1: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-10T01:07:19Z",
+        "basis": "`sh -c python3 plugins/audit/tests/test_audit_task.py --selftest` in a throwaway tree at HEAD exited 1, but no case --case names failed an assertion as the task's own: fm1 (house FAIL) (fm1 `done --from-return` whose filed red-first basis names the checkout's own root and a temp root writes NEITHER into the shard or the index - the in-repo path lands repo-relative and the scratch path as the outside token: (0, 'WARNING: you are standing in <tmp>/audit-red-vd8l4afb/tree, and this writes the plan under <outside-repo>', ['<outside-repo>', '<tmp>/audit-red-vd8l4afb/task-tmp-sp19vt8o/audit-task-stages-__0c0kjr/fr-block.tmp/audit-task-fr-fu4xj3qx/dr-fr-machine', '<outside-repo>'], '<outside-repo> exit 1 at the root <tmp>/audit-red-vd8l4afb/task-tmp-sp19vt8o/audit-task-stages-__0c0kjr/fr-block.tmp/audit-task-fr-fu4xj3qx/dr-fr-machine; the red ran in <outside-repo>'): the runner locates it in no declared test file) - SELFTEST FAILED: 909/911 cases passed; --case fm1 names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR; dependencies linked from ., entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in node_modules and is not watched; the user's <outside-repo> dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
       "id": "P122.11-z4y",
       "title": "the driver and the verb share one definition of an open finding",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Finding P122-R2 (med): drive-phase.open_findings counts findings with no fixTask, while audit-task's open_findings counts findings whose status is not settled and that lack fixTask plus commit. A finding naming a fix task with no commit (closed --no-change, cancelled, or closed by an older plugin copy) is open to the verb and settled to the driver, so a drive that passes --accept-open for the driver's set is refused at sign-off. One predicate, owned by the verb module, read by the driver (it already loads audit-task's helpers or can ask the verb for the open set), with a case for each of the three shapes.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
         "plugins/audit/tests/test_drive_phase.py",
         "plugins/audit/scripts/manifest/audit-task.py",
-        "plugins/audit/tests/test_audit_task.py"
+        "plugins/audit/tests/test_audit_task.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test__manifest_phases.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1029,19 +1048,31 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T01:34:45Z",
       "completedAt": null,
       "verifiedBy": [],
       "fixes": [
         "P122-R2"
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "notes": [
+        {
+          "at": "2026-10-10T01:17:11Z",
+          "text": "PLUGIN-BUILD-GUIDE.md rides in this task's commit as P122.10's follower: P122.10 regenerated the module map (new _panel_write edges) without declaring the guide, and the installed 3.2.0 commit-task-work staged only declared files - the F592 shape this phase fixes, seen on the driving copy."
+        }
+      ],
+      "testEvidence": {
+        "runId": "2026-10-10T02:10:36Z.d1c8e1",
+        "status": "passed",
+        "at": "2026-10-10T02:10:36Z"
+      }
     }
   ],
   "reviewPerTask": "phase",

@@ -15346,6 +15346,19 @@ def _stage_runner_cases(check):
           % ((replayed, local),), replayed == local and len(local) > 1)
 
 
+def _open_finding_shape_cases(check):
+    """The verb's open set, which the driver reads: a fix task with no commit
+    leaves a finding open, a landed fix or a recorded disposition settles it."""
+    phase = {"id": "P1", "review": {"findings": [
+        {"id": "A"}, {"id": "B", "fixTask": "P1.4"},
+        {"id": "C", "fixTask": "P1.5", "commit": "a" * 40},
+        {"id": "D", "status": "accepted-open"}, "legacy string"]}}
+    got = [f["id"] for f in M.open_findings(phase)]
+    check("of1 open to the verb: a finding no task names, and one whose fix "
+          "task has no commit; settled: a landed fix, a disposition, and a "
+          "legacy string it cannot hold one for: %r" % (got,), got == ["A", "B"])
+
+
 STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("at3-block", "_flag_cases"), ("at4-block", "_start_cases"),
           ("at5-block", "_close_cases"), ("at6-block", "_group_cases"),
@@ -15357,7 +15370,8 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("io-block", "_index_only_cases"),
           ("fd-block", "_finding_disposition_cases"),
           ("bf-block", "_bug_fix_discipline_cases"),
-          ("ps-block", "_stage_runner_cases"))
+          ("ps-block", "_stage_runner_cases"),
+          ("of-block", "_open_finding_shape_cases"))
 
 
 if __name__ == "__main__":

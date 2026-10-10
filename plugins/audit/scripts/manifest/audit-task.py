@@ -8985,19 +8985,10 @@ def record_fix_on_findings(phase, tid, sha):
     return changes
 
 
-# A finding is SETTLED when it names a status from this table or a fix commit; an
-# entry that is neither is open, and a sign-off must say what became of it.
-SETTLED_STATUS = ("fixed", "accepted-open", "carried")
-
-
-def open_findings(phase):
-    """The findings of `phase`'s review that are neither fixed nor carrying a
-    recorded disposition. Legacy string findings have no field to hold one and
-    are not counted."""
-    review = phase.get("review") if isinstance(phase.get("review"), dict) else {}
-    return [f for f in (review.get("findings") or [])
-            if isinstance(f, dict) and f.get("status") not in SETTLED_STATUS
-            and not (f.get("fixTask") and f.get("commit"))]
+# Thin aliases: `_manifest_phases` owns what an open finding is, so the driver
+# can ask the same question without importing a verb.
+SETTLED_STATUS = _phases.SETTLED_STATUS
+open_findings = _phases.open_findings
 
 
 def _disposition_pairs(values, flag):
