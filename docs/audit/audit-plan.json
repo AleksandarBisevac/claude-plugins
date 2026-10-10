@@ -780,7 +780,7 @@
     {
       "id": "P124",
       "title": "A phase runs its ready tasks as waves, and task scopes carry their companions",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P124.json"
     }
   ],
