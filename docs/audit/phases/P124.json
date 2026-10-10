@@ -1,0 +1,622 @@
+{
+  "id": "P124",
+  "title": "A phase runs its ready tasks as waves, and task scopes carry their companions",
+  "status": "pending",
+  "description": "F600 (high) and F599 (med) from the danuvia testbed. Design, prior art, roles and decisions: quality-gates-internal plans/2026-10-09-f600-f599-waves-design.md (D1 unset width = 1 and init writes auto; D3 re-gate only on path overlap; D7 the plan-gate binding is agent-written).",
+  "desiredOutcome": "A phase runs its ready disjoint tasks concurrently, each gated in its own worktree and integrated serially onto the phase tree with conflicting or undeclared overlaps refused by name, width 1 reproduces 3.2.0 exactly, and a task's scope carries the dependency, locale and runner-config files its change cannot avoid.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P124.1",
+      "title": "wave selection and overlap classification are pure functions over the plan",
+      "status": "pending",
+      "description": "F600 design A1 (quality-gates-internal plans/2026-10-09-f600-f599-waves-design.md, section 4.1 step 1). select(tasks, width) and overlap(a, b) over task dicts, through _task_outputs.covers; lockfiles are non-mergeable. The caller passes ready tasks in id order.",
+      "files": [
+        "plugins/audit/scripts/governance/_wave.py",
+        "plugins/audit/tests/test__wave.py",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__output.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__wave.py: two disjoint ready tasks at width 2 make one wave; width 1 is id order one at a time; empty files runs alone; a directory overlaps its subpath; an overlap names both tasks; a lockfile overlap is non-mergeable"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P124.2",
+      "title": "a task worktree is created detached at the phase head, outside the project, with a marker naming its task",
+      "status": "pending",
+      "description": "F600 design A2 and decision D5: manage-worktrees task-add/task-remove, the task marker, read_provenance(expect_task). README worktree row lists --base; the guide's manage-worktrees section names the new verbs.",
+      "files": [
+        "plugins/audit/scripts/git/manage-worktrees.py",
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/tests/test_manage_worktrees.py",
+        "plugins/audit/tests/test__worktrees.py",
+        "plugins/audit/commands/worktree.md",
+        "plugins/audit/README.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_manage_worktrees.py: task-add at a base SHA is detached there with a marker naming the task; a root inside the project is refused; a second tree for the same task is refused; the sweep keeps a dirty task tree and names it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P124.3",
+      "title": "run-test-gate --tree measures in a task's tree and records in the phase tree",
+      "status": "pending",
+      "description": "F600 design A3 and D4. testedState.tree carries a hash key, never a path; a path the tree prints goes through the P122 write-boundary scrub. Name the flag where run-test-gate's flags are documented.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test__verdict_binding.py",
+        "plugins/audit/reference/orchestrator.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: with the tree and the project holding different declared bytes, the row scopeDigest equals the tree, the row lands in the project ledger and the pointer moves; --own --tree runs in the tree; a missing tree is refused"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P124.4",
+      "title": "integrate-task folds one green task tree into the phase tree serially, refusing conflicts and undeclared changes by name",
+      "status": "pending",
+      "description": "F600 design A4 and D2/D9. One task per call; the driver calls it in id order over green tasks.",
+      "files": [
+        "plugins/audit/scripts/git/integrate-task.py",
+        "plugins/audit/tests/test_integrate_task.py",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__output.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_integrate_task.py: two tasks both writing package.json undeclared are refused naming both; a clean overlap of a declared file integrates with regate true; a dirty phase tree is refused; a rerun after a crash reports already integrated; the phase index is untouched; a lockfile inside a declared directory changed by two tasks is non-mergeable"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P124.1",
+        "P124.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P124.5",
+      "title": "the plan gate binds a task worktree to its task, reading the task from the phase tree",
+      "status": "pending",
+      "description": "F600 design A7 and D7 (agent-written, tree resolution - not command parsing). A marker that cannot be proved refuses every edit in that tree (guards fail loud). Mutation-probe the tb cases, which were never seen red because their functions were new.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/tests/test_require_plan.py",
+        "plugins/audit/tests/test__config.py",
+        "SECURITY.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_require_plan.py: in a marked task tree an edit to a sibling task file is denied; in the phase tree an edit to a file of a task bound to a worktree is denied naming the worktree; an unmarked linked worktree resolves as today"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P124.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P124.6",
+      "title": "a task worktree gets its environment: .worktreeinclude copies and an executor.worktreeSetup command, and the doctor reports it",
+      "status": "pending",
+      "description": "F600 design A8 and D6. Wire check_worktree_env into audit-doctor diagnose. The executor.worktreeSetup key is declared by the config task (a5).",
+      "files": [
+        "plugins/audit/scripts/git/manage-worktrees.py",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/scripts/status/audit-doctor.py",
+        "plugins/audit/tests/test_manage_worktrees.py",
+        "plugins/audit/tests/test_audit_doctor.py",
+        "plugins/audit/tests/test__doctor_report.py",
+        "plugins/audit/tests/test__doctor_setup.py",
+        "QUICKSTART.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_manage_worktrees.py: setup runs in the tree not the project with its duration recorded; a failing setup is could-not-run and spends no attempt; .worktreeinclude ignored files are copied and node_modules never"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P124.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P124.7",
+      "title": "the driver runs a phase's ready disjoint tasks as a wave, each gated in its own tree and integrated serially; executor.waveWidth (absent = 1)",
+      "status": "pending",
+      "description": "F600 design A5, sections 4.1-4.2, D1/D3/D9: sort ready tasks by id; call integrate-task in id order over green tasks; write wave.start, task.worktree, task.integrated, task.integration.refused, wave.done rows; scope --files for widened paths before commit-task-work; re-gate when regate is true or null. Declare executor.waveWidth, executor.worktreeSetup and executor.worktreeRoot (schema, rules, README, COMPATIBILITY: absent changes nothing); init writes waveWidth auto into new configs.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/config/_config_rules.py",
+        "plugins/audit/schema/audit-config.schema.json",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/README.md",
+        "COMPATIBILITY.md",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test__config_rules.py",
+        "plugins/audit/tests/test_validate_config.py",
+        "plugins/audit/commands/init.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: two disjoint tasks are dispatched in one next and each recorded gate tree holds only its own diff; absent key and width 1 give the same did-lines and journal actions as 3.2.0; a red sibling does not hold back a green one; waveWidth 0 is a finding"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P124.1",
+        "P124.3",
+        "P124.4",
+        "P124.5",
+        "P124.6"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P124.8",
+      "title": "briefs, prompts and docs say which tree a wave task works in",
+      "status": "pending",
+      "description": "F600 design A6: replace orchestrator.md's stale parallel-tasks paragraph (the source of F595's confusion) instead of adding beside it; keep followed_anchor_drift green with the README row anchored to dispatch-wave. Mind measure-context's byte ceilings on command bodies.",
+      "files": [
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/commands/run.md",
+        "plugins/audit/reference/orchestrator.md",
+        "README.md",
+        "plugins/audit/tests/test_audit_lookup.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_lookup.py: a wave task brief carries tree and base lines and the cd rule; a width-1 brief carries none"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P124.7"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P124.9",
+      "title": "the plugin can tell whether a runner collects a test path: collected, not collected, or could not tell",
+      "status": "pending",
+      "description": "F599 design B1 and D8. vitest semantics were probed on real vitest 5.0.3; jest testMatch/roots and pytest python_files/testpaths were written from memory - verify them against the runners' docs before closing, and add jest --listTests / pytest --collect-only list modes if cheap.",
+      "files": [
+        "plugins/audit/scripts/governance/_runner_collects.py",
+        "plugins/audit/tests/test__runner_collects.py",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__output.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__runner_collects.py: with vitest include tests/unit/**, lib/store.test.ts and components/x.test.tsx are not collected and tests/unit/a.test.ts is; an unknown runner or a computed include is could-not-tell"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P124.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P124.10",
+      "title": "a task's unavoidable companion files are derived from its intent and the repo layout",
+      "status": "pending",
+      "description": "F599 design B2.",
+      "files": [
+        "plugins/audit/scripts/manifest/_scope_companions.py",
+        "plugins/audit/tests/test__scope_companions.py",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__output.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__scope_companions.py: a new dependency adds package.json and the lockfile on disk only; user strings add every locale file; a test outside the include adds the runner config; could-not-tell adds nothing and says so"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P124.9",
+        "P124.4"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P124.11",
+      "title": "planning writes companions: add/scope --introduces, the explorer field, init synthesis, and fix tasks from findings",
+      "status": "pending",
+      "description": "F599 design B3. Also F607's scope half: a fix task from add --fixes gets every path its finding names, plus companions.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/agents/audit-explorer.md",
+        "plugins/audit/commands/init.md",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/reference/verbs-in-full.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: add --introduces dependency:next-intl on a pnpm fixture writes package.json and pnpm-lock.yaml into files and fileIndex with a journal basis; without the flag nothing changes"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P124.10",
+        "P124.7"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P124.12",
+      "title": "task start refuses a declared test the runner will never collect, before an executor is spent",
+      "status": "pending",
+      "description": "F599 design B4; the executor brief's widen rule (widen a runner include for the repo layout, not one directory).",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a P1.3-shaped task stops at decide scope-gap naming vitest.config.ts before any dispatch; could-not-tell prints one line and dispatches"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P124.11",
+        "P124.8"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ],
+  "request": "F600 + F599 (owner-mandated, testbed): tasks inside a phase run concurrently in their own worktrees, gated there and integrated serially; task scopes carry their unavoidable companions. One phase per the user (fewer review rounds).",
+  "openChoices": []
+}
