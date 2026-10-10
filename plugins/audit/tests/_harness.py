@@ -39,8 +39,8 @@ guessed:
     detail. The 12 domain wrappers stay in their own test files - a wrapper that calls
     `decide()` for you belongs beside the cases that need it, not in a shared runner.
   * the parameter's name - 22 files say `label`, 20 say `name`. KEPT: `label`, by count.
-  * detail rendering - 17 of the 18 detail-carrying files print `" (%s)"` on FAILURE only;
-    4 print `" :: %s"`. KEPT: `" (%s)"` on failure only. A detail printed on a passing case
+  * detail rendering - most detail-carrying files print `" (%s)"` on FAILURE only;
+    a few print `" :: %s"`. KEPT: `" (%s)"` on failure only. A detail printed on a passing case
     is noise the reader has to skip 3,451 times to find the one that matters, and one of
     the migrated suites proves it: `remind-tdd` printed `(expected record, got record)` on
     every green line.

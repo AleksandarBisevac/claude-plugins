@@ -332,7 +332,7 @@ const uAtt=(t)=>(typeof (t||{}).attempts==='number'
 // Models order by NAME, which is the rule render-report.py's _model_slots uses, so
 // a model wears the same hue in the report and the panel. Authors order by spend,
 // because there is no report chart to agree with and rank is the useful priority
-// when only 8 of 40 can be coloured.
+// when fewer palette slots exist than authors.
 /**
  * The palette slot each entity currently holds, rebuilt per render by
  * `uSlots`: `USLOTS` for whatever the chart is splitting by, `MSLOTS` for

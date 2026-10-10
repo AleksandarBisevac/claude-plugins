@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "selftests": "pass",
+    "selftests-spaced": "pass",
+    "ruff": "pass",
+    "vermin": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only task, expectRedFirst false",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Deleted the ratio/count prose in _deps.py, _harness.py, test_remind_tdd.py, test__panel_page.py and usage-model.js; the fo2 case now prints a per-cap leftover table it derives its assertions from (test__panel_page 490/490); the _worktrees LAYERS comment drops its count; CLAUDE.md states the under-ten exception of _numeral_span. The usage-model.js comment edit moved the panel source digest, so the screenshots were re-captured by the orchestrator (node tools/capture-screenshots.mjs, exit 0); after that python3 tools/sweep-selftests.py exit 0 (331/331 files ok) and --spaced exit 0 (331/331 files ok); ruff exit 0; vermin exit 0. The regression grep over non-fixture files is empty.",
+    "descriptive": "No prose states a count a command prints, and CLAUDE.md states the under-ten rule."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__panel_page.py: fo2 (prints the per-cap leftover table it derives from)"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:f5514ff3f5dab4b01944f2d40267a6a237c4c36b35ecbd30b1cd5d5b77e0677a\",\"dirtyDigest\":\"sha256:6323af4a7fc80d966cb7cddf7a1b48d57658ecb803e068fcc26f82c2f46c216a\",\"dirtyPaths\":null,\"head\":\"15248cac\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CLAUDE.md\",\"PLUGIN-BUILD-GUIDE.md\",\"docs/screenshots\",\"plugins/audit/scripts/_deps.py\",\"plugins/audit/scripts/ui/panel/usage-model.js\",\"plugins/audit/tests/_harness.py\",\"plugins/audit/tests/test__panel_page.py\",\"plugins/audit/tests/test_remind_tdd.py\"],\"scopeDigest\":\"sha256:4cc3bda2f41834852a84c21f9ebd75f97b1cd65ced3cb8438b490a6abb921724\",\"v\":2}"
+}

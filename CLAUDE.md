@@ -58,7 +58,9 @@ two copies of a procedure is one copy and one lie.
   completeness (`all N of them`, `all N … have`) or ratio (`N of M <noun>` — the tally a
   command prints, quoted with no command beside it) claim — and the number may be spelled as a
   word: `_numeral_span()` reads both spellings, for every shape it knows, from
-  one fixed table. Three things stay legal on purpose: **history** (`it stood at N that day`),
+  one fixed table — except that a bare word under ten (`one case`, `two cases`) is off by
+  default, because it is ordinary English and only a shape that supplies its own bound
+  (`N of M <noun>`) may ask for it; `_numeral_span()`'s docstring carries the measurement. Three things stay legal on purpose: **history** (`it stood at N that day`),
   a number **carrying the command that re-derives it** — the basis may sit on the next line,
   because prose wraps — and the repair itself, which is to delete the number and keep the
   pointer. `CONTRIBUTING.md`'s *Writing a count that is allowed* states those three

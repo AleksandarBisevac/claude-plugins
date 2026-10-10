@@ -17,7 +17,7 @@ of `_harness.HOOKS_DIR`.
 
 `_expect` IS THE DOMAIN WRAPPER, AND IT STAYS HERE. `remind-tdd`'s selftest did not call
 `check(label, cond)` - it called `check(name, expected, payload)` and ran `decide()` for
-you. Twelve of the 48 suites wrap `check` like that, and none of the wrappers is the same
+you. Several suites wrap `check` like that, and none of the wrappers is the same
 shape, which is why `_harness` unifies only the runner underneath: a wrapper that knows
 what a verdict is belongs beside the cases that need one. It borrows `_harness.attempt`
 for the guard the original hand-rolled (`except Exception as exc: verdict = "EXC:%s"`),

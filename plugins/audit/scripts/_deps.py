@@ -193,10 +193,10 @@ LAYERS = (
      # point may not import another. It reaches nothing but `_output`.
      "_runner_collects",
      # `_worktrees` answers "which worktrees exist, whose phase is each, and what
-     # may be reaped". At L1 for `_commit_trail`'s reason word for word: FOUR
-     # surfaces need the SAME answer - `_doctor_hygiene` and `_doctor_policy` (both
-     # L4, and layer-mates that cannot import each other), plus `close-phase` and
-     # `manage-worktrees` at L7 - and a second enumeration of git's worktree list
+     # may be reaped". At L1 for `_commit_trail`'s reason word for word: more
+     # than one layer needs the SAME answer - `_doctor_hygiene` and `_doctor_policy`
+     # (both L4, and layer-mates that cannot import each other), plus `close-phase`
+     # and `manage-worktrees` at L7 - and a second enumeration of git's worktree list
      # would BE a second answer. It reaches nothing but `_output` and git: the
      # branch names, the parent names and the cwd all arrive as ARGUMENTS, which is
      # what keeps it here rather than one layer up beside `_branch`'s readers.
@@ -3937,7 +3937,7 @@ SHARED_CONCERNS = (
     ("table header construction", "panel/core.js", r"re:el\(\s*['\"]thead['\"]", 1,
      "EXTRACTED into headRow/tableHead, and the row this registry gained from "
      "the SCOUT rather than from reading - five agents read the whole panel and "
-     "none reported it. Fourteen of the fifteen sites are converted, including "
+     "none reported it. All but one of the sites are converted, including "
      "every decorated one: a column may be a string, `null` for an action "
      "column, or {attrs,label,extra}, which is three shapes rather than an "
      "optional field per caller. The ONE left is browse-dialog's, which builds "

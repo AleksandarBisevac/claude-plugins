@@ -2425,7 +2425,7 @@
     {
       "id": "P123.31",
       "title": "A mutating gate sweep announces itself, and the sweep refuses to read a tree mid-mutation",
-      "status": "in_progress",
+      "status": "done",
       "description": "The dirty-file half is closed (redfirst.sh refuses a dirty file). Still open on main: `tools/prove-gates.py` mutates the tree for minutes with nothing another process can see - `tools/orchestrator-state.py` (what is running/uncommitted/staged) does not report it, and a concurrent `tools/sweep-selftests.py` reads a mid-mutation tree and reports false reds. Have prove-gates hold a marker (under the git dir, with pid and start) for the whole run, orchestrator-state report 'a mutating sweep is live', and sweep-selftests refuse to start (naming the marker, ignoring a dead pid's) while one is live. Regression: with a live marker the sweep refuses; with a stale marker it proceeds and says so. Faults: F441.",
       "files": [
         "tools/prove-gates.py",
@@ -2464,25 +2464,42 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "15248caca1d5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/_suite.py: shared marker helpers (MARKER_NAME, git_dir_of, pid_alive, hold, release, marker_state: none/live/stale/unreadable). tools/prove-gates.py main(): holds the marker under the git dir for the whole mutating run (refuses to start if another live/unreadable one exists, releases in finally; --list/--help take none). tools/sweep-selftests.py: marker_gate() refuses with exit 2 naming the marker file and pid on a live or unreadable marker, ignores a dead pid's and prints 'ignoring stale marker'. tools/orchestrator-state.py: sweep_line() prints 'MUTATING SWEEP: a mutating sweep is live (pid, since)'. CONTRIBUTING.md note added; PLUGIN-BUILD-GUIDE.md untouched (it does not describe tools/). New cases mk0-mk2 (sweep) and o1-o3 (orchestrator-state). Exit codes: sweep 0 (331 files ok), --spaced 0, ruff 0 (after fixing one F821 I introduced), vermin 0, gate-parity 0, prove-gates --selftest 0. Not run: a full mutating prove-gates run, so the live marker is exercised only through the helper cases, not end to end. orchestrator-state now imports _suite (and so the test tree) on each run.",
+        "descriptive": "A mutating gate sweep announces itself via a git-dir marker; the sweep refuses to read a tree mid-mutation and orchestrator-state reports it."
       },
       "startedAt": "2026-10-10T22:22:41Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T22:53:21Z",
+      "verifiedBy": [
+        "sweep-selftests mk0",
+        "sweep-selftests mk1",
+        "sweep-selftests mk2",
+        "orchestrator-state o1",
+        "orchestrator-state o2",
+        "orchestrator-state o3"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T22:53:19Z.06b634",
         "status": "passed",
         "at": "2026-10-10T22:53:19Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "15248caca1d5",
+        "at": "2026-10-10T22:53:21Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T22:43:54Z",
+        "basis": "`python3 tools/sweep-selftests.py` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: ImportError: cannot import name 'git_dir_of' from '_suite' (/private/var/folders/d1/pwtx3bsx53g9w4w6wslwxkjr0000gn/T/audit-red-f5627tj4/tree/tools/_suite.py); HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 54/55 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
       "id": "P123.32",
       "title": "No prose states a count a command prints, and CLAUDE.md states the under-ten rule",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Three author-enforced prose-number leftovers, all confirmed on main. (F316) ratio claims the lint deliberately cannot read: `_deps.py` ('Fourteen of the fifteen sites are converted'), `tests/_harness.py` header ('17 of the 18 detail-carrying files'), `test_remind_tdd.py` docstring ('Twelve of the 48 suites'), `test__panel_page.py` ('# 8 of 40 can be coloured.', 'fails at 17 of 353 with this feature switched off', and the label 'a fixed 3 left 10 of the 72, 6 left 5, 8 left 2, 16 left none'), plus the twin comment in `ui/panel/usage-model.js` ('when only 8 of 40 can be coloured'). Repair is the rule's own: delete the number and keep the pointer; the `test__panel_page.py` measurement table is made a value the case computes and prints in its detail rather than reworded. The lint fixtures in test__output.py/test__deps.py that quote these phrases are inputs and stay, and so does the quotation in `_output.py`'s own WHAT IT CANNOT SEE comment, which documents the shape. (F544a) the `_worktrees` LAYERS comment in `_deps.py` says 'FOUR surfaces need the SAME answer' and names four importers while more import it - delete the count, keep the reason (more than one layer needs the same answer). (F562) CLAUDE.md says `_numeral_span()` 'reads both spellings, for every shape it knows' while its docstring says bare number words under ten are off by default - state the exception and point at the docstring's reason. Regression: the prose lints stay green and `grep -nE \"Fourteen of the fifteen|17 of the 18|Twelve of the 48|8 of 40|17 of 353|10 of the 72\"` over non-fixture files is empty. Faults: F316, F544, F562.",
       "files": [
         "plugins/audit/scripts/_deps.py",
@@ -2491,7 +2508,8 @@
         "plugins/audit/tests/test__panel_page.py",
         "plugins/audit/scripts/ui/panel/usage-model.js",
         "CLAUDE.md",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "docs/screenshots"
       ],
       "tests": {
         "mode": "gate-only",
@@ -2519,16 +2537,22 @@
         "P123.30"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T22:53:22Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T23:19:33Z.7971ce",
+        "status": "passed",
+        "at": "2026-10-10T23:19:33Z"
+      }
     },
     {
       "id": "P123.33",

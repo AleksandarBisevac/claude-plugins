@@ -2780,8 +2780,8 @@ def _cases(check):
           and "sort((a,b)=>t[b]-t[a]" in M.UI_HTML)
     # A model must wear one hue across BOTH surfaces, so the panel orders models by
     # the same key render-report.py's _model_slots does. Authors have no report
-    # chart to agree with, so they order by spend — the useful priority when only
-    # 8 of 40 can be coloured.
+    # chart to agree with, so they order by spend — the useful priority when
+    # fewer palette slots exist than authors.
     check("models slot by name (matching the report), authors by spend",
           "uSlots(F.model,dim==='model'?plotted" in M.UI_HTML
           and "'name')" in M.UI_HTML
@@ -5031,14 +5031,14 @@ def _cases(check):
               in M.UI_HTML)
 
     # --- WCAG 2.2 SC 2.4.11 Focus Not Obscured (Minimum) ------------------------
-    # MEASURED by driving real Tab presses, not `.focus()`: 72 of 942 focus stops
-    # across six tabs and two viewports landed ENTIRELY under pinned chrome -- 60
-    # under `.top`, 11 under `.savebar`, 1 under `.ufil`. Shift+Tab far worse than
-    # Tab, because backwards traversal walks up into the header.
+    # MEASURED by driving real Tab presses, not `.focus()`: focus stops across
+    # every tab and both viewports landed ENTIRELY under pinned chrome -- under
+    # `.top`, `.savebar` and `.ufil`. Shift+Tab far worse than Tab, because
+    # backwards traversal walks up into the header.
     #
     # THE BEHAVIOUR IS PINNED BY THE BROWSER GATE, not by these lines: only
     # `tools/capture-screenshots.mjs`'s 2.4.11 walk can see whether a control is
-    # covered, and it fails at 17 of 353 with this feature switched off. What the
+    # covered, and it fails with this feature switched off. What the
     # cases here add is the half a browser gate is bad at -- catching the feature
     # being DELETED, which would leave that walk measuring a page that no longer
     # tries.
@@ -5047,11 +5047,21 @@ def _cases(check):
           "function keepFocusClear(){" in M.UI_HTML
           and "document.addEventListener('focusin'" in M.UI_HTML
           and "try{keepFocusClear();}" in M.UI_HTML)
+    # The per-cap leftovers are what the browser gate's walk recorded for a fixed
+    # number of passes: (cap, focus stops still obscured). The case prints the
+    # table it reasons from and derives the two things it asserts from it - that
+    # leftovers only fall as the cap rises, and that the shipped ceiling is the
+    # first cap that leaves none.
+    _fo2_left = ((3, 10), (6, 5), (8, 2), (16, 0))
+    _fo2_ceiling = min(cap for cap, left in _fo2_left if left == 0)
     check("fo2 the correction terminates on PROGRESS, not on a tuned count: a "
           "pass that moves nothing stops it, and the ceiling is only a spin "
-          "guard - a fixed 3 left 10 of the 72, 6 left 5, 8 left 2, 16 left none",
+          "guard - leftover stops by fixed cap: %s"
+          % ", ".join("%d left %s" % (cap, left or "none")
+                      for cap, left in _fo2_left),
           "if(now===was)return;" in M.UI_HTML
-          and "for(let pass=0;pass<16;pass++){" in M.UI_HTML)
+          and "for(let pass=0;pass<%d;pass++){" % _fo2_ceiling in M.UI_HTML
+          and all(a[1] > b[1] for a, b in zip(_fo2_left, _fo2_left[1:])))
     check("fo3 which viewport HALF the chrome sits in decides the direction, not "
           "how its edges compare - comparing edges reads a bottom bar backwards "
           "the moment the control is fully under it, which left every savebar "
