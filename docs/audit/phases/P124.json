@@ -159,7 +159,7 @@
     {
       "id": "P124.3",
       "title": "run-test-gate --tree measures in a task's tree and records in the phase tree",
-      "status": "in_progress",
+      "status": "done",
       "description": "F600 design A3 and D4. testedState.tree carries a hash key, never a path; a path the tree prints goes through the P122 write-boundary scrub. Name the flag where run-test-gate's flags are documented.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -193,25 +193,46 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a14a45c5924e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Reviewed the applied diff against P122. The tree key is a sha1 prefix of the realpath, so it holds no path. Any other string a gate prints goes through scrubbed_ledger_row, which scrubs everything outside the project, so the tree path is covered. Fixed tr6: its probe script lived outside the repo, and the entry's path was rewritten to <outside-repo>, then --own saw a path not in tests.add. The declared tests/test_a.py is now itself the program the step runs (exit 1 in the project, 0 in the tree) and prints its own path. Documented --tree in the run-test-gate module docstring and in reference/orchestrator.md. Results: test_run_test_gate 500/500, test__verdict_binding 39/39, test__evidence_io 280/280, ruff clean, full sweep 320/320 files ok.",
+        "descriptive": "run-test-gate --tree DIR measures in a task's tree and records in the project ledger with a hash-keyed tree; documented and green."
       },
       "startedAt": "2026-10-10T03:03:05Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T03:22:02Z",
+      "verifiedBy": [
+        "tr1",
+        "tr2",
+        "tr3",
+        "tr4",
+        "tr5",
+        "tr6",
+        "tr7",
+        "tr8 (test_run_test_gate.py)",
+        "vb32",
+        "vb33 (test__verdict_binding.py)"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T03:22:01Z.975be2",
         "status": "passed",
         "at": "2026-10-10T03:22:01Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "a14a45c5924e",
+        "at": "2026-10-10T03:22:02Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T03:14:13Z",
+        "basis": "`python3 plugins/audit/tests/test_run_test_gate.py --selftest` in a throwaway tree at HEAD exited 1 with 8 of 500 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - tr1 (house FAIL), tr2 (house FAIL), tr3 (house FAIL), tr4 (house FAIL), tr5 (house FAIL), tr6 (house FAIL), tr7 (house FAIL), tr8 (house FAIL): SELFTEST FAILED: 492/500 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P124.4",
       "title": "integrate-task folds one green task tree into the phase tree serially, refusing conflicts and undeclared changes by name",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F600 design A4 and D2/D9. One task per call; the driver calls it in id order over green tasks.",
       "files": [
         "plugins/audit/scripts/git/integrate-task.py",
@@ -246,16 +267,22 @@
         "P124.1",
         "P124.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T03:22:02Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T03:35:28Z.941692",
+        "status": "passed",
+        "at": "2026-10-10T03:35:28Z"
+      }
     },
     {
       "id": "P124.5",

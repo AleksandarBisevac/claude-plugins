@@ -137,6 +137,7 @@ claude-plugins/                           # this repo (personal, public)
           _worktrees.py                   # which worktrees exist, whose phase each is, and what may be reaped
           close-phase.py                  # sign-off 5c-5e as one step: merge into the resolved parent, stamp it, clean up
           manage-worktrees.py             # list / add / remove / sweep: the account of what /audit:worktree created
+          integrate-task.py               # one wave task tree's bytes into the phase tree's working tree - or a named refusal (dirty tree, conflict, lockfile) or a decision (undeclared paths); never the index
         governance/                       # the governance domain: the policy, the lock, the audit trail
           _policy.py                      # capability policy: shape, validation, required -> deny -> allow -> default
           _locks.py                       # the lock library: where one lives, is it live, acquire/release
@@ -415,6 +416,7 @@ L8:
   gen-demo-manifest -> _claude_home, _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
   gen-demo-usage -> _claude_home, _demo_cast, _loader, _output
   import-evidence -> _claude_home, _evidence_io, _journal_io, _loader, _manifest_io, _output, _panel_write
+  integrate-task -> _claude_home, _evidence_io, _invariants, _journal_io, _manifest_io, _output, _task_outputs, _wave, _worktrees
   manage-worktrees -> _branch, _claude_home, _manifest_io, _output, _worktrees
   materialize-proposal -> _claude_home, _manifest_io, _output, _proposals, _warning_groups
   merge-manifest -> _claude_home, _id_refs, _id_shape, _locks, _manifest_io, _manifest_merge, _manifest_rules, _merge_install, _output
@@ -1111,6 +1113,27 @@ the wrong one.
 ancestry is re-asked with `merge-base --is-ancestor`; comparing the merge command's own output
 against itself would be a check that cannot go red. Cleanup runs only after that answer is
 `contained`, and stops at the first refusal — the steps are ordered because git enforces the order.
+
+### `plugins/audit/scripts/git/integrate-task.py`
+`integrate-task.py <manifest> <taskId> [--undeclared widen|discard|block] [--json]` — carries one
+wave task tree's work into the phase tree, because that tree is removed afterwards and whatever
+is not carried is lost. It writes bytes into the phase tree's **working tree** and a state file in
+its git directory, and never touches the index (`commit-task-work` stages the declared files and
+refuses a pre-staged one); every git call runs with `GIT_OPTIONAL_LOCKS=0`.
+
+What the task changed is read from the **task tree's own index** against the base the marker
+records, never from its declaration. The questions, in the order of what a wrong answer costs: a
+phase tree dirty beyond record paths and earlier integrations is refused (`dirty`); a path another
+task changed since the base is refused when it is a lockfile (`non-mergeable`, judged on the real
+file path, so a lockfile inside a declared directory is caught) and otherwise merged per path with
+`git merge-file`, a conflict being refused (`conflict`) with every task named; only then are
+undeclared paths a **decision** (exit 3: widen, discard or block). A clean overlap is integrated
+with `regate: true`. Every refusal is reached before the first write.
+
+A second run says "already integrated", from the state file or, if that is lost, from the bytes
+(then `regate` is `null`: unknown). Exit codes: 0 integrated, 1 refused, 2 usage, 3 decision owed,
+4 git could not be asked. Id order among green tasks is the caller's — the driver runs this once
+per task. Its cases are `plugins/audit/tests/test_integrate_task.py`.
 
 ### `plugins/audit/scripts/git/manage-worktrees.py`
 `list`, `add`, `remove`, `sweep`, `task-add`, `task-remove` — the account of what `/audit:worktree` created, which the prose

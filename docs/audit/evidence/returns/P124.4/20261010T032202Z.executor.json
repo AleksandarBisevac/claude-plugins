@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "test_integrate_task": "pass",
+    "test__wave": "pass",
+    "test__worktrees": "pass",
+    "test__deps": "pass",
+    "test__output": "pass",
+    "ruff": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T03:26:48Z",
+    "basis": "`python3 plugins/audit/tests/test_integrate_task.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: ImportError: audit plugin: no script named 'integrate-task.py' among the 136 .py file(s) found under /private/var/folders/d1/pwtx3bsx53g9w4w6wslwxkjr0000gn/T/audit-red-cg1f3u9_/tree/plugins/audit/scripts. (0 searched means the walk found nothing at all - a tree that is not there - which is a different problem from a misspelled name); 'integrate_task' is not introduced by this task: no declared implementation file in the working tree carries it; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "Reviewed the prepared integrate-task.py as my own. The guide module-map fence already equals `_deps.py --render` (checked: the render text is contained in PLUGIN-BUILD-GUIDE.md). Reconciled with committed _wave.is_non_mergeable, _worktrees.list_worktrees and read_provenance(expect_task=...): all exist with the signatures used. Fixed one real defect: the __main__ stub read --selftest off sys.argv, making test__output sfl8 red (224/225); it now uses _output.selftest_requested. GIT_OPTIONAL_LOCKS=0: probed in a scratch repo with a stale stat cache. `git status` rewrote .git/index without the variable (sha changed) and not with it, but `git diff --name-only HEAD`, the form the script uses, rewrote nothing either way. So it is unproven for the script's own calls; kept, and the module docstring now says defensive and unproven, with that measurement. Runs (exit 0 each): test_integrate_task 24/24, test__wave 14/14, test__worktrees 113/113, test__deps 307/307, test__output 225/225; ruff check plugins/audit tools passes.",
+    "descriptive": "integrate-task folds one task tree into the phase tree with named refusals; stub and lock claim corrected, tests and ruff green."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_integrate_task.py"
+  ],
+  "claims": "claims:\n- GIT_OPTIONAL_LOCKS=0 is not shown to matter for the calls integrate-task makes; shown only for git status (scratch repo, index sha before/after). Docstring says so.\n- The guide sentence 'every git call runs with GIT_OPTIONAL_LOCKS=0' is a statement of what the code does, not of why it is needed.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:dc33a30b86065b4b32d2b027f022ccc08c21be27dcba09121a2eb45597193a71\",\"dirtyDigest\":\"sha256:23bb5cd593cb8c9ee4ab79ebff8656baffac37755aec4dc9db52cd8fd73e0ce3\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"5350682cda26df74\",\"plugins/audit/scripts/_deps.py\":\"027cb965774d18df\",\"plugins/audit/scripts/git/integrate-task.py\":\"b3be1d70133a503b\",\"plugins/audit/tests/test__output.py\":\"a128ae90485501c0\",\"plugins/audit/tests/test_integrate_task.py\":\"bce7691a0491ead6\"},\"head\":\"a14a45c5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/_deps.py\",\"plugins/audit/scripts/git/integrate-task.py\",\"plugins/audit/tests/test__output.py\",\"plugins/audit/tests/test_integrate_task.py\"],\"scopeDigest\":\"sha256:c0c647214f1e08a8e4e3326369173f2cde132f096337bbbe44b59074f9e8529b\",\"v\":2}"
+}

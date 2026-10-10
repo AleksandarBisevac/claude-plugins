@@ -764,6 +764,13 @@ LAYERS = (
      # the same L1 pair - `_branch` for the plan's own branch names, `_worktrees`
      # for git's list and the sweep plan.
      "manage-worktrees",
+     # `integrate-task` is the next step of the same domain: a wave's task tree is
+     # removed once its work is carried into the phase tree, so the carrying is a
+     # door that refuses by name (dirty tree, textual conflict, lockfile, undeclared
+     # path) rather than a copy. It reaches `_wave` (L2) for the lockfile class,
+     # `_worktrees` for the task marker and `_task_outputs` for what a declared
+     # entry covers - nothing sideways.
+     "integrate-task",
      # `run-test-gate` is the same shape one step earlier: a door the
      # orchestrator PROSE reaches through Bash, doing the thing prose cannot be
      # trusted to remember. It brackets a phase's gate with a working-tree
