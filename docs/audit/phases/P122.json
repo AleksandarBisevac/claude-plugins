@@ -1,7 +1,7 @@
 {
   "id": "P122",
   "title": "One rule decides whether a declared path covers a file",
-  "status": "in_progress",
+  "status": "done",
   "description": "F581 (priority: 68 false commit-scope breaches on a real user's first sign-off), F579, F592. Today one files entry has several meanings: commit-scope matches exact paths after stripping the slash; the plan gate and two guard hooks treat an entry as a directory only with a trailing slash (the guards through drifted inline copies); remind-tdd matches exactly; staging and run-test-gate are separator-bounded; the red-first fix tree copies files only. Settled with the user 2026-10-09: one separator-bounded predicate, hosted at L1 in scripts/manifest/_task_outputs.py, reached by hooks through _config._load_scripts_module. The next version ships only once every open bug is fixed (user, 2026-10-09).",
   "desiredOutcome": "Every reader of a task's files answers coverage through one shared predicate (an entry covers itself and everything under entry/, with or without a trailing slash), and the records a task's close and sign-off write are true: no false commit-scope breach or could-not-prove from a declared directory or a forwarded --selftest, no done task with its work uncommitted, findings carry their fix or disposition, and no committed record carries a machine path.",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "99130da9c6babe7b1078f684b00d32fdfb6fae4f",
   "branch": "audit/p122-one-rule-decides-whether-a-dec",
-  "mergedAt": null,
+  "mergedAt": "2026-10-10T02:32:56Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -1178,5 +1178,6 @@
     "runId": "2026-10-10T02:31:58Z.36441b",
     "status": "passed",
     "at": "2026-10-10T02:31:58Z"
-  }
+  },
+  "mergedHead": "fbdf1e559cfc8ede7fee1b16c20b9d4c9de5c790"
 }
