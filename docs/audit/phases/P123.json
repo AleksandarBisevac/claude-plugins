@@ -1,0 +1,333 @@
+{
+  "id": "P123",
+  "title": "A first-time user's plan, run and landing do what they said",
+  "status": "pending",
+  "description": "Testbed faults from the danuvia-software run on 3.2.0: F588, F589, F595, F591, F594, F593. Each was hit by a real first-time user.",
+  "desiredOutcome": "On a fresh repo a first phase is planned in one verb call with no placeholder, /audit:run never runs less or more than the user named, a stopped drive leaves no lock behind, the gate's evidence lands in the project's own directory, and a single-checkout landing leaves the user on the branch the work landed on.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [
+    "P122"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P123.1",
+      "title": "a missing plan is created by the first /audit:phase add, with no placeholder task",
+      "status": "pending",
+      "description": "F588: on a repo with no plan, /audit:phase add hits _under_lock's 'manifest not found -- run /audit:init first' (exit 2), and the model went into the plugin's source, found seed, created the plan, retargeted the seeded phase, cancelled seed's placeholder and added tasks: 16 turns, 0.83 USD to plan two tasks. F589: _locked_seed hardcodes P1 with a placeholder task P1.1. Make add-phase and the batch add (add --from-file) seed a missing plan themselves (seed's meta, the requested phase as the first phase, no placeholder), and give seed a --no-task form; the missing-manifest refusal stays for the task verbs that need an existing phase. Mind fb10 (phase.md's add section is pinned to at most 8000 bytes and to its heredoc) and test__refs' flag/hint parity. Say it in phase.md, init.md, verbs-in-full.md, README.md's /audit:init and /audit:phase rows, and QUICKSTART.md's cheaper-first-step paragraph.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/commands/init.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/README.md",
+        "QUICKSTART.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: add-phase and add --from-file on a project with no manifest write the plan (seed's meta and index) and exactly the requested phase and tasks in one call, with no placeholder task; seed --no-task writes no task"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.2",
+      "title": "a drive that stops releases the phase lock it took",
+      "status": "pending",
+      "description": "F591: drive-phase.drive calls take_lock first; when audit-task start (or done, record_gate, commit_signoff, land) exits non-zero, drive_task and drive_phase return the stop directly and the lock is released only in finish/finish_task, reached only on done. So any stop after take_lock strands phase-<id>, which status later reads as abandoned. Release on every stop path that this invocation took the lock on (one exit point, not one release per arm), and give an index-lock exit 3 from audit-task its own followed rule instead of the generic 'stopped'. Keep STEPS in step with the README's followed table if a rule is added (_refs.followed_anchor_drift). Update orchestrator.md's concurrency-lock release rule.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/reference/orchestrator.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a drive that took the phase lock and then stops on a verb refusal (the index lock held during start, exit 3) leaves phase-<id> released and state.lock not taken"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.3",
+      "title": "/audit:run given a phase id refuses and names /audit:phase",
+      "status": "pending",
+      "description": "F595: the owner typed /audit:run p1 meaning the phase; P1.2 alone ran. On main, run.md hands the argument to drive-phase next, whose context tries resolve_phase_id first, so a phase id drives the WHOLE phase (pinned by dt3) - the opposite of the observation. Establish first, from the testbed session's transcript, whether the script or the model picked P1.2, and write the answer into the task note. Either way /audit:run's contract is one task: add a one-task form to drive-phase next (a flag run.md passes) that refuses a phase-shaped id with one line naming /audit:phase <id> and the tasks it would run (in waves once F600 lands, one at a time before), and never picks a task. /audit:phase keeps next <phaseId>. dt3 stays true for the phase form. Update run.md, verbs-in-full.md and README.md's /audit:run row.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/commands/run.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: the one-task form given p1, P1 or 1 exits 2 naming /audit:phase P1 and the tasks it would run in parallel; a task id still drives one task"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P123.1",
+        "P123.2"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.4",
+      "title": "a single-checkout landing leaves the checkout on the branch it landed on",
+      "status": "pending",
+      "description": "F594: merge_plan's no-checkout mode fast-forwards the parent ref with fetch . branch:refs/heads/parent and never moves HEAD, and commit_landing then commits the stamp and journal rows on the phase branch and fast-forwards the parent again. The user stays on the merged phase branch and starts the next phase from it. When the landing runs in the checkout that holds the phase branch, the parent is held by no worktree and that checkout is clean, switch it to the parent after the merge and commit the landing there; otherwise keep today's behaviour and say plainly that the checkout still sits on the merged branch, with the git switch command. phase-signoff.md documents 'It never moves your HEAD' - check COMPATIBILITY.md before changing a documented promise, and rewrite that sentence and the mt0-mt2 / ns3 expectations to the new rule rather than adding an exception beside them.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/README.md",
+        "plugins/audit/commands/worktree.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_close_phase.py: closing from a clean main tree standing on the phase branch with the parent checked out nowhere ends with HEAD on the parent, the stamp and journal rows committed on the parent, and the branch deletable; a dirty tree is not switched and the follow-up names git switch"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P123.3"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.5",
+      "title": "run-test-gate resolves its project the way every other verb does",
+      "status": "pending",
+      "description": "F593, PRIORITY (hit the testbed owner twice; root cause reproduced, see PLAN.md F593). Two resolvers answer 'which project does this manifest belong to': _evidence_io.project_config_for (--project-dir, CLAUDE_PROJECT_DIR, then the MANIFEST'S OWN DIRECTORY) used by run-test-gate._own_log_dir, and _panel_write.project_of_manifest (first ancestor holding .claude/ or .git). The first hand-run gate (no CLAUDE_PROJECT_DIR in a terminal or Bash-tool shell) writes its raw log under docs/audit/.claude/, which then makes project_of_manifest answer docs/audit forever, so every later run without --project-dir records evidence into docs/audit/docs/audit/, which no check reads. Every printed gate remedy omits --project-dir (commit-task-work's, audit-task's gate_command and its other print sites). Fix the class: ONE project resolver for every writer and every printed command, anchored on the git toplevel (or a .git file), never accepting a .claude/ marker inside the manifest's own docs/audit-shaped directory; project_config_for's manifest-dir fallback goes away; printed commands then need no flag because the default is right; keep audit-task.resolve_basis and drive-phase.project_context on the same function. Add a doctor hygiene check naming a stray <manifest dir>/.claude or docs/audit/docs. Keep lp1 true. Blocked by P123.1 only because both edit audit-task.py.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/tests/test__panel_write.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/status/_doctor_hygiene.py",
+        "plugins/audit/tests/test__doctor_hygiene.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: a fresh repo plus one hand-run gate with no flags and no CLAUDE_PROJECT_DIR, then a second run: both land in <root>/docs/audit/evidence, and no <manifest dir>/.claude or docs/audit/docs is created"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P123.1"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.6-z4y",
+      "title": "a failing tool's output is excerpted head and tail with the failure lines kept, through one helper",
+      "status": "pending",
+      "description": "F598 + F553, one class from opposite ends: _scoped_commit cuts every refusal reason to (err or out).strip()[:200] (head only), so danuvia's lint-staged refusal kept the progress preamble and lost the failing check; verify.sh keeps only the tail of a failing step, so a failing vitest test could not be named. Choosing an end is the bug. Add one helper in a new scripts/_excerpt.py (L1; the five things CLAUDE.md lists for a new .py): head and tail of a failing tool's output with an explicit 'N chars elided' marker between, plus the lines matching a failure shape (✖, error, FAIL, ERR_) from the elided middle. Route every subprocess-output refusal reason through it: _scoped_commit's (the most cuts), _ado_fetch and _ado_connect's, and any other site in scripts/ that cuts git or tool OUTPUT (a title or a summary cut is a different thing and stays); journal rows keep the excerpt whole in details and clip only the summary (_journal_io._clip_marked). verify.sh's failing-step print keeps every FAIL/✖ line plus the tail. Add a lint in _output.py banning a bare .strip()[:N] / [:N] on a name bound from subprocess output, with a red-first allow case, and add it to prove-gates' table if that is how lints are proven here. A site outside the declared files is a scope widening, not a skip.",
+      "files": [
+        "plugins/audit/scripts/_excerpt.py",
+        "plugins/audit/tests/test__excerpt.py",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/scripts/manifest/_ado_fetch.py",
+        "plugins/audit/scripts/manifest/_ado_connect.py",
+        "tools/verify.sh"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__scoped_commit.py: a refused commit whose 2 KB hook output starts with lint-staged's preamble and ends with '✖ prettier --check found issues in lib/store.ts' records a withdrawn row whose details contain lib/store.ts"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
