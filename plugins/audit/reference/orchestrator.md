@@ -242,6 +242,11 @@ never hardcode branch names, package ids, skills, or build tools here:
   status; the verb is what records why, and a blocked task with no reason cannot say when it may
   run again.
 
+- **An executor that returned without filing** (`decide no-executor-return`): answer `resume`, the
+  recommended option and one that spends no attempt — resume the dispatched executor by the id your
+  dispatch returned and have it run its submit block. `retry` spends an attempt and recuts work that
+  may be finished; `block` needs a reason.
+
 ## Readiness rule
 
 Which tasks are ready is computed, not followed: `_status_facts.ready_tasks()` lists them under

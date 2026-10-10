@@ -1,0 +1,28 @@
+{
+  "gates": {
+    "test_audit_lookup --selftest": "pass",
+    "test_drive_phase --selftest": "pass",
+    "ruff": "pass",
+    "vermin": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T13:52:45Z",
+    "basis": "`sh -c python3 plugins/audit/tests/test_audit_lookup.py --selftest && python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases bf3a (house FAIL), bf3b (house FAIL), bf3c (house FAIL), but none is the task's own (bf3a a retry after a red gate step names THAT step's command and its failing line, and does not list the green step beside it: \"Retry - what attempt 1 left on the record\\noutcome.technical (verbatim):\\nattempt 1: gate red on bf_case\\ntestEvidence: runId run-red, status failed, at z\\nredFirst: none recorded\\nThe working tree is the last attempt; this is what it answered.\\n\\n## Your return\\nYour last act files the return object agents/audit-executor.md declares - it checks the shape, runs the red-first helper on the command after `--`, takes the stamp and files the return once. Put the return object in place of the middle line and run the block as it stands - the object goes on the command's stdin and nothing is written to disk:\": the runner locates it in no declared test file; bf3b a retry whose recorded run has no ledger row SAYS the steps were not read and why, rather than printing 'none recorded' for them: \"Retry - what attempt 1 left on the record\\noutcome.technical (verbatim):\\nattempt 1: gate red on bf_case\\ntestEvidence: runId run-red, status failed, at z\\nredFirst: none recorded\\nThe working tree is the last attempt; this is what it answered.\\n\\n## Your return\\nYour last act files the return object agents/audit-executor.md declares - it checks the shape, runs the red-first helper on the command after `--`, takes the stamp and files the return once. Put the return object in place of the middle line and run the block as it stands - the object goes on the command's stdin and nothing is written to disk:\": the runner locates it in no declared test file; bf3c the submit block is the FIRST thing in 'Your return' - before the paragraph that says what it files: 'Your last act files the return object agents/audit-executor.md declares - it checks the shape, runs the red-first helper on the command after `--`, takes the stamp and files the return once. Put the r': the runner locates it in no declared test file) - a case is the task's only when the runner locates it in a declared test file (plugins/audit/tests/test_audit_lookup.py, plugins/audit/tests/test_drive_phase.py) whose named class defines it, with no identical def in HEAD's test files - SELFTEST FAILED: 81/84 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "audit-lookup: new red_step_lines reads the retry run's ledger row via _evidence_io (read_rows, row_by_run, _step_failed), names each red step's command (row's, else resolved gate entry, else program) with failing lines cut by _excerpt.reason_of; unreadable/missing row says 'red steps: not read - why'. executor_return_lines now puts the submit block first and alone, paragraph after. drive-phase: no-executor-return offers resume|retry|block; resume spends no attempt, prints one 'resume the executor dispatched for <task> ... run its submit block' instruction, keeps the dispatch mark; step rule 'recommended: resume' added (followed_anchor_drift clean); README followed-table row, orchestrator.md bullet, audit-executor.md sentence. test_audit_lookup 84/84, test_drive_phase 199/199, ruff and vermin clean. Measure later: count no-executor-return decisions in the next phase's journal. A first attempt to edit drive-phase.py through a Bash heredoc was refused by the plan gate; I redid it with Edit, which was allowed.",
+    "descriptive": "A retry brief names the red step and what it printed, and a silent executor is resumed without spending an attempt."
+  },
+  "testsAdded": [
+    "bf3a",
+    "bf3b",
+    "bf3c",
+    "rs1",
+    "rs2",
+    "rs3",
+    "rs4",
+    "rs5"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:d51dc9d5340ece62e0352bfc2f081aeb2987638572edf7ddeb79a3a0531fc4b4\",\"dirtyDigest\":\"sha256:7846899ea432911e878c8acec26ce3deadde262309df583fd4e9373c93d189ad\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\"plugins/audit/README.md\":\"9fed324d639f4761\",\"plugins/audit/agents/audit-executor.md\":\"c4e7803cc6f125b8\",\"plugins/audit/reference/orchestrator.md\":\"fc742c8a9ad7a24a\",\"plugins/audit/scripts/governance/drive-phase.py\":\"e69deb61f6bfd53f\",\"plugins/audit/scripts/status/audit-lookup.py\":\"d8bb60f64da1806c\",\"plugins/audit/tests/test_audit_lookup.py\":\"916e4cbed8d2d244\",\"plugins/audit/tests/test_drive_phase.py\":\"dadc7b1c993b3d12\"},\"head\":\"ae63b885\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/README.md\",\"plugins/audit/agents/audit-executor.md\",\"plugins/audit/reference/orchestrator.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"plugins/audit/tests/test_audit_lookup.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:233e309663e3232a3a1dc324593516a6c82c5adf41adacfe35be6eddb9afb413\",\"v\":2}"
+}

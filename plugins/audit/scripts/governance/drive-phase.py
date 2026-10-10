@@ -303,6 +303,11 @@ STEPS = {
     "decide-no-executor-return": {
         "line": "decide no-executor-return %(task)s: the executor was dispatched "
                 "and filed no return for this start",
+        "rule": ("recommended: resume - it spends no attempt; retry spends one "
+                 "and recuts work that may be finished.",)},
+    "resume-executor": {
+        "line": "resume the executor dispatched for %(task)s (the agent id your "
+                "dispatch returned) and have it run its submit block",
         "rule": ()},
     "decide-no-reviewer-return": {
         "line": "decide no-reviewer-return %(task)s: the reviewer was dispatched "
@@ -397,7 +402,7 @@ STEPS = {
 # options is one only the plan can change; nothing here answers it.
 DECISIONS = {
     "gate-red": (("retry", "rerun", "block"), ("block",)),
-    "no-executor-return": (("retry", "block"), ("block",)),
+    "no-executor-return": (("resume", "retry", "block"), ("block",)),
     "no-reviewer-return": (("redispatch", "not-asked"), ("not-asked",)),
     "high-risk": (("confirm", "block"), ("block",)),
     "no-change": (("no-change", "retry"), ("no-change",)),
@@ -1549,6 +1554,11 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
             return stop
         ctx["did"].append("blocked %s" % (task["id"],))
         return keep_record(ctx, phase)
+    if answer == "resume":
+        # The dispatch mark stays, so a return still unfiled is asked about
+        # again on the next `next`; no attempt is spent.
+        return instruction("resume", step_text("resume-executor",
+                                               task=task["id"]))
     if answer == "rerun":
         # The gate is not marked as run for this start, so the drive measures
         # again - with `--no-reuse`, through the mark `task_gate` spends - and

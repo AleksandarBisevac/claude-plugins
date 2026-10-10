@@ -123,6 +123,7 @@ import _manifest_phases as _phases  # noqa: E402  (own_gate_entries: the entries
 #                                               `run-test-gate --own` runs)
 import _journal_io  # noqa: E402  (layer 1: the trail this cross-checks against)
 import _evidence_io as _evio  # noqa: E402  (layer 2: project/config resolution)
+import _excerpt  # noqa: E402  (a red step's output is quoted both ends, never head-cut)
 import _loader  # noqa: E402  (the one way scripts/ loads hooks/_config as a library)
 import _areas  # noqa: E402  (resolve_skills: area skills first, then the task's)
 import _filed_returns as _fr  # noqa: E402  (where `submit` filed a return, and
@@ -602,11 +603,47 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
                evidence.get("at")) if evidence else
             "testEvidence: none recorded",
             "redFirst: %s" % (json.dumps(task.get("redFirst"), sort_keys=True)
-                              if task.get("redFirst") else "none recorded"),
-            "The working tree is the last attempt; this is what it answered."])
+                              if task.get("redFirst") else "none recorded")]
+            + red_step_lines(ctx, manifest, phase, task, evidence)
+            + ["The working tree is the last attempt; this is what it answered."])
     lines += _section("Your return", executor_return_lines(
         manifest, phase, task, ctx))
     return lines
+
+
+def red_step_lines(ctx, manifest, phase, task, evidence):
+    """The red steps of the run the last attempt recorded, each with its command
+    and what it printed (cut by `_excerpt`), or why they could not be read.
+    A step's command is the row's own when the plan publishes it, else the gate
+    entry of that name resolved, else the program the row kept."""
+    run_id = (evidence or {}).get("runId")
+    if not run_id:
+        return ["red steps: not read - the task records no run"]
+    try:
+        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+    except Exception as exc:
+        return ["red steps: not read - the ledger could not be read (%s)"
+                % (str(exc) or exc.__class__.__name__,)]
+    row = _evio.row_by_run(rows, run_id)
+    if row is None:
+        return ["red steps: not read - no ledger row carries runId %s" % (run_id,)]
+    entries, _whose = _task_gate(manifest, phase, task)
+    resolved = dict(_evio.resolved_commands(manifest, entries))
+    red = [s for s in (row.get("steps") or [])
+           if isinstance(s, dict) and _evio._step_failed(s)]
+    if not red:
+        return ["red steps: none - run %s has no step that exited red" % (run_id,)]
+    out = []
+    for step in red:
+        name = step.get("name")
+        command = (step.get("command") or resolved.get(name)
+                   or "%s (command not stored)" % (step.get("program") or "?",))
+        printed = _excerpt.reason_of(
+            "\n".join(str(x) for x in step.get("failing") or []),
+            step.get("outcomeBasis") or "")
+        out += ["red step %s: %s" % (name, command),
+                "  printed: %s" % (printed or "nothing recorded for this step")]
+    return out
 
 
 def red_command(manifest, phase, task):
@@ -680,11 +717,12 @@ def executor_return_lines(manifest, phase, task, ctx):
         tail, note = "", [
             "Add `-- <test command>` to prove a regression test red in a "
             "throwaway tree; without it the `redFirst` you wrote is filed."]
-    return (["Your last act files the return object agents/audit-executor.md "
-             "declares - it checks the shape, runs the red-first helper on the "
-             "command after `--`, takes the stamp and files the return once. %s:"
-             % (RETURN_ON_STDIN,), submit_command(ctx, tid, "executor", tail,
-                            wave_tree(ctx, phase, task)[0] is not None)]
+    return ([submit_command(ctx, tid, "executor", tail,
+                            wave_tree(ctx, phase, task)[0] is not None),
+             "Your last act files the return object agents/audit-executor.md "
+             "declares - the block above checks the shape, runs the red-first "
+             "helper on the command after `--`, takes the stamp and files the "
+             "return once. %s." % (RETURN_ON_STDIN,)]
             + note)
 
 

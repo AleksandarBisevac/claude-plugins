@@ -651,7 +651,7 @@
     {
       "id": "P123.9",
       "title": "A fix batch lands whole from stdin, rerun re-measures, and fix refusals say the truth",
-      "status": "in_progress",
+      "status": "done",
       "description": "(F606) `drive-phase.add_fix_tasks` calls `audit-task.py add` once per finding and passes the finding's issue and resolution on argv as `--description`; the argv prose check refused a text holding \" :400\" (\"whitespace before a mark that hugs the word in front of it\") and the batch stopped with only some findings given a task. Hand the whole batch over in ONE `add --from-file -` call on stdin, where no shell rewrites a value: add `fixes` to `BATCH_TASK_KEYS` so a batch task writes `task.fixes` and each finding's `fixTask` in the same write `--fixes` does today, and the batch lands all or nothing. (F607, the discipline half only - the every-path scope half is P124's b3) a fix task defaults to gate-only, so a finding asking for a new test got gate [lint, typecheck]. Derive a fix task's mode with the rule `--bug` already uses (`_bug_tests_mode`: every named file a test path -> regression with its note, else tdd); gate-only only when the caller passes it. (F608, recurred on P4) `--answer rerun` on a gate-red decision returns None and the next task gate reuses the red verdict (\"GATE VERDICT REUSED ... nothing ran here\"), so the decision comes back unchanged and the operator ran `run-test-gate.py --no-reuse --record` by hand. A rerun answer measures: mark it in the drive state for that start and pass `--no-reuse` to the next gate run, consuming the mark once. (P122-R15) the `--answer fix` refusal prints \"not open: F\" for a finding that is open but already names a fix task - say that it already names a fix task and is dispositioned at sign-off; reword the `run_signoff` comment that still says \"a finding no fix task names\", and drop the guard that restates `accepted-open`/`carried` after `open_findings` (now in `_manifest_phases`) has already excluded them. Name the batch form in verbs-in-full.md and the rerun rule in orchestrator.md. Also F617: a pending triage is satisfied without an answer once every med+ open finding names a pending/in-progress fix task (added by hand with add --fixes); the drive runs them, re-reviews, re-triages; such a finding is offered neither fix nor accept-open. Faults: F606, F607, F608, P122-R15, F617.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -693,25 +693,42 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ae63b88592e6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "F606: drive-phase.add_fix_tasks now hands every named finding to ONE `audit-task.py add <manifest> --from-file - --json` call on stdin; audit-task gains an append batch form (phase = {\"id\": ...} alone adds tasks to an existing open phase, no request/openChoices) and `fixes` in BATCH_TASK_KEYS, written as --fixes writes it (task.fixes + finding.fixTask, scope, companions) through shared helpers _fix_task_args/_unit_runner_paths/_batch_build_tasks; a finding named by two batch tasks is refused; all-or-nothing. Also fixed in audit-task._dispatch: `add <manifest> --from-file -` had its manifest positional graded as a <title> and refused as a machine path. F607 (discipline half): a fix task's default mode is _paths_discipline (the --bug rule: all test paths -> regression with note, else tdd; newTests still tdd with the case); gate-only only when passed. Consequence handled in drive-phase.red_block: a tdd task declaring no test file gets redFirst could-not-prove with the helper's refusal verbatim instead of a submit that can never file. F608: --answer rerun marks the start; task_gate spends the mark and passes --no-reuse to run-test-gate (both the task gate and the wave re-gate). F617: refresh_triage - a pending triage whose every med+ open finding names a pending/in_progress fix task is dropped and the drive runs those tasks; otherwise handed findings leave the offered list (rendered as 'handed to X'). P122-R15: fix_refusal says '<id> already names a fix task (<task>), so it is dispositioned at sign-off'; run_signoff comment reworded, the redundant accepted-open/carried guard dropped (triage_findings already excludes settled and live-handed). Docs: verbs-in-full.md batch fix form + discipline rule; orchestrator.md rerun rule. Test fixture: test_drive_phase._file_executor passes `-- true` for a tdd task. Updated existing cases of4 (wording) and cz13 (modes now tdd). Commands: full sweep `python3 tools/sweep-selftests.py` exit 0 (328/328 files ok, 15305 cases); ruff exit 0; vermin exit 0.",
+        "descriptive": "Fix batches land whole from stdin, a rerun re-measures, a hand-added fix task satisfies the triage, and fix refusals say the truth"
       },
       "startedAt": "2026-10-10T13:09:30Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T13:39:15Z",
+      "verifiedBy": [
+        "test_drive_phase.py rm1/rm2/rm3 (rm-block)",
+        "test_drive_phase.py fb1/fb2/fb3 (fx-block)",
+        "test_drive_phase.py ht1/ht2/ht3 (ht-block)",
+        "test_drive_phase.py of4 (reworded)/of4b",
+        "test_audit_task.py bx1-bx5 (bx-block)",
+        "test_audit_task.py cz13 (updated)"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T13:39:14Z.05593a",
         "status": "passed",
         "at": "2026-10-10T13:39:14Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "ae63b88592e6",
+        "at": "2026-10-10T13:39:15Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T13:30:51Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage rm-block --stage fx-block --stage ht-block --stage of-block` in a throwaway tree at HEAD exited 1 with failing cases rm1 (house FAIL), fb1 (house FAIL), ht1 (house FAIL), ht2 (house FAIL), ht3 (house FAIL), of4 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 5/6 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 7/14 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
       "id": "P123.10",
       "title": "A retry brief names the red step and its output; an executor with no return is resumed",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(F609) the brief's \"Retry - what attempt N left on the record\" section (`audit-lookup`) prints `outcome.technical`, a runId and redFirst, and nothing about which gate step went red or what it printed, so the executor could not know the smoke test was the red step. Read that run's evidence row through `_evidence_io` and name each red step's command with its failure excerpt, cut by P123.6's shared `_excerpt` helper; when the row or its output cannot be read, say that instead of 'none recorded'. (F611) executors twice ended without running the brief's submit block and printed the return object instead. `drive-phase.advance` already turns this into `decide no-executor-return` with answers retry/block, and retry spends an attempt on work that is finished. Add a `resume` answer, recommended and spending no attempt, that prints one instruction: resume the dispatched executor (its id from the dispatch mark) and run its submit block. In the brief, put the submit block first and alone in the closing \"Your return\" section (`executor_return_lines`), ahead of the return's shape. Keep the decision vocabulary in step with the README's followed table (`_refs.followed_anchor_drift`) and orchestrator.md. Measure afterwards: count no-executor-return decisions in the next phase's journal. Faults: F609, F611.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -720,7 +737,8 @@
         "plugins/audit/tests/test_drive_phase.py",
         "plugins/audit/agents/audit-executor.md",
         "plugins/audit/reference/orchestrator.md",
-        "plugins/audit/README.md"
+        "plugins/audit/README.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -749,16 +767,22 @@
         "P123.9"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T13:39:15Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T14:11:18Z.93f54c",
+        "status": "passed",
+        "at": "2026-10-10T14:11:18Z"
+      }
     },
     {
       "id": "P123.11",

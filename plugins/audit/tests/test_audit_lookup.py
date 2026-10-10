@@ -853,6 +853,40 @@ def _brief_cases(check):
           "Retry" in text2 and "attempt 1: gate red on bf_case" in text2
           and "run-red" in text2)
 
+    # ---- a retry names the red step and what it printed ---------------------
+    smoke_cmd = "python3 smoke.py"
+    smoke_line = "FAIL smoke_test: expected 3 got 4"
+    row_result = {"status": "failed", "durationMs": 10, "failed": ["smoke"],
+                  "ranTotal": 2, "coverageBasis": None, "treeBasis": "b",
+                  "treeMutated": [], "overlap": None,
+                  "steps": [{"name": "unit", "exit": 0},
+                            {"name": "smoke", "command": smoke_cmd, "exit": 1,
+                             "failing": [smoke_line]}]}
+    proj3, mpath3 = project("bf-retry-row", retry)
+    _evio.append_row(proj3, _evio.row_for(
+        proj3, row_result, "task", {"taskId": "P1.1"},
+        {"runId": "run-red", "ts": "2026-01-01T00:00:00Z", "attempt": 1,
+         "via": "cli"}, published=[smoke_cmd]))
+    brief(proj3, mpath3, "P1.1", "executor")
+    text3 = read(brief_file(proj3, "P1.1",
+                            "20260101T000000Z.executor.md")) or ""
+    check("bf3a a retry after a red gate step names THAT step's command and its "
+          "failing line, and does not list the green step beside it: %r"
+          % (text3[text3.find("Retry"):][:600],),
+          "red step smoke: %s" % (smoke_cmd,) in text3 and smoke_line in text3
+          and "red step unit" not in text3)
+    check("bf3b a retry whose recorded run has no ledger row SAYS the steps were "
+          "not read and why, rather than printing 'none recorded' for them: %r"
+          % (text2[text2.find("Retry"):][:600],),
+          "red steps: not read" in text2 and "run-red" in text2.split(
+              "red steps: not read")[1].splitlines()[0])
+    cut = text3.split("## Your return\n", 1)[-1]
+    check("bf3c the submit block is the FIRST thing in 'Your return' - before the "
+          "paragraph that says what it files: %r" % (cut[:200],),
+          cut.startswith("```sh\n") and "submit P1.1 --role executor" in cut
+          .split("```", 2)[1]
+          and cut.index("Your last act files") > cut.index("AUDIT_RETURN"))
+
     # ---- the reviewer's brief waits for the executor's filed return --------
     proj, mpath = project("bf-review", _bf_manifest())
     rpath = brief_file(proj, "P1.1", "20260101T000000Z.reviewer.md")

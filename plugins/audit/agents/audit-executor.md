@@ -110,3 +110,6 @@ brief's other commands use. It checks the shape and writes nothing when a field 
 missing; runs the red-first helper when you give a test command — owed on a `tdd`
 task, whose `redFirst` is then the helper's block; takes the stamp of the tree your
 claims are about, refusing to file without one; and files the return once.
+
+Printing the return object as your reply files nothing. If you are resumed and told to run
+your submit block, run it as it stands in your brief's "Your return" section.

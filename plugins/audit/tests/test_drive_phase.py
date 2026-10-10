@@ -650,6 +650,53 @@ def _rerun_cases(check):
           retry == 0 and _attempts(mpath, "P1.1") == (before or 0) + 1)
 
 
+def _resume_cases(check):
+    """An executor that ended without running its submit block is resumed, not
+    retried: `resume` is offered first, spends no attempt and prints one
+    instruction; `retry` still spends one."""
+    M, why = _load("drive_phase_resume")
+    if M is None:
+        check("rs1 the driver loads", False, why)
+        return
+    root, mpath = _repo("resume", task_ids=TASKS[:1])
+    _next(M, root, mpath)                       # dispatches the executor
+    _code, text = _next(M, root, mpath)         # it filed nothing
+    before = _attempts(mpath, "P1.1")
+    check("rs1 an executor dispatched and never filed is a decision whose FIRST "
+          "option is `resume`, with the rule saying it spends no attempt: %r"
+          % (text,),
+          instruction(text)[1] == "no-executor-return"
+          and "answer: next %s --answer resume|retry|block" % (PHASE,) in text
+          and "no attempt" in text and len(text.encode("utf-8")) <= BOUND)
+    code, said = _next(M, root, mpath, "--answer", "resume")
+    after = _attempts(mpath, "P1.1")
+    check("rs2 `--answer resume` spends no attempt and prints the one instruction "
+          "- resume the dispatched executor and run its submit block: %r"
+          % ((code, said, before, after),),
+          code == 0 and after == before and "resume" in said
+          and "submit" in said and len(said.splitlines()) <= 2
+          and len(said.encode("utf-8")) <= BOUND)
+    _file_executor(root, mpath, "P1.1")
+    _code, moved = _next(M, root, mpath)
+    check("rs4 once the resumed executor files, the drive goes on past the "
+          "decision: %r" % (moved,), instruction(moved)[0] != "decide")
+    root3, mpath3 = _repo("resume-unfiled", task_ids=TASKS[:1])
+    _next(M, root3, mpath3)
+    _next(M, root3, mpath3)
+    _next(M, root3, mpath3, "--answer", "resume")
+    _code, again = _next(M, root3, mpath3)
+    check("rs3 until the return is filed the decision is asked again: %r"
+          % (again,), instruction(again)[1] == "no-executor-return")
+    root2, mpath2 = _repo("resume-retry", task_ids=TASKS[:1])
+    _next(M, root2, mpath2)
+    _next(M, root2, mpath2)
+    b2 = _attempts(mpath2, "P1.1")
+    _next(M, root2, mpath2, "--answer", "retry")
+    check("rs5 THE TWIN: `retry` still spends one attempt: %r"
+          % ((b2, _attempts(mpath2, "P1.1")),),
+          _attempts(mpath2, "P1.1") == (b2 or 0) + 1)
+
+
 def _gate_calls(module):
     """Wrap `module.run_verb` so each `run-test-gate.py` call is kept as
     `(args, output)` - which flags it was given, and what it printed."""
@@ -3659,7 +3706,7 @@ def _house_suite(cases):
 
 STAGES = (("dp-block", "_drive_cases"), ("dr-block", "_refusal_cases"),
           ("dd-block", "_decide_cases"), ("ct-block", "_continue_cases"),
-          ("dd3-block", "_rerun_cases"),
+          ("dd3-block", "_rerun_cases"), ("rs-block", "_resume_cases"),
           ("rm-block", "_rerun_measures_cases"),
           ("fx-block", "_fix_batch_cases"), ("ht-block", "_handed_triage_cases"),
           ("dt-block", "_single_task_cases"), ("dl-block", "_lock_stop_cases"),
