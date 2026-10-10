@@ -768,7 +768,7 @@
     {
       "id": "P122",
       "title": "One rule decides whether a declared path covers a file",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P122.json"
     },
     {
