@@ -95,6 +95,15 @@ def _cases(check):
           review["findings"][0]["fixTask"] == "P7.1"
           and review["preExistingNotCharged"][0]["fixTask"] == "P7.1"
           and review["findings"][0]["id"] == "P2-abc-R1" and n == 3)
+    carried = {"phases": [
+        {"id": "P2-abc", "tasks": [{"id": "P2-abc.1", "title": "u"}],
+         "review": {"findings": [{"id": "P2-abc-R1", "status": "carried",
+                                  "carriedTo": "P2-abc.1"}]}}]}
+    moved, n = M.rename(carried, {"P2-abc.1": "P7.1"})
+    check("ir13b moving a task named by a finding's carriedTo rewrites carriedTo: %r"
+          % (moved["phases"][0]["review"],),
+          moved["phases"][0]["review"]["findings"][0]["carriedTo"] == "P7.1"
+          and n == 2)
     import _manifest_phases as _phases
     check("ir14 the finding lists walked are the validator's own - one list in two "
           "layers, pinned rather than trusted: %r / %r"

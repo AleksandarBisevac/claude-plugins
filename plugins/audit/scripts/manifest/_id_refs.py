@@ -48,7 +48,8 @@ _output.install_path()
 
 # The fields that hold ONE other record's id, and the ones that hold a LIST of them.
 # `fixTask` sits on a review finding: the task whose commit settled it.
-SCALAR_REFS = ("bugId", "taskId", "materializedAs", "fixTask")
+# `carriedTo` sits on a carried finding: the task or bug that now holds it.
+SCALAR_REFS = ("bugId", "taskId", "materializedAs", "fixTask", "carriedTo")
 LIST_REFS = ("blockedBy", "dependsOn")
 # The lists a phase's review holds findings in. The validator's
 # `_manifest_phases.REVIEW_FINDING_LISTS` is the same tuple one layer up, which

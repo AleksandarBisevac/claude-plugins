@@ -728,7 +728,7 @@
     {
       "id": "P123.10",
       "title": "A retry brief names the red step and its output; an executor with no return is resumed",
-      "status": "in_progress",
+      "status": "done",
       "description": "(F609) the brief's \"Retry - what attempt N left on the record\" section (`audit-lookup`) prints `outcome.technical`, a runId and redFirst, and nothing about which gate step went red or what it printed, so the executor could not know the smoke test was the red step. Read that run's evidence row through `_evidence_io` and name each red step's command with its failure excerpt, cut by P123.6's shared `_excerpt` helper; when the row or its output cannot be read, say that instead of 'none recorded'. (F611) executors twice ended without running the brief's submit block and printed the return object instead. `drive-phase.advance` already turns this into `decide no-executor-return` with answers retry/block, and retry spends an attempt on work that is finished. Add a `resume` answer, recommended and spending no attempt, that prints one instruction: resume the dispatched executor (its id from the dispatch mark) and run its submit block. In the brief, put the submit block first and alone in the closing \"Your return\" section (`executor_return_lines`), ahead of the return's shape. Keep the decision vocabulary in step with the README's followed table (`_refs.followed_anchor_drift`) and orchestrator.md. Measure afterwards: count no-executor-return decisions in the next phase's journal. Faults: F609, F611.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -769,32 +769,53 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "44bb7417044b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-lookup: new red_step_lines reads the retry run's ledger row via _evidence_io (read_rows, row_by_run, _step_failed), names each red step's command (row's, else resolved gate entry, else program) with failing lines cut by _excerpt.reason_of; unreadable/missing row says 'red steps: not read - why'. executor_return_lines now puts the submit block first and alone, paragraph after. drive-phase: no-executor-return offers resume|retry|block; resume spends no attempt, prints one 'resume the executor dispatched for <task> ... run its submit block' instruction, keeps the dispatch mark; step rule 'recommended: resume' added (followed_anchor_drift clean); README followed-table row, orchestrator.md bullet, audit-executor.md sentence. test_audit_lookup 84/84, test_drive_phase 199/199, ruff and vermin clean. Measure later: count no-executor-return decisions in the next phase's journal. A first attempt to edit drive-phase.py through a Bash heredoc was refused by the plan gate; I redid it with Edit, which was allowed.",
+        "descriptive": "A retry brief names the red step and what it printed, and a silent executor is resumed without spending an attempt."
       },
       "startedAt": "2026-10-10T13:39:15Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T14:11:19Z",
+      "verifiedBy": [
+        "bf3a",
+        "bf3b",
+        "bf3c",
+        "rs1",
+        "rs2",
+        "rs3",
+        "rs4",
+        "rs5"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T14:11:18Z.93f54c",
         "status": "passed",
         "at": "2026-10-10T14:11:18Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "44bb7417044b",
+        "at": "2026-10-10T14:11:19Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T13:52:45Z",
+        "basis": "`sh -c python3 plugins/audit/tests/test_audit_lookup.py --selftest && python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases bf3a (house FAIL), bf3b (house FAIL), bf3c (house FAIL), but none is the task's own (bf3a a retry after a red gate step names THAT step's command and its failing line, and does not list the green step beside it: \"Retry - what attempt 1 left on the record\\noutcome.technical (verbatim):\\nattempt 1: gate red on bf_case\\ntestEvidence: runId run-red, status failed, at z\\nredFirst: none recorded\\nThe working tree is the last attempt; this is what it answered.\\n\\n## Your return\\nYour last act files the return object agents/audit-executor.md declares - it checks the shape, runs the red-first helper on the command after `--`, takes the stamp and files the return once. Put the return object in place of the middle line and run the block as it stands - the object goes on the command's stdin and nothing is written to disk:\": the runner locates it in no declared test file; bf3b a retry whose recorded run has no ledger row SAYS the steps were not read and why, rather than printing 'none recorded' for them: \"Retry - what attempt 1 left on the record\\noutcome.technical (verbatim):\\nattempt 1: gate red on bf_case\\ntestEvidence: runId run-red, status failed, at z\\nredFirst: none recorded\\nThe working tree is the last attempt; this is what it answered.\\n\\n## Your return\\nYour last act files the return object agents/audit-executor.md declares - it checks the shape, runs the red-first helper on the command after `--`, takes the stamp and files the return once. Put the return object in place of the middle line and run the block as it stands - the object goes on the command's stdin and nothing is written to disk:\": the runner locates it in no declared test file; bf3c the submit block is the FIRST thing in 'Your return' - before the paragraph that says what it files: 'Your last act files the return object agents/audit-executor.md declares - it checks the shape, runs the red-first helper on the command after `--`, takes the stamp and files the return once. Put the r': the runner locates it in no declared test file) - a case is the task's only when the runner locates it in a declared test file (plugins/audit/tests/test_audit_lookup.py, plugins/audit/tests/test_drive_phase.py) whose named class defines it, with no identical def in HEAD's test files - SELFTEST FAILED: 81/84 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
       "id": "P123.11",
       "title": "The finding schema names status, acceptedReason and carriedTo, and done journals them",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(P122-R6) findings now carry `status` (fixed|accepted-open|carried), `acceptedReason` and `carriedTo`, written by `done` and `signoff`, and the schema's finding definition names none of them and still says `fixTask`/`commit` are written by resolve-finding. Document the three keys in the finding `$def` with their writers. `carriedTo` holds a task or bug id but is not in `_id_refs.SCALAR_REFS`, so `/audit:task move` leaves it dangling: add it, with its test__id_refs pin. (P122-R7) `record_fix_on_findings` returns journal-shaped changes (the finding's commit, review.outcome) and `_locked_done` discards them, so the `task.done` row does not show the finding rewrite: append them to done's journal changes. This lands before validator-schema, which starts applying the schema to whole plans. Faults: P122-R6, P122-R7.",
       "files": [
         "plugins/audit/schema/audit-plan.schema.json",
         "plugins/audit/scripts/manifest/_id_refs.py",
         "plugins/audit/tests/test__id_refs.py",
         "plugins/audit/scripts/manifest/audit-task.py",
-        "plugins/audit/tests/test_audit_task.py"
+        "plugins/audit/tests/test_audit_task.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -822,16 +843,22 @@
         "P123.9"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T14:11:20Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T14:27:09Z.1ee428",
+        "status": "passed",
+        "at": "2026-10-10T14:27:09Z"
+      }
     },
     {
       "id": "P123.12",
@@ -849,7 +876,8 @@
         "plugins/audit/tests/test_drive_phase.py",
         "plugins/audit/reference/execute-task.md",
         "plugins/audit/reference/verbs-in-full.md",
-        "plugins/audit/README.md"
+        "plugins/audit/README.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -902,7 +930,8 @@
         "plugins/audit/hooks/_config.py",
         "plugins/audit/tests/test_guard_bash_writes.py",
         "plugins/audit/tests/test__config.py",
-        "SECURITY.md"
+        "SECURITY.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -948,7 +977,8 @@
       "description": "(P122-R9) `hooks/_config.covering_key` calls `_load_scripts_module('_task_outputs', ...)` on every call, re-executing the module and its `_output` import each time, and guard-bash-writes asks it once per written path; it loads even when `file_map` is empty. Cache the module the way `_LEDGER_LIB` is cached (tried once, kept), and return None before loading when the map is empty. Confirm with `tools/bench-hooks.py --gate`. Faults: P122-R9.",
       "files": [
         "plugins/audit/hooks/_config.py",
-        "plugins/audit/tests/test__config.py"
+        "plugins/audit/tests/test__config.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1013,7 +1043,8 @@
         "plugins/audit/tests/test__output.py",
         "examples/acme-store/acme-store-audit.html",
         "docs/demo-large.html",
-        "docs/index.html"
+        "docs/index.html",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1069,7 +1100,8 @@
         "plugins/audit/tests/test__evidence_io.py",
         "COMPATIBILITY.md",
         "plugins/audit/reference/phase-signoff.md",
-        "plugins/audit/reference/execute-task.md"
+        "plugins/audit/reference/execute-task.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1246,7 +1278,8 @@
         "plugins/audit/scripts/git/close-phase.py",
         "plugins/audit/tests/test_close_phase.py",
         "COMPATIBILITY.md",
-        "plugins/audit/reference/phase-signoff.md"
+        "plugins/audit/reference/phase-signoff.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1377,7 +1410,8 @@
         "plugins/audit/commands/task.md",
         "plugins/audit/reference/verbs-in-full.md",
         "plugins/audit/reference/tracker-sync.md",
-        "plugins/audit/README.md"
+        "plugins/audit/README.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1425,7 +1459,8 @@
       "description": "`audit-task._tip_only_remedy` (with `_branch_holder`) says 'no worktree holds <branch>' when the worktree list could not be read (absence stated without a basis), and names `git worktree add <dir> <branch>` when a prunable worktree holds the branch, which git refuses (exit 128). When the listing carries an error, say the holder is unknown and why; when a prunable worktree holds the branch, name `git worktree prune` before the add. The refusal itself is unchanged. Regression: pinned beside hs5b - unreadable listing -> 'unknown' wording; prunable holder -> prune named first. Faults: F571.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
-        "plugins/audit/tests/test_audit_task.py"
+        "plugins/audit/tests/test_audit_task.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1479,7 +1514,8 @@
         "plugins/audit/tests/test__doctor_setup.py",
         "plugins/audit/commands/layout.md",
         "plugins/audit/commands/init.md",
-        "plugins/audit/README.md"
+        "plugins/audit/README.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1544,7 +1580,8 @@
         "plugins/audit/scripts/governance/_journal_io.py",
         "plugins/audit/tests/test__journal_io.py",
         "plugins/audit/tests/test__locks.py",
-        "plugins/audit/tests/test_gen_demo_*.py"
+        "plugins/audit/tests/test_gen_demo_*.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1596,7 +1633,8 @@
         "plugins/audit/scripts/_loader.py",
         "plugins/audit/scripts/_output.py",
         "plugins/audit/tests/test__loader.py",
-        "plugins/audit/tests/test__journal_io.py"
+        "plugins/audit/tests/test__journal_io.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "regression",
@@ -1650,7 +1688,8 @@
         ".github/workflows/ci.yml",
         "tools/gate-parity.py",
         "CONTRIBUTING.md",
-        "CLAUDE.md"
+        "CLAUDE.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "regression",
@@ -1704,7 +1743,8 @@
         "tools/verify.sh",
         "tools/gate-parity.py",
         "CONTRIBUTING.md",
-        "CLAUDE.md"
+        "CLAUDE.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1755,7 +1795,8 @@
         "tools/ui-checks/responsive.mjs",
         "examples/acme-store/acme-store-audit.html",
         "docs/demo-large.html",
-        "docs/index.html"
+        "docs/index.html",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1801,7 +1842,8 @@
       "description": "`hooks/journal-writes.py` refreshes its baseline at Pre (P72.3), but its own docstring names the residual: a peer writing during this call's window is read as this call's write and journaled under this session - the shared-checkout rows of F554 (a verb's completion journaled again under the peer's sessionId). In Post, a difference whose resulting stateHash already appears in a journal row (any session's verb row) is already recorded and gets no row; a difference no row accounts for is journaled with an explicit unattributed marker rather than this session's id. Regression: two sessions on one checkout, A writes through a verb while B's tool call is open, B's journal gains no row claiming A's change; B's own edit in the same window is still journaled. Faults: F554.",
       "files": [
         "plugins/audit/hooks/journal-writes.py",
-        "plugins/audit/tests/test_journal_writes.py"
+        "plugins/audit/tests/test_journal_writes.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1939,7 +1981,8 @@
         "tools/prove-gates.py",
         "tools/orchestrator-state.py",
         "tools/sweep-selftests.py",
-        "CONTRIBUTING.md"
+        "CONTRIBUTING.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1989,7 +2032,8 @@
         "plugins/audit/tests/test_remind_tdd.py",
         "plugins/audit/tests/test__panel_page.py",
         "plugins/audit/scripts/ui/panel/usage-model.js",
-        "CLAUDE.md"
+        "CLAUDE.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "gate-only",
@@ -2060,7 +2104,8 @@
         "plugins/audit/scripts/report/_report_html.py",
         "plugins/audit/scripts/report/_report_md.py",
         "plugins/audit/scripts/report/_report_page.py",
-        "plugins/audit/scripts/report/render-report.py"
+        "plugins/audit/scripts/report/render-report.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -2110,7 +2155,8 @@
         "plugins/audit/hooks/_config.py",
         "plugins/audit/tests/test_guard_history_rewrite.py",
         "plugins/audit/tests/test__config.py",
-        "SECURITY.md"
+        "SECURITY.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -2159,7 +2205,8 @@
         "plugins/audit/hooks/guard-secrets-read.py",
         "plugins/audit/tests/test__config.py",
         "plugins/audit/tests/test_guard_secrets_read.py",
-        "SECURITY.md"
+        "SECURITY.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -2256,7 +2303,8 @@
         "plugins/audit/hooks/require-plan.py",
         "plugins/audit/hooks/_config.py",
         "plugins/audit/tests/test_require_plan.py",
-        "plugins/audit/tests/test__config.py"
+        "plugins/audit/tests/test__config.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -2311,7 +2359,8 @@
         "plugins/audit/tests/test_audit_status.py",
         "plugins/audit/tests/test__refs.py",
         "plugins/audit/scripts/status/_doctor_setup.py",
-        "plugins/audit/tests/test__doctor_setup.py"
+        "plugins/audit/tests/test__doctor_setup.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -2426,7 +2475,8 @@
         "plugins/audit/tests/test_stamp_verification.py",
         "plugins/audit/hooks/_config.py",
         "plugins/audit/hooks/require-plan.py",
-        "plugins/audit/tests/test_require_plan.py"
+        "plugins/audit/tests/test_require_plan.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "regression",
@@ -2478,7 +2528,8 @@
         "plugins/audit/tests/test_audit_lookup.py",
         "plugins/audit/scripts/git/_worktrees.py",
         "plugins/audit/scripts/_output.py",
-        "plugins/audit/tests/test__output.py"
+        "plugins/audit/tests/test__output.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "regression",
@@ -2577,7 +2628,8 @@
         "plugins/audit/tests/test_import_evidence.py",
         "plugins/audit/tests/test_repair_commits.py",
         "plugins/audit/tests/test_repair_tests_add.py",
-        "plugins/audit/tests/test_record_risk_confirmation.py"
+        "plugins/audit/tests/test_record_risk_confirmation.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "regression",

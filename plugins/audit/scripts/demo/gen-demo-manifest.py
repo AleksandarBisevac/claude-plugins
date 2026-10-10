@@ -916,6 +916,21 @@ SCHEMA_REL = ("schema", "audit-plan.schema.json")
 OPAQUE_FIELDS = frozenset(["proposal.payload"])
 
 SCHEMA_EXEMPTIONS = {
+    # A finding's disposition fields are written by `done` (fixed) and by
+    # `signoff --accept-open` / `--carried`; the demo plan's findings are all
+    # resolved through `resolve-finding`, which predates them. REVISIT when a
+    # rendered surface (the report's findings list or the panel) shows a
+    # disposition, so the fixture has something to demonstrate.
+    "finding.status":
+        "is the disposition the sign-off records (fixed, accepted-open, carried); "
+        "no rendered surface shows it yet, so stamping it into the fixture would "
+        "publish a field with nothing to read it.",
+    "finding.acceptedReason":
+        "is the human's recorded reason beside an accepted-open finding; the demo "
+        "plan accepts none open, and no surface renders the reason yet.",
+    "finding.carriedTo":
+        "names the bug or task a carried finding moved to; the demo plan carries "
+        "none, and no surface renders where a finding was carried yet.",
     # `phase.testEvidence`, `task.testEvidence` and the three fields of the block
     # were all exempt here, on one reason: nothing wrote a run, so a hand-stamped
     # pointer would have named an id that resolved to nothing. Each row named its

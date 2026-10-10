@@ -13142,6 +13142,24 @@ def _held_cases(check):
           r7[0] == 0 and answer(mpath, fid) == "not-asked"
           and r8[0] == M.E_USAGE and read(mpath) == before)
 
+    # The task.done row shows the finding rewrite `done` made in the same write.
+    proj, mpath = project("done-row", [ph("P1", [tk("P1.1")], review={
+        "findings": [finding("P1-R1")]})])
+    verb(proj, "add", "fix R1", "--phase", "P1", "--files", "src/f.ts",
+         "--fixes", "P1-R1")
+    verb(proj, "start", "P1.2")
+    close(proj, "P1.2", "--intent", "not-asked", *_HD_BASIS)
+    _dr_rows = [r for r in _journal_io.read_all(proj)
+                if r.get("action") == "task.done"]
+    _dr_changes = ((_dr_rows[-1].get("details") or {}).get("changes") or []
+                   ) if _dr_rows else []
+    _dr_fields = [(c.get("id"), c.get("field")) for c in _dr_changes]
+    check("hd6b done --commit on a fix task writes a task.done row whose changes "
+          "include the finding's commit and the review outcome: %r" % (_dr_fields,),
+          ("P1-R1", "commit") in _dr_fields
+          and ("P1", "review.outcome") in _dr_fields
+          and ("P1.2", "commit") in _dr_fields)
+
     # Linked by `resolve-finding`, then reopened: the link is not the key.
     proj, mpath = project("relinked", [ph("P1", [tk("P1.1")], review={
         "findings": [finding("P1-R1")]})])

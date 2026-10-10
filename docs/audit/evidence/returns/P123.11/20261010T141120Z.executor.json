@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "test__id_refs --selftest": "pass",
+    "test_audit_task --selftest": "pass",
+    "test_validate_manifest + test__manifest_phases selftests": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "sweep-selftests (full, unrequested extra)": "fail"
+  },
+  "redFirst": {
+    "at": "2026-10-10T14:18:43Z",
+    "basis": "`python3 plugins/audit/tests/test__id_refs.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 16 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ir13b (house FAIL): SELFTEST FAILED: 15/16 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "Schema finding $def now names status (fixed|accepted-open|carried), acceptedReason, carriedTo with writers. _id_refs.SCALAR_REFS gains carriedTo; test__id_refs ir13b added (red 15/16 before, 16/16 after). record_fix_on_findings changes are now appended to done's task.done journal changes via _journal_done/_done_details extra_changes (also in the --json result); test_audit_task hd6b added (red before: 959/960, 960/960 after). NOT DONE / BLOCKED: full sweep has 1 failure, test_gen_demo_manifest.py 'every schema field the demo fixture does not carry has an explicit exemption' naming finding.acceptedReason, finding.carriedTo, finding.status. Fix is three SCHEMA_EXEMPTIONS rows in plugins/audit/scripts/demo/gen-demo-manifest.py; the plan gate refused my Edit there (file not in P123.11 files; only P123.24 pending declares it). Orchestrator must add those rows or widen scope. PLUGIN-BUILD-GUIDE.md/module-map untouched (no import edge change).",
+    "descriptive": "The finding schema documents status/acceptedReason/carriedTo, task move rewrites carriedTo, and done's journal row shows the finding rewrite; demo-manifest exemptions still owed."
+  },
+  "testsAdded": [
+    "test__id_refs.py ir13b",
+    "test_audit_task.py hd6b"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:eb510f742c3e72220296e9640cc67e0a63d51367fde36ec1def8253d0d45b6e3\",\"dirtyDigest\":\"sha256:0aaf2079e3b2c927e4752116085ee7d5e4eafcac97f1e740bc0a772077af7157\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\"plugins/audit/schema/audit-plan.schema.json\":\"e7c9152712510afd\",\"plugins/audit/scripts/manifest/_id_refs.py\":\"106092f67104b6c7\",\"plugins/audit/scripts/manifest/audit-task.py\":\"a6c3cb0564498f1d\",\"plugins/audit/tests/test__id_refs.py\":\"df0d70afcf42ee85\",\"plugins/audit/tests/test_audit_task.py\":\"9169f8aeec2f433e\"},\"head\":\"44bb7417\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/schema/audit-plan.schema.json\",\"plugins/audit/scripts/manifest/_id_refs.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test__id_refs.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:123bff87906b7c7bf2da11c62d3e429c9be4531f5b14081f33a20bc16d5d3678\",\"v\":2}"
+}

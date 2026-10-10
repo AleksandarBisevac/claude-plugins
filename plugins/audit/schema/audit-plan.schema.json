@@ -2119,6 +2119,23 @@
             "commit": {
               "type": "string",
               "description": "The SHA `fixTask` landed in, written with it; `audit-task.py reopen` of that task removes it, so a finding never reads as fixed by work the plan has undone."
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "fixed",
+                "accepted-open",
+                "carried"
+              ],
+              "description": "What became of the finding. `fixed` is written by `audit-task.py done` (and `resolve-finding`) beside `fixTask` and `commit`; `accepted-open` and `carried` are written by `signoff --accept-open` / `--carried`."
+            },
+            "acceptedReason": {
+              "type": "string",
+              "description": "The human's reason for signing off over the finding, written by `signoff --accept-open FINDING=REASON` with `status: accepted-open`."
+            },
+            "carriedTo": {
+              "type": "string",
+              "description": "The task or bug id that now holds the finding, written by `signoff --carried FINDING=ID` with `status: carried`. An id, so a task move rewrites it (`_id_refs.SCALAR_REFS`)."
             }
           }
         }

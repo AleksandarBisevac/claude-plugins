@@ -5314,7 +5314,7 @@ def _done_changes(tid, was, task):
     return rows
 
 
-def _done_details(task_id, phase_id, was, task):
+def _done_details(task_id, phase_id, was, task, extra_changes=()):
     """The `details` block for a `task.done` row, built where a case can read it.
 
     SEPARATE FROM THE APPEND FOR `_start_details`' REASON, word for word:
@@ -5328,14 +5328,15 @@ def _done_details(task_id, phase_id, was, task):
     hook's own derived rows, so this row invents no vocabulary of its own.
     """
     details = {"taskId": task_id, "phaseId": phase_id,
-               "changes": _done_changes(task_id, was, task),
+               "changes": _done_changes(task_id, was, task) + list(extra_changes),
                "completedAt": task.get("completedAt")}
     if task.get("commit"):
         details["commit"] = task.get("commit")
     return details
 
 
-def _journal_done(project, config, mpath, task_id, phase_id, was, task):
+def _journal_done(project, config, mpath, task_id, phase_id, was, task,
+                  extra_changes=()):
     """The `task.done` row: what closed, against which commit, and out of what.
 
     NOT `task.complete`. That action and `task.commit` are DERIVED by
@@ -5356,14 +5357,14 @@ def _journal_done(project, config, mpath, task_id, phase_id, was, task):
         # rule for a why: a close with no commit has nothing else to name.
         summary = ("%s done in %s with no change, was %s: %s"
                    % (task_id, phase_id, was["status"], no_change.get("reason")))
-        details = _done_details(task_id, phase_id, was, task)
+        details = _done_details(task_id, phase_id, was, task, extra_changes)
         details["reason"] = no_change.get("reason")
         return _journal_row(project, config, mpath, "task.done", summary, details)
     summary = ("%s done in %s: commit %s, was %s"
                % (task_id, phase_id, str(task.get("commit") or "")[:12],
                   was["status"]))
     return _journal_row(project, config, mpath, "task.done", summary,
-                        _done_details(task_id, phase_id, was, task))
+                        _done_details(task_id, phase_id, was, task, extra_changes))
 
 
 
@@ -5759,8 +5760,7 @@ def _locked_done(args, project, config, mpath, tid, out):
     phase_id = phase.get("id")
     # THE FIX IS RECORDED ON ITS FINDINGS IN THIS WRITE: `add --fixes` named them
     # and no other verb has to be remembered afterwards.
-    if sha:
-        record_fix_on_findings(phase, tid, sha)
+    finding_changes = record_fix_on_findings(phase, tid, sha) if sha else []
     # A bug this task fixes derives `fixed` (and its `fixedIn`) from this close, so
     # both are stored on the bug - in the index, which is where `bugs[]` lives.
     settled = _settle(assembled, set(
@@ -5802,7 +5802,8 @@ def _locked_done(args, project, config, mpath, tid, out):
                 "rolled back and nothing kept. The verdict: %s" % (refused,))
             return E_INVALID
 
-    jres = _journal_done(project, config, mpath, tid, phase_id, was, node)
+    jres = _journal_done(project, config, mpath, tid, phase_id, was, node,
+                         finding_changes)
     index_note = _index_dirty_note(written, mpath, project, phase_id)
     branch_note = _phase_branch_note(git_root, phase, cwd=git_root)
     open_left = _still_open(phase)
@@ -5829,7 +5830,7 @@ def _locked_done(args, project, config, mpath, tid, out):
                   # answer must not render as one that agrees.
                   "intentCheck": node.get("intentCheck"),
                   "redFirst": node.get("redFirst"),
-                  "changes": _done_changes(tid, was, node),
+                  "changes": _done_changes(tid, was, node) + finding_changes,
                   "phaseOpenTasks": open_left,
                   "phaseComplete": not open_left,
                   "phaseStatus": _mio.effective_phase_status(phase),
