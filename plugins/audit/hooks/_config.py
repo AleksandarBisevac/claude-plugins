@@ -2137,6 +2137,73 @@ def program_candidates(words):
     return (words, candidates + fallback_candidates)
 
 
+# The copying programs, each with the options that take a SEPARATE value, so the
+# value is not read as an operand. `-t`/`--target-directory` names the
+# destination outright and is read for its value rather than skipped.
+_COPY_VALUE_OPTIONS = {
+    "cp": ("-S", "--suffix"),
+    "mv": ("-S", "--suffix"),
+    "ln": ("-S", "--suffix"),
+    "install": ("-m", "--mode", "-o", "--owner", "-g", "--group", "-S",
+                "--suffix", "--strip-program"),
+}
+
+
+def copy_destinations(words):
+    """Where one command's copying program puts its bytes: `[path, ...]`.
+
+    [] when the program is not one that copies (`cp`, `mv`, `ln`, `install`,
+    `tee`); None when it is one and its destination cannot be read - a missing
+    operand, an option with no value, no words at all. The program is found past
+    assignments and wrappers by `program_candidates`, as every reader here finds
+    it, so `sudo mv a b` is read as `mv a b` is. A path is returned as typed;
+    whether it can be placed is `resolvable_destination`'s question, asked by
+    the caller."""
+    if words is None:
+        return None
+    rest, _candidates = program_candidates(words)
+    if not rest:
+        return []
+    program = _program_of(rest[0])
+    args = list(rest[1:])
+    if program == "tee":
+        return [w for w in args if not w.startswith("-")]
+    takes = _COPY_VALUE_OPTIONS.get(program)
+    if takes is None:
+        return []
+    operands, target, index = [], None, 0
+    while index < len(args):
+        word = args[index]
+        if word == "--":
+            operands.extend(args[index + 1:])
+            break
+        if word.startswith("--target-directory="):
+            target = word.split("=", 1)[1]
+            index += 1
+            continue
+        if word in ("-t", "--target-directory"):
+            if index + 1 >= len(args):
+                return None
+            target = args[index + 1]
+            index += 2
+            continue
+        if word.startswith("-") and len(word) > 1:
+            if word in takes:
+                if index + 1 >= len(args):
+                    return None
+                index += 2
+                continue
+            index += 1
+            continue
+        operands.append(word)
+        index += 1
+    if target is not None:
+        return [target]
+    if len(operands) < 2:
+        return None
+    return [operands[-1]]
+
+
 def leading_assignments(words):
     """The `NAME=value` words one command's `words` set for its program: the
     ones ahead of it, bare (`A=1 git diff`) or through a wrapper that takes

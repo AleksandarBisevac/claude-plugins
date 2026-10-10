@@ -356,6 +356,38 @@ def _cases(check):
           "warn", payload("Bash", sid="bw-d3"),
           dirty=["src/dirdecl-old/mod.ts"])
 
+    # (co) a file a shell command created outside every in_progress task's
+    # scope, whatever its extension, while a phase runs: the Write/Edit tier,
+    # not a notice. The testbed's `cp hero.webp public/` drew nothing at all.
+    seed("bw-os1")
+    _v_os, _d_os = M.decide(payload("Bash", sid="bw-os1",
+                                    command="cp a.webp public/x.webp"),
+                            cfg=cfg, state_dir=sd, dirty=["public/x.webp"])
+    check("co1 RED-FIRST: a non-source file copied outside scope in the deny "
+          "tier is refused, naming the path and the scope remedy: %r"
+          % ((_v_os, _d_os),),
+          _v_os == "block" and "public/x.webp" in _d_os
+          and "/audit:task scope" in _d_os)
+    _st_os = json.loads((Path(sd) / ("bash-writes-%s.json" % "bw-os1"))
+                        .read_text(encoding="utf-8")) \
+        if (Path(sd) / ("bash-writes-%s.json" % "bw-os1")).exists() else {}
+    check("co1b ...and the refused path is recorded in the session state for "
+          "the commit check to read: %r" % (_st_os.get("outOfScope"),),
+          "public/x.webp" in (_st_os.get("outOfScope") or []))
+    seed("bw-os2")
+    _expect("co2 ALLOW: the same kind of file inside a declared directory is "
+            "covered: silent", "silent",
+            payload("Bash", sid="bw-os2", command="cp a.webp src/dirdecl/x.webp"),
+            dirty=["src/dirdecl/x.webp"])
+    seed("bw-os3")
+    _expect("co3 ALLOW: an exempt path stays silent", "silent",
+            payload("Bash", sid="bw-os3", command="cp a.md notes/x.md"),
+            dirty=["notes/x.md"])
+    seed("bw-os4")
+    _expect("co4 ALLOW: a read-only command is not the author of new dirt",
+            "silent", payload("Bash", sid="bw-os4", command="ls -la"),
+            dirty=["public/y.webp"])
+
     # (e) two new files → one warn naming both; disabled config → silent
     s = "bw-e"
     seed(s)

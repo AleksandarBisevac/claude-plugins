@@ -670,7 +670,11 @@ open, and it names them so a reader need not find them:
 Every row `test_hooks.py` marks a known divergence rather than fixing is listed by id in its
 `KNOWN_DIVERGENCE`. What stays uncatchable beyond all of that is the residual of bypass class 1
 below, the writes no static reading of a command can find at all; `guard-bash-writes` reports
-both residuals afterwards, from `git status`, once the write has already landed.
+both residuals afterwards, from `git status`, once the write has already landed. While a phase
+runs (the plan gate's deny tier), a file of any other kind than source that a shell command
+wrote outside every in_progress task's scope - an image or a config copied in with `cp` - is
+answered with a blocking PostToolUse decision naming it, and every such uncovered path is kept
+in the session's state; a source file keeps its notice. The write is never reverted.
 
 Both `_config.manifest_state` and `_config.plan_gate_mode` degrade to the **least** aggressive
 verdict on any internal error, in keeping with the fail-open posture above: a crash in the

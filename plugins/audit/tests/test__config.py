@@ -2380,6 +2380,29 @@ def _cases(check):
     finally:
         _harness.remove_tree(_tb)
 
+    # dd: where a copying command puts its bytes, read off its words. The one
+    # reader the shell-write guards ask, so a `cp` and a redirect are placed by
+    # the same rules.
+    _dd = [
+        (["cp", "a.webp", "public/x.webp"], ["public/x.webp"]),
+        (["mv", "-t", "out", "a", "b"], ["out"]),
+        (["cp", "--target-directory=out", "a"], ["out"]),
+        (["install", "-m", "644", "a", "bin/a"], ["bin/a"]),
+        (["tee", "-a", "f1", "f2"], ["f1", "f2"]),
+        (["env", "A=1", "cp", "a", "b"], ["b"]),
+        (["sudo", "mv", "a", "b"], ["b"]),
+        (["ls", "-la"], []),
+    ]
+    _dd_got = [(w, M.copy_destinations(w)) for w, _want in _dd]
+    check("dd1 cp/mv/install/tee destinations are named past wrappers and "
+          "value-taking options, and a non-copying command names none: %r"
+          % (_dd_got,),
+          all(M.copy_destinations(w) == want for w, want in _dd))
+    _dd_none = [["cp", "only-one"], ["mv"], ["install", "-m"], None]
+    check("dd2 a copy whose destination cannot be read answers None, never a "
+          "guess: %r" % ([M.copy_destinations(w) for w in _dd_none],),
+          all(M.copy_destinations(w) is None for w in _dd_none))
+
 
 def _selftest():
     return _harness.run(_cases)

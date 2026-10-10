@@ -1,0 +1,28 @@
+{
+  "gates": {
+    "own-test: test_guard_bash_writes": "pass",
+    "own-test: test__config": "pass",
+    "sweep": "pass",
+    "bench-hooks --gate": "pass",
+    "ruff": "pass"
+  },
+  "outcome": {
+    "descriptive": "While a phase runs, a non-source file a shell command creates outside every in_progress task's scope (an image or config copied in with cp) is refused with a blocking decision naming it and the scope remedy; source files keep their notice, and every uncovered path is recorded for the commit check.",
+    "technical": "_config.copy_destinations(words): the destination(s) of cp/mv/ln/install (last operand, or -t/--target-directory) and tee, found past assignments and wrappers by program_candidates, None when unreadable, [] for a non-copying program (cases dd1, dd2). guard-bash-writes: _statement_targets names copy destinations through it, writing_statement matches a path under a directory destination; decide grades a non-source path in the deny tier only (plan_gate_mode), keeps the free-file slot for source files, records every authored uncovered path in state.outOfScope (new state key, loaded and defaulted), and returns 'block' with BLOCK_TEMPLATE for non-source paths the command authored; main prints decision block + reason. Cases co1 (red before: silent), co1b, co2-co4 (allow: covered dir, exempt, read-only). SECURITY.md states the deny-tier answer. Written by the orchestrator under the user's permission for guard command-reading code."
+  },
+  "testsAdded": [
+    "test_guard_bash_writes co1",
+    "test_guard_bash_writes co1b",
+    "test_guard_bash_writes co2",
+    "test_guard_bash_writes co3",
+    "test_guard_bash_writes co4",
+    "test__config dd1",
+    "test__config dd2"
+  ],
+  "redFirst": {
+    "at": "2026-10-10T15:09:04Z",
+    "basis": "`python3 plugins/audit/tests/test_guard_bash_writes.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 226 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - co1 (house FAIL): SELFTEST FAILED: 224/226 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:cb86b203e430d400d5818dd364885f14b1e72ab1ab89023c15e6ddf94d3b1644\",\"dirtyDigest\":\"sha256:604ce8b32458a875ef36b864c5c40aa91d2b65d3e0b28ed4bfaa014d4a3d21cc\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\"SECURITY.md\":\"d330d1026815d458\",\"plugins/audit/hooks/_config.py\":\"8aa55620cedbf191\",\"plugins/audit/hooks/guard-bash-writes.py\":\"9fec1dcf7bfd679d\",\"plugins/audit/tests/test__config.py\":\"1323af0051a0b075\",\"plugins/audit/tests/test_guard_bash_writes.py\":\"32dc2382d1d9d058\"},\"head\":\"9ed765c3\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/guard-bash-writes.py\",\"plugins/audit/tests/test__config.py\",\"plugins/audit/tests/test_guard_bash_writes.py\"],\"scopeDigest\":\"sha256:6ec18b08650254ac3287d1374ffc389f351dcbb9e874d50b6f6fe69b46c973b4\",\"v\":2}"
+}

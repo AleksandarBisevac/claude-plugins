@@ -876,7 +876,7 @@
     {
       "id": "P123.12",
       "title": "A task commit carries exactly its attempt: no older dirt swept in, no new file left out",
-      "status": "in_progress",
+      "status": "done",
       "description": "One invariant: a task's commit holds the change its own attempt made - nothing from before the attempt is swept in, and nothing made during it is left out in silence. (F610) P2.7 was blocked with edits uncommitted in a file P2.8 also declares, and P2.8 started with no warning; on P5 commit-task-work did stage a blocked task's dirty hunks into another task's commit. P122.4's leftover refusal misses it because the edits are covered by the new task's own files. `start` refuses when a declared file of the task being started is dirty and is declared by another not-done task that has spent an attempt (blocked, or in_progress), naming that task and offering unblock-and-finish or a stash named by the task; commit-task-work refuses when a declared file's uncommitted change predates the task's `startedAt` (record at `start` a snapshot of the declared files' blob ids and compare against it; a file mtime is only a fallback, with that basis stated), and where it can, stages only hunks that differ from the start snapshot. (F612 part a, the commit-time check - not guard reading) P4.3's executor `cp`-ed an image outside its declared files; commit-task-work staged declared files only, so the commit references an image it does not contain. `_uncommitted_leftovers` blames only paths the task's files cover: at commit-task-work and at `done --commit` also list untracked or changed paths that appeared since the attempt began and that no in_progress task covers, and refuse naming them, offering `/audit:task scope` widening or removing the file. (P122-R10) `_porcelain_paths` reads `git status --porcelain` without -z, so a path with a space or a non-ASCII byte is quoted and never matches a declared entry: use -z and split on NUL, a rename carrying two names. Update execute-task.md, verbs-in-full.md and the README's /audit:task start/done text. Faults: F610, F612, P122-R10.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -924,25 +924,46 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9ed765c3d3f6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Start snapshot + attribution in _scoped_commit.py: status_paths() reads `git status --porcelain -z --untracked-files=all` (a rename/copy gives both names); path_marks() digests each path in the stamp's dirtyPaths spelling (file_hash prefix, 16 chars); record_attempt()/read_attempt()/drop_attempt() keep <stateDir>/attempts/<taskId>.json (written through _manifest_io.atomic_write_text; a re-start keeps the existing record, done removes it); attribute() sorts paths into predates/during/mixed by the record, else by mtime against startedAt (basis stated), else undated; attempt_strays() applies it to paths no in_progress task covers. uncommitted() now uses status_paths: it used lines(), which strips the blank opening a worktree-only status, so it returned 'M src/a.py' (harmless while only its truth was read). audit-task.py: _porcelain_paths delegates to status_paths (P122-R10). `start` refuses a first start when a declared file is dirty and another blocked/in_progress task with attempts>0 declares it (_held_dirt), naming path and task and offering finish-or-unblock or setting the change aside in a stash named by that task. It records the snapshot and prints it (JSON: startSnapshot). _uncommitted_leftovers returns (left, during, basis); `done --commit` refuses the `during` paths by name with the basis. Bookkeeping and the state/logs dirs are skipped. done drops the snapshot. commit-task-work.py: attempt_refusal() runs before staging. It refuses declared files whose change predates the start (PREDATES), declared files dirty at start and changed since (MIXED, no hunk splitting: refused, not separated), and strays changed during the attempt that no in_progress task covers (offers /audit:task scope or removal). The answer gains an `attempt` key. With no record and more than one recorded attempt, the declared-predates question is not asked. Docs: execute-task.md 4c, verbs-in-full.md start/done, README /audit:task start/done text, PLUGIN-BUILD-GUIDE _scoped_commit section + regenerated module-map fence (only my three edges changed). Tests: test_audit_task lo-block ae1-ae6 (+ lo2/lo4 backdate the uncovered path that now predates; fixture fileIndex accumulates ids); test_commit_task_work ctw-at1..4 (the real start verb), cl1/cl2 fixture writes only the declared file. Runs: lo-block 16/16; test_commit_task_work 97/97; test_audit_task full 967/967; test__scoped_commit 31/31; first full sweep exit 1 (test__deps sw1: os.replace outside sanctioned writers, mine, fixed); second full sweep exit 0, 328/328 files. Not used: the submit stamp's dirtyPaths. No stamp is taken at start (drive-phase takes one only at submit), and it is bounded at 24 paths. start now records an unbounded record in the same digest spelling instead. The pre-existing dirty .claude/hooks/guard-release.py (P123.42-64p) is untouched; with a record it reads as predates and is not blamed.",
+        "descriptive": "A task commit and close now carry exactly the attempt. Older dirt in a declared file is refused, not swept in. A file made during the attempt outside every running scope is refused by name. Paths with spaces or non-ASCII bytes are matched."
       },
       "startedAt": "2026-10-10T14:27:10Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T15:01:29Z",
+      "verifiedBy": [
+        "test_audit_task.py lo-block ae1 start refuses a dirty file another started task declares",
+        "ae2 allow: clean shared file starts",
+        "ae3 allow: other declarer never spent an attempt",
+        "ae4 leftover 'src/a b.ts' and 'src/ž.ts' found by done",
+        "ae5 done refuses an undeclared file dated after startedAt (mtime basis)",
+        "ae6 done with the start snapshot blames the in-attempt stray, not older dirt, and closes once it is removed",
+        "test_commit_task_work.py ctw-at1 predating declared change refused",
+        "ctw-at2 allow: change after start committed",
+        "ctw-at3 stray made during the attempt refuses until removed",
+        "ctw-at4 widened scope commits the same file"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T15:01:28Z.074cbe",
         "status": "passed",
         "at": "2026-10-10T15:01:28Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "9ed765c3d3f6",
+        "at": "2026-10-10T15:01:29Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T14:53:18Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage lo-block` in a throwaway tree at HEAD exited 1 with 5 of 16 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ae1 (house FAIL), ae4 (house FAIL), ae4 (house FAIL), ae5 (house FAIL), ae6 (house FAIL): SELFTEST FAILED: 11/16 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.13",
       "title": "A shell-created file outside every running task's scope is refused at the edit tools' tier",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(F612 part b - guard command reading) guard-bash-writes' Bash branch filters new dirty paths through `_config.source_exts`, so a `cp` of a .webp outside every in_progress task's scope drew nothing, and even a source file draws only a non-blocking notice whatever tier the plan gate is in; the executor said \"plan gate did not refuse\". Match the Write/Edit tier: while the gate is in its deny tier (a phase in_progress), a new non-exempt file a shell command created outside every in_progress task's scope is reported whatever its extension, with a blocking PostToolUse decision naming the path and the remedy (remove it, or widen scope with `/audit:task scope`), and recorded in the session state so attempt-bound-commit's check reads the same fact; the warn and observe tiers keep today's notice. Where the command's destination is readable before the diff (cp/mv/install/tee/redirect targets, through the shared `_config` readers), attribute the file to that command; an unreadable command stays attributed by the git-status diff as today. Red-first both directions: `cp a.webp public/x.webp` outside scope in the deny tier -> blocking decision; the same path inside scope, an exempt path, a read-only command and another session's file -> nothing new. Run `tools/bench-hooks.py --gate` after. Faults: F612. GUARD COMMAND-READING CODE: written by the orchestrator with the user's permission (auto mode off when possible); if the API refuses, record it verbatim and hand the remainder to the human.",
       "files": [
         "plugins/audit/hooks/guard-bash-writes.py",
@@ -978,16 +999,22 @@
         "P123.7"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T15:01:30Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T15:16:59Z.8267cc",
+        "status": "passed",
+        "at": "2026-10-10T15:16:59Z"
+      }
     },
     {
       "id": "P123.14",

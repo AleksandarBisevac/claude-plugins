@@ -192,6 +192,20 @@ WARN_TEMPLATE = (
     "notice; the change itself was NOT reverted."
 )
 
+# The deny tier's sentence. While a phase runs, the plan gate refuses an Edit or
+# Write outside every in_progress task's scope, and a shell command that CREATED
+# a file there is the same act by another door - so it is refused too, whatever
+# the file's extension (a `cp` of an image outside scope used to draw nothing,
+# because only source extensions were looked at). PostToolUse cannot undo the
+# write; the block tells the model the file must not stay as it is.
+BLOCK_TEMPLATE = (
+    "[bash-write-guard] BLOCKED - a phase is running, so the plan gate is in "
+    "its deny tier, and that shell command wrote outside every in_progress "
+    "task's scope: %s. Remove the file(s), or widen the task that owns them "
+    "with `/audit:task scope <taskId> --files ...`; ask the operator if no task "
+    "should own them. The change itself was NOT reverted."
+)
+
 # The session's free file, taken by a shell write BEFORE it ran and found too big
 # once it had. PreToolUse sees a command and not the change it makes, so a write
 # whose command does not state its content takes the slot unmeasured, exactly as
@@ -655,6 +669,14 @@ def _statement_targets(toks):
     for words in _segments(toks):
         if not words:
             continue
+        if words[0] != "tee":
+            # `cp`, `mv`, `ln` and `install` put their bytes where `_config`'s one
+            # reader says, past wrappers and value-taking options; a tee keeps
+            # its own spelling below.
+            rest, _candidates = _config.program_candidates(words)
+            how = _config.program_name(rest[0]) if rest else "copy"
+            out.extend((how, dest)
+                       for dest in (_config.copy_destinations(words) or []))
         if words[0] == "tee":
             out.extend(("tee", w) for w in words[1:] if not w.startswith("-"))
         elif words[0] == "sed" and any(_write_flag(w) for w in words[1:]):
@@ -716,7 +738,11 @@ def writing_statement(command, cwd, watching, rel):
             continue
         if not _config.within_root(base, dest):
             continue
-        if _config.rel_path(base, dest) != rel:
+        dest_rel = _config.rel_path(base, dest)
+        # A copy INTO a directory lands at `<dir>/<name>`, so a destination
+        # that is a directory names every path under it.
+        if dest_rel != rel and not (os.path.isdir(dest)
+                                    and rel.startswith(dest_rel + "/")):
             continue
         return "the command's own `%s %s`" % (how, target)
     return None
@@ -810,7 +836,7 @@ def default_state():
     therefore the exact key set `_save_state` writes, every time."""
     return {"toolEdited": [], "seenDirty": [], "warned": [], "baselined": False,
             "gitTimeout": False, "otherTrees": [], "bgLaunches": [],
-            "agents": {}, "agentSeq": 0, "agentsAt": {}}
+            "agents": {}, "agentSeq": 0, "agentsAt": {}, "outOfScope": []}
 
 
 def _state_file(state_dir, session_id):
@@ -838,7 +864,10 @@ def _load_state(state_dir, session_id):
                     # the reading that says so: no writer has a look of its own
                     # yet, so each falls back to the session's mtime on its first
                     # pass exactly as it always did.
-                    "agentsAt": dict(data.get("agentsAt") or {})}
+                    "agentsAt": dict(data.get("agentsAt") or {}),
+                    # Absent in a slot an older copy wrote: nothing was refused
+                    # out of scope yet.
+                    "outOfScope": list(data.get("outOfScope") or [])}
     except Exception:
         pass
     return default_state()
@@ -1887,8 +1916,16 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
             continue
         if _config.matches_exempt(rel, exempt):
             continue
-        if not any(rel.lower().endswith(x) for x in exts):
-            continue
+        is_source = any(rel.lower().endswith(x) for x in exts)
+        if not is_source:
+            # A file of any other kind is graded only in the deny tier: there the
+            # plan gate refuses the same file through Edit or Write, and in the
+            # lower tiers a notice about a non-code file would be noise.
+            if plan_mode is None:
+                plan_mode = _config.plan_gate_mode(
+                    cfg, _config.manifest_state(root, manifest_rel))
+            if plan_mode != "deny":
+                continue
         # THE PLAN-COVERAGE CLASS IS GRADED, and only this class: the journal
         # and lock classes above bind their claim to evidence of their own and mean
         # the same thing in a repo with no plan. This one does not. `in_progress_
@@ -1921,7 +1958,7 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
         # a later pass sees only paths that are new to `seenDirty`.
         if slot is None:
             slot = _config.trivial_slot(sd, session_id)
-        if rel in slot:
+        if is_source and rel in slot:
             size = slot_write_magnitude(
                 _config.git_root_dir(root, cfg),
                 rel[len(prefix) + 1:] if prefix else rel,
@@ -2032,8 +2069,29 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
                                               "; and ".join(clauses)))
         elif unproven:
             parts.append(WARN_TEMPLATE % ", ".join(unproven))
+        # THE DENY TIER REFUSES what this command is the author of: a path its own
+        # text names, or one nobody else could have written. A path whose author
+        # is in question (`clauses`) keeps the notice - a block is an accusation.
+        #
+        # ONLY A FILE THE SOURCE-FILE NOTICE NEVER COVERED is refused here. A code
+        # file outside scope keeps the notice it has always had (and the plan
+        # gate's own PreToolUse arm); the class that drew NOTHING - an image, a
+        # config, a lockfile copied into the tree - is the one that now draws the
+        # deny tier's answer. Every uncovered path is recorded for the commit
+        # check either way.
+        if plan_mode == "deny":
+            authored = [rel for rel in suspicious
+                        if rel in named or (rel in unproven and not clauses)]
+            state["outOfScope"] = sorted(
+                set(state.get("outOfScope") or []) | set(authored))
+            blocked = [rel for rel in authored
+                       if not any(rel.lower().endswith(x) for x in exts)]
+            if blocked:
+                parts.insert(0, BLOCK_TEMPLATE % ", ".join(blocked))
 
     _save_state(sd, session_id, state)
+    if parts and parts[0].startswith("[bash-write-guard] BLOCKED"):
+        return ("block", "\n".join(parts))
     if parts:
         return ("warn", "\n".join(parts))
     if attributed:
@@ -2051,7 +2109,16 @@ def main():
 
     try:
         verdict, detail = decide(data)
-        if verdict == "warn":
+        if verdict == "block":
+            print(json.dumps({
+                "decision": "block",
+                "reason": detail,
+                "hookSpecificOutput": {
+                    "hookEventName": "PostToolUse",
+                    "additionalContext": detail,
+                },
+            }))
+        elif verdict == "warn":
             print(json.dumps({
                 "hookSpecificOutput": {
                     "hookEventName": "PostToolUse",
