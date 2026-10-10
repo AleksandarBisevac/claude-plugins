@@ -38,6 +38,7 @@ from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402  (script_path: resolve by basename)
 import _proc_group as _pg                          # noqa: E402  (the teardown `_tear_down` is)
 import _journal_io                                 # noqa: E402  (the rows a stamp anchors)
+import _tree_stamp                                 # noqa: E402  (the digest a row records)
 import _evidence_io as _ev_io                      # noqa: E402  (STEP_KEYS: what a row keeps)
 import _manifest_vocab                             # noqa: E402  (FULL_STATUS_WHOLE, for --full)
 import _fmt as _rtg_fmt                            # noqa: E402  (where human_duration lives now)
@@ -9248,9 +9249,98 @@ def _success_line_cases(check):
                                root, "--own", "--record", "--verbose"]))
 
 
+def _tree_cases(check):
+    """`--tree DIR`: the commands, the tree bracket and the digests are taken over
+    DIR, while the row, the pointer and the boundary land in the project the
+    manifest names. The fixture gives the project and the tree DIFFERENT bytes
+    for the one declared file, and the gate step passes only over the tree's.
+    """
+    project = _mini_repo("run-test-gate-tree-p-")
+    tree = _mini_repo("run-test-gate-tree-t-")
+    aux = _harness.fixture_root("run-test-gate-tree-x-")
+    # The declared file IS the program the gate step runs, so the one step
+    # passes over the tree's bytes and fails over the project's.
+    for root, code in ((project, 1), (tree, 0)):
+        os.makedirs(os.path.join(root, "tests"), exist_ok=True)
+        with open(os.path.join(root, "tests", "test_a.py"), "w") as fh:
+            fh.write("import sys\nprint('tests/test_a.py')\nsys.exit(%d)\n"
+                     % (code,))
+    mp = os.path.join(project, "audit-plan.json")
+    with open(mp, "w") as fh:
+        json.dump({"meta": {"version": 2, "buildCommands": {
+            "chk": "true"}},
+            "phases": [{"id": "P1", "title": "p", "status": "in_progress",
+                        "testGate": ["chk"],
+                        "tasks": [{"id": "P1.1", "title": "t",
+                                   "status": "in_progress",
+                                   "files": ["tests/test_a.py"],
+                                   "tests": {
+                                       "gateBasis": "declared",
+                                       "gate": ['"%s" tests/test_a.py'
+                                                % (sys.executable,)],
+                                       "add": ["tests/test_a.py: covers a"]}}]}]},
+                  fh)
+    base = [mp, "P1", "--task", "P1.1", "--project-dir", project]
+
+    def run(*extra):
+        lines = []
+        return M.main(base + list(extra), out=lines.append), lines
+
+    code, lines = run("--record", "--tree", tree)
+    rows = _ev_io.read_rows(project)["rows"]
+    row = rows[-1] if rows else {}
+    state = row.get("testedState") or {}
+    tree_digest = _tree_stamp.scope_digest(tree, ["tests/test_a.py"])[0]
+    project_digest = _tree_stamp.scope_digest(project, ["tests/test_a.py"])[0]
+    check("tr1 RED-FIRST: a gate measured with `--tree` ran in the tree - it "
+          "passes only over the tree's bytes, which the project's differ from: "
+          "%r" % (lines[-3:],),
+          code == M.E_OK and len(rows) == 1)
+    check("tr2 ...and the row's scopeDigest is the TREE's, never the project's "
+          "(the fixture's two digests differ, so each reading is told apart): "
+          "%r" % ((state.get("scopeDigest"), tree_digest, project_digest),),
+          tree_digest != project_digest
+          and state.get("scopeDigest") == tree_digest)
+    check("tr3 ...the row lands in the PROJECT's ledger and the tree has no "
+          "evidence directory of its own: %r"
+          % (os.path.isdir(_ev_io.evidence_dir(tree)),),
+          len(rows) == 1 and not os.path.isdir(_ev_io.evidence_dir(tree))
+          and not os.path.exists(os.path.join(tree, "audit-plan.json")))
+    plan = json.load(open(mp))
+    pointer = (plan["phases"][0]["tasks"][0].get("testEvidence") or {})
+    check("tr4 ...and the project's manifest pointer moves to that row: %r"
+          % (pointer,),
+          row.get("runId") and pointer.get("runId") == row.get("runId"))
+    key = (state.get("tree") or {}).get("key")
+    check("tr5 the row names the measured tree by a key and never by its path "
+          "(the row is committed): %r" % (key,),
+          bool(key) and tree not in json.dumps(row)
+          and os.path.realpath(tree) not in json.dumps(row))
+
+    own_code, own_said = run("--own", "--quiet", "--tree", tree)
+    plain_code, plain_said = run("--own", "--quiet")
+    check("tr6 `--own --tree` runs in the tree (green), and the SAME `--own` "
+          "without it runs in the project and is red - the second direction, "
+          "which fails if the flag is ignored: %r"
+          % ((own_code, plain_code, own_said[:14], plain_said[-2:]),),
+          own_code == M.E_OK and plain_code == M.E_FAIL)
+
+    miss_code, miss = run("--tree", os.path.join(aux, "absent"))
+    check("tr7 ALLOW: a `--tree` that is not a directory is refused by name, "
+          "not measured as an empty cwd: %r" % (miss,),
+          miss_code == M.E_ASK and any("is not a directory" in ln for ln in miss))
+    full_lines = []
+    full_code = M.main([mp, "--full", "--project-dir", project, "--tree", tree],
+                       out=full_lines.append)
+    check("tr8 ALLOW: `--tree` is refused with `--full`, which has no single "
+          "tree: %r" % (full_lines,),
+          full_code == M.E_ASK and any("--full" in ln for ln in full_lines))
+
+
 def _selftest():
     def body(check):
         _cases(check)
+        _harness.stage(check, "tr-block", _tree_cases)
         _harness.stage(check, "sl-block", _success_line_cases)
         _group_cases(check)
         _crowd_cases(check)

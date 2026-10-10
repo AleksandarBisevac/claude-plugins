@@ -85,6 +85,11 @@ measurement, and every surface that shows the verdict says it was repeated and
 names the run it came from. A repeat is not a run, and nothing here lets a reader
 read it as one.
 
+`--tree DIR` MEASURES IN ANOTHER DIRECTORY AND RECORDS IN THE PROJECT: the
+commands run in DIR and the digests are read from it, the row lands in the
+project's ledger, and `testedState.tree` names DIR by a hash key, never a path.
+It is refused with `--full` and `--reconcile`, and for a DIR that does not exist.
+
 Exit codes:
   0  every command passed, the tree is unchanged, and at least one check ran
   1  a command failed, or the gate mutated the tree, or nothing ran, or the OS
@@ -93,6 +98,7 @@ Exit codes:
   2  the gate could not be asked (no manifest, no such phase)
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -2370,7 +2376,8 @@ def grades_left_out(gate, excluded):
     return named
 
 
-def reuse_identity(project, manifest_path, manifest, commands, owns, group=None):
+def reuse_identity(project, manifest_path, manifest, commands, owns, group=None,
+                   tree=None):
     """`{key, basis, limit, grading, unexcluded}` - what this run would have to
     match to be a repeat, and the entries that stop it being one.
 
@@ -2393,9 +2400,14 @@ def reuse_identity(project, manifest_path, manifest, commands, owns, group=None)
     when there are any: a group run and a solo run over the same files are two
     claims - the group's row says it owned each member - so neither may repeat
     the other. A solo run's key is exactly what it was before.
+
+    `tree` is `--tree`'s directory: the exclusions are still the PROJECT's
+    (they name the project's recorder paths, project-relative), and the content
+    read is the tree's, because the tree is what the commands run over.
     """
     excluded, unexcluded = _ev.recorded_paths(project, manifest_path)
-    content, cbasis = _tree_stamp.content_digest(project, excluded=excluded)
+    content, cbasis = _tree_stamp.content_digest(
+        project if tree is None else tree, excluded=excluded)
     build = ((manifest.get("meta") or {}).get("buildCommands") or {})
     if not isinstance(build, dict):
         build = {}
@@ -4503,6 +4515,33 @@ def success_line(lines):
                                 "; ".join([""] + records) if records else "")
 
 
+def tree_key(tree):
+    """A short, stable name for a measured tree that is not the project - never
+    its path, which names a machine and this row is committed."""
+    return hashlib.sha1(os.path.realpath(tree).encode("utf-8")).hexdigest()[:12]
+
+
+def tree_of(args, project):
+    """`(tree, error)` - the directory `--tree` names, or `(None, None)` when the
+    run measures the project itself. A tree that is the project is no tree.
+
+    `--full` and `--reconcile` have no single tree to measure and are refused
+    by name; a directory that does not exist is refused rather than measured as
+    an empty one (a gate run in a missing cwd would read as a command failure).
+    """
+    if args.tree is None:
+        return None, None
+    if args.full or args.reconcile:
+        return None, ("--tree measures one phase or task in another "
+                      "directory; it is refused with %s"
+                      % ("--full" if args.full else "--reconcile"))
+    if not os.path.isdir(args.tree):
+        return None, "--tree %s is not a directory" % (args.tree,)
+    if os.path.realpath(args.tree) == os.path.realpath(project):
+        return None, None
+    return args.tree, None
+
+
 def main(argv, out=print):
     p = argparse.ArgumentParser(prog="run-test-gate.py", add_help=True)
     p.add_argument("manifest")
@@ -4562,6 +4601,12 @@ def main(argv, out=print):
     # <phase,...>` is a DIFFERENT flag on this same parser, and the two must
     # never collide.
     p.add_argument("--own", dest="own", action="store_true")
+    # MEASURE IN ONE TREE, RECORD IN ANOTHER. The commands, the tree bracket
+    # and the digests are taken over DIR; the row, the pointer and the
+    # boundary are written where they always are - the project the manifest
+    # names. Orthogonal to how the project is resolved: it only ever adds a
+    # directory to measure in.
+    p.add_argument("--tree", dest="tree", default=None, metavar="DIR")
     _claude_home.attach_usage_hint(p)
     try:
         args = p.parse_args(argv)
@@ -4611,6 +4656,10 @@ def main(argv, out=print):
     # anywhere else into a ledger outside the project.
     project = args.project_dir or _panel_write.project_of_manifest(
         args.manifest)
+    tree, tree_err = tree_of(args, project)
+    if tree_err:
+        out("[run-test-gate] %s" % (tree_err,))
+        return E_ASK
     try:
         manifest = _mio.load_manifest(args.manifest)
     except Exception as exc:
@@ -4709,7 +4758,7 @@ def main(argv, out=print):
         # `group=also`: a group run and a solo run over the same files are two
         # claims, so the members a run owns are part of what a repeat must match.
         identity = reuse_identity(project, args.manifest, manifest, commands,
-                                  owns, group=also)
+                                  owns, group=also, tree=tree)
         if identity.get("unexcluded"):
             # A NARROWING THAT DID NOT APPLY, SAID RATHER THAN LEFT FOR A COUNT TO
             # IMPLY. `recorded_paths` tried to leave this plugin's own writes out of
@@ -4748,7 +4797,8 @@ def main(argv, out=print):
         # a second Ctrl-C should be free to stop a session that is already stopping.
         previous = _arm_interrupt()
         try:
-            res = run_gate(project, commands, owns=owns, timeout=args.timeout,
+            res = run_gate(tree or project, commands, owns=owns,
+                           timeout=args.timeout,
                            recorded=_ev.recorded_paths(project,
                                                        args.manifest)[0],
                            task_scope=args.task is not None,
@@ -4768,6 +4818,8 @@ def main(argv, out=print):
         # had its chance to rewrite one.
         res[_ev.REUSE_KEY] = identity["key"]
         res["reuseBasis"] = identity["basis"]
+        if tree is not None and isinstance(res.get("testedState"), dict):
+            res["testedState"]["tree"] = {"key": tree_key(tree)}
         # PHASE-SCOPE ONLY, and asked of THIS run's own steps - a task-scope
         # run is narrowed by its own `tests.gate`, whose rules are
         # `_invariants`' and not `meta.phaseGate`'s, so neither claim is one

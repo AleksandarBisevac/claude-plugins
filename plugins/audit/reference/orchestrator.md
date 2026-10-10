@@ -281,6 +281,13 @@ is this run's to claim at all. **Neither line moves an exit code** — they are 
 a verdict, because a rule that refused a run for having company would refuse the ordinary case
 and be switched off within a day.
 
+**`run-test-gate.py --tree <dir>` measures in a directory other than the project and records in
+the project.** The commands, the tree bracket and the digests are taken over `<dir>` — a task's
+own worktree — while the row, the pointer and the boundary land in the project the manifest names.
+The row carries `testedState.tree`, a hash key naming the measured tree and never its path; any
+path a gate command prints goes through the ledger's write-boundary scrub like every other string.
+It is refused by name with `--full` or `--reconcile`, and when `<dir>` is not a directory.
+
 **A suite this plugin did not start is invisible to that line until somebody records it.** A
 pre-push hook runs one on `git push`, a developer runs one in a second terminal, a commit hook
 runs one — and one of those overlapping a recorded gate is where a red got attributed to the

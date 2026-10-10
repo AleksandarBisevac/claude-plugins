@@ -470,7 +470,7 @@ STEP_KEYS = ("name", "exit", "ran", "measured", "durationMs", "outcome",
              "retriedAfterSignal", "retryBasis", "outcomeBasis", "derivedGap",
              "flaky", "flakyBasis", "muted")
 STATE_KEYS = ("head", "headBasis", "scopeDigest", "scopeBasis",
-              "scopeListDigest", "dirtyDigest", "dirtyBasis")
+              "scopeListDigest", "dirtyDigest", "dirtyBasis", "tree")
 _PORCELAIN_RENAME = " -> "
 # The C-style escapes git writes INSIDE a quoted porcelain path. Git quotes a
 # path whose bytes it will not print raw - a double quote, a backslash, a control

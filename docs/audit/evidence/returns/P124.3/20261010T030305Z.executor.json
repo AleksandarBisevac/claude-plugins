@@ -1,0 +1,31 @@
+{
+  "gates": {
+    "test_run_test_gate --selftest": "pass",
+    "test__verdict_binding --selftest": "pass",
+    "test__evidence_io --selftest": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "tools/sweep-selftests.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T03:14:13Z",
+    "basis": "`python3 plugins/audit/tests/test_run_test_gate.py --selftest` in a throwaway tree at HEAD exited 1 with 8 of 500 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - tr1 (house FAIL), tr2 (house FAIL), tr3 (house FAIL), tr4 (house FAIL), tr5 (house FAIL), tr6 (house FAIL), tr7 (house FAIL), tr8 (house FAIL): SELFTEST FAILED: 492/500 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "Reviewed the applied diff against P122. The tree key is a sha1 prefix of the realpath, so it holds no path. Any other string a gate prints goes through scrubbed_ledger_row, which scrubs everything outside the project, so the tree path is covered. Fixed tr6: its probe script lived outside the repo, and the entry's path was rewritten to <outside-repo>, then --own saw a path not in tests.add. The declared tests/test_a.py is now itself the program the step runs (exit 1 in the project, 0 in the tree) and prints its own path. Documented --tree in the run-test-gate module docstring and in reference/orchestrator.md. Results: test_run_test_gate 500/500, test__verdict_binding 39/39, test__evidence_io 280/280, ruff clean, full sweep 320/320 files ok.",
+    "descriptive": "run-test-gate --tree DIR measures in a task's tree and records in the project ledger with a hash-keyed tree; documented and green."
+  },
+  "testsAdded": [
+    "tr1",
+    "tr2",
+    "tr3",
+    "tr4",
+    "tr5",
+    "tr6",
+    "tr7",
+    "tr8 (test_run_test_gate.py)",
+    "vb32",
+    "vb33 (test__verdict_binding.py)"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:cdeca583d55d48d30b1a30b944e5ece4c7ce698cc376eac7dee57e5a7c7d8ff6\",\"dirtyDigest\":\"sha256:84ff2e0032e02c4b4ce6fcd09092e931b9681544676917315fc6779b48eb8689\",\"dirtyPaths\":{\"plugins/audit/reference/orchestrator.md\":\"ad02d68eaaf390b2\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"1a70a129bf232313\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"f7e297a07099eda9\",\"plugins/audit/tests/test__verdict_binding.py\":\"ebafe840de6787a9\",\"plugins/audit/tests/test_run_test_gate.py\":\"9cac9e1f1b60b06d\"},\"head\":\"e7022c55\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/reference/orchestrator.md\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/tests/test__verdict_binding.py\",\"plugins/audit/tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:b99d9270e49eac24dab830b4902fad686ffad7936b85b8aa15782dd87a21f48b\",\"v\":2}"
+}

@@ -93,7 +93,7 @@
     {
       "id": "P124.2",
       "title": "a task worktree is created detached at the phase head, outside the project, with a marker naming its task",
-      "status": "in_progress",
+      "status": "done",
       "description": "F600 design A2 and decision D5: manage-worktrees task-add/task-remove, the task marker, read_provenance(expect_task). README worktree row lists --base; the guide's manage-worktrees section names the new verbs.",
       "files": [
         "plugins/audit/scripts/git/manage-worktrees.py",
@@ -129,25 +129,37 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e7022c55a650",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Completed prep run's task-add/task-remove work. Added ta8 (second tree for same task at another path refused); saw it FAIL (50/52, ta8 and tr1 red) before implementing the marker scan in do_task_add via list_worktrees+read_provenance(expect_task). README worktree row now lists task-add/task-remove and --base (cf1 passes); PLUGIN-BUILD-GUIDE manage-worktrees section names both verbs. Selftests: test_manage_worktrees 52/52, test__worktrees 113/113, test__refs 334/334, test__deps 307/307; ruff check plugins/audit tools clean. Did not run the sweep or the task's other gate commands (own-tests).",
+        "descriptive": "A task can have only one marked tree; README and guide document task-add/task-remove."
       },
       "startedAt": "2026-10-10T02:52:32Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T03:03:04Z",
+      "verifiedBy": [
+        "ta8 a SECOND tree for a task that already has one is refused"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T03:03:02Z.b97908",
         "status": "passed",
         "at": "2026-10-10T03:03:02Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "e7022c55a650",
+        "at": "2026-10-10T03:03:04Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T02:54:35Z",
+        "basis": "`python3 plugins/audit/tests/test_manage_worktrees.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 39/40 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
       "id": "P124.3",
       "title": "run-test-gate --tree measures in a task's tree and records in the phase tree",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F600 design A3 and D4. testedState.tree carries a hash key, never a path; a path the tree prints goes through the P122 write-boundary scrub. Name the flag where run-test-gate's flags are documented.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -179,16 +191,22 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T03:03:05Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T03:22:01Z.975be2",
+        "status": "passed",
+        "at": "2026-10-10T03:22:01Z"
+      }
     },
     {
       "id": "P124.4",

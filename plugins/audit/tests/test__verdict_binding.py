@@ -14,6 +14,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 import json
 import os
+import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -342,8 +343,60 @@ def _cases(check):
         _harness.remove_tree(root)
 
 
+def _tree_binding_cases(check):
+    """A gate measured in another tree (`run-test-gate.py --tree`) binds the
+    project's commit by CONTENT: the row carries the tree's digest and the head
+    the tree had, and a commit made in the project after the tree's bytes were
+    copied in moves HEAD without changing the declared bytes."""
+    root = _harness.fixture_root("verdict-binding-tree")
+    try:
+        project = os.path.join(root, "project")
+        tree = os.path.join(root, "tree")
+        os.makedirs(project)
+        os.makedirs(os.path.join(tree, "src"))
+        with open(os.path.join(tree, "src", "a.py"), "w") as fh:
+            fh.write("a = 2\n")
+        git = ["git", "-C", project, "-c", "user.name=t", "-c", "user.email=t@t",
+               "-c", "commit.gpgsign=false"]
+        subprocess.run(["git", "init", "-q", project], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        mpath = _project(project, [])
+        subprocess.run(git + ["add", "-A"], check=True)
+        subprocess.run(git + ["commit", "-qm", "base"], check=True,
+                       stdout=subprocess.DEVNULL)
+        head_then = subprocess.run(
+            ["git", "-C", project, "rev-parse", "HEAD"], check=True,
+            stdout=subprocess.PIPE, universal_newlines=True).stdout.strip()
+        measured = _measured(tree, "R1", "2026-09-01T00:00:00Z")
+        measured["testedState"]["head"] = head_then
+        _project(project, [measured])
+        got = _bind(project, mpath)
+        check("vb32 a verdict measured over the TREE's bytes does not bind the "
+              "project while its declared file still holds other bytes: %r"
+              % (got["sentence"],), got["state"] == "refused")
+        with open(os.path.join(project, "src", "a.py"), "w") as fh:
+            fh.write("a = 2\n")
+        subprocess.run(git + ["add", "-A"], check=True)
+        subprocess.run(git + ["commit", "-qm", "integrate"], check=True,
+                       stdout=subprocess.DEVNULL)
+        head_now = subprocess.run(
+            ["git", "-C", project, "rev-parse", "HEAD"], check=True,
+            stdout=subprocess.PIPE, universal_newlines=True).stdout.strip()
+        got = _bind(project, mpath)
+        check("vb33 ...and once the tree's bytes are copied in and COMMITTED in "
+              "the project it binds although HEAD is no longer the one the row "
+              "was taken at (the binding compares content, not commits): %r"
+              % ((got["sentence"], head_then[:8], head_now[:8]),),
+              head_then != head_now and got["state"] == "bound")
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _harness.stage(check, "vb-tree-block", _tree_binding_cases)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":
