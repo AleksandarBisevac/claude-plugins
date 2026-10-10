@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "test_manage_worktrees": "pass",
+    "test__worktrees": "pass",
+    "test__refs": "pass",
+    "test__deps": "pass",
+    "ruff": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T02:54:35Z",
+    "basis": "`python3 plugins/audit/tests/test_manage_worktrees.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 39/40 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "Completed prep run's task-add/task-remove work. Added ta8 (second tree for same task at another path refused); saw it FAIL (50/52, ta8 and tr1 red) before implementing the marker scan in do_task_add via list_worktrees+read_provenance(expect_task). README worktree row now lists task-add/task-remove and --base (cf1 passes); PLUGIN-BUILD-GUIDE manage-worktrees section names both verbs. Selftests: test_manage_worktrees 52/52, test__worktrees 113/113, test__refs 334/334, test__deps 307/307; ruff check plugins/audit tools clean. Did not run the sweep or the task's other gate commands (own-tests).",
+    "descriptive": "A task can have only one marked tree; README and guide document task-add/task-remove."
+  },
+  "testsAdded": [
+    "ta8 a SECOND tree for a task that already has one is refused"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:6e68d152a1fc1590229cbca7334447544dc6ec627d80b92597910743da84e6b4\",\"dirtyDigest\":\"sha256:a5276a8bd64c338ba56a4c0b71277beb9cd0192cac82aed9cf4c06896e6f811f\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"68f7b3b77fd2d934\",\"plugins/audit/README.md\":\"c4c76f61f29e1ac3\",\"plugins/audit/commands/worktree.md\":\"b11b02473a8b0d18\",\"plugins/audit/scripts/git/_worktrees.py\":\"3314979c5266594a\",\"plugins/audit/scripts/git/manage-worktrees.py\":\"7c57d904193c5f22\",\"plugins/audit/tests/test__worktrees.py\":\"c50940c4f828bd23\",\"plugins/audit/tests/test_manage_worktrees.py\":\"713e90e423a15943\"},\"head\":\"f3b479a8\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/README.md\",\"plugins/audit/commands/worktree.md\",\"plugins/audit/scripts/git/_worktrees.py\",\"plugins/audit/scripts/git/manage-worktrees.py\",\"plugins/audit/tests/test__worktrees.py\",\"plugins/audit/tests/test_manage_worktrees.py\"],\"scopeDigest\":\"sha256:786a122f74733eb1f7d9de4b6a77677baee569f19e8c5fb28f89b94c8397ba75\",\"v\":2}"
+}

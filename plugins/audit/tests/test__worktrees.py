@@ -931,6 +931,83 @@ def _cases(check):
     finally:
         shutil.rmtree(_mk, ignore_errors=True)
 
+    # --- a task marker names ONE task, and a task tree is never swept ------------
+    _tk = tempfile.mkdtemp()
+    try:
+        _tadm = os.path.join(_tk, "admin")
+        os.makedirs(_tadm)
+        with io.open(os.path.join(_tadm, M.PROVENANCE_FILE), "w",
+                     encoding="utf-8") as _fh:
+            _fh.write(json.dumps({"createdBy": M.PROVENANCE_MARK,
+                                  "phaseId": "P1", "taskId": "P1.2",
+                                  "base": "a" * 40, "phaseTree": "/x/repo",
+                                  "at": "2026-01-01T00:00:00Z"}))
+        _saved_adm, M.admin_dir = M.admin_dir, lambda _p, run=None: _tadm
+        try:
+            _mine = M.read_provenance("/x/repo-P1.2", expect_task="P1.2")
+            check("tk1 a marker written for task P1.2 answers ours=True when "
+                  "asked about P1.2 - the allow case, without which tk2 passes by "
+                  "a reader that refuses every marker",
+                  _mine["ours"] is True, repr(_mine["basis"][:80]))
+            _other = M.read_provenance("/x/repo-P1.2", expect_task="P1.3")
+            check("tk2 ...and the same marker is NOT ours for task P1.3, with the "
+                  "refusal naming both tasks - `createdBy` alone proved the plugin "
+                  "made A task tree, never THIS task's",
+                  _other["ours"] is False and "P1.2" in _other["basis"]
+                  and "P1.3" in _other["basis"], repr(_other["basis"]))
+            _wide_t = M.read_provenance("/x/repo-P1.2")
+            check("tk3 ...and without an expected task the wide question still "
+                  "answers ours=True, so the report does not call a task tree a "
+                  "stranger",
+                  _wide_t["ours"] is True, repr(_wide_t["ours"]))
+        finally:
+            M.admin_dir = _saved_adm
+        with io.open(os.path.join(_tadm, M.PROVENANCE_FILE), "w",
+                     encoding="utf-8") as _fh:
+            _fh.write(json.dumps({"createdBy": M.PROVENANCE_MARK,
+                                  "phaseId": "P1", "branch": "feature/p1"}))
+        _saved_adm, M.admin_dir = M.admin_dir, lambda _p, run=None: _tadm
+        try:
+            _phase_marker = M.read_provenance("/x/repo-P1", expect_task="P1.2")
+            check("tk4 a PHASE marker (no taskId) is not a task's: asking about a "
+                  "task of a phase worktree is a refusal, not a match on "
+                  "createdBy",
+                  _phase_marker["ours"] is False, repr(_phase_marker["basis"]))
+        finally:
+            M.admin_dir = _saved_adm
+    finally:
+        shutil.rmtree(_tk, ignore_errors=True)
+
+    _ttrees = _trees("worktree /repo\nHEAD aaa\nbranch refs/heads/dev\n\n"
+                     "worktree /wt-t1\nHEAD bbb\ndetached\n\n"
+                     "worktree /wt-x\nHEAD ccc\ndetached\n")
+    _tmark = {"/wt-t1": {"ok": True, "taskId": "P1.2", "phaseId": "P1"}}
+    _tdirty = M.sweep_plan(
+        _ttrees, {}, {}, {},
+        {"/wt-t1": {"dirty": True, "lines": [" M src/a.js"]}},
+        cwd_tree=M.CWD_OUTSIDE, verbs=("removeWorktrees",), task_by_path=_tmark)
+    _kept = [k for k in _tdirty["kept"] if k["path"] == "/wt-t1"]
+    check("ts1 the sweep KEEPS a dirty task tree and names the task and the dirty "
+          "path - never an action, and never filed under strangers",
+          len(_kept) == 1 and _kept[0].get("taskId") == "P1.2"
+          and "src/a.js" in " ".join(r["why"] for r in _kept[0]["reasons"])
+          and "P1.2" in " ".join(r["why"] for r in _kept[0]["reasons"])
+          and not _tdirty["actions"]
+          and "/wt-t1" not in [s["path"] for s in _tdirty["strangers"]],
+          repr(_tdirty["kept"]))
+    _tclean = M.sweep_plan(
+        _ttrees, {}, {}, {}, {"/wt-t1": {"dirty": False, "lines": []}},
+        cwd_tree=M.CWD_OUTSIDE, verbs=("removeWorktrees",), task_by_path=_tmark)
+    check("ts2 ...a CLEAN task tree is kept as well: removing one is `task-remove`'s "
+          "job, after integration, and a sweep that reaped it would race the wave",
+          not _tclean["actions"]
+          and [k["path"] for k in _tclean["kept"]] == ["/wt-t1"],
+          repr(_tclean["kept"]))
+    check("ts3 ...and a detached tree with NO task marker is still a stranger, "
+          "counted in `examined` beside the task tree",
+          [s["path"] for s in _tclean["strangers"]] == ["/wt-x"]
+          and _tclean["examined"] == 2, repr(_tclean["strangers"]))
+
     _outside = M.cleanup_plan(
         open_trees, "feature/p2", "dev", M.CONTAINED, False, [],
         cwd_tree=M.CWD_OUTSIDE, owned=OWNED_OK, settled=SETTLED_OK)

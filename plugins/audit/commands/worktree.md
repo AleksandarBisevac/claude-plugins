@@ -1,7 +1,7 @@
 ---
 description: 'Audit pipeline: the worktrees this plan owns — list them with their merge state, add one for a phase so it can run in a parallel session, remove one, or sweep the ones whose work has already landed. The sweep is read-only until you name a verb; a worktree is only ever reaped when its branch is contained in its parent AND its tree is clean.'
 disable-model-invocation: true
-argument-hint: '<list|add|remove|sweep> [phaseId] [--path DIR] [--force] [--apply] [--remove-worktrees] [--delete-branches] [--prune] [--json]'
+argument-hint: '<list|add|remove|sweep|task-add|task-remove> [phaseId|taskId] [--path DIR] [--force] [--apply] [--remove-worktrees] [--delete-branches] [--prune] [--json]'
 allowed-tools: Read, Bash
 ---
 
@@ -21,7 +21,7 @@ nothing could enumerate what had been created and nothing ever cleaned up.
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/git/manage-worktrees.py" \
-    <list|add|remove|sweep> <manifestPath> [phaseId] --project <projectDir>
+    <list|add|remove|sweep|task-add|task-remove> <manifestPath> [phaseId|taskId] --project <projectDir>
 ```
 
 Resolve `manifestPath` and `gitRoot` from `.claude/audit.config.json` first (read-only).
@@ -63,6 +63,21 @@ that decision on its own.
 **`sweep`** — what may be reaped, and what stays and why. **Read-only unless `--apply`**, and
 `--apply` needs at least one of `--remove-worktrees`, `--delete-branches`, `--prune`. Show the
 read-only output to the human and let them choose; never pass `--apply` on your own initiative.
+
+**`task-add <taskId> --base <sha>`** — a worktree for one task of a parallel wave: **detached** at
+the given commit (the phase HEAD, resolved to a full SHA first), created **outside** the project
+directory, and marked with the task, its phase, the base and the phase tree. A root inside the
+project (or the git root) is refused, because the plan gate judges a tree under the project as the
+project. `--path` names somewhere else than the default `../<repo>-<taskId>`. Harness-made
+isolation is not a substitute: it lives under the exempt `.claude/` and branches from the default
+branch.
+
+**`task-remove <taskId>`** — removes the tree whose marker names **that** task; a marker for
+another task is not ours and is named in the refusal. It refuses a dirty tree, an unreadable one
+and the tree the process is standing in; `--force` is the explicit escape.
+
+**The sweep never removes a task tree.** It lists each one as kept, names the task, and names any
+dirty path — the wave driver takes the tree down with `task-remove` once its work is integrated.
 
 ## What the sweep will and will not do
 
@@ -148,7 +163,7 @@ is the `--takeover` above, since no `/audit` command takes a user lock over.
 
 ## Exit codes of `/audit:worktree`
 
-`0` it ran · `1` it could not, and the reason names a path · `2` usage · `4` git could not be
+`0` it ran · `1` it could not (for `task-add`: a root inside the project, a base that is no commit, a non-empty target; for `task-remove`: no tree marked for the task, or a dirty one), and the reason names a path · `2` usage (an unknown task included) · `4` git could not be
 **asked** · `5` there was nothing to examine — which is **not** the same as "everything is clean",
 and must not be reported as if it were.
 

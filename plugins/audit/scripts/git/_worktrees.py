@@ -128,7 +128,7 @@ def admin_dir(tree_path, run=None):
     return path if os.path.isabs(path) else os.path.join(tree_path, path)
 
 
-def read_provenance(tree_path, run=None, expect_branch=None):
+def read_provenance(tree_path, run=None, expect_branch=None, expect_task=None):
     """{"ours", "record", "basis"} -- did THIS plugin create THIS worktree?
 
     `ours` is True, False, or None when the question could not be put. None is
@@ -145,6 +145,11 @@ def read_provenance(tree_path, run=None, expect_branch=None):
     and it is removed with the ignored files `dirtiness()` deliberately cannot see.
     Reproduced against a real worktree. Passing None keeps the weaker question, which
     is right for a report that only asks "did we make this at all".
+
+    `expect_task` IS THE SAME BINDING FOR A TASK TREE. A task tree is detached, so
+    its marker carries a `taskId` and no branch, and the branch test cannot say whose
+    it is. A marker for another task -- or a phase marker with no `taskId` at all --
+    is the plugin's and not THIS task's, so it answers False with the two names.
     """
     admin = admin_dir(tree_path, run=run)
     if not admin:
@@ -176,6 +181,11 @@ def read_provenance(tree_path, run=None, expect_branch=None):
                          "describe the work in it"
                          % (path, rec.get("phaseId"), rec.get("branch"),
                             expect_branch)}
+    if expect_task is not None and rec.get("taskId") != expect_task:
+        return {"ours": False, "record": rec,
+                "basis": "%s was created by this plugin for task %r, not for task "
+                         "%r - the marker does not describe the work in it"
+                         % (path, rec.get("taskId"), expect_task)}
     return {"ours": True, "record": rec, "basis": path}
 
 
@@ -1124,6 +1134,18 @@ def observe_for_sweep(git_root, trees, wanted_branches, parent_of,
     the floor, where both can reach down to it.
     """
     contained, dirty, owned, settled, shas = {}, {}, {}, {}, {}
+    tasks = {}
+    # A detached tree carrying a TASK marker is a task tree, not a stranger. Only
+    # detached ones are asked, so the extra git calls stay off every other record.
+    for rec in phase_trees(trees, wanted_branches, resolve=resolve)["strangers"]:
+        if not rec.get("detached") or not rec.get("path"):
+            continue
+        prov = read_provenance(rec.get("path"), run=run)
+        task_id = (prov["record"] or {}).get("taskId")
+        if prov["ours"] is True and task_id:
+            tasks[rec.get("path")] = {"ok": True, "taskId": str(task_id),
+                                      "phaseId": (prov["record"] or {}).get("phaseId")}
+            dirty[rec.get("path")] = dirtiness(rec.get("path"), run=run)
     for rec in phase_trees(trees, wanted_branches, resolve=resolve)["named"]:
         branch = rec.get("branch")
         parent = (parent_of or {}).get(branch) or ""
@@ -1153,12 +1175,13 @@ def observe_for_sweep(git_root, trees, wanted_branches, parent_of,
             verdict = phase_settled(phase, terminal or (), status_of=status_of)
             settled[branch] = {"ok": verdict["settled"], "why": verdict["why"]}
     return {"contained": contained, "dirty": dirty, "owned": owned,
-            "settled": settled, "shas": shas}
+            "settled": settled, "shas": shas, "tasks": tasks}
 
 
 def sweep_plan(trees, wanted_branches, parent_of, contained_by_branch,
                dirty_by_path, cwd_tree=None, verbs=None, resolve=None,
-               owned_by_path=None, settled_by_branch=None, sha_by_branch=None):
+               owned_by_path=None, settled_by_branch=None, sha_by_branch=None,
+               task_by_path=None):
     """{"examined", "actions", "kept", "strangers", "empty", "basis"}.
 
     `examined` IS A COUNT AND IT IS ALWAYS REPORTED, and `empty` is a separate field
@@ -1179,6 +1202,32 @@ def sweep_plan(trees, wanted_branches, parent_of, contained_by_branch,
     verbs = set(verbs or ())
     split = phase_trees(trees, wanted_branches, resolve=resolve)
     actions, kept = [], []
+    # TASK TREES ARE KEPT, ALWAYS. They are the plugin's own and they are short-lived:
+    # the wave driver takes one down with `task-remove` once its work is integrated,
+    # so a sweep that reaped a clean one would race a wave that has not integrated it
+    # yet. What the sweep owes is the name of the task and of any dirty path.
+    tasked = [r for r in split["strangers"] if r.get("path") in (task_by_path or {})]
+    split = dict(split, strangers=[r for r in split["strangers"] if r not in tasked])
+    for rec in tasked:
+        mark = task_by_path[rec.get("path")]
+        dirt = (dirty_by_path or {}).get(rec.get("path")) or {}
+        why = "task tree for %s (phase %s): the wave driver removes it with " \
+              "`task-remove` after integration, so the sweep never does" \
+              % (mark.get("taskId"), mark.get("phaseId"))
+        reasons = [{"why": why}]
+        if dirt.get("dirty"):
+            reasons.append({"why": "task %s has uncommitted work: %s"
+                                   % (mark.get("taskId"),
+                                      ", ".join(dirt.get("lines") or []))})
+        elif dirt.get("dirty") is None:
+            reasons.append({"why": "task %s could not be described by git, and an "
+                                   "unanswered question is not a clean tree"
+                                   % (mark.get("taskId"),)})
+        kept.append({"path": rec.get("path"), "branch": None,
+                     "taskId": mark.get("taskId"), "ours": True, "settled": None,
+                     "phaseId": mark.get("phaseId"), "parent": "",
+                     "contained": UNKNOWN, "dirty": dirt.get("dirty"),
+                     "dirtyLines": dirt.get("lines") or [], "reasons": reasons})
 
     for rec in split["named"]:
         branch = rec.get("branch")
@@ -1221,7 +1270,7 @@ def sweep_plan(trees, wanted_branches, parent_of, contained_by_branch,
                                           "leaves the branch"}],
                         "blocked": []})
 
-    examined = len(split["named"]) + len(split["strangers"])
+    examined = len(split["named"]) + len(split["strangers"]) + len(tasked)
     return {"examined": examined,
             "actions": actions,
             "kept": kept,

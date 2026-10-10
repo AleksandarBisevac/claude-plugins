@@ -36,6 +36,15 @@ Usage:
   manage-worktrees.py remove <manifest> <phaseId> [--project DIR] [--force]
   manage-worktrees.py sweep  <manifest> [--project DIR] [--apply]
                              [--remove-worktrees] [--delete-branches] [--prune]
+  manage-worktrees.py task-add    <manifest> <taskId> --base SHA [--project DIR]
+                                  [--path DIR]
+  manage-worktrees.py task-remove <manifest> <taskId> [--project DIR] [--force]
+
+  A TASK TREE is a worktree for one task of a parallel wave: detached at `--base`
+  (the phase HEAD), OUTSIDE the project directory, and marked with the task it
+  belongs to. `task-add` refuses a root inside the project; `task-remove` takes down
+  only a tree whose marker names THIS task, refuses a dirty one without `--force`,
+  and the sweep never removes one.
 
   The verb is mandatory and `sweep` without `--apply` is the read-only half -- the
   same grammar `/audit:logs prune` already uses. `--apply` needs at least one of the
@@ -93,7 +102,7 @@ import _worktrees as _wt                                             # noqa: E40
 
 E_OK, E_FAIL, E_USAGE, E_NO_BASIS, E_NOTHING = 0, 1, 2, 4, 5
 
-VERBS = ("list", "add", "remove", "sweep")
+VERBS = ("list", "add", "remove", "sweep", "task-add", "task-remove")
 
 # The two do-nothing outcomes, worded APART because they are different states of the
 # world and a reader acts on them differently. Folded into one line they would both
@@ -388,6 +397,27 @@ def do_remove(git_root, manifest, phase_id, force=False, run=None, path=None):
 # and only a worktree carrying that record is ever reaped automatically.
 
 
+def _write_record(tree_path, record, run=None):
+    """The marker file for `record`, in the worktree's own admin directory. Returns
+    the file, or "" + why -- the one writer, so a phase marker and a task marker
+    cannot disagree about where the record lives."""
+    admin = _wt.admin_dir(tree_path, run=run)
+    if not admin:
+        return "", "git would not name the admin directory of %s" % (tree_path,)
+    path = os.path.join(admin, _wt.PROVENANCE_FILE)
+    try:
+        with io.open(path, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, indent=1, sort_keys=True))
+            fh.write("\n")
+    except Exception as exc:
+        return "", "%s could not be written: %s" % (path, exc)
+    return path, ""
+
+
+def _now():
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def write_provenance(tree_path, phase_id, branch, run=None):
     """Record that this plugin created this worktree. Returns the file, or "" + why.
 
@@ -396,21 +426,142 @@ def write_provenance(tree_path, phase_id, branch, run=None):
     which is the safe direction, and the caller says so rather than pretending the
     worktree is unusable.
     """
-    admin = _wt.admin_dir(tree_path, run=run)
-    if not admin:
-        return "", "git would not name the admin directory of %s" % (tree_path,)
-    path = os.path.join(admin, _wt.PROVENANCE_FILE)
-    record = {"createdBy": _wt.PROVENANCE_MARK, "phaseId": str(phase_id),
-              "branch": str(branch),
-              "at": datetime.datetime.now(datetime.timezone.utc)
-              .strftime("%Y-%m-%dT%H:%M:%SZ")}
-    try:
-        with io.open(path, "w", encoding="utf-8") as fh:
-            fh.write(json.dumps(record, indent=1, sort_keys=True))
-            fh.write("\n")
-    except Exception as exc:
-        return "", "%s could not be written: %s" % (path, exc)
-    return path, ""
+    return _write_record(tree_path, {"createdBy": _wt.PROVENANCE_MARK,
+                                     "phaseId": str(phase_id),
+                                     "branch": str(branch), "at": _now()}, run=run)
+
+
+# --- task trees ------------------------------------------------------------------
+
+def _find_task(manifest, task_id):
+    """(phaseId, task) for `task_id`, or (None, None)."""
+    for ph in ((manifest or {}).get("phases") or []):
+        if not isinstance(ph, dict):
+            continue
+        for task in (ph.get("tasks") or []):
+            if isinstance(task, dict) and str(task.get("id")) == str(task_id):
+                return str(ph.get("id")), task
+    return None, None
+
+
+def do_task_add(git_root, manifest, task_id, base, project=None, path=None, run=None):
+    """(exit, answer) -- a detached worktree at `base` for one task, outside the project.
+
+    Every refusal is asked BEFORE git is called, and `base` is resolved to a full
+    commit first: a ref name would move under a tree that is meant to stay at the
+    phase HEAD it was cut from. The root is judged against the project directory AND
+    the git root -- a tree inside either is judged as the project by the plan gate,
+    which is what a task tree exists to avoid.
+    """
+    fn = _wt._runner(run)
+    phase_id, task = _find_task(manifest, task_id)
+    if task is None:
+        return E_USAGE, {"error": "no task %r in this plan" % (task_id,)}
+    if not base:
+        return E_USAGE, {"error": "task-add needs --base <sha>: a task tree is cut "
+                                  "from a named commit, never from a default"}
+    target = os.path.abspath(path or default_path(git_root, task_id))
+    for root in (project, git_root):
+        if root and _wt.within_tree(os.path.abspath(root), target):
+            return E_FAIL, {"error": "%s is inside the project (%s)"
+                                     % (target, os.path.abspath(root)),
+                            "remedy": "a task tree lives OUTSIDE the project "
+                                      "directory; pass --path to a sibling of it"}
+    if os.path.isdir(target) and os.listdir(target):
+        return E_FAIL, {"error": "%s already exists and is not empty" % (target,),
+                        "remedy": "pass --path to name somewhere else, or clear it "
+                                  "by hand once you have read it"}
+    listing = _wt.list_worktrees(git_root, run=run)
+    if listing["error"]:
+        return E_NO_BASIS, {"error": listing["error"]}
+    for rec in listing["trees"]:
+        if rec.get("isMain") or not rec.get("path"):
+            continue
+        held = _wt.read_provenance(rec.get("path"), run=run, expect_task=str(task_id))
+        if held["ours"] is True:
+            return E_FAIL, {"error": "task %s already has a tree: %s"
+                                     % (task_id, rec.get("path")),
+                            "remedy": "`task-remove` takes one tree down by its "
+                                      "marker, so a second tree would be unreachable "
+                                      "by it; remove the first, or integrate it"}
+    code, out, err = fn(git_root, ["rev-parse", "--verify", "--quiet",
+                                   "%s^{commit}" % (base,)])
+    if code is None:
+        return E_NO_BASIS, {"error": err}
+    sha = (out or "").strip()
+    if code != 0 or not sha:
+        return E_FAIL, {"error": "--base %r does not name a commit in %s"
+                                 % (base, git_root)}
+    argv = ["worktree", "add", "--detach", target, sha]
+    code, out, err = fn(git_root, argv)
+    if code is None:
+        return E_NO_BASIS, {"error": err, "argv": argv}
+    if code != 0:
+        return E_FAIL, {"error": (err or out or "").strip(), "argv": argv}
+    marker, why = _write_record(
+        target, {"createdBy": _wt.PROVENANCE_MARK, "phaseId": phase_id,
+                 "taskId": str(task_id), "base": sha,
+                 "phaseTree": os.path.abspath(git_root), "at": _now()}, run=run)
+    return E_OK, {"path": target, "task": str(task_id), "phaseId": phase_id,
+                  "base": sha, "argv": argv, "provenance": marker,
+                  "provenanceWhy": why,
+                  "note": ("marked for task %s, so `task-remove` may take it down"
+                           % (task_id,) if marker else
+                           "the plugin could NOT record the task marker (%s), so "
+                           "`task-remove` will not take this tree down; remove it "
+                           "by hand" % (why,))}
+
+
+def do_task_remove(git_root, manifest, task_id, force=False, run=None):
+    """(exit, answer) -- remove the tree whose marker names THIS task.
+
+    Found by marker, not by path: the path is a default a caller may have overridden,
+    and a marker for another task is not ours to remove. The refusals are `remove`'s:
+    dirty, unreadable, and the tree the process stands in.
+    """
+    fn = _wt._runner(run)
+    if _find_task(manifest, task_id)[1] is None:
+        return E_USAGE, {"error": "no task %r in this plan" % (task_id,)}
+    listing = _wt.list_worktrees(git_root, run=run)
+    if listing["error"]:
+        return E_NO_BASIS, {"error": listing["error"]}
+    tree, others = None, []
+    for rec in listing["trees"]:
+        if rec.get("isMain") or not rec.get("path"):
+            continue
+        prov = _wt.read_provenance(rec.get("path"), run=run, expect_task=str(task_id))
+        if prov["ours"] is True:
+            tree = rec
+        elif (prov["record"] or {}).get("taskId"):
+            others.append("%s (task %s)" % (rec.get("path"), prov["record"]["taskId"]))
+    if tree is None:
+        return E_FAIL, {"error": "no worktree is marked for task %r" % (task_id,),
+                        "remedy": "nothing to remove%s"
+                                  % ("; task trees that exist belong to other tasks: "
+                                     + ", ".join(others) if others else "")}
+    standing = _wt.standing_in(listing["trees"], os.getcwd())
+    if standing is not None and _wt.same_tree(standing.get("path"), tree.get("path")):
+        return E_FAIL, {"error": "this process is standing inside %s"
+                                 % (tree.get("path"),),
+                        "remedy": "git does NOT ask this - it removes the caller's "
+                                  "own directory, silently, exit 0. Run it from "
+                                  "somewhere else"}
+    dirt = _wt.dirtiness(tree.get("path"), run=run)
+    if dirt["dirty"] is None and not force:
+        return E_FAIL, {"error": "%s could not be described by git" % (tree.get("path"),),
+                        "remedy": "an unanswered question is not a clean tree"}
+    if dirt["dirty"] and not force:
+        return E_FAIL, {"error": "%s holds uncommitted work: %s"
+                                 % (tree.get("path"), ", ".join(dirt["lines"])),
+                        "remedy": "integrate or commit it, or pass --force once you "
+                                  "have read it. Removal also destroys IGNORED files"}
+    argv = ["worktree", "remove"] + (["--force"] if force else []) + [tree.get("path")]
+    code, out, err = fn(git_root, argv)
+    if code is None:
+        return E_NO_BASIS, {"error": err, "argv": argv}
+    if code != 0:
+        return E_FAIL, {"error": (err or out or "").strip(), "argv": argv}
+    return E_OK, {"removed": tree.get("path"), "task": str(task_id), "argv": argv}
 
 
 def do_sweep(git_root, manifest, verbs, apply_it=False, run=None):
@@ -438,7 +589,8 @@ def do_sweep(git_root, manifest, verbs, apply_it=False, run=None):
                                        or _wt.CWD_OUTSIDE),
                              verbs=verbs, owned_by_path=obs["owned"],
                              settled_by_branch=obs["settled"],
-                             sha_by_branch=obs["shas"])
+                             sha_by_branch=obs["shas"],
+                             task_by_path=obs["tasks"])
     the_plan["applied"] = []
     the_plan["development"] = development
     if the_plan["empty"]:
@@ -493,7 +645,8 @@ def render(verb, answer, out=print):
                 out("  %s git %s" % ("ran:  " if answer.get("applied")
                                      else "would run:", " ".join(step["argv"])))
         for row in answer["kept"]:
-            out("  keeping %s (%s)" % (row["path"], row["branch"]))
+            out("  keeping %s (%s)" % (row["path"], row["branch"]
+                                       or "task %s" % (row.get("taskId"),)))
             for why in row["reasons"]:
                 out("      %s" % (why["why"],))
         for rec in answer["strangers"]:
@@ -509,7 +662,7 @@ def render(verb, answer, out=print):
             % (answer["examined"],
                answer["examined"] - len(answer["strangers"])))
         return
-    for key in ("path", "branch", "parent", "removed", "note"):
+    for key in ("path", "task", "base", "branch", "parent", "removed", "note"):
         if answer.get(key):
             out("  %-8s %s" % (key + ":", answer[key]))
 
@@ -542,6 +695,16 @@ def build_parser():
     rm.add_argument("phase", nargs="?", default=None)
     rm.add_argument("--path", default=None)
     rm.add_argument("--force", action="store_true")
+    ta = sub.add_parser("task-add", parents=[common],
+                        help="a detached worktree at --base for one task, outside "
+                             "the project")
+    ta.add_argument("task")
+    ta.add_argument("--base", default=None)
+    ta.add_argument("--path", default=None)
+    tr = sub.add_parser("task-remove", parents=[common],
+                        help="remove the worktree marked for one task")
+    tr.add_argument("task")
+    tr.add_argument("--force", action="store_true")
     sw = sub.add_parser("sweep", parents=[common],
                         help="what may be reaped, read-only unless --apply, "
                              "which only sweep takes")
@@ -582,6 +745,9 @@ def main(argv, out=print):
         sys.stderr.write("ERROR: cannot read/parse %s: %s\n"
                          % (args.manifest, exc))
         return E_USAGE
+    if args.verb == "task-add" and not args.base:
+        sys.stderr.write("ERROR: task-add needs --base <sha>\n")
+        return E_USAGE
     if args.verb == "add" and not args.phase:
         sys.stderr.write("ERROR: add needs a phase id\n")
         return E_USAGE
@@ -609,6 +775,12 @@ def main(argv, out=print):
         code, answer = do_list(git_root, manifest)
     elif args.verb == "add":
         code, answer = do_add(git_root, manifest, args.phase, path=args.path)
+    elif args.verb == "task-add":
+        code, answer = do_task_add(git_root, manifest, args.task, args.base,
+                                   project=project, path=args.path)
+    elif args.verb == "task-remove":
+        code, answer = do_task_remove(git_root, manifest, args.task,
+                                      force=args.force)
     elif args.verb == "remove":
         code, answer = do_remove(git_root, manifest, args.phase,
                                  force=args.force, path=args.path)

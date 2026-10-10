@@ -1113,7 +1113,7 @@ against itself would be a check that cannot go red. Cleanup runs only after that
 `contained`, and stops at the first refusal — the steps are ordered because git enforces the order.
 
 ### `plugins/audit/scripts/git/manage-worktrees.py`
-`list`, `add`, `remove`, `sweep` — the account of what `/audit:worktree` created, which the prose
+`list`, `add`, `remove`, `sweep`, `task-add`, `task-remove` — the account of what `/audit:worktree` created, which the prose
 composed as a path (`../<repo>-<phaseId>`) and then recorded nowhere. Git's own list is the
 registry; the phase is joined onto it through `phase.branch`.
 
@@ -1152,6 +1152,12 @@ replacement: one directory, named by a human.
 the commits are safe. `phase_settled` asks whether the plugin is *finished*: sign-off passed, no
 task still open, `mergedAt` recorded — three marks, and the first missing one is the reason
 reported. A phase can be merged early and still be running.
+
+**`task-add` and `task-remove` are the same account for a task.** `task-add <taskId> --base <sha>` cuts a
+detached tree at a resolved commit, outside the project, and writes a marker naming the task, its
+phase, the base and the phase tree; a second tree for a task that already has one is refused, because
+`task-remove` finds its tree by that marker and a duplicate would be unreachable. The sweep keeps a
+task tree and names the task.
 
 **Exit 5 means there was nothing to examine.** A sweep that looked at nothing and a sweep that
 looked at everything and found it healthy are otherwise the same exit code and very nearly the same

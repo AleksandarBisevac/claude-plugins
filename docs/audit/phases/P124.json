@@ -29,7 +29,7 @@
     {
       "id": "P124.1",
       "title": "wave selection and overlap classification are pure functions over the plan",
-      "status": "in_progress",
+      "status": "done",
       "description": "F600 design A1 (quality-gates-internal plans/2026-10-09-f600-f599-waves-design.md, section 4.1 step 1). select(tasks, width) and overlap(a, b) over task dicts, through _task_outputs.covers; lockfiles are non-mergeable. The caller passes ready tasks in id order.",
       "files": [
         "plugins/audit/scripts/governance/_wave.py",
@@ -63,25 +63,37 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f3b479a85bd5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Reviewed the already-applied diff (_wave.py select/overlap/is_non_mergeable via _task_outputs.covers, test__wave w1-w7c, _deps LAYERS entry, guide tree line/section, test__output lists). Since P122 _wave renders at L3 (below _task_outputs L2), so I corrected the stale LAYERS comment that said L2/L1, and regenerated the guide module-map fence from _deps.py --render (now includes '_wave -> _output, _task_outputs' under L3 and _machine_paths at L1). Ran: test__wave --selftest 14/14, test__deps 307/307, test__output 225/225 (all pass), ruff check plugins/audit tools exit 0. Full sweep/vermin not run (own-tests reading).",
+        "descriptive": "Wave selection and overlap classification are pure, tested functions; layer table and guide map current."
       },
       "startedAt": "2026-10-10T02:33:59Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T02:52:32Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__wave.py w1-w7c"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T02:52:30Z.37b81c",
         "status": "passed",
         "at": "2026-10-10T02:52:30Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "f3b479a85bd5",
+        "at": "2026-10-10T02:52:32Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T02:36:08Z",
+        "basis": "`python3 plugins/audit/tests/test__wave.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: ModuleNotFoundError: No module named '_wave'; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
       "id": "P124.2",
       "title": "a task worktree is created detached at the phase head, outside the project, with a marker naming its task",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F600 design A2 and decision D5: manage-worktrees task-add/task-remove, the task marker, read_provenance(expect_task). README worktree row lists --base; the guide's manage-worktrees section names the new verbs.",
       "files": [
         "plugins/audit/scripts/git/manage-worktrees.py",
@@ -115,16 +127,22 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T02:52:32Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T03:03:02Z.b97908",
+        "status": "passed",
+        "at": "2026-10-10T03:03:02Z"
+      }
     },
     {
       "id": "P124.3",

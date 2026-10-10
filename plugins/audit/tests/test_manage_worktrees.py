@@ -35,6 +35,7 @@ import contextlib
 import io
 import json
 import os
+import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -119,8 +120,120 @@ def _cases(check):
     root = _harness.fixture_root("mwt")
     try:
         _run_cases(check, root)
+        _task_cases(check, root)
     finally:
         _harness.remove_tree(root)
+
+
+def _g(cwd, *argv):
+    """(code, stdout) of a real git run in `cwd`, identity pinned so the fixture
+    does not lean on the host's config."""
+    done = subprocess.run(["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+                           "-c", "commit.gpgsign=false"] + list(argv),
+                          cwd=cwd, capture_output=True, text=True, timeout=60)
+    return done.returncode, done.stdout.strip()
+
+
+TASK_PLAN = {"meta": {"developmentBranch": "dev", "branchPrefix": "audit"},
+             "phases": [{"id": "P1", "title": "One", "branch": "audit/p1-one",
+                         "status": "in_progress",
+                         "tasks": [{"id": "P1.1", "status": "pending"},
+                                   {"id": "P1.2", "status": "pending"}]}]}
+
+
+def _task_cases(check, root):
+    """The task-tree verbs against a REAL repository: the claims are about what git
+    holds afterwards (detached, at this SHA), which a recording fake cannot say."""
+    proj = os.path.join(root, "proj")
+    os.makedirs(proj)
+    _g(proj, "init", "-q", "-b", "dev")
+    with open(os.path.join(proj, "a.txt"), "w") as fh:
+        fh.write("one\n")
+    _g(proj, "add", "-A")
+    _g(proj, "commit", "-qm", "one")
+    base = _g(proj, "rev-parse", "HEAD")[1]
+    with open(os.path.join(proj, "a.txt"), "w") as fh:
+        fh.write("two\n")
+    _g(proj, "commit", "-qam", "two")
+    head = _g(proj, "rev-parse", "HEAD")[1]
+
+    code, ans = M.do_task_add(proj, TASK_PLAN, "P1.1", base, project=proj)
+    path = ans.get("path") or ""
+    check("ta1 task-add exits 0 and the tree is DETACHED at the base SHA - not at "
+          "the phase tree's newer HEAD, which is what a defaulted base would give "
+          "(base %s, HEAD %s, tree at %s)" % (base[:7], head[:7],
+                                              _g(path, "rev-parse", "HEAD")[1][:7]
+                                              if path else "-"),
+          code == 0 and base != head and _g(path, "rev-parse", "HEAD")[1] == base
+          and _g(path, "symbolic-ref", "-q", "HEAD")[0] != 0, repr(ans))
+    check("ta2 ...and it sits OUTSIDE the project directory",
+          path and not M._wt.within_tree(proj, path), repr(path))
+    prov = M._wt.read_provenance(path, expect_task="P1.1") if path else {}
+    rec = prov.get("record") or {}
+    check("ta3 ...with a marker that names the task, its phase, the base and the "
+          "phase tree, and that read_provenance accepts for P1.1",
+          prov.get("ours") is True and rec.get("taskId") == "P1.1"
+          and rec.get("phaseId") == "P1" and rec.get("base") == base
+          and rec.get("phaseTree") == proj, repr(prov))
+    other = M._wt.read_provenance(path, expect_task="P1.2") if path else {}
+    check("ta4 ...and that marker is NOT ours for task P1.2",
+          other.get("ours") is False, repr(other.get("basis")))
+
+    inside = os.path.join(proj, "wt-in")
+    code, ans = M.do_task_add(proj, TASK_PLAN, "P1.2", base, project=proj,
+                              path=inside)
+    check("ta5 a root INSIDE the project is refused (exit 1), names the reason, "
+          "and creates nothing",
+          code == M.E_FAIL and "inside" in (ans.get("error") or "")
+          and not os.path.exists(inside), repr((code, ans)))
+    code, ans = M.do_task_add(proj, TASK_PLAN, "P9.9", base, project=proj)
+    check("ta6 an unknown task is a usage error (exit 2)",
+          code == M.E_USAGE, repr((code, ans)))
+    code, ans = M.do_task_add(proj, TASK_PLAN, "P1.2", "f" * 40, project=proj)
+    check("ta7 a base that is no commit is refused (exit 1) before a directory is "
+          "made",
+          code == M.E_FAIL and not os.path.exists(M.default_path(proj, "P1.2")),
+          repr((code, ans)))
+
+    second = path + "-again"
+    code, ans = M.do_task_add(proj, TASK_PLAN, "P1.1", base, project=proj,
+                              path=second)
+    check("ta8 a SECOND tree for a task that already has one is refused (exit 1), "
+          "names the tree it would duplicate, and creates nothing - at another "
+          "path, since the default path is already refused as non-empty",
+          code == M.E_FAIL and os.path.basename(path) in (ans.get("error") or "")
+          and not os.path.exists(second), repr((code, ans)))
+
+    # --- the sweep, over the same real tree -------------------------------------
+    with open(os.path.join(path, "b.txt"), "w") as fh:
+        fh.write("scratch\n")
+    code, ans = M.do_sweep(proj, TASK_PLAN, ("removeWorktrees",), apply_it=True)
+    kept = [k for k in ans.get("kept", []) if k.get("taskId") == "P1.1"]
+    check("ts4 the sweep keeps the DIRTY task tree, names task P1.1 and the dirty "
+          "file, and removes nothing even under --apply",
+          kept and "b.txt" in " ".join(r["why"] for r in kept[0]["reasons"])
+          and os.path.isdir(path) and not ans.get("applied"), repr(ans)[:300])
+
+    # --- task-remove ------------------------------------------------------------
+    code, ans = M.do_task_remove(proj, TASK_PLAN, "P1.1")
+    check("tr1 task-remove refuses the dirty tree (exit 1) and names the file",
+          code == M.E_FAIL and "b.txt" in (ans.get("error") or "")
+          and os.path.isdir(path), repr((code, ans)))
+    os.remove(os.path.join(path, "b.txt"))
+    code, ans = M.do_task_remove(proj, TASK_PLAN, "P1.2")
+    check("tr2 task-remove for a task with no tree of its own is refused and the "
+          "other task's tree stays (exit 1)",
+          code == M.E_FAIL and os.path.isdir(path), repr((code, ans)))
+    code, ans = M.do_task_remove(proj, TASK_PLAN, "P1.1")
+    check("tr3 a clean task tree comes down (exit 0), the directory goes, and "
+          "the base commit is untouched",
+          code == 0 and not os.path.exists(path)
+          and _g(proj, "cat-file", "-t", base)[1] == "commit", repr((code, ans)))
+    p2, _m = M.build_parser(), None
+    ns = p2.parse_args(["task-add", "m.json", "P1.1", "--base", base])
+    ns2 = p2.parse_args(["task-remove", "m.json", "P1.1", "--force"])
+    check("tr4 both verbs parse under their own names",
+          ns.verb == "task-add" and ns.base == base and ns2.force is True)
 
 
 def _run_cases(check, root):
