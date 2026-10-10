@@ -1218,6 +1218,75 @@ def _resolve_cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _scrub_cases(check):
+    """The plan's writer scrubs every string it saves, so a caller that composed
+    its own text cannot put a machine path into a committed shard."""
+    tmp = tempfile.mkdtemp(prefix="manifest-scrub-")
+    try:
+        repo = os.path.join(tmp, "repo")
+        os.makedirs(os.path.join(repo, ".git"))
+        home = "/".join(("", "Users", "someone", ".config", "tool"))
+        scratch = "/".join(("", "var", "folders", "ab", "cdef", "T",
+                            "audit-red-1", "npmrc"))
+        root_said = "sandbox at %s read %s via %s" % (
+            os.path.join(repo, "src", "a.py"), home, scratch)
+        plan = {"meta": {"version": "2.1-sharded"},
+                "phases": [{"id": "P1", "title": "t", "status": "pending",
+                            "tasks": [{"id": "P1.1", "title": "plain words",
+                                       "status": "pending",
+                                       "redFirst": {"basis": root_said}}]}]}
+        idx = os.path.join(repo, "docs", "audit-plan.json")
+        written = M.save_sharded(idx, plan)
+        text = "".join(open(w, encoding="utf-8").read() for w in written)
+        check("ws1 a shard save whose red basis names the real project root and "
+              "a home path writes the root repo-relative and the home as the "
+              "outside token - neither machine spelling reaches the shard: %r"
+              % (text[:300],),
+              repo not in text and "someone" not in text
+              and "folders" not in text and "src/a.py" in text
+              and text.count("<outside-repo>") == 2)
+        clean = {"meta": {"version": "2.1-sharded"},
+                 "phases": [{"id": "P2", "title": "t", "status": "pending",
+                             "tasks": [{"id": "P2.1", "title": "docs/a.md, docs/var/folders/ab/T/x.md",
+                                        "status": "pending"}]}]}
+        idx2 = os.path.join(repo, "docs2", "audit-plan.json")
+        w2 = M.save_sharded(idx2, clean)
+        # ALLOW twin, and the mutation it is here for: a scrub that rewrote
+        # plain text would change these bytes.
+        index2, shards2 = M.split_manifest(clean, "phases")
+        same = (open(w2[-1], encoding="utf-8").read() == M.json_document(index2)
+                and open(w2[0], encoding="utf-8").read()
+                == M.json_document(list(shards2.values())[0]))
+        check("ws2 a plan without a machine path is written byte for byte as "
+              "it was before the scrub existed", same)
+        single = os.path.join(repo, "flat.json")
+        M.save_single_file(single, plan)
+        check("ws3 the single-file layout passes through the same scrub: %r"
+              % (open(single, encoding="utf-8").read()[:160],),
+              repo not in open(single, encoding="utf-8").read()
+              and "someone" not in open(single, encoding="utf-8").read())
+        # A caller of the one-document writer cannot put a machine path into
+        # the plan, and a clean document is written exactly as raw would write it.
+        one = os.path.join(repo, "docs", "phases", "P1.json")
+        M.save_plan_json(one, {"id": "P1", "note": root_said})
+        body = open(one, encoding="utf-8").read()
+        check("ws4 save_plan_json strips the root, the home path and the scratch "
+              "path from a document its caller composed: %r" % (body[:200],),
+              repo not in body and "someone" not in body
+              and "folders" not in body and "src/a.py" in body)
+        plain = os.path.join(repo, "docs", "phases", "P2.json")
+        doc = {"id": "P2", "note": "plain words, docs/a.md"}
+        M.save_plan_json(plain, doc)
+        raw = os.path.join(repo, "docs", "phases", "raw.json")
+        M.atomic_write_json(raw, doc)
+        check("ws5 ALLOW twin: a document naming no machine is written byte for "
+              "byte as the raw writer writes it",
+              open(plain, encoding="utf-8").read()
+              == open(raw, encoding="utf-8").read())
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _selftest():
     def body(check):
         _stub_claim_cases(check)
@@ -1227,6 +1296,7 @@ def _selftest():
         _drift_cases(check)
         _gate_cases(check)
         _resolve_cases(check)
+        _scrub_cases(check)
     return _harness.run(body)
 
 

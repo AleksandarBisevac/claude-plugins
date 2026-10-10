@@ -4031,6 +4031,7 @@ def _free_text_cases(check):
     finally:
         _harness.remove_tree(tmp)
     _shape_parity_cases(check)
+    _scrub_cases(check)
 
 
 def _shape_parity_cases(check):
@@ -4222,6 +4223,41 @@ def _shape_parity_cases(check):
               M.repo_relative_or_token(proj, os.path.join(proj, "src", "out",
                                                           "x"))
               == M.OUTSIDE_TOKEN)
+    finally:
+        _harness.remove_tree(tmp)
+
+
+def _scrub_cases(check):
+    """The save boundary scrubs every string of a row, not only the fields
+    `_normalise` knew to redact."""
+    tmp = tempfile.mkdtemp(prefix="journal-scrub-")
+    try:
+        proj = os.path.join(tmp, "repo")
+        os.makedirs(os.path.join(proj, ".claude"))
+        home = "/".join(("", "Users", "someone", ".config", "tool"))
+        said = "sandbox read %s and %s" % (home, os.path.join(proj, "src", "a.py"))
+        path = M.append(proj, {"action": "probe " + said, "target": "P1.1",
+                               "summary": "ok"})
+        text = open(path, encoding="utf-8").read() if path else ""
+        check("sc1 an `action` the plugin composed carries neither the home "
+              "path nor the checkout root once stored: %r" % (text[:200],),
+              bool(path) and "someone" not in text and proj not in text
+              and "src/a.py" in text)
+        clean = M.append(proj, {"action": "task.start", "target": "P1.1",
+                                "summary": "plain words, docs/a.md"})
+        rows, _t = M.read_file(clean)
+        # ALLOW twin: a row naming no machine is stored as it was said, so a
+        # scrub that rewrote everything fails here.
+        check("sc2 a row without a machine path keeps its words: %r"
+              % (rows[-1].get("summary"),),
+              rows[-1]["action"] == "task.start"
+              and rows[-1]["summary"] == "plain words, docs/a.md")
+        outside = os.path.join(tmp, "elsewhere", "t.txt")
+        again = M.append(proj, {"action": "x", "target": outside})
+        last, _t = M.read_file(again)
+        check("sc3 an outside-repo target stays as given, because it is a "
+              "drift-map key: %r" % (last[-1]["target"],),
+              last[-1]["target"] == outside)
     finally:
         _harness.remove_tree(tmp)
 

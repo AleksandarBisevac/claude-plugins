@@ -31,7 +31,7 @@ graded a WARNING and never a FINDING, because a fresh install that has asked for
 nothing must not fail a build for having no history yet - and one occurrence is
 never printed as a pattern.
 
-Layer 4, and the ledger is what sets the floor: `check_ledger` runtime-loads
+Layer 5, and the ledger is what sets the floor: `check_ledger` runtime-loads
 `usage_ledger` (layer 3), so this cannot sit below 4. `_journal_io` (layer 1) and
 `_evidence_io` (layer 2) are imported rather than loaded - the trail's library
 half came out from under `audit-journal.py` for exactly that reason, and the

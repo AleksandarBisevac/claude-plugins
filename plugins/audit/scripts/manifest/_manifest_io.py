@@ -67,6 +67,8 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _machine_paths  # noqa: E402  (what a committed plan may not say, and its redaction)
+
 
 # --- reading + assembly ---------------------------------------------------------
 def read_json(path):
@@ -1230,6 +1232,47 @@ def _atomic_write_json(path, data):
     atomic_write_json(path, data, indent=2)
 
 
+def _checkout_of(path):
+    """The directory above `path` holding a `.git` (directory or file), else None.
+
+    The scrub needs the checkout's root to tell an in-repo absolute path from a
+    machine one, and a save is handed only the plan's path. A plan outside any
+    checkout has no root to spell paths against, and then only the shapes that
+    name a machine (a home directory, a scratch directory) are redacted."""
+    here = os.path.dirname(os.path.abspath(path))
+    while True:
+        if os.path.exists(os.path.join(here, ".git")):
+            return here
+        up = os.path.dirname(here)
+        if up == here:
+            return None
+        here = up
+
+
+def scrubbed_plan(index_path, manifest):
+    """`manifest` as the committed plan may say it: every string passed through
+    `_machine_paths.scrubbed_values`, in a NEW structure.
+
+    THE SAVE BOUNDARY IS THE ONLY PLACE THIS CAN BE HELD. A red helper's
+    sandbox description, a runner's stderr and a hook's rendered change all land
+    in the plan through callers that composed the text themselves, and a rule
+    each caller must remember is a rule the next one does not know about. Text
+    with no path in it comes back unchanged, so a clean plan is written
+    byte for byte as before."""
+    return _machine_paths.scrubbed_values(_checkout_of(index_path), manifest)
+
+
+def save_plan_json(path, obj, indent=2):
+    """Write one committed plan document (an index, a shard or a whole plan) at
+    `path`: `scrubbed_plan` first, then `atomic_write_json`.
+
+    THE ONE NAME A PLAN WRITER CALLS when it holds a single document rather than
+    a manifest to split. A writer that must put back bytes it already holds
+    (a restore from a snapshot) copies them and does not come through here;
+    `atomic_write_json` stays the raw writer for files that are not the plan."""
+    atomic_write_json(path, scrubbed_plan(path, obj), indent=indent)
+
+
 # --- sharded save ---------------------------------------------------------------
 def save_sharded(index_path, manifest, shard_rel_dir="phases"):
     """Write an assembled `manifest` as index + per-phase shards, each file written
@@ -1251,6 +1294,7 @@ def save_sharded(index_path, manifest, shard_rel_dir="phases"):
     Nothing is created before the check, so a refused save leaves the shard
     directory exactly as it found it — including not existing.
     """
+    manifest = scrubbed_plan(index_path, manifest)
     collisions = shard_name_collisions(manifest, shard_rel_dir)
     if collisions:
         raise ValueError(
@@ -1327,7 +1371,7 @@ def save_single_file(path, manifest):
     own failure path unrecoverable - restoring the index is what undoes this write, and
     an index whose shards have been deleted restores to nothing.
     """
-    _atomic_write_json(path, join_manifest(manifest))
+    _atomic_write_json(path, join_manifest(scrubbed_plan(path, manifest)))
     return [path]
 
 

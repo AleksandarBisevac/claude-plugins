@@ -60,7 +60,7 @@ resolve a path, which is right for a gate (a wrong guess leaves a gate where it
 already was) and wrong for a writer (a wrong guess writes). So the writer's
 boundary is spelled as "this exact file in this exact directory" and fails closed.
 
-Layer 2: it reaches `_loader`, `_usage_core` and `_journal_io`, all layer 1, and
+Layer 3: it reaches `_loader`, `_usage_core` and `_journal_io`, all layer 1, and
 nothing else. `parse_ts` comes from `_usage_core` for the reason `_ado_drift`
 states about the same call - the alternative was this tree's next ISO parser - and
 `repo_relative_or_token` comes from `_journal_io` for the reason both of the

@@ -157,6 +157,14 @@ def _atomic_write_json(path, obj):
     _mio.atomic_write_json(path, obj, indent=2)
 
 
+def _write_plan_json(path, obj):
+    """`_atomic_write_json` for a plan document: scrubbed on the way out by
+    `_manifest_io.save_plan_json`, which every plan writer shares. The theme and
+    settings files this module also writes are not the plan and keep the raw
+    writer."""
+    _mio.save_plan_json(path, obj, indent=2)
+
+
 # --- the CLI writers' shared machinery ------------------------------------------
 # THREE FUNCTIONS AND A LOCK WRAPPER THAT ARE NOT THE PANEL'S, and they live here
 # for the reason every other alias above does: this module is already the shared
@@ -2205,7 +2213,7 @@ def _write_back(project, mpath, raw_index, assembled, patch, touched,
     Returns the list of written paths, project-relative.
     """
     if not _mio.is_sharded(raw_index):
-        _atomic_write_json(mpath, assembled)
+        _write_plan_json(mpath, assembled)
         return [_output.posix_rel(mpath, project)]
 
     base = os.path.dirname(os.path.abspath(mpath))
@@ -2242,7 +2250,7 @@ def _write_back(project, mpath, raw_index, assembled, patch, touched,
         # `_manifest_io.index_only_in_bodies()` reports it as ignored - a value
         # the panel just promised to save, in a place the next load discards.
         body = _mio.shard_body(patched)[0]
-        _atomic_write_json(spath, body)
+        _write_plan_json(spath, body)
         written.append(_output.posix_rel(spath, project))
 
     # The INDEX is written for `meta`, and for any index-only field a phase patch
@@ -2260,7 +2268,7 @@ def _write_back(project, mpath, raw_index, assembled, patch, touched,
         if index_only_touched:
             idx["phases"] = [_index_only_stub(entry, by_pid)
                              for entry in (raw_index.get("phases") or [])]
-        _atomic_write_json(mpath, idx)
+        _write_plan_json(mpath, idx)
         written.append(_output.posix_rel(mpath, project))
     return written
 

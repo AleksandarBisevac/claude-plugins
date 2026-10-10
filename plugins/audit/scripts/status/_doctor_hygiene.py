@@ -20,7 +20,7 @@ check once called anything older than 60 minutes stale, which told the human a
 healthy 90-minute phase run had crashed - a diagnostic manufacturing the very
 takeover that loses work.
 
-Layer 3: `_locks` is at layer 1, `_doctor_report` at layer 2, and this module
+Layer 4: `_locks` is at layer 1, `_doctor_report` at layer 2, and this module
 loads nothing at runtime at all.
 
 This module carries no `--selftest` of its own; its cases live in

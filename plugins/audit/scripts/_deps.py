@@ -127,6 +127,14 @@ import _output  # noqa: E402  (py_files: the ONE recursive `.py` walk, shared no
 # --- layer table --------------------------------------------------------------
 LAYERS = (
     ("_output",),
+    # `_machine_paths` is what counts as machine identity in a string and how to
+    # take it out. It reaches nothing but `_output` and gets a layer of its own
+    # because BOTH committed writers need it - `_manifest_io` for the plan and
+    # `_journal_io` for the trail - and those two are layer-mates that may not
+    # import each other. Every layer number below this line is therefore one
+    # higher than a comment elsewhere that says "L1" or "L2" may still read;
+    # the table, `--render` and the guide's fence are the numbering to trust.
+    ("_machine_paths",),
     # _deps (this module) imports only _output, the safe_stdio guard - same as every
     # other member of this layer - so it belongs beside them, not in a layer of its own.
     ("_ui_theme", "_loader", "_fmt", "_cli_fmt", "_manifest_io", "_areas", "_policy",
@@ -6054,7 +6062,7 @@ KNOWN_LAYER_DEBT = (
     # carrying twenty-one upward runtime edges - and `rt6`/`bw4` keep that
     # version red on purpose. The edge is real; the spelling is what is unusual.
     ("panel/_panel_state.py",
-     "runtime-loads render-report (layer 7) from layer 5 - not strictly downward"),
+     "runtime-loads render-report (layer 8) from layer 6 - not strictly downward"),
 )
 
 

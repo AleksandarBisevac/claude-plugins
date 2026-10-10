@@ -18,7 +18,7 @@ that came out from under `validate-config.py`, `validate-manifest.py` and
 `audit-status.py`, and reaching the commands instead is what put four entries in
 `_deps.KNOWN_LAYER_DEBT` before those splits.
 
-Layer 4, and the manifest rules are what set the floor: `_manifest_rules` sits
+Layer 5, and the manifest rules are what set the floor: `_manifest_rules` sits
 at layer 3 since it was cut into five, so its consumers cannot sit below 4.
 
 This module carries no `--selftest` of its own; its cases live in

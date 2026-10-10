@@ -43,7 +43,7 @@ precedence rule this module cannot verify. The fact that matters is true
 either way and is the trap this rung exists for: a board command that succeeds
 proves the ORGANIZATION is reachable, never which identity reached it.
 
-Layer 1: it reaches nothing but `_output`. Everything - `meta.ado`, the
+Layer 2: it reaches nothing but `_output`. Everything - `meta.ado`, the
 environment, the probe - arrives as an argument, which is what lets the entry
 point be the only part that touches a machine.
 

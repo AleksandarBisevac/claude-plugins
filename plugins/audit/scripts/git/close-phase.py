@@ -831,7 +831,7 @@ def _revalidated_write(manifest_path, path, obj):
         # first is not written at all.
         raise OSError("%s could not be read before the write" % (path,))
     pre = _findings_of(manifest_path)
-    _mio.atomic_write_json(path, obj, indent=2)
+    _mio.save_plan_json(path, obj, indent=2)
     new = sorted(_findings_of(manifest_path) - pre)
     if new:
         try:

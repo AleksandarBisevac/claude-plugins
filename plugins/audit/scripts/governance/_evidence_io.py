@@ -88,8 +88,15 @@ import _worktrees  # noqa: E402  (git ancestry: merged_into, the three answers)
 import _usage_core  # noqa: E402  (parse_ts: a full run's ts read as a moment, at layer 1)
 from _journal_io import (command_facts, redacted_paths,  # noqa: E402
                          redacted_text, repo_relative_or_token)
+from _machine_paths import OUTSIDE_TOKEN  # noqa: E402
 
 DEFAULT_DIRNAME = "evidence"
+# The row fields the append's scrub passes through untouched, by name: a step's
+# `command` is a copy of the plan's own gate entry (which the plan's save
+# scrubbed) and every reader asks whether the two are equal, so rewriting it
+# would make a recorded run stop matching the gate it ran. Free text is
+# everything else.
+LEDGER_KEPT_KEYS = frozenset(["command"])
 
 
 # --- one resolution of a gate entry, for every reader that needs one -----------
@@ -1229,7 +1236,9 @@ def append_row(project, row, session_id=None, config=None, writer=None):
                     "copy and record the run again"
                     % (os.path.basename(path), exc))
         tail = [r for r in rows if not r.get("_unparseable")]
-        linked = chain_onto(row, tail, os.path.basename(path))
+        linked = chain_onto(_journal_io.scrubbed_values(project, row, keep=LEDGER_KEPT_KEYS),
+                            tail,
+                            os.path.basename(path))
         # LF on every platform, as the journal's appender writes it.
         with open(path, "a", encoding="utf-8", newline="\n") as fh:
             fh.write(_journal_io.canonical(linked) + "\n")
@@ -1782,7 +1791,7 @@ def write_pointer(project, manifest_path, scope, ids, row, session_id=None,
     # still using it.
     refused = None
     try:
-        _mio.atomic_write_json(path, body)
+        _mio.save_plan_json(path, body)
     finally:
         if _locks.took(code):
             rcode = _locks.release(project, lock_name, session=session_id,
@@ -2957,6 +2966,11 @@ def project_relative(spelling, project):
     file name is not, so a suite that is itself a link still counts as the
     project's.
     """
+    if spelling == OUTSIDE_TOKEN:
+        # What the ledger's own scrub wrote for an absolute path outside the
+        # checkout: the spelling is gone, the fact that it lay outside is not.
+        return None, ("%s lies outside the project, and a machine's own path "
+                      "is never written into a plan" % (spelling,))
     if os.path.isabs(spelling):
         root = os.path.realpath(project)
         full = os.path.join(os.path.realpath(os.path.dirname(spelling)),
@@ -3759,7 +3773,7 @@ def _stamp_since(project, manifest_path, body, meta, derived, refusal):
         return _refused(refusal)
     meta[SINCE_KEY] = derived
     try:
-        _mio.atomic_write_json(manifest_path, body)
+        _mio.save_plan_json(manifest_path, body)
     except Exception as exc:
         return _refused("cannot write %s: %s"
                         % (repo_relative_or_token(project, manifest_path), exc))

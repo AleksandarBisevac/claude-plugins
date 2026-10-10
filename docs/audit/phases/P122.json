@@ -550,7 +550,7 @@
     {
       "id": "P122.8-z4y",
       "title": "a script's own --selftest is read only from its own arguments, never from a command it forwards",
-      "status": "in_progress",
+      "status": "done",
       "description": "F603: every migrated selftest stub tests '\"--selftest\" in sys.argv[1:]', which matches the flag anywhere, including inside a test command a wrapper forwards after --. drive-phase answered the red helper's forwarded '<suite> --selftest' with its own pointer line and exit 0, so every Python red on this repo graded could-not-prove (P122.1-P122.3). One invariant: add _output.selftest_requested(argv) (true only for the script's own flag: before any '--', and not as an option value), make every stub call it, and add an AST lint in _output.py that fails a stub spelling 'in sys.argv' for --selftest, with a red-first allow case. The declared list is every stub at the time of planning (114 files, from grep -rl over scripts/); hooks/ carry the same stub but forward no command and cannot import _output, so they stay out. A file this misses is a scope widening.",
       "files": [
         "plugins/audit/scripts/_output.py",
@@ -731,25 +731,39 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f23f53721e4c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Reviewed the applied diff. selftest_requested(argv) in _output.py reads only args before first -- and rejects flag as another option's value. Spot-checked stubs audit-journal, audit-lock, validate-manifest, audit-status, _report_md, _fmt: each prints the pointer, exit 0. drive-phase.py x -- t --selftest no longer prints the pointer (argparse rejects 'x', exit 2). test__output 220/220, test_drive_phase 133/133, ruff clean. sweep-selftests: 315/316 files ok; the one failure is tools/check-committed-pii.py flagging docs/audit/phases/P122.json:546 (machine home path in a committed plan record, not a file of this task; belongs to a later P122 task).",
+        "descriptive": "A forwarded test command's --selftest is no longer swallowed by migrated stubs, so Python rereds can be graded."
       },
       "startedAt": "2026-10-09T23:07:07Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-09T23:28:08Z",
+      "verifiedBy": [
+        "sfl1-sfl8 in test__output.py",
+        "ds7f",
+        "ds7g in test_drive_phase.py"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-09T23:28:07Z.dbd653",
         "status": "passed",
         "at": "2026-10-09T23:28:07Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "f23f53721e4c",
+        "at": "2026-10-09T23:28:08Z"
+      },
+      "redFirst": {
+        "at": "2026-10-09T23:19:21Z",
+        "basis": "`sh -c python3 plugins/audit/tests/test__output.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 197/198 cases passed; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from <project>, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in <project>/node_modules and is not watched; the user's npm config (.npmrc in the home directory) dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
       "id": "P122.9-z4y",
       "title": "every string the plugin writes into a committed plan, journal or evidence row is scrubbed of machine paths at the write",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F604, the second recurrence of F538 (committed shards carrying machine paths): the red helper's sandbox description put the absolute project root and a home-shorthand npmrc path into P122's committed shard twice (P122.1 and P122.2 records), and check-committed-pii failed the next task gates until the orchestrator redacted them by hand. The writer already refuses a machine path in a --description (audit-task's prose-flag check through _journal_io.machine_path_shape), but text the plugin composes itself bypasses that door. Invariant: the save boundary (_manifest_io's shard/index writer, the journal append, the evidence append) passes every string value through _journal_io's existing redaction (redacted_free_text / redacted_text with the project root) so no caller can bypass it; check-committed-pii stays the backstop. Keep the layers legal (_deps.LAYERS); no new detector - reuse the ones the tool already imports. Red-first: the case in tests.add, plus a journal and an evidence row with the same shape. Layer decision (2026-10-09): _manifest_io and _journal_io are both L1 and may not import each other, so the detectors and redaction (machine_path_shape, redacted_free_text and their patterns) move into a new L0 module scripts/_machine_paths.py that both import; _journal_io keeps re-exporting the names the tool and other callers use. Use the existing tokens (repo-relative, <outside-repo>); do not invent <project>/<home>. Measured cost: about 50 ms to scrub the largest shard (P118, ~199 KB) against ~1 ms to save it - add a cheap pre-reject (a string with none of the characters a machine path needs is skipped) and re-measure twice with a gap.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_io.py",
@@ -802,16 +816,22 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-09T23:44:28Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T00:06:07Z.99548a",
+        "status": "passed",
+        "at": "2026-10-10T00:06:07Z"
+      }
     }
   ],
   "reviewPerTask": "phase",

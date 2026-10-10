@@ -503,7 +503,7 @@ def _write_phase_fields(project, mpath, raw_index, phase_id, fields):
             if isinstance(ph, dict) and ph.get("id") == phase_id:
                 ph.update(fields)
                 break
-        _panel_write._atomic_write_json(mpath, assembled)
+        _panel_write._write_plan_json(mpath, assembled)
         return [_output.posix_rel(mpath, project)]
     spath = _shard_path_for(raw_index, mpath, phase_id)
     if spath is None:
@@ -514,7 +514,7 @@ def _write_phase_fields(project, mpath, raw_index, phase_id, fields):
     if not isinstance(body, dict):
         raise ValueError("shard %s is not an object" % (spath,))
     body.update(fields)
-    _panel_write._atomic_write_json(spath, body)
+    _panel_write._write_plan_json(spath, body)
     return [_output.posix_rel(spath, project)]
 
 

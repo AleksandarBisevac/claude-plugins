@@ -3756,6 +3756,31 @@ def _full_status_cases(check):
               % (M._same_subject(head1, {"head": "h2"}),),
               M._same_subject(head1, {"head": "h1"})
               and not M._same_subject(head1, {"head": "h2"}))
+
+        # --- append_row: the save boundary scrubs every string ---------------
+        sc_proj = _project(os.path.join(tmp, "scrub-proj"))
+        sc_home = "/".join(("", "Users", "someone", ".config", "tool"))
+        sc_path = M.append_row(sc_proj, {
+            "runId": "SC-1", "ts": "2026-01-01T00:00:00Z",
+            "basis": "sandbox read %s under %s" % (
+                sc_home, os.path.join(sc_proj, "src", "a.py")),
+            "nested": {"lines": ["see %s" % sc_home, "plain words, docs/a.md"]}})
+        sc_text = open(sc_path, encoding="utf-8").read()
+        check("sc1 an evidence row whose composed text names a home path and "
+              "the checkout root is stored with neither, in a nested list "
+              "too, and the sentence around them survives: %r"
+              % (sc_text[:240],),
+              "someone" not in sc_text and sc_proj not in sc_text
+              and "src/a.py" in sc_text and "plain words, docs/a.md" in sc_text
+              and sc_text.count(_journal_io.OUTSIDE_TOKEN) == 2)
+        sc_ok = M.append_row(sc_proj, {"runId": "SC-2",
+                                       "ts": "2026-01-01T00:00:01Z",
+                                       "basis": "ran 5 suites in docs/a.md"})
+        # ALLOW twin: a row naming no machine is byte-identical in its text.
+        check("sc2 a row without a machine path keeps its words: %r"
+              % (open(sc_ok, encoding="utf-8").read()[-160:],),
+              "ran 5 suites in docs/a.md" in open(sc_ok,
+                                                  encoding="utf-8").read())
     finally:
         _harness.remove_tree(tmp)
 
