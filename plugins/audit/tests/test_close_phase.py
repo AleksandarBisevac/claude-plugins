@@ -3586,7 +3586,71 @@ def _landing_commit_cases(check):
               and "not committed here" in text and "other" in text)
     finally:
         _harness.remove_tree(root)
+    _ignored_evidence_cases(check)
     _foreign_pending_cases(check)
+
+
+def _ignored_evidence_repo(root, exclude):
+    """The parent checked out nowhere and a clean tree on the phase branch, with
+    an evidence record on disk - excluded through `.git/info/exclude` when
+    `exclude` - and the git object for the parent read before the run."""
+    git = _fixture_git(root)
+    _init_fixture_repo(git)
+    mpath = _write_plan(root, {"developmentBranch": "main"},
+                        [_signed_phase("P1", "audit/p1-demo")])
+    git("add", "-A")
+    git("commit", "-q", "-m", "base")
+    git("checkout", "-q", "-b", "audit/p1-demo")
+    with open(os.path.join(root, "work.txt"), "w") as fh:
+        fh.write("work\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "work")
+    evidence = os.path.join(root, "docs", "audit", "evidence")
+    os.makedirs(evidence)
+    with open(os.path.join(evidence, "run.jsonl"), "w") as fh:
+        fh.write("{}\n")
+    if exclude:
+        with open(os.path.join(root, ".git", "info", "exclude"), "a") as fh:
+            fh.write("docs/audit/evidence\n")
+    return git, mpath
+
+
+def _ignored_evidence_cases(check):
+    """A record directory git ignores refuses the landing BEFORE the merge, so
+    the refusal never follows a merge; the same landing with the directory not
+    ignored lands."""
+    root = _harness.fixture_root("closephase-ignored-evidence")
+    try:
+        git, mpath = _ignored_evidence_repo(root, True)
+        parent = git("rev-parse", "main").stdout.decode().strip()
+        lines = []
+        code = M.main([mpath, "P1", "--project", root], out=lines.append)
+        text = "\n".join(lines)
+        after = git("rev-parse", "main").stdout.decode().strip()
+        check("ie1 an evidence directory in .git/info/exclude refuses the landing "
+              "before the merge: exit 1, main unmoved, the branch still there, "
+              "nothing stamped, the remedy named: exit %r, moved %r, %s"
+              % (code, parent != after, text[-300:]),
+              code == M.E_FAIL and parent == after and "REFUSED" in text
+              and "docs/audit/evidence" in text and "Nothing was merged" in text
+              and git("rev-parse", "--verify", "-q",
+                      "audit/p1-demo").returncode == 0
+              and not _merged_at(mpath))
+    finally:
+        _harness.remove_tree(root)
+    root = _harness.fixture_root("closephase-notignored-evidence")
+    try:
+        git, mpath = _ignored_evidence_repo(root, False)
+        parent = git("rev-parse", "main").stdout.decode().strip()
+        lines = []
+        code = M.main([mpath, "P1", "--project", root], out=lines.append)
+        after = git("rev-parse", "main").stdout.decode().strip()
+        check("ie2 THE ALLOW TWIN: the same landing with the evidence directory "
+              "not ignored lands as before: exit %r, moved %r, %s"
+              % (code, parent != after, "\n".join(lines)[-200:]),
+              code == M.E_OK and parent != after and bool(_merged_at(mpath)))
+    finally:
+        _harness.remove_tree(root)
 
 
 def _foreign_pending_cases(check):

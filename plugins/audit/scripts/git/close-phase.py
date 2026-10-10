@@ -145,6 +145,8 @@ import _claude_home  # noqa: E402  (a usage error names this copy and a newer in
 import _branch                                                       # noqa: E402
 import _evidence_io  # noqa: E402  (where the ledger lives, and its one strict decode)
 import _config_rules  # noqa: E402  (review_per_task_mode: the live key, refused not defaulted)
+import _invariants  # noqa: E402  (_rel: a record path relative to the git root, or None outside it)
+import _scoped_commit  # noqa: E402  (ignored_records: the refusal the stamp commit would earn)
 import _filed_returns as _fr  # noqa: E402  (landing_refusals: sign-off's own property)
 import _journal_io                                                 # noqa: E402
 import _loader  # noqa: E402  (script_path: the commit verbs run as subprocesses, never imported)
@@ -1678,6 +1680,30 @@ def pending_beyond_stamp(target, phase_id, project, tree):
     return found
 
 
+def ignored_stamp_refusal(manifest_path, project, git_root):
+    """The refusal the stamp commit would earn for a record directory git
+    ignores, or "" - asked BEFORE the merge, so a refusal never follows it.
+
+    The journal and the evidence directory, resolved as the audit-state verb
+    resolves them, and only when on disk. NOTHING IS OWED WHEN THE PLAN FILE IS
+    ITSELF IGNORED: a plan git never versions is a supported layout, landed with
+    no stamp commit, so its ignored records refuse nothing there."""
+    config = _journal_io.load_config(project)
+    plan_rel = _invariants._rel(os.path.abspath(manifest_path), git_root)
+    paths = []
+    for absolute in (_journal_io.journal_dir(project, config),
+                     _evidence_io.evidence_dir(project, config)):
+        rel = _invariants._rel(absolute, git_root)
+        if rel is not None and os.path.exists(absolute) and rel not in paths:
+            paths.append(rel)
+    kinds = _scoped_commit.classify(
+        git_root, [(rel, True) for rel in paths + ([plan_rel] if plan_rel else [])])
+    if plan_rel and kinds.get(plan_rel) == _scoped_commit.IGNORED:
+        return ""
+    return _scoped_commit.ignored_records(
+        dict((rel, kinds[rel]) for rel in paths if rel in kinds))
+
+
 def _commit_stamp(target, phase_id, project, parent):
     """The stamp committed by the audit-state verb, and the index verb after it
     in a sharded plan, run in `project`."""
@@ -2963,6 +2989,8 @@ def render(answer, out=print):
         elif answer.get("stubWhy"):
             out("  index stub NOT re-mirrored: %s" % (answer["stubWhy"],))
         if answer.get("landingCommitWhy"):
+            out("  the merge landed; what is left is committing the stamp, and "
+                "re-running this command does that once the cause is repaired")
             out("  the stamp is NOT committed: %s" % (answer["landingCommitWhy"],))
         elif answer.get("landingCommitSkipped"):
             out("  the stamp is not committed here: %s"
@@ -3257,6 +3285,14 @@ def main(argv, out=print):
     if held:
         out("[close-phase] REFUSED: %s Nothing was merged or written." % (held,))
         return E_FAIL
+    # THE STAMP COMMIT'S OWN REFUSAL FOR AN IGNORED RECORD, ASKED NOW: found after
+    # the merge it would exit 1 over a landing that had already happened.
+    if landing_due and writes:
+        ignored = ignored_stamp_refusal(args.manifest, project, git_root)
+        if ignored:
+            out("[close-phase] REFUSED: %s. Nothing was merged or written."
+                % (ignored,))
+            return E_FAIL
     if refused and landing_due \
             and not _journal_io.enabled(_journal_io.load_config(project)):
         out("[close-phase] REFUSED: %s was given and journal.enabled is false, so "

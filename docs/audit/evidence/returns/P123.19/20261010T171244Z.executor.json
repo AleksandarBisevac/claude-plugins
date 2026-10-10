@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "sweep-selftests (python3 tools/sweep-selftests.py)": "pass",
+    "own test stage lt-block": "pass",
+    "ruff on touched .py": "pass",
+    "_deps --render fence vs PLUGIN-BUILD-GUIDE.md close-phase line": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T17:23:07Z",
+    "basis": "`python3 plugins/audit/tests/test_close_phase.py --selftest --stage lt-block` in a throwaway tree at HEAD exited 1 with 1 of 10 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ie1 (house FAIL): SELFTEST FAILED: 9/10 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "close-phase.py: new ignored_stamp_refusal(manifest_path, project, git_root) classifies the journal and evidence dirs via _scoped_commit.classify/ignored_records (new imports _invariants, _scoped_commit; layers fine, module-map fence line in PLUGIN-BUILD-GUIDE.md regenerated). main() calls it after the landed_answers_refusal check and before the override journal row / merge when landing_due and writes; refuses exit 1 'Nothing was merged or written'. Skipped when the plan file itself is ignored: a first attempt that included the plan file turned five existing ALLOW cases (sv7, ra13, vr12, vr13, vr23b) red, so the unversioned-plan layout stays as before. Post-merge output now prints a line 'the merge landed; what is left is committing the stamp...' before the unchanged 'the stamp is NOT committed:' line (drive-phase.py parses that prefix). Tests ie1/ie2 added in test_close_phase.py (_ignored_evidence_cases, called from _landing_commit_cases). COMPATIBILITY.md entry and phase-signoff.md exit-1 row updated. Full sweep exit 0. PLUGIN-BUILD-GUIDE.md edited only on the generated fence line (scope file). Did not touch guard-release.py.",
+    "descriptive": "A landing over a git-ignored evidence or journal directory is now refused before the merge instead of merging then exiting 1."
+  },
+  "testsAdded": [
+    "ie1 evidence dir in .git/info/exclude refuses landing before merge, main unmoved",
+    "ie2 allow twin: evidence not ignored lands"
+  ],
+  "claims": "claims: ie1 asserts main's ref is unchanged and the branch still exists (evidence: test checks rev-parse before/after). The plan-file-ignored layout is deliberately not refused; evidence: sv7/ra13/vr12/vr13/vr23b went red when it was included.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:0d1f51c4d444c5d201f330eae4f2a9fd152ea6b157ee327032fc8b8121638146\",\"dirtyDigest\":\"sha256:4a11d9b96898cce78a233787ecf954290be26270819b2beaeb1e91892447abe9\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\"COMPATIBILITY.md\":\"97e42f6bef367c06\",\"PLUGIN-BUILD-GUIDE.md\":\"19e9c6df3804ca48\",\"plugins/audit/reference/phase-signoff.md\":\"5fa56fbe7d17297c\",\"plugins/audit/scripts/git/close-phase.py\":\"6c17f2fefec314ef\",\"plugins/audit/tests/test_close_phase.py\":\"e5616b4b2fdafdf7\"},\"head\":\"f96824a4\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"COMPATIBILITY.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/phase-signoff.md\",\"plugins/audit/scripts/git/close-phase.py\",\"plugins/audit/tests/test_close_phase.py\"],\"scopeDigest\":\"sha256:d5515f7d7067529777ebf0b4561957a95d71a87e7e070e7f3b99df519cf8fddb\",\"v\":2}"
+}

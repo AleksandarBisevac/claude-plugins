@@ -1348,7 +1348,7 @@
     {
       "id": "P123.18",
       "title": "Red-first helper reads replacements right, derives --introduces, and marks its own block",
-      "status": "in_progress",
+      "status": "done",
       "description": "(F535) `stamp-verification._replaces` reads Assign/AugAssign/AnnAssign targets and setattr only: a `for New.<case> in [...]` or `with ... as New.<case>` target also replaces the case and HEAD's red is still credited through it, while a bare `New.<case>: int` (AnnAssign with no value, binds nothing) is refused. Read For/AsyncFor and With/AsyncWith targets as replacements; count an AnnAssign only with a value; PLUGIN-BUILD-GUIDE tells an author to wrap with the decorator form. (F573) executors rarely pass `--introduces`, so a test red on a missing symbol grades could-not-prove; have `drive-phase.py submit` derive the introduced symbols from the task's diff (new top-level def/class/assignment names in the declared source files) and pass them to the red helper, with the executor brief naming the flag only as an override. (F576) `_filed_returns.helper_red_first` recognises the helper's block by its wording, so a hand-typed block in those words is filed as computed; `drive-phase.py submit` marks the block it fills (a `source` field or the helper output's digest) and the filing verb trusts the mark, not the words. Regression: T3/T4 (for/with targets) refused; bare annotation proves; a missing-symbol red with no flag grades proved when the diff introduces the symbol; a hand-typed block in the helper's words is not treated as the helper's. Also F613 (testbed P3.1/P5.2/P6.1, and this repo P124.1): a JS missing-module failure (Vite \"Failed to resolve import\", jest \"Cannot find module\", node ERR_MODULE_NOT_FOUND) whose path resolves to a declared file is a missing-symbol red - one per-runner table of missing-module spellings, not a second Python-only list. Also the house runner shape seen on this repo in P124.1/P124.2: a suite whose body aborts on the missing symbol (an AttributeError or TypeError from the task's new name, printing SELFTEST FAILED: N-1/N) is graded \"no test was collected or none reached an assertion\"; an abort naming the task's introduced symbol, or a declared file, is a missing-symbol red. And: --introduces refuses a hyphenated entry-point name (integrate-task), so a new CLI script cannot name its own symbol; a new file the task declares (untracked at HEAD) is itself the introduced thing. Faults: F535, F573, F576, F613. Also F621: an inline suite (test and implementation in one file) is red-proved by applying only the added test hunks to HEAD, or graded could-not-prove with that reason - never refused as \"fix the test\"; add/scope pick regression for such a file by default. And: --case with a hyphenated case id (dg-red-moment) is not matched against a FAIL line that names it (seen P123.15) - match the id as the house runner prints it.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -1393,25 +1393,41 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f96824a4a2d8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "F535: stamp-verification._replaces now reads For/AsyncFor and With/AsyncWith targets as replacements and counts an AnnAssign only with a value (sr186 rows added: for target, with target, with-tuple target refused; bare `New.test_x: int` proves). F573: new `--derive-introduces` flag + derive_introduced() (top-level def/class/assignment names added over HEAD in declared .py files, plus the stem of a file HEAD lacks, hyphenated included; _SYMBOL_SHAPE now accepts `-`); drive-phase red_block always passes it, --introduces stays the override (ds7h: submit with no --introduces proves a red on `foo`; sr213 unit case). F576: _filed_returns.HELPER_SOURCE mark; helper_red_first requires redFirst.source == mark; submit marks the block it fills and strips a typed mark when no helper ran (ma1 rewritten: unmarked twin and wrong-mark are not the helper's). Hyphen --case: _is_named matches a label's first word when it contains - or _ (sr212). Docs: PLUGIN-BUILD-GUIDE, audit-executor.md, execute-task.md. Because the mark is new, test_audit_lookup.py and test_audit_task.py (OUTSIDE declared files; edits were allowed) mark their red_verdict-built blocks. Sweep: python3 tools/sweep-selftests.py exit 0 (all files ok). NOT DONE: F613 JS missing-module table, house-runner abort naming an introduced symbol or declared file as a missing-symbol red, F621 inline-suite red proof via test hunks.",
+        "descriptive": "The red-first helper reads for/with replacements and bare annotations right, submit derives introduced symbols itself, and only submit-marked blocks count as the helper's."
       },
       "startedAt": "2026-10-10T16:43:49Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T17:12:44Z",
+      "verifiedBy": [
+        "sr186 rows (for/with/bare annotation)",
+        "sr212",
+        "sr213",
+        "ds7h",
+        "ma1 (marked/unmarked twin)"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T17:12:43Z.ad924e",
         "status": "passed",
         "at": "2026-10-10T17:12:43Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "f96824a4a2d8",
+        "at": "2026-10-10T17:12:44Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T17:04:28Z",
+        "basis": "`python3 plugins/audit/tests/test__filed_returns.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 53/54 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
       "id": "P123.19",
       "title": "close-phase refuses before merging when the evidence directory is git-ignored",
-      "status": "pending",
+      "status": "in_progress",
       "description": "With docs/audit/evidence excluded (e.g. via .git/info/exclude), a landing from the branch's own checkout merges and then exits 1 because `commit_landing`/`_commit_stamp` refuses an ignored record path ('the stamp is NOT committed'); the irreversible step has already happened. Structurally correct: check the records the landing will commit (`_scoped_commit.ignored_records`) before the merge and refuse with the remedy, so a refusal never follows a merge; keep the post-merge message for causes that cannot be known in advance, and make it say the merge landed and what is left. Record the exit behaviour in COMPATIBILITY.md. Regression: ignored evidence dir -> exit 1 with the branch NOT merged into its parent; not ignored -> lands as today. Faults: F570.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -1445,16 +1461,22 @@
         "P123.16"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T17:12:44Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T17:31:14Z.c4014d",
+        "status": "passed",
+        "at": "2026-10-10T17:31:14Z"
+      }
     },
     {
       "id": "P123.20",
@@ -2794,6 +2816,58 @@
       "blockedBy": [
         "P123.5"
       ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.44-64p",
+      "title": "Red-first reads a JS missing-module failure, a house-runner abort and an inline suite as the reds they are",
+      "status": "pending",
+      "description": "Follow-up to the red-first helper task, which returned these three as not done. (1) A JS missing-module failure (Vite \"Failed to resolve import\", jest \"Cannot find module\", node ERR_MODULE_NOT_FOUND) whose path resolves to a declared file is a missing-symbol red: one per-runner table of missing-module spellings in stamp-verification, not a second Python-only list. (2) The house runner shape: a --selftest suite whose body aborts on the task's new name (AttributeError/TypeError/NameError naming an introduced symbol, or an import error naming a declared file, printing SELFTEST FAILED: N-1/N) is today graded 'no test was collected or none reached an assertion'; an abort naming an introduced symbol (derived or --introduces) or a declared file is a missing-symbol red. The helper task's own red-first went could-not-prove on exactly this shape. (3) An inline suite (test and implementation in one file) is red-proved by applying only the added test hunks to HEAD in the throwaway tree, or graded could-not-prove with that reason - never refused as 'fix the test'; audit-task add/scope pick regression mode for such a file by default. Faults: F613, F621.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/execute-task.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: a Vite 'Failed to resolve import ./x' / jest 'Cannot find module' / ERR_MODULE_NOT_FOUND line naming a declared file grades a missing-symbol red; one naming an undeclared path does not",
+          "plugins/audit/tests/test_stamp_verification.py: SELFTEST FAILED N-1/N with an AttributeError naming an introduced symbol grades proved; the same abort naming an unrelated name stays could-not-prove",
+          "plugins/audit/tests/test_stamp_verification.py: an inline suite is red-proved from its added test hunks alone, or could-not-prove with the inline reason",
+          "plugins/audit/tests/test_audit_task.py: add/scope of a task whose only test file is also its source defaults to regression mode"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
       "dependsOn": [],
       "attempts": 0,
       "maxAttempts": 3,

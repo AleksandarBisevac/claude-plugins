@@ -526,6 +526,13 @@ depending on an implementation:
   reason. `close-phase.py`'s refusal for a phase that records no branch and whose composed
   name is not one moved from **exit 4 to exit 1**: git answered, and the command is what has
   to change (`--branch`),
+- **a landing whose record directory git ignores — and it changed.** `close-phase.py`
+  with the journal directory or the evidence directory excluded (a `.gitignore` rule, or
+  `.git/info/exclude`) while the plan file itself is versioned used to merge the branch and then exit 1 because the stamp commit
+  refused the ignored record. It now exits 1 **before** the merge, naming the ignored path and the
+  rule to remove, with the branch not merged; the exit code is unchanged and the point it is
+  reached at moved earlier. A cause that cannot be known in advance still exits 1 after the merge,
+  and the output then says the merge landed and that committing the stamp is what is left,
 - **closing over a verdict that no longer holds — and it changed.** `audit-task.py done` and
   `close-phase.py` used to exit 0 closing a task or landing a phase whatever its newest recorded
   gate verdict said; each now refuses instead — `done` exits 2, `close-phase` exits 1 — naming
