@@ -780,7 +780,7 @@
     {
       "id": "P124",
       "title": "A phase runs its ready tasks as waves, and task scopes carry their companions",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P124.json"
     }
   ],
@@ -1280,7 +1280,12 @@
       "P124.2",
       "P124.4",
       "P124.9",
-      "P124.10"
+      "P124.10",
+      "P124.7",
+      "P124.11",
+      "P124.12",
+      "P124.14-k2x",
+      "P124.15-k2x"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1450,7 +1455,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "examples/acme-store/acme-store-audit.html": [
       "P13.3",
@@ -1618,7 +1624,8 @@
       "P122.6-z4y",
       "P124.2",
       "P124.7",
-      "P124.12"
+      "P124.12",
+      "P124.9"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -2592,7 +2599,8 @@
       "P121.1",
       "P123.6-z4y",
       "P122.8-z4y",
-      "P122.10-z4y"
+      "P122.10-z4y",
+      "P124.14-k2x"
     ],
     "plugins/audit/scripts/_refs.py": [
       "P23.1",
@@ -2766,7 +2774,8 @@
       "P102.10",
       "P122.8-z4y",
       "P124.2",
-      "P124.6"
+      "P124.6",
+      "P124.15-k2x"
     ],
     "plugins/audit/scripts/governance/_evidence_io.py": [
       "P29.4",
@@ -2892,7 +2901,8 @@
       "P121.14-eof",
       "P123.6-z4y",
       "P122.8-z4y",
-      "P122.9-z4y"
+      "P122.9-z4y",
+      "P124.7"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -3146,7 +3156,8 @@
       "P121.7",
       "P121.13-eof",
       "P121.18-eof",
-      "P122.3"
+      "P122.3",
+      "P124.14-k2x"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -3555,7 +3566,9 @@
       "P85.1",
       "P104.18-tog",
       "P118.6",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.7",
+      "P124.13-k2x"
     ],
     "plugins/audit/scripts/panel/_panel_state.py": [
       "P12.3",
@@ -3882,7 +3895,8 @@
       "P119.9-g0k",
       "P122.8-z4y",
       "P124.8",
-      "P124.12"
+      "P124.12",
+      "P124.15-k2x"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -4533,7 +4547,8 @@
       "P124.1",
       "P124.4",
       "P124.9",
-      "P124.10"
+      "P124.10",
+      "P124.14-k2x"
     ],
     "plugins/audit/tests/test__panel_composition.py": [
       "P18.7",
@@ -4569,7 +4584,8 @@
       "P104.18-tog",
       "P115.3-4yc",
       "P115.4-4yc",
-      "P115.5-4yc"
+      "P115.5-4yc",
+      "P124.13-k2x"
     ],
     "plugins/audit/tests/test__panel_policy.py": [
       "P59.10",
@@ -4833,7 +4849,8 @@
       "P119.5-g0k",
       "P119.6-g0k",
       "P119.9-g0k",
-      "P124.8"
+      "P124.8",
+      "P124.15-k2x"
     ],
     "plugins/audit/tests/test_audit_status.py": [
       "P25.2",
@@ -5259,7 +5276,8 @@
       "P69.4-j6r",
       "P74.2-qq5",
       "P124.2",
-      "P124.6"
+      "P124.6",
+      "P124.15-k2x"
     ],
     "plugins/audit/tests/test_merge_manifest.py": [
       "P60.2",
@@ -5464,7 +5482,8 @@
       "P121.7",
       "P121.13-eof",
       "P121.18-eof",
-      "P122.3"
+      "P122.3",
+      "P124.14-k2x"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
@@ -5563,7 +5582,8 @@
       "P108.13-4gh",
       "P108.17-4gh",
       "P108.19-4gh",
-      "P122.9-z4y"
+      "P122.9-z4y",
+      "P124.16-k2x"
     ],
     "tools/check-example-ledgers.py": [
       "P32.10",
@@ -5694,7 +5714,8 @@
       "P118.8",
       "P118.9",
       "P122.8-z4y",
-      "P122.10-z4y"
+      "P122.10-z4y",
+      "P124.14-k2x"
     ],
     "tools/redfirst.sh": [
       "P55.13"
@@ -5742,12 +5763,14 @@
       "P79.8-5bh",
       "P85.4",
       "P81.15-j7p",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.11"
     ],
     "plugins/audit/tests/test__gate_derive.py": [
       "P79.2",
       "P79.8-5bh",
-      "P81.15-j7p"
+      "P81.15-j7p",
+      "P124.11"
     ],
     "plugins/audit/scripts/governance/derive-phase-gate.py": [
       "P79.3",
@@ -5938,7 +5961,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/authors.png": [
       "P84.7-791",
@@ -5951,7 +5975,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/dark.png": [
       "P84.7-791",
@@ -5964,13 +5989,15 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/demo-gate.gif": [
       "P84.7-791",
       "P103.8",
       "P112.1-uce",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/expanded.png": [
       "P84.7-791",
@@ -5983,7 +6010,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/filtered.png": [
       "P84.7-791",
@@ -5996,7 +6024,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/filters.png": [
       "P84.7-791",
@@ -6009,7 +6038,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/mobile.png": [
       "P84.7-791",
@@ -6022,7 +6052,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/overview.png": [
       "P84.7-791",
@@ -6035,7 +6066,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/panel-appearance.png": [
       "P80.8",
@@ -6054,7 +6086,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/panel-blocks.png": [
       "P80.8",
@@ -6073,7 +6106,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/panel-composition-expanded.png": [
       "P80.8",
@@ -6092,7 +6126,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/panel-composition.png": [
       "P80.8",
@@ -6111,7 +6146,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/panel-confirm.png": [
       "P80.8",
@@ -6130,7 +6166,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/panel-dark.png": [
       "P80.8",
@@ -6149,7 +6186,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/panel-gate.png": [
       "P80.8",
@@ -6168,7 +6206,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/panel-guards.png": [
       "P80.8",
@@ -6187,7 +6226,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/panel-help.png": [
       "P80.8",
@@ -6206,7 +6246,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/panel-mobile.png": [
       "P80.8",
@@ -6225,7 +6266,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/panel-monthly.png": [
       "P80.8",
@@ -6244,7 +6286,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/panel-overview.png": [
       "P80.8",
@@ -6263,7 +6306,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/panel-person.png": [
       "P80.8",
@@ -6282,7 +6326,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/panel-policy-expanded.png": [
       "P80.8",
@@ -6301,7 +6346,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/panel-policy.png": [
       "P80.8",
@@ -6320,7 +6366,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/panel-proposals.png": [
       "P80.8",
@@ -6339,7 +6386,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "docs/screenshots/panel-usage.png": [
       "P80.8",
@@ -6358,7 +6406,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P115.5-4yc",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P124.13-k2x"
     ],
     "tools/ui-tests/evidence-read-error.test.mjs": [
       "P80.15-rtb"
@@ -6431,7 +6480,8 @@
       "P109.1"
     ],
     "plugins/audit/tests/test__panel_ui.py": [
-      "P109.1"
+      "P109.1",
+      "P124.13-k2x"
     ],
     "package.json": [
       "P109.3"
@@ -6513,7 +6563,8 @@
     ],
     "plugins/audit/scripts/ui/panel/settings.js": [
       "P105.4",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P124.13-k2x"
     ],
     "tools/ui-tests/config-patch.test.mjs": [
       "P105.4",
@@ -6686,7 +6737,9 @@
     ],
     "plugins/audit/tests/test__panel_settings.py": [
       "P104.18-tog",
-      "P118.6"
+      "P118.6",
+      "P124.7",
+      "P124.13-k2x"
     ],
     "tools/demo-gate.tape": [
       "P112.1-uce",
@@ -6786,7 +6839,10 @@
       "P122.6-z4y",
       "P122.11-z4y",
       "P124.7",
-      "P124.12"
+      "P124.12",
+      "P124.11",
+      "P124.14-k2x",
+      "P124.15-k2x"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -6812,7 +6868,10 @@
       "P122.6-z4y",
       "P122.11-z4y",
       "P124.7",
-      "P124.12"
+      "P124.12",
+      "P124.11",
+      "P124.14-k2x",
+      "P124.15-k2x"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6",
@@ -6830,7 +6889,8 @@
       "P118.23-v7t",
       "P119.5-g0k",
       "P119.9-g0k",
-      "P119.10-g0k"
+      "P119.10-g0k",
+      "P124.14-k2x"
     ],
     "plugins/audit/tests/test__filed_returns.py": [
       "P118.3",
@@ -6844,7 +6904,8 @@
       "P118.23-v7t",
       "P119.5-g0k",
       "P119.9-g0k",
-      "P119.10-g0k"
+      "P119.10-g0k",
+      "P124.14-k2x"
     ],
     "plugins/audit/agents/guide.md": [
       "P118.9"
@@ -6959,10 +7020,12 @@
       "P124.1"
     ],
     "plugins/audit/scripts/git/integrate-task.py": [
-      "P124.4"
+      "P124.4",
+      "P124.7"
     ],
     "plugins/audit/tests/test_integrate_task.py": [
-      "P124.4"
+      "P124.4",
+      "P124.7"
     ],
     "plugins/audit/scripts/governance/_runner_collects.py": [
       "P124.9"
@@ -6975,6 +7038,57 @@
     ],
     "plugins/audit/tests/test__scope_companions.py": [
       "P124.10"
+    ],
+    "tools/ui-tests/int-or-auto.test.mjs": [
+      "P124.13-k2x"
+    ],
+    "docs/audit/evidence/returns/P122.1/20261009T193258Z.executor.json": [
+      "P124.16-k2x"
+    ],
+    "docs/audit/evidence/returns/P122.10-z4y/20261010T002105Z.executor.json": [
+      "P124.16-k2x"
+    ],
+    "docs/audit/evidence/returns/P122.10-z4y/20261010T005441Z.executor.json": [
+      "P124.16-k2x"
+    ],
+    "docs/audit/evidence/returns/P122.11-z4y/20261010T011646Z.executor.json": [
+      "P124.16-k2x"
+    ],
+    "docs/audit/evidence/returns/P122.11-z4y/20261010T013445Z.executor.json": [
+      "P124.16-k2x"
+    ],
+    "docs/audit/evidence/returns/P122.2/20261009T194822Z.executor.json": [
+      "P124.16-k2x"
+    ],
+    "docs/audit/evidence/returns/P122.3/20261009T202501Z.executor.json": [
+      "P124.16-k2x"
+    ],
+    "docs/audit/evidence/returns/P122.4/20261009T205252Z.executor.json": [
+      "P124.16-k2x"
+    ],
+    "docs/audit/evidence/returns/P122.6-z4y/20261009T212317Z.executor.json": [
+      "P124.16-k2x"
+    ],
+    "docs/audit/evidence/returns/P122.7-z4y/20261009T215442Z.executor.json": [
+      "P124.16-k2x"
+    ],
+    "docs/audit/evidence/returns/P122.8-z4y/20261009T230707Z.executor.json": [
+      "P124.16-k2x"
+    ],
+    "docs/audit/evidence/returns/P122.9-z4y/20261009T232809Z.executor.json": [
+      "P124.16-k2x"
+    ],
+    "docs/audit/evidence/returns/P122.9-z4y/20261009T234428Z.executor.json": [
+      "P124.16-k2x"
+    ],
+    "docs/audit/evidence/returns/P122/09aed798f46fd04e3b7061223197149da7e63a40.reviewer.json": [
+      "P124.16-k2x"
+    ],
+    "docs/audit/evidence/returns/P124.4/20261010T032202Z.executor.json": [
+      "P124.16-k2x"
+    ],
+    "docs/audit/evidence/returns/P124/79f02001d457770458000381194ca97b81deaebf.reviewer.json": [
+      "P124.16-k2x"
     ]
   },
   "bugs": [
