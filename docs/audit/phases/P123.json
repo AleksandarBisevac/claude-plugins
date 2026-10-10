@@ -2029,7 +2029,7 @@
     {
       "id": "P123.26",
       "title": "Suites pass with a space and a non-suffix symlink in TMPDIR and the interpreter path",
-      "status": "in_progress",
+      "status": "done",
       "description": "Reproduced on main (HEAD export, TMPDIR and venv interpreter under a path with a space; all green without the space): test_guard_secrets_read 23 reds (tt2, tt3, ww5, ww7a, ww10a, lq7 x4, sm17, we12, xs0, xs1, xs3, xs4, lw2, lw3, lw8, lw10-lw13), test__config tr7, test_journal_writes tf3/tf4, test_stamp_verification sr44. The ones read so far build commands with an unquoted `%s` path (`\"cd %s && ...\"`), which is a different command to the shell - a fixture defect. Triage every red: quote fixture paths with shlex.quote where the test means one word; any red that survives quoting is a product fail-open (a guard reading a quoted spaced path wrongly) and is handed to the guard-readers task with its repro, not fixed here. Then add a sweep leg that runs with TMPDIR containing a space AND reached through a symlink whose target is not a suffix-extension of the link, so the class stays measured, described in every document gate-parity compares. Regression: the leg is green on the fixed tree and red on main. Faults: F543.",
       "files": [
         "plugins/audit/tests/test_guard_secrets_read.py",
@@ -2076,25 +2076,41 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "890e3e0bfff7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Quoted fixture paths with shlex.quote in test__config (tr7), test_journal_writes (tf3/tf4), test_guard_secrets_read (all listed sites except 3), test_stamp_verification (sr44 NODE_OPTIONS). Added tools/sweep-selftests.py --spaced leg: spaced_layout builds TMPDIR 'holder/via/s p' where via -> holder/real (non-suffix symlink) plus an interpreter symlink under 'py dir'; refuses on Windows (exit 2); SPACED_EXEMPT table with reasons, printed in the tail; 5 new selftest cases sp1-sp5 (sweep selftest 60/60). Wired the leg in tools/verify.sh (skipped by --fast), ci.yml (non-Windows step), CONTRIBUTING.md and CLAUDE.md; gate-parity AUDITED_EXEMPTIONS row for SPACED_EXEMPT (instrument: sp5); gate-parity reports both runners run the same legs. Gates: default sweep exit 0 (330/330 files), --spaced sweep exit 0 (330/330 files, exempt files not run), ruff exit 0, vermin exit 0, gate-parity exit 0. SURVIVING REDS UNDER QUOTING (product fail-opens, NOT fixed, exempted from the leg with reasons, to hand to the guard-readers task): (1) plan-gate shell reader (guard-secrets-read / require-plan path) does not grade a redirect whose QUOTED target is an absolute path containing a space: `echo y > '<root with space>/main-P48/src/undeclared.ts'` -> allow, while the same with no space -> block, and `sed -i ... '<same>'` -> block. Cases still red: tt2, tt3, ww10a in test_guard_secrets_read. (2) stamp-verification.py child_env/_TOKEN_SPLIT: a quoted `--require '/a b/setup.js'` option string under the shared root is not NAMED (sr44 red). NEW REDS FOUND BY THE LEG IN FILES OUTSIDE MY SCOPE (exempted, not edited): the machine-path scrub ends a path at its first space, leaving `<outside-repo> b/...` (test__machine_paths mp2, test__journal_io ft4, test__evidence_io sc1, test__manifest_io ws1, test_audit_task ff17 fm1) - a product privacy gap; _harness.py fr2/sr5 split a child's output with .split() (fixture); .claude/hooks/guard-release.py gr34/gr34c build `cd %s` / `git -C %s` unquoted (fixture; file has another task's uncommitted diff, untouched). Not run: the Windows leg of the spaced sweep (symlinks).",
+        "descriptive": "The sweep now has a spaced, symlinked TMPDIR and interpreter leg wired into verify.sh and CI; four suites' fixtures are quoted, and the defects that quoting cannot cure are exempted by name with their repro."
       },
       "startedAt": "2026-10-10T20:24:06Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T21:03:32Z",
+      "verifiedBy": [
+        "tools/sweep-selftests.py sp1",
+        "tools/sweep-selftests.py sp2",
+        "tools/sweep-selftests.py sp3",
+        "tools/sweep-selftests.py sp4",
+        "tools/sweep-selftests.py sp5"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T21:03:31Z.6b2dbc",
         "status": "passed",
         "at": "2026-10-10T21:03:31Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "890e3e0bfff7",
+        "at": "2026-10-10T21:03:32Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task, expectRedFirst false. Reds watched before the fix under a spaced + symlinked TMPDIR and a spaced symlinked interpreter: test_guard_secrets_read (tt2 tt3 ww5 ww7a ww10a lq7x4 sm17 we12 xs0 xs1 xs3 xs4 lw2 lw3 lw8 lw10-lw13), test__config tr7, test_journal_writes tf3 tf4, test_stamp_verification sr44.",
+        "at": "2026-10-10 (first reproduction run, before the edits)"
       }
     },
     {
       "id": "P123.27",
       "title": "The Azure example pins a tag holding every script it calls, and a release check holds it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "`docs/examples/azure-pipelines.yml` fetches and clones the plugin at v0.5.0 (`auditPlugin` URL and `git clone --branch v0.5.0`), while its steps call `governance/run-test-gate.py` and `status/audit-status.py` with options v0.5.0 does not have. Repin to the current release tag and add a check to the release set that every plugin script path an example invokes exists at the tag it pins (git ls-tree), refusing rather than passing when the tag is not available locally; add it to the version-bump follower list so the next bump cannot leave the example behind. Regression: the check fails on the current v0.5.0 pin. Faults: F533.",
       "files": [
         "docs/examples/azure-pipelines.yml",
@@ -2130,16 +2146,22 @@
         "P123.26"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T21:03:32Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T21:27:13Z.5dc8ec",
+        "status": "passed",
+        "at": "2026-10-10T21:27:13Z"
+      }
     },
     {
       "id": "P123.28",
@@ -3157,6 +3179,61 @@
         "add": [
           "plugins/audit/tests/test_render_report.py: under a CRLF-default text mode the rendered HTML and Markdown are written with LF bytes",
           "plugins/audit/tests/test__output.py: text_write_newline_violations flags a bare text-mode write open in a hooks/ file, and NEWLINE_PENDING holds no row"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.47-64p",
+      "title": "A machine path with a space is scrubbed whole, a quoted preload is named, and the spaced leg exempts no product suite",
+      "status": "pending",
+      "description": "The spaced sweep leg found product reds it could not fix in scope. (F627, privacy) `_machine_paths` ends a machine path at its first space, so `<home>/My Projects/...` is committed as `<outside-repo> Projects/...` or with the user-specific tail - in shards, evidence, journal and returns, the very writes the scrub-by-default layer exists to protect. Match each known machine root (home, the project's parent, TMPDIR, and their realpaths) as a LITERAL prefix rather than a no-space token pattern, so a spaced root is replaced whole and a spaced path inside the repo stays repo-relative; reds today under the spaced leg: test__machine_paths mp2, test__journal_io ft4, test__evidence_io sc1, test__manifest_io ws1, test_audit_task ff17, fm1. `tools/check-committed-pii.py` gains a probe for a spaced home path. (F626) stamp-verification's child_env/_TOKEN_SPLIT splits NODE_OPTIONS on whitespace, so a quoted `--require '<root>/a b/setup.js'` preload is not named in the basis (sr44): split it the way node does, quotes honoured. (F628, fixture part) `_harness.py` fr2/sr5 split a child's output with `.split()` - parse it properly. Then remove every SPACED_EXEMPT row these fix in tools/sweep-selftests.py; the rows left after this task are only test_guard_secrets_read.py and .claude/hooks/guard-release.py, which the orchestrator's guard tasks remove. Regression: each named case green under `python3 tools/sweep-selftests.py --spaced` with its row gone. Faults: F626, F627, F628.",
+      "files": [
+        "plugins/audit/scripts/_machine_paths.py",
+        "plugins/audit/tests/test__machine_paths.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/tests/test__manifest_io.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/tests/_harness.py",
+        "tools/sweep-selftests.py",
+        "tools/check-committed-pii.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__machine_paths.py: a home root containing a space is replaced whole - no fragment of the user path survives - and a spaced repo-internal path stays repo-relative",
+          "plugins/audit/tests/test_stamp_verification.py: a quoted --require preload with a space in NODE_OPTIONS is named in the basis",
+          "tools/sweep-selftests.py: SPACED_EXEMPT holds no row for the scrub, stamp-verification or harness suites"
         ],
         "expectRedFirst": true,
         "gate": [

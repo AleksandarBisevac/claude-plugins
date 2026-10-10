@@ -357,6 +357,7 @@ ask:
 
 ```bash
 python3 tools/check-release-published.py   # the newest published tag has a Release, and Latest names it
+python3 tools/check-example-pins.py        # every plugin script an example calls exists at the tag it pins
 ```
 
 **Do not commit, push, tag or release without being asked.** Permission to commit is not

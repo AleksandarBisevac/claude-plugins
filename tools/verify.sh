@@ -627,6 +627,12 @@ fi
 #R   4. docs/screenshots/ — each image records the version it was shot at.
 #R        node tools/capture-screenshots.mjs
 #R
+#R   4b. docs/examples/ — an example that clones the plugin pins a release tag, and
+#R      a bump that leaves it behind sends a reader to scripts the tag may not have.
+#R        repin each example to the newest tag that exists (at preflight that is
+#R        the previous release, since the new tag is cut afterwards); the row
+#R        below asks each pinned tag's tree for every script the example calls
+#R
 #R CAPTURE FOLLOWS THE BUMP. Capturing first and bumping afterwards invalidates
 #R every picture and the shutter runs twice. That is not a hypothetical.
 #R
@@ -700,6 +706,10 @@ PYEOF
   run "follower 2: artifacts stamp v$version" refs_rule artifact_version_drift
   run "follower 3: docs/index.html copies follower 2" docs_index_is_copy
   run "follower 4: screenshots were shot at v$version" refs_rule screenshot_capture_drift
+  # Asks git, not the network: a pinned tag missing locally is a refusal, never a
+  # pass. Release set only, because a CI checkout does not promise to carry tags.
+  run "follower 4b: example pins hold the scripts they call" \
+    python3 tools/check-example-pins.py
   # THE ARM THE PLAIN RUN LEAVES OUT. A release is cut from a commit, so here the
   # question has an answer: does HEAD carry the pages the render above found current.
   # A re-render left unstaged is green in every before-commit check and absent from

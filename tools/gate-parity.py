@@ -254,6 +254,14 @@ ABSENT_BY_DESIGN = (
      "stale the day a workflow that runs at release time - a tag-triggered one - "
      "adopts it, which is the shape that would make it a CI gate honestly"),
 
+    ("tools/check-example-pins.py", ("ci.yml",),
+     "it asks the repository's tags whether the tag an example pins holds every "
+     "plugin script the example calls, and a CI checkout does not promise to carry "
+     "tags - a run there would refuse for a clone it does not control. It belongs "
+     "to the release set: verify.sh runs it under --release alone, as the example "
+     "follower of a version bump, and both documents name it in their Releasing "
+     "sections. This row goes stale the day the CI checkout fetches tags"),
+
     ("tools/prove-gates.py", ("verify.sh", "ci.yml", "CONTRIBUTING.md"),
      "minutes rather than seconds, and it MUTATES the tree while it runs, so it is "
      "not a per-commit gate. This was once the argument for no row at all: a gate no "
@@ -2401,6 +2409,8 @@ NOT_AN_EXEMPTION = {
     "SYNTHETIC": "the wordings a synthetic PII verdict is printed with, so an empty "
                  "run cannot read as a clean one",
     "FINDINGS": "what each release-publication finding means, printed with it",
+    "REFUSALS": "what each question a release check could not put means, printed "
+                "with it so a refusal cannot read as a clean run",
     "_ALWAYS": "a RULE table, and the opposite of an exemption: every row is a "
                "history rewrite this hook always refuses, with the why it prints",
     "LIST_ANCHORS": "a RULE table too, and the opposite of an exemption twice over: "

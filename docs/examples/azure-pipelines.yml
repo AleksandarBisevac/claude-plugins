@@ -1,21 +1,13 @@
 # Azure Pipelines example — gate a build on the audit manifest's state and
 # publish the audit report as a build artifact.
 #
-# The three scripts (validate-manifest.py, audit-status.py, render-report.py)
-# are fetched standalone from a PINNED release tag of the plugin repo — at
-# that tag each was a single dependency-free Python stdlib file, so curling
-# them one by one is safe and reproducible (bump the tag deliberately — or
-# vendor the scripts into your repo and skip the curl step entirely).
-#
-# That single-file layout is a snapshot of v0.5.0. On current main these
-# scripts have been split into an entry point plus sibling modules (e.g.
-# _manifest_io, _ui_theme, _areas, _loader, _fmt, _report_html,
-# _report_usage, _report_ui), and render-report.py also reads
-# scripts/ui/report.css and scripts/ui/report.js. Cherry-picking single
-# files by curl will not work against main. If you are tracking main
-# instead of a pinned tag, clone or download the whole
-# plugins/audit/scripts/ directory (including its ui/ subfolder) rather
-# than curling individual files.
+# The scripts (validate-manifest.py, audit-status.py, render-report.py,
+# run-test-gate.py) are not standalone files: each is an entry point with sibling
+# modules and, for the report, ui/ assets. So the first step clones the plugin
+# repository at a PINNED release tag and every later step calls the scripts from
+# that clone. Bump the tag deliberately; `tools/check-example-pins.py` asks the
+# tag's tree whether every script this file calls exists there. (Or vendor the
+# whole plugins/audit/scripts/ directory into your repo and skip the clone.)
 #
 # Optional: /audit:sync works headless here too — provide a PAT via the
 # AZURE_DEVOPS_EXT_PAT secret variable (az devops reads it; never echo it).
@@ -28,7 +20,6 @@ pool:
   vmImage: ubuntu-latest
 
 variables:
-  auditPlugin: https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v0.5.0/plugins/audit
   manifest: docs/audit/audit-plan.json
 
 steps:
@@ -46,22 +37,21 @@ steps:
 
   - script: |
       set -e
-      mkdir -p $(Agent.TempDirectory)/audit
-      for s in validate-manifest.py audit-status.py render-report.py; do
-        curl -fsSL "$(auditPlugin)/scripts/$s" -o "$(Agent.TempDirectory)/audit/$s"
-      done
-    displayName: Fetch audit scripts (pinned tag)
+      git clone --depth 1 --branch v3.2.0 \
+        https://github.com/AleksandarBisevac/claude-plugins.git \
+        "$(Agent.TempDirectory)/plugin-src"
+    displayName: Fetch the audit plugin's scripts/ tree (pinned tag)
 
-  - script: python "$(Agent.TempDirectory)/audit/validate-manifest.py" "$(manifest)"
+  - script: python "$(Agent.TempDirectory)/plugin-src/plugins/audit/scripts/manifest/validate-manifest.py" "$(manifest)"
     displayName: Validate audit manifest (structure, links, cycles)
 
   - script: |
-      python "$(Agent.TempDirectory)/audit/audit-status.py" "$(manifest)" --gate
+      python "$(Agent.TempDirectory)/plugin-src/plugins/audit/scripts/status/audit-status.py" "$(manifest)" --gate
     displayName: 'Gate: manifest valid, no open high-severity bugs, no blocked tasks'
     # tune with e.g.  --fail-on invalid,open-bugs,in-progress  for a release freeze
 
   - script: |
-      python "$(Agent.TempDirectory)/audit/render-report.py" "$(manifest)" \
+      python "$(Agent.TempDirectory)/plugin-src/plugins/audit/scripts/report/render-report.py" "$(manifest)" \
         --out-dir "$(Build.ArtifactStagingDirectory)"
     displayName: Render audit report
     condition: succeededOrFailed()
@@ -75,14 +65,7 @@ steps:
 
   # --- the third place: meta.fullGate, measured against the whole checkout -------
   # `run-test-gate.py --full` needs its sibling modules (`_evidence_io`, `_manifest_io`,
-  # `_loader`, ...), so this clones the whole `plugins/audit/scripts/` tree rather than
-  # curling one file the way the pinned-tag steps above do - see the header note.
-  - script: |
-      set -e
-      git clone --depth 1 --branch v0.5.0 \
-        https://github.com/AleksandarBisevac/claude-plugins.git \
-        "$(Agent.TempDirectory)/plugin-src"
-    displayName: Fetch the audit plugin's scripts/ tree (pinned tag)
+  # `_loader`, ...), which the clone above already carries.
 
   - script: |
       python "$(Agent.TempDirectory)/plugin-src/plugins/audit/scripts/governance/run-test-gate.py" \

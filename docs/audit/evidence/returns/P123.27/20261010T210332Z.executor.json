@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/sweep-selftests.py --spaced": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests": "pass",
+    "python3 tools/gate-parity.py": "pass",
+    "python3 tools/check-example-pins.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T21:18:51Z",
+    "basis": "`python3 tools/check-example-pins.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 14 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code, its declared test files new at HEAD (tools/check-example-pins.py) laid over as empty files), each passing with the working tree's implementation - l1 (house FAIL): SELFTEST FAILED: 13/14 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "Added tools/check-example-pins.py (14 selftest cases incl. a live case l1 reading the committed example against this repo's tags, and a real-git fixture; reads pins and plugin script paths from an example's code lines, asks git ls-tree at each pinned tag, refuses on missing tag/no tags, also flags a pin behind the newest tag). Repinned docs/examples/azure-pipelines.yml to v3.2.0: one clone step at the top, every step calls the scripts from the clone (the old flat curl could not work at v3.x). Wired into tools/verify.sh --release as follower 4b with a #R list entry; gate-parity exemption row (not in ci.yml, tags not guaranteed) and NOT_AN_EXEMPTION row for REFUSALS; CONTRIBUTING.md and CLAUDE.md name it in Releasing. Sweep, sweep --spaced, ruff, vermin, gate-parity exit 0 (run before adding l1; l1 re-run via selftest and ruff). Process deviation: some edits (yml rewrite, verify.sh, CONTRIBUTING, CLAUDE.md, one sed) were made via python/sed in Bash rather than the Edit tool. PLUGIN-BUILD-GUIDE.md needed no change.",
+    "descriptive": "The Azure example pins a tag that holds every script it calls, and the release set refuses a stale or unverifiable pin."
+  },
+  "testsAdded": [
+    "tools/check-example-pins.py r1,r2,c1-c8,i1,l1,g1,g2"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:295c0a6b0fec4385ba068aaca006b1335a0ce33940bbc6ccf52dba3bf0a1e7f6\",\"dirtyDigest\":\"sha256:3edabf2fbb6a02d6981cf980d390ea93ed731e24c5feb7f2b904814a0a680255\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\"CLAUDE.md\":\"7275ffd26dd61c75\",\"CONTRIBUTING.md\":\"99705aec80a38550\",\"docs/examples/azure-pipelines.yml\":\"183bf417215f7d7f\",\"tools/check-example-pins.py\":\"68c1c913be1086f7\",\"tools/gate-parity.py\":\"69cbe5bcb1026ed5\",\"tools/verify.sh\":\"4cefadf15bffe952\"},\"head\":\"890e3e0b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CLAUDE.md\",\"CONTRIBUTING.md\",\"PLUGIN-BUILD-GUIDE.md\",\"docs/examples/azure-pipelines.yml\",\"tools/check-example-pins.py\",\"tools/gate-parity.py\",\"tools/verify.sh\"],\"scopeDigest\":\"sha256:3c80f2fea929bd1803ddebbc1a804cbbc665c0bba9be85c2d71a02cdce730b03\",\"v\":2}"
+}
