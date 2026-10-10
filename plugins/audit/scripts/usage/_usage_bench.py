@@ -320,7 +320,7 @@ def _mode(argv):
     multi-second benchmark run because a stray flag came along would be paid for
     on every push. A mode that can be entered by accident will be.
     """
-    if "--selftest" in argv:
+    if _output.selftest_requested(argv):
         return "selftest"
     if "--bench" in argv:
         return "bench"

@@ -458,7 +458,7 @@ def parse_args(argv):
 
 
 def main(argv):
-    if "--selftest" in argv:
+    if _output.selftest_requested(argv):
         # Kept, rather than left to fall through to the usage error below: every
         # other file here still answers `--selftest`, so silence or an exit 2 would
         # read as a broken flag rather than as a moved suite. It deliberately does

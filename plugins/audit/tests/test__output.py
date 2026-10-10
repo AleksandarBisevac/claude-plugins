@@ -3344,10 +3344,12 @@ def _selftest_flag_cases(check):
               own(["--selftest", "--", "t.py"])],),
           own(["red", "--", "t.py", "--selftest"]) is False
           and own(["--selftest", "--", "t.py"]) is True)
-    check("sfl4 as the value of another option it is that option's text, not "
-          "this script's flag: %r"
-          % ([own(["--note", "--selftest"]), own(["--note", "x", "--selftest"])],),
-          own(["--note", "--selftest"]) is False
+    check("sfl4 the flag counts after another option too, whichever order they "
+          "arrive in: %r"
+          % ([own(["--note", "--selftest"]), own(["--bench", "--selftest"]),
+              own(["--note", "x", "--selftest"])],),
+          own(["--note", "--selftest"]) is True
+          and own(["--bench", "--selftest"]) is True
           and own(["--note", "x", "--selftest"]) is True)
     check("sfl5 a tuple, as a caller holding argv might pass: %r"
           % (own(("--selftest",)),), own(("--selftest",)) is True)
@@ -3367,6 +3369,15 @@ def _selftest_flag_cases(check):
                         "if __name__ == '__main__':\n"
                         "    if selftest_requested(sys.argv[1:]):\n        pass\n")
         _w("other.py", "import sys\nif '--verbose' in sys.argv[1:]:\n    pass\n")
+        _w("local.py", "import sys\nif __name__ == '__main__':\n"
+                       "    argv = sys.argv[1:]\n"
+                       "    if '--selftest' in argv:\n        pass\n")
+        _w("param.py", "import sys\ndef main(argv):\n"
+                       "    if '--selftest' in argv:\n        return 0\n"
+                       "    return 1\n\nmain(sys.argv[1:])\n")
+        _w("unbound.py", "import sys\nif __name__ == '__main__':\n"
+                         "    args = ['--selftest']\n"
+                         "    if '--selftest' in args:\n        pass\n")
         # The ALLOW case, and the mutation it is there for: a lint that fired on
         # every `in sys.argv` for the flag would convict the files that really
         # carry a suite and may read their own argv however they like.
@@ -3380,11 +3391,17 @@ def _selftest_flag_cases(check):
               % (sorted(named.items()),),
               named.get("slice.py") == 3 and named.get("whole.py") == 3
               and named.get("negated.py") == 3)
-        check("sfl7 ALLOW: the helper's spelling, an unrelated flag, and a file "
-              "that carries its own inline suite are silent: %r"
+        check("sfl9 a stub that tests the flag against a local name bound from "
+              "`sys.argv` (a slice included) or against a parameter called "
+              "`argv` is reported too: %r" % (sorted(named.items()),),
+              named.get("local.py") == 4 and named.get("param.py") == 3)
+        check("sfl7 ALLOW: the helper's spelling, an unrelated flag, a name not "
+              "bound from argv, and a file that carries its own inline suite "
+              "are silent: %r"
               % (sorted(named),),
               "helper.py" not in named and "other.py" not in named
-              and "inline.py" not in named and len(hits) == 3)
+              and "inline.py" not in named and "unbound.py" not in named
+              and len(hits) == 5)
     finally:
         shutil.rmtree(stubs, ignore_errors=True)
     check("sfl8 the real tree has no stub spelling the flag off `sys.argv`: %r"

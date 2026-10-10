@@ -405,6 +405,12 @@ TABLE = (
  ("path_preamble_violations", S + "_fmt.py", "after", INSTALL, INSTALL, OUT, "pp1"),
  ("selftest_argv_violations", S + "_fmt.py", "after", INSTALL,
   "\n_probe_flag = '--selftest' in sys.argv\n", OUT, "sfl8"),
+ # A migrated stub that reads the flag off a local name bound from argv - the
+ # spelling that forwards a wrapped command's `--selftest` - is the same defect as
+ # `sys.argv` itself; `sfl9` holds the local and parameter shapes red.
+ ("selftest_argv_violations", S + "manifest/migrate-manifest.py", "replace",
+  "    if _output.selftest_requested(argv):",
+  '    if "--selftest" in argv:', OUT, "sfl8"),
  ("depth_sensitive_paths", S + "_fmt.py", "after", INSTALL,
   "\n_probe_dir = os.path.dirname(__file__)\n", OUT, "ds1"),
  ("house_style_violations", S + "_fmt.py", "after", INSTALL,

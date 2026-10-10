@@ -481,7 +481,7 @@
     {
       "id": "P123.7",
       "title": "No gate or config value is rewritten by the write scrub, and every redaction is journaled",
-      "status": "in_progress",
+      "status": "done",
       "description": "PRIORITY (P122-R13). `_manifest_io.scrubbed_plan` runs `_machine_paths.scrubbed_values` over the WHOLE plan on every save (`atomic_write_json`, `save_plan_json`, `save_sharded`, `save_single_file`), so executable and config values are rewritten with everything else: a `meta.buildCommands` entry naming an interpreter under a home directory becomes the outside-repo token and the gate stops running, and with `--project-dir` below the checkout root an in-repo absolute path becomes checkout-relative while gate steps run with cwd=project. Invariant: an executable or config value is never silently rewritten - it is refused at the door that sets it, or exempt from the scrub. Do both: (1) exempt those fields from `scrubbed_plan` by their POSITION in the plan (`meta.buildCommands.*`, `meta.phaseGate`, `meta.fullGate`, each phase's `testGate`, each task's `tests.gate`, and any other field the plan executes - enumerate them from the readers of `_evidence_io.resolved_commands`), as a pointer table beside `scrubbed_plan`, never a key name at any depth (the flaw R11 removed from the ledger); (2) refuse a machine path in those fields at every door that writes them - audit-task's `--gate` on `add`, `scope`, `add-phase` and `retarget`, the panel settings save of `meta.buildCommands` through `_panel_write`, and derive-phase-gate's derived entry - each refusal naming the field and the remedy (a repo-relative or PATH-resolved spelling), with `tools/check-committed-pii.py` left as the backstop for a hand edit. (P122-R14) `scrubbed_values(keep=)` is a name-keyed exemption with no caller outside the mp8 case: replace it with the pointer exemption or delete it with mp8. (P122-R3, P122-R12) A save that redacts prose must say so: only `_panel_write`'s route journals `plan.redact`, while `_proposals._save`, audit-task's own `save_single_file` call, `_evidence_io`'s `save_plan_json` calls, `close-phase._revalidated_write` and migrate-manifest drop the pointers the writer returns. Make the journal row part of the one writer contract (route them through `_panel_write.save_in_layout`, or have every plan writer journal what it redacted) rather than a duty each caller remembers, and add a case over the committed corpus listing the rewrites the scrub makes today, so rewriting historic prose is a decision on record. (prep note) `_invariants.write_baseline` stores each breach's free-text line and its `subject` through the same scrubbing `atomic_write_json`: establish whether a subject or breach line can carry an absolute path, and make the baseline's match key survive the scrub (compare scrubbed keys on both sides, or keep subjects path-free and say so in `found()`), since a subject the scrub rewrote would never match again and re-report a frozen breach as new. Update SECURITY.md's scrub paragraph to the new rule. Faults: P122-R13, P122-R3, P122-R12, P122-R14, prep-invariants-baseline-breach.",
       "files": [
         "plugins/audit/scripts/_machine_paths.py",
@@ -542,25 +542,45 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "eea4ae7b72a8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_machine_paths: scrubbed_values(keep=) replaced by a position exemption (exempt_positions, ANY_SEGMENT, _below); new executed_value_refusal (names field+shape, remedy repo-relative or PATH-resolved, never the value). _manifest_io: PLAN_EXECUTED_POSITIONS/PHASE_EXECUTED_POSITIONS pointer table beside scrubbed_plan (meta.buildCommands, nodePreamble, fullGate, phaseGate, runtimeBoot, gitRoot; phase testGate, testGateDerived entry/always/smoke, task tests.gate; live phases and parked proposals), executed_positions picks the table by document shape (plan/index, shard, other=none); planned_redactions, redaction_entry, report_redactions(path, pointers, append_from_cli_why, project=None). Journal row now written by every plan writer: _proposals._save, migrate-manifest (after revalidation), close-phase._revalidated_write (only when the write stands), _evidence_io write_pointer and _stamp_since, audit-task's _create_then and _locked_seed; _panel_write builds its row via _mio.redaction_entry. Doors: audit-task --gate/--gate-set name the field (tests.gate/testGate) via executed_value_refusal, batch-file phase/task gates too; panel refuses meta.buildCommands and config executor.worktreeSetup with the executed remedy; derive-phase-gate refuses machine paths in derived testGate/entry/smoke/always before writing. _invariants: baseline matches on stored_key (the scrubbed spelling) on both sides; found() docstring says so. SECURITY.md new bullet on the plan save rule. Tests added: mp8 rewritten, mp9-mp11; ex1-ex6 (ex5 = committed-corpus rewrites on record, ex6 = AST contract that every plan write journals); pr1/pr2; mr1/mr2; rj1/rj2; bc1-bc3; mx1/mx2, fb6b; bs1/bs2; dp-machine. Post-fix cases proven red in throwaway copies (M1-M7: bc3, ex4, mp11, dp-machine, fb6b, pr2+mr2, mp9 each FAIL under its mutation). Full sweep: 328/328 files ok, exit 0.",
+        "descriptive": "The save scrub no longer rewrites gate/build/config commands; every door that writes one refuses a machine path naming the field, every redacting plan save journals plan.redact, and invariants baselines still match scrubbed subjects."
       },
       "startedAt": "2026-10-10T11:46:57Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T12:41:43Z",
+      "verifiedBy": [
+        "test__machine_paths mp8 mp9 mp10 mp11",
+        "test__manifest_io ex1 ex2 ex3 ex4 ex5 ex6",
+        "test__proposals pr1 pr2",
+        "test_migrate_manifest mr1 mr2",
+        "test_close_phase rj1 rj2",
+        "test__panel_write bc1 bc2 bc3",
+        "test_audit_task mx1 mx2 fb6b",
+        "test__invariants bs1 bs2",
+        "test_derive_phase_gate dp-machine"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T12:41:29Z.a62328",
         "status": "passed",
         "at": "2026-10-10T12:41:29Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "eea4ae7b72a8",
+        "at": "2026-10-10T12:41:43Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T12:33:18Z",
+        "basis": "`python3 plugins/audit/tests/test__manifest_io.py --selftest` in a throwaway tree at HEAD exited 1 with 4 of 185 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ex1 (house FAIL): SELFTEST FAILED: 181/185 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.8",
       "title": "Every migrated stub asks selftest_requested(), and the lint sees a local argv name too",
-      "status": "pending",
+      "status": "in_progress",
       "description": "P122.8 added `_output.selftest_requested(argv)` and `selftest_argv_violations()`, whose docstring says it cannot see a stub that reads `--selftest` off a local name bound to `sys.argv`. Four stubs do exactly that (`if \"--selftest\" in argv:` in migrate-manifest's, merge-manifest's, usage/_usage_bench's and render-report's `__main__`). None forwards a command today, but the invariant was every stub. Convert the four to `selftest_requested(...)`, and widen `selftest_argv_violations()` to flag a membership test of `--selftest` against any name bound from `sys.argv` (including a slice) inside a migrated stub, with its prove-gates row (red: plant `argv = sys.argv[1:]` / `\"--selftest\" in argv` in one stub; allow: the helper call). Faults: P122-R5.",
       "files": [
         "plugins/audit/scripts/manifest/migrate-manifest.py",
@@ -569,7 +589,8 @@
         "plugins/audit/scripts/report/render-report.py",
         "plugins/audit/scripts/_output.py",
         "plugins/audit/tests/test__output.py",
-        "tools/prove-gates.py"
+        "tools/prove-gates.py",
+        "plugins/audit/scripts/governance/stamp-verification.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -598,16 +619,22 @@
         "P123.6-z4y"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T12:57:25Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T13:09:28Z.8b5578",
+        "status": "passed",
+        "at": "2026-10-10T13:09:28Z"
+      }
     },
     {
       "id": "P123.9",

@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test__output.py --selftest": "fail",
+    "ruff check (touched files)": "pass",
+    "four stub --selftest": "pass",
+    "tools/prove-gates.py --only selftest_argv": "could-not-run"
+  },
+  "redFirst": {
+    "at": "2026-10-10T12:48:08Z",
+    "basis": "`python3 plugins/audit/tests/test__output.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases sfl9 (house FAIL), sfl7 (house FAIL), but with the working tree's implementation the task's tests do not all pass (SELFTEST FAILED: 244/245 cases passed), so the red is not one the fix turns green - SELFTEST FAILED: 243/245 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "Added _output._argv_names(tree) and widened selftest_argv_violations() to flag a '--selftest' in/not-in test against any name assigned from sys.argv (slice included) or a parameter called argv; docstring updated. Converted migrate-manifest, merge-manifest, usage/_usage_bench, render-report to _output.selftest_requested(argv) (each --selftest still prints its pointer, exit 0). test__output.py: new fixtures local.py/param.py/unbound.py, new case sfl9, sfl7 allow widened (unbound name quiet, 5 hits). tools/prove-gates.py: new row selftest_argv_violations on migrate-manifest.py (replace helper call with local-argv spelling, case sfl8). test__output --selftest: 244/245, only sfl8 fails, naming stamp-verification.py:3000. prove-gates --only selftest_argv: the existing sfl8 row went RED, but my new row and the allow row were REFUSED (DIRTY) because the files are uncommitted, so the new row is unproven; rerun after commit. ruff clean on touched files.",
+    "descriptive": "The flag lint now sees a local/param argv, and four stubs use the helper; one more stub (stamp-verification.py) needs the same one-line conversion by a task that owns it."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__output.py: sfl9 (plus widened sfl7)",
+    "tools/prove-gates.py: selftest_argv_violations row on migrate-manifest.py (case sfl8)"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:4926c7e6f46bf68ae96b9121fb30bf1a10c8085eb141cf662c988e96f0571024\",\"dirtyDigest\":\"sha256:8b4e0d9ec6fc910ddb66a191b9d5a4f6a5f9146229eb0d0cb1e2b6c12ba9d804\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\"plugins/audit/scripts/_output.py\":\"8547ecf35bc1910c\",\"plugins/audit/scripts/manifest/merge-manifest.py\":\"d232f7f226360bde\",\"plugins/audit/scripts/manifest/migrate-manifest.py\":\"b9bf429c9a76c31a\",\"plugins/audit/scripts/report/render-report.py\":\"e612ed93fb839538\",\"plugins/audit/scripts/usage/_usage_bench.py\":\"57432e9901348e54\",\"plugins/audit/tests/test__output.py\":\"60e8d31bd06f4cb7\",\"tools/prove-gates.py\":\"2a5438446b58afe5\"},\"head\":\"eea4ae7b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/_output.py\",\"plugins/audit/scripts/manifest/merge-manifest.py\",\"plugins/audit/scripts/manifest/migrate-manifest.py\",\"plugins/audit/scripts/report/render-report.py\",\"plugins/audit/scripts/usage/_usage_bench.py\",\"plugins/audit/tests/test__output.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:88db0ff9fa5cb57ab3c8b9b864a5f2f0648e25512394b4e58d35f139964f61ba\",\"v\":2}"
+}

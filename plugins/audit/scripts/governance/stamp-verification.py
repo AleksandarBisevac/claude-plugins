@@ -2992,12 +2992,11 @@ def main(argv, out=print, stdin=None):
 
 
 if __name__ == "__main__":
-    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
     safe_stdio()
     # Only this command's own flags: after `--` a `--selftest` belongs to the red
-    # run's test command.
-    _own = sys.argv[1:sys.argv.index("--")] if "--" in sys.argv else sys.argv[1:]
-    if "--selftest" in _own:
+    # run's test command, which `selftest_requested` already leaves alone.
+    if selftest_requested(sys.argv[1:]):
         # Answers rather than falling through to a usage error, which would read
         # as a broken flag rather than as a moved suite. It deliberately does NOT
         # print the `N/M cases passed` contract - that literal is how

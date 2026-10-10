@@ -243,10 +243,6 @@ def own_args(argv):
 
 
 SELFTEST_FLAG = "--selftest"
-# Options that take no value: the flag right after one of these is still the
-# script's own. Every other long option is read as possibly taking the next
-# token, because a stub has no parser to ask.
-_VALUELESS_FLAGS = (VERBOSE_FLAG,) + LONG_FORM_FLAGS
 
 
 def selftest_requested(argv):
@@ -255,17 +251,12 @@ def selftest_requested(argv):
     A wrapper such as `drive-phase.py submit ... -- <suite> --selftest` forwards a
     test command whose `--selftest` belongs to that command; a stub that looked for
     the flag anywhere in argv answered it with its own pointer and exit 0, so the
-    forwarded suite never ran. So the flag counts only before the first `--`, and
-    not as the value of the option right before it: a long option other than the
-    valueless ones above is taken to consume the next token, since a stub has no
-    parser to ask. `argv` is the arguments without the program name.
+    forwarded suite never ran. So the flag counts anywhere before the first `--`;
+    an option value that itself starts with `--` is not a shape these stubs take,
+    and reading one would make `--bench --selftest` not a selftest. `argv` is the
+    arguments without the program name.
     """
-    head = own_args(argv)
-    return any(a == SELFTEST_FLAG
-               and (i == 0 or head[i - 1] in _VALUELESS_FLAGS
-                    or not head[i - 1].startswith("--")
-                    or "=" in head[i - 1])
-               for i, a in enumerate(head))
+    return SELFTEST_FLAG in own_args(argv)
 
 
 def without_verbose(argv):
@@ -2430,6 +2421,19 @@ def _mentions_sys_argv(node):
                for n in ast.walk(node))
 
 
+def _argv_names(tree):
+    """The names a file binds from `sys.argv`: an assignment whose value reads it
+    (a slice included), and a parameter called `argv`, the name a `main(argv)`
+    receives it under."""
+    names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and _mentions_sys_argv(node.value):
+            names.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        elif isinstance(node, ast.arg) and node.arg == "argv":
+            names.add(node.arg)
+    return names
+
+
 def selftest_argv_violations(dirs=None):
     """(filename, line, what) for a stub that spells `"--selftest" in sys.argv`.
 
@@ -2440,9 +2444,14 @@ def selftest_argv_violations(dirs=None):
     left alone: it forwards nothing. `hooks/` carries the same stub but cannot
     import this module and forwards no command.
 
-    WHAT IT CANNOT SEE: argv reached through another name (`args = sys.argv`) or a
-    `from sys import argv`, and a comparison built from a variable holding the
-    flag. A clean result means "none of this spelling here".
+    The test is also read against a local name bound from `sys.argv` (`argv =
+    sys.argv[1:]`) and against a parameter called `argv`, so `main(argv)` is held
+    to it as well.
+
+    WHAT IT CANNOT SEE: a parameter under another name (`def main(args)`), a name
+    bound by anything but a plain assignment, a `from sys import argv`, and a
+    comparison built from a variable holding the flag. A clean result means
+    "none of these spellings here".
     """
     dirs = dirs if dirs is not None else (SCRIPTS_DIR,)
     violations = []
@@ -2452,13 +2461,16 @@ def selftest_argv_violations(dirs=None):
                 continue  # inline suite, or unreadable: reported elsewhere
             with open(path, "r", encoding="utf-8") as fh:
                 tree = ast.parse(fh.read(), filename=name)
+            bound = _argv_names(tree)
             for node in ast.walk(tree):
                 if (isinstance(node, ast.Compare)
                         and isinstance(node.left, ast.Constant)
                         and node.left.value == SELFTEST_FLAG
                         and any(isinstance(op, (ast.In, ast.NotIn))
                                 for op in node.ops)
-                        and any(_mentions_sys_argv(c) for c in node.comparators)):
+                        and any(_mentions_sys_argv(c)
+                                or (isinstance(c, ast.Name) and c.id in bound)
+                                for c in node.comparators)):
                     violations.append((name, node.lineno, _SELFTEST_ARGV))
     return sorted(violations)
 
