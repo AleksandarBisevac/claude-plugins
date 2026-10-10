@@ -2785,6 +2785,9 @@ def build_parser():
     nxt.add_argument("manifest", nargs="?", default=None,
                      help="the manifest (default: the project's configured one)")
     nxt.add_argument("--project-dir", dest="project_dir", default=None)
+    nxt.add_argument("--task", dest="task_only", action="store_true",
+                     help="the one-task form `/audit:run` passes: a phase id is "
+                          "refused, naming /audit:phase, and no task is picked")
     nxt.add_argument("--answer", default=None,
                      help="answer the pending decision with one of its options")
     nxt.add_argument("--reason", default=None,
@@ -2854,11 +2857,31 @@ def task_phase(manifest, task_id):
     return None
 
 
+def phase_form_refusal(manifest, config, phase_id):
+    """The one line `next --task` answers a phase-shaped id with: it names
+    `/audit:phase <id>` and the tasks that verb would run, in waves when
+    `executor.waveWidth` is above 1 and one at a time otherwise."""
+    phase = next((ph for ph in manifest.get("phases") or []
+                  if isinstance(ph, dict) and ph.get("id") == phase_id), {})
+    ready = set(_status_facts.ready_tasks(manifest))
+    running = [t["id"] for t in _tasks(phase) if t.get("status") == "in_progress"]
+    would = running + [t["id"] for t in _tasks(phase) if t["id"] in ready]
+    width, _basis, _problem = wave_width(config)
+    how = ("in waves of up to %d" % (width,) if width and width > 1
+           else "one at a time")
+    return ("%s is a phase, and /audit:run runs exactly one task: run "
+            "`/audit:phase %s` to run %s %s, or name one task id%s" % (
+                phase_id, phase_id, ", ".join(would) or "its tasks", how,
+                "" if would else " (none is ready now)"))
+
+
 def context(args):
     """Everything one `next` resolves once, or raises ValueError naming why not.
     A task id in the phase's place scopes the drive to that one task."""
     manifest, ctx = project_context(args)
     phase_id, problem = _mio.resolve_phase_id(manifest, args.phase)
+    if not problem and getattr(args, "task_only", False):
+        raise ValueError(phase_form_refusal(manifest, ctx["config"], phase_id))
     ctx["only"] = None
     if problem:
         phase_id = task_phase(manifest, args.phase)

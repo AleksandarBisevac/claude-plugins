@@ -12,7 +12,11 @@ Where it says "you", read the caller of the verb. Its `## ` sections are declare
 
 ## What the run commands leave behind
 
-`/audit:run <taskId>` and `/audit:next` run one task through `drive-phase.py next <taskId>`;
+`/audit:run <taskId>` runs one task through `drive-phase.py next <taskId> --task`, and
+`/audit:next` through `next <taskId>`. The `--task` form refuses a phase id (`p1`, `P1`, `1`) with
+exit 2 and one line naming `/audit:phase <id>` and the tasks it would run - in waves when
+`executor.waveWidth` is above 1, one at a time otherwise - and never picks a task; the bare
+`next <phaseId>` that `/audit:phase` uses still drives the whole phase;
 `/audit:resume` sweeps an interrupted run's record and then continues the phase through
 `drive-phase.py next <phaseId>`. This is what each guard and each record means, for a reader who
 asks.

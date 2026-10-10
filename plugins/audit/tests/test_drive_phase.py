@@ -42,6 +42,8 @@ so the replayed case order is the one a run in one process gives. `sb1` reads
 that each block runs in exactly one stage, since a cut half-made runs cases
 twice or never and a green run looks the same either way.
 """
+import contextlib
+import io
 import json
 import os
 import re
@@ -675,6 +677,44 @@ def _single_task_cases(check):
           "the first pending task, so the task scope narrows only when asked: %r"
           % (whole["steps"],),
           whole["steps"][:1] == [("dispatch", "executor", "P1.1")])
+    root_t, mpath_t = _repo("task-form")
+    refused = []
+    with _Env(root_t):
+        for given in ("p1", "P1", "1"):
+            said, errs = [], io.StringIO()
+            with contextlib.redirect_stderr(errs):
+                code = M.main(["next", given, mpath_t, "--project-dir", root_t,
+                               "--task"], out=said.append)
+            refused.append((given, code, said, errs.getvalue()))
+    after = tasks_of(mpath_t)
+    check("dt7 the one-task form given a phase id (p1, P1, 1) exits 2 on one line "
+          "naming /audit:phase P1 and the tasks it would run, one at a time on a "
+          "plan with no waveWidth, and starts nothing: %r" % (refused,),
+          all(c == 2 and s == [] and e.count("\n") == 1
+              and "`/audit:phase P1`" in e and "P1.1, P1.2, P1.3" in e
+              and "one at a time" in e for _g, c, s, e in refused)
+          and all(t.get("status") == "pending" for t in after.values())
+          and not os.path.exists(os.path.join(root_t, ".claude", "state", "drive")))
+    with open(os.path.join(root_t, ".claude", "audit.config.json")) as fh:
+        cfg = json.load(fh)
+    cfg["executor"] = {"waveWidth": 3}
+    with open(os.path.join(root_t, ".claude", "audit.config.json"), "w") as fh:
+        json.dump(cfg, fh)
+    errs = io.StringIO()
+    with _Env(root_t), contextlib.redirect_stderr(errs):
+        M.main(["next", "P1", mpath_t, "--project-dir", root_t, "--task"],
+               out=[].append)
+    check("dt8 with executor.waveWidth above 1 the same refusal says the phase "
+          "verb runs them in waves: %r" % (errs.getvalue(),),
+          "in waves of up to 3" in errs.getvalue()
+          and "one at a time" not in errs.getvalue())
+    said = []
+    with _Env(root_t):
+        code = M.main(["next", "P1.2", mpath_t, "--project-dir", root_t, "--task"],
+                      out=said.append)
+    kind = instruction("\n".join(said))
+    check("dt9 THE TWIN: a task id with the one-task flag still drives that task: "
+          "%r" % ((code, kind),), code == 0 and kind == ("dispatch", "executor", "P1.2"))
     echo_free = [t for _c, t in run["prints"] + again["prints"] + whole["prints"]
                  if "ado echo" in t]
     check("dt5 THE ALLOW TWIN: a plan with no board owes no ADO echo, and no print "

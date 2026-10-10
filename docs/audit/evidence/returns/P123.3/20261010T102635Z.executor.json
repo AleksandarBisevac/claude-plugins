@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "test_drive_phase --selftest": "pass",
+    "ruff check plugins/audit tools": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T10:34:10Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 184 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dt7 (house FAIL), dt8 (house FAIL), dt9 (house FAIL): SELFTEST FAILED: 181/184 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "drive-phase.py next gains --task (dest task_only): given a phase-shaped id (p1, P1, 1) it raises ValueError from phase_form_refusal() -> exit 2, one line naming `/audit:phase <id>` and the tasks it would run, 'in waves of up to N' when executor.waveWidth>1 else 'one at a time'; starts nothing, picks no task. A task id with --task still drives that task; bare next <phaseId> unchanged (dt3 holds). Cases dt7, dt8, dt9 added to test_drive_phase.py. run.md passes --task, verbs-in-full.md and README /audit:run row updated. Own red: HEAD's drive-phase.py copied into a scratch copy of plugins/, test_drive_phase.py --selftest there gave dt7, dt8, dt9 FAIL (181/184); in the tree 184/184 pass, exit 0; ruff check plugins/audit tools exit 0. Not done: the task note on whether script or model picked P1.2 in the testbed transcript was not established (no transcript read).",
+    "descriptive": "/audit:run given a phase id now refuses with one line naming /audit:phase instead of driving a phase or picking a task."
+  },
+  "testsAdded": [
+    "dt7",
+    "dt8",
+    "dt9"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:ebeef695073f645660b83b8fc91d68c1290fc19a74aef64737a61c7b43c179ba\",\"dirtyDigest\":\"sha256:1e1726e086d1bba94623ce1cecc10248ae88731f5ed8da7b62f2897ead4a3f1f\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\"plugins/audit/README.md\":\"535105cad2ebe4e0\",\"plugins/audit/commands/run.md\":\"ec0175c5504e99d2\",\"plugins/audit/reference/verbs-in-full.md\":\"f80038c28ffd991c\",\"plugins/audit/scripts/governance/drive-phase.py\":\"3f87f0b6a447edfd\",\"plugins/audit/tests/test_drive_phase.py\":\"d054b4fa3c7c4e7c\"},\"head\":\"c8ff50d3\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/README.md\",\"plugins/audit/commands/run.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:2443d90e0933a3873071d7195e8f0d3a0e7cec2c29c99119c9a6d4ac9cb7ce7f\",\"v\":2}"
+}

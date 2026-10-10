@@ -165,7 +165,7 @@
     {
       "id": "P123.3",
       "title": "/audit:run given a phase id refuses and names /audit:phase",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F595: the owner typed /audit:run p1 meaning the phase; P1.2 alone ran. On main, run.md hands the argument to drive-phase next, whose context tries resolve_phase_id first, so a phase id drives the WHOLE phase (pinned by dt3) - the opposite of the observation. Establish first, from the testbed session's transcript, whether the script or the model picked P1.2, and write the answer into the task note. Either way /audit:run's contract is one task: add a one-task form to drive-phase next (a flag run.md passes) that refuses a phase-shaped id with one line naming /audit:phase <id> and the tasks it would run (in waves once F600 lands, one at a time before), and never picks a task. /audit:phase keeps next <phaseId>. dt3 stays true for the phase form. Update run.md, verbs-in-full.md and README.md's /audit:run row.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -200,16 +200,22 @@
         "P123.2"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T10:26:35Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T10:42:13Z.ec9e72",
+        "status": "passed",
+        "at": "2026-10-10T10:42:13Z"
+      }
     },
     {
       "id": "P123.4",
@@ -2200,7 +2206,7 @@
     {
       "id": "P123.39-64p",
       "title": "a wave executor's submit files against the phase tree's plan from wherever it is run",
-      "status": "in_progress",
+      "status": "done",
       "description": "F619, found live in P123's first wave: the brief's submit block names docs/audit/audit-plan.json relatively and the brief's rule makes every command start with cd <task tree>, so the manifest resolves to the task tree's committed shard where the task is still pending, and audit-task refuses the filing as \"records no start\". Fix: (1) drive-phase submit resolves a relative manifest under --project-dir (project_context's rule), never the cwd; (2) the wave brief's submit block carries the phase tree's absolute manifest and says this command runs from the project. Red-first as in tests.add, plus the width-1 allow twin.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2233,19 +2239,35 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c8ff50d36817",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py project_context: dropped the os.path.exists clause so every relative manifest joins --project-dir (submit resolves through project_context). audit-lookup.py submit_command gained in_tree: a wave task's executor and reviewer briefs print the project's absolute manifest and a line saying the command runs from the project. Cases: ds9w/ds9x/ds9y (test_drive_phase.py), bf42 and width-1 allow twin bf43 (test_audit_lookup.py). test_drive_phase 181/181, test_audit_lookup 81/81, ruff clean. Left guard-release.py alone.",
+        "descriptive": "A wave executor's submit files against the project's plan from wherever its shell stands."
       },
       "startedAt": "2026-10-10T09:05:39Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T10:11:58Z",
+      "verifiedBy": [
+        "ds9w",
+        "ds9x",
+        "ds9y",
+        "bf42",
+        "bf43"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T10:11:56Z.09d661",
         "status": "passed",
         "at": "2026-10-10T10:11:56Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "c8ff50d36817",
+        "at": "2026-10-10T10:11:58Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T10:03:40Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 181 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ds9w (house FAIL): SELFTEST FAILED: 180/181 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
