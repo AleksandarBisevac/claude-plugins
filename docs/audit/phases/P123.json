@@ -102,7 +102,7 @@
     {
       "id": "P123.2",
       "title": "a drive that stops releases the phase lock it took",
-      "status": "blocked",
+      "status": "in_progress",
       "description": "F591: drive-phase.drive calls take_lock first; when audit-task start (or done, record_gate, commit_signoff, land) exits non-zero, drive_task and drive_phase return the stop directly and the lock is released only in finish/finish_task, reached only on done. So any stop after take_lock strands phase-<id>, which status later reads as abandoned. Release on every stop path that this invocation took the lock on (one exit point, not one release per arm), and give an index-lock exit 3 from audit-task its own followed rule instead of the generic 'stopped'. Keep STEPS in step with the README's followed table if a rule is added (_refs.followed_anchor_drift). Update orchestrator.md's concurrency-lock release rule.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -132,18 +132,22 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-10T08:12:48Z",
+      "startedAt": "2026-10-10T09:05:37Z",
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "phase",
-      "blockedReason": "F619: the wave submit reads the task tree's stale plan; running it from the project dir instead was denied by the auto-mode classifier as a bypass, rightly. Work is done and kept in the task tree; unblock after P123.39 (the F619 fix) lands and the executor files from its own tree."
+      "testEvidence": {
+        "runId": "2026-10-10T09:20:16Z.0b4314",
+        "status": "passed",
+        "at": "2026-10-10T09:20:16Z"
+      }
     },
     {
       "id": "P123.3",
@@ -312,7 +316,7 @@
     {
       "id": "P123.6-z4y",
       "title": "a failing tool's output is excerpted head and tail with the failure lines kept, through one helper",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F598 + F553, one class from opposite ends: _scoped_commit cuts every refusal reason to (err or out).strip()[:200] (head only), so danuvia's lint-staged refusal kept the progress preamble and lost the failing check; verify.sh keeps only the tail of a failing step, so a failing vitest test could not be named. Choosing an end is the bug. Add one helper in a new scripts/_excerpt.py (L1; the five things CLAUDE.md lists for a new .py): head and tail of a failing tool's output with an explicit 'N chars elided' marker between, plus the lines matching a failure shape (✖, error, FAIL, ERR_) from the elided middle. Route every subprocess-output refusal reason through it: _scoped_commit's (the most cuts), _ado_fetch and _ado_connect's, and any other site in scripts/ that cuts git or tool OUTPUT (a title or a summary cut is a different thing and stays); journal rows keep the excerpt whole in details and clip only the summary (_journal_io._clip_marked). verify.sh's failing-step print keeps every FAIL/✖ line plus the tail. Add a lint in _output.py banning a bare .strip()[:N] / [:N] on a name bound from subprocess output, with a red-first allow case, and add it to prove-gates' table if that is how lints are proven here. A site outside the declared files is a scope widening, not a skip.",
       "files": [
         "plugins/audit/scripts/_excerpt.py",
@@ -327,7 +331,8 @@
         "plugins/audit/tests/test__journal_io.py",
         "plugins/audit/scripts/manifest/_ado_fetch.py",
         "plugins/audit/scripts/manifest/_ado_connect.py",
-        "tools/verify.sh"
+        "tools/verify.sh",
+        "tools/prove-gates.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -352,16 +357,22 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T08:31:42Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-10T09:05:26Z.2c0942",
+        "status": "failed",
+        "at": "2026-10-10T09:05:26Z"
+      }
     },
     {
       "id": "P123.7",
@@ -923,7 +934,7 @@
     {
       "id": "P123.17",
       "title": "The panel's gate-catches payload reports an unreadable evidence ledger instead of []",
-      "status": "blocked",
+      "status": "in_progress",
       "description": "`panel/_panel_usage._gate_catches_payload` wraps the evidence read in `except Exception: return []` and also ignores `read_rows(...)`'s own read problem (`.get('rows') or []`), so an unreadable ledger is indistinguishable from a project with no gate history. Latent: no UI reads `gateCatches` yet. Ship `{catches, readError}` with the same readError shape and sentence the evidence tab uses, before any UI reads it; `_usage_shape`'s default becomes the empty-but-readable value. Regression: a read that raises (or a ledger with an undecodable file) yields readError and no catches; an empty ledger yields no catches and no error. Faults: F525.",
       "files": [
         "plugins/audit/scripts/panel/_panel_usage.py",
@@ -952,18 +963,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-10T08:12:51Z",
+      "startedAt": "2026-10-10T09:05:38Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase",
-      "blockedReason": "F619: the wave submit reads the task tree's stale plan; running it from the project dir instead was denied by the auto-mode classifier as a bypass, rightly. Work is done and kept in the task tree (it also needs PLUGIN-BUILD-GUIDE.md for its module-map line); unblock after P123.39 (the F619 fix) lands and the executor files from its own tree."
+      "reviewPerTask": "phase"
     },
     {
       "id": "P123.18",
@@ -1625,7 +1635,7 @@
     {
       "id": "P123.30",
       "title": "The panel's api() fetch is bounded, so a stalled server reads as no answer, not a hang",
-      "status": "blocked",
+      "status": "in_progress",
       "description": "CI run 37875405209 hung six hours in the screenshot step after 'composition: confirmed'; P121.14 added the stall watch and job time bounds, but `ui/panel/core.js` `api()` still awaits `fetch` with no timeout, the only unbounded wait on that path. Bound it with an AbortSignal timeout and treat a timeout like a rejected fetch (a write resolves to the NO_ANSWER refusal, a read rejects with noAnswer), keeping the server-offline semantics. Regression (vitest): a fetch that never settles resolves a write to the no-answer refusal and rejects a read after the bound; an answer before the bound is unchanged. Faults: F587.",
       "files": [
         "plugins/audit/scripts/ui/panel/core.js",
@@ -1655,18 +1665,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-10T08:29:12Z",
+      "startedAt": "2026-10-10T09:05:38Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase",
-      "blockedReason": "Waves cannot run on this repo with the installed 3.2.0 hooks: the plan gate predates the task-tree binding (P124.5, ships in 3.3.0), so it reads the task tree's stale plan and refuses edits, and the wave submit hits F619. Work so far is kept in the task tree; re-run at executor.waveWidth 1 in the phase tree, starting from the tree's work."
+      "reviewPerTask": "phase"
     },
     {
       "id": "P123.31",
@@ -1939,7 +1948,7 @@
     {
       "id": "P123.36",
       "title": "The release guard finds git and gh past assignments, wrappers, global options and sh -c",
-      "status": "blocked",
+      "status": "in_progress",
       "description": "Probed on main (`_publishers`): `GH_REPO=x gh release create v1`, `env GH_REPO=x gh release create v1`, `git --git-dir=.git tag v1`, `git -c user.name=x tag v1`, `sudo git tag v1` and `bash -c 'git tag v3'` all return [] - missed denies; `-C`, subshells, heredoc data, quoted text and the listing forms are already handled (the heredoc/listing/unrelated-repo halves of F524 are closed on main). Find the program past leading assignments and wrappers with `_config.program_candidates`, accept git's global options (`-C`, `-c`, `--git-dir=`, `--work-tree=`, ...) before the verb, and read `sh -c`/`bash -c`/eval arguments with `_config.handed_commands`. Deny half first, every spelling above pinned red-first; then confirm the allow cases (`grep 'git tag' f`, heredoc text, `git tag --sort=-creatordate`) stay allowed. `tools/bench-hooks.py --gate` after. Faults: F524. GUARD COMMAND-READING CODE: written by the orchestrator with the user's permission (auto mode off when possible); if the API refuses, record it verbatim and hand the remainder to the human.",
       "files": [
         ".claude/hooks/guard-release.py"
@@ -1967,18 +1976,17 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-10T08:29:15Z",
+      "startedAt": "2026-10-10T09:05:39Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase",
-      "blockedReason": "Waves cannot run on this repo with the installed 3.2.0 hooks: the plan gate predates the task-tree binding (P124.5, ships in 3.3.0), so it reads the task tree's stale plan and refuses edits, and the wave submit hits F619. Work so far is kept in the task tree; re-run at executor.waveWidth 1 in the phase tree, starting from the tree's work."
+      "reviewPerTask": "phase"
     },
     {
       "id": "P123.37",
@@ -2031,7 +2039,7 @@
       "id": "P123.38",
       "title": "the wave driver's remaining edges are pinned and its docs say what the code does",
       "status": "pending",
-      "description": "Carried lows from P124's reviews: integration-refused offers retry and spends an attempt where the design offers redo with no attempt spent; F599 behaviours at width 1 (scope-gap preflight, WIDEN_RULE, add --fixes scoping) are unpinned because the w1 fixture has no tests.add; the driver re-gate on regate:null is unpinned (mutation survived); task_binding's not-in_progress branch survives mutation (pin its message); a worktreeSetup that rewrites tracked files surfaces as undeclared-change - say so beside the setting; plugins/audit/README.md's /audit:worktree row still says a second tree is refused (task-add adopts it now); a discarded change's kept tree is named only once - name it in status until removed; commands/task.md's argument-hint lacks --introduces; a phase-review submit refuses a full 40-char head SHA where the plan records 12 - accept any unambiguous prefix. Faults: P124-R5, P124-R6, P124-R7, P124-R8, P124-R9, P124-R10, P124-R11.",
+      "description": "Carried lows from P124's reviews: integration-refused offers retry and spends an attempt where the design offers redo with no attempt spent; F599 behaviours at width 1 (scope-gap preflight, WIDEN_RULE, add --fixes scoping) are unpinned because the w1 fixture has no tests.add; the driver re-gate on regate:null is unpinned (mutation survived); task_binding's not-in_progress branch survives mutation (pin its message); a worktreeSetup that rewrites tracked files surfaces as undeclared-change - say so beside the setting; plugins/audit/README.md's /audit:worktree row still says a second tree is refused (task-add adopts it now); a discarded change's kept tree is named only once - name it in status until removed; commands/task.md's argument-hint lacks --introduces; a phase-review submit refuses a full 40-char head SHA where the plan records 12 - accept any unambiguous prefix. Faults: P124-R5, P124-R6, P124-R7, P124-R8, P124-R9, P124-R10, P124-R11. Also F620: before opening a wave the driver checks that the hooks Claude Code loads (the copy installed_plugins.json and the hook run records name, as /audit:doctor reads it) carry the task-tree binding; otherwise it runs at width 1 and prints why.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
         "plugins/audit/tests/test_drive_phase.py",
@@ -2042,7 +2050,9 @@
         "plugins/audit/commands/worktree.md",
         "plugins/audit/scripts/status/audit-status.py",
         "plugins/audit/tests/test_audit_status.py",
-        "plugins/audit/tests/test__refs.py"
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/tests/test__doctor_setup.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -2083,7 +2093,7 @@
     {
       "id": "P123.39-64p",
       "title": "a wave executor's submit files against the phase tree's plan from wherever it is run",
-      "status": "blocked",
+      "status": "in_progress",
       "description": "F619, found live in P123's first wave: the brief's submit block names docs/audit/audit-plan.json relatively and the brief's rule makes every command start with cd <task tree>, so the manifest resolves to the task tree's committed shard where the task is still pending, and audit-task refuses the filing as \"records no start\". Fix: (1) drive-phase submit resolves a relative manifest under --project-dir (project_context's rule), never the cwd; (2) the wave brief's submit block carries the phase tree's absolute manifest and says this command runs from the project. Red-first as in tests.add, plus the width-1 allow twin.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2114,18 +2124,117 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-10T08:29:18Z",
+      "startedAt": "2026-10-10T09:05:39Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase",
-      "blockedReason": "Waves cannot run on this repo with the installed 3.2.0 hooks: the plan gate predates the task-tree binding (P124.5, ships in 3.3.0), so it reads the task tree's stale plan and refuses edits, and the wave submit hits F619. Work so far is kept in the task tree; re-run at executor.waveWidth 1 in the phase tree, starting from the tree's work."
+      "reviewPerTask": "phase"
+    },
+    {
+      "id": "P123.40-64p",
+      "title": "on Windows a stamp's manifest label reads back to the native path and a binding refusal names the worktree in the native form",
+      "status": "pending",
+      "description": "CI windows-latest on ci/p124 (run 38036907164) went red on two P124 cases, both Windows path shape. sr210: stamp-verification.stored_manifest returns os.path.join(project, label) with label in posix form, so on Windows the result mixes separators and does not equal the expected native path - join label.split('/') (or normpath the result). bt2: require-plan's binding refusal names the bound worktree as git lists it (forward slashes, the long user name), while the fixture's path is Python's (backslashes, an 8.3 short name of the runner's home), so the case's substring check fails - present the worktree in os.path.normpath form in the message, and make the case compare normcase(realpath) of both sides. Exercise the Windows shapes on every platform through ntpath where the code allows (no Windows box here), and say which half only CI can prove.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/tests/test_require_plan.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: stored_manifest joins a posix label onto a Windows-shaped project as one native path (a ntpath-driven case runs on every platform)"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.41-64p",
+      "title": "no script cuts a failing tool's output to its head: the last five route through the excerpt helper and the pending list is empty",
+      "status": "pending",
+      "description": "P123.6 landed the excerpt helper (_excerpt.excerpt / reason_of) and the bare_output_cut_violations lint, with five scripts parked in _output.BARE_CUT_PENDING: git/close-phase.py (two cuts, one through _worktrees' runner which the lint cannot see), governance/drive-phase.py (two), manifest/ado-connect.py (one), status/_live_copy.py (five), status/audit-lookup.py (three). Route every one through the helper (head + tail + failure lines with the elision marker), empty BARE_CUT_PENDING, and confirm bc4 stays green with the table empty. The release does not ship with a pending row.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/manifest/ado-connect.py",
+        "plugins/audit/scripts/status/_live_copy.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__output.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__output.py: bc4 holds with BARE_CUT_PENDING empty - the real tree has no head-only cut of subprocess output"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P123.6-z4y"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "reviewPerTask": "phase",

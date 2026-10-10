@@ -380,7 +380,7 @@ keeps your note, so sign-off leaves it and the release stays yours:
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py" release <name> --project <gitRoot>
 ```
 
-A refusal that never acquired it releases nothing. Human-confirmation pauses (AskUserQuestion) keep
+A refusal that never acquired it releases nothing. A command that stops after it acquired the lock — a verb refused, a gate red with nobody left to answer — releases it on that stop too, at one exit point rather than one release per arm; `drive-phase.py` does this for every stop of its own, and a stop that leaves it held is what `audit-lock.py status` later reads as abandoned. Human-confirmation pauses (AskUserQuestion) keep
 the lock — that is still your run. **Release can itself exit 3**: that means another session took
 the lock over while you were working. Do not `--force` past it. Stop, tell the human, and re-read
 the shard before trusting anything you wrote after the takeover.

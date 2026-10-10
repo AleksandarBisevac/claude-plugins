@@ -372,6 +372,10 @@ STEPS = {
         "line": "",
         "rule": ("Held by a live run: stop, never take it over. Looks abandoned: "
                  "ask the human before --takeover.",)},
+    "stop-index-lock": {
+        "line": "",
+        "rule": ("The plan's index lock is held by a live run: wait and run next "
+                 "again; never --takeover or edit the plan by hand.",)},
     "stopped": {
         "line": "",
         "rule": ("Relay these words and act on the remedy they name; never edit "
@@ -522,7 +526,13 @@ def relay_refusal(ctx, script, code, text):
     stop, which for a held lock is the lock's own."""
     head = "%s %s: stopped - %s refused (exit %d); its own words follow" % (
         PREFIX, ctx["phase"], script, code)
-    rule = STEPS["stop-lock" if script == "audit-lock.py" else "stopped"]["rule"]
+    if script == "audit-lock.py":
+        kind = "stop-lock"
+    elif script == "audit-task.py" and code == 3:
+        kind = "stop-index-lock"
+    else:
+        kind = "stopped"
+    rule = STEPS[kind]["rule"]
     return E_STOPPED, "\n".join([head, (text or "").rstrip("\n")] + list(rule))
 
 
@@ -1582,19 +1592,34 @@ def take_lock(ctx, state):
     return stop
 
 
-def finish(ctx, state, why):
-    """The phase is through: give back a lock this drive took, drop the state."""
-    if state.get("lock") == "taken":
-        _out, stop = _verb_or_stop(ctx, "audit-lock.py", [
-            "release", "phase-%s" % (ctx["phase"],), "--project", ctx["gitRoot"]])
-        if stop is not None:
-            return stop
-        ctx["did"].append(RELEASED)
+def release_lock(ctx, state):
+    """Give back the phase lock when this drive holds it; None, or the stop. The
+    one release every way out of a drive goes through."""
+    if state.get("lock") != "taken":
+        return None
+    _out, stop = _verb_or_stop(ctx, "audit-lock.py", [
+        "release", "phase-%s" % (ctx["phase"],), "--project", ctx["gitRoot"]])
+    if stop is not None:
+        return stop
+    state.pop("lock", None)
+    ctx["did"].append(RELEASED)
+    return None
+
+
+def drop_state(ctx):
     try:
         os.remove(state_path(ctx))
         os.rmdir(os.path.dirname(state_path(ctx)))
     except OSError:
         pass
+
+
+def finish(ctx, state, why):
+    """The phase is through: give back a lock this drive took, drop the state."""
+    stop = release_lock(ctx, state)
+    if stop is not None:
+        return stop
+    drop_state(ctx)
     return instruction("done", step_text("done", phase=ctx["phase"], why=why))
 
 
@@ -2365,13 +2390,9 @@ def blocked_stop(name, tasks, **fields):
 def finish_task(ctx, state, task):
     """A task-scoped drive is through: give back a lock this drive took, drop the
     marks of this task, and drop the state when nothing else is in it."""
-    if state.get("lock") == "taken":
-        _out, stop = _verb_or_stop(ctx, "audit-lock.py", [
-            "release", "phase-%s" % (ctx["phase"],), "--project", ctx["gitRoot"]])
-        if stop is not None:
-            return stop
-        state.pop("lock", None)
-        ctx["did"].append(RELEASED)
+    stop = release_lock(ctx, state)
+    if stop is not None:
+        return stop
     for kind in [k for k, v in state.items() if isinstance(v, dict)]:
         state[kind].pop(task["id"], None)
         if not state[kind]:
@@ -2379,11 +2400,7 @@ def finish_task(ctx, state, task):
     if state:
         write_state(ctx, state)
     else:
-        try:
-            os.remove(state_path(ctx))
-            os.rmdir(os.path.dirname(state_path(ctx)))
-        except OSError:
-            pass
+        drop_state(ctx)
     closed = any(d.startswith("%s %s" % (CLOSED, task["id"])) for d in ctx["did"])
     why = "%s%s" % ("" if closed else "already ", task.get("status") or "?")
     if task.get("commit"):
@@ -2417,11 +2434,28 @@ def drive_task(ctx, state):
 
 
 def drive(ctx, answer=None, reason=None, fixes=()):
-    """`(code, instruction_or_text)` for one `next`."""
+    """`(code, instruction_or_text)` for one `next`. A stop after the lock was
+    taken gives it back here, the one exit every arm shares, so no refusal
+    strands it; a decision or a dispatch keeps it, as that is still this run."""
     state = read_state(ctx)
     stop = take_lock(ctx, state)
     if stop is not None:
         return stop
+    code, said = drive_locked(ctx, state, answer, reason, fixes)
+    if code != E_STOPPED or state.get("lock") != "taken":
+        return code, said
+    refused = release_lock(ctx, state)
+    if refused is not None:
+        return code, "%s\n%s" % (said, refused[1])
+    if state:
+        write_state(ctx, state)
+    else:
+        drop_state(ctx)
+    return code, said
+
+
+def drive_locked(ctx, state, answer, reason, fixes):
+    """The body of `drive`, run with the phase lock held."""
     manifest, phase = load_phase(ctx)
     pending = state.get("pending")
     if pending and not pending_still_applies(manifest, pending):

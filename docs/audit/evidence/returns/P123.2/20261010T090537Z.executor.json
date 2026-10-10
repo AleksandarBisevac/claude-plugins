@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "test_drive_phase --selftest": "pass (178/178, exit 0)",
+    "test__refs --selftest (followed_anchor_drift)": "pass (334/334)",
+    "ruff check plugins/audit tools": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-10T09:12:13Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 178 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dl2 (house FAIL), dl3 (house FAIL): SELFTEST FAILED: 176/178 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "Reviewed applied diff. drive-phase.py: drive() takes lock, delegates to drive_locked(); any E_STOPPED with state lock taken releases via release_lock() and drop_state() at one exit; finish/finish_task reuse release_lock/drop_state; relay_refusal maps audit-task exit 3 to new STEPS entry stop-index-lock. README followed-table row added; orchestrator.md release rule updated. test_drive_phase.py: dl2 (stop on index-lock exit 3 releases phase lock, no state) and dl3 (own rule printed), dr2 adjusted. P123.6-z4y files untouched.",
+    "descriptive": "A drive that stops after taking the phase lock now gives it back, and an index-lock refusal has its own followed rule."
+  },
+  "testsAdded": [
+    "dl2",
+    "dl3"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:0e379b84ba048365b0fa447633779f58137617a9efa9808894fb8c2ad871ddf7\",\"dirtyDigest\":\"sha256:878d8b753bf066268b8fc1e27000850c068507092896b7f08805f3580e9647f7\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"055e3578545824ae\",\"plugins/audit/README.md\":\"100c9d0efc8c8713\",\"plugins/audit/reference/orchestrator.md\":\"64914a59e3b34f68\",\"plugins/audit/scripts/_deps.py\":\"a64dfd4773a69afb\",\"plugins/audit/scripts/_excerpt.py\":\"ac4c65a8dc015a60\",\"plugins/audit/scripts/_output.py\":\"084bb79599ecb35f\",\"plugins/audit/scripts/governance/_journal_io.py\":\"e04be8605f5d226d\",\"plugins/audit/scripts/governance/_scoped_commit.py\":\"b6b55bc04bc7e3b6\",\"plugins/audit/scripts/governance/drive-phase.py\":\"5b1a627cf82751ad\",\"plugins/audit/scripts/manifest/_ado_connect.py\":\"cf816029ab379c75\",\"plugins/audit/scripts/manifest/_ado_fetch.py\":\"ebebbc82166db48e\",\"plugins/audit/tests/test__excerpt.py\":\"4dcfb6624b0e00d1\",\"plugins/audit/tests/test__journal_io.py\":\"9df4b12d9150ccaf\",\"plugins/audit/tests/test__output.py\":\"32315b2825a26fe2\",\"plugins/audit/tests/test__scoped_commit.py\":\"6583be41fa6c693f\",\"plugins/audit/tests/test_drive_phase.py\":\"48250c71f7dec84b\",\"tools/prove-gates.py\":\"f899ba8ceb6488bf\",\"tools/verify.sh\":\"f8723cb6b2eb0313\"},\"head\":\"3000d4f6\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/reference/orchestrator.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:42bb176b8f767f3c1abae838307302959d48ffeb40544f7b2f596aeffab74027\",\"v\":2}"
+}

@@ -545,7 +545,8 @@ def _refusal_cases(check):
     check("dr2 the stop prints the verb's own refusal, naming the verb: %r"
           % (text[:400],),
           "[commit-task-work]" in text and "REFUSED" in text
-          and "commit-task-work.py" in text.splitlines()[0])
+          and any("stopped" in ln and "commit-task-work.py" in ln
+                  for ln in text.splitlines()[:2]))
 
     mutant, _w = _load("drive_phase_refusal_mute")
     mutant.relay_refusal = lambda ctx, script, code, text: (
@@ -725,6 +726,27 @@ def _lock_stop_cases(check):
           "rule printed under them: %r" % ((code, text),),
           code == 1 and "[audit-lock]" in text and rule
           and all(line in text for line in rule))
+
+    def index_held(ctx, script, args, stdin=None):
+        if script == "audit-task.py" and args[:1] == ["start"]:
+            return 3, "[audit-lock] the index lock is held by a live session\n", ""
+        return real(ctx, script, args, stdin=stdin)
+    M.run_verb = index_held
+    root, mpath = _repo("lockidx", task_ids=TASKS[:1])
+    run = drive(M, root, mpath, cap=1)
+    code, text = run["prints"][-1]
+    state_file = os.path.join(root, ".claude", "state", "drive")
+    held_now = "phase-%s" % (PHASE,) in _verb(
+        root, "audit-lock.py", ["status", "--project", root])[1]
+    check("dl2 a drive that took the phase lock and then stops on a verb refusal "
+          "(the index lock held during start, exit 3) releases phase-%s and leaves "
+          "no taken lock in its state: %r" % (PHASE, (code, text, held_now)),
+          code == 1 and "audit-task.py" in text and not held_now
+          and not os.path.exists(state_file))
+    rule = list((M.STEPS.get("stop-index-lock") or {}).get("rule") or ())
+    check("dl3 an index-lock exit 3 from audit-task has its own followed rule, "
+          "printed under the verb's words: %r" % (text,),
+          rule and all(line in text for line in rule))
 
 
 def _key_cases(check):
