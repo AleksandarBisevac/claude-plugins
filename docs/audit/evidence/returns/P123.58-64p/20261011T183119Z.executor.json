@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "sweep-selftests": "pass",
+    "sweep-selftests --spaced": "pass",
+    "bench-hooks --gate": "pass",
+    "ruff": "pass",
+    "vermin": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "task is gate-only; the two new cases were still watched: ctw-at5 failed on unfixed code (105/106) and passed after (106/106)",
+    "at": "before the fix, same session"
+  },
+  "outcome": {
+    "technical": "Took the structural answer. hooks/_config.py gained BASH_WRITES_STATE_FILE and out_of_scope_record(state_dir) (sorted union of outOfScope over bash-writes-<sid>.json slots, tolerant of absent dir/slot/key and of the bash-writes-plugin-* sidecars' other shape). guard-bash-writes.STATE_FILE now aliases the _config template so writer and reader share one name. commit-task-work.attempt_refusal reads it through the existing _hooks_config()/attempt_state_dir seam and, for during-attempt strays the guard also recorded, appends 'The bash-write guard recorded X as written outside scope this session.' to the refusal; the snapshot still decides the refusal. Cases added in test_commit_task_work.py: ctw-at5 (record present, names it, an unrelated recorded path not named, sidecar shape ignored), ctw-at6 (no record, refusal stands on snapshot alone, no guard mention). Selftest of that file 106/106. Sweep, --spaced, bench-hooks --gate, ruff, vermin all exit 0. _scoped_commit.py, PLUGIN-BUILD-GUIDE.md and SECURITY.md needed no edit (no mention of the key). Wrote the cases in test_commit_task_work.py, not test_guard_bash_writes.py; the existing co1b guard-side case still locks the write.",
+    "descriptive": "The guard's outOfScope record is now read by the task commit check and named in its refusal, so the key is no longer write-only."
+  },
+  "testsAdded": [
+    "ctw-at5",
+    "ctw-at6"
+  ],
+  "claims": "claims: read-by-commit-check: commit-task-work.py attempt_refusal calls _config.out_of_scope_record; evidence ctw-at5 passes, failed before the change.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:f8fb4097b4d7bc8fc38aab69f55afe519269467fb2bbdb09efda989cb3be39fe\",\"dirtyDigest\":\"sha256:4cbd571579beb99108b2b931da6e7466eb63855620ecdad8a285168ab74e4c13\",\"dirtyPaths\":{\"plugins/audit/hooks/_config.py\":\"518028c29af4a383\",\"plugins/audit/hooks/guard-bash-writes.py\":\"a0c4f3616ddec557\",\"plugins/audit/scripts/governance/commit-task-work.py\":\"fb5b441e8d6d7cd6\",\"plugins/audit/tests/test_commit_task_work.py\":\"316f0fdc80b153b5\"},\"head\":\"73ca7f3a\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/guard-bash-writes.py\",\"plugins/audit/scripts/governance/_scoped_commit.py\",\"plugins/audit/scripts/governance/commit-task-work.py\",\"plugins/audit/tests/test__scoped_commit.py\",\"plugins/audit/tests/test_commit_task_work.py\",\"plugins/audit/tests/test_guard_bash_writes.py\"],\"scopeDigest\":\"sha256:3dd2006a71b1e779a42acfc8937c4158e705caa7a08a49eac71d90af4615e058\",\"v\":2}"
+}

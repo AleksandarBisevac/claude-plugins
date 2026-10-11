@@ -543,12 +543,19 @@ def attempt_refusal(manifest, task, project, git_root, config, targets,
         return why, notes, None
     during = strays["during"]
     if during:
+        recorded = set(_hooks_config().out_of_scope_record(
+            attempt_state_dir(project, config)))
+        guarded = [p for p in during if p in recorded]
         parts.append("%s changed during this attempt and no in_progress task "
                      "declares %s (basis: %s), so this commit would leave %s "
-                     "out in silence. Widen the scope (/audit:task scope %s "
+                     "out in silence.%s Widen the scope (/audit:task scope %s "
                      "--files <paths>, then record the gate again) or remove %s"
                      % (", ".join(during), _them(during), strays["basis"],
-                        _them(during), task.get("id"), _them(during)))
+                        _them(during),
+                        (" The bash-write guard recorded %s as written outside "
+                         "scope this session." % ", ".join(guarded))
+                        if guarded else "",
+                        task.get("id"), _them(during)))
     undated = strays["undated"]
     if undated and record is None and started:
         notes.append("%s could not be dated - no file to read an mtime from - "

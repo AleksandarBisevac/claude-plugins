@@ -1859,8 +1859,46 @@ def _attempt_cases(check, repos):
           scode == 0 and code == 0
           and "src/img.png" in _carried(fx, _head(fx)))
 
+    # The bash-write guard's record of what it refused as out of scope is read
+    # as corroboration: a stray the snapshot found AND the guard recorded is
+    # named as both; a record naming something else, or none, changes nothing.
+    fx = repos.make()
+    _restartable(fx)
+    scode, said = _start(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 2  # this attempt's work\n")
+    _write(os.path.join(fx["root"], "src", "img.png"), "copied in\n")
+    state = M.attempt_state_dir(fx["root"], {})
+    os.makedirs(state, exist_ok=True)
+    with open(os.path.join(state, "bash-writes-sess.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"outOfScope": ["src/img.png", "src/elsewhere.png"]}, fh)
+    with open(os.path.join(state, "bash-writes-plugin-sess.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump(["not-a-session-slot"], fh)
+    _gate(fx)
+    code, text = _run(fx)
+    check("ctw-at5 a stray the guard recorded as written outside scope is "
+          "refused with the snapshot's reason AND the guard's record named; a "
+          "recorded path that is not a stray this attempt left is not "
+          "named: %r" % ((scode, code, text[:600]),),
+          scode == 0 and code == 1 and "src/img.png" in text
+          and "bash-write guard recorded" in text
+          and "src/elsewhere.png" not in text)
 
-CE_TEST = "tests/test_a.py"
+    fx = repos.make()
+    _restartable(fx)
+    scode, said = _start(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 2  # this attempt's work\n")
+    _write(os.path.join(fx["root"], "src", "img.png"), "copied in\n")
+    _gate(fx)
+    code, text = _run(fx)
+    check("ctw-at6 with no guard record the refusal stands on the snapshot "
+          "alone and says nothing of a guard: %r" % ((scode, code, text[:400]),),
+          scode == 0 and code == 1 and "src/img.png" in text
+          and "bash-write guard" not in text)
+
+
+CE_TEST ="tests/test_a.py"
 
 
 def _owe_test(fx):

@@ -851,7 +851,7 @@ def _tokens_are_read_only(toks):
 # mechanised - and it tells a session slot from a plugin sidecar by these two
 # name templates. A hand-written list over there would be a second statement of
 # this file's shape, drifting the first time a key is added here.
-STATE_FILE = "bash-writes-%s.json"
+STATE_FILE = _config.BASH_WRITES_STATE_FILE
 
 
 def default_state():
@@ -889,7 +889,8 @@ def _load_state(state_dir, session_id):
                     # pass exactly as it always did.
                     "agentsAt": dict(data.get("agentsAt") or {}),
                     # Absent in a slot an older copy wrote: nothing was refused
-                    # out of scope yet.
+                    # out of scope yet. `_config.out_of_scope_record` reads this
+                    # key for the task commit's attempt check.
                     "outOfScope": list(data.get("outOfScope") or [])}
     except Exception:
         pass

@@ -1222,6 +1222,40 @@ def logs_dir(root, cfg):
     return root / (cfg.get("logsDir") or DEFAULTS["logsDir"])
 
 
+# The name template of a session slot `guard-bash-writes` keeps, owned here so
+# the writer and the commit check that reads its out-of-scope record resolve
+# one name. The plugin sidecars share the prefix and hold another shape.
+BASH_WRITES_STATE_FILE = "bash-writes-%s.json"
+
+
+def out_of_scope_record(state):
+    """The sorted union of the `outOfScope` lists every bash-write slot under
+    `state` (a directory path) holds - the paths the guard refused as written
+    outside every running task's scope.
+
+    Empty when the directory, a slot or the key is absent or unreadable: that is
+    the ordinary state, and a reader treats it as no corroboration rather than
+    as a finding."""
+    prefix, suffix = BASH_WRITES_STATE_FILE.split("%s")
+    found = set()
+    try:
+        names = os.listdir(str(state))
+    except OSError:
+        return []
+    for name in names:
+        if not (name.startswith(prefix) and name.endswith(suffix)):
+            continue
+        try:
+            with open(os.path.join(str(state), name), "r",
+                      encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict) and isinstance(data.get("outOfScope"), list):
+            found.update(p for p in data["outOfScope"] if isinstance(p, str))
+    return sorted(found)
+
+
 # --- the session's free-file slot ----------------------------------------------
 # `trivialLineThreshold`'s allowance is ONE file per writer - the main loop, or
 # one dispatched agent (`slot_key`) - whichever tool writes it. `require-plan.py` grades Edit/Write against it,

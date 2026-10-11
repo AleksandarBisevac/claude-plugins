@@ -70,8 +70,10 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:2643-2661,620,3256-3260",
         "issue": "drive()'s one release point covers only a returned E_STOPPED. load_phase raises ValueError('phase ... is no longer in ...') inside drive_locked after take_lock; main catches it at :3260 and prints 'stopped - ...' without passing through drive(), so that stop strands phase-<id> (as does any unexpected exception) - the class P123.2 was opened for.",
-        "resolution": "Wrap drive_locked in try/except ValueError inside drive() (convert to the E_STOPPED tuple before the release check) or release in a finally when state['lock'] == 'taken' and the outcome is a stop; add a dl case where the phase vanishes after the lock is taken.",
-        "fixTask": "P123.57-64p"
+        "resolution": "fixed in P123.57-64p (73ca7f3a55d3): Wrap drive_locked in try/except ValueError inside drive() (convert to the E_STOPPED tuple before the release check) or release in a finally when state['lock'] == 'taken' and the outcome is a stop; add a dl case where the phase vanishes after the lock is taken.",
+        "fixTask": "P123.57-64p",
+        "commit": "73ca7f3a55d3",
+        "status": "fixed"
       },
       {
         "id": "P123-R6",
@@ -90,7 +92,7 @@
         "fixTask": "P123.59-64p"
       }
     ],
-    "outcome": "[findings: 7 - 0 high, 4 med, 3 low; 4 with a recorded fix commit]"
+    "outcome": "[findings: 7 - 0 high, 4 med, 3 low; 5 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -4435,7 +4437,7 @@
     {
       "id": "P123.57-64p",
       "title": "A drive stop raised after the phase lock is taken releases the lock",
-      "status": "in_progress",
+      "status": "done",
       "description": "(P123-R5, low) drive()'s one release point covers only a returned E_STOPPED. load_phase raises ValueError('phase ... is no longer in ...') inside drive_locked after take_lock; main catches it at :3260 and prints 'stopped - ...' without passing through drive(), so that stop strands phase-<id> (as does any unexpected exception) - the class P123.2 was opened for.\n\nResolution: Wrap drive_locked in try/except ValueError inside drive() (convert to the E_STOPPED tuple before the release check) or release in a finally when state['lock'] == 'taken' and the outcome is a stop; add a dl case where the phase vanishes after the lock is taken. Faults: P123-R5.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -4464,14 +4466,17 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "73ca7f3a55d3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive() in drive-phase.py now releases the lock on every exit once taken: a returned stop and a ValueError (converted to a stop) release via the new give_back_lock helper; any other BaseException releases the lock, then re-raises. Cases dl5 (phase vanishes) and dl6 (RuntimeError after lock surfaces and lock is released) in tests/test_drive_phase.py. Selftest 229/229. Exit codes: sweep-selftests.py 0, --spaced 0, ruff 0, vermin 0.",
+        "descriptive": "A drive that dies after taking the phase lock, by stop or by any exception, no longer strands the lock."
       },
       "startedAt": "2026-10-11T18:12:27Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-11T18:31:19Z",
+      "verifiedBy": [
+        "dl5",
+        "dl6"
+      ],
       "notes": [
         {
           "at": "2026-10-11T16:31:10Z",
@@ -4486,15 +4491,34 @@
         "runId": "2026-10-11T18:31:17Z.cf65ed",
         "status": "passed",
         "at": "2026-10-11T18:31:17Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "73ca7f3a55d3",
+        "at": "2026-10-11T18:31:19Z",
+        "basis": "a fix task for P123-R5: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "Task is gate-only with expectRedFirst false, so the helper was not run. I added dl6 and watched it FAIL on the previous code (RuntimeError surfaced, phase-P1 still held), then green after the fix.",
+        "at": "n/a"
       }
     },
     {
       "id": "P123.58-64p",
       "title": "The bash-write guard's out-of-scope record is read by the commit check, or is gone",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(P123-R6, low) P123.13 records every authored out-of-scope path in state['outOfScope'] 'so attempt-bound-commit's check reads the same fact', but nothing reads the key (git grep finds only the default, the load and this write); commit-task-work's attempt_strays recomputes from its own snapshot. The key is write-only state that implies a contract that does not exist.\n\nResolution: Either have commit-task-work/_scoped_commit read the session's outOfScope list as corroborating evidence (and name it in the refusal), or drop the key and the sentence. Prefer the structural answer: _scoped_commit's during-attempt check reads the session's outOfScope list as corroborating evidence and names it in its refusal; drop the key only if no reader can use it honestly. Faults: P123-R6.",
       "files": [
-        "plugins/audit/hooks/guard-bash-writes.py"
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/tests/test_guard_bash_writes.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/hooks/_config.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "SECURITY.md"
       ],
       "tests": {
         "mode": "gate-only",
@@ -4517,14 +4541,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-11T18:31:19Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -4535,7 +4559,13 @@
       ],
       "fixes": [
         "P123-R6"
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T18:54:30Z.78c830",
+        "status": "passed",
+        "at": "2026-10-11T18:54:30Z"
+      }
     },
     {
       "id": "P123.59-64p",
