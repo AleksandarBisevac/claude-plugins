@@ -1,0 +1,25 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/sweep-selftests.py --spaced": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-11T19:37:47Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage bx-block` in a throwaway tree at HEAD exited 1 with 5 of 10 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bx6 (house FAIL): SELFTEST FAILED: 5/10 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "Part 1 (stdin batch) was already in HEAD: add_fix_tasks in drive-phase.py hands one add --from-file - call, locked by fb1 in test_drive_phase.py; no drive-phase.py change needed. Part 2 in audit-task.py: _tracked_files (git ls-files, else a walk), _resolve_finding_path (as written from the project root, else unique tail match among tracked files), _unresolved_sentence; _fix_scope now resolves each finding path (a word with several or no matches, and not a test file still to be written, goes to scope['unresolved'] and is named in the task note, not written) and also scopes an existing test file the finding's resolution names; _pathless_refusal and _fixes_targets take project and name unresolved words. Tests: bx6, bx6b, bx7, bx8, bx9 added to the bx-block of test_audit_task.py; existing fixtures (cz7, cz13, cz15-19 in test_audit_task.py; _repo in test_drive_phase.py) now create the source files they name, since a nonexistent path is no longer written. Full sweep, --spaced, ruff and vermin all exit 0.",
+    "descriptive": "A finding's path words become existing repo-relative files in a fix task's scope; ambiguous or missing ones are named in the note instead of guessed."
+  },
+  "testsAdded": [
+    "bx6",
+    "bx6b",
+    "bx7",
+    "bx8",
+    "bx9"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:e06946b9a0de7ca96012db84c8d62e48229f67af10f3a1a8b9b6e05e22c3062d\",\"dirtyDigest\":\"sha256:2e66c381d767fd141f1cbb7ffd6389b12c700f5299a4296a459b3411933b7607\",\"dirtyPaths\":{\"plugins/audit/scripts/manifest/audit-task.py\":\"203af29cdea452a7\",\"plugins/audit/tests/test_audit_task.py\":\"1f5a10067f95cc64\",\"plugins/audit/tests/test_drive_phase.py\":\"888a3908a6b80fa8\"},\"head\":\"185f3f4f\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:efe5c3b0cd4f14aac99e1bfb02a38ab9ed8920168ef49f86a3c797fdf5d48787\",\"v\":2}"
+}

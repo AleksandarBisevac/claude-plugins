@@ -15879,6 +15879,8 @@ def _introduces_cases(check):
                 ("one path (the allow case)", "lib/one.ts:12", ["lib/one.ts"])):
             proj, mpath = project("fx-" + str(len(want)) + file[:3].strip(),
                                   [finding("P1-R1", file)])
+            for rel in want:
+                write(proj, rel)
             code, text = verb(proj, "add", "Fix", "--phase", "P1", "--fixes", "P1-R1")
             got = (tasks(mpath).get("P1.2") or {}).get("files")
             check("cz7 a finding naming %s gives the fix task every path, none "
@@ -15935,6 +15937,8 @@ def _introduces_cases(check):
             finding("P1-R3", "components/Plain.tsx", resolution="Rename the prop"),
             finding("P1-R4", "lib/x.ts", resolution="Add a test for the parser")])
         write(proj, "components/Other.test.tsx")
+        for rel in ("components/Why.tsx", "components/Plain.tsx", "lib/x.ts"):
+            write(proj, rel)
         verb(proj, "add", "Fix 1", "--phase", "P1", "--fixes", "P1-R1")
         verb(proj, "add", "Fix 2", "--phase", "P1", "--fixes", "P1-R2")
         verb(proj, "add", "Fix 3", "--phase", "P1", "--fixes", "P1-R3")
@@ -15961,6 +15965,7 @@ def _introduces_cases(check):
               "P1-R4" in notes and "tests-add" in notes)
         proj, mpath = project("fx-chosen", [finding(
             "P1-R1", "components/Why.tsx", resolution="Add a test for the label")])
+        write(proj, "components/Why.tsx")
         verb(proj, "add", "Fix", "--phase", "P1", "--fixes", "P1-R1",
              "--tests-mode", "gate-only")
         check("cz15 ALLOW: a --tests-mode the caller chose is never overridden by "
@@ -15974,7 +15979,8 @@ def _introduces_cases(check):
             finding("P1-R1", "(no path here)"),
             finding("P1-R2", "src/a.ts"),
             finding("P1-R3", "see the review notes")])
-        before = open(mpath, "rb").read()
+        write(proj, "src/a.ts")
+        before =open(mpath, "rb").read()
         code, text = verb(proj, "add", "Fix", "--phase", "P1", "--fixes",
                           "P1-R1,P1-R2,P1-R3")
         check("cz16 `--fixes` over findings naming no path is refused naming "
@@ -16001,15 +16007,17 @@ def _introduces_cases(check):
         # ---- the runner the test a fix asks for belongs to --------------------
         proj, mpath = project("fx-unit", [finding(
             "P1-R1", "src/a.ts", resolution="Add a unit test for the parser")])
+        write(proj, "src/a.ts")
         code, text = verb(proj, "add", "Fix", "--phase", "P1", "--fixes", "P1-R1")
         t = tasks(mpath).get("P1.2") or {}
-        gate = (t.get("tests") or {}).get("gate") or []
+        gate =(t.get("tests") or {}).get("gate") or []
         check("cz17 a finding naming src/a.ts whose resolution asks for a unit "
               "test: the gate holds the unit runner and not the e2e one: %r"
               % ((code, gate),),
               code == 0 and any("vitest" in g for g in gate)
               and not any("playwright" in g for g in gate))
         proj, mpath = project("fx-reported", [finding("P1-R1", "src/a.ts (x, y)")])
+        write(proj, "src/a.ts")
         code, text = verb(proj, "add", "Fix", "--phase", "P1", "--fixes", "P1-R1")
         check("cz18 the reported string `src/a.ts (x, y)` scopes src/a.ts alone: "
               "%r" % ((code, (tasks(mpath).get("P1.2") or {}).get("files")),),
@@ -16017,6 +16025,7 @@ def _introduces_cases(check):
               == ["src/a.ts"])
         proj, mpath = project("fx-norunner", [finding(
             "P1-R1", "src/a.ts", resolution="Add a unit test for the parser")])
+        write(proj, "src/a.ts")
         raw = _mio.load_manifest(mpath)
         raw["phases"][0]["tasks"][0]["tests"]["gate"] = ["lint"]
         _panel_write._atomic_write_json(mpath, raw)
@@ -16187,17 +16196,17 @@ def _batch_fix_cases(check):
         with open(full, "w") as fh:
             fh.write(text)
 
-    def project(name):
+    def project(name, findings=None, extra=()):
         proj = os.path.join(root, name)
         os.makedirs(os.path.join(proj, ".claude"))
         _panel_write._atomic_write_json(
             os.path.join(proj, ".claude", "audit.config.json"),
             {"manifestPath": "docs/audit/audit-plan.json"})
-        for rel in ("src/a.py", "src/b.py", "tests/test_a.py"):
+        for rel in ("src/a.py", "src/b.py", "tests/test_a.py") + tuple(extra):
             write(proj, rel)
         mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
         os.makedirs(os.path.dirname(mpath))
-        findings = [
+        findings = findings or [
             {"id": "P1-R1", "severity": "med", "file": "src/a.py",
              "issue": "the bound reads 1 :400",
              "resolution": "keep the bound at :400 bytes"},
@@ -16300,6 +16309,89 @@ def _batch_fix_cases(check):
               "over a source file, regression over only a test file, and the "
               "caller's gate-only kept: %r" % ((got, modes),),
               got == [0, 0, 0] and modes == ["tdd", "regression", "gate-only"])
+
+        # ---- a path a finding names is resolved before it is a `files` entry --
+        scripts = "plugins/audit/scripts/"
+        layout = (scripts + "manifest/_manifest_io.py",
+                  scripts + "a/dup.py", scripts + "b/dup.py")
+
+        def finding_for(file, resolution="rework it"):
+            return [{"id": "P1-R1", "severity": "med", "file": file,
+                     "issue": "it is wrong", "resolution": resolution}]
+
+        def notes_of(tasks, tid):
+            return " ".join(n.get("text", "") for n in
+                            (tasks.get(tid) or {}).get("notes") or [])
+
+        proj, mpath = project("resolve", finding_for("manifest/_manifest_io.py:774"),
+                              layout)
+        code, txt = _cli_in(["add", "--from-file", "-"], proj, fix_doc(
+            {"title": "fix P1-R1", "fixes": ["P1-R1"]}))
+        tasks, _named = state(mpath)
+        new = sorted(t for t in tasks if t != "P1.1")
+        got = (tasks.get(new[0]) or {}).get("files") if new else None
+        check("bx6 a finding naming `manifest/_manifest_io.py:774` scopes the "
+              "fix task onto the one tracked file that path is the tail of - "
+              "the batch and `add --fixes` alike, never the bare words: %r"
+              % ((code, got, txt[-200:]),),
+              code == 0 and got == [scripts + "manifest/_manifest_io.py"])
+        proj, mpath = project("resolve-one", finding_for("manifest/_manifest_io.py:774"),
+                              layout)
+        code, txt = _cli_in(["add", "Fix", "--phase", "P1", "--fixes", "P1-R1"], proj, "")
+        tasks, _named = state(mpath)
+        check("bx6b ...and the single `add --fixes` verb scopes the same path: %r"
+              % ((code, (tasks.get("P1.2") or {}).get("files")),),
+              code == 0 and (tasks.get("P1.2") or {}).get("files")
+              == [scripts + "manifest/_manifest_io.py"])
+
+        proj, mpath = project("ambiguous", finding_for("dup.py, ghost.py, src/a.py"),
+                              layout)
+        code, txt = _cli_in(["add", "--from-file", "-"], proj, fix_doc(
+            {"title": "fix P1-R1", "fixes": ["P1-R1"]}))
+        tasks, _named = state(mpath)
+        new = sorted(t for t in tasks if t != "P1.1")
+        t = tasks.get(new[0]) if new else {}
+        said = notes_of(tasks, new[0]) if new else ""
+        check("bx7 a basename two tracked files share is named in the task's "
+              "note with both candidates and is not written, a word matching "
+              "nothing is named as matching nothing, and the path that exists "
+              "as written is kept: %r" % ((code, t.get("files"), said[:400]),),
+              code == 0 and t.get("files") == ["src/a.py"]
+              and "dup.py" in said and scripts + "a/dup.py" in said
+              and scripts + "b/dup.py" in said and "ghost.py" in said)
+
+        proj, mpath = project("resolution-test", finding_for(
+            "core/widget.py",
+            "Fix the loop and add a case to test_widget.py"),
+            ("pkg/core/widget.py", "pkg/tests/test_widget.py"))
+        code, txt = _cli_in(["add", "--from-file", "-"], proj, fix_doc(
+            {"title": "fix P1-R1", "fixes": ["P1-R1"]}))
+        tasks, _named = state(mpath)
+        new = sorted(t for t in tasks if t != "P1.1")
+        got = (tasks.get(new[0]) or {}).get("files") if new else None
+        check("bx8 a test file the resolution names is resolved the same way and "
+              "scoped with the source, so the fix task carries the test it is "
+              "asked to add: %r" % ((code, got),),
+              code == 0 and got == ["pkg/core/widget.py",
+                                    "pkg/tests/test_widget.py"])
+
+        proj, mpath = project("tracked", finding_for("dup.py"),
+                              (scripts + "a/dup.py",))
+        git = ["git", "-C", proj]
+        quiet = dict(stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        subprocess.run(git + ["init", "-q"], **quiet)
+        subprocess.run(git + ["add", scripts + "a/dup.py"], **quiet)
+        write(proj, scripts + "b/dup.py")
+        code, txt = _cli_in(["add", "--from-file", "-"], proj, fix_doc(
+            {"title": "fix P1-R1", "fixes": ["P1-R1"]}))
+        tasks, _named = state(mpath)
+        new = sorted(t for t in tasks if t != "P1.1")
+        check("bx9 in a git checkout the candidates are the TRACKED files: an "
+              "untracked file of the same name is no second candidate, so the "
+              "word resolves to the tracked one: %r"
+              % ((code, (tasks.get(new[0]) or {}).get("files") if new else None),),
+              code == 0 and new
+              and (tasks.get(new[0]) or {}).get("files") == [scripts + "a/dup.py"])
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

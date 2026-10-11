@@ -124,7 +124,9 @@ def _repo(prefix, task_ids=TASKS, gate=("true",), per_task="always",
                    "review": {"perTask": per_task}}, fh)
     with open(os.path.join(root, ".gitignore"), "w") as fh:
         fh.write(".claude/state/\n")
-    for n in range(1, len(task_ids) + 1):
+    # At least three sources: the findings these cases hand in name `src/f1.txt`
+    # to `src/f3.txt`, and a fix task is scoped only onto a path that exists.
+    for n in range(1, max(len(task_ids), 3) + 1):
         with open(os.path.join(root, "src", "f%d.txt" % (n,)), "w") as fh:
             fh.write("v0\n")
     mpath = os.path.join(root, "docs", "audit", "audit-plan.json")

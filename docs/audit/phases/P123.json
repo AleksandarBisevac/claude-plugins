@@ -90,11 +90,13 @@
         "severity": "low",
         "file": "plugins/audit/hooks/_config.py:2231-2280; plugins/audit/hooks/guard-secrets-read.py:1823",
         "issue": "P123.13 adds a second reader of where cp/mv/install write (_config.copy_destinations) beside guard-secrets-read._copy_destinations, and they disagree: the new one has no `install -d` (creates directories, writes no file) or `-T` handling and no is_dir reading, so guard-bash-writes can attribute or block a path the plan gate's PreToolUse reader grades differently - the two-readers-of-one-command shape P123.35 consolidates elsewhere.",
-        "resolution": "Make one reader in hooks/_config (with install -d, -T and the is_dir seam) and have both hooks call it; pin the agreement with a case per spelling.",
-        "fixTask": "P123.59-64p"
+        "resolution": "fixed in P123.59-64p (185f3f4ffed3): Make one reader in hooks/_config (with install -d, -T and the is_dir seam) and have both hooks call it; pin the agreement with a case per spelling.",
+        "fixTask": "P123.59-64p",
+        "commit": "185f3f4ffed3",
+        "status": "fixed"
       }
     ],
-    "outcome": "[findings: 7 - 0 high, 4 med, 3 low; 6 with a recorded fix commit]"
+    "outcome": "[findings: 7 - 0 high, 4 med, 3 low; 7 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -4586,7 +4588,7 @@
     {
       "id": "P123.59-64p",
       "title": "One reader says where cp, mv and install write, and both hooks call it (orchestrator-written guard reading code)",
-      "status": "in_progress",
+      "status": "done",
       "description": "(P123-R7, low) P123.13 adds a second reader of where cp/mv/install write (_config.copy_destinations) beside guard-secrets-read._copy_destinations, and they disagree: the new one has no `install -d` (creates directories, writes no file) or `-T` handling and no is_dir reading, so guard-bash-writes can attribute or block a path the plan gate's PreToolUse reader grades differently - the two-readers-of-one-command shape P123.35 consolidates elsewhere.\n\nResolution: Make one reader in hooks/_config (with install -d, -T and the is_dir seam) and have both hooks call it; pin the agreement with a case per spelling. GUARD COMMAND-READING CODE: written by the orchestrator. Faults: P123-R7.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -4621,14 +4623,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "185f3f4ffed3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Written by the orchestrator (guard command-reading code). hooks/_config.copy_destinations(words, is_dir=None, files_of=None) is now the one reader: program found past assignments and wrappers (program_candidates); tee writes its operands; cp/mv/install/ln read -t/--target-directory, -T/--no-target-directory, install -d (writes no file -> []), value-taking options, a slash-ended or multi-source directory, the is_dir seam for a slashless directory operand, and a whole copy (mv, cp -r/-R/-a) listed through files_of; a missing operand or option value is None (unreadable). _lands_as_named moved with it. guard-secrets-read._copy_destinations is now that reader's name in this file (`or []`), keeping _COPY_PROGRAMS and the directory walk bound; its duplicate parser and constants are gone. guard-bash-writes already called the shared reader and now attributes a landed write per file (`mv -t out a b` -> out/a, out/b, not out). Cases: test__config dd1 updated (per-file -t), dd3 (install -d, -T, slash/multi-source directory, ln), dd4 (is_dir seam); test_guard_secrets_read ww7c (the two hooks' readers agree on every spelling). Seen red before the change: dd1, dd3, dd4, ww7c.",
+        "descriptive": "One reader says where cp, mv, install, ln and tee write, and both shell-write guards ask it, so one command gets one answer."
       },
       "startedAt": "2026-10-11T18:54:31Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-11T19:12:43Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__config.py: dd3, dd4 (dd1 updated)",
+        "plugins/audit/tests/test_guard_secrets_read.py: ww7c"
+      ],
       "notes": [
         {
           "at": "2026-10-11T16:31:12Z",
@@ -4643,12 +4648,22 @@
         "runId": "2026-10-11T19:12:41Z.9ac69d",
         "status": "passed",
         "at": "2026-10-11T19:12:41Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "185f3f4ffed3",
+        "at": "2026-10-11T19:12:43Z",
+        "basis": "a fix task for P123-R7: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only fix task; the red was observed by hand before the change: test__config dd1, dd3 and dd4 and test_guard_secrets_read ww7c failed on the two unconsolidated readers (313/316 and 700/701), and pass after it (335/335, 701/701)."
       }
     },
     {
       "id": "P123.60-64p",
       "title": "A triage's fix tasks are added whole from stdin, never stopped halfway by a finding's own text",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(F639) `drive-phase next --answer fix --fix <ids>` builds each fix task's `audit-task add` argv with the finding's free text as `--description`; audit-task refuses a description whose argv shape looks like shell substitution, so a finding that quotes code (`(split_not_commands at :4809)`) stopped the P123 triage after two of seven fix tasks, and the rest were added by hand on stdin. Hand every fix task's description to `audit-task add` on stdin (`--description -`), as the refusal itself prescribes, and make the batch whole: every requested fix task is added or none is, and the drive says which. Regression: a triage over a finding whose issue holds a backtick span with a spaced paren adds its fix task; an add the verb refuses for another reason leaves no partial batch. Also (F640): a fix task's files are the finding's path words as written - `manifest/_manifest_io.py`, `_deps.py` - relative to whatever directory the reviewer meant, so the plan gate covered none of them and P123.54 needed a widening with full paths. Resolve each path a finding names to an existing repo-relative path before it becomes a `files` entry: as written when it exists from the repo root, else by a unique suffix match among the project's tracked files; a word that resolves to none or to several is named in the add's note with its candidates and is not written. Regression: a finding naming `manifest/_manifest_io.py:774` scopes `plugins/audit/scripts/manifest/_manifest_io.py`; an ambiguous basename is named, not guessed. Faults: F639, F640.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -4679,16 +4694,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-11T19:12:43Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T19:46:37Z.4ec0fe",
+        "status": "passed",
+        "at": "2026-10-11T19:46:37Z"
+      }
     },
     {
       "id": "P123.61-64p",

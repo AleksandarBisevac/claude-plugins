@@ -2932,15 +2932,16 @@ def _scope_paths(entry):
     return [p for p in _finding_paths(entry.get("file")) if not _path_problems([p])]
 
 
-def _pathless_refusal(targets, files):
+def _pathless_refusal(targets, files, project):
     """The refusal for `--fixes` findings whose `file` text names no path a task
     can be scoped to, or None. A fix task scoped to nothing by accident is refused
     edit by edit by the plan gate, so it is not made: each such finding is named
-    with the text it carried. A path the caller named in `files` is a scope of its
+    with the text it carried, and with what each word it did name resolved to
+    (`_resolve_finding_path`). A path the caller named in `files` is a scope of its
     own, so nothing is refused then."""
     if files:
         return None
-    bare = [e for e in targets if not _scope_paths(e)]
+    bare = [e for e in targets if not _fix_scope([e], project)["paths"]]
     if not bare:
         return None
     return ("[audit-task] --fixes names finding(s) whose `file` text names no path "
@@ -2948,8 +2949,11 @@ def _pathless_refusal(targets, files):
             "edit by the plan gate, so none was made. Name the path with --files "
             "(the flag `scope --files` takes) alongside --fixes, or fix the "
             "finding's `file`. Nothing written."
-            % ("; ".join("%s (file: %r)" % (e.get("id"), e.get("file"))
-                         for e in bare),))
+            % ("; ".join("%s (file: %r)%s" % (
+                e.get("id"), e.get("file"),
+                "".join(" - " + _unresolved_sentence(p, c) for p, c
+                        in _fix_scope([e], project)["unresolved"]))
+                for e in bare),))
 
 
 def _runnerless_test_note(targets, project, gate, basis, fixes):
@@ -2985,17 +2989,83 @@ def _colocated_test(project, path):
     return "%s%s.test.%s" % (head + "/" if head else "", stem, ext)
 
 
+_UNTRACKED_DIRS = ("node_modules", "__pycache__")
+
+
+def _tracked_files(project):
+    """The project's files as repo-relative POSIX paths: `git ls-files` when the
+    directory is a checkout, else a walk that skips dot-directories and the
+    dependency and bytecode folders - a tree with no git still has paths a
+    finding can name."""
+    try:
+        done = subprocess.run(["git", "-C", project, "ls-files", "-z"],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except OSError:
+        done = None
+    if done is not None and done.returncode == 0 and done.stdout:
+        return [p for p in done.stdout.decode("utf-8", "replace").split("\0") if p]
+    walked, top = [], project.rstrip(os.sep)
+    for base, dirs, names in os.walk(project):
+        dirs[:] = sorted(d for d in dirs
+                         if not d.startswith(".") and d not in _UNTRACKED_DIRS)
+        head = base[len(top):].strip(os.sep).replace(os.sep, "/")
+        walked.extend("%s/%s" % (head, n) if head else n for n in sorted(names))
+    return walked
+
+
+def _resolve_finding_path(path, project, tracked):
+    """The repo-relative paths a path a finding names can mean: `[path]` when it
+    exists from the project root as written, else every tracked file it is the
+    tail of (`manifest/_manifest_io.py` for `plugins/audit/scripts/manifest/...`).
+    `tracked` is a one-item list holding the listing once it has been needed, so
+    a finding whose paths all exist never lists the tree."""
+    if os.path.exists(os.path.join(project, *path.split("/"))):
+        return [path]
+    if not tracked:
+        tracked.append(_tracked_files(project))
+    return [t for t in tracked[0] if t.endswith("/" + path)]
+
+
+def _unresolved_sentence(path, candidates):
+    """Why a path a finding names was not written to `files`: the candidates it
+    matched, or that it matched no file."""
+    if candidates:
+        return ("%s matches %d tracked files (%s) and is not written; name the "
+                "one meant with `scope --files`"
+                % (path, len(candidates), ", ".join(candidates)))
+    return "%s matches no tracked file and is not written" % (path,)
+
+
 def _fix_scope(targets, project):
-    """`{"paths", "newTests", "asksForTest", "unplaced"}` for the findings `--fixes`
-    names: every path they name that can be a `files` entry; the new test files -
-    those a finding names that do not exist yet, and the one a finding's
+    """`{"paths", "newTests", "asksForTest", "unplaced", "unresolved"}` for the
+    findings `--fixes` names: every path they name that can be a `files` entry,
+    each resolved to an existing repo-relative path (`_resolve_finding_path`; a
+    word that resolves to several, or to none and is not a test file still to be
+    written, is in `unresolved` as `(word, candidates)` instead); the new test
+    files - those a finding names that do not exist yet, and the one a finding's
     RESOLUTION asks for, placed beside its source when the directory shows where
     tests live; and the findings that ask for a test the repo gives no place for.
-    The prose reading is confined to the resolution - the sentence that says what
-    to do - and only ever defaults a mode the caller did not pick."""
-    paths, asking = [], []
+    A test file the resolution names that exists is scoped too, so the task
+    carries the test it is asked to add. The prose reading is confined to the
+    resolution - the sentence that says what to do - and only ever defaults a
+    mode the caller did not pick."""
+    paths, asking, unresolved, tracked = [], [], [], []
     for entry in targets:
-        mine = _scope_paths(entry)
+        mine = []
+        for word in _scope_paths(entry):
+            found = _resolve_finding_path(word, project, tracked)
+            if len(found) == 1:
+                mine.append(found[0])
+            elif not found and _fr.is_test_path(word):
+                mine.append(word)
+            elif (word, found) not in unresolved:
+                unresolved.append((word, found))
+        for word in _finding_paths(entry.get("resolution")):
+            if _path_problems([word]) or not _fr.is_test_path(word):
+                continue
+            found = _resolve_finding_path(word, project, tracked)
+            if len(found) == 1 and found[0] not in mine:
+                mine.append(found[0])
         paths.extend(p for p in mine if p not in paths)
         if _ASKS_FOR_TEST.search(str(entry.get("resolution") or "")):
             asking.append((str(entry.get("id")), mine))
@@ -3013,7 +3083,8 @@ def _fix_scope(targets, project):
             new_tests.append(placed)
     return {"paths": paths + [t for t in new_tests if t not in paths],
             "newTests": new_tests, "unplaced": unplaced,
-            "asksForTest": [fid for fid, _m in asking]}
+            "asksForTest": [fid for fid, _m in asking],
+            "unresolved": unresolved}
 
 
 def _unit_runner_paths(phase, assembled, project, declared):
@@ -3050,6 +3121,8 @@ def _fix_task_args(args, targets, project, fixes):
     if scope["paths"]:
         notes.append("scope: %s, every path the finding(s) %s name"
                      % (", ".join(scope["paths"]), ", ".join(fixes)))
+    notes.extend("scope: " + _unresolved_sentence(w, c)
+                 for w, c in scope["unresolved"])
     if scope["unplaced"]:
         notes.append(
             "the resolution of %s asks for a test, but names no test file and "
@@ -3118,7 +3191,7 @@ def _companion_basis(companions):
                      for c in companions)
 
 
-def _fixes_targets(assembled, phase, fixes, files=()):
+def _fixes_targets(assembled, phase, fixes, files, project):
     """`(findings, None)` - the review findings `--fixes` names, each of the new
     task's own phase and naming no task yet - or `(None, refusal)` naming every
     one that is not. A finding of another phase would key an exception the task's
@@ -3148,7 +3221,7 @@ def _fixes_targets(assembled, phase, fixes, files=()):
         return None, ("[audit-task] --fixes names only findings of the task's own "
                       "phase that name no fix task yet: %s. Nothing written."
                       % ("; ".join(bad),))
-    refusal = _pathless_refusal(found, list(files))
+    refusal = _pathless_refusal(found, list(files), project)
     if refusal:
         return None, refusal
     return found, None
@@ -3219,7 +3292,7 @@ def _locked_add(args, project, config, mpath, title, out):
             return E_USAGE
     fixes = _split_csv(args.fixes)
     targets, refusal = _fixes_targets(assembled, phase, fixes,
-                                      _split_csv(args.files))
+                                      _split_csv(args.files), project)
     if refusal:
         out(refusal)
         return E_USAGE
@@ -7738,7 +7811,7 @@ def _batch_build_tasks(doc, ids, keys, phase, first, assembled, project):
         args = _batch_task_args(spec_task, keys)
         fixes = list(spec_task.get("fixes") or [])
         targets, refusal = _fixes_targets(assembled, phase, fixes,
-                                          _split_csv(args.files))
+                                          _split_csv(args.files), project)
         if refusal:
             bad.append("tasks[%d]: %s" % (i, refusal))
             continue
