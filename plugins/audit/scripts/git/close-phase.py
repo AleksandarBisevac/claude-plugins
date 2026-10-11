@@ -144,6 +144,7 @@ _output.install_path()
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _branch                                                       # noqa: E402
 import _evidence_io  # noqa: E402  (where the ledger lives, and its one strict decode)
+import _excerpt  # noqa: E402  (a failing tool's output is quoted both ends, never head-cut)
 import _config_rules  # noqa: E402  (review_per_task_mode: the live key, refused not defaulted)
 import _invariants  # noqa: E402  (_rel: a record path relative to the git root, or None outside it)
 import _scoped_commit  # noqa: E402  (ignored_records: the refusal the stamp commit would earn)
@@ -605,7 +606,7 @@ def close(git_root, the_plan, branch, parent, run=None, dry_run=False,
         if not switched:
             answer["switchWhy"] = ("`git %s` in %s exited %s%s" % (
                 " ".join(switch["argv"]), switch["path"], code,
-                ": %s" % ((err or out or "").strip()[:160],)
+                ": %s" % (_excerpt.reason_of(err, out),)
                 if (err or out) else ""))
     answer["switched"] = switched
     if switched:
@@ -1489,7 +1490,7 @@ def _commit_verb(script, manifest_path, phase_id, project, subject):
     except ValueError:
         return None, "%s exited %d with no answer it could read: %s" % (
             script, done.returncode,
-            (done.stderr.decode("utf-8", "replace") or text).strip()[:200])
+            _excerpt.reason_of(done.stderr.decode("utf-8", "replace"), text))
     if done.returncode != 0 or answer.get("refused"):
         return None, "%s refused: %s" % (script, answer.get("refused")
                                          or "exit %d" % (done.returncode,))
@@ -1554,7 +1555,7 @@ def commit_landing(target, phase_id, project, git_root, parent, branch=None,
             "the stamp is committed on %s, and `git %s` did not carry %s to it "
             "(exit %s: %s) - run it once %s can fast-forward"
             % (branch, " ".join(argv), parent, code,
-               (err or "").strip()[:160], parent))
+               _excerpt.reason_of(err), parent))
     return made
 
 

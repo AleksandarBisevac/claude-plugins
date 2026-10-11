@@ -61,6 +61,7 @@ import _locks  # noqa: E402  (which phase locks are held, and whether a holder i
 import _branch  # noqa: E402  (what a phase's own branch is called - one answer for every surface)
 import _worktrees  # noqa: E402  (which worktree has a phase branch out, and the ref probe)
 import _scoped_commit  # noqa: E402  (the stderr-keeping git runner a branch copy is read through)
+import _excerpt  # noqa: E402  (a failing git's output is quoted both ends, never head-cut)
 
 
 # --- reading one copy -------------------------------------------------------------
@@ -115,7 +116,7 @@ def _show_phase(git_root, rev, rel, phase_id):
     code, out, err = _scoped_commit.run_git(git_root, ["show", spec])
     if code != 0:
         return None, "git show %s answered %s: %s" % (
-            spec, code, " ".join((err or "").split())[:160] or "no output")
+            spec, code, " ".join(_excerpt.reason_of(err).split()) or "no output")
     try:
         body = _phase_body(json.loads(out), phase_id)
     except ValueError as exc:
@@ -159,7 +160,7 @@ def _readiness_moved(git_root, branch, rel, phase_id):
     if code == 0:
         return "", True
     why = "git diff --quiet %s answered %s: %s" % (
-        spec, code, " ".join((err or "").split())[:160] or "no output")
+        spec, code, " ".join(_excerpt.reason_of(err).split()) or "no output")
     if code == 1:
         why = None
         mcode, mout, merr = _scoped_commit.run_git(
@@ -167,7 +168,7 @@ def _readiness_moved(git_root, branch, rel, phase_id):
         fork = (mout or "").strip()
         if mcode != 0 or not fork:
             why = "git merge-base answered %s: %s" % (
-                mcode, " ".join((merr or "").split())[:160] or "no output")
+                mcode, " ".join(_excerpt.reason_of(merr).split()) or "no output")
         if why is None:
             was, why = _show_phase(git_root, fork, rel, phase_id)
         if why is None:
@@ -411,7 +412,7 @@ def _lock_dir(git_root):
                       "second ask, so the first lookup's failure is not known"
                       % ((out or "").strip(),))
     return None, "git rev-parse --git-common-dir answered %s: %s" % (
-        code, " ".join((err or "").split())[:160] or "no output")
+        code, " ".join(_excerpt.reason_of(err).split()) or "no output")
 
 
 def _held_locks(ld):
@@ -447,7 +448,7 @@ def _branch_names(git_root):
         git_root, ["for-each-ref", "--format=%(refname)", "refs/heads/"])
     if code != 0:
         return None, "git for-each-ref refs/heads/ answered %s: %s" % (
-            code, " ".join((err or "").split())[:160] or "no output")
+            code, " ".join(_excerpt.reason_of(err).split()) or "no output")
     prefix = "refs/heads/"
     return set(ln.strip()[len(prefix):] for ln in (out or "").splitlines()
                if ln.strip().startswith(prefix)), None

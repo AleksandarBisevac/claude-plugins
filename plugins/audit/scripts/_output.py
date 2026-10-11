@@ -2085,13 +2085,11 @@ OUTPUT_RUNNERS = frozenset(("run_git", "_git", "_git_bytes", "run_verb",
 OUTPUT_STREAMS = frozenset(("stdout", "stderr"))
 # Below this a head cut is an abbreviation (a SHA, an id), not a quotation.
 OUTPUT_CUT_MIN = 40
-# Files that still cut output head-only because the task that introduced the lint
-# could not edit them (the plan gate held each outside that task's files). A row
-# is a debt and not a permission: it is reported once the file holds no such cut,
-# so the table empties as the sites are routed and cannot outlive them.
-BARE_CUT_PENDING = ("git/close-phase.py", "governance/drive-phase.py",
-                    "manifest/ado-connect.py", "status/_live_copy.py",
-                    "status/audit-lookup.py")
+# Files that still cut output head-only for a reason a row states. A row is a
+# debt and not a permission: it is reported once the file holds no such cut, so
+# the table cannot outlive its sites. It is empty, and stays so unless a site
+# genuinely cannot reach `_excerpt`.
+BARE_CUT_PENDING = ()
 _BARE_OUTPUT_CUT = ("a head-only cut of a subprocess's output - it keeps whatever "
                     "the tool printed first and loses the line that names the "
                     "failure; quote it through _excerpt.excerpt()")

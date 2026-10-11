@@ -197,6 +197,7 @@ import _loader  # noqa: E402  (script_path: every verb resolved by basename, nev
 import _manifest_io as _mio  # noqa: E402  (loader, phase resolver, TERMINAL)
 import _manifest_phases as _phases  # noqa: E402  (FINDING_FIELDS: what a finding is)
 import _evidence_io as _evio  # noqa: E402  (project_config_for, evidence_dir)
+import _excerpt  # noqa: E402  (a failing verb's output is quoted both ends, never head-cut)
 import _journal_io  # noqa: E402  (read_all: a high-risk answer given before the run)
 import _filed_returns as _fr  # noqa: E402  (where a filed return lives, and its read;
 #                                            the per-task review key a task holds;
@@ -858,7 +859,7 @@ def grade_stamp(ctx, stamp, tree=None):
         result = json.loads(out)
     except ValueError:
         return "stamp not graded (compare exit %d: %s)" % (
-            code, ((err or out).strip().splitlines() or ["no output"])[0][:80])
+            code, _excerpt.reason_of(err, out) or "no output")
     verdict = result.get("verdict")
     if verdict == "stale":
         return "stamp stale (moved %s)" % ("; ".join(moved_fields(result)) or "?",)
@@ -2847,7 +2848,7 @@ def take_stamp(ctx, task, tree=None):
     if code != 0 or not isinstance(line, str) or not line.startswith(STAMP_TOKEN):
         return None, _stopped(ctx, "the stamp is missing - `stamp-verification.py "
                               "take` exited %d with no %s line: %s Nothing filed."
-                              % (code, STAMP_TOKEN, (err or out).strip()[:200]))
+                              % (code, STAMP_TOKEN, _excerpt.reason_of(err, out)))
     if not head:
         return None, _stopped(ctx, "the stamp is missing - git named no HEAD for "
                               "%s, so the stamp binds the claims to no tree. "

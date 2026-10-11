@@ -3098,7 +3098,7 @@
     {
       "id": "P123.40-64p",
       "title": "on Windows a stamp's manifest label reads back to the native path and a binding refusal names the worktree in the native form",
-      "status": "in_progress",
+      "status": "done",
       "description": "CI windows-latest on ci/p124 (run 38036907164) went red on two P124 cases, both Windows path shape. sr210: stamp-verification.stored_manifest returns os.path.join(project, label) with label in posix form, so on Windows the result mixes separators and does not equal the expected native path - join label.split('/') (or normpath the result). bt2: require-plan's binding refusal names the bound worktree as git lists it (forward slashes, the long user name), while the fixture's path is Python's (backslashes, an 8.3 short name of the runner's home), so the case's substring check fails - present the worktree in os.path.normpath form in the message, and make the case compare normcase(realpath) of both sides. Exercise the Windows shapes on every platform through ntpath where the code allows (no Windows box here), and say which half only CI can prove.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -3133,25 +3133,38 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "bbd44ed705ff",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stored_manifest takes pathmod=os.path and joins label.split('/') segment-wise; require-plan's bound-elsewhere refusal prints os.path.normpath(os.path.realpath(worktree)); bt2 compares normcase(realpath(worktree)) in normcase(message); added sr210b/sr210c driving ntpath. Only CI on Windows can prove realpath expands the 8.3 short name to the long name git lists.",
+        "descriptive": "Windows stamp labels read back as one native path and the binding refusal names the worktree in native form."
       },
       "startedAt": "2026-10-11T10:03:34Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-11T10:33:42Z",
+      "verifiedBy": [
+        "sr210b",
+        "sr210c"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-11T10:33:41Z.a49fcd",
         "status": "passed",
         "at": "2026-10-11T10:33:41Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "bbd44ed705ff",
+        "at": "2026-10-11T10:33:42Z"
+      },
+      "redFirst": {
+        "at": "2026-10-11T10:23:11Z",
+        "basis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases sr23 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 235/236 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 234/236 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
       "id": "P123.41-64p",
       "title": "no script cuts a failing tool's output to its head: the last five route through the excerpt helper and the pending list is empty",
-      "status": "pending",
+      "status": "in_progress",
       "description": "P123.6 landed the excerpt helper (_excerpt.excerpt / reason_of) and the bare_output_cut_violations lint, with five scripts parked in _output.BARE_CUT_PENDING: git/close-phase.py (two cuts, one through _worktrees' runner which the lint cannot see), governance/drive-phase.py (two), manifest/ado-connect.py (one), status/_live_copy.py (five), status/audit-lookup.py (three). Route every one through the helper (head + tail + failure lines with the elision marker), empty BARE_CUT_PENDING, and confirm bc4 stays green with the table empty. The release does not ship with a pending row.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -3192,16 +3205,22 @@
         "P123.6-z4y"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-11T10:33:42Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T10:53:49Z.94ed7a",
+        "status": "passed",
+        "at": "2026-10-11T10:53:49Z"
+      }
     },
     {
       "id": "P123.42-64p",

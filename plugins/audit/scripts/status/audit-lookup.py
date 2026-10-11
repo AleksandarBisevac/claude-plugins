@@ -748,8 +748,8 @@ def _diff_lines(ctx, files, tree=None, base=None):
     if done.returncode != 0:
         return ["`%s` exited %d here (%s); run it yourself."
                 % (command, done.returncode,
-                   done.stderr.decode("utf-8", "replace").strip()[:200])]
-    lines = ["`%s`:" % (command,), "```diff",
+                   _excerpt.excerpt(done.stderr.decode("utf-8", "replace")))]
+    lines =["`%s`:" % (command,), "```diff",
              done.stdout.decode("utf-8", "replace").rstrip("\n") or "(empty)",
              "```"]
     new = untracked.stdout.decode("utf-8", "replace").split()
@@ -835,7 +835,7 @@ def _head(ctx):
     sha = done.stdout.decode("utf-8", "replace").strip()
     if done.returncode != 0 or not sha:
         return None, ("`git rev-parse HEAD` exited %d (%s)" % (
-            done.returncode, done.stderr.decode("utf-8", "replace").strip()[:160]))
+            done.returncode, _excerpt.excerpt(done.stderr.decode("utf-8", "replace"))))
     return sha, None
 
 
@@ -898,7 +898,7 @@ def existing_test_lines(ctx, phase, head):
     if done.returncode != 0:
         return ["Not computed: `%s` exited %d (%s)." % (
             command, done.returncode,
-            done.stderr.decode("utf-8", "replace").strip()[:200])]
+            _excerpt.excerpt(done.stderr.decode("utf-8", "replace")))]
     paths = [p for p in done.stdout.decode("utf-8", "replace").splitlines()
              if _fr.is_test_path(p)]
     return (["`%s`, test paths only; a test file the phase added is not listed. "

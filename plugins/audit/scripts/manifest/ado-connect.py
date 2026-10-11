@@ -69,6 +69,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _ado_connect as _conn  # noqa: E402  (every decision this door reports)
+import _excerpt  # noqa: E402  (a tool's output that is not JSON is quoted both ends)
 
 USAGE = ("usage: ado-connect.py <manifest> [--transport auto|mcp|az] "
          "[--probe <file.json|->] [--json]\n")
@@ -128,7 +129,7 @@ def extension_reading(has_az, completed, error):
     except Exception as exc:
         return {"names": None,
                 "saw": "`az extension list` exited 0 and its output is not JSON "
-                       "(%s): %r" % (exc, stdout[:120])}
+                       "(%s): %r" % (exc, _excerpt.excerpt(stdout))}
     if not isinstance(parsed, list):
         return {"names": None,
                 "saw": "`az extension list` exited 0 and returned %s, not the "

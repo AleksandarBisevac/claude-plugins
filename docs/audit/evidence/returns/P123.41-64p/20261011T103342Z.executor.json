@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "sweep-selftests": "pass",
+    "sweep-selftests --spaced": "pass",
+    "ruff": "pass",
+    "vermin": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task, expectRedFirst false; no helper run. I did watch bc4 (tightened to also require BARE_CUT_PENDING == ()) FAIL on the unrouted tree via python3 plugins/audit/tests/test__output.py --selftest: 'FAIL bc4 ... pending [five rows], [] found', then PASS after routing and emptying the table.",
+    "at": "before the routing edits, this session"
+  },
+  "outcome": {
+    "technical": "Routed all twelve flagged head-only cuts through _excerpt (excerpt/reason_of): close-phase.py x3 (the _commit_verb cut, plus the two through the _worktrees runner at the switch reason and the fetch reason that the lint cannot see), drive-phase.py x2, ado-connect.py x1, _live_copy.py x5, audit-lookup.py x3; added `import _excerpt` to close-phase, drive-phase, ado-connect, _live_copy. BARE_CUT_PENDING emptied to () in _output.py (comment rewritten). bc4 in test__output.py now asserts the table is empty and the real tree has no violations. PLUGIN-BUILD-GUIDE.md module-map fence updated for the four new _excerpt edges (4 lines, matches _deps.py --render). No file beyond the declared list touched; _worktrees.py needed no change. Sweep: 331/331 files ok exit 0; --spaced exit 0; ruff exit 0; vermin exit 0. No timeouts.",
+    "descriptive": "No script cuts a failing tool's output to its head any more; the bare-cut pending table is empty and still green."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__output.py::bc4 (tightened: pending table empty and real tree clean)"
+  ],
+  "claims": "claims: cuts routed = the 12 sites the lint reported with pending=() plus the 2 _wt-runner cuts in close-phase it cannot see (grep of [:N] on err/out in close-phase.py); evidence: bc4 red before, sweep exit 0 after. Behavior change: drive-phase's stamp-compare reason now quotes the excerpt of the output rather than its first line cut to 80 chars; messages that were cut at 160/200 now keep head 100 + tail 220 with an elision marker when longer.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:1416eb9135dd4aea83bbccb4dc3f76eda7be796b1fb45dba0784803978b8d624\",\"dirtyDigest\":\"sha256:621e883fe950bdc2d2a48f58ea5569125d95ede23fadcca2f4d77c154dcf653d\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\"PLUGIN-BUILD-GUIDE.md\":\"9d7cc806ed379b2e\",\"plugins/audit/scripts/_output.py\":\"7bea7d338e41e3a1\",\"plugins/audit/scripts/git/close-phase.py\":\"2f75e1bb178be7ab\",\"plugins/audit/scripts/governance/drive-phase.py\":\"dee92f8040f829f6\",\"plugins/audit/scripts/manifest/ado-connect.py\":\"0b3f6292984e32eb\",\"plugins/audit/scripts/status/_live_copy.py\":\"8aae8c2decb88191\",\"plugins/audit/scripts/status/audit-lookup.py\":\"b168a9af0496bb9b\",\"plugins/audit/tests/test__output.py\":\"7cdbf582a0c3e436\"},\"head\":\"bbd44ed7\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/_output.py\",\"plugins/audit/scripts/git/_worktrees.py\",\"plugins/audit/scripts/git/close-phase.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/manifest/ado-connect.py\",\"plugins/audit/scripts/status/_live_copy.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"plugins/audit/tests/test__output.py\",\"plugins/audit/tests/test_audit_lookup.py\",\"plugins/audit/tests/test_close_phase.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:159cc5fdd609d955d82f03f4b081888b0f2cac945b49685994ac0e875ea6ddd7\",\"v\":2}"
+}

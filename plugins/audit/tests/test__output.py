@@ -830,9 +830,10 @@ def _cases(check):
               and [h for h in held if h[0] == "title.py" and h[1] == 0])
     finally:
         shutil.rmtree(bc, ignore_errors=True)
-    check("bc4 ...and the real tree carries no head-only cut of output beyond the "
-          "files the pending table names: %r" % (M.bare_output_cut_violations(),),
-          M.bare_output_cut_violations() == [])
+    check("bc4 ...and the pending table is empty while the real tree still "
+          "carries no head-only cut of output: %r pending, %r found"
+          % (M.BARE_CUT_PENDING, M.bare_output_cut_violations()),
+          M.BARE_CUT_PENDING == () and M.bare_output_cut_violations() == [])
 
     # ------------------------------------ text-mode writes name their newline
     nw = tempfile.mkdtemp(prefix="audit-newline-")
