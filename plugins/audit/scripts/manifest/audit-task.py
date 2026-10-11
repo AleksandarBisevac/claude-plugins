@@ -2924,6 +2924,51 @@ def _finding_paths(text):
     return out
 
 
+def _scope_paths(entry):
+    """The paths a finding's `file` text names that can be a `files` entry - the
+    ones `_fix_scope` scopes a fix task onto, and the only ones that count when
+    asking whether a finding named a path at all."""
+    return [p for p in _finding_paths(entry.get("file")) if not _path_problems([p])]
+
+
+def _pathless_refusal(targets, files):
+    """The refusal for `--fixes` findings whose `file` text names no path a task
+    can be scoped to, or None. A fix task scoped to nothing by accident is refused
+    edit by edit by the plan gate, so it is not made: each such finding is named
+    with the text it carried. A path the caller named in `files` is a scope of its
+    own, so nothing is refused then."""
+    if files:
+        return None
+    bare = [e for e in targets if not _scope_paths(e)]
+    if not bare:
+        return None
+    return ("[audit-task] --fixes names finding(s) whose `file` text names no path "
+            "to scope a task to: %s. A fix task with no files is refused edit by "
+            "edit by the plan gate, so none was made. Name the path with --files "
+            "(the flag `scope --files` takes) alongside --fixes, or fix the "
+            "finding's `file`. Nothing written."
+            % ("; ".join("%s (file: %r)" % (e.get("id"), e.get("file"))
+                         for e in bare),))
+
+
+def _runnerless_test_note(targets, project, gate, basis, fixes):
+    """The note for a fix task that owes a test but whose gate names no test
+    runner, else None: the findings whose resolution asks for a test (or, failing
+    those, all of `fixes` when the scope holds a test path) and why the gate has
+    none - `basis`, the sentence the gate derivation gave for its own choice.
+    Which runner a test belongs to is `_gate_derive`'s to say, so a gate it reads
+    a runner off is never noted."""
+    scope = _fix_scope(targets, project)
+    owed = scope["asksForTest"] or (
+        list(fixes) if any(_fr.is_test_path(p) for p in scope["paths"]) else [])
+    if not owed or any(_gate_derive.entry_runner(e) for e in gate):
+        return None
+    return ("no test runner in this task's gate for the test %s asks for: the "
+            "gate is %s, derived as %s; name the runner with `retarget "
+            "--gate-set`, or the test will have nothing that runs it"
+            % (", ".join(owed), gate or "empty", basis))
+
+
 def _colocated_test(project, path):
     """The test file a source `path` would have beside it - `Why.test.tsx` for
     `components/Why.tsx` - when its directory already holds a `.test.` or `.spec.`
@@ -2949,8 +2994,7 @@ def _fix_scope(targets, project):
     to do - and only ever defaults a mode the caller did not pick."""
     paths, asking = [], []
     for entry in targets:
-        mine = [p for p in _finding_paths(entry.get("file"))
-                if not _path_problems([p])]
+        mine = _scope_paths(entry)
         paths.extend(p for p in mine if p not in paths)
         if _ASKS_FOR_TEST.search(str(entry.get("resolution") or "")):
             asking.append((str(entry.get("id")), mine))
@@ -3073,11 +3117,13 @@ def _companion_basis(companions):
                      for c in companions)
 
 
-def _fixes_targets(assembled, phase, fixes):
+def _fixes_targets(assembled, phase, fixes, files=()):
     """`(findings, None)` - the review findings `--fixes` names, each of the new
     task's own phase and naming no task yet - or `(None, refusal)` naming every
     one that is not. A finding of another phase would key an exception the task's
-    landing is never asked about, and one already naming a task belongs to it."""
+    landing is never asked about, and one already naming a task belongs to it.
+    A finding whose `file` names no path is refused too, unless the caller's own
+    `files` give the task a scope (`_pathless_refusal`)."""
     if not fixes:
         return [], None
     own = dict((str(f.get("id")), f) for f in
@@ -3101,6 +3147,9 @@ def _fixes_targets(assembled, phase, fixes):
         return None, ("[audit-task] --fixes names only findings of the task's own "
                       "phase that name no fix task yet: %s. Nothing written."
                       % ("; ".join(bad),))
+    refusal = _pathless_refusal(found, list(files))
+    if refusal:
+        return None, refusal
     return found, None
 
 
@@ -3168,7 +3217,8 @@ def _locked_add(args, project, config, mpath, title, out):
             out(refusal)
             return E_USAGE
     fixes = _split_csv(args.fixes)
-    targets, refusal = _fixes_targets(assembled, phase, fixes)
+    targets, refusal = _fixes_targets(assembled, phase, fixes,
+                                      _split_csv(args.files))
     if refusal:
         out(refusal)
         return E_USAGE
@@ -3203,6 +3253,10 @@ def _locked_add(args, project, config, mpath, title, out):
                                                 assembled, failing_row,
                                                 project, companions,
                                                 runner_aware=bool(fixes))
+    if fixes:
+        bare_runner = _runnerless_test_note(targets, project, task["tests"]["gate"],
+                                            gate_basis, fixes)
+        fix_notes = fix_notes + ([bare_runner] if bare_runner else [])
     for text in fix_notes + ([_companion_basis(companions)] if companions else []):
         task.setdefault("notes", []).append({"at": _utc_now(), "text": text})
     if args.bug:
@@ -7665,7 +7719,8 @@ def _batch_build_tasks(doc, ids, keys, phase, first, assembled, project):
     for i, (spec_task, tid) in enumerate(zip(doc["tasks"], ids)):
         args = _batch_task_args(spec_task, keys)
         fixes = list(spec_task.get("fixes") or [])
-        targets, refusal = _fixes_targets(assembled, phase, fixes)
+        targets, refusal = _fixes_targets(assembled, phase, fixes,
+                                          _split_csv(args.files))
         if refusal:
             bad.append("tasks[%d]: %s" % (i, refusal))
             continue
@@ -7677,10 +7732,15 @@ def _batch_build_tasks(doc, ids, keys, phase, first, assembled, project):
             companions, _cn = _companions_for(
                 project, declared, None,
                 _unit_runner_paths(phase, assembled, project, declared))
-        task, _unnamed, _basis = _build_task(
+        task, _unnamed, gate_basis = _build_task(
             tid, spec_task["title"].strip(), args, phase, assembled, None,
             project, companions, runner_aware=bool(fixes))
         basis = _companion_basis(companions) if companions else ""
+        if fixes:
+            bare_runner = _runnerless_test_note(targets, project,
+                                                task["tests"]["gate"], gate_basis,
+                                                fixes)
+            notes = notes + ([bare_runner] if bare_runner else [])
         for text in notes + ([basis] if basis else []):
             task.setdefault("notes", []).append({"at": _utc_now(), "text": text})
         if fixes:

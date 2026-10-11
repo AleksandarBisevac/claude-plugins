@@ -1,0 +1,30 @@
+{
+  "gates": {
+    "sweep-selftests": "pass",
+    "sweep-selftests --spaced": "pass",
+    "ruff": "pass",
+    "vermin": "pass",
+    "gate-parity": "pass",
+    "cz-block": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-11T14:11:52Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage cz-block` in a throwaway tree at HEAD exited 1 with 3 of 25 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cz16 (house FAIL), cz16b (house FAIL), cz19 (house FAIL): SELFTEST FAILED: 22/25 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "audit-task.py: _fixes_targets now takes the caller's files and refuses (via new _pathless_refusal, shared by add --fixes and the batch/drive path) any finding whose file text names no usable path, naming each with its text and the --files remedy, writing nothing; _scope_paths factored out of _fix_scope. New _runnerless_test_note adds a task note (add and batch) when a finding asks for a test or the scope holds a test path but the derived gate names no runner (entry_runner from _gate_derive), citing the gate basis. _gate_derive.py needed no change (runner mapping already there; cz17/cz18 lock gate-holds-vitest and 'src/a.ts (x, y)' -> src/a.ts, both green on old code). Drive: relays the verb refusal as its stop (relay_refusal), no drive-phase.py change. Docs: verbs-in-full.md paragraph. Tests cz16, cz16b, cz16c, cz17, cz18, cz19 added to the cz-block stage. Full sweep 331/331 files ok, plain and --spaced; ruff, vermin, gate-parity exit 0.",
+    "descriptive": "A fix task is no longer made with an empty scope by accident, and a fix task owing a test the gate cannot run says why."
+  },
+  "testsAdded": [
+    "cz16",
+    "cz16b",
+    "cz16c",
+    "cz17",
+    "cz18",
+    "cz19"
+  ],
+  "claims": "claims: no numbers or ids added to comments; the drive-relay statement rests on drive-phase.py _verb_or_stop returning relay_refusal for a non-zero verb exit (read at line 548), not on a drive test.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:b6412e18dd223e14ec583e965f46ad368681053f9fdbc76a0c12f2cd3ad25f85\",\"dirtyDigest\":\"sha256:8fe5a4dc3bf8f5586a31b96dfec5067ca13b35c7f6d4b90fca2c553f8a283e09\",\"dirtyPaths\":{\"plugins/audit/reference/verbs-in-full.md\":\"dd090e1a69795aa4\",\"plugins/audit/scripts/manifest/audit-task.py\":\"441e582be2227dae\",\"plugins/audit/tests/test_audit_task.py\":\"32f04728f0c89285\"},\"head\":\"a2602d6e\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/governance/_gate_derive.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:b5c72180043405ae8c1c6aae7367bbffae26b4b59c3dba1b9d8d92ddb7122946\",\"v\":2}"
+}

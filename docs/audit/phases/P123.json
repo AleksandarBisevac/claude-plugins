@@ -3621,7 +3621,7 @@
     {
       "id": "P123.47-64p",
       "title": "A machine path with a space is scrubbed whole, a quoted preload is named, and the spaced leg exempts no product suite",
-      "status": "in_progress",
+      "status": "done",
       "description": "The spaced sweep leg found product reds it could not fix in scope. (F627, privacy) `_machine_paths` ends a machine path at its first space, so `<home>/My Projects/...` is committed as `<outside-repo> Projects/...` or with the user-specific tail - in shards, evidence, journal and returns, the very writes the scrub-by-default layer exists to protect. Match each known machine root (home, the project's parent, TMPDIR, and their realpaths) as a LITERAL prefix rather than a no-space token pattern, so a spaced root is replaced whole and a spaced path inside the repo stays repo-relative; reds today under the spaced leg: test__machine_paths mp2, test__journal_io ft4, test__evidence_io sc1, test__manifest_io ws1, test_audit_task ff17, fm1. `tools/check-committed-pii.py` gains a probe for a spaced home path. (F626) stamp-verification's child_env/_TOKEN_SPLIT splits NODE_OPTIONS on whitespace, so a quoted `--require '<root>/a b/setup.js'` preload is not named in the basis (sr44): split it the way node does, quotes honoured. (F628, fixture part) `_harness.py` fr2/sr5 split a child's output with `.split()` - parse it properly. Then remove every SPACED_EXEMPT row these fix in tools/sweep-selftests.py; the rows left after this task are only test_guard_secrets_read.py and .claude/hooks/guard-release.py, which the orchestrator's guard tasks remove. Regression: each named case green under `python3 tools/sweep-selftests.py --spaced` with its row gone. Faults: F626, F627, F628.",
       "files": [
         "plugins/audit/scripts/_machine_paths.py",
@@ -3665,25 +3665,43 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a2602d6edc26",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_machine_paths: new _known_roots/_root_alternative/_root_pattern/_rooted. The checkout root, its parent, HOME/USERPROFILE, TMPDIR/TEMP/TMP, expanduser('~') and gettempdir(), each as given and as realpath, are matched as LITERAL prefixes, longest first, before the token grammar runs, in both redacted_free_text and redacted_paths. A posix root takes only '/' and never matches behind a drive letter. An in-checkout match becomes repo-relative, unless it is glued to a preceding path character (a PATH list entry) or leaves the checkout through '..', in which case it becomes the outside token. Under an outside root, a following space-separated word that carries a separator is consumed as the path's tail. scrubbed_values threads `known` through the walk. stamp-verification: child_env reads option strings through _option_words: node's NODE_OPTIONS grammar (double quotes group, a backslash escapes inside them), plus shlex for other variables, then a split on '=' and the path-list separator. The vitest/node 'imported from' importer now runs to end of line. _harness fr2/sr5 read lines rather than whitespace words. sweep-selftests: SPACED_EXEMPT is now {}, sweep() takes exempt=, sp4 uses its own table, new sp6. gate-parity: the SPACED_EXEMPT AUDITED_EXEMPTIONS row is removed (an empty table is not derived). test__manifest_io _CORPUS_REWRITES records the new rewrites, P123.json /tasks/30/redFirst/basis and P124.json /tasks/3/{intentCheck/redFirstBasis,redFirst/basis}: committed /private/var/folders throwaway paths that this machine's temp root now scrubs. check-committed-pii gains q2s (a spaced home path is detected, and the scrub leaves no fragment and no finding). PLUGIN-BUILD-GUIDE describes both rules. Reds seen before the fix: mp12 (test__machine_paths, plain run, 12/13); sr44 and sr44a (test_stamp_verification --stage sr-budget, 4/6); sm1 (--stage sm-missing-module, importer under 'the tree'); sp4/sp6 (sweep --selftest raised TypeError: sweep() got an unexpected keyword argument 'exempt'). q2s was written after the scrub's literal pass and seen red against the first version of the fix: the tail 'Projects/proj/notes.md' was left beside the token. fr2/sr5 were seen red only under the spaced leg, before the edit. Final: `python3 tools/sweep-selftests.py` exit 0 (331/331 files, 15645 cases); `python3 tools/sweep-selftests.py --spaced` exit 0 (331/331, no exemption); `python3 tools/check-committed-pii.py` exit 0; `python3 tools/gate-parity.py` exit 0; `ruff check plugins/audit tools` exit 0; vermin exit 0; `python3 tools/bench-hooks.py --gate` exit 0. The guide was edited after the sweeps; test__deps, test__refs and test__output were rerun after it, all pass.",
+        "descriptive": "A machine path holding a space is scrubbed whole, a double-quoted NODE_OPTIONS preload is named, and the spaced sweep leg exempts nothing."
       },
       "startedAt": "2026-10-11T13:19:29Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-11T14:00:11Z",
+      "verifiedBy": [
+        "test__machine_paths.py mp12",
+        "test__machine_paths.py mp13",
+        "test_stamp_verification.py sr44 (fixture now a double-quoted spaced preload)",
+        "test_stamp_verification.py sr44a",
+        "test_stamp_verification.py sm1 (importer under a spaced directory)",
+        "tools/sweep-selftests.py sp6",
+        "tools/check-committed-pii.py q2s"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-11T14:00:10Z.f2abdf",
         "status": "passed",
         "at": "2026-10-11T14:00:10Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "a2602d6edc26",
+        "at": "2026-10-11T14:00:11Z"
+      },
+      "redFirst": {
+        "at": "2026-10-11T13:52:04Z",
+        "basis": "`python3 plugins/audit/tests/test__machine_paths.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 13 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - mp12 (house FAIL): SELFTEST FAILED: 12/13 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.48-64p",
       "title": "A fix task that would declare no path is refused, and a fix task's gate runs the test its finding asks for",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(F631, reported from the testbed's P11 review on 3.2.0; the free-text path split itself is already fixed by `_finding_paths`) Two gaps remain in how `add --fixes` / `drive next --answer fix` scope a fix task. (a) A finding whose `file` text names no resolvable path still yields a fix task with no files, which the plan gate then refuses edit by edit; refuse the add instead, naming each such finding and the `scope --files` remedy (or, from the drive, stop with that question) - never a task whose scope is empty by accident. (b) When a finding's resolution asks for a test, or the fix scope holds a test path, the fix task's gate includes the runner that test belongs to (through `_gate_derive`, the one place that maps a test path to its runner); when no runner can be derived, the note says why instead of leaving a lint/typecheck-only gate in silence. Regression: `--fixes` over a finding with `file: \"(no path here)\"` refuses naming it; a finding with `file: \"src/a.ts\"` and a resolution 'add a unit test' yields a gate holding the unit runner; the reported string `src/a.ts (x, y)` still scopes `src/a.ts` alone. Faults: F631.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -3717,16 +3735,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-11T14:00:11Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T14:20:01Z.19cbc7",
+        "status": "passed",
+        "at": "2026-10-11T14:20:01Z"
+      }
     },
     {
       "id": "P123.49-64p",

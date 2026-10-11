@@ -354,7 +354,10 @@ each path to the runner that takes it: a project whose gate names vitest and pla
 runs a unit test under vitest and an e2e spec under playwright, never the other way round,
 and an entry left with no path is dropped rather than left to run the whole suite. The
 companions below apply to a fix task too, and a test outside the runner's include widens
-the runner's config.
+the runner's config. When the test a finding asks for has no runner in the task's gate
+(the phase's gate names none), a task note says so and says how the gate was derived. A finding whose `file` text names no
+path is refused, naming it, unless `--files` gives the task a scope; the drive relays that
+refusal as its stop, so a fix task is never made with an empty scope by accident.
 
 **Several fix tasks at once go in one batch on stdin**, never one `--fixes` call per
 finding with its text on argv, where a value like ` :400` is refused part-way through and

@@ -15911,6 +15911,65 @@ def _introduces_cases(check):
               % (((tasks(mpath).get("P1.2") or {}).get("tests") or {}).get("mode"),),
               ((tasks(mpath).get("P1.2") or {}).get("tests") or {}).get("mode")
               == "gate-only")
+
+        # ---- a fix task is never scoped to nothing by accident ----------------
+        proj, mpath = project("fx-nopath", [
+            finding("P1-R1", "(no path here)"),
+            finding("P1-R2", "src/a.ts"),
+            finding("P1-R3", "see the review notes")])
+        before = open(mpath, "rb").read()
+        code, text = verb(proj, "add", "Fix", "--phase", "P1", "--fixes",
+                          "P1-R1,P1-R2,P1-R3")
+        check("cz16 `--fixes` over findings naming no path is refused naming "
+              "each such finding and the `scope --files` remedy, and writes "
+              "nothing - not the finding that does name one: %r"
+              % ((code, text[:400]),),
+              code == M.E_USAGE and "P1-R1" in text and "P1-R3" in text
+              and "P1-R2" not in text and "scope" in text and "--files" in text
+              and open(mpath, "rb").read() == before)
+        code, text = verb(proj, "add", "Fix", "--phase", "P1", "--fixes", "P1-R2")
+        check("cz16b ALLOW: a finding that names a path is scoped as it was: %r"
+              % ((code, (tasks(mpath).get("P1.2") or {}).get("files")),),
+              code == 0 and (tasks(mpath).get("P1.2") or {}).get("files")
+              == ["src/a.ts"])
+        proj, mpath = project("fx-nopath-files", [finding("P1-R1", "(no path here)")])
+        code, text = verb(proj, "add", "Fix", "--phase", "P1", "--fixes", "P1-R1",
+                          "--files", "src/b.ts")
+        check("cz16c ALLOW: a path the caller named with --files is a scope, so "
+              "the finding that names none is not refused: %r"
+              % ((code, (tasks(mpath).get("P1.2") or {}).get("files")),),
+              code == 0 and (tasks(mpath).get("P1.2") or {}).get("files")
+              == ["src/b.ts"])
+
+        # ---- the runner the test a fix asks for belongs to --------------------
+        proj, mpath = project("fx-unit", [finding(
+            "P1-R1", "src/a.ts", resolution="Add a unit test for the parser")])
+        code, text = verb(proj, "add", "Fix", "--phase", "P1", "--fixes", "P1-R1")
+        t = tasks(mpath).get("P1.2") or {}
+        gate = (t.get("tests") or {}).get("gate") or []
+        check("cz17 a finding naming src/a.ts whose resolution asks for a unit "
+              "test: the gate holds the unit runner and not the e2e one: %r"
+              % ((code, gate),),
+              code == 0 and any("vitest" in g for g in gate)
+              and not any("playwright" in g for g in gate))
+        proj, mpath = project("fx-reported", [finding("P1-R1", "src/a.ts (x, y)")])
+        code, text = verb(proj, "add", "Fix", "--phase", "P1", "--fixes", "P1-R1")
+        check("cz18 the reported string `src/a.ts (x, y)` scopes src/a.ts alone: "
+              "%r" % ((code, (tasks(mpath).get("P1.2") or {}).get("files")),),
+              code == 0 and (tasks(mpath).get("P1.2") or {}).get("files")
+              == ["src/a.ts"])
+        proj, mpath = project("fx-norunner", [finding(
+            "P1-R1", "src/a.ts", resolution="Add a unit test for the parser")])
+        raw = _mio.load_manifest(mpath)
+        raw["phases"][0]["tasks"][0]["tests"]["gate"] = ["lint"]
+        _panel_write._atomic_write_json(mpath, raw)
+        code, text = verb(proj, "add", "Fix", "--phase", "P1", "--fixes", "P1-R1")
+        t = tasks(mpath).get("P1.2") or {}
+        notes = " ".join(n.get("text", "") for n in t.get("notes") or [])
+        check("cz19 a fix task asking for a test in a phase whose gate names no "
+              "runner says why no runner was added instead of leaving a "
+              "lint-only gate in silence: %r" % ((code, t.get("tests"), notes),),
+              code == 0 and "no test runner" in notes and "P1-R1" in notes)
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
