@@ -2473,6 +2473,59 @@ def _cases(check):
         import shutil
         shutil.rmtree(cw_root, ignore_errors=True)
 
+    # (hq) a `<<` the shell reads as text - inside quotes - opens no heredoc,
+    # so the lines after it stay command text even when one of them happens to
+    # spell the would-be delimiter.
+    _rm = "rm -rf " + "x"
+    hq_quoted = M.split_heredocs('echo "a<<b"\n%s\nb' % _rm)
+    check("hq1 a double-quoted `<<` opens no heredoc: the next line is kept as "
+          "command text: %r" % (hq_quoted,),
+          _rm in hq_quoted[0] and hq_quoted[1:] == ([], []))
+    hq_single = M.split_heredocs("echo 'it is <<EOF here'\n%s\nEOF" % _rm)
+    check("hq2 ...and so does a single-quoted one: %r" % (hq_single,),
+          _rm in hq_single[0])
+    hq_real = M.split_heredocs("cat <<b > f\n%s\nb" % _rm)
+    check("hq3 SECOND DIRECTION: a real heredoc into a file is still lifted out "
+          "of the text: %r" % (hq_real,),
+          _rm not in hq_real[0] and hq_real[1:] == ([], []))
+    hq_after = M.split_heredocs('echo "x<<y" && cat <<EOF > f\n%s\nEOF' % _rm)
+    check("hq4 ...including one that follows a quoted `<<` on the same line: %r"
+          % (hq_after,), _rm not in hq_after[0])
+    _far = "cat <<'EOF' | python3 x.py --technical -\n%s\nEOF" % _rm
+    hq_far = M.split_heredocs(_far, pipe_data=True)
+    check("hq5 with pipe_data, a quoted-delimiter body `cat` pipes to a plain "
+          "script run is data, graded by the reader that grades the same script "
+          "as a heredoc head: %r" % (hq_far,),
+          _rm not in hq_far[0] and hq_far[1:] == ([], []))
+    hq_strict = M.split_heredocs(_far)
+    hq_env = M.split_heredocs("export NODE_OPTIONS='-r /dev/stdin'; cat <<'EOF' "
+                              "| node e.js\n%s\nEOF" % _rm, pipe_data=True)
+    hq_awk = M.split_heredocs("awk '{system($0)}' <<'EOF' | python3 x.py -\n%s\n"
+                              "EOF" % _rm, pipe_data=True)
+    check("hq7 ...while without it the same body stays shell, and an "
+          "interpreter option assigned in the command or a head other than "
+          "`cat` keeps it with it: %r" % ((hq_strict[2], hq_env[2], hq_awk),),
+          hq_strict[2] == [_rm] and hq_env[2] == [_rm]
+          and _rm in "\n".join([hq_awk[0]] + hq_awk[1] + hq_awk[2]))
+    _pd = dict(pipe_data=True)
+    hq_shell = M.split_heredocs("cat <<'EOF' | bash\n%s\nEOF" % _rm, **_pd)
+    hq_code = M.split_heredocs("cat <<'EOF' | python3 -\n%s\nEOF" % _rm, **_pd)
+    hq_two = M.split_heredocs("cat <<'EOF' | python3 x.py - | sh\n%s\nEOF" % _rm,
+                              **_pd)
+    hq_live = M.split_heredocs("cat <<EOF | python3 x.py -\n$(%s)\nEOF" % _rm,
+                               **_pd)
+    hq_house = M.split_heredocs("git commit -m \"$(cat <<'EOF'\n%s\nEOF\n)\""
+                                % _rm)
+    check("hq8 a heredoc inside a double-quoted `$( )` is a heredoc - the shell "
+          "reads commands there - so the house commit-message form is still "
+          "lifted: %r" % (hq_house,), _rm not in hq_house[0])
+    check("hq6 ...while every other far side keeps it as shell, as before: a "
+          "shell, an interpreter reading its program from stdin, a second pipe "
+          "and a live substitution: %r"
+          % ((hq_shell[2], hq_code[2], hq_two[2], hq_live[2]),),
+          hq_shell[2] == [_rm] and hq_code[2] == [_rm]
+          and hq_two[2] == [_rm] and hq_live[2] == ["$(%s)" % _rm])
+
 
 def _selftest():
     return _harness.run(_cases)

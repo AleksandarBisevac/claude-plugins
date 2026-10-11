@@ -2366,7 +2366,84 @@ def join_continuations(text):
     return "".join(out)
 
 
-def split_heredocs(cmd):
+def _scan_quotes(text, stack, stop_at_marker=False):
+    """(marker match or None, the quoting open after the scan) for `text`.
+
+    `stack` is the quoting open when `text` begins, as a tuple of "'", '"' and
+    "(" - the last one is innermost. A `$(` opens a context where the shell
+    reads commands again, inside double quotes too, so a heredoc there is a
+    heredoc: `-m "$(cat <<'EOF' ... EOF\n)"` is the house commit-message form.
+    A backslash outside single quotes escapes the next character. With
+    `stop_at_marker`, the scan stops at the first `<<` marker read where the
+    shell reads one, and the quoting returned is the one open at that point."""
+    stack, i, n = list(stack), 0, len(text)
+    while i < n:
+        ch, top = text[i], (stack[-1] if stack else None)
+        if top == "'":
+            if ch == "'":
+                stack.pop()
+        elif ch == "\\":
+            i += 1
+        elif text.startswith("$(", i):
+            stack.append("(")
+            i += 1
+        elif top == '"':
+            if ch == '"':
+                stack.pop()
+        elif ch in "'\"":
+            stack.append(ch)
+        elif ch == "(" and top == "(":
+            stack.append("(")
+        elif ch == ")" and top == "(":
+            stack.pop()
+        elif stop_at_marker and ch == "<":
+            m = _HEREDOC_START.match(text, i)
+            if m:
+                return m, tuple(stack)
+        i += 1
+    return None, tuple(stack)
+
+
+def _unquoted_heredoc_start(line, stack):
+    """(match, quoting open after it) for the first heredoc marker in `line` that
+    the shell reads as one - outside quotes, `stack` being the quoting open when
+    the line began. A `<<` inside a quoted string is text: reading it as a marker
+    took the lines after it, up to any line spelling the would-be delimiter, for
+    a body and dropped them, commands included."""
+    return _scan_quotes(line, stack, stop_at_marker=True)
+
+
+def _quote_after(text, stack):
+    """The quoting open at the end of `text`, starting from `stack`."""
+    return _scan_quotes(text, stack)[1]
+
+
+# Environment variables that make an interpreter read code from somewhere a
+# plain script run does not name - a preload, an inspect prompt on stdin, extra
+# options. A command that assigns one anywhere is not a plain script run.
+_INTERP_ENV_OPTION = re.compile(
+    r"\b(?:NODE_OPTIONS|PYTHONINSPECT|PYTHONSTARTUP|PERL5OPT|RUBYOPT)\s*=")
+
+
+def _pipes_to_script_run(tail, cmd):
+    """Is the far side of the ONE pipe in a heredoc line's `tail` a plain script
+    run (`python3 x.py -`), with nothing piped on after it? That is the same
+    invocation `_head_runs_body` reads as data when it is the heredoc's own head,
+    so the body handed to it by a pipe is read by the same rule.
+
+    The two holes that got an earlier far-side reading removed stay shut: a
+    second pipe (a later stage that may run what the script prints), `||` or
+    `|&` keeps the body, and so does an interpreter option assigned anywhere in
+    `cmd` (`export NODE_OPTIONS='-r /dev/stdin'; ... | node e.js`)."""
+    if "||" in tail or "|&" in tail or tail.count("|") != 1:
+        return False
+    if _INTERP_ENV_OPTION.search(cmd or ""):
+        return False
+    far = re.split(r"[;&\n]", tail.split("|", 1)[1])[0]
+    return _plain_script_run(far.split())
+
+
+def split_heredocs(cmd, pipe_data=False):
     """(text without heredoc bodies, bodies that are CODE, bodies that are SHELL).
 
     Found while committing a fix to `guard-secrets-read`: the guard refused
@@ -2389,11 +2466,22 @@ def split_heredocs(cmd):
 
     A THIRD CLASSIFICATION, and it is the one that keeps this a narrowing. A body
     the consumer does not execute is DATA and leaves -- unless the head line pipes
-    it onward, in which case what the far side does with it is not read here and
-    it is kept as shell. (A data reading of the far side was tried and removed:
-    each allow-list of it missed a spelling that runs the body.) The head is read
-    by program too (`_head_runs_body`), so a wrapper or an option in front of an
-    interpreter does not turn its program into data.
+    it onward, in which case it is kept as shell. (An allow-list reading of the
+    far side was tried and removed: each one missed a spelling that runs the
+    body.) The one exception is no list, and a guard opts in to it with
+    `pipe_data`: a quoted-delimiter body that `cat` pipes to a PLAIN SCRIPT RUN,
+    with nothing piped on after it, is data by the very rule that makes
+    `python3 x.py - <<'EOF'` data as a head (`_pipes_to_script_run`). The
+    history guard opts in - its question is which git commands run, and prose
+    handed to a script runs none. The secrets guard does not: it keeps the
+    stricter reading, and a secret path in such a body is still a read there.
+    The head is read by program too (`_head_runs_body`), so a wrapper or an
+    option in front of an interpreter does not turn its program into data.
+
+    A MARKER COUNTS ONLY OUTSIDE QUOTES, as the shell reads it, with the quote
+    state carried across lines: a `<<` inside a quoted string opens nothing, and
+    reading it as a marker dropped every line up to one spelling the would-be
+    delimiter, commands included.
     `cat <<EOF | bash` really is a way to run a command; `cat <<'EOF' | python3
     x.py -` is an outcome handed to a script, and refusing its prose for naming
     a rule was the guard firing on a sentence.
@@ -2414,12 +2502,13 @@ def split_heredocs(cmd):
     if "<<" not in (cmd or ""):
         return (cmd or ""), [], []
     lines = (cmd or "").split("\n")
-    kept, code, shell, i = [], [], [], 0
+    kept, code, shell, i, quote = [], [], [], 0, ()
     while i < len(lines):
         line = lines[i]
-        m = _HEREDOC_START.search(line)
+        m, after = _unquoted_heredoc_start(line, quote)
         if not m:
             kept.append(line)
+            quote = after
             i += 1
             continue
         delim = m.group(2)
@@ -2432,10 +2521,12 @@ def split_heredocs(cmd):
                 break
         if end is None:
             kept.append(line)
+            quote = _quote_after(line, quote)
             i += 1
             continue
         head = line[:m.start()].strip()
         tail = line[m.end():]
+        quote = _quote_after(tail, after)
         # THE REST OF THE HEAD LINE IS COMMAND TEXT, and it was dropped with
         # the body: `cat <<'EOF' && git stash` kept only `cat`, so whatever
         # followed the marker on its own line was invisible to every rule.
@@ -2450,14 +2541,19 @@ def split_heredocs(cmd):
         elif tail.rstrip().endswith("\\"):
             shell.append(body)     # the line continues; its far side is unread
         elif "|" in tail:
-            shell.append(body)     # piped onward: what the far side runs is unread
+            # Only `cat` is vouched for as passing the body on unchanged: any
+            # other head may run it (awk's system()) or hand it elsewhere.
+            if (not pipe_data or live or not m.group(1)
+                    or head.split() != ["cat"]
+                    or not _pipes_to_script_run(tail, cmd)):
+                shell.append(body)  # what the far side does with it is unread
         elif live:
             shell.append(body)
         i = end + 1
     return "\n".join(kept), code, shell
 
 
-def runnable_text(cmd):
+def runnable_text(cmd, pipe_data=False):
     """The command with only the spans nothing executes removed.
 
     Everything a machine will run in SOME language: the text, shell bodies and
@@ -2469,9 +2565,11 @@ def runnable_text(cmd):
     This is the view a guard wants when it asks "what does this command DO": the
     body of `cat > probe.py <<'PY'` is on its way into a file and the guard that
     read it as a command refused a write, while `python3 - <<'PY'` and
-    `cat <<'EOF' | bash` keep every byte they are graded on.
+    `cat <<'EOF' | bash` keep every byte they are graded on. `pipe_data` is
+    `split_heredocs`' own: a guard opts in to reading a quoted body piped to a
+    plain script run as data.
     """
-    text, code, shell = split_heredocs(cmd)
+    text, code, shell = split_heredocs(cmd, pipe_data)
     return "\n".join([text] + shell + code)
 
 

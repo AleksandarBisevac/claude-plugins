@@ -302,13 +302,15 @@ publish — is never asked this question at all. **Write the message to a file
 and pass `-F <path>` instead** — nothing for this reading to grade, and the
 same message either way.
 
-**Every `git` word counts, prose included, and that over-refusal is deliberate.** This
-is not a command-position reader: `git` is an invocation wherever it sits in a command,
-so `echo attempt used git stash` and `grep git stash notes.md` are refused as a stash.
-An exemption for the arguments of text emitters was tried and removed — each fix of it
-opened another way through (a later pipe, a comment ending in a backslash, a file run
-by name or by git itself), and a fail-loud guard keeps only what it can prove. Write
-the rule into a file with an editor. A shell's `-c` argument, `eval`'s argument, a
+**A `git` counts where the shell runs it: in command position.** That is the program
+word of a command — after an operator outside quotes, past assignments, reserved words
+(`if`, `then`, `!`, `{`) and wrappers that run their argument (`sudo`, `xargs`, `env`,
+`timeout`), read by `_config.program_candidates` — so `echo attempt used git stash`
+names the operation and runs none of it, and an operator inside quotes separates
+nothing. An earlier exemption for text emitters' arguments was removed because each
+fix of it opened another way through (a later pipe, a comment ending in a backslash, a
+file run by name or by git itself); each of those is read now as the run it is, in the
+list below, rather than by counting every word. A shell's `-c` argument, `eval`'s argument, a
 here-string fed to a shell or an interpreter, found past a wrapper that runs its
 argument (`sh <<<'…'`, `env sh <<<'…'`), and a `$(…)` or backquote — including one inside double quotes, which
 the lexer returns as a single word, with quotes tracked inside it — are read as
@@ -331,11 +333,15 @@ script. A body fed to a shell or any other interpreter invocation is graded — 
 the program in command position of the heredoc's head, past a wrapper that runs its
 argument (`env`, `sudo`, `xargs`, `timeout`, `nice`, …), so an option in front of `-`
 does not turn a program into data; process or command substitution anywhere in the
-head grades it as shell. **A body PIPED onward is graded as shell, whatever the far
-side** — a data reading of the far side was tried and removed, because every
-allow-list of it missed a spelling that runs the body. So `cat <<'EOF' | python3
-x.py -` naming these rules in its body is refused; feed the heredoc to the script
-directly instead. A heredoc line that continues with a backslash is graded as shell.
+head grades it as shell. **A body PIPED onward is graded as shell** — an allow-list
+reading of the far side was tried and removed, because each one missed a spelling
+that runs the body. The history guard takes one exception that is no list: a
+quoted-delimiter body that `cat` pipes to a plain script run (`cat <<'EOF' | python3
+x.py -`), with nothing piped on after it and no interpreter option (`NODE_OPTIONS`,
+`PYTHONINSPECT`, …) assigned in the command, is read by the same rule that makes the
+heredoc-head form data. `guard-secrets-read` does not take it. A heredoc marker counts
+only where the shell reads one — outside quotes, or inside a `$(…)` — so a quoted
+`<<` hides no line after it. A heredoc line that continues with a backslash is graded as shell.
 The rest of the heredoc's own line after the marker is command text and is graded,
 and a here-string (`<<<`) is not read as a heredoc - in `guard-secrets-read` a
 here-string handed to an interpreter that runs no program of its own is graded as
@@ -364,17 +370,21 @@ base refused:
   redirect, through `tee`, or by a pass-through filter's own redirect after the
   pipe, into anything under `.git/hooks/` or `.husky/`, into a file named as a git
   hook in a directory whose name says it holds hooks or, after a `cd` into such a
-  directory, a bare hook name, into a target the reading cannot resolve (an
+  directory, a bare hook name, into a file a shell or an environment loader runs at
+  start-up (`~/.bashrc`, `.zshenv`, `.profile`, a direnv `.envrc`, a `profile.d`
+  drop-in, fish's config directory), into a target the reading cannot resolve (an
   expansion, a glob, a process substitution that runs its input or whose own
   command writes it into one of these), or into a file a later stage of the same
-  command runs. What an emitter prints is its words as one line, a substitution
+  command runs; and a substitution in command position runs what its body prints.
+  What an emitter prints is its words as one line (for `printf`, its arguments and
+  its format, each read), a substitution
   inside them contributing what an emitter within it prints, and a compound
   command (a group, a loop, `if`, `case`) carries its pipe or redirect to every
   stage inside it. Not followed: a file run by a LATER command; a process
   substitution whose own command writes into a file a later stage runs; a
   `core.hooksPath` directory whose name does not say it holds hooks; a file
   written by another program (`dd`, `cp`, an editor); a phrase assembled at run
-  time (a `printf` format, a variable's value); and output that reaches a shell
+  time (a variable's value, a `printf` format's directives filled in); and output that reaches a shell
   through a descriptor or a named pipe;
 - inside a double-quoted `$(…)`, a `)` in a comment is read as the substitution's
   close, and so is one in a heredoc body the heredoc reading leaves in place (a

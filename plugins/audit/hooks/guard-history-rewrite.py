@@ -19,13 +19,13 @@ It reads two ways, and the first one decides almost every call:
     about the rules is a daily operation in this repository and a guard that
     fires on it is the same defect as one that fires on a read - this REVERSED
     the known cost recorded before it;
-  * a command `shlex` cannot parse falls back to the raw-text patterns, which
+  * a command the lexer cannot read falls back to the raw-text patterns, which
     over-fire on quoted text and are the conservative answer where nothing can
     be parsed at all.
 
 **A HEREDOC BODY IS GRADED BY WHAT CONSUMES IT**, which is the third reading and
-the one this document twice got wrong. `shlex` splits `<<'EOF'` at the `<` and
-lexes the body as bare words, so every body used to arrive as command words: a
+the one this document twice got wrong. `shlex` split `<<'EOF'` at the `<` and
+lexed the body as bare words, so every body used to arrive as command words: a
 call whose ONLY act was `cat > probe.py <<'PYEOF'` - a file whose content carried
 a force-push literal as a test payload - was refused with the force-push reason,
 having requested no push and named no remote. The author's way past it was to
@@ -96,7 +96,6 @@ This hook carries no `--selftest` of its own; its cases live in
 import json
 import os
 import re
-import shlex
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -134,34 +133,37 @@ import _config  # noqa: E402  (hooks resolve scripts/ by basename through here)
 # WHAT KEEPS IT FROM UNDER-FIRING, which is the only way this can be worse than
 # what it replaced. Three things, each with a case of its own:
 #
-#   * an unparseable command (`shlex` raises on unbalanced quotes) falls back to
+#   * an unparseable command (an unclosed quote or substitution) falls back to
 #     the raw-text patterns below and stays conservatively REFUSED;
-#   * shell punctuation is SPLIT OUT of tokens, not merely stripped from their
-#     ends. `shlex.split("echo $(git stash)")` is `['echo', '$(git', 'stash)']`
-#     and an exact-token match would allow it; so would `git stash;echo done`,
-#     whose middle token is `stash;echo` and which the old regex refused. A
-#     separator inside a token is a separator;
+#   * an operator OUTSIDE QUOTES ends a word wherever it sits, so
+#     `git stash;echo done` is two commands, and the body of every substitution
+#     - `$(...)` or a backquote, quoted or bare - is read as a command line of
+#     its own. An operator inside quotes is text: splitting it out of the word
+#     cut a shell's quoted `-c` argument at a quoted `<<` and lost the command
+#     after it;
 #   * a SHELL's `-c` argument is a command, so it is parsed as one. That is what
 #     keeps `sh -c "git rebase -i"` caught, which the old comment credited to the
 #     text match. `git commit -m` is not a shell and its argument is not a
-#     command - which is the whole distinction this change turns on.
+#     command - which is the whole distinction this change turns on;
+#   * a `git` counts only in COMMAND POSITION: the program word of a command,
+#     past assignments, reserved words (`if`, `then`, `!`, `{`) and wrappers that
+#     run their argument (`sudo`, `xargs`, `env`, `timeout`), read by
+#     `_config.program_candidates`. `echo attempt used git stash` names the
+#     operation and runs none of it.
 #
-# THE SEPARATOR SET IS THE COMMAND SEPARATORS AND NOTHING ELSE, and the reason is
-# an under-fire found by driving it. A wider set (`{`, `}`, `$`, quotes) split
-# ARGUMENT VALUES apart as well as command words: `git stash show -p stash@{0}`
-# came back with the arg `stash@` - harmless, since `show` is the sub-verb - but
-# the same corruption reaches `git reset --hard HEAD@{2}`, whose ref becomes
-# `HEAD@`, which git cannot resolve, which makes `orphaned_by` return nothing,
-# which ALLOWS a reset that orphans recorded commits. A reflog ref is exactly the
+# THE OPERATOR SET IS THE SHELL'S OPERATORS AND NOTHING ELSE, and the reason is
+# an under-fire found by driving it. A wider set (`{`, `}`, `$`) split ARGUMENT
+# VALUES apart as well as command words: `git stash show -p stash@{0}` came back
+# with the arg `stash@` - harmless, since `show` is the sub-verb - but the same
+# corruption reaches `git reset --hard HEAD@{2}`, whose ref becomes `HEAD@`,
+# which git cannot resolve, which makes `orphaned_by` return nothing, which
+# ALLOWS a reset that orphans recorded commits. A reflog ref is exactly the
 # spelling somebody reaches for when they are moving a branch pointer around.
-# `$(` and `${` need no help: splitting on `(` alone leaves `git` its own word,
-# and quotes are gone by the time `shlex` returns.
 #
-# KNOWN RESIDUAL, measured rather than assumed. Prose no longer fires at all -
-# `-m "git;stash"` splits at the `;` and the separator between them is what stops
-# it, and `-m "git stash"` stays one word with a space in it, which is not the
-# word `git`. What still fires is `git` and a verb quoted as SEPARATE shell words
-# (`git commit -m git -m stash`), which is a command line and not a sentence.
+# KNOWN RESIDUAL, measured rather than assumed. Prose does not fire: a quoted
+# message is one word, and a `git` that is an argument is not in command
+# position. What a wrapper's options leave uncertain is read conservatively -
+# every word that can remain after the wrapper is a candidate program.
 # Wrappers whose ARGUMENT is a command, so it is parsed as one. A shell takes it
 # behind a `-c` cluster; `eval` takes it as the next word. `sudo`, `env` and
 # `xargs` need no entry - they leave the command as ordinary words, which the
@@ -181,12 +183,6 @@ HERESTRING_READERS = SHELLS + ("python", "python3", "node", "nodejs", "ruby",
 GLOBAL_VALUE_OPT = ("-C", "-c", "--git-dir", "--work-tree", "--namespace",
                     "--exec-path")
 
-# Shell punctuation that ENDS a command word wherever it appears in one - a
-# separator inside a token is a separator, which is why this splits rather than
-# stripping the ends. `git stash;echo done` is one `shlex` token in the middle
-# (`stash;echo`) and stripping would have allowed it.
-_SEP_SPLIT = re.compile(r"([;&|()`<>\n]+)")
-_SEP_ONLY = re.compile(r"^[;&|()`<>\n]+$")
 _MAX_NEST = 3          # `sh -c "sh -c ..."`; a bound, not a feature
 
 
@@ -209,32 +205,26 @@ def runnable(command):
     the place a policy lives: the lexer reads what it is handed, and a case can
     hand it a body on purpose.
     """
-    return _config.runnable_text(command or "")
+    return _config.runnable_text(command or "", pipe_data=True)
 
 
 def shell_words(command):
     """(words, parsed) - the command as shell WORDS, separators marked as None.
 
-    `parsed` is False when `shlex` could not read the line at all, and then
-    `words` is empty and the caller MUST use the text patterns instead. It is a
-    separate answer rather than an empty list because "no words" and "could not
-    be read" lead to opposite verdicts, and the second one must never be quiet.
+    `parsed` is False when the line could not be read at all (a quote or a
+    substitution that never closes), and then `words` is empty and the caller
+    MUST use the text patterns instead. It is a separate answer rather than an
+    empty list because "no words" and "could not be read" lead to opposite
+    verdicts, and the second one must never be quiet.
 
-    THE LEXER IS BUILT BY HAND BECAUSE `shlex.split` DROPS NEWLINES.
-    A newline is whitespace to it, so it never reaches a token, `_SEP_SPLIT`'s
-    `\\n` was inert in both directions, and the FIRST verb's argument loop
-    swallowed every command after it - `git_invocations` returned one pair for a
-    whole multi-line script. Measured: `git status` newline `git push --force`
-    was ALLOWED where the raw-text version refused it, and so was
-    `git stash list` newline `git stash drop`, which is the exact shape
-    `stash_operations` below says must be caught. A multi-line Bash call is the
-    ordinary shape, so this was the spelling most likely to be typed.
-    `punctuation_chars` does not help: it emits `; & | < >` and still not `\\n`.
-
-    Taking `\\n` out of the whitespace set rather than splitting the string on it
-    first is deliberate - splitting first would cut a QUOTED multi-line argument
-    into unbalanced halves, `shlex` would raise, and every multi-line commit
-    message would land in the conservative text fallback.
+    A NEWLINE OUTSIDE QUOTES IS A SEPARATOR. `shlex.split` read it as
+    whitespace, and the FIRST verb's argument loop swallowed every command after
+    it - `git_invocations` returned one pair for a whole multi-line script.
+    Measured then: `git status` newline `git push --force` was ALLOWED where the
+    raw-text version refused it, and so was `git stash list` newline
+    `git stash drop`, which is the exact shape `stash_operations` below says
+    must be caught. A newline INSIDE quotes stays in its word, so a multi-line
+    commit message is one argument, not a run of commands.
     """
     pieces, parsed = _shell_pieces(command)
     return ([None if sep else piece for piece, sep in pieces], parsed)
@@ -244,24 +234,19 @@ def _shell_pieces(command):
     """(pieces, parsed) - `shell_words` before the separators lose their
     spelling: each piece is (text, is_separator). `git_calls` needs to know
     WHICH separator ends a command, because a pipe hands the command's output
-    to whatever is on its far side and a `;` does not."""
-    try:
-        # The shell removes backslash-newline before it reads a word, so this
-        # does too: kept, the escaped newline split one pipeline into two.
-        lex = shlex.shlex(_config.join_continuations(command or ""), posix=True)
-        lex.whitespace_split = True
-        lex.commenters = ""          # `shlex.split(comments=False)` does this too
-        lex.whitespace = " \t\r"     # `\n` stays IN the token, for _SEP_SPLIT
-        raw = list(lex)
-    except ValueError:
+    to whatever is on its far side and a `;` does not.
+
+    AN OPERATOR COUNTS ONLY OUTSIDE QUOTES. The words are `_op_tokens`', the
+    lexer the stage reader already trusted: splitting a separator out of a word
+    wherever it sat cut a shell's quoted `-c` argument at a quoted `<<` or `;`,
+    and the command after the cut was read as no command at all. A substitution
+    stays whole inside its word, and `git_calls` reads its body on its own.
+    The shell removes backslash-newline before it reads a word, so this does
+    too: kept, the escaped newline split one pipeline into two."""
+    tokens = _op_tokens(_config.join_continuations(command or ""))
+    if tokens is None:
         return ([], False)
-    out = []
-    for word in raw:
-        for piece in _SEP_SPLIT.split(word):
-            if not piece:
-                continue
-            out.append((piece, bool(_SEP_ONLY.match(piece))))
-    return (out, True)
+    return ([(text, bool(op)) for text, op in tokens], True)
 
 
 def program_name(word):
@@ -338,16 +323,15 @@ def help_requested(args):
 STDIN_VERB = "<stdin>"
 
 
-def _quoted_substitutions(text):
-    """The bodies of every `$(...)` and backquote INSIDE DOUBLE QUOTES in
-    `text` - commands the shell runs that the lexer returns as one word.
+def _substitutions(text):
+    """The bodies of every `$(...)` and backquote OUTSIDE SINGLE QUOTES in
+    `text` - commands the shell runs that the lexer returns inside a word.
 
-    `echo "$(git stash)"` came back from `shlex` as the single word
-    `$(git stash)`, split at its parentheses into `git stash` with a space in
-    it, which is not the word `git`: the stash ran unread, and so did
-    `eval "$(echo ...)"` and `sh -c "$(echo ...)"`. An unquoted substitution
-    needs none of this - its parentheses are separators already. A single-
-    quoted one is literal text and is skipped.
+    The lexer keeps a substitution whole inside its word, bare or
+    double-quoted, so `echo $(git stash)` and `echo "$(git stash)"` both reach
+    the reader as one word that is not the word `git`: each body is read here
+    as a command line of its own, and so are `eval "$(echo ...)"` and
+    `sh -c "$(echo ...)"`. A single-quoted one is literal text and is skipped.
 
     -> the bodies, or None when a substitution never closes - an unreadable
     command, which the caller hands to the raw-text reading rather than
@@ -372,14 +356,14 @@ def _quoted_substitutions(text):
             quote = "'"
             i += 1
             continue
-        if quote == '"' and text.startswith("$(", i):
+        if text.startswith("$(", i):
             j = _substitution_end(text, i + 2)
             if j is None:
                 return None
             out.append(text[i + 2:j])
             i = j + 1
             continue
-        if quote == '"' and ch == "`":
+        if ch == "`":
             j = text.find("`", i + 1)
             if j < 0:
                 return None
@@ -405,7 +389,15 @@ _GIT_HOOK_NAMES = frozenset((
 # The one kind of program whose arguments ARE what it prints. For any other
 # program an argument naming a git phrase is a search term, a message or a
 # path, and what reaches the far side is the program's own output.
+# The files a shell or an environment loader runs at start-up: a git command
+# written into one runs on the next shell with no second command at all.
+_STARTUP_FILES = frozenset((
+    ".bashrc", ".bash_profile", ".bash_login", ".bash_logout", ".profile",
+    ".zshrc", ".zshenv", ".zprofile", ".zlogin", ".zlogout", ".kshrc",
+    ".mkshrc", ".cshrc", ".tcshrc", ".login", ".envrc",
+))
 _TEXT_EMITTERS = ("echo", "printf")
+_BACKQUOTED = re.compile(r"`([^`]*)`")
 # Programs that print what arrives on their stdin, so a here-string fed to one
 # is what it prints.
 _STDIN_PRINTERS = ("cat",)
@@ -639,8 +631,16 @@ def _printed(stage, depth=0):
         if name in _STDIN_PRINTERS and stage["here"]:
             return " ".join(stage["here"])
         if name in _TEXT_EMITTERS and word in rest:
-            words = rest[rest.index(word) + 1:]
-            return " ".join(_expand_printed(w, depth) for w in words)
+            words = [_expand_printed(w, depth)
+                     for w in rest[rest.index(word) + 1:]]
+            if name == "printf" and words:
+                # The first word is a FORMAT, not text: `printf '%s\n' 'git
+                # push --force'` prints its argument. Both are read - the
+                # arguments as one line, the format with its escaped newlines
+                # made real - so neither spelling hides a command.
+                return "\n".join([" ".join(words[1:]),
+                                  words[0].replace("\\n", "\n")])
+            return " ".join(words)
     return ""
 
 
@@ -664,6 +664,18 @@ def _expand_printed(word, depth):
         out.append(" ".join(p for p in (_printed(s, depth + 1) for s in inner)
                             if p))
         i = end + 1
+
+
+def _substituted_command(stage, depth):
+    """The command line a stage RUNS when its program word is a substitution -
+    `$(echo git stash)` runs what its body prints - or "" for any other stage.
+    The words are the stage's own, each substitution replaced by what its body
+    prints, a backquote read as the `$( )` it is."""
+    rest, _candidates = _config.program_candidates(_program_words(stage))
+    if not rest or ("$(" not in rest[0] and "`" not in rest[0]):
+        return ""
+    words = [_BACKQUOTED.sub(r"$(\1)", w) for w in rest]
+    return " ".join(_expand_printed(w, depth) for w in words)
 
 
 def _runs_input(stage):
@@ -769,11 +781,20 @@ def _is_hook_path(target, stages, after):
             or any(_stage_changes_to_hooks(stage) for stage in stages[:after]))
 
 
+def _is_sourced_at_start(target):
+    """Whether a shell or an environment loader runs `target` on its own, with
+    no second command: a startup file (`~/.bashrc`, `.zshenv`, `.profile`, a
+    direnv `.envrc`), a `profile.d` drop-in, or fish's config directory."""
+    norm = target.replace("\\", "/").lower()
+    return (os.path.basename(norm) in _STARTUP_FILES
+            or "/profile.d/" in norm or "/.config/fish/" in norm)
+
+
 def _target_runs(target, stages, after):
     """Whether writing into `target` is running what was written."""
     if target == ">(" or "$" in target or "`" in target or _GLOB.search(target):
         return True
-    if _is_hook_path(target, stages, after):
+    if _is_hook_path(target, stages, after) or _is_sourced_at_start(target):
         return True
     return any(_runs_file(later, target) for later in stages[after + 1:])
 
@@ -878,6 +899,33 @@ _OPENS_COMMAND = ("then", "do", "else", "elif", "if", "while", "until", "!",
                   "{", "time")
 
 
+def _command_positions(words):
+    """The indices of `words` (separators as None) that may be the program a
+    command runs: per command, past leading reserved words, by
+    `_config.program_candidates` - the program word after assignments and
+    wrappers that run their argument, and every word a wrapper's uncertain
+    options leave as a possible program. A word anywhere else is an argument:
+    `echo attempt used git stash` runs `echo`."""
+    out, start, total = set(), 0, len(words)
+    while start < total:
+        if words[start] is None:
+            start += 1
+            continue
+        end = start
+        while end < total and words[end] is not None:
+            end += 1
+        lead = start
+        while lead < end and words[lead] in _OPENS_COMMAND:
+            lead += 1
+        rest, candidates = _config.program_candidates(words[lead:end])
+        if rest:
+            out.add(end - len(rest))
+        named = set(candidates)
+        out.update(at for at in range(lead, end) if words[at] in named)
+        start = end
+    return out
+
+
 def git_invocations(command, depth=0):
     """[(verb, [args]), ...] for every `git` this command RUNS, or None - the
     `git_calls` answer without the directory each one runs in."""
@@ -945,6 +993,12 @@ def git_calls(command, depth=0):
             return None
         stages, groups = _stages(tokens)
         for at, stage in enumerate(stages):
+            ran = _substituted_command(stage, depth)
+            if ran:
+                nested = git_calls(ran, depth + 1)
+                if nested is None:
+                    return None
+                out.extend(nested)
             line = _printed(stage)
             if not line or not _output_runs(stages, groups, at):
                 continue
@@ -952,12 +1006,12 @@ def git_calls(command, depth=0):
             if nested is None:
                 return None
             out.extend(nested)
-    # A substitution inside double quotes is one word to the lexer and a
-    # command to the shell, so its body is read as one. A body this cannot
-    # read makes the whole command unreadable (None), which sends every arm to
-    # its raw-text reading - never to a reading that contributes nothing.
+    # A substitution, bare or double-quoted, is inside one word to the lexer
+    # and a command to the shell, so its body is read as one. A body this
+    # cannot read makes the whole command unreadable (None), which sends every
+    # arm to its raw-text reading - never to a reading that contributes nothing.
     if depth < _MAX_NEST:
-        inners = _quoted_substitutions(_config.join_continuations(text))
+        inners = _substitutions(_config.join_continuations(text))
         if inners is None:
             return None
         for inner in inners:
@@ -966,6 +1020,7 @@ def git_calls(command, depth=0):
                 return None
             out.extend(nested)
     index, total = 0, len(words)
+    runs_at = _command_positions(words)
     while index < total:
         word = words[index]
         if word is None:
@@ -992,7 +1047,7 @@ def git_calls(command, depth=0):
                     out.extend(git_calls(words[scan], depth + 1) or [])
                     break
                 scan += 1
-        if program != "git":
+        if program != "git" or index not in runs_at:
             index += 1
             continue
         index += 1
@@ -1071,7 +1126,7 @@ _GIT_SUB = (r"\bgit\b(?:\s+(?:-C(?:\s+\"[^\"]*\"|\s+'[^']*'|\s+[^\s\"']\S*"
             r"|--[a-z][a-z-]*))*\s+")
 
 # THESE PATTERNS ARE NO LONGER THE PRIMARY READING. They decide only a command
-# `shlex` could not parse, where their over-firing on quoted text is the
+# the lexer could not read, where their over-firing on quoted text is the
 # conservative direction and the right one: an unparseable line naming a whole
 # forbidden command is refused rather than guessed at. On everything else
 # `git_invocations` above answers first, and it answers on the operation.
@@ -1107,7 +1162,7 @@ _FLAGS = re.compile(r"(^|\s)-{1,2}[A-Za-z][\w-]*(=\S*)?")
 # --- the four arms, each on the operation with the text patterns behind it -----
 # Every arm below takes the raw command and reads it through `git_invocations`,
 # falling back to its own pattern above when the line will not parse. Each parses
-# for itself rather than being handed a shared parse: `shlex.split` on a command
+# for itself rather than being handed a shared parse: lexing a command
 # line costs microseconds against a process spawn of tens of milliseconds, and
 # `tools/bench-hooks.py --gate` is what guards the cost that is real here, which
 # is what this module IMPORTS.

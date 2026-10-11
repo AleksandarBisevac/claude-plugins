@@ -162,10 +162,10 @@ CLASSES = {
         "basis": "guard-history-rewrite.py header: stash is refused as soon "
                  "as an audit plan exists on disk"},
     "unquoted-git-words": {
-        "verdict": _ladder("allow", "deny", "deny"),
-        "basis": "SECURITY.md: every git word counts, prose included, so an "
-                 "unquoted forbidden phrase is refused, deliberately, once a "
-                 "plan exists"},
+        "verdict": _all("allow"),
+        "basis": "SECURITY.md: a git counts where the shell runs it, in command "
+                 "position - `grep git stash notes.md` runs grep, and its "
+                 "arguments name an operation without performing it"},
     "journal-write": {
         "verdict": _all("deny"),
         "basis": "_config.plan_gate_mode docstring: a guard whose claim binds "
@@ -482,7 +482,7 @@ ROWS = (
     # unquoted-git-words
     {"id": "n17b", "class": "unquoted-git-words", "tool": "Bash",
      "input": _bash("grep git stash notes.md"),
-     "why": "UNQUOTED words naming a forbidden command"},
+     "why": "UNQUOTED words naming a forbidden command as a search's arguments"},
     # journal-write
     {"id": "b09", "class": "journal-write", "tool": "Edit",
      "input": _edit(JOURNAL, "{}", "{\"x\": 1}"),

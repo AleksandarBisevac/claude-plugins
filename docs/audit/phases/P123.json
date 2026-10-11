@@ -2569,7 +2569,7 @@
     {
       "id": "P123.33",
       "title": "Every layer number written in prose is checked against _deps.LAYERS or not written",
-      "status": "in_progress",
+      "status": "done",
       "description": "P122.9 gave `_machine_paths` a layer of its own, so every running-prose mention of another module's layer above it - \"`name` (layer N)\", \"`name` (LN)\" - is now one too low (some were already off by two). Measured on main at 9b9b9dd1 by matching those two shapes against `_deps.LAYERS`: 116 stale mentions in 25 files, most of them in `_deps.py`'s own LAYERS comments; the prep note's 'seven doctor/gate docstrings' was the visible tip. `layer_doc_drift` (lyd1) grades only a module's OPENING 'Layer N' claim about itself and leaves running prose alone on purpose, which is exactly where the rot sits - the F-prose class of a number a table already holds. Invariant: a layer number in prose is checked or not written. Add the check for every mention shape it can read reliably (\"`name` (layer N)\", \"`name` (LN)\", \"this file (LN)\") in docstrings and comments under scripts/ and hooks/, beside `layer_doc_drift` in `_deps.py`, with a prove-gates row (red: plant a wrong number; allow: a correct one). Repair by deleting the number wherever the layer is not the argument (keep the pointer to the module), and correcting it where the sentence's argument is the layer. Re-derive the count with the new check, never from this description. Faults: prep-layer-prose. Also: _deps.py close-phase comment still says it never moves HEAD; P123.4 made a clean single checkout switch to the parent after the merge - say so.",
       "files": [
         "plugins/audit/scripts/_deps.py",
@@ -2635,25 +2635,43 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2dfff566352a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added _deps.layer_mention_drift (+ _prose_blocks, two regexes) grading '`name` (layer N)', '`name` (LN)' and 'this file (LN)' in docstrings and comment runs under scripts/ and hooks/ against LAYERS. Repaired every flagged mention across 28 scripts files (numbers deleted unless the layer was the argument; corrected in _config_rules, _panel_state; _panel_page self-claim reworded; entry-point 'L7 peer' phrases reworded). Fixed the close-phase comment: it moves HEAD in one case, a clean single checkout on the merged branch switches to the parent. Added cases lmd1-lmd7 in tests/test__deps.py, two prove-gates rows (red lmd1, allow lmd3) and a guide paragraph. The check now reports nothing on the tree. Sweep and --spaced green with test__refs sc1/sc2 not red. tools/prove-gates.py was not run: redfirst refuses dirty files (DIRTY), so the orchestrator should run 'prove-gates.py --only layer_mention' on a committed tree. Unflagged module-qualified mentions such as '`_manifest_io.iter_tasks` (L1)' in _deps.py comments remain; the check does not read that shape.",
+        "descriptive": "A layer number in prose is now checked against _deps.LAYERS or not written, and the stale ones are gone."
       },
       "startedAt": "2026-10-10T23:19:35Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-10T23:47:37Z",
+      "verifiedBy": [
+        "lmd1",
+        "lmd2",
+        "lmd3",
+        "lmd4",
+        "lmd5",
+        "lmd6",
+        "lmd7"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-10T23:47:36Z.935062",
         "status": "passed",
         "at": "2026-10-10T23:47:36Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "2dfff566352a",
+        "at": "2026-10-10T23:47:37Z"
+      },
+      "redFirst": {
+        "at": "2026-10-10T23:39:07Z",
+        "basis": "`python3 plugins/audit/tests/test__deps.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_deps' has no attribute 'layer_mention_drift'. Did you mean: 'layer_doc_drift'?\", and the task introduces 'layer_mention_drift': absent from HEAD's plugins/audit/scripts/_deps.py, tools/prove-gates.py, plugins/audit/scripts/demo/gen-demo-usage.py, plugins/audit/scripts/panel/_panel_page.py, plugins/audit/scripts/panel/_panel_state.py, plugins/audit/scripts/config/_config_rules.py, plugins/audit/scripts/config/validate-config.py, plugins/audit/scripts/manifest/_ado_drift.py, plugins/audit/scripts/manifest/_manifest_io.py, plugins/audit/scripts/manifest/_manifest_phases.py, plugins/audit/scripts/manifest/_manifest_vocab.py, plugins/audit/scripts/manifest/_priority.py, plugins/audit/scripts/usage/_usage_core.py, plugins/audit/scripts/status/_doctor_ado.py, plugins/audit/scripts/status/_doctor_completions.py, plugins/audit/scripts/status/_doctor_hygiene.py, plugins/audit/scripts/status/_doctor_setup.py, plugins/audit/scripts/status/_doctor_trail.py, plugins/audit/scripts/status/_status_facts.py, plugins/audit/scripts/status/audit-status.py, plugins/audit/scripts/governance/_locks.py, plugins/audit/scripts/governance/audit-journal.py, plugins/audit/scripts/report/_report_html.py, plugins/audit/scripts/report/_report_md.py, plugins/audit/scripts/report/_report_page.py, plugins/audit/scripts/report/render-report.py, PLUGIN-BUILD-GUIDE.md, plugins/audit/scripts/manifest/migrate-manifest.py, plugins/audit/scripts/manifest/validate-manifest.py, plugins/audit/scripts/report/_report_usage.py, plugins/audit/scripts/usage/audit-usage.py, docs/screenshots/areas.png, docs/screenshots/authors.png, docs/screenshots/captured-at.json, docs/screenshots/dark.png, docs/screenshots/demo-gate.gif, docs/screenshots/expanded.png, docs/screenshots/filtered.png, docs/screenshots/filters.png, docs/screenshots/mobile.png, docs/screenshots/overview.png, docs/screenshots/panel-appearance.png, docs/screenshots/panel-blocks.png, docs/screenshots/panel-composition-expanded.png, docs/screenshots/panel-composition.png, docs/screenshots/panel-confirm.png, docs/screenshots/panel-dark.png, docs/screenshots/panel-gate.png, docs/screenshots/panel-guards.png, docs/screenshots/panel-help.png, docs/screenshots/panel-mobile.png, docs/screenshots/panel-monthly.png, docs/screenshots/panel-overview.png, docs/screenshots/panel-person.png, docs/screenshots/panel-policy-expanded.png, docs/screenshots/panel-policy.png, docs/screenshots/panel-proposals.png, docs/screenshots/panel-usage.png and present in the working tree's plugins/audit/scripts/_deps.py, tools/prove-gates.py, PLUGIN-BUILD-GUIDE.md; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.34",
       "title": "The history guard reads git only in command position and quoted << as data",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Probed on main (`git_invocations`): `echo attempt used git stash` -> [('stash', [])] and `cat <<'EOF' | python3 x.py --technical -` with stash words in the body -> stash push (false denies, F505); `sh -c 'echo \"a<<b\"; git stash drop'` and `sh -c 'echo a<<b; git stash drop'` -> [] (F536: `_config.split_heredocs` treats `<<` inside a single-quoted -c argument as a heredoc and drops the rest - a missed git call). Fix: a git invocation counts only in command position (start, ;, &&, ||, |, newline, or after a command-running prefix found by `_config.program_candidates`); a piped heredoc body is classified by the far side of the pipe (a script reading `-` = data, a shell = commands, unknown = conservative); `split_heredocs` ignores `<<` inside quotes as the shell does. Red-first both directions: `true && git stash push`, `sudo git stash drop`, `xargs git stash drop` stay deny; the two F505 shapes allow; the quoted-<< git call is read. Check `tools/bench-hooks.py --gate` after. Faults: F505, F536. GUARD COMMAND-READING CODE: written by the orchestrator with the user's permission (auto mode off when possible); if the API refuses, record it verbatim and hand the remainder to the human.",
       "files": [
         "plugins/audit/hooks/guard-history-rewrite.py",
@@ -2661,7 +2679,8 @@
         "plugins/audit/tests/test_guard_history_rewrite.py",
         "plugins/audit/tests/test__config.py",
         "SECURITY.md",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test_hooks.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -2689,16 +2708,22 @@
         "P123.26"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-10T23:47:38Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T08:06:57Z.5d8316",
+        "status": "passed",
+        "at": "2026-10-11T08:06:57Z"
+      }
     },
     {
       "id": "P123.35",
