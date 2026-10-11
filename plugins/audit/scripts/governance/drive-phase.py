@@ -2648,17 +2648,34 @@ def drive(ctx, answer=None, reason=None, fixes=()):
     stop = take_lock(ctx, state)
     if stop is not None:
         return stop
-    code, said = drive_locked(ctx, state, answer, reason, fixes)
+    try:
+        code, said = drive_locked(ctx, state, answer, reason, fixes)
+    except ValueError as exc:
+        code, said = E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], exc)
+    except BaseException:
+        # Not a stop this driver knows: give the lock back, then let it surface.
+        if state.get("lock") == "taken":
+            give_back_lock(ctx, state)
+        raise
     if code != E_STOPPED or state.get("lock") != "taken":
         return code, said
-    refused = release_lock(ctx, state)
+    refused = give_back_lock(ctx, state)
     if refused is not None:
         return code, "%s\n%s" % (said, refused[1])
+    return code, said
+
+
+def give_back_lock(ctx, state):
+    """None once the phase lock is released and the state rewritten (or dropped
+    when nothing else is left in it); else release_lock's own refusal."""
+    refused = release_lock(ctx, state)
+    if refused is not None:
+        return refused
     if state:
         write_state(ctx, state)
     else:
         drop_state(ctx)
-    return code, said
+    return None
 
 
 def refresh_triage(ctx, state, phase, pending):

@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "sweep-selftests": "pass",
+    "sweep-selftests --spaced": "pass",
+    "ruff": "pass",
+    "vermin": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "Task is gate-only with expectRedFirst false, so the helper was not run. I added dl5 first and watched it FAIL on the unfixed code (exit 1, held_now True: phase-P1 still locked), then green after the fix.",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "drive() in drive-phase.py now wraps drive_locked in try/except ValueError, converting it to the E_STOPPED tuple before the release check, so a phase vanishing after take_lock releases the lock. Added dl5 in tests/test_drive_phase.py (load_phase patched to raise ValueError). test_drive_phase --selftest: 228/228 pass. Exit codes: sweep-selftests.py 0, --spaced 0, ruff 0, vermin 0.",
+    "descriptive": "A drive stopped by a phase vanishing mid-run no longer strands the phase lock."
+  },
+  "testsAdded": [
+    "dl5"
+  ],
+  "claims": "claims: the fix covers ValueError only (the case the finding names); any other unexpected exception still propagates and is not converted. dl5 evidence: red before fix (lock held), green after, 228/228.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:39b70aa768277afa3872180190a691a776c5b5435d0143a1d6cffb79d9eebf72\",\"dirtyDigest\":\"sha256:b5ad397336a35cec29449587ebead65c1acab246c54d92b69fa83bc1e8047b78\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/drive-phase.py\":\"b605a6a277fa6083\",\"plugins/audit/tests/test_drive_phase.py\":\"76cc7aba1c424fcb\"},\"head\":\"8ec57099\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:272a12380ef965f671d2592afa17141aa642e694fe91a532b805cad4c3aa7d26\",\"v\":2}"
+}

@@ -953,6 +953,51 @@ def _lock_stop_cases(check):
           "printed under the verb's words: %r" % (text,),
           rule and all(line in text for line in rule))
 
+    # A phase that vanishes from the plan after the lock was taken raises out of
+    # the locked body; that stop must give the lock back like any other.
+    M.run_verb = real
+    real_load = M.load_phase
+
+    def vanished(ctx):
+        raise ValueError("phase %s is no longer in the plan" % (ctx["phase"],))
+    M.load_phase = vanished
+    root, mpath = _repo("lockgone", task_ids=TASKS[:1])
+    try:
+        run = drive(M, root, mpath, cap=1)
+    finally:
+        M.load_phase = real_load
+    code, text = run["prints"][-1]
+    state_file = os.path.join(root, ".claude", "state", "drive")
+    held_now = "phase-%s" % (PHASE,) in _verb(
+        root, "audit-lock.py", ["status", "--project", root])[1]
+    check("dl5 a phase that vanishes after the lock is taken stops the drive and "
+          "releases phase-%s, leaving no taken lock in its state: %r"
+          % (PHASE, (code, text, held_now)),
+          code == 1 and "stopped" in text and not held_now
+          and not os.path.exists(state_file))
+
+    # Any other error raised after the lock was taken gives the lock back and
+    # still surfaces: releasing must not swallow what nobody expected.
+    def broken(ctx):
+        raise RuntimeError("the plan read blew up")
+    M.load_phase = broken
+    root, mpath = _repo("lockboom", task_ids=TASKS[:1])
+    raised = None
+    try:
+        drive(M, root, mpath, cap=1)
+    except RuntimeError as exc:
+        raised = exc
+    finally:
+        M.load_phase = real_load
+    state_file = os.path.join(root, ".claude", "state", "drive")
+    held_now = "phase-%s" % (PHASE,) in _verb(
+        root, "audit-lock.py", ["status", "--project", root])[1]
+    check("dl6 an unexpected error raised after the lock is taken surfaces to the "
+          "caller and phase-%s is released first, with no taken lock in the state: %r"
+          % (PHASE, (raised, held_now)),
+          raised is not None and "blew up" in str(raised) and not held_now
+          and not os.path.exists(state_file))
+
     # The project a context carries is the manifest's own when no --project-dir
     # was typed: the session's directory may be another checkout.
     M.run_verb = real

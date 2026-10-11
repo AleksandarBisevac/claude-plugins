@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "sweep-selftests": "pass",
+    "sweep-selftests --spaced": "pass",
+    "ruff": "pass",
+    "vermin": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "Task is gate-only with expectRedFirst false, so the helper was not run. I added dl6 and watched it FAIL on the previous code (RuntimeError surfaced, phase-P1 still held), then green after the fix.",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "drive() in drive-phase.py now releases the lock on every exit once taken: a returned stop and a ValueError (converted to a stop) release via the new give_back_lock helper; any other BaseException releases the lock, then re-raises. Cases dl5 (phase vanishes) and dl6 (RuntimeError after lock surfaces and lock is released) in tests/test_drive_phase.py. Selftest 229/229. Exit codes: sweep-selftests.py 0, --spaced 0, ruff 0, vermin 0.",
+    "descriptive": "A drive that dies after taking the phase lock, by stop or by any exception, no longer strands the lock."
+  },
+  "testsAdded": [
+    "dl5",
+    "dl6"
+  ],
+  "claims": "claims: release_lock failing during exception unwinding is ignored in favour of re-raising the original error (give_back_lock's refusal is not surfaced on that path). dl6 evidence: red then green, 229/229.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:be0ebead5f13adc269003cf60a75ac49781a0b2aa35a1bb12a3a5b8ed37e903a\",\"dirtyDigest\":\"sha256:b5ad397336a35cec29449587ebead65c1acab246c54d92b69fa83bc1e8047b78\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/drive-phase.py\":\"023a47aa2723b1ef\",\"plugins/audit/tests/test_drive_phase.py\":\"1e2769ecfe8c0f8a\"},\"head\":\"8ec57099\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:247b60f07fc0c62fa277780d159b5b3fd0c691407cc78520b6a734170352ab83\",\"v\":2}"
+}

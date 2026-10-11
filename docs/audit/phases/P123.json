@@ -60,8 +60,10 @@
         "severity": "med",
         "file": "tools/check-example-pins.py:150-154,343-349; tools/verify.sh:711-712; CONTRIBUTING.md:684-694",
         "issue": "The example-pin check (P123.27) cannot be satisfied across a release. verify.sh --release runs it before the tag exists (`tag v$version does not exist yet` is checked in the same block), so repinning the example to the new tag in the release commit is a `tag-unavailable` refusal (exit 1) and the release preflight fails; leaving it on the previous tag passes preflight, but the moment the new tag exists `pin-behind-newest-tag` (a finding, not a refusal) fires. And the live case l1 accepts only refusals, so it goes red in the ordinary per-commit sweep - which CI runs with fetch-depth 0, tags included - on every commit after the release until a follow-up repin. CONTRIBUTING.md says the check 'belongs to the release set alone', which l1 contradicts. This lands at the imminent 3.3.0 tag.",
-        "resolution": "Let the release check accept a pin equal to the version being released (plugin.json's) as 'pending this release's tag' rather than tag-unavailable, so the follower can be repinned in the release commit; and drop the pin-behind arm from l1 (keep l1 to script-missing-at-tag over existing tags), or move the live claim out of the per-commit sweep.",
-        "fixTask": "P123.56-64p"
+        "resolution": "fixed in P123.56-64p (8ec57099ac18): Let the release check accept a pin equal to the version being released (plugin.json's) as 'pending this release's tag' rather than tag-unavailable, so the follower can be repinned in the release commit; and drop the pin-behind arm from l1 (keep l1 to script-missing-at-tag over existing tags), or move the live claim out of the per-commit sweep.",
+        "fixTask": "P123.56-64p",
+        "commit": "8ec57099ac18",
+        "status": "fixed"
       },
       {
         "id": "P123-R5",
@@ -88,7 +90,7 @@
         "fixTask": "P123.59-64p"
       }
     ],
-    "outcome": "[findings: 7 - 0 high, 4 med, 3 low; 3 with a recorded fix commit]"
+    "outcome": "[findings: 7 - 0 high, 4 med, 3 low; 4 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -4360,7 +4362,7 @@
     {
       "id": "P123.56-64p",
       "title": "The example-pin check passes across a release: the pending tag is accepted and the per-commit sweep makes no live pin-behind claim",
-      "status": "in_progress",
+      "status": "done",
       "description": "(P123-R4, med) The example-pin check (P123.27) cannot be satisfied across a release. verify.sh --release runs it before the tag exists (`tag v$version does not exist yet` is checked in the same block), so repinning the example to the new tag in the release commit is a `tag-unavailable` refusal (exit 1) and the release preflight fails; leaving it on the previous tag passes preflight, but the moment the new tag exists `pin-behind-newest-tag` (a finding, not a refusal) fires. And the live case l1 accepts only refusals, so it goes red in the ordinary per-commit sweep - which CI runs with fetch-depth 0, tags included - on every commit after the release until a follow-up repin. CONTRIBUTING.md says the check 'belongs to the release set alone', which l1 contradicts. This lands at the imminent 3.3.0 tag.\n\nResolution: Let the release check accept a pin equal to the version being released (plugin.json's) as 'pending this release's tag' rather than tag-unavailable, so the follower can be repinned in the release commit; and drop the pin-behind arm from l1 (keep l1 to script-missing-at-tag over existing tags), or move the live claim out of the per-commit sweep. Faults: P123-R4.",
       "files": [
         "tools/check-example-pins.py",
@@ -4390,14 +4392,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8ec57099ac18",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/check-example-pins.py: check_example/check take pending= and lag=; a pin equal to the pending tag (tag not yet existing) is read against HEAD's tree; new --pending vX.Y.Z flag (parse_argv now returns root, pending, problem); lag=False drops pin-behind-newest-tag. Selftest: i1 adapted, new p1-p4, l1 now calls check(lag=False). tools/verify.sh passes --pending v$version in follower 4b. CONTRIBUTING.md updated. All exit 0: check-example-pins.py --selftest (18/18), sweep-selftests.py, --spaced, gate-parity.py, ruff, vermin. Design holds for (a) preflight before tag with example repinned to plugin.json version, (b) per-commit sweep after tag exists (l1 no longer claims lag).",
+        "descriptive": "The example-pin check accepts a pin to the release being cut and the per-commit sweep no longer goes red once the new tag exists."
       },
       "startedAt": "2026-10-11T17:41:50Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-11T17:59:24Z",
+      "verifiedBy": [
+        "check-example-pins.py p1",
+        "p2",
+        "p3",
+        "p4"
+      ],
       "notes": [
         {
           "at": "2026-10-11T16:31:10Z",
@@ -4412,15 +4419,27 @@
         "runId": "2026-10-11T17:59:23Z.9785fe",
         "status": "passed",
         "at": "2026-10-11T17:59:23Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "8ec57099ac18",
+        "at": "2026-10-11T17:59:24Z",
+        "basis": "a fix task for P123-R4: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task, expectRedFirst false; selftest cases p1-p4 added in the tool's own suite but no red proof owed",
+        "at": "n/a"
       }
     },
     {
       "id": "P123.57-64p",
       "title": "A drive stop raised after the phase lock is taken releases the lock",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(P123-R5, low) drive()'s one release point covers only a returned E_STOPPED. load_phase raises ValueError('phase ... is no longer in ...') inside drive_locked after take_lock; main catches it at :3260 and prints 'stopped - ...' without passing through drive(), so that stop strands phase-<id> (as does any unexpected exception) - the class P123.2 was opened for.\n\nResolution: Wrap drive_locked in try/except ValueError inside drive() (convert to the E_STOPPED tuple before the release check) or release in a finally when state['lock'] == 'taken' and the outcome is a stop; add a dl case where the phase vanishes after the lock is taken. Faults: P123-R5.",
       "files": [
-        "plugins/audit/scripts/governance/drive-phase.py"
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py"
       ],
       "tests": {
         "mode": "gate-only",
@@ -4443,14 +4462,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-11T18:12:27Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -4461,7 +4480,13 @@
       ],
       "fixes": [
         "P123-R5"
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T18:31:17Z.cf65ed",
+        "status": "passed",
+        "at": "2026-10-11T18:31:17Z"
+      }
     },
     {
       "id": "P123.58-64p",
