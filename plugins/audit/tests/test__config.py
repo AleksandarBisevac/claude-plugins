@@ -2486,8 +2486,8 @@ def _cases(check):
     # the same rules.
     _dd = [
         (["cp", "a.webp", "public/x.webp"], ["public/x.webp"]),
-        (["mv", "-t", "out", "a", "b"], ["out"]),
-        (["cp", "--target-directory=out", "a"], ["out"]),
+        (["mv", "-t", "out", "a", "b"], ["out/a", "out/b"]),
+        (["cp", "--target-directory=out", "a"], ["out/a"]),
         (["install", "-m", "644", "a", "bin/a"], ["bin/a"]),
         (["tee", "-a", "f1", "f2"], ["f1", "f2"]),
         (["env", "A=1", "cp", "a", "b"], ["b"]),
@@ -2503,6 +2503,25 @@ def _cases(check):
     check("dd2 a copy whose destination cannot be read answers None, never a "
           "guess: %r" % ([M.copy_destinations(w) for w in _dd_none],),
           all(M.copy_destinations(w) is None for w in _dd_none))
+    # The one reader carries the spellings a copy's destination turns on: a
+    # directory install writes no file, -T names the file itself, a slash or
+    # several sources mean a directory, and the disk seam places a slashless
+    # directory operand.
+    _dd_more = [
+        (["install", "-d", "bin"], []),
+        (["install", "-T", "a", "bin/"], ["bin"]),
+        (["cp", "a.py", "src/"], ["src/a.py"]),
+        (["cp", "a.py", "b.py", "src"], ["src/a.py", "src/b.py"]),
+        (["ln", "-s", "a", "b"], ["b"]),
+    ]
+    _dd_more_got = [(w, M.copy_destinations(w)) for w, _want in _dd_more]
+    check("dd3 install -d, -T, a slash-ended or multi-source directory and ln "
+          "are read where the bytes land: %r" % (_dd_more_got,),
+          all(M.copy_destinations(w) == want for w, want in _dd_more))
+    _dd_disk = M.copy_destinations(["cp", "a.py", "src"],
+                                   is_dir=lambda word: word == "src")
+    check("dd4 a slashless operand the disk says is a directory takes the "
+          "source's name inside it: %r" % (_dd_disk,), _dd_disk == ["src/a.py"])
 
     # (cw) the command's own window: a start noted at Pre, a path judged by it.
     import tempfile

@@ -80,8 +80,10 @@
         "severity": "low",
         "file": "plugins/audit/hooks/guard-bash-writes.py:2132-2133",
         "issue": "P123.13 records every authored out-of-scope path in state['outOfScope'] 'so attempt-bound-commit's check reads the same fact', but nothing reads the key (git grep finds only the default, the load and this write); commit-task-work's attempt_strays recomputes from its own snapshot. The key is write-only state that implies a contract that does not exist.",
-        "resolution": "Either have commit-task-work/_scoped_commit read the session's outOfScope list as corroborating evidence (and name it in the refusal), or drop the key and the sentence.",
-        "fixTask": "P123.58-64p"
+        "resolution": "fixed in P123.58-64p (a0b125a6eac6): Either have commit-task-work/_scoped_commit read the session's outOfScope list as corroborating evidence (and name it in the refusal), or drop the key and the sentence.",
+        "fixTask": "P123.58-64p",
+        "commit": "a0b125a6eac6",
+        "status": "fixed"
       },
       {
         "id": "P123-R7",
@@ -92,7 +94,7 @@
         "fixTask": "P123.59-64p"
       }
     ],
-    "outcome": "[findings: 7 - 0 high, 4 med, 3 low; 5 with a recorded fix commit]"
+    "outcome": "[findings: 7 - 0 high, 4 med, 3 low; 6 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -4507,7 +4509,7 @@
     {
       "id": "P123.58-64p",
       "title": "The bash-write guard's out-of-scope record is read by the commit check, or is gone",
-      "status": "in_progress",
+      "status": "done",
       "description": "(P123-R6, low) P123.13 records every authored out-of-scope path in state['outOfScope'] 'so attempt-bound-commit's check reads the same fact', but nothing reads the key (git grep finds only the default, the load and this write); commit-task-work's attempt_strays recomputes from its own snapshot. The key is write-only state that implies a contract that does not exist.\n\nResolution: Either have commit-task-work/_scoped_commit read the session's outOfScope list as corroborating evidence (and name it in the refusal), or drop the key and the sentence. Prefer the structural answer: _scoped_commit's during-attempt check reads the session's outOfScope list as corroborating evidence and names it in its refusal; drop the key only if no reader can use it honestly. Faults: P123-R6.",
       "files": [
         "plugins/audit/hooks/guard-bash-writes.py",
@@ -4543,14 +4545,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a0b125a6eac6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Took the structural answer. hooks/_config.py gained BASH_WRITES_STATE_FILE and out_of_scope_record(state_dir) (sorted union of outOfScope over bash-writes-<sid>.json slots, tolerant of absent dir/slot/key and of the bash-writes-plugin-* sidecars' other shape). guard-bash-writes.STATE_FILE now aliases the _config template so writer and reader share one name. commit-task-work.attempt_refusal reads it through the existing _hooks_config()/attempt_state_dir seam and, for during-attempt strays the guard also recorded, appends 'The bash-write guard recorded X as written outside scope this session.' to the refusal; the snapshot still decides the refusal. Cases added in test_commit_task_work.py: ctw-at5 (record present, names it, an unrelated recorded path not named, sidecar shape ignored), ctw-at6 (no record, refusal stands on snapshot alone, no guard mention). Selftest of that file 106/106. Sweep, --spaced, bench-hooks --gate, ruff, vermin all exit 0. _scoped_commit.py, PLUGIN-BUILD-GUIDE.md and SECURITY.md needed no edit (no mention of the key). Wrote the cases in test_commit_task_work.py, not test_guard_bash_writes.py; the existing co1b guard-side case still locks the write.",
+        "descriptive": "The guard's outOfScope record is now read by the task commit check and named in its refusal, so the key is no longer write-only."
       },
       "startedAt": "2026-10-11T18:31:19Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-11T18:54:31Z",
+      "verifiedBy": [
+        "ctw-at5",
+        "ctw-at6"
+      ],
       "notes": [
         {
           "at": "2026-10-11T16:31:11Z",
@@ -4565,16 +4570,33 @@
         "runId": "2026-10-11T18:54:30Z.78c830",
         "status": "passed",
         "at": "2026-10-11T18:54:30Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "a0b125a6eac6",
+        "at": "2026-10-11T18:54:31Z",
+        "basis": "a fix task for P123-R6: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "task is gate-only; the two new cases were still watched: ctw-at5 failed on unfixed code (105/106) and passed after (106/106)",
+        "at": "before the fix, same session"
       }
     },
     {
       "id": "P123.59-64p",
       "title": "One reader says where cp, mv and install write, and both hooks call it (orchestrator-written guard reading code)",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(P123-R7, low) P123.13 adds a second reader of where cp/mv/install write (_config.copy_destinations) beside guard-secrets-read._copy_destinations, and they disagree: the new one has no `install -d` (creates directories, writes no file) or `-T` handling and no is_dir reading, so guard-bash-writes can attribute or block a path the plan gate's PreToolUse reader grades differently - the two-readers-of-one-command shape P123.35 consolidates elsewhere.\n\nResolution: Make one reader in hooks/_config (with install -d, -T and the is_dir seam) and have both hooks call it; pin the agreement with a case per spelling. GUARD COMMAND-READING CODE: written by the orchestrator. Faults: P123-R7.",
       "files": [
         "plugins/audit/hooks/_config.py",
-        "plugins/audit/hooks/guard-secrets-read.py"
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_guard_bash_writes.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "SECURITY.md"
       ],
       "tests": {
         "mode": "gate-only",
@@ -4597,14 +4619,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-11T18:54:31Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -4615,7 +4637,13 @@
       ],
       "fixes": [
         "P123-R7"
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T19:12:41Z.9ac69d",
+        "status": "passed",
+        "at": "2026-10-11T19:12:41Z"
+      }
     },
     {
       "id": "P123.60-64p",

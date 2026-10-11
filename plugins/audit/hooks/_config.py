@@ -2262,16 +2262,43 @@ _COPY_VALUE_OPTIONS = {
 }
 
 
-def copy_destinations(words):
+# What makes `cp` copy a directory whole rather than refuse it.
+_COPY_RECURSIVE_LONG = ("--recursive", "--archive")
+_COPY_RECURSIVE_SHORT = "rRa"
+
+
+def copy_destinations(words, is_dir=None, files_of=None):
     """Where one command's copying program puts its bytes: `[path, ...]`.
 
+    THE ONE READER, asked by both shell-write guards - the plan gate's
+    PreToolUse reading in `guard-secrets-read` and `guard-bash-writes`'
+    attribution of a write that landed - so one command gets one answer.
+
     [] when the program is not one that copies (`cp`, `mv`, `ln`, `install`,
-    `tee`); None when it is one and its destination cannot be read - a missing
-    operand, an option with no value, no words at all. The program is found past
-    assignments and wrappers by `program_candidates`, as every reader here finds
-    it, so `sudo mv a b` is read as `mv a b` is. A path is returned as typed;
-    whether it can be placed is `resolvable_destination`'s question, asked by
-    the caller."""
+    `tee`), or when it writes no file (`install -d` makes directories); None
+    when it is one and its destination cannot be read - a missing operand, an
+    option with no value, no words at all. The program is found past
+    assignments and wrappers by `program_candidates`, so `sudo mv a b` is read
+    as `mv a b` is.
+
+    The last operand, or - when it is spelled as a directory (a trailing
+    slash), when more than one source precedes it, when `-t` names the
+    directory, or when `is_dir` says the last operand is a directory that
+    exists - each source's name inside that directory. `-T`
+    (`--no-target-directory`) makes the last operand the file written whatever
+    is on the disk. With no `is_dir` nothing is known about the disk and a
+    slashless last operand is the file it names.
+
+    A DIRECTORY COPIED WHOLE WRITES EVERY FILE IN IT. `mv` of a directory, and
+    `cp` under `-r`, `-R`, `-a` or their long names, land each file of the
+    source under the destination; `files_of`, asked of a source and the
+    destination it lands as, lists them - or answers None, and the destination
+    is the one word written. A trailing slash on a whole copy's single
+    destination does not make that directory exist: when `is_dir` says it is
+    none, the copy creates the name and lands as it.
+
+    A path is returned as typed; whether it can be placed is
+    `resolvable_destination`'s question, asked by the caller."""
     if words is None:
         return None
     rest, _candidates = program_candidates(words)
@@ -2284,37 +2311,69 @@ def copy_destinations(words):
     takes = _COPY_VALUE_OPTIONS.get(program)
     if takes is None:
         return []
-    operands, target, index = [], None, 0
+    operands, directory, as_file, index = [], None, False, 0
+    whole = program == "mv"
     while index < len(args):
         word = args[index]
+        short = word.startswith("-") and not word.startswith("--")
         if word == "--":
             operands.extend(args[index + 1:])
             break
-        if word.startswith("--target-directory="):
-            target = word.split("=", 1)[1]
-            index += 1
-            continue
+        if program == "cp" and (word in _COPY_RECURSIVE_LONG or (
+                short and any(ch in word[1:] for ch in _COPY_RECURSIVE_SHORT))):
+            whole = True
         if word in ("-t", "--target-directory"):
             if index + 1 >= len(args):
                 return None
-            target = args[index + 1]
+            directory = args[index + 1]
             index += 2
             continue
-        if word.startswith("-") and len(word) > 1:
-            if word in takes:
-                if index + 1 >= len(args):
-                    return None
-                index += 2
-                continue
+        if word.startswith("--target-directory="):
+            directory = word.split("=", 1)[1]
+        elif word == "--no-target-directory" or (short and "T" in word[1:]):
+            as_file = True
+        elif program == "install" and word in ("-d", "--directory"):
+            return []
+        elif word in takes:
+            if index + 1 >= len(args):
+                return None
             index += 1
-            continue
-        operands.append(word)
+        elif not (word.startswith("-") and len(word) > 1):
+            operands.append(word)
         index += 1
-    if target is not None:
-        return [target]
-    if len(operands) < 2:
+    if directory is not None:
+        sources = operands
+    elif len(operands) < 2:
         return None
-    return [operands[-1]]
+    elif len(operands) == 2 and (as_file or _lands_as_named(
+            operands[1], whole, is_dir)):
+        directory, sources = None, operands[:1]
+    else:
+        directory, sources = operands[-1], operands[:-1]
+    if directory is None:
+        landed = [(operands[1].rstrip("/\\") or operands[1], operands[0])]
+    else:
+        base = directory.rstrip("/\\")
+        landed = [("%s/%s" % (base, s.replace("\\", "/").rstrip("/")
+                              .rsplit("/", 1)[-1]), s) for s in sources]
+    out = []
+    for dest, source in landed:
+        inside = (files_of(source, dest) if whole and files_of is not None
+                  else None)
+        out.extend([dest] if inside is None else
+                   ["%s/%s" % (dest.rstrip("/\\"), rel) for rel in inside])
+    return out
+
+
+def _lands_as_named(last, whole, is_dir):
+    """True when a two-operand copy writes its last operand `last` itself
+    rather than a file inside it: a slashless name that is no directory, or
+    - for a whole copy - a slash-ended one `is_dir` says is no directory."""
+    if is_dir is not None and is_dir(last):
+        return False
+    if not last.endswith(("/", "\\")):
+        return True
+    return whole and is_dir is not None
 
 
 def leading_assignments(words):

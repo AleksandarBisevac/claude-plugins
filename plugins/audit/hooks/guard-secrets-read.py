@@ -1809,11 +1809,6 @@ def _quoted_text_skipper(text):
 # read, never written - `mv` removes its source, which is a deletion and not a
 # change of content, and is outside what this arm grades.
 _COPY_PROGRAMS = ("cp", "mv", "install")
-_COPY_VALUE_OPTIONS = ("-S", "--suffix", "-m", "--mode", "-o", "--owner",
-                       "-g", "--group")
-# What makes `cp` copy a directory whole rather than refuse it.
-_COPY_RECURSIVE_LONG = ("--recursive", "--archive")
-_COPY_RECURSIVE_SHORT = "rRa"
 # How many files of a directory copied whole are listed before the rest is said
 # as a destination not established - a bound on the walk a hook makes on every
 # such command, never a silent stop.
@@ -1823,98 +1818,11 @@ _COPY_WALK_LIMIT = 2000
 def _copy_destinations(words, is_dir=None, files_of=None):
     """The files a `cp`/`mv`/`install` call, given as its words, writes.
 
-    The last operand, or - when it is spelled as a directory (a trailing
-    slash), when more than one source precedes it, when `-t` names the
-    directory, or when `is_dir` says the last operand is a directory that
-    exists - each source's name inside that directory. `install -d` creates
-    directories and writes no file, and `-T` (`--no-target-directory`) makes
-    the last operand the file written whatever is on the disk.
-
-    A DIRECTORY SPELLED WITHOUT ITS SLASH IS STILL A DIRECTORY. Whether the
-    last operand is one is a fact about the disk, so the caller asks it there
-    (`is_dir`, at the command's own directory): read as the file it names,
-    `cp notes.py src` graded a write to `src`, which is no source file, while
-    `cp notes.py src/` and `cp -t src notes.py` - the same write - were
-    refused.
-
-    A DIRECTORY COPIED WHOLE WRITES EVERY FILE IN IT. `mv` of a directory, and
-    `cp` under `-r`, `-R`, `-a` or their long names, land each file of the
-    source under the destination; `files_of`, asked of a source and the
-    destination it lands as, lists them - or answers None, and the
-    destination is the one word written - and each is a file written. Read as
-    the one directory name, a recursive copy of source files into the tree
-    wrote no source file this arm could see.
-
-    A TRAILING SLASH DOES NOT MAKE A DIRECTORY EXIST. A whole copy or move
-    of one source onto a slash-ended name that is no directory - not on the
-    disk, not made by an earlier clause (`is_dir` answers both) - creates
-    that name and lands as it, exactly as the slashless spelling does: read
-    as landing inside it, `cp -r src/ lib/` was refused naming
-    `lib/src/app.ts` against a plan declaring the `lib/app.ts` it writes.
-    With no `is_dir` nothing is known about the disk, and the slash is read
-    as a directory, as it always was."""
-    operands, directory, index = [], None, 1
-    as_file = False
-    whole = words[0] == "mv"
-    while index < len(words):
-        word = words[index]
-        if word == "--":
-            operands.extend(words[index + 1:])
-            break
-        if words[0] == "cp" and (word in _COPY_RECURSIVE_LONG or (
-                word.startswith("-") and not word.startswith("--")
-                and any(ch in word[1:] for ch in _COPY_RECURSIVE_SHORT))):
-            whole = True
-        if word in ("-t", "--target-directory"):
-            directory = words[index + 1] if index + 1 < len(words) else None
-            index += 2
-            continue
-        if word.startswith("--target-directory="):
-            directory = word.split("=", 1)[1]
-        elif word == "--no-target-directory" or (
-                word.startswith("-") and not word.startswith("--")
-                and "T" in word[1:]):
-            as_file = True
-        elif word in ("-d", "--directory") and words[0] == "install":
-            return []
-        elif word in _COPY_VALUE_OPTIONS:
-            index += 1
-        elif not (word.startswith("-") and len(word) > 1):
-            operands.append(word)
-        index += 1
-    if directory is not None:
-        sources = operands
-    elif len(operands) < 2:
-        return []
-    elif len(operands) == 2 and (as_file or _lands_as_named(
-            operands[1], whole, is_dir)):
-        directory, sources = None, operands[:1]
-    else:
-        directory, sources = operands[-1], operands[:-1]
-    if directory is None:
-        landed = [(operands[1].rstrip("/\\") or operands[1], operands[0])]
-    else:
-        base = directory.rstrip("/\\")
-        landed = [("%s/%s" % (base, s.replace("\\", "/").rstrip("/")
-                              .rsplit("/", 1)[-1]), s) for s in sources]
-    out = []
-    for dest, source in landed:
-        inside = (files_of(source, dest) if whole and files_of is not None
-                  else None)
-        out.extend([dest] if inside is None else
-                   ["%s/%s" % (dest.rstrip("/\\"), rel) for rel in inside])
-    return out
-
-
-def _lands_as_named(last, whole, is_dir):
-    """True when a two-operand copy writes its last operand `last` itself
-    rather than a file inside it: a slashless name that is no directory, or
-    - for a whole copy - a slash-ended one `is_dir` says is no directory."""
-    if is_dir is not None and is_dir(last):
-        return False
-    if not last.endswith(("/", "\\")):
-        return True
-    return whole and is_dir is not None
+    This file's name for `_config.copy_destinations`, the one reader both
+    shell-write guards ask, so the plan gate here and `guard-bash-writes`'
+    attribution of a landed write read one command alike. A destination that
+    cannot be read writes nothing this arm can grade, so it is no file here."""
+    return _config.copy_destinations(words, is_dir, files_of) or []
 
 
 def _existing_directory(word, cwd):

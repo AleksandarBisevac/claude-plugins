@@ -1027,6 +1027,20 @@ def _handed_spelling_cases(check, root, outside, journal, shell, same_as_bare,
           "directory takes the source's name, anything else - or `-T` - is "
           "the file written",
           got == [x for _w, x in want], got)
+    # One command, one answer: the plan gate's reader here and the shared one
+    # guard-bash-writes attributes a landed write with read every spelling
+    # alike.
+    spellings = (["cp", "a.py", "b.py"], ["cp", "a.py", "src/"],
+                 ["cp", "a.py", "b.py", "src"], ["mv", "-t", "out", "a", "b"],
+                 ["cp", "--target-directory=out", "a"], ["install", "-d", "bin"],
+                 ["install", "-T", "a", "bin/"], ["install", "-m", "644", "a",
+                                                  "bin/a"], ["cp", "-r", "src/",
+                                                             "lib/"])
+    pairs = [(w, dests(list(w)), _config.copy_destinations(list(w)) or [])
+             for w in spellings]
+    check("ww7c the plan gate's copy reader and the shared one agree on every "
+          "spelling: %r" % ([p for p in pairs if p[1] != p[2]],),
+          all(a == b for _w, a, b in pairs))
 
     # A handed command one level past the bound the walk reads is graded as
     # a write this guard cannot place: refused at the deny tier, said at the

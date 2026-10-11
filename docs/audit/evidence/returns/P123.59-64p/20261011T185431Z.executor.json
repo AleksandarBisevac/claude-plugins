@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/sweep-selftests.py --spaced": "pass",
+    "python3 tools/bench-hooks.py --gate": "pass",
+    "python3 tools/gate-parity.py": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only fix task; the red was observed by hand before the change: test__config dd1, dd3 and dd4 and test_guard_secrets_read ww7c failed on the two unconsolidated readers (313/316 and 700/701), and pass after it (335/335, 701/701)."
+  },
+  "outcome": {
+    "descriptive": "One reader says where cp, mv, install, ln and tee write, and both shell-write guards ask it, so one command gets one answer.",
+    "technical": "Written by the orchestrator (guard command-reading code). hooks/_config.copy_destinations(words, is_dir=None, files_of=None) is now the one reader: program found past assignments and wrappers (program_candidates); tee writes its operands; cp/mv/install/ln read -t/--target-directory, -T/--no-target-directory, install -d (writes no file -> []), value-taking options, a slash-ended or multi-source directory, the is_dir seam for a slashless directory operand, and a whole copy (mv, cp -r/-R/-a) listed through files_of; a missing operand or option value is None (unreadable). _lands_as_named moved with it. guard-secrets-read._copy_destinations is now that reader's name in this file (`or []`), keeping _COPY_PROGRAMS and the directory walk bound; its duplicate parser and constants are gone. guard-bash-writes already called the shared reader and now attributes a landed write per file (`mv -t out a b` -> out/a, out/b, not out). Cases: test__config dd1 updated (per-file -t), dd3 (install -d, -T, slash/multi-source directory, ln), dd4 (is_dir seam); test_guard_secrets_read ww7c (the two hooks' readers agree on every spelling). Seen red before the change: dd1, dd3, dd4, ww7c."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__config.py: dd3, dd4 (dd1 updated)",
+    "plugins/audit/tests/test_guard_secrets_read.py: ww7c"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:7f7730f1c549f12aff0ba6ac03b045d876d570184fd3b764579ec553a982344c\",\"dirtyDigest\":\"sha256:934c33aae9381dd3e2ec82ae9099aa2d799ce22506dc17537bf6806639c2a546\",\"dirtyPaths\":{\"plugins/audit/hooks/_config.py\":\"1926de03b4ae51d6\",\"plugins/audit/hooks/guard-secrets-read.py\":\"74710b0ccfe45def\",\"plugins/audit/tests/test__config.py\":\"501b1feae0ad0c41\",\"plugins/audit/tests/test_guard_secrets_read.py\":\"ccef3097e81a9b8f\"},\"head\":\"a0b125a6\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/guard-bash-writes.py\",\"plugins/audit/hooks/guard-secrets-read.py\",\"plugins/audit/tests/test__config.py\",\"plugins/audit/tests/test_guard_bash_writes.py\",\"plugins/audit/tests/test_guard_secrets_read.py\"],\"scopeDigest\":\"sha256:f0e7e636dff067484e6c7d1da68de91bf9e1ed03bd2212c280ff4708bf2899c2\",\"v\":2}"
+}
