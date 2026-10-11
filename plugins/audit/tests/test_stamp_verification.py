@@ -47,6 +47,7 @@ from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _tree_stamp                                 # noqa: E402
 import _proc_group                                 # noqa: E402
+import _runner_output                              # noqa: E402
 import _worktrees as _wt                           # noqa: E402
 
 M = _loader.load_script("stamp-verification.py", modname="stamp_verification")
@@ -4264,6 +4265,243 @@ def _edge_cases(check):
           "HEAD no longer holds, is not reported present: %r" % (got_c,),
           got_c == (set([":colon_test.py"]), None))
 
+
+# --- a missing module, read off each runner's own spelling of it ---
+# What each runner prints when a test imports a module that does not exist yet.
+# vitest 4.1.10's line was captured on 2026-10-11 from `vitest run` over a test
+# importing `../src/add` with no such file (the importer printed absolute);
+# Vite's own import analysis prints the `Failed to resolve import` shape; jest
+# prints the `from '<importer>'` shape `_JEST_NO_SUITE` carries; node's ESM
+# loader prints `ERR_MODULE_NOT_FOUND` with both paths absolute.
+def _vitest_missing(spec, importer):
+    return (" FAIL  tests/add.test.js [ tests/add.test.js ]\n"
+            "Error: Cannot find module '%s' imported from %s\n\n"
+            " Test Files  1 failed (1)\n      Tests  no tests\n" % (spec, importer))
+
+
+def _vite_missing(spec):
+    return (" FAIL  tests/add.test.js [ tests/add.test.js ]\n"
+            "Error: Failed to resolve import \"%s\" from \"tests/add.test.js\". "
+            "Does the file exist?\n\n"
+            " Test Files  1 failed (1)\n      Tests  no tests\n" % (spec,))
+
+
+def _jest_missing(spec):
+    return _JEST_NO_SUITE.replace("'../src/add'", "'%s'" % (spec,))
+
+
+def _node_missing(target, importer):
+    return ("node:internal/modules/esm/resolve:275\n"
+            "    throw new ERR_MODULE_NOT_FOUND(\n          ^\n\n"
+            "Error [ERR_MODULE_NOT_FOUND]: Cannot find module '%s' imported from "
+            "%s\n    at finalizeResolution (node:internal/modules/esm/resolve:"
+            "275:11)\n" % (target, importer))
+
+
+def _missing_module_cases(check):
+    root = _seeded_repo("stamp-missing-")
+    tree = os.path.join(_harness.fixture_root("stamp-missing-tree-"), "tree")
+    for rel in ("src/add.js", "src/sum.mjs"):
+        _write(os.path.join(root, *rel.split("/")),
+               "export function add(a, b) { return a + b; }\n")
+    passing = " Test Files  1 passed (1)\n      Tests  1 passed (1)\n"
+    ctx = {"root": root, "implementation": ["src/add.js", "src/sum.mjs"],
+           "tests": ["tests/add.test.js", "tests/run.mjs"], "cases": [],
+           "symbols": [], "dropped": [], "new": [], "absent": [],
+           "head_files": None, "head_defs": None, "head_modules": None,
+           "head_js": None, "path": tree}
+
+    def grade(cmd, text, second_text=passing):
+        run = {"cmd": cmd, "code": 1, "text": text, "problem": None,
+               "head": {"code": 0, "text": "", "problem": None},
+               "second": {"code": 0, "text": second_text, "problem": None},
+               "fix": None}
+        code, _v, block, _n = M.red_verdict(run, ctx)
+        return code, (block or {}).get("basis", "")
+
+    vitest = ["npx", "vitest", "run"]
+    importer = tree + "/tests/add.test.js"
+    shapes = [
+        ("vitest", vitest, _vitest_missing("../src/add", importer),
+         _vitest_missing("../src/other", importer)),
+        ("vite", vitest, _vite_missing("../src/add"), _vite_missing("../src/other")),
+        ("jest", ["npx", "jest"], _jest_missing("../src/add"),
+         _jest_missing("../src/other")),
+        ("node", ["node", "tests/run.mjs"],
+         _node_missing(tree + "/src/sum.mjs", tree + "/tests/run.mjs"),
+         _node_missing(tree + "/src/other.mjs", tree + "/tests/run.mjs")),
+    ]
+    got = dict((name, (grade(cmd, hit), grade(cmd, miss)))
+               for name, cmd, hit, miss in shapes)
+    check("sm1 a missing-module failure whose path resolves to a declared "
+          "implementation file new at HEAD is a missing-symbol red, read off "
+          "each runner's own spelling - vitest's `imported from`, Vite's "
+          "`Failed to resolve import`, jest's `from '<importer>'`, node's "
+          "ERR_MODULE_NOT_FOUND - and the basis names the file: %r"
+          % (dict((k, (v[0][0], v[0][1][:200])) for k, v in got.items()
+                  if v[0][0] != M.E_PROVED),),
+          all(v[0][0] == M.E_PROVED and ("src/add.js" in v[0][1]
+                                         or "src/sum.mjs" in v[0][1])
+              and "second run" in v[0][1] for v in got.values()))
+    check("sm2 THE DENY TWIN for sm1: the same line naming a path no declared "
+          "file answers stays could-not-prove, for every runner: %r"
+          % (dict((k, v[1][0]) for k, v in got.items()),),
+          all(v[1][0] == M.E_CANNOT_PROVE for v in got.values()))
+    stays = grade(vitest, _vitest_missing("../src/add", importer),
+                  second_text=_vitest_missing("../src/add", importer))
+    check("sm3 THE DENY TWIN for sm1: a missing module the working tree's "
+          "implementation does not supply - the second run still prints it - "
+          "stays could-not-prove: %r" % (stays,),
+          stays[0] == M.E_CANNOT_PROVE)
+
+
+# --- a house suite whose body aborts on the task's new name ---
+# What `_harness.run` prints when the body raises: every case before it, the
+# abort as one more FAIL line carrying `<Error>: <message>`, and the tally. The
+# fixture prints it without the traceback the harness sends to stderr, so the
+# only place the error is written is the FAIL line itself.
+_ABORT = _runner_output.HOUSE_ESCAPES[1] + " - every case after this point did NOT run"
+
+
+def _aborting_test(call):
+    body = ["import os, sys", _PATH_LINE, "import mine",
+            "print('PASS old1')",
+            "try:",
+            "    ok = %s == 2" % (call,),
+            "    lines = ['%s new1' % ('PASS' if ok else 'FAIL')]",
+            "    passed = 2 if ok else 1",
+            "except Exception as exc:",
+            "    lines = ['FAIL %s (%%s: %%s)' %% (type(exc).__name__, exc)]"
+            % (_ABORT,),
+            "    passed = 1",
+            "print('\\n'.join(lines))",
+            "print(%r %% ('ALL PASS' if passed == 2 else 'SELFTEST FAILED', "
+            "passed, 2))" % (_TALLY,),
+            "sys.exit(0 if passed == 2 else 1)"]
+    return "\n".join(body) + "\n"
+
+
+def _house_abort_cases(check):
+    py = sys.executable
+    fix = {"src/mine.py": "v = 2\n\n\ndef new_fn():\n    return 2\n"}
+    root, man = _red_repo("stamp-abort-", _aborting_test("mine.new_fn()"),
+                          extra=fix)
+    code, got = _red(root, man, [py, "tests/test_mine.py"], "--derive-introduces")
+    basis = (got.get("redFirst") or {}).get("basis", "")
+    check("sh1 a house suite printing SELFTEST FAILED: N-1/N because its body "
+          "aborted on an AttributeError naming the symbol the task introduces "
+          "(derived from the diff) is a missing-symbol red, proved: exit=%r %r"
+          % (code, basis[:300]),
+          code == M.E_PROVED and "new_fn" in basis
+          and "AttributeError" in basis)
+    root_u, man_u = _red_repo("stamp-abort-other-",
+                              _aborting_test("mine.unrelated_fn()"), extra=fix)
+    code_u, got_u = _red(root_u, man_u, [py, "tests/test_mine.py"],
+                         "--derive-introduces")
+    check("sh2 THE DENY TWIN for sh1: the same abort naming a name the task "
+          "does not introduce stays could-not-prove: exit=%r %r"
+          % (code_u, (got_u.get("redFirst") or {}).get("basis", "")[:240]),
+          code_u == M.E_CANNOT_PROVE
+          and (got_u.get("redFirst") or {}).get("status") == "could-not-prove")
+    root_t, man_t = _red_repo("stamp-abort-kw-",
+                              _aborting_test("mine.scaled(scale=1)"))
+    _write(os.path.join(root_t, "src", "mine.py"),
+           "v = 1\n\n\ndef scaled():\n    return 1\n")
+    _git(root_t, "add", "src/mine.py")
+    _git(root_t, "commit", "-q", "-m", "scaled without the keyword")
+    _write(os.path.join(root_t, "src", "mine.py"),
+           "v = 2\n\n\ndef scaled(scale=1):\n    return 2 * scale\n")
+    code_t, got_t = _red(root_t, man_t, [py, "tests/test_mine.py"],
+                         "--introduces", "scale")
+    check("sh3 ...and a TypeError naming the introduced name - a keyword the "
+          "task adds, given by --introduces - aborts the same way and is the "
+          "same red: exit=%r %r"
+          % (code_t, (got_t.get("redFirst") or {}).get("basis", "")[:300]),
+          code_t == M.E_PROVED
+          and "TypeError" in (got_t.get("redFirst") or {}).get("basis", ""))
+
+
+# --- an inline suite: the test and the implementation in one file ---
+_INLINE_HEAD = "\n".join([
+    "import sys", "", "",
+    "def value():", "    return 1", "", "",
+    "def _cases(results):", "    results.append(('old1', value() >= 1))", "", "",
+    "if __name__ == '__main__':",
+    "    results = []",
+    "    _cases(results)",
+    "    for label, ok in results:",
+    "        print('%s %s' % ('PASS' if ok else 'FAIL', label))",
+    "    n = sum(1 for _l, ok in results if ok)",
+    "    print(%r %% ('ALL PASS' if n == len(results) else 'SELFTEST FAILED', "
+    "n, len(results)))" % (_TALLY,),
+    "    sys.exit(0 if n == len(results) else 1)", ""])
+# The fix and its case, each in its own hunk: `value` returns the new value, and
+# `_cases` asserts it.
+_INLINE_WT = _INLINE_HEAD.replace("    return 1", "    return 2").replace(
+    "    results.append(('old1', value() >= 1))",
+    "    results.append(('old1', value() >= 1))\n"
+    "    results.append(('new1', value() == 2))")
+# The same fix with its case written outside any test definition.
+_INLINE_LOOSE = _INLINE_HEAD.replace("    return 1", "    return 2").replace(
+    "    _cases(results)\n",
+    "    _cases(results)\n    results.append(('new1', value() == 2))\n")
+
+
+def _inline_repo(prefix, wt_text):
+    root = _seeded_repo(prefix)
+    os.makedirs(os.path.join(root, "tools"))
+    _write(os.path.join(root, "tools", "inline.py"), _INLINE_HEAD)
+    _git(root, "add", "tools/inline.py")
+    _git(root, "commit", "-q", "-m", "inline")
+    _write(os.path.join(root, "tools", "inline.py"), wt_text)
+    manifest = json.loads(json.dumps(MANIFEST))
+    task = manifest["phases"][0]["tasks"][0]
+    task["files"] = ["tools/inline.py"]
+    task["tests"] = {"mode": "tdd", "add": ["tools/inline.py: value is two"]}
+    man = os.path.join(_harness.fixture_root(prefix + "man-"), "audit-plan.json")
+    _write(man, json.dumps(manifest))
+    return root, man
+
+
+def _inline_suite_cases(check):
+    py = sys.executable
+    root, man = _inline_repo("stamp-inline-", _INLINE_WT)
+    code, got = _red(root, man, [py, "tools/inline.py"])
+    basis = (got.get("redFirst") or {}).get("basis", "")
+    check("si1 an inline suite - its test file is its implementation file - is "
+          "red-proved by laying HEAD plus only its added test hunks over the "
+          "throwaway, and the basis says so: exit=%r %r note=%r"
+          % (code, basis[:300], got.get("note")),
+          code == M.E_PROVED and "inline" in basis and "new1" in basis)
+    root_l, man_l = _inline_repo("stamp-inline-loose-", _INLINE_LOOSE)
+    code_l, got_l = _red(root_l, man_l, [py, "tools/inline.py"])
+    block_l = got_l.get("redFirst") or {}
+    check("si2 ...and one whose added case lies in no test definition, so no "
+          "test-only copy can be made, is could-not-prove with the inline "
+          "reason - never the green 'fix the test' no-block answer: exit=%r %r"
+          % (code_l, block_l or got_l.get("note")),
+          code_l == M.E_CANNOT_PROVE and block_l.get("status") == "could-not-prove"
+          and "inline" in block_l.get("basis", ""))
+    root_p, man_p = _inline_repo("stamp-inline-pass-", _INLINE_WT.replace(
+        "('new1', value() == 2)", "('new1', value() >= 1)"))
+    code_p, got_p = _red(root_p, man_p, [py, "tools/inline.py"])
+    block_p = got_p.get("redFirst") or {}
+    check("si4 an inline suite whose test-only copy PASSES on HEAD's code is "
+          "could-not-prove naming the split, not the green no-block answer - "
+          "the split is read from definition names and may be misread: "
+          "exit=%r %r" % (code_p, block_p or got_p.get("note")),
+          code_p == M.E_CANNOT_PROVE and block_p.get("status") == "could-not-prove"
+          and "misread split" in block_p.get("basis", ""))
+    head_lines, wt_lines = _INLINE_HEAD.splitlines(True), _INLINE_WT.splitlines(True)
+    text, held, applied, problem = M.inline_test_text(_INLINE_HEAD, _INLINE_WT)
+    check("si3 the test-only copy is HEAD with the test hunk applied and the "
+          "implementation hunk held back: one of each, `value` still returns 1 "
+          "and the new case is present: %r"
+          % ((held, applied, problem, text and text[:120]),),
+          problem is None and held == 1 and applied == 1
+          and "    return 1\n" in text and "('new1', value() == 2)" in text
+          and len(head_lines) + 1 == len(wt_lines))
+
 # Every block, in run order. `--stage LABEL` narrows a run to the blocks it
 # names, which is what lets a red-first proof in a throwaway tree fit its
 # deadline: the whole suite does not.
@@ -4291,6 +4529,9 @@ STAGES = (
     ("sr-red", "_red_cases"),
     ("sr-tally", "_tally_cases"),
     ("sr-introduces", "_introduces_cases"),
+    ("sm-missing-module", "_missing_module_cases"),
+    ("sh-house-abort", "_house_abort_cases"),
+    ("si-inline", "_inline_suite_cases"),
     ("sr-directory", "_directory_scope_cases"),
     ("sr-sandbox-words", "_sandbox_words_cases"),
     ("sr-process", "_process_cases"),

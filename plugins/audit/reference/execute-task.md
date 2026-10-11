@@ -158,9 +158,12 @@ verb writes and refuses, and what the run commands leave behind, is
      derives the introduced symbols from the task's diff and passes them as
      `--derive-introduces`; `--introduces <symbol>` is the override, and is where "the task introduces the symbol" is decided: an
      identifier absent from HEAD's copy of every declared implementation file and present
-     in the working tree's, a final import/attribute/name error naming it, and a second run
-     with the working tree's implementation copied in that loses that error and reaches its
-     assertions. The throwaway holds tracked files only and runs with a scrubbed
+     in the working tree's, a final import/attribute/name error naming it — or a house
+     suite's abort line, or a JS missing-module line resolving to a declared source the
+     task changed — and a second run with the working tree's implementation copied in that
+     loses that error and reaches its assertions. An inline suite (a test file only because
+     `tests.add` names it) is run with HEAD's copy plus only its hunks inside test
+     definitions; where no such split exists the red is `could-not-prove` with that reason. The throwaway holds tracked files only and runs with a scrubbed
      environment; `--deps-from <dir>` (`--project` by default) links in its ignored
      dependency directories (`node_modules` at any depth, `.venv`) entry by entry, named
      on the output's `dependencies:` line. Its leaks are named, not closed: a link landing

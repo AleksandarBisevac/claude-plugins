@@ -2854,6 +2854,29 @@ def _paths_discipline(paths, named_by):
         % (named_by, ", ".join(paths)))
 
 
+def _inline_suite_discipline(paths):
+    """`(mode, note)` for a task whose `tests.add` names `paths`: `regression`
+    and the reason when every one has none of the test shapes - an inline
+    suite, whose cases live in the file they test - else `(None, None)`.
+
+    A red run lays a task's test files over HEAD; an inline suite's copy
+    carries the fix with it, so the red-first helper has to split the file's
+    test hunks from its code by the definitions they lie in. That works when
+    the cases sit in test definitions and is refused otherwise, so red-first
+    is the caller's to ask for and not the default. The test-path reading is
+    `_filed_returns.is_test_path`, the one the red-first helper grades with."""
+    if not paths or any(_fr.is_test_path(p) for p in paths):
+        return None, None
+    return "regression", (
+        "regression by default: %s %s the task's only test file%s and %s %s own "
+        "implementation (an inline suite), so a red run at HEAD would lay the fix "
+        "over with the cases; pass --tests-mode tdd to ask for the red-first "
+        "split of its test hunks"
+        % (", ".join(paths), "is" if len(paths) == 1 else "are",
+           "" if len(paths) == 1 else "s", "is" if len(paths) == 1 else "are",
+           "its" if len(paths) == 1 else "their"))
+
+
 def _bug_for_add(assembled, bug_id):
     """`(bug, refusal)` -- the open bug `add --bug` names, or why it cannot."""
     bug = next((b for b in (assembled.get("bugs") or [])
@@ -3165,6 +3188,13 @@ def _locked_add(args, project, config, mpath, title, out):
     fix_notes = []
     if fixes:
         args, fix_notes = _fix_task_args(args, targets, project, fixes)
+    if args.tests_mode is None:
+        inline_mode, inline_note = _inline_suite_discipline(
+            _tests_add_paths(args.tests_add)[0])
+        if inline_mode:
+            args = argparse.Namespace(**vars(args))
+            args.tests_mode = inline_mode
+            fix_notes = fix_notes + [inline_note]
     declared = _union_paths(_split_csv(args.files), _tests_add_paths(args.tests_add)[0])
     by_runner = _unit_runner_paths(phase, assembled, project, declared) if fixes else {}
     companions, companion_notes = _companions_for(project, declared, intent, by_runner)
@@ -8126,6 +8156,17 @@ def _locked_scope(args, project, config, mpath, tid, out):
                     or bool(args.gate) or args.gate_clear)
     tests = node.get("tests")
     tests = dict(tests) if isinstance(tests, dict) else None
+    # An inline suite named as the task's only test file fills an ABSENT or a
+    # gate-only mode with `regression` (`add` makes the same choice); a mode
+    # somebody chose to be red-first is theirs and stays.
+    mode_note = None
+    if args.tests_mode is None and args.tests_add \
+            and (tests or {}).get("mode") in (None, "gate-only"):
+        inline_mode, mode_note = _inline_suite_discipline(
+            _tests_add_paths(args.tests_add)[0])
+        if inline_mode:
+            args = argparse.Namespace(**vars(args))
+            args.tests_mode = inline_mode
     if tests_writes and tests is None and args.tests_mode is None:
         # Refused BEFORE the write and named as the flag it is, because the two
         # alternatives are worse: writing produces the same invalid object one
@@ -8373,6 +8414,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
                   # file the task declares is outside it.
                   "testsAddNamingNoFile": list(unnamed_add),
                   "companions": companions, "companionNotes": companion_notes,
+                  "testsModeNote": mode_note,
                   "ready": not waiting, "waitingOn": waiting}
         result.update(jres)
         result.update(stdin_notes_key(args))
@@ -8385,6 +8427,8 @@ def _locked_scope(args, project, config, mpath, tid, out):
     for row in changes:
         out("  %s: %s -> %s" % (row["field"], json.dumps(row["from"]),
                                 json.dumps(row["to"])))
+    if mode_note:
+        out("  tests.mode: %s" % (mode_note,))
     for item in companions:
         out("  companion: %s -- %s" % (item["path"], item["basis"]))
     for note in companion_notes:

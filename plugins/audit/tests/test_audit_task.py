@@ -15526,6 +15526,105 @@ def _bug_fix_discipline_cases(check):
         shutil.rmtree(root, ignore_errors=True)
 
 
+def _inline_suite_mode_cases(check):
+    """A task whose only test file is also its source - an inline suite - has no
+    test file a red run can lay over HEAD by itself, so `add` and `scope` pick
+    `regression` for it when the caller named no mode, and say why. A test
+    file of the ordinary shape keeps the default it always had."""
+    import io
+    root = _harness.fixture_root("audit-task-is-")
+
+    def project(name):
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        _panel_write._atomic_write_json(
+            os.path.join(proj, ".claude", "audit.config.json"),
+            {"manifestPath": "docs/audit/audit-plan.json"})
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        _panel_write._atomic_write_json(mpath, {
+            "meta": {"version": 2, "buildCommands": {"test": "true"}},
+            "phases": [{"id": "P1", "title": "P1", "status": "in_progress",
+                        "testGate": ["test"], "tasks": []}],
+            "fileIndex": {}})
+        return proj, mpath
+
+    def verb(proj, *argv):
+        lines, real = [], sys.stdin
+        sys.stdin = io.StringIO("")
+        try:
+            code = M.main(list(argv) + ["--project-dir", proj], out=lines.append)
+        finally:
+            sys.stdin = real
+        return code, "\n".join(str(x) for x in lines)
+
+    def task(mpath, i=0):
+        tasks = _mio.load_manifest(mpath)["phases"][0]["tasks"]
+        return tasks[i] if len(tasks) > i else {}
+
+    def notes(t):
+        return " ".join(str(n.get("text")) for n in (t.get("notes") or []))
+
+    inline = "tools/check-thing.py"
+    try:
+        proj, mpath = project("add-inline")
+        code, text = verb(proj, "add", "Inline", "--phase", "P1", "--tests-add",
+                          "%s: the new case" % (inline,))
+        t = task(mpath)
+        check("is1 add of a task whose only test file is its source (an inline "
+              "suite) defaults to regression, not red-first, and says why: %r"
+              % ((code, t.get("tests"), notes(t), text[-200:]),),
+              code == 0 and (t.get("tests") or {}).get("mode") == "regression"
+              and (t.get("tests") or {}).get("expectRedFirst") is False
+              and "inline" in notes(t) and inline in notes(t))
+
+        proj, mpath = project("add-ordinary")
+        code, text = verb(proj, "add", "Ordinary", "--phase", "P1",
+                          "--tests-add", "tests/test_thing.py: the new case")
+        t = task(mpath)
+        check("is2 ALLOW: a test file of the ordinary shape keeps add's default "
+              "and gets no inline note: %r" % ((code, t.get("tests"), notes(t)),),
+              code == 0 and (t.get("tests") or {}).get("mode") == "gate-only"
+              and "inline" not in notes(t))
+
+        proj, mpath = project("add-explicit")
+        code, text = verb(proj, "add", "Explicit", "--phase", "P1",
+                          "--tests-mode", "tdd", "--tests-add",
+                          "%s: the new case" % (inline,))
+        t = task(mpath)
+        check("is3 ALLOW: an explicit --tests-mode is the caller's answer and "
+              "the inline default does not overrule it: %r"
+              % ((code, t.get("tests")),),
+              code == 0 and (t.get("tests") or {}).get("mode") == "tdd")
+
+        proj, mpath = project("scope-inline")
+        verb(proj, "add", "Later", "--phase", "P1", "--files", inline)
+        tid = task(mpath).get("id")
+        code, text = verb(proj, "scope", tid, "--tests-add",
+                          "%s: the new case" % (inline,))
+        t = task(mpath)
+        check("is4 scope naming an inline suite as the task's only test file, "
+              "with no --tests-mode, moves a gate-only task to regression and "
+              "says why: %r" % ((code, t.get("tests"), text[-240:]),),
+              code == 0 and (t.get("tests") or {}).get("mode") == "regression"
+              and (t.get("tests") or {}).get("expectRedFirst") is False
+              and "inline" in text)
+
+        proj, mpath = project("scope-ordinary")
+        verb(proj, "add", "Later", "--phase", "P1", "--files", inline,
+             "--tests-mode", "tdd", "--tests-add", "tests/test_thing.py: one")
+        tid = task(mpath).get("id")
+        code, text = verb(proj, "scope", tid, "--tests-add",
+                          "%s: the new case" % (inline,))
+        t = task(mpath)
+        check("is5 ALLOW: scope of a task already graded tdd keeps tdd - the "
+              "inline default fills an absent or gate-only mode, never "
+              "overrules a red-first one: %r" % ((code, t.get("tests")),),
+              code == 0 and (t.get("tests") or {}).get("mode") == "tdd")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def _introduces_cases(check):
     """`--introduces` writes the files a change cannot avoid, and a fix task gets
     every path its finding names, the companions, the discipline it asks for and
@@ -16397,6 +16496,7 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("io-block", "_index_only_cases"),
           ("fd-block", "_finding_disposition_cases"),
           ("bf-block", "_bug_fix_discipline_cases"),
+          ("is-block", "_inline_suite_mode_cases"),
           ("cz-block", "_introduces_cases"),
           ("ps-block", "_stage_runner_cases"),
           ("of-block", "_open_finding_shape_cases"),

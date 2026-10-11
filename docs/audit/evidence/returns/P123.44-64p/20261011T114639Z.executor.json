@@ -1,0 +1,37 @@
+{
+  "gates": {
+    "own-tests: python3 plugins/audit/tests/test_stamp_verification.py --selftest": "pass",
+    "own-tests: python3 plugins/audit/tests/test_audit_task.py --selftest --stage is-block": "pass",
+    "selftests: python3 tools/sweep-selftests.py": "pass",
+    "selftests --spaced: python3 tools/sweep-selftests.py --spaced": "pass",
+    "lint: ruff check plugins/audit tools": "pass",
+    "lint: vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-11T12:16:40Z",
+    "basis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases sm1 (house FAIL), sh1 (house FAIL), sh3 (house FAIL), si1 (house FAIL), si2 (house FAIL), si4 (house FAIL), sr23 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 237/238 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 240/248 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "stamp-verification.py: one per-runner table MISSING_SPELLINGS (house abort FAIL line, vitest/node 'Cannot find module .. imported from', Vite 'Failed to resolve import', jest 'Cannot find module .. from') read by missing_reports() beside Python's final error; missing_subjects() pairs each report with an introduced symbol (quoted name) or a declared source it resolves to (report_module: JS specifier resolved against its importer, Python import error's module or printed path); changed_source() is the static check for a file; red_verdict's introduces loop now runs over those subjects (and over a no-tally run that printed one), with the second run still deciding; _wants_second takes sources and roots. House abort reads AttributeError/ImportError/ModuleNotFoundError/NameError plus TypeError. Inline suite: is_inline_suite() (a tests.add-named path with no test shape), inline_test_text() (difflib hunks; a hunk is applied only when every non-blank, non-comment line lies in a test definition - def test*/selftest*/*cases or Test* class - in both copies; others held at HEAD), inline_overlays() feeds the task run through _isolated_run(texts=); no test hunk / not Python / new at HEAD / unparsable -> could-not-prove with 'inline suite X (its test file is its implementation file): reason'; an inline test-only copy that passes -> could-not-prove naming the misread-split risk, never the no-block green; inline files count as sources for --derive-introduces; payload carries 'inline'. Module docstring's NOT-addressed line updated. audit-task.py: _inline_suite_discipline(); add with no --tests-mode and only inline tests.add paths -> regression + note; scope fills an absent or gate-only mode the same way and prints '  tests.mode: <why>' (json: testsModeNote); tdd stays. Docs: PLUGIN-BUILD-GUIDE.md (stamp-verification and audit-task sections), reference/execute-task.md. drive-phase.py and test_drive_phase.py were not changed: submit already passes --derive-introduces and files whatever block the helper prints, and the helper now prints a block for an inline suite instead of none. Red seen before the fix: stamp stages sm-missing-module/sh-house-abort/si-inline -> sm1, sh1, sh3, si1, si2 FAIL on assertions and si3 raised AttributeError on the not-yet-existing inline_test_text (3/9); test_audit_task --stage is-block -> is1, is4 FAIL (3/5). After: stamp stages 10/10, full test_stamp_verification exit 0, test_audit_task 991/991 exit 0. sweep exit 0 (331/331 files ok), --spaced exit 0, ruff exit 0, vermin exit 0. One lint hit during the work (test__output pn0 on a '2 cases'-shaped comment in the new fixture, and sv15 because a basis string I wrote contained the contract words) was fixed in my own files.",
+    "descriptive": "The red-first helper now proves a JS missing-module red, a house-suite abort on the task's new name and an inline suite's red, and audit-task defaults inline-suite tasks to regression."
+  },
+  "testsAdded": [
+    "test_stamp_verification.py sm1",
+    "test_stamp_verification.py sm2",
+    "test_stamp_verification.py sm3",
+    "test_stamp_verification.py sh1",
+    "test_stamp_verification.py sh2",
+    "test_stamp_verification.py sh3",
+    "test_stamp_verification.py si1",
+    "test_stamp_verification.py si2",
+    "test_stamp_verification.py si3",
+    "test_stamp_verification.py si4",
+    "test_audit_task.py is1",
+    "test_audit_task.py is2",
+    "test_audit_task.py is3",
+    "test_audit_task.py is4",
+    "test_audit_task.py is5"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:35915f892a914b437dcec132f838c52c4ffb4184f642cec7cc7cf59374bb2012\",\"dirtyDigest\":\"sha256:26162269c9c9ca8074fcbc67f790488313a029804b458b76afefd218d3ee6056\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"c6309a1baa4c1117\",\"plugins/audit/reference/execute-task.md\":\"387907a7d863fa76\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"dba55507b958ff23\",\"plugins/audit/scripts/manifest/audit-task.py\":\"f06c0a8077afcff6\",\"plugins/audit/tests/test_audit_task.py\":\"addbdf29ebc3d509\",\"plugins/audit/tests/test_stamp_verification.py\":\"060375b9c0509da4\"},\"head\":\"23ad35e5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\",\"plugins/audit/tests/test_drive_phase.py\",\"plugins/audit/tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:268c0e9b87b2327f0d4cacd4792ac0b664bb0c659d43e31c14432a94523363ad\",\"v\":2}"
+}

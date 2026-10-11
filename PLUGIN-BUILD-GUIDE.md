@@ -4841,8 +4841,22 @@ declared implementation file and present in the working tree's; a final error of
 import/attribute/name class naming `S` whole (pytest's `E   ` gutter is read, and a tally-less
 AttributeError counts as a collection error), never a syntax error; and a SECOND run in the
 throwaway, with the working tree's implementation copied in, that no longer ends on that error and
-reaches its assertions. A runner whose tally it does not read is `no-tally`, also
-`could-not-prove`. A green run
+reaches its assertions. **The errors read are one table, `MISSING_SPELLINGS`, per runner**: beside
+Python's final error, a house suite's FAIL line for a body or block that raised (its detail carries
+the exception, and a TypeError naming the name counts there too, a keyword the task adds), and the
+JS missing-module lines — vitest's and node's `Cannot find module '<spec>' imported from`, Vite's
+`Failed to resolve import`, jest's `Cannot find module '<spec>' from`. A missing module counts
+when its specifier, resolved against its importer, names ONE declared source the working tree
+changed over HEAD (`report_module`, `changed_source`), and so does a Python import error whose
+module or printed path names one; a run no tally reader matched is read for those lines too.
+**An inline suite** — a declared test file only because `tests.add` names it, with none of the
+test shapes — would carry the fix into the task's run with its cases, so that run gets HEAD's copy
+with only the changed hunks lying inside a test definition applied (`inline_test_text`: a def named
+`test*`/`selftest*`/`*cases`, or a `Test*` class, in both copies; blank and comment lines go
+anywhere) and every other hunk held at HEAD; the fix run lays the whole file. One with no test
+hunk, not Python, new at HEAD or not parsing is `could-not-prove` with that reason, and so is a
+test-only copy that passes, because the split is read from names. A runner whose tally it does
+not read is `no-tally`, also `could-not-prove`. A green run
 gets no word at all (exit `1`): a test that passes without the fix is work left, not an outcome to
 record. The block it prints is the executor's own `redFirst` shape, `{status, basis, at}`, and
 every word it can print is one the schema's enum declares.
@@ -4946,7 +4960,11 @@ and appends a `task.add` journal row in-process (the journal-writes hook only se
 TOOLS, not `os.replace` — same blindness `_panel_write._journal` covers). `--phase` absent
 resolves the single in_progress phase or exits 2 naming the choices; `--skills null` writes
 the explicit JSON-null opt-out (v0.37 B1); a held lock prints audit-lock's own message
-(exit 3 live / 4 stale, `--takeover` to seize what a human confirmed dead).
+(exit 3 live / 4 stale, `--takeover` to seize what a human confirmed dead). With no
+`--tests-mode`, a `--tests-add` whose every path has none of the test shapes — an inline
+suite, its cases in the file they test — makes the task `regression` and says why in a note
+(`_inline_suite_discipline`); `scope` gives the same default to a task whose mode is absent or
+`gate-only`, and leaves one somebody made `tdd` alone.
 
 **`add-phase "<title>" --outcome "<…>"` is the same discipline one noun up** — the writer
 behind `/audit:phase add`, and the answer to the one thing nothing in this tree could do:

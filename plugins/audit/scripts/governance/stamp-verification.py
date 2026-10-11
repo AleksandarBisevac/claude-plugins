@@ -285,8 +285,9 @@ WHAT THIS DESIGN ADDRESSES, from what was observed on 2026-10-06:
   - a new jest or vitest test file turning HEAD's baseline red as an empty
     suite: (3).
   - an inline suite under `tools/`, whose test file is its implementation
-    file, so no HEAD-versus-fix split exists: NOT addressed; left to a later
-    task.
+    file, so no HEAD-versus-fix split exists: addressed since by laying HEAD's
+    copy with only its test-definition hunks applied (`inline_test_text`), or
+    `could-not-prove` with the reason where no such split can be made.
   - the removal cases that kill a run (SIGTERM, SIGKILL) failing inside the
     helper's own throwaway, so HEAD reads red there: NOT addressed, and its
     cause is not diagnosed here; left to a later task.
@@ -298,6 +299,7 @@ WHAT THIS DESIGN ADDRESSES, from what was observed on 2026-10-06:
 import argparse
 import ast
 import datetime
+import difflib
 import json
 import os
 import posixpath
@@ -628,8 +630,181 @@ def qualifying_error(text, symbol):
     err = final_error(text)
     if err is None or err[0] not in INTRODUCES_CLASSES:
         return None
-    quoted = ("'%s'" % (symbol,), '"%s"' % (symbol,))
-    return err[2] if any(q in err[1] for q in quoted) else None
+    return err[2] if _quotes(err[1], symbol) else None
+
+
+def _quotes(message, name):
+    """Whether `message` carries `name` whole, in the quotes a runtime puts
+    round the name it could not find."""
+    return "'%s'" % (name,) in message or '"%s"' % (name,) in message
+
+
+# --- what a run printed when a name or a module was missing ---
+# ONE TABLE OF THE SPELLINGS A MISSING NAME OR MODULE TAKES, per runner, so a
+# runner added later is a row and not a second list beside a Python-only one.
+# Each row is `(spelling, the tally runners it is read under - None among them
+# meaning a run no tally reader matched - , pattern)`. A `name` row carries an
+# exception class and message, and the name is read off the quotes the runtime
+# puts round it; a `module` row carries the specifier that failed and the file
+# that imported it, resolved to a repository path (`report_module`).
+#
+# Python's final error line is read under any runner, as it always was, and only
+# the LAST one: a traceback ends on its cause. A house suite whose body or one of
+# its blocks raised prints that as a FAIL line with the exception in its detail -
+# the traceback goes to stderr, or to a child process's, and may never reach the
+# output at all - so every such line is read. The JS rows: vitest 4.1.10 and
+# node's ESM loader print `Cannot find module '<spec>' imported from <importer>`
+# (observed 2026-10-11, vitest's importer absolute), Vite's import analysis
+# `Failed to resolve import "<spec>" from "<importer>"`, jest `Cannot find
+# module '<spec>' from '<importer>'`.
+_HOUSE_ABORT = re.compile(
+    r"^FAIL .*?(?:%s).*\((?P<cls>[A-Za-z_][\w.]*(?:Error|Exception)): "
+    r"(?P<msg>.*)\)[ \t]*$" % ("|".join(re.escape(e) for e in
+                                         _runner_output.HOUSE_ESCAPES[:2]),),
+    re.M)
+MISSING_SPELLINGS = (
+    ("house abort", ("house",), _HOUSE_ABORT),
+    ("vite", ("vitest", None), re.compile(
+        r'Failed to resolve import "(?P<spec>[^"]+)" from "(?P<importer>[^"]+)"')),
+    ("node", ("vitest", None), re.compile(
+        r"Cannot find module '(?P<spec>[^']+)' imported from (?P<importer>\S+)")),
+    ("jest", ("jest", None), re.compile(
+        r"Cannot find module '(?P<spec>[^']+)' from '(?P<importer>[^']+)'")),
+)
+# A house abort is read for one class more than a final error: a TypeError
+# naming the name - a keyword the task adds - is the same absence, and the
+# second run still decides whether the fix removes it.
+ABORT_CLASSES = INTRODUCES_CLASSES + ("TypeError",)
+_IMPORT_CLASSES = ("ImportError", "ModuleNotFoundError")
+_JS_EXTENSIONS = (".js", ".mjs", ".cjs", ".jsx", ".ts", ".mts", ".cts", ".tsx")
+_QUOTED = re.compile(r"'([^']+)'|\"([^\"]+)\"")
+_TRAILING_PATH = re.compile(r"\(([^()]+\.py)\)\s*$")
+
+
+def missing_reports(text, runner=None):
+    """`[{"spelling", "line", "cls"?, "message"?, "spec"?, "importer"?}]` -
+    every missing-name or missing-module error the run printed, read off
+    `MISSING_SPELLINGS` for the runner whose tally was read (`runner`, None
+    when none was). `line` is the text a second run must no longer print."""
+    out = []
+    err = final_error(text)
+    if err is not None and err[0] in INTRODUCES_CLASSES:
+        out.append({"spelling": "python", "cls": err[0], "message": err[1],
+                    "line": err[2]})
+    plain = _runner_output.plain_text(text)
+    for spelling, runners, pattern in MISSING_SPELLINGS:
+        if runner not in runners:
+            continue
+        for hit in pattern.finditer(plain):
+            found = hit.groupdict()
+            if "cls" in found:
+                cls, message = found["cls"].split(".")[-1], found["msg"].strip()
+                if cls in ABORT_CLASSES:
+                    out.append({"spelling": spelling, "cls": cls, "message": message,
+                                "line": "%s: %s" % (cls, message)})
+            else:
+                out.append({"spelling": spelling, "spec": found["spec"],
+                            "importer": found["importer"], "line": hit.group(0)})
+    return out
+
+
+def _one_source(target, sources, suffixes=("",)):
+    """The ONE declared source `target` names - equal to it, or ending with
+    `/` + it - with one of `suffixes` appended; None when none or several do."""
+    if not target:
+        return None
+    names = [target + s for s in suffixes]
+    hits = [rel for rel in sources
+            if any(rel == n or rel.endswith("/" + n) for n in names)]
+    return hits[0] if len(hits) == 1 else None
+
+
+def _js_module_file(spec, importer, sources, roots):
+    """The declared source a JS specifier resolves to, or None. A relative
+    specifier is resolved against its importer's directory, an absolute one
+    against `roots`; a bare package name names no file of the task's."""
+    if os.path.isabs(spec):
+        target = _as_rel(spec, roots)
+    elif spec.startswith(("./", "../")):
+        base = _as_rel(importer, roots)
+        if base is None:
+            return None
+        target = posixpath.normpath(posixpath.join(posixpath.dirname(base), spec))
+    else:
+        return None
+    if target is None or target.startswith("../"):
+        return None
+    hits = [rel for rel in sources if rel == target or (
+        rel.startswith(target) and rel[len(target):] in
+        _JS_EXTENSIONS + tuple("/index" + e for e in _JS_EXTENSIONS))]
+    return hits[0] if len(hits) == 1 else None
+
+
+def report_module(report, sources, roots):
+    """The declared source file a missing-module report names, or None: a JS
+    specifier resolved (`_js_module_file`), or a Python import error's module -
+    a quoted dotted name, or the path it prints in parentheses."""
+    if "spec" in report:
+        return _js_module_file(report["spec"], report["importer"], sources, roots)
+    if report.get("cls") not in _IMPORT_CLASSES:
+        return None
+    path = _TRAILING_PATH.search(report["message"])
+    if path:
+        rel = _as_rel(path.group(1), roots)
+        if rel in sources:
+            return rel
+    for quoted in _QUOTED.findall(report["message"]):
+        rel = _one_source((quoted[0] or quoted[1]).replace(".", "/"), sources,
+                          (".py", "/__init__.py"))
+        if rel:
+            return rel
+    return None
+
+
+def _roots(*paths):
+    """Each of `paths` and its resolved spelling: a runner may print either."""
+    out = []
+    for p in paths:
+        for spelling in ((p, os.path.realpath(p)) if p else ()):
+            if spelling not in out:
+                out.append(spelling)
+    return tuple(out)
+
+
+def changed_source(root, rel, deadline=None):
+    """`(holds, basis)` - whether the working tree's copy of the declared
+    source `rel` differs from HEAD's (or HEAD has none), which is what lets the
+    task's fix supply a module the run could not find."""
+    head = _head_text(root, rel, timeout=max(1, _left(deadline))
+                      if deadline is not None else 120)
+    now = _wt_text(root, rel)
+    if now is None:
+        return False, ("%s is declared but not in the working tree, so the fix "
+                       "cannot supply it" % (rel,))
+    if head == now:
+        return False, ("%s is unchanged from HEAD, so the task does not supply "
+                       "what the run found missing" % (rel,))
+    return True, ("%s is %s in the working tree" % (
+        rel, "absent from HEAD and present" if head is None else "changed over HEAD"))
+
+
+def missing_subjects(text, runner, symbols, sources, roots):
+    """`[(subject, report)]` - each introduced symbol a report names, and each
+    report whose module resolves to a declared source, as `("symbol", name)`
+    or `("file", rel)`. Static only: `introduced` / `changed_source` and the
+    second run still decide."""
+    reports = missing_reports(text, runner)
+    out = []
+    for symbol in symbols:
+        hit = next((r for r in reports
+                    if "message" in r and _quotes(r["message"], symbol)), None)
+        if hit is not None:
+            out.append((("symbol", symbol), hit))
+    for report in reports:
+        rel = report_module(report, sources, roots)
+        if rel is not None and (("file", rel), report) not in out:
+            out.append((("file", rel), report))
+    return out
 
 
 # --- which files the throwaway takes from where ---
@@ -860,6 +1035,123 @@ def derive_introduced(root, implementation, deadline=None):
         found += sorted(n for n in names if n not in found
                         and _SYMBOL_SHAPE.match(n) and not n.startswith("__"))
     return found
+
+
+# --- an inline suite: the test and the implementation in one file ---
+# A declared test file `tests.add` names whose path has no test shape is an
+# INLINE suite: its cases live beside the code they test. Laying the working
+# tree's copy over HEAD would lay the fix over it too, and the run would pass
+# for that reason alone. So the task's run gets HEAD's copy with only the
+# changed hunks that lie inside a TEST DEFINITION applied - a def whose name
+# starts with `test` or `selftest` or ends in `cases`, or a class whose name
+# starts or ends with `Test` - and every other hunk held at HEAD. Which hunk is
+# a test is read from those names and nothing else, so a helper the new cases
+# call, defined outside them, stays at HEAD and the run fails to reach it; a
+# file that does not parse, is not Python, or is new at HEAD has no split to
+# make, and the red is `could-not-prove` with that reason.
+_TEST_DEF_NAME = re.compile(r"^_*(?:test|selftest)|(?:^|_)cases$", re.I)
+_TEST_CLASS_NAME = re.compile(r"^_*Test|Tests?$")
+
+
+def is_inline_suite(rel):
+    """Whether a declared test file is one only because `tests.add` names it:
+    its path has none of the test shapes `_is_test_path` reads."""
+    return not _is_test_path(rel, ()) and not _JS_TEST_FILE.search(rel)
+
+
+def _test_spans(tree):
+    """`[(first, last)]` - the line span of each test definition in `tree`,
+    decorators included; a class that is not one is searched for methods."""
+    spans = []
+
+    def visit(body):
+        for node in body:
+            test_def = isinstance(node, _DEFS) and _TEST_DEF_NAME.search(node.name)
+            test_class = (isinstance(node, ast.ClassDef)
+                          and _TEST_CLASS_NAME.search(node.name))
+            if test_def or test_class:
+                first = min([node.lineno] + [d.lineno for d in node.decorator_list])
+                spans.append((first, node.end_lineno))
+            elif isinstance(node, ast.ClassDef):
+                visit(node.body)
+    visit(tree.body)
+    return spans
+
+
+def _neutral(line):
+    text = line.strip()
+    return not text or text.startswith("#")
+
+
+def _inside(lines, start, stop, spans):
+    """Whether every line of `lines[start:stop]` that is not blank or a
+    comment lies in one of `spans` (1-based, inclusive)."""
+    return all(_neutral(lines[i]) or any(a <= i + 1 <= b for a, b in spans)
+               for i in range(start, stop))
+
+
+def inline_test_text(head, now):
+    """`(text, held, applied, problem)` - HEAD's copy of an inline suite with
+    only the changed hunks inside a test definition (in both copies) applied;
+    how many hunks were held at HEAD and how many test hunks applied; and why
+    no test-only copy can be made, or None. A hunk of blank and comment lines
+    only is applied and counted as neither."""
+    head_tree, now_tree = _parse(head), _parse(now)
+    if head_tree is None or now_tree is None:
+        return None, 0, 0, ("its %s copy does not parse, so its test definitions "
+                            "cannot be told from its implementation"
+                            % ("HEAD" if head_tree is None else "working-tree",))
+    old, new = head.splitlines(True), now.splitlines(True)
+    old_spans, new_spans = _test_spans(head_tree), _test_spans(now_tree)
+    out, held, applied = [], 0, 0
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
+            None, old, new, autojunk=False).get_opcodes():
+        if tag == "equal":
+            out += old[i1:i2]
+        elif _inside(old, i1, i2, old_spans) and _inside(new, j1, j2, new_spans):
+            out += new[j1:j2]
+            if not all(_neutral(ln) for ln in old[i1:i2] + new[j1:j2]):
+                applied += 1
+        else:
+            out += old[i1:i2]
+            held += 1
+    if not applied:
+        return "".join(out), held, 0, (
+            "none of its %d changed hunk(s) lies inside a test definition (a def "
+            "named test*/selftest*/*cases, or a Test* class), so no copy holding "
+            "the new cases without the fix can be laid over HEAD" % (held,))
+    return "".join(out), held, applied, None
+
+
+def inline_overlays(root, tests, deadline=None):
+    """`(overlays, notes, problem)` - `{rel: test-only text}` for each inline
+    suite among `tests` whose change holds both test and implementation hunks,
+    `{rel: (applied, held)}` for the basis, and the problem that leaves one
+    with no test-only copy, or None. An inline suite whose every hunk is a
+    test is laid over whole, like any test file."""
+    overlays, notes = {}, {}
+    for rel in tests:
+        if not is_inline_suite(rel):
+            continue
+        reason = None
+        head = _head_text(root, rel, timeout=max(1, _left(deadline))
+                          if deadline is not None else 120)
+        now = _wt_text(root, rel)
+        if not rel.endswith(".py"):
+            reason = ("it is not Python, and an inline suite's test hunks are "
+                      "read from Python definitions")
+        elif head is None or now is None:
+            reason = ("it is %s, so there is no HEAD copy to hold its "
+                      "implementation at" % ("new at HEAD" if head is None
+                                             else "absent from the working tree",))
+        else:
+            text, held, applied, reason = inline_test_text(head, now)
+            if reason is None and held:
+                overlays[rel], notes[rel] = text, (applied, held)
+        if reason is not None:
+            return {}, {}, ("inline suite %s (its test file is its implementation "
+                            "file): %s" % (rel, reason))
+    return overlays, notes, None
 
 
 # --- which failing case is the task's own: the baseline is GREEN ---
@@ -2450,6 +2742,20 @@ def red_verdict(run, ctx):
     verdict, tally = classify_run(code, text, run["cmd"])
     line = _decisive_line(text, tally)
     where = "`%s` in a throwaway tree at HEAD exited %d" % (shown, code)
+    inline = ctx.get("inline") or {}
+    inline_clause = "; ".join(
+        "inline suite %s laid over as HEAD's copy plus its %d test hunk(s), %d "
+        "other hunk(s) held at HEAD" % (rel, a, h) for rel, (a, h) in sorted(inline.items()))
+    if verdict == V_GREEN and inline:
+        # The split between an inline suite's cases and its code is read from
+        # definition names, so a pass here cannot be told from a misread split.
+        return E_CANNOT_PROVE, verdict, {
+            "status": RED_CANNOT, "at": at,
+            "basis": "%s (%s) with its %s: no new case failed on HEAD's "
+                     "implementation, and an inline suite's test hunks are told "
+                     "from its fix only by the definitions they lie in, so a pass "
+                     "cannot be told from a misread split%s"
+                     % (where, line, inline_clause, env_clause)}, None
     if verdict == V_GREEN:
         return E_NOT_RED, verdict, None, (
             "%s (%s): the test PASSED in the throwaway - HEAD's implementation with "
@@ -2468,6 +2774,8 @@ def red_verdict(run, ctx):
     if absent:
         how += (", its declared jest or vitest test files new at HEAD (%s) left "
                 "absent" % (", ".join(absent),))
+    if inline:
+        how += ", the task's run with its " + inline_clause
     if ctx["cases"]:
         how = "named by --case, " + how
     baseline = baseline_problem(run.get("head"), run["cmd"])
@@ -2523,21 +2831,38 @@ def red_verdict(run, ctx):
                         " (%s)" % (uncredited,) if uncredited else "", line,
                         refused_clause, env_clause)}, None
     why_not = [baseline] if baseline and verdict == V_COLLECT else []
+    runner = tally["runner"] if tally is not None else None
+    sources = ctx.get("sources") or ctx["implementation"]
+    roots = _roots(ctx["root"], ctx.get("path"))
+    subjects = (missing_subjects(text, runner, ctx["symbols"], sources, roots)
+                if verdict in (V_COLLECT, V_NO_TALLY) and not baseline else [])
+    named = set(s[0][1] for s in subjects if s[0][0] == "symbol")
     for symbol in (ctx["symbols"] if verdict == V_COLLECT and not baseline else ()):
-        holds, why = introduced(ctx["root"], ctx["implementation"], symbol,
-                                ctx.get("deadline"))
-        error = qualifying_error(text, symbol)
+        if symbol in named:
+            continue
+        holds, why = introduced(ctx["root"], sources, symbol, ctx.get("deadline"))
+        why_not.append(why if not holds else
+                       "no error the run printed - its final %s, a house abort, "
+                       "a missing module - names %r: %s"
+                       % ("/".join(INTRODUCES_CLASSES), symbol,
+                          (final_error(text) or ("", "", "none"))[2]))
+    for (kind, subject), report in subjects:
+        if kind == "symbol":
+            holds, why = introduced(ctx["root"], sources, subject, ctx.get("deadline"))
+            what = "the task introduces %r" % (subject,)
+        else:
+            holds, why = changed_source(ctx["root"], subject, ctx.get("deadline"))
+            what = ("the missing module is %s, which the task declares"
+                    % (subject,))
+        error = report["line"]
         second = run.get("second")
+        second_text = _runner_output.plain_text((second or {}).get("text") or "")
         if not holds:
             why_not.append(why)
-        elif error is None:
-            why_not.append("the run's final error is not an %s naming %r: %s"
-                           % ("/".join(INTRODUCES_CLASSES), symbol,
-                              (final_error(text) or ("", "", "none"))[2]))
         elif second is None or second.get("problem"):
             why_not.append("the second run could not be made: %s"
                            % ((second or {}).get("problem") or "not attempted",))
-        elif error in second["text"]:
+        elif error in second_text:
             why_not.append("with the working tree's implementation copied in, a "
                            "second run still ends on %r, so the error is not the "
                            "absence this task fills" % (error,))
@@ -2550,11 +2875,11 @@ def red_verdict(run, ctx):
         else:
             return E_PROVED, verdict, {
                 "status": RED_PROVED, "at": at,
-                "basis": "%s on %r, and the task introduces %r: %s; a second run "
+                "basis": "%s on %r (read as %s), and %s: %s; a second run "
                          "with the working tree's implementation copied in exited "
                          "%s without that error, its tests reaching their "
-                         "assertions%s" % (where, error, symbol, why,
-                                           second["code"], env_clause)}, None
+                         "assertions%s" % (where, error, report["spelling"], what,
+                                           why, second["code"], env_clause)}, None
     if verdict == V_MIXED:
         reason = ("its output carries the tallies of more than one runner (%s) and "
                   "the command names none of them, so which runner ran - and "
@@ -2642,13 +2967,14 @@ def _isolated_env(env, scratch, tag):
 
 
 def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
-                  stubs=(), deps=None):
+                  stubs=(), deps=None, texts=None):
     """`(run, copied)` - the throwaway reset to HEAD, `rels` laid over it from
-    the working tree, each of `stubs` written as an EMPTY file and the `deps`
-    plan's directories linked in again - the reset removed them - and the
-    command run in an isolated environment. With less than a second of the
-    deadline left no run is made at all - not even the reset's git calls,
-    which would otherwise run past it."""
+    the working tree, each of `texts` (`{rel: text}`, an inline suite's
+    test-only copy) written over that, each of `stubs` written as an EMPTY
+    file and the `deps` plan's directories linked in again - the reset removed
+    them - and the command run in an isolated environment. With less than a
+    second of the deadline left no run is made at all - not even the reset's
+    git calls, which would otherwise run past it."""
     if _left(deadline) < 1:
         return {"code": None, "text": "", "seconds": 0.0,
                 "problem": "the run timed out: no time was left of the "
@@ -2657,6 +2983,10 @@ def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
     if problem is not None:
         return {"code": None, "text": "", "problem": problem, "seconds": 0.0}, []
     copied = _lay_over(root, path, rels)
+    for rel, text in sorted((texts or {}).items()):
+        with open(os.path.join(path, *rel.split("/")), "w", encoding="utf-8",
+                  newline="") as fh:
+            fh.write(text)
     for rel in stubs:
         dst = os.path.join(path, *rel.split("/"))
         if not os.path.isdir(os.path.dirname(dst)):
@@ -2669,11 +2999,17 @@ def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
                       _isolated_env(env, scratch, tag)), copied
 
 
-def _wants_second(code, text, symbols, cmd=None):
-    """Whether a second run is owed: a collection error some named symbol's
-    missing-symbol error could explain."""
-    verdict, _t = classify_run(code, text, cmd) if code is not None else (None, None)
-    return verdict == V_COLLECT and any(qualifying_error(text, s) for s in symbols)
+def _wants_second(code, text, symbols, cmd=None, sources=(), roots=()):
+    """Whether a second run is owed: a run that reached no assertion, with a
+    missing-name or missing-module error (`missing_subjects`) naming one of
+    `symbols` or resolving to one of the declared `sources`."""
+    if code is None:
+        return False
+    verdict, tally = classify_run(code, text, cmd)
+    if verdict not in (V_COLLECT, V_NO_TALLY):
+        return False
+    runner = tally["runner"] if tally is not None else None
+    return bool(missing_subjects(text, runner, symbols, sources, roots))
 
 
 def _left(deadline):
@@ -2755,9 +3091,14 @@ def run_red(args, cmd, out):
         sys.stderr.write("ERROR: %s\n" % (problem,))
         return E_USAGE
     root = scope["root"]
+    overlays, inline, inline_problem = inline_overlays(root, scope["tests"], deadline)
+    # An inline suite is a source too: the symbols it adds are read off it, and
+    # a missing module may be it.
+    sources = scope["implementation"] + [rel for rel in scope["tests"]
+                                         if is_inline_suite(rel)]
     if args.derive_introduces:
         args.introduces = list(args.introduces) + [
-            n for n in derive_introduced(root, scope["implementation"], deadline)
+            n for n in derive_introduced(root, sources, deadline)
             if n not in args.introduces]
     leftovers = leftover_throwaways(root, timeout=max(1, _left(deadline)))
     env, dropped, naming = child_env(root)
@@ -2796,6 +3137,8 @@ def run_red(args, cmd, out):
         try:
             present, run["problem"] = _at_head(root, scope["declared"], deadline)
             if run["problem"] is None:
+                run["problem"] = inline_problem
+            if run["problem"] is None:
                 state["new"] = sorted(set(scope["tests"]) - present)
                 # jest and vitest fail an empty suite, so a new file of theirs
                 # is left absent - the reset already removes it - and the
@@ -2819,11 +3162,12 @@ def run_red(args, cmd, out):
             if run["problem"] is None:
                 task, copied = _isolated_run(root, path, scope["declared"], cmd,
                                              deadline, args.timeout, env, holder,
-                                             "task", deps=deps)
+                                             "task", deps=deps, texts=overlays)
                 run["code"], run["text"], run["problem"] = (
                     task["code"], task["text"], task["problem"])
-            if run["problem"] is None and _wants_second(run["code"], run["text"],
-                                                        args.introduces, cmd):
+            if run["problem"] is None and _wants_second(
+                    run["code"], run["text"], args.introduces, cmd, sources,
+                    _roots(root, path)):
                 run["second"], _c = _isolated_run(
                     root, path, scope["declared"] + scope["implementation"], cmd,
                     deadline, args.timeout, env, holder, "second", deps=deps)
@@ -2847,7 +3191,8 @@ def run_red(args, cmd, out):
             "head_defs": state["head_defs"],
             "head_modules": state["head_modules"],
             "head_js": state["head_js"], "path": path,
-            "deadline": deadline, "deps": deps})
+            "deadline": deadline, "deps": deps, "sources": sources,
+            "inline": inline})
     finally:
         # A junction left in the throwaway is one git's removal may descend
         # through into the shared tree's dependencies: the removal is skipped
@@ -2866,6 +3211,8 @@ def run_red(args, cmd, out):
                "baseline": {"stubbed": [rel for rel in state["new"]
                                         if rel not in state["absent"]],
                             "absent": state["absent"]},
+               "inline": dict((rel, {"applied": a, "held": h})
+                              for rel, (a, h) in sorted(inline.items())),
                "environment": {"dropped": dropped, "naming": naming,
                                "set": ["%s=%s" % (k, env[k]) for k in
                                        ("PYTHONDONTWRITEBYTECODE",) if k in env]},
