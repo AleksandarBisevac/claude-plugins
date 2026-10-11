@@ -1483,6 +1483,33 @@ def _cases(check):
     _kebab_hits = scan_text("f.md", _kebab, "report")
     check("q2d ALLOW: kebab prose holding -home-<word> and -Users-<word> "
           "mid-word trips nothing: %r" % (_kebab_hits,), _kebab_hits == [])
+    # A HOME DIRECTORY HOLDING A SPACE. The detector sees its head - the home
+    # word and the first word of the user segment - and a scrub that read the
+    # path as a token stopped at the space, so a committed row kept the tail
+    # of the user's path beside the outside token, a fragment no shape names.
+    # Both halves are asked: the raw path is found, and the writer's scrub of
+    # it, with that home as the machine's own, leaves no word of it behind.
+    _sp_home = "/".join(("", "Us" + "ers", "Some One"))
+    _sp_line = "sandbox read %s/My Projects/proj/notes.md" % (_sp_home,)
+    _sp_found = sorted(set(h[2] for h in scan_text("f.md", _sp_line, "report")))
+    _sp_held = dict((k, os.environ.get(k)) for k in ("HOME", "USERPROFILE"))
+    os.environ["HOME"] = os.environ["USERPROFILE"] = _sp_home
+    try:
+        _sp_scrub = _journal_io.redacted_free_text(None, _sp_line)
+    finally:
+        for _k, _v in _sp_held.items():
+            if _v is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _v
+    _sp_left = [w for w in ("Some", "One", "My", "Projects", "proj", "notes")
+                if w in _sp_scrub]
+    check("q2s a home path holding a space is found, and the writer's scrub "
+          "of it leaves no fragment of the user's path and no finding: "
+          "found %r, scrubbed %r, left %r" % (_sp_found, _sp_scrub, _sp_left),
+          "posix-home" in _sp_found and _sp_left == []
+          and _sp_scrub == "sandbox read %s" % (_journal_io.OUTSIDE_TOKEN,)
+          and scan_text("f.md", _sp_scrub, "report") == [])
     # A dash-led word at a token start with nothing after it - an option name,
     # a bare user name in prose - is not a slug either; beside a separator the
     # same lone segment is.

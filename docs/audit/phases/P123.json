@@ -3540,7 +3540,7 @@
     {
       "id": "P123.46-64p",
       "title": "Every text write states its newline: the pending list is empty and hooks are read too",
-      "status": "in_progress",
+      "status": "done",
       "description": "Follow-up to the Windows-leftovers task, which added text_write_newline_violations with a shrink-only NEWLINE_PENDING table naming the files outside its scope. Convert every pending row so the table is EMPTY (and the table is removed, or kept as an empty shrink-only list with its stale-row check): render-report.py first - it writes the rendered report and its Markdown twin, which are committed and compared byte for byte, so a Windows render writes CRLF the comparison refuses - then manage-worktrees, _invariants, run-test-gate, stamp-verification, _panel_runstate, panel-server and usage_ledger. Each write states newline explicitly (\"\\n\" for anything read back or committed; a write whose platform newline is genuinely wanted says newline=None with a comment saying why, which the lint accepts as stated). Extend the lint's walk to plugins/audit/hooks/ (and .claude/hooks/ if the shared walk reaches it) and fix what it finds there. Regression: the CRLF-default simulation (the nl-block shape in test__journal_io) over render-report's writer produces LF bytes; the lint flags a hooks/ file with a bare text-mode write open; NEWLINE_PENDING carries no row. Faults: F585.",
       "files": [
         "plugins/audit/scripts/_output.py",
@@ -3590,25 +3590,38 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7516c6d9f40e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "NEWLINE_PENDING emptied (kept as empty tuple with stale-row check); NEWLINE_DIRS = scripts + plugin hooks added as the default walk; every pending scripts write plus 14 hooks writes now name newline=\"\\n\"; gate-parity NEWLINE_PENDING row deleted (reported stale when empty). .claude/hooks is NOT walked: it holds bare writes (arm-release-bypass.py and others) outside this task's files; left as follow-up. Rendered artifacts unchanged (check-rendered-artifacts exit 0). One _output.py docstring edit was made via a python heredoc, not Edit.",
+        "descriptive": "Every text write in scripts and plugin hooks states its newline; the pending list is empty and render-report writes LF on Windows."
       },
       "startedAt": "2026-10-11T12:59:24Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-11T13:19:28Z",
+      "verifiedBy": [
+        "test_render_report.py rl10",
+        "test__output.py nw4 (rewritten), nw5"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-11T13:19:27Z.a9927f",
         "status": "passed",
         "at": "2026-10-11T13:19:27Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "7516c6d9f40e",
+        "at": "2026-10-11T13:19:28Z"
+      },
+      "redFirst": {
+        "at": "2026-10-11T13:11:22Z",
+        "basis": "`python3 plugins/audit/tests/test_render_report.py --selftest --stage rl` in a throwaway tree at HEAD exited 1 with 1 of 295 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rl10 (house FAIL): SELFTEST FAILED: 294/295 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.47-64p",
       "title": "A machine path with a space is scrubbed whole, a quoted preload is named, and the spaced leg exempts no product suite",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The spaced sweep leg found product reds it could not fix in scope. (F627, privacy) `_machine_paths` ends a machine path at its first space, so `<home>/My Projects/...` is committed as `<outside-repo> Projects/...` or with the user-specific tail - in shards, evidence, journal and returns, the very writes the scrub-by-default layer exists to protect. Match each known machine root (home, the project's parent, TMPDIR, and their realpaths) as a LITERAL prefix rather than a no-space token pattern, so a spaced root is replaced whole and a spaced path inside the repo stays repo-relative; reds today under the spaced leg: test__machine_paths mp2, test__journal_io ft4, test__evidence_io sc1, test__manifest_io ws1, test_audit_task ff17, fm1. `tools/check-committed-pii.py` gains a probe for a spaced home path. (F626) stamp-verification's child_env/_TOKEN_SPLIT splits NODE_OPTIONS on whitespace, so a quoted `--require '<root>/a b/setup.js'` preload is not named in the basis (sr44): split it the way node does, quotes honoured. (F628, fixture part) `_harness.py` fr2/sr5 split a child's output with `.split()` - parse it properly. Then remove every SPACED_EXEMPT row these fix in tools/sweep-selftests.py; the rows left after this task are only test_guard_secrets_read.py and .claude/hooks/guard-release.py, which the orchestrator's guard tasks remove. Regression: each named case green under `python3 tools/sweep-selftests.py --spaced` with its row gone. Faults: F626, F627, F628.",
       "files": [
         "plugins/audit/scripts/_machine_paths.py",
@@ -3622,7 +3635,8 @@
         "plugins/audit/tests/_harness.py",
         "tools/sweep-selftests.py",
         "tools/check-committed-pii.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/gate-parity.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -3649,16 +3663,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-11T13:19:29Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T14:00:10Z.f2abdf",
+        "status": "passed",
+        "at": "2026-10-11T14:00:10Z"
+      }
     },
     {
       "id": "P123.48-64p",
@@ -3829,6 +3849,54 @@
         "mode": "tdd",
         "add": [
           "plugins/audit/tests/test_stamp_verification.py: a task adding a new --stage whose case is red before the fix and green after proves; a HEAD-existing red stage still grades already-red; sr23 passes inside the helper's throwaway"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.52-64p",
+      "title": "The newline lint reads this repository's own hooks too, and none of them writes text with a platform newline",
+      "status": "pending",
+      "description": "Follow-up to the newline task, which emptied the pending list and extended `_output.text_write_newline_violations` to the plugin's hooks but left `.claude/hooks/` out of `NEWLINE_DIRS` because its files were outside that task's scope: arm-release-bypass.py, guard-release.py, guard-uncommitted.py and require-claim-block.py open text files for write with no newline. Give each write an explicit `newline=\"\\n\"` (or `newline=None` with a comment saying why the platform newline is wanted), add `.claude/hooks` to the lint's default walk when that directory exists, and keep the pending list empty. Regression: the lint flags a bare text-mode write in a `.claude/hooks`-shaped directory and reports nothing on the real tree.",
+      "files": [
+        ".claude/hooks/arm-release-bypass.py",
+        ".claude/hooks/guard-release.py",
+        ".claude/hooks/guard-uncommitted.py",
+        ".claude/hooks/require-claim-block.py",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__output.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__output.py: text_write_newline_violations walks .claude/hooks when it exists, flags a bare text write there, and reports nothing on the real tree"
         ],
         "expectRedFirst": true,
         "gate": [

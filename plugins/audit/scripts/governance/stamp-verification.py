@@ -304,6 +304,7 @@ import json
 import os
 import posixpath
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -656,7 +657,8 @@ def _quotes(message, name):
 # node's ESM loader print `Cannot find module '<spec>' imported from <importer>`
 # (observed 2026-10-11, vitest's importer absolute), Vite's import analysis
 # `Failed to resolve import "<spec>" from "<importer>"`, jest `Cannot find
-# module '<spec>' from '<importer>'`.
+# module '<spec>' from '<importer>'`. The unquoted importer runs to the end of
+# its line, since it is printed as it is and a path may hold a space.
 _HOUSE_ABORT = re.compile(
     r"^FAIL .*?(?:%s).*\((?P<cls>[A-Za-z_][\w.]*(?:Error|Exception)): "
     r"(?P<msg>.*)\)[ \t]*$" % ("|".join(re.escape(e) for e in
@@ -667,7 +669,8 @@ MISSING_SPELLINGS = (
     ("vite", ("vitest", None), re.compile(
         r'Failed to resolve import "(?P<spec>[^"]+)" from "(?P<importer>[^"]+)"')),
     ("node", ("vitest", None), re.compile(
-        r"Cannot find module '(?P<spec>[^']+)' imported from (?P<importer>\S+)")),
+        r"Cannot find module '(?P<spec>[^']+)' imported from "
+        r"(?P<importer>[^\r\n]*[^\s])")),
     ("jest", ("jest", None), re.compile(
         r"Cannot find module '(?P<spec>[^']+)' from '(?P<importer>[^']+)'")),
 )
@@ -875,9 +878,57 @@ def _under(value, roots):
 
 
 # An option string - NODE_OPTIONS, PYTEST_ADDOPTS - is not a path to rewrite, but
-# a runner reads the paths inside it: split on whitespace, `=` and the path-list
-# separator to find them.
-_TOKEN_SPLIT = re.compile(r"[\s=%s]+" % (re.escape(os.pathsep),))
+# a runner reads the paths inside it. Its words are read the way its runner
+# reads them (`_option_words`), and each word is then split on `=` and the
+# path-list separator, so `--import=<path>` names its path too.
+_TOKEN_SPLIT = re.compile(r"[=%s]+" % (re.escape(os.pathsep),))
+
+
+def _node_words(value):
+    """`value`'s words as node reads NODE_OPTIONS: whitespace separates them
+    outside double quotes, a double-quoted run belongs to the word around it,
+    and inside the quotes a backslash takes the next character literally. A
+    single quote is an ordinary character to node, so it is one here too.
+
+    THE QUOTES ARE THE POINT. A preload whose path holds a space is written
+    `--require "/a b/setup.js"`, and a split on whitespace read it as two
+    words, neither a path under the root - so the basis did not say the run
+    read the shared tree. An unterminated quote runs to the end, as in node."""
+    words, word, quoted, escaped, started = [], [], False, False, False
+    for ch in value:
+        if escaped:
+            word.append(ch)
+            escaped = False
+        elif quoted and ch == "\\":
+            escaped = True
+        elif ch == '"':
+            quoted = not quoted
+            started = True
+        elif ch.isspace() and not quoted:
+            if started:
+                words.append("".join(word))
+            word, started = [], False
+        else:
+            word.append(ch)
+            started = True
+    if started:
+        words.append("".join(word))
+    return words
+
+
+def _option_words(key, value):
+    """The words a runner may read out of variable `key`. NODE_OPTIONS is
+    node's alone, so node's reading is the only one. Any other option string
+    is read node's way AND as a POSIX shell would split it - pytest reads
+    PYTEST_ADDOPTS with `shlex`, where a single quote does group - because a
+    path either reading finds is one the basis must name."""
+    words = _node_words(value)
+    if key == "NODE_OPTIONS":
+        return words
+    try:
+        return words + shlex.split(value)
+    except ValueError:
+        return words
 
 
 def child_env(root, environ=None):
@@ -903,7 +954,8 @@ def child_env(root, environ=None):
         gone = [p for p in parts if _under(p, roots)]
         if not gone:
             env[key] = value
-            if any(_under(tok, roots) for tok in _TOKEN_SPLIT.split(value)):
+            if any(_under(tok, roots) for word in _option_words(key, value)
+                   for tok in [word] + _TOKEN_SPLIT.split(word)):
                 naming.append(key)
         elif len(parts) == 1 or len(gone) == len(parts):
             dropped.append(key)

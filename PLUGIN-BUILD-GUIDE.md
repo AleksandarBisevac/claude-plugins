@@ -1452,7 +1452,12 @@ ledger row before it is chained, and the first two are layer-mates. `_journal_io
 names its callers and `tools/check-committed-pii.py` have always used, as the same objects.
 `may_hold_path` is the cheap pre-reject: a string with none of the characters a machine path
 needs skips the regexes, and `test__machine_paths.py` runs the redaction with and without it over
-one corpus so a pre-reject narrowed past a shape fails by name. Cases in
+one corpus so a pre-reject narrowed past a shape fails by name. Before any shape or token grammar
+reads a value, the roots this machine is known by - the checkout root, its parent, the home
+directory and the temp directory, each as given and resolved - are matched as literal prefixes
+(`_rooted`), because every token grammar ends a path at a space: a root holding one is replaced
+whole, a path under the checkout is spelled repo-relative, and under any other root a following
+word that carries a separator is taken as the rest of the path. Cases in
 `plugins/audit/tests/test__machine_paths.py`.
 
 ### `plugins/audit/scripts/_fmt.py`
@@ -4695,7 +4700,9 @@ entries under the root, so an in-repo `.venv/bin` leaves PATH intact otherwise -
 `redFirst` basis names what was dropped. A value that is not itself a path but carries one under
 the root - an option string such as `NODE_OPTIONS=--require …/setup.js` - is kept, since it is
 not a path to rewrite, and named in the basis as `kept, naming the shared root`, because a runner
-reads the path inside it. The throwaway holds only tracked files, so `dependency_plan` asks git
+reads the path inside it. Its words are read the way its runner reads them: NODE_OPTIONS as node
+does, a double-quoted run being one word, and any other option string that way and as `shlex`
+splits it. The throwaway holds only tracked files, so `dependency_plan` asks git
 for the ignored directories of `--deps-from` (`--project` by default) and `link_dependencies`
 links each `node_modules`, at any depth, and each `.venv` whose parent exists at HEAD and which
 holds no link into the tree into it

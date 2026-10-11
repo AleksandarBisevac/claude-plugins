@@ -22,6 +22,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -171,7 +172,7 @@ def redacted_paths(project, text):
     second reader copying the substitution instead - one grammar, one token
     table, two budgets.
     """
-    body = text if isinstance(text, str) else str(text or "")
+    body = _rooted(project, text if isinstance(text, str) else str(text or ""))
 
     def _token(match):
         raw = match.group(0)
@@ -306,6 +307,123 @@ def _checkout_roots(project):
     return tuple(sorted(spellings, key=len, reverse=True))
 
 
+# --- the known roots, matched as literals -------------------------------------------
+# THE ROOTS THIS MACHINE IS KNOWN BY, matched as LITERAL prefixes before any token
+# grammar reads the text. Every grammar above ends a path at its first space, so
+# a home directory or a checkout under `My Projects` was read as two words: the
+# head replaced, the tail - the user's own directory names - kept beside the
+# token. A literal root has no such edge: it is replaced whole, whatever it holds.
+# The variables a home and a temp directory are named by; `expanduser` and
+# `gettempdir` are asked too, for the spelling the platform settles on.
+_HOME_VARS = ("HOME", "USERPROFILE")
+_TEMP_VARS = ("TMPDIR", "TEMP", "TMP")
+
+
+def _spellings(path):
+    """`path` as given and resolved, posix-separated, without a trailing
+    separator; nothing for a path that is the filesystem root, which every
+    absolute path starts with."""
+    out = set()
+    if not path:
+        return out
+    for way in (os.path.abspath, os.path.realpath):
+        try:
+            root = way(str(path)).replace("\\", "/").rstrip("/")
+        except Exception:
+            continue
+        if root and "/" in root:
+            out.add(root)
+    return out
+
+
+def _known_roots(project, environ=None):
+    """`((spelling, inside), ...)`, longest first: every spelling of the
+    checkout root (`inside` True) and of the roots outside it a value could
+    carry - the checkout's parent, the home directory, the temp directory."""
+    env = os.environ if environ is None else environ
+    inside = set(_checkout_roots(project))
+    outside = set()
+    if project:
+        outside |= _spellings(os.path.dirname(os.path.abspath(str(project))))
+    for name in _HOME_VARS + _TEMP_VARS:
+        outside |= _spellings(env.get(name))
+    try:
+        outside |= _spellings(os.path.expanduser("~"))
+        outside |= _spellings(tempfile.gettempdir())
+    except Exception:
+        pass
+    rows = [(r, True) for r in inside] + [(r, False) for r in outside - inside]
+    return tuple(sorted(rows, key=lambda row: (-len(row[0]), row[0])))
+
+
+def _root_alternative(root):
+    """One root as a pattern. A drive-letter root takes either separator, the
+    way Windows spells it; a posix root takes only `/` and never stands behind
+    a drive letter - `C:\\Users\\x` is another machine's path, not this one's
+    `/Users/x`, and is the shape check's to name."""
+    parts = [re.escape(part) for part in root.split("/")]
+    if re.match(r"^[A-Za-z]:", root):
+        return r"[/\\]".join(parts)
+    return r"(?<![A-Za-z]:)" + "/".join(parts)
+
+
+def _root_pattern(known):
+    """One alternation over `known`'s spellings, longest first, each standing
+    at a token start and ending at a path boundary, with the path under it."""
+    if not known:
+        return None
+    alts = "|".join(_root_alternative(root) for root, _inside in known)
+    return re.compile(r"%s(?P<path>(?:%s)(?![A-Za-z0-9._-])"
+                      r"(?:[/\\][~A-Za-z0-9_.@$:+\\/-]*)?)"
+                      r"(?P<more>(?: %s)*)"
+                      % (MACHINE_PATH_TOKEN_START, alts, _SPACED_SEGMENT))
+
+
+# A word that CONTINUES a path across a space: it carries a separator, so it is
+# the rest of a directory name and what lies under it (`Projects/repo/x.md`
+# after `.../My`), not the next word of a sentence.
+_SPACED_SEGMENT = r"[~A-Za-z0-9_.@$:+-]*[/\\][~A-Za-z0-9_.@$:+\\/-]*"
+# A character `_TEXT_PATH` reads as part of a path token: standing right before
+# a root, it makes the root an entry inside a larger token.
+_GLUED = re.compile(r"[~A-Za-z0-9_.@$:+\\/-]")
+
+
+def _rooted(project, text, known=None):
+    """`text` with every known root replaced whole: a path under the checkout
+    spelled repo-relative, a path under any other root - or one that leaves
+    the checkout through `..` - the outside token.
+
+    UNDER AN OUTSIDE ROOT THE TOKEN TAKES THE SPACED REST TOO. Below a home
+    directory sit the user's own directory names, and one holding a space
+    (`My Projects`) left its tail beside the token when the path ended at the
+    space. A following word carrying a separator is read as that tail and
+    replaced with the rest; a sentence's next word carries none and is kept.
+    Under the checkout the tail is kept as written - it is the repository's
+    own path, and repo-relative is what a row may say."""
+    if known is None:
+        known = _known_roots(project)
+    pattern = _root_pattern(known)
+    if pattern is None:
+        return text
+    inside = [root for root, held in known if held]
+
+    def _token(match):
+        raw = match.group("path")
+        flat = raw.replace("\\", "/")
+        # Glued to the path before it - a search path's `:`, a URL's `//` -
+        # the root is one entry of a larger token, and spelling that entry
+        # repo-relative would change what the whole names: it goes whole.
+        glued = match.start() > 0 and _GLUED.match(text[match.start() - 1])
+        if project and not glued and any(flat == r or flat.startswith(r + "/")
+                                         for r in inside):
+            rel = repo_relative_or_token(project, raw)
+            if rel != OUTSIDE_TOKEN:
+                return rel + match.group("more")
+        return OUTSIDE_TOKEN
+
+    return pattern.sub(_token, text)
+
+
 def _in_repo_relative(project, text):
     """`text` with every absolute token INSIDE the repo spelled repo-relative.
 
@@ -397,7 +515,7 @@ def _judged_text(value):
         return None
 
 
-def redacted_free_text(project, value, roots=None):
+def redacted_free_text(project, value, roots=None, known=None):
     """`value` as a row may say it: in-repo absolute paths spelled
     repo-relative, every token still carrying machine identity replaced by
     `OUTSIDE_TOKEN`. NEVER raises, and never refuses.
@@ -415,7 +533,12 @@ def redacted_free_text(project, value, roots=None):
     a spelling the token grammar split differently from the shape - the WHOLE
     value becomes `OUTSIDE_TOKEN`: failing toward the constant is
     `program_token`'s direction, and a second marker would be one more word of
-    row vocabulary for every reader to learn."""
+    row vocabulary for every reader to learn.
+
+    THE KNOWN ROOTS GO FIRST (`_rooted`), as literals, so a root holding a
+    space is taken whole before the token grammar - which ends a path at a
+    space - reads what is left. `known` is `_known_roots`' answer, handed in
+    by a caller scrubbing many values against one project."""
     text = _judged_text(value)
     if text is None:
         return value
@@ -423,7 +546,7 @@ def redacted_free_text(project, value, roots=None):
         return text
     if roots is None:
         roots = _checkout_roots(project)
-    text = _in_repo_relative(project, text)
+    text = _in_repo_relative(project, _rooted(project, text, known))
 
     def _token(match):
         raw = match.group(0)
@@ -435,7 +558,7 @@ def redacted_free_text(project, value, roots=None):
     return out
 
 
-def scrubbed_values(project, value, roots=None, seen=None, exempt=()):
+def scrubbed_values(project, value, roots=None, seen=None, exempt=(), known=None):
     """`value` with every string in it run through `redacted_free_text`; a NEW
     structure, the argument untouched. Dict keys, numbers and booleans stay.
 
@@ -459,20 +582,22 @@ def scrubbed_values(project, value, roots=None, seen=None, exempt=()):
     """
     if roots is None:
         roots = _checkout_roots(project)
+    if known is None:
+        known = _known_roots(project)
     if seen is None:
         seen = {}
     if any(not pattern for pattern in exempt):
         return value
     if isinstance(value, str):
         if value not in seen:
-            seen[value] = redacted_free_text(project, value, roots)
+            seen[value] = redacted_free_text(project, value, roots, known)
         return seen[value]
     if isinstance(value, dict):
         return dict((k, scrubbed_values(project, v, roots, seen,
-                                        _below(exempt, k)))
+                                        _below(exempt, k), known))
                     for k, v in value.items())
     if isinstance(value, list):
-        return [scrubbed_values(project, v, roots, seen, _below(exempt, i))
+        return [scrubbed_values(project, v, roots, seen, _below(exempt, i), known)
                 for i, v in enumerate(value)]
     return value
 

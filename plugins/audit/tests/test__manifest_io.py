@@ -1478,6 +1478,13 @@ _CORPUS_REWRITES = {
                                    "/tasks/1/description"),
     "docs/audit/phases/P75.json": ("/tasks/3/description",),
     "docs/audit/phases/P82.json": ("/review/findings/38/issue",),
+    # A red helper's throwaway under the temp directory of the machine that
+    # wrote it. Found only on that machine, whose temp directory is a known
+    # root: the scrub takes the temp directory as machine identity, which a
+    # path under `/private/var/folders` had passed every shape without.
+    "docs/audit/phases/P123.json": ("/tasks/30/redFirst/basis",),
+    "docs/audit/phases/P124.json": ("/tasks/3/intentCheck/redFirstBasis",
+                                    "/tasks/3/redFirst/basis"),
 }
 
 

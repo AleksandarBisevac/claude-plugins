@@ -1344,7 +1344,9 @@ def _cases(check):
         _fr_out = subprocess.run([sys.executable, _fr_script],
                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                  timeout=60)
-        _fr_lines = _fr_out.stdout.decode("utf-8", "replace").split()
+        # ONE PATH PER LINE, read as lines: a temp directory may hold a space,
+        # and a split on whitespace would read one path as two.
+        _fr_lines = _fr_out.stdout.decode("utf-8", "replace").splitlines()
         _fr_kept = _fr_lines[0] if len(_fr_lines) > 1 else ""
         _fr_swept = _fr_lines[1] if len(_fr_lines) > 1 else ""
         check("fr1 a root from fixture_root() is GONE once the process that asked "
@@ -1553,7 +1555,9 @@ def _stage_runner_cases(check):
           % (code, order),
           code == 0 and order == ["x1", "x2", "y1"]
           and out.rstrip().endswith("ALL PASS: 3/3 cases " + "passed"))
-    tmps = re.findall(r"tmp=(\S+)", out)
+    # TO THE END OF THE LINE, not to the first space: the label ends on the
+    # temp directory, and a temp directory may hold a space.
+    tmps = re.findall(r"tmp=(.+?)\s*$", out, re.M)
     check("sr5 each child ran with a temp directory of its own, so a block "
           "reading the temp listing cannot see a sibling's scratch: %r" % (tmps,),
           len(tmps) == 2 and tmps[0] != tmps[1]

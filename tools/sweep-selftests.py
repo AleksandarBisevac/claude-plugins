@@ -141,33 +141,13 @@ DEFAULT_TIMEOUT = 300
 # - and with the interpreter itself launched through a spaced path, which is how a
 # virtualenv under a spaced directory looks to a child that re-runs `sys.executable`.
 #
-# A FILE EXEMPT FROM THE LEG NAMES WHY. Most rows are a product defect that a
-# fixture cannot be quoted around: the suite is red because the code it tests reads
-# a path holding a space wrongly. The rest are fixtures this leg was introduced
-# without the files to repair. Either way the row is a debt with its cause written
-# down, and it leaves the table when the cause does. Each row is checked to still
-# name a swept file.
-_SCRUB_SPLITS_AT_SPACE = (
-    "the machine-path scrub ends a path at its first space, so a checkout root "
-    "that holds one is replaced only up to there and the rest of the path is "
-    "kept beside the outside token (`<outside-repo> b/...`): a product defect in "
-    "the scrub, which this suite's fixtures surface and cannot quote around")
-
-SPACED_EXEMPT = {
-    "plugins/audit/tests/test__evidence_io.py": _SCRUB_SPLITS_AT_SPACE,
-    "plugins/audit/tests/test__journal_io.py": _SCRUB_SPLITS_AT_SPACE,
-    "plugins/audit/tests/test__machine_paths.py": _SCRUB_SPLITS_AT_SPACE,
-    "plugins/audit/tests/test__manifest_io.py": _SCRUB_SPLITS_AT_SPACE,
-    "plugins/audit/tests/test_audit_task.py": _SCRUB_SPLITS_AT_SPACE,
-    "plugins/audit/tests/_harness.py":
-        "two of its cases split a child's printed temp listing on whitespace, so "
-        "a temp path holding a space reads as two words: a fixture defect in the "
-        "harness itself, outside the files the leg was introduced with",
-    "plugins/audit/tests/test_stamp_verification.py":
-        "`child_env` names a path under the shared root inside an option string "
-        "only when the word is a bare absolute path, so a quoted `--require "
-        "'/a b/setup.js'` in NODE_OPTIONS is kept without being named in the basis",
-}
+# A FILE EXEMPT FROM THE LEG NAMES WHY: `{path: reason}`, the reason being the
+# product defect or the fixture that makes the suite red under a spaced path. A
+# row is a debt with its cause written down, and it leaves the table when the
+# cause does. Each row is checked to still name a swept file, and a table that
+# holds a row again has to be named in `gate-parity.py`'s audited tables, whose
+# derivation sees only a table with rows in it.
+SPACED_EXEMPT = {}
 
 
 # --- discovery ----------------------------------------------------------------
@@ -705,8 +685,11 @@ def exempt_row(rel_path, reason):
 
 
 def sweep(paths, covered, jobs=None, repo=None, encoding=None,
-          timeout=DEFAULT_TIMEOUT, spaced=False):
+          timeout=DEFAULT_TIMEOUT, spaced=False, exempt=None):
     """Run every path and return one graded row per file, sorted by path.
+
+    `exempt` is the spaced leg's table, `SPACED_EXEMPT` unless a caller hands
+    one in; it is read on the spaced leg only.
 
     Sorted on the way out rather than printed on the way in: completion order is
     whatever the scheduler decided this run, and a log that reorders itself between
@@ -721,7 +704,10 @@ def sweep(paths, covered, jobs=None, repo=None, encoding=None,
     """
     jobs = jobs or default_jobs()
     rows = []
-    exempt = SPACED_EXEMPT if spaced else {}
+    if not spaced:
+        exempt = {}
+    elif exempt is None:
+        exempt = SPACED_EXEMPT
     rows.extend(exempt_row(p, exempt[p]) for p in paths if p in exempt)
     paths = [p for p in paths if p not in exempt]
     pycache = tempfile.mkdtemp(prefix="sp-run-")
@@ -1567,17 +1553,35 @@ def _cases(check):
               and sp_got.get("BARE") not in (None, "0")
               and sp_got.get("QUOTED") == "0")
 
-        sp_exempt = sorted(SPACED_EXEMPT)[0]
+        # A TABLE OF THE CASE'S OWN, because the shipped one may be empty and
+        # a case that borrowed its first row would then assert nothing.
+        sp_exempt = "/".join(("plugins", "audit", "tests", "absent" + ".py"))
+        sp_table = {sp_exempt: "a scratch row: the file does not exist in this "
+                               "scratch repository, so running it is red"}
         sp_rows = sweep([sp_exempt], covered, jobs=1, repo=sp_work, timeout=30,
-                        spaced=True)
-        sp_plain = sweep([sp_exempt], covered, jobs=1, repo=sp_work, timeout=30)
+                        spaced=True, exempt=sp_table)
+        sp_plain = sweep([sp_exempt], covered, jobs=1, repo=sp_work, timeout=30,
+                         exempt=sp_table)
         check("sp4 a file the spaced leg exempts is reported as exempt with its "
               "reason and is not run there (it does not exist in this scratch "
               "repository, so running it would be red), while the same path on "
               "the ordinary leg IS run: %r" % (sp_rows,),
               len(sp_rows) == 1 and sp_rows[0]["ok"]
-              and sp_rows[0].get("exempt") == SPACED_EXEMPT[sp_exempt]
+              and sp_rows[0].get("exempt") == sp_table[sp_exempt]
               and len(sp_plain) == 1 and not sp_plain[0]["ok"])
+        sp_repaired = ("plugins/audit/tests/test__machine_paths.py",
+                       "plugins/audit/tests/test__journal_io.py",
+                       "plugins/audit/tests/test__evidence_io.py",
+                       "plugins/audit/tests/test__manifest_io.py",
+                       "plugins/audit/tests/test_audit_task.py",
+                       "plugins/audit/tests/test_stamp_verification.py",
+                       "plugins/audit/tests/_harness.py")
+        check("sp6 the spaced leg runs the scrub, stamp-verification and "
+              "harness suites - the machine-path scrub, NODE_OPTIONS reading "
+              "and the harness fixtures read a path holding a space as one "
+              "path, so no row excuses them: %r"
+              % (sorted(set(sp_repaired) & set(SPACED_EXEMPT)),),
+              not set(sp_repaired) & set(SPACED_EXEMPT))
         sp_swept = set(sweep_files())
         check("sp5 every exemption names a file the sweep reaches and carries a "
               "reason, so a row cannot outlive its file or excuse it silently: "

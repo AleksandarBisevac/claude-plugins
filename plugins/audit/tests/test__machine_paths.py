@@ -206,6 +206,8 @@ def _cases(check):
                   for v in ("python3 tools/gate.py", "npx vitest run",
                             ["test", "lint"])))
 
+        _spaced_root_cases(check, proj)
+
         check("mp7 the journal re-exports the SAME objects, so the detector "
               "tool and every old caller judge by one pattern set",
               _journal_io.MACHINE_PATH_SHAPES is M.MACHINE_PATH_SHAPES
@@ -215,6 +217,56 @@ def _cases(check):
               and _journal_io.canonical is M.canonical)
     finally:
         _harness.remove_tree(proj)
+
+
+def _spaced_root_cases(check, proj):
+    """A machine root holding a space - a home directory, the checkout's own
+    root - is one path to the scrub, not two words.
+
+    The fixture builds both under a directory named with a space and points
+    HOME at it for the length of the block, so the run does not depend on the
+    temp directory the sweep happened to hand this suite. Every fragment of
+    the home spelling is asked for in the output, because a scrub that stops
+    at the space leaves the tail of the user's path beside the token."""
+    home = os.path.join(proj, "Some One")
+    repo = os.path.join(home, "My Projects", "repo")
+    os.makedirs(os.path.join(repo, "src"))
+    os.makedirs(os.path.join(home, ".config"))
+    os.makedirs(os.path.join(home, "My Projects", "other"))
+    said = "read %s and %s and %s then %s" % (
+        os.path.join(home, ".config", "tool"),
+        os.path.join(repo, "src", "a.py"),
+        os.path.join(home, "My Projects", "other", "b.txt"),
+        os.path.join(home, "My Docs", "c.md"))
+    want = "read %s and src/a.py and %s then %s" % (
+        M.OUTSIDE_TOKEN, M.OUTSIDE_TOKEN, M.OUTSIDE_TOKEN)
+    held = dict((k, os.environ.get(k)) for k in ("HOME", "USERPROFILE"))
+    os.environ["HOME"] = home
+    os.environ["USERPROFILE"] = home
+    try:
+        free = M.redacted_free_text(repo, said)
+        output = M.redacted_paths(repo, said)
+        bare = M.redacted_free_text(repo, "home is %s" % (home,))
+    finally:
+        for key, value in held.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+    fragments = ("One", "Projects", ".config", "other", "b.txt", "Docs", "c.md")
+    check("mp12 a home root and a checkout root that HOLD A SPACE are each "
+          "replaced whole - no fragment of the user's path survives beside "
+          "the token - and a path inside the spaced checkout stays "
+          "repo-relative, in free text and in program output alike: %r"
+          % ((free, output, bare),),
+          free == want and output == want
+          and bare == "home is %s" % (M.OUTSIDE_TOKEN,)
+          and not [f for f in fragments if f in free + output + bare])
+    plain = "see docs/My Projects.md and src/a b/c.py"
+    check("mp13 ALLOW twin for mp12: a repo-relative path holding a space is "
+          "no machine root and is kept byte for byte: %r"
+          % (M.redacted_free_text(repo, plain),),
+          M.redacted_free_text(repo, plain) == plain)
 
 
 def _selftest():

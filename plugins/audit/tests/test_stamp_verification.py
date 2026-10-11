@@ -1204,9 +1204,12 @@ def _budget_cases(check):
           "%r %r" % (naming, dropped),
           naming == ["NODE_OPTIONS", "NOTE", "PYTEST_ADDOPTS"]
           and all(k in kept for k in env) and dropped == [])
+    # QUOTED THE WAY NODE READS IT: double quotes around a preload whose path
+    # holds a space. Node honours no single quote in NODE_OPTIONS, so a
+    # shell-quoted word would be a different preload to the runner.
     held = os.environ.get("NODE_OPTIONS")
-    os.environ["NODE_OPTIONS"] = "--require %s" % (
-        shlex.quote(os.path.join(root, "setup.js")),)
+    os.environ["NODE_OPTIONS"] = '--require "%s"' % (
+        os.path.join(root, "a b", "setup.js"),)
     try:
         _c, got_n = _red(root, man, [py, "tests/test_mine.py"])
     finally:
@@ -1214,10 +1217,25 @@ def _budget_cases(check):
             os.environ.pop("NODE_OPTIONS", None)
         else:
             os.environ["NODE_OPTIONS"] = held
-    check("sr44 ...and the redFirst basis carries it: %r"
+    check("sr44 ...and the redFirst basis carries it, for a double-quoted "
+          "--require preload whose path holds a space: %r"
           % ((got_n.get("redFirst") or {}).get("basis", "")[-160:],),
           "kept, naming the shared root: NODE_OPTIONS"
           in (got_n.get("redFirst") or {}).get("basis", ""))
+    spaced = {
+        "NODE_OPTIONS": '--require "/repo x/a b/setup.js"',
+        "ESCAPED": '--require "/repo x/say \\"hi\\".js"',
+        "JOINED": '--import="/repo x/hook.mjs"',
+        "OUTSIDE": '--require "/repo xy/setup.js"',
+        "SPLIT": "--require /repo x/setup.js"}
+    _k, _d, spaced_naming = M.child_env("/repo x", environ=spaced)
+    check("sr44a NODE_OPTIONS is read the way node reads it - a double-quoted "
+          "word is one word, a backslash inside the quotes escapes the next "
+          "character, and an option joined by `=` still names its path - so "
+          "a preload under a root holding a space is named; a sibling root "
+          "sharing its prefix and an UNQUOTED spaced path, which node reads "
+          "as two words, are not: %r" % (spaced_naming,),
+          spaced_naming == ["ESCAPED", "JOINED", "NODE_OPTIONS"])
 
     with open(os.path.join(M_PLUGIN, "reference", "execute-task.md"), "r",
               encoding="utf-8") as fh:
@@ -4300,7 +4318,10 @@ def _node_missing(target, importer):
 
 def _missing_module_cases(check):
     root = _seeded_repo("stamp-missing-")
-    tree = os.path.join(_harness.fixture_root("stamp-missing-tree-"), "tree")
+    # The throwaway's path HOLDS A SPACE: a runner prints the importer as it
+    # is, unquoted to the end of its line, so a reading that stops at the
+    # first space loses the file on any machine whose temp directory has one.
+    tree = os.path.join(_harness.fixture_root("stamp-missing-tree-"), "the tree")
     for rel in ("src/add.js", "src/sum.mjs"):
         _write(os.path.join(root, *rel.split("/")),
                "export function add(a, b) { return a + b; }\n")
