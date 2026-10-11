@@ -511,6 +511,39 @@ def _cases_body(check, tmp, outside):
               {"meta": {"buildCommands": {"provesCanFailSomehow": "x"}}})
           == [])
 
+    # gf30..gf33: an entry that is a READ of the diff, not a command.
+    import _manifest_phases as _phases
+    _ro_man = {"meta": {"buildCommands": {
+        "lint": "ruff check", "provesCanFail": "tools/prove-gates.py",
+        "claimsMatchCode": "review-only: sign-off reviewer refuses diff prose",
+        "mood": "review-only: be kind in comments"}}}
+    _claims = M._OFFERED_BY_KEY["claimsMatchCode"]
+    check("gf30 the catalog marks the read-only entry `runs: False` and the "
+          "commands entry does not say so: %r"
+          % ((_claims.get("runs"), M._OFFERED_BY_KEY["provesCanFail"].get("runs")),),
+          _claims.get("runs") is False
+          and M._OFFERED_BY_KEY["provesCanFail"].get("runs", True) is True)
+    check("gf31 the key list `_manifest_phases` skips is the catalog's own "
+          "`runs: False` keys - two spellings of one fact, pinned equal: %r"
+          % (_phases.REVIEW_ONLY_KEYS,),
+          sorted(_phases.REVIEW_ONLY_KEYS)
+          == sorted(e["key"] for e in M.OFFERED_GATES
+                    if e.get("runs") is False))
+    _derived = _phases.phase_gate_default(_ro_man["meta"])
+    check("gf32 a review-only entry never comes back as a gate command, "
+          "whether the catalog marks it or only its value does, and the "
+          "commands entries stay in order: %r" % (_derived["entries"],),
+          _derived["entries"] == ["lint", "provesCanFail"]
+          and sorted(_derived["reviewOnly"]) == ["claimsMatchCode", "mood"])
+    _asks = M.review_asks(_ro_man)
+    check("gf33 the reviewer is offered the catalog's `asks` sentence for the "
+          "catalog entry and the declared text for a key the catalog does not "
+          "carry, and a plan with none gets nothing: %r" % (_asks,),
+          _asks == [("claimsMatchCode", _claims["asks"]),
+                    ("mood", "be kind in comments")]
+          and M.review_asks({}) == []
+          and M.review_asks({"meta": {"buildCommands": {"lint": "x"}}}) == [])
+
 
 def _selftest():
     return _harness.run(_cases)

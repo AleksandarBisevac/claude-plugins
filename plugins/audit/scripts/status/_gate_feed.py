@@ -393,6 +393,7 @@ OFFERED_GATES = (
               "purged between cycles - minutes rather than seconds, and not "
               "a per-commit gate."},
     {"key": "claimsMatchCode",
+     "runs": False,
      "title": "refuse a comment that claims what the code does not do",
      "asks": "Refuse a comment, docstring or document that asserts a "
              "behaviour unless the sentence names the file:line that makes "
@@ -423,6 +424,30 @@ def accepted_gates(manifest):
     return [_OFFERED_BY_KEY[key] for key in keys if key in _OFFERED_BY_KEY]
 
 
+def review_asks(manifest):
+    """`[(key, sentence)]` - what the sign-off reviewer is asked to refuse, for
+    every `meta.buildCommands` entry that is a read and not a command.
+
+    The catalog's own `asks` sentence answers for a catalog entry (`runs: False`);
+    a key the catalog does not carry but whose value begins `review-only:` is
+    answered by the text after that prefix. Sorted by key, so the order is the
+    same on every run. `[]` for a plan declaring neither."""
+    meta = manifest.get("meta") if isinstance(manifest, dict) else None
+    build = meta.get("buildCommands") if isinstance(meta, dict) else None
+    out = []
+    for key in sorted(build.keys() if isinstance(build, dict) else []):
+        entry = _OFFERED_BY_KEY.get(key)
+        value = build[key]
+        if entry is not None and entry.get("runs") is False:
+            out.append((key, entry["asks"]))
+        elif isinstance(value, str) and value.strip().lower().startswith(
+                "review-only:"):
+            text = value.strip()[len("review-only:"):].strip()
+            if text:
+                out.append((key, text))
+    return out
+
+
 if __name__ == "__main__":
     from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
     safe_stdio()
@@ -443,5 +468,8 @@ if __name__ == "__main__":
             print("%s: %s" % (entry["key"], entry["title"]))
             print("  asks:  %s" % entry["asks"])
             print("  costs: %s" % entry["costs"])
+            if entry.get("runs") is False:
+                print("  runs:  no - the sign-off reviewer reads it; it is "
+                      "never a gate command")
         raise SystemExit(0)
     print("This is a library module; run with --selftest to exercise it.")

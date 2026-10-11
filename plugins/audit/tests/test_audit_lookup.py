@@ -27,6 +27,7 @@ import _output                                      # noqa: E402  (CLIPPED_MARK,
 import _journal_io                                  # noqa: E402
 import _evidence_io as _evio                        # noqa: E402
 import _manifest_phases                             # noqa: E402  (own_gate_entries, swapped in bf31)
+import _gate_feed                                   # noqa: E402  (review_asks: the sentence the brief must carry)
 
 M = _loader.load_script("audit-lookup.py", modname="audit_lookup")
 
@@ -1032,6 +1033,21 @@ def _brief_cases(check):
           and "--head %s" % (head7,) in ptext7
           and "`\"tasks\": []`" in ptext7
           and not [ln for ln in ptext7.splitlines() if ln.startswith("owed:")])
+
+    ro_man = _bf_manifest()
+    ro_man["meta"]["buildCommands"]["claimsMatchCode"] = (
+        "review-only: sign-off reviewer refuses diff prose")
+    ro_proj, ro_mpath = project("bf-review-only", ro_man)
+    file_exec(ro_proj)
+    brief(ro_proj, ro_mpath, "P1.1", "reviewer")
+    ro_text = read(brief_file(ro_proj, "P1.1",
+                              "20260101T000000Z.reviewer.md")) or ""
+    check("bf5a a plan carrying a review-only entry puts the catalog's `asks` "
+          "sentence in the reviewer's brief as an instruction, and a plan "
+          "without one adds no such section: %r"
+          % (ro_text[ro_text.find("## Refuse"):][:300],),
+          "## Refuse" in ro_text and _gate_feed.review_asks(ro_man)[0][1]
+          in ro_text and "## Refuse" not in rtext)
 
     # WHERE THE RETURN GOES. The reviewer has no Write tool and the plan gate
     # refuses an executor's write outside its task files, so a brief saying

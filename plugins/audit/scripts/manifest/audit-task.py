@@ -61,7 +61,8 @@ Usage:
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py scope <taskId> [manifest] [--files f1,f2]
                 [--tests-mode tdd|regression|gate-only] [--tests-add TEXT ...]
-                [--gate CMD ... | --gate-clear] [--description TEXT|-]
+                [--gate CMD ... | --gate-clear | --gate-set entry ...
+                 | --gate-drop entry ...] [--description TEXT|-]
                 [--risk low|med|high] [--blocked-by id,id] [--depends-on id,id]
                 [--introduces KIND ...]
                 [--project-dir DIR] [--takeover] [--json]
@@ -7015,7 +7016,20 @@ def _phase_gate(args, assembled):
 
 def _default_phase_gate(assembled):
     """`(testGate, basis)` for a phase that names no gate of its own: the
-    plan's default, and the sentence saying which part of it answered."""
+    plan's default, and the sentence saying which part of it answered. An entry
+    that is a read of the diff and not a command is left out and named."""
+    entries, basis = _default_phase_gate_entries(assembled)
+    meta = assembled.get("meta")
+    skipped = _phases.phase_gate_default(
+        meta if isinstance(meta, dict) else {})["reviewOnly"]
+    if skipped:
+        basis += ("; left out as review-only, not a command: %s -- the sign-off "
+                  "reviewer is asked it instead"
+                  % (_output.some_of(skipped, render=repr),))
+    return entries, basis
+
+
+def _default_phase_gate_entries(assembled):
     meta = assembled.get("meta")
     build = (meta or {}).get("buildCommands") if isinstance(meta, dict) else None
     if not isinstance(build, dict):
@@ -7032,6 +7046,10 @@ def _default_phase_gate(assembled):
     default = _phases.phase_gate_default(meta if isinstance(meta, dict) else {})
     entries, always, excluded = (default["entries"], default["always"],
                                  default["excluded"])
+    if not entries and not excluded:
+        # Every key was a read, not a command: nothing to run, and `exclude`
+        # removed nothing, so the sentence below would name a cause that is not.
+        return [], "every meta.buildCommands key is review-only, not a command"
     if not entries:
         # CERTAIN, EVEN WITH NO EVIDENCE: `exclude` removed every buildCommands
         # key and `always` put none back, so there is nothing left to have run
@@ -8146,9 +8164,18 @@ def _locked_scope(args, project, config, mpath, tid, out):
     # SHAPE of the change and no longer the call.
     started = _started(node)
 
-    contradiction = _gate_contradiction(args)
+    contradiction = _retarget_gate_contradiction(args)
     if contradiction:
         out(contradiction)
+        return E_USAGE
+    # `--gate-set` / `--gate-drop` are the pending task's spellings. A started
+    # task keeps the rule it has: it takes `--gate` (replace) and `--gate-clear`,
+    # so the refusal says exactly those rather than leaving the caller to guess.
+    if started and (args.gate_set is not None or args.gate_drop):
+        out("[audit-task] %s has started (status %s) -- --gate-set and "
+            "--gate-drop are for a task that has not. On a started task replace "
+            "the gate with `--gate CMD [--gate CMD ...]` or empty it with "
+            "`--gate-clear`." % (tid, node.get("status")))
         return E_USAGE
     files = _split_csv(args.files)
     # Asked BEFORE the no-op check below and before any mutation, in
@@ -8169,10 +8196,12 @@ def _locked_scope(args, project, config, mpath, tid, out):
         return E_USAGE
     if not files and args.tests_mode is None and not args.tests_add \
             and not args.gate and not args.gate_clear and not args.description \
+            and args.gate_set is None and not args.gate_drop \
             and args.risk is None and args.blocked_by is None \
             and args.depends_on is None and not args.introduces:
         out("[audit-task] scope needs --files (and may take --tests-mode / "
-            "--tests-add / --gate / --gate-clear / --description / --risk / "
+            "--tests-add / --gate / --gate-clear / --gate-set / --gate-drop / "
+            "--description / --risk / "
             "--blocked-by / --depends-on / --introduces) -- a scope call that "
             "changes nothing is a lock taken for no reason")
         return E_USAGE
@@ -8242,8 +8271,10 @@ def _locked_scope(args, project, config, mpath, tid, out):
     # key, and every `scope` against it was refused with
     # `tests.mode None not in [...]` -- a message about the manifest for a
     # defect in the writer, which is the half that makes it hard to read.
+    gate_writes = bool(args.gate or args.gate_clear
+                       or args.gate_set is not None or args.gate_drop)
     tests_writes = (args.tests_mode is not None or bool(args.tests_add)
-                    or bool(args.gate) or args.gate_clear)
+                    or gate_writes)
     tests = node.get("tests")
     tests = dict(tests) if isinstance(tests, dict) else None
     # An inline suite named as the task's only test file fills an ABSENT or a
@@ -8318,8 +8349,12 @@ def _locked_scope(args, project, config, mpath, tid, out):
             node["files"] = now_comp
         else:
             companions = []
-    if args.gate or args.gate_clear:
-        now_gate = [] if args.gate_clear else list(args.gate)
+    if gate_writes:
+        now_gate, gate_refusal = _retarget_gate_now(
+            args, was_gate, "this task's tests.gate")
+        if gate_refusal:
+            out(gate_refusal)
+            return E_USAGE
         if was_gate != now_gate:
             changes.append({"id": tid, "field": "tests.gate",
                             "from": was_gate, "to": now_gate})
@@ -8632,7 +8667,7 @@ _EMPTY_GATE_REFUSAL = ("[audit-task] an empty gate is --gate-clear, which says "
                       "so")
 
 
-def _retarget_gate_now(args, current):
+def _retarget_gate_now(args, current, subject="this phase's testGate"):
     """`(now, refusal)` -- the phase's NEXT `testGate`, or the refusal line,
     for whichever ONE of `--gate` / `--gate-clear` / `--gate-set` /
     `--gate-drop` is present. Exactly one of the two return values is not
@@ -8671,10 +8706,10 @@ def _retarget_gate_now(args, current):
         missing = [g for g in args.gate_drop if g not in current]
         if missing:
             return None, (
-                "[audit-task] --gate-drop names %s, which %s not in this "
-                "phase's testGate (%s)"
+                "[audit-task] --gate-drop names %s, which %s not in %s (%s)"
                 % (_output.some_of(missing, render=repr),
-                   "is" if len(missing) == 1 else "are", json.dumps(current)))
+                   "is" if len(missing) == 1 else "are", subject,
+                   json.dumps(current)))
         drop = set(args.gate_drop)
         now = [g for g in current if g not in drop]
         if not now:
@@ -12582,7 +12617,7 @@ VERB_FLAGS = {
     # was computed at, which keys the file.
     "file-return": ("role", "head"),
     "scope": ("files", "tests_mode", "tests_add", "gate", "gate_clear",
-              "description", "risk", "blocked_by", "depends_on", "introduces"),
+              "gate_set", "gate_drop", "description", "risk", "blocked_by", "depends_on", "introduces"),
     "retarget": ("gate", "gate_clear", "gate_drop", "gate_set", "area",
                  "outcome", "description", "rename"),
     # `seed` writes where nothing exists yet, so it has no target to describe,
@@ -12752,9 +12787,9 @@ def build_parser():
     # not this project's.
     p.add_argument("--gate-drop", dest="gate_drop", action="append",
                    default=None,
-                   help="retarget: drop one testGate entry (repeatable)")
+                   help="retarget, scope: drop one gate entry (repeatable)")
     p.add_argument("--gate-set", dest="gate_set", nargs="*", default=None,
-                   help="retarget: replace testGate with these entries")
+                   help="retarget, scope: replace the gate with these entries")
     p.add_argument("--project-dir", dest="project_dir", default=None)
     p.add_argument("--reason", default=None, help=_PROSE_HELP)
     p.add_argument("--verdict", default=None, choices=list(_mio.SIGNOFF_VERDICTS),

@@ -244,6 +244,32 @@ def _phase_gate_lists(meta):
     return always, exclude, build_keys
 
 
+REVIEW_ONLY_PREFIX = "review-only:"
+# The `buildCommands` keys `_gate_feed.OFFERED_GATES` marks `runs: False` - a read
+# of the diff's prose with no command form. `_gate_feed` sits at this module's own
+# layer and may not be imported from here, so the fact is written twice and
+# `test__gate_feed` pins the two equal.
+REVIEW_ONLY_KEYS = ("claimsMatchCode",)
+
+
+def is_review_only(value):
+    """Whether a `buildCommands` value declares itself a read, not a command:
+    it BEGINS with `review-only:` (any case, leading blanks allowed). A command
+    that merely mentions the word is a command."""
+    return (isinstance(value, str)
+            and value.strip().lower().startswith(REVIEW_ONLY_PREFIX))
+
+
+def review_only_keys(build):
+    """The `buildCommands` keys that are never gate commands: the catalog's
+    read-only keys, and any key whose value declares itself `review-only:`,
+    in `buildCommands` order."""
+    if not isinstance(build, dict):
+        return []
+    return [k for k, v in build.items()
+            if isinstance(k, str) and (k in REVIEW_ONLY_KEYS or is_review_only(v))]
+
+
 def phase_gate_default(meta):
     """`{entries, always, rest, excluded, basis}` - what a NEW phase's gate
     starts as, read by `/audit:phase add` now and by a future task-level
@@ -269,6 +295,11 @@ def phase_gate_default(meta):
     this field existed.
     """
     always, exclude, build_keys = _phase_gate_lists(meta)
+    # A READ IS NOT A COMMAND, so it is skipped HERE - the one derivation every
+    # consumer asks - and returned by name so a caller can say it did.
+    review_only = review_only_keys((meta or {}).get("buildCommands"))
+    always = [a for a in always if a not in review_only]
+    build_keys = [k for k in build_keys if k not in review_only]
     always_set = set(always)
     exclude_set = set(exclude) - always_set
     rest = [k for k in build_keys
@@ -294,7 +325,7 @@ def phase_gate_default(meta):
                     % (len(always), _output.some_of(always, render=repr))
                     if always else ""))
     return {"entries": entries, "always": always, "rest": rest,
-            "excluded": excluded, "basis": basis}
+            "excluded": excluded, "basis": basis, "reviewOnly": review_only}
 
 
 def phase_gate_suite_gap(manifest, suite_keys=None):

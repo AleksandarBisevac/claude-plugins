@@ -6832,6 +6832,30 @@ def _excluded_cases(check):
           == "  excluded: coverage - meta.phaseGate.exclude declares them "
              "out of this phase's gate; they were not run here")
 
+    # --- xg5: a `review-only:` step handed to the gate anyway (an older plan) -
+    ro_mp = os.path.join(root, "audit-plan-review-only.json")
+    with open(ro_mp, "w") as fh:
+        json.dump({"meta": {"version": 2, "buildCommands": {
+            "lint": _step(sys.executable, say, lint_out),
+            "claimsMatchCode": "review-only: sign-off reviewer refuses "
+                               "diff prose that (claims) more than the code"}},
+            "phases": [{"id": "P1", "title": "p", "status": "in_progress",
+                        "testGate": ["lint", "claimsMatchCode"],
+                        "tasks": []}]}, fh)
+    ro_lines = []
+    ro_code = M.main([ro_mp, "P1", "--project-dir", root, "--no-reuse"],
+                     out=ro_lines.append)
+    ro_text = "\n".join(ro_lines)
+    check("xg5 RED-FIRST: a `review-only:` gate step is recorded as not a "
+          "command - no shell run (a shell would exit non-zero on it), the "
+          "gate stays green, and the line names the remedy: %r"
+          % ((ro_code, [ln for ln in ro_lines if "not a command" in ln]),),
+          ro_code == 0 and "GATE GREEN" in ro_text
+          and "claimsMatchCode" in ro_text
+          and any("not a command" in ln and "claimsMatchCode" in ln
+                  and "derive" in ln for ln in ro_lines)
+          and len([ln for ln in ro_lines if "claimsMatchCode" in ln]) == 1)
+
 
 def _derived_gate_cases(check):
     """The derived sign-off gate, in shadow first: a phase's `testGateDerived`

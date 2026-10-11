@@ -1165,7 +1165,11 @@ Give a task the files it touches, and optionally its tests, its
 description and the three fields that decide how and when it runs:
 `--tests-mode tdd|regression|gate-only`, `--tests-add TEXT`
 (repeatable — `"<path>: <what it asserts>"`, since the leading path is what
-reaches `files`), `--gate CMD` (repeatable), `--gate-clear`, `--description TEXT`
+reaches `files`), `--gate CMD` (repeatable), `--gate-clear`, `--gate-set entry ...`
+(replace the gate) and `--gate-drop entry` (repeatable; every name must be in the
+task's gate) — those last two the way `retarget` takes them on a phase, for a task
+that has **not started**; a started task is refused with the spelling it may use,
+`--gate` or `--gate-clear` — `--description TEXT`
 (or `--description -` to read the brief from stdin — see *A brief the shell has
 eaten is refused* above, and prefer it whenever the text holds backticks),
 `--risk low|med|high`, `--blocked-by ids`, `--depends-on ids`. Runs `scripts/manifest/audit-task.py scope` — the same

@@ -3701,7 +3701,7 @@
     {
       "id": "P123.48-64p",
       "title": "A fix task that would declare no path is refused, and a fix task's gate runs the test its finding asks for",
-      "status": "in_progress",
+      "status": "done",
       "description": "(F631, reported from the testbed's P11 review on 3.2.0; the free-text path split itself is already fixed by `_finding_paths`) Two gaps remain in how `add --fixes` / `drive next --answer fix` scope a fix task. (a) A finding whose `file` text names no resolvable path still yields a fix task with no files, which the plan gate then refuses edit by edit; refuse the add instead, naming each such finding and the `scope --files` remedy (or, from the drive, stop with that question) - never a task whose scope is empty by accident. (b) When a finding's resolution asks for a test, or the fix scope holds a test path, the fix task's gate includes the runner that test belongs to (through `_gate_derive`, the one place that maps a test path to its runner); when no runner can be derived, the note says why instead of leaving a lint/typecheck-only gate in silence. Regression: `--fixes` over a finding with `file: \"(no path here)\"` refuses naming it; a finding with `file: \"src/a.ts\"` and a resolution 'add a unit test' yields a gate holding the unit runner; the reported string `src/a.ts (x, y)` still scopes `src/a.ts` alone. Faults: F631.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -3737,25 +3737,43 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4e9ff55b71b1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py: _fixes_targets now takes the caller's files and refuses (via new _pathless_refusal, shared by add --fixes and the batch/drive path) any finding whose file text names no usable path, naming each with its text and the --files remedy, writing nothing; _scope_paths factored out of _fix_scope. New _runnerless_test_note adds a task note (add and batch) when a finding asks for a test or the scope holds a test path but the derived gate names no runner (entry_runner from _gate_derive), citing the gate basis. _gate_derive.py needed no change (runner mapping already there; cz17/cz18 lock gate-holds-vitest and 'src/a.ts (x, y)' -> src/a.ts, both green on old code). Drive: relays the verb refusal as its stop (relay_refusal), no drive-phase.py change. Docs: verbs-in-full.md paragraph. Tests cz16, cz16b, cz16c, cz17, cz18, cz19 added to the cz-block stage. Full sweep 331/331 files ok, plain and --spaced; ruff, vermin, gate-parity exit 0.",
+        "descriptive": "A fix task is no longer made with an empty scope by accident, and a fix task owing a test the gate cannot run says why."
       },
       "startedAt": "2026-10-11T14:00:11Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-11T14:20:02Z",
+      "verifiedBy": [
+        "cz16",
+        "cz16b",
+        "cz16c",
+        "cz17",
+        "cz18",
+        "cz19"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-11T14:20:01Z.19cbc7",
         "status": "passed",
         "at": "2026-10-11T14:20:01Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "4e9ff55b71b1",
+        "at": "2026-10-11T14:20:02Z"
+      },
+      "redFirst": {
+        "at": "2026-10-11T14:11:52Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage cz-block` in a throwaway tree at HEAD exited 1 with 3 of 25 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cz16 (house FAIL), cz16b (house FAIL), cz19 (house FAIL): SELFTEST FAILED: 22/25 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P123.49-64p",
       "title": "A review-only offered gate entry never runs as a command; it reaches the reviewer, and scope can replace a task gate",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(F635, reported from the testbed on 3.2.0) `meta.buildCommands.claimsMatchCode` held `review-only: sign-off reviewer refuses diff prose...`; the phase gate's `always` carried it, run-test-gate handed it to bash (exit 2, syntax error) and every task gate in the phase went red. `_gate_feed.OFFERED_GATES` offers `claimsMatchCode` as a read of the diff's prose - it has no command form - but gate derivation (`add --from-file` from meta.buildCommands, the phase gate's `always`) treats every key as a command. (1) An offered entry the catalog marks review-only (a `runs: false` field on the catalog entry), or any buildCommands value declaring itself `review-only:`, never enters a task or phase gate as a command: derivation skips it and says so, and the reviewer's brief carries its `asks` sentence as an instruction. (2) run-test-gate, handed such a step anyway (an older plan), records it as not a command - no shell run, no red gate - naming the remedy. (3) `audit-task scope` takes `--gate-set` and `--gate-drop` on a not-started task the way `retarget` takes them on a phase (a started task keeps its append-only rule, and the refusal names the exact spelling that is allowed). Regression: a plan with `claimsMatchCode: \"review-only: ...\"` derives a gate without it and the reviewer brief carries its sentence; run-test-gate given that step stays green and says not-a-command; scope --gate-set replaces a pending task's gate. Faults: F635.",
       "files": [
         "plugins/audit/scripts/status/_gate_feed.py",
@@ -3770,7 +3788,14 @@
         "plugins/audit/tests/test_derive_phase_gate.py",
         "plugins/audit/reference/verbs-in-full.md",
         "plugins/audit/README.md",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/tests/test__deps.py",
+        "plugins/audit/tests/test_validate_manifest.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -3797,16 +3822,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-11T14:20:02Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T14:56:23Z.575742",
+        "status": "passed",
+        "at": "2026-10-11T14:56:23Z"
+      }
     },
     {
       "id": "P123.50-64p",

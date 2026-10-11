@@ -2387,6 +2387,12 @@ def _reshape_cases(check):
         gcm["phases"][1]["tasks"][1]["tests"] = {
             "mode": "gate-only", "expectRedFirst": False,
             "add": ["the case the import came with"], "gate": ["lint"]}
+        gcm["phases"][1]["tasks"].append(
+            {"id": "P2.9", "title": "running", "status": "in_progress",
+             "attempts": 1, "maxAttempts": 3, "commit": None,
+             "startedAt": "2026-01-01T00:00:00Z", "completedAt": None,
+             "outcome": {"technical": None, "descriptive": None},
+             "verifiedBy": []})
         gc_proj, gc_mp = mk("gc-gate", gcm)
 
         def gc_gate():
@@ -2447,6 +2453,39 @@ def _reshape_cases(check):
               "absence of one - the fixture that says why the clear had to be a "
               "flag rather than a value of the flag it clears: %r" % (gc_gate(),),
               code == 0 and gc_gate() == [""])
+
+        # `scope` takes the two gate operations `retarget` takes on a phase,
+        # on a task that has not started.
+        code, txt = run(["scope", "P2.3", "--gate-set", "lint", "pytest -q",
+                         "--project-dir", gc_proj])
+        check("gc8 scope --gate-set REPLACES a pending task's gate with the "
+              "values it was given, in order: %r" % ((code, gc_gate(), txt[-100:]),),
+              code == 0 and gc_gate() == ["lint", "pytest -q"])
+        code, txt = run(["scope", "P2.3", "--gate-drop", "lint",
+                         "--project-dir", gc_proj])
+        check("gc9 scope --gate-drop removes one named entry and keeps the "
+              "rest: %r" % ((code, gc_gate()),),
+              code == 0 and gc_gate() == ["pytest -q"])
+        code, txt = run(["scope", "P2.3", "--gate-drop", "nope",
+                         "--project-dir", gc_proj])
+        check("gc10 a drop naming an entry the TASK's gate lacks is refused "
+              "naming the task's gate, and writes nothing: %r"
+              % ((code, gc_gate(), txt[:160]),),
+              code == 2 and gc_gate() == ["pytest -q"]
+              and "tests.gate" in txt and "nope" in txt)
+        code, txt = run(["scope", "P2.3", "--gate-set", "a", "--gate-clear",
+                         "--project-dir", gc_proj])
+        check("gc11 --gate-set with --gate-clear is refused as opposite "
+              "answers, gate untouched: %r" % ((code, gc_gate()),),
+              code == 2 and "opposite things" in txt
+              and gc_gate() == ["pytest -q"])
+        code, txt = run(["scope", "P2.9", "--gate-set", "lint",
+                         "--project-dir", gc_proj])
+        check("gc12 a STARTED task refuses --gate-set and the refusal names the "
+              "spelling that is allowed there, `--gate` or `--gate-clear`: %r"
+              % ((code, txt[-300:]),),
+              code == 2 and "--gate " in txt and "--gate-clear" in txt
+              and "started" in txt)
 
         # ---- (jf) what the trail says the prior state was ---------------------
         # `_locked_scope` builds the journal's `changes` list. Three fields read
@@ -10706,6 +10745,24 @@ def _record_cases(check):
               "vanish: %r" % (pg_gate(pg_mp, "Docs"),),
               code == 0 and pg_gate(pg_mp, "Docs") == ["lint", "test"]
               and "meta.phaseGate.always first" in txt)
+
+        pg_ro = {
+            "meta": {"version": 2,
+                     "buildCommands": {
+                         "test": "npm test",
+                         "claimsMatchCode":
+                             "review-only: sign-off reviewer refuses diff prose"},
+                     "phaseGate": {"always": ["claimsMatchCode", "test"]}},
+            "phases": [], "fileIndex": {}, "bugs": [],
+        }
+        pg_proj_ro, pg_mp_ro = mk("pg-review-only", pg_ro)
+        code, txt = run(["add-phase", "DocsRO", "--outcome", "shipped",
+                         "--project-dir", pg_proj_ro])
+        check("pg1a a `review-only:` buildCommands entry never enters a new "
+              "phase's gate, even named in `always`, and the basis says it was "
+              "left out: %r" % (pg_gate(pg_mp_ro, "DocsRO"),),
+              code == 0 and pg_gate(pg_mp_ro, "DocsRO") == ["test"]
+              and "review-only" in txt and "claimsMatchCode" in txt)
 
         pg_exclude = {
             "meta": {"version": 2,

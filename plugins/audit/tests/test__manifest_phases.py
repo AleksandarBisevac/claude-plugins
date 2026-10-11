@@ -1047,6 +1047,24 @@ def _cases(check):
           and M.phase_gate_default(
               {"buildCommands": {"": "x", "lint": "y"}})["entries"]
           == ["lint"])
+    _ro_meta = {"buildCommands": {"test": "x", "notes": "review-only: read it",
+                                  "claimsMatchCode": "python3 check.py"},
+                "phaseGate": {"always": ["notes", "test"]}}
+    _ro = M.phase_gate_default(_ro_meta) if hasattr(M, "phase_gate_default") else {}
+    check("pg7 a value declaring itself `review-only:` and a catalog read-only "
+          "key never enter the default gate, `always` included, and the skip "
+          "is returned by name: %r" % (_ro,),
+          _ro.get("entries") == ["test"]
+          and sorted(_ro.get("reviewOnly") or []) == ["claimsMatchCode", "notes"])
+    check("pg8 ALLOW: `is_review_only` reads the prefix only, any case, and a "
+          "command merely mentioning it is a command: %r"
+          % ([getattr(M, "is_review_only", lambda v: "missing")(v)
+              for v in ("review-only: x", "  Review-Only: x", "pytest",
+                        "echo review-only: x", None, "")],),
+          [getattr(M, "is_review_only", lambda v: "missing")(v)
+           for v in ("review-only: x", "  Review-Only: x", "pytest",
+                     "echo review-only: x", None, "")]
+          == [True, True, False, False, False, False])
 
 
     # --- meta.coupling: shape, plus the two new coded warnings -----------------

@@ -129,6 +129,7 @@ import _areas  # noqa: E402  (resolve_skills: area skills first, then the task's
 import _filed_returns as _fr  # noqa: E402  (where `submit` filed a return, and
 #                                            which tasks a phase review owes)
 import _config_rules  # noqa: E402  (review_per_task_mode: the config's reading now)
+import _gate_feed  # noqa: E402  (review_asks: what the plan asks a reviewer to refuse)
 
 E_OK = 0
 E_NOMATCH = 1
@@ -491,6 +492,19 @@ def _section(title, body_lines):
     return ["", "## %s" % (title,)] + list(body_lines)
 
 
+def refuse_lines(manifest):
+    """The reviewer's instructions from the plan's read-only gate entries, as a
+    section, or [] when the plan declares none. A read of the diff has no
+    command form, so this brief is the only place it is ever asked."""
+    asks = _gate_feed.review_asks(manifest)
+    if not asks:
+        return []
+    return _section("Refuse", [
+        "The plan declares these checks as reads of the diff, not commands; "
+        "nothing runs them, so you apply them:"]
+        + ["- %s: %s" % (key, sentence) for key, sentence in asks])
+
+
 def _verbatim(text, absent):
     return [text] if isinstance(text, str) and text.strip() else [absent]
 
@@ -784,6 +798,7 @@ def compose_reviewer_brief(manifest, phase, task, ctx, filed):
         "task.testEvidence) - read that as absent, not as passed."])
     lines += _section("Gate commands, %s" % (whose,),
                       gate_lines(manifest, entries))
+    lines += refuse_lines(manifest)
     tree, base = wave_tree(ctx, phase, task)
     if tree is not None:
         lines += _section("Tree", [
@@ -992,6 +1007,7 @@ def compose_phase_brief(manifest, phase, ctx):
         "the record."))
     lines += _section("The choices the request left open", _choices_lines(phase))
     lines += _section("The question", [PHASE_QUESTION])
+    lines += refuse_lines(manifest)
     lines += _section("Phase desired outcome",
                       _verbatim(phase.get("desiredOutcome"),
                                 "The phase records no desiredOutcome."))

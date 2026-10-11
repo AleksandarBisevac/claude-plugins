@@ -2189,6 +2189,21 @@ def _resolved(entries, build, preamble=None):
         {"meta": {"buildCommands": build, "nodePreamble": preamble}}, entries)
 
 
+def split_not_commands(commands):
+    """`(commands, names)` - the gate with every `review-only:` step taken out,
+    and the names taken out, in order. A step is the `(name, command)` pair
+    `gate_of` returns; only the resolved command is read, so a plan whose entry
+    is spelled out in `testGate` itself is caught the same as one resolved
+    through `meta.buildCommands`."""
+    keep, left = [], []
+    for name, command in commands or []:
+        if _phases.is_review_only(command):
+            left.append(name)
+        else:
+            keep.append((name, command))
+    return keep, left
+
+
 def gate_of(manifest, phase_id, task_id=None):
     """`(commands, source, error)` -- the gate to run, and WHOSE it is.
 
@@ -4774,6 +4789,18 @@ def main(argv, out=print):
     if err:
         out("[run-test-gate] %s" % err)
         return E_ASK
+    commands, not_commands = split_not_commands(commands)
+    for name in not_commands:
+        # SAID, NEVER RUN, NEVER RED. A `review-only:` value is a read of the
+        # diff for the sign-off reviewer; handed to a shell it is a syntax error
+        # that reddens every gate carrying it. `--json` keeps stdout parseable.
+        if not args.as_json:
+            out("[run-test-gate] %s is not a command (it declares itself "
+                "review-only) - not run, and not a failure. Remedy: re-derive "
+                "the gate so it leaves the entry out (`audit-task.py retarget "
+                "%s --gate-drop %s`, or `scope <task> --gate-drop %s`); the "
+                "reviewer is asked it instead."
+                % (name, args.phase, name, name))
     also = [p.strip() for p in (args.also or "").split(",") if p.strip()]
     if also and args.task is not None:
         out("[run-test-gate] --also groups PHASES for one phase-scope run, and "
