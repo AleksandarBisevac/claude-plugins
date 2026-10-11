@@ -2489,7 +2489,7 @@ def verdict_banners(res):
     return found
 
 
-def reused_result(identity, row, elapsed_ms):
+def reused_result(identity, row, elapsed_ms, newer=None):
     """`run_gate`'s shape for a verdict that was NOT taken here.
 
     THE SHAPE IS KEPT AND THE CLAIMS ARE NOT. Every observation a run makes is
@@ -2510,6 +2510,12 @@ def reused_result(identity, row, elapsed_ms):
         "steps": [],
         "reusedFrom": {"runId": row.get("runId"), "ts": row.get("ts"),
                        "status": row.get("status")},
+        # THE NEWER ROW FOR THIS IDENTITY, when there is one: a repeat that
+        # names the row it copies owes the reader the row that sorts after it.
+        "newerRow": (None if newer is None else
+                     {"runId": newer.get("runId"), "ts": newer.get("ts"),
+                      "status": newer.get("status"),
+                      "repeat": newer.get(_ev.VERDICT_SOURCE) == _ev.REUSED}),
         _ev.REUSE_KEY: identity.get("key"),
         "reuseBasis": identity.get("basis"),
         "durationMs": elapsed_ms,
@@ -2595,6 +2601,17 @@ def render_reuse(res, out=print):
         "the identity below, and is being repeated rather than re-taken."
         % (prior.get("runId"), prior.get("ts")))
     out("  identity: %s" % (res.get(_ev.REUSE_KEY),))
+    out("  repeats:  run %s (%s, recorded %s)"
+        % (prior.get("runId"), prior.get("status"), prior.get("ts")))
+    newer = res.get("newerRow")
+    if newer:
+        out("  newer row: run %s at %s (%s) exists for this identity and was "
+            "not taken: %s"
+            % (newer.get("runId"), newer.get("ts"), newer.get("status"),
+               "it is itself a repeat of a verdict, not a measurement, so the "
+               "newest MEASURED row stays the one above" if newer.get("repeat")
+               else "it sorts after the row above but is not a verdict this "
+                    "gate may repeat"))
     out("  basis:    %s" % (res.get("reuseBasis"),))
     out("  says:     %s" % (REUSE_LIMIT,))
     if res["status"] == "failed":
@@ -4866,6 +4883,7 @@ def main(argv, out=print):
                     "basis": "--own is never recorded, so nothing here is "
                              "ever repeated"}
         prior = None
+        newer = None
     else:
         # `group=also`: a group run and a solo run over the same files are two
         # claims, so the members a run owns are part of what a repeat must match.
@@ -4883,6 +4901,7 @@ def main(argv, out=print):
                     "left out of it, and a run that changes it can never be "
                     "matched by a later one." % (path, why))
         prior = None
+        newer = None
         if identity.get("grading"):
             # THE ONE SUBJECT THIS IDENTITY CANNOT SPEAK FOR. Driven before this
             # line existed: a gate whose single entry validates the plan reported
@@ -4897,11 +4916,13 @@ def main(argv, out=print):
                     "the other way round is a verdict that no longer describes the "
                     "thing it graded" % (name, path))
         elif not args.no_reuse:
-            prior = _ev.reusable_run(_ev.read_rows(project)["rows"], source,
+            ledger = _ev.read_rows(project)["rows"]
+            prior = _ev.reusable_run(ledger, source,
                                      subject_ids(args.phase, args.task, source),
                                      identity["key"], REUSABLE_STATUS)
+            newer = _ev.newer_for_identity(ledger, identity["key"], prior)
     if prior is not None:
-        res = reused_result(identity, prior, _elapsed_ms(started))
+        res = reused_result(identity, prior, _elapsed_ms(started), newer=newer)
     else:
         # ARMED AROUND THE MEASUREMENT AND NOWHERE ELSE. This is the window a stop
         # signal actually lands in - a gate step is where the wall clock goes - and

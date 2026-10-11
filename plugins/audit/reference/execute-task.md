@@ -250,6 +250,12 @@ verb writes and refuses, and what the run commands leave behind, is
      (`GATE NOT RECORDED`) — that is not a pass, so repair the ledger the `evidence: NOT recorded`
      line names and run again.
 
+     A run over a tree whose identity an earlier MEASURED row already carries repeats that row
+     (`GATE VERDICT REUSED`), and the newest such verdict is the one repeated: a green you
+     recorded by hand supersedes an older red from the drive. The banner names the row it repeats
+     (`repeats:`) and, when a newer row exists for the identity, says why that one was not taken
+     (`newer row:`). To measure instead, pass `--no-reuse`; the drive's `rerun` answer does.
+
      The subagent's own run is what it develops against; **this** run is the one that becomes
      evidence. It has to be yours and not its, for the reason the script exists at all: the
      bracket, the check count, the coverage answer and the tree comparison are only true of a run

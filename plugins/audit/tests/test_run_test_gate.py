@@ -7954,6 +7954,70 @@ def _reuse_cases(check):
           _ev_io.reusable_run([_row("passed", {_ev_io.REUSE_KEY: None})],
                               "phase", ids, None, M.REUSABLE_STATUS) is None)
 
+    # THE NEWEST MEASURED ROW FOR THE IDENTITY DECIDES, never an older red that
+    # a filter left standing. Each case differs from its twin in one thing.
+    _old_red = _row("failed", {"runId": "R-old-red",
+                               "ts": "2026-01-01T00:00:00Z"})
+    _new_green = _row("passed", {"runId": "R-new-green",
+                                 "ts": "2026-01-02T00:00:00Z"})
+    _take = lambda rows: _ev_io.reusable_run(  # noqa: E731
+        rows, "phase", ids, identity["key"], M.REUSABLE_STATUS)
+    check("ru40 an older red and a newer recorded green: the green is what a "
+          "repeat names, whichever order the ledger lists them in: %r"
+          % ([(_take(r) or {}).get("runId")
+              for r in ([_old_red, _new_green], [_new_green, _old_red])],),
+          all((_take(r) or {}).get("runId") == "R-new-green"
+              for r in ([_old_red, _new_green], [_new_green, _old_red])))
+    _new_muted = _row("passed", {"runId": "R-new-muted",
+                                 "ts": "2026-01-02T00:00:00Z",
+                                 "muted": [{"test": "t", "bugId": "B1",
+                                            "until": "2026-12-01"}]})
+    _new_timeout = _row("timed-out", {"runId": "R-new-timeout",
+                                      "ts": "2026-01-02T00:00:00Z"})
+    check("ru41 a NEWER verdict a mute excused is not stepped over to reach "
+          "the older red: the answer is no repeat at all, so the gate "
+          "measures: %r" % (_take([_old_red, _new_muted]),),
+          _take([_old_red, _new_muted]) is None
+          and _take([_new_muted, _old_red]) is None)
+    check("ru45 ALLOW: a newer row whose word is no verdict about the bytes (a "
+          "run that timed out) IS passed over, as the infrastructure case "
+          "below it requires, so the older verdict is still found: %r"
+          % ((_take([_old_red, _new_timeout]) or {}).get("runId"),),
+          (_take([_old_red, _new_timeout]) or {}).get("runId") == "R-old-red")
+    check("ru42 THE TWIN: with only the old red, it IS repeated - the rule "
+          "narrows what is stepped over and does not stop repeating a red",
+          (_take([_old_red]) or {}).get("runId") == "R-old-red")
+    _later = _row("passed", {"runId": "R-copy", "ts": "2026-01-03T00:00:00Z",
+                             _ev_io.VERDICT_SOURCE: _ev_io.REUSED})
+    check("ru43 a newer row that is itself a repeat is not a measurement and "
+          "does not displace the red it copied, but it IS reported as the "
+          "newer row for the identity: %r"
+          % ((_take([_old_red, _later]) or {}).get("runId"),),
+          (_take([_old_red, _later]) or {}).get("runId") == "R-old-red"
+          and (_ev_io.newer_for_identity(
+              [_old_red, _later], identity["key"], _old_red) or {}).get(
+                  "runId") == "R-copy"
+          and _ev_io.newer_for_identity(
+              [_old_red], identity["key"], _old_red) is None)
+
+    # THE BANNER, END TO END: run one measures the red, run two repeats it
+    # (and appends a repeat row), run three repeats it again - and says which
+    # row it repeats and that a newer row exists and why it was not taken.
+    _plan(["red"], {"ok": "true", "other": "true", "red": "false"})
+    _run("--no-reuse")
+    _run()
+    _r3_code, _r3_text = _run()
+    _r3_rows = _recorded_rows(evdir)
+    _r3_measured = [r for r in _r3_rows
+                    if r.get(_ev_io.VERDICT_SOURCE) != _ev_io.REUSED][-1]
+    check("ru44 the repeat banner NAMES the row it repeats and, because a "
+          "newer row for the identity exists, says why that one was not "
+          "taken: %r" % (_r3_text,),
+          "GATE VERDICT REUSED" in _r3_text
+          and _r3_measured["runId"] in _r3_text
+          and "newer row" in _r3_text and "repeat" in _r3_text.split(
+              "newer row", 1)[1])
+
     # A TREE GIT WILL NOT LIST, DRIVEN THROUGH `main`. A fresh directory with no
     # repository in it: the gate still runs, the verdict is still real, and the
     # one thing that cannot happen is a repeat - in either direction.

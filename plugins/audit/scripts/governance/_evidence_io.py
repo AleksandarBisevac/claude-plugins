@@ -2441,9 +2441,11 @@ def reusable_run(rows, scope, ids, key, statuses):
     """The newest recorded run a caller may repeat instead of measuring, or None.
 
     EVERY CONDITION NARROWS. The identity has to match, the
-    subject has to be the same work, the row has to be a MEASUREMENT rather than
-    another repeat, the verdict has to be one the caller says may be
-    repeated, and no mute may have excused it. Drop any of them and this returns a run that answers a different
+    subject has to be the same work and the row has to be a MEASUREMENT rather
+    than another repeat; the newest such row is then the only candidate, and it
+    is repeated only if its verdict is one the caller says may be repeated and
+    no mute excused it. Otherwise the answer is None - never an older row.
+    Drop any of them and this returns a run that answers a different
     question.
 
     THE IDENTITY IS NOT THE SUBJECT, which is why both are asked. Two tasks can
@@ -2463,7 +2465,24 @@ def reusable_run(rows, scope, ids, key, statuses):
     """
     if not key:
         return None
-    candidates = []
+    # THE NEWEST VERDICT FOR THE IDENTITY DECIDES. A word the caller refuses to
+    # repeat (the machine failed, the run timed out) is not a verdict about the
+    # bytes and is passed over; a verdict a mute excused IS one, and it is the
+    # newest, so it ends the search with no repeat rather than letting an older
+    # red - which the tree has since moved past - be handed back instead.
+    chosen = newest_row([r for r in _identity_measurements(rows, scope, ids, key)
+                         if r.get("status") in statuses])
+    # A VERDICT A MUTE EXCUSED holds only while the mute does, and whether
+    # it still does depends on the day - which no content identity sees.
+    if chosen is None or chosen.get("muted"):
+        return None
+    return chosen
+
+
+def _identity_measurements(rows, scope, ids, key):
+    """The rows that MEASURED something for this identity, scope and subject: a
+    repeat copies a verdict and is not one, so it is left out."""
+    found = []
     for row in rows or []:
         if not isinstance(row, dict):
             continue
@@ -2471,18 +2490,27 @@ def reusable_run(rows, scope, ids, key, statuses):
             continue
         if row.get(VERDICT_SOURCE) == REUSED:
             continue
-        if row.get("status") not in statuses:
-            continue
-        # A VERDICT A MUTE EXCUSED holds only while the mute does, and whether
-        # it still does depends on the day - which no content identity sees.
-        if row.get("muted"):
-            continue
         if str(row.get("scope") or "") != str(scope or ""):
             continue
         if not _same_subject(row, ids):
             continue
-        candidates.append(row)
-    return newest_row(candidates)
+        found.append(row)
+    return found
+
+
+def newer_for_identity(rows, key, chosen):
+    """The newest row carrying `key` that sorts after `chosen` in
+    `oldest_first` order, or None - a measurement or a repeat alike, because
+    the question is what a reader of the ledger would find newer than the row
+    a repeat names."""
+    if not key or chosen is None:
+        return None
+    ordered = oldest_first([r for r in rows or []
+                            if isinstance(r, dict) and r.get(REUSE_KEY) == key])
+    for at, row in enumerate(ordered):
+        if row is chosen:
+            return ordered[-1] if at < len(ordered) - 1 else None
+    return None
 
 
 def reconcile(project, manifest_path, session_id=None, config=None):

@@ -762,6 +762,52 @@ def _rerun_measures_cases(check):
           "avoided is real here, and the mark was spent once: %r"
           % ((plain[0], plain[1][:200]),),
           "--no-reuse" not in plain[0] and "GATE VERDICT REUSED" in plain[1])
+    _rerun_after_record_cases(check, M)
+
+
+def _rerun_after_record_cases(check, M):
+    """One tree identity, an older red the drive measured and a newer green
+    recorded by hand: `rerun` closes on a green and never prints the red the
+    newer row superseded, and a plain gate run after it repeats the GREEN."""
+    flagdir = os.path.realpath(_harness.fixture_root("drive-rerun-flag-"))
+    flag = os.path.join(flagdir, "flag")
+    probe = os.path.join(flagdir, "probe.py")
+    with open(probe, "w", encoding="utf-8") as fh:
+        fh.write("import os, sys\nsys.exit(0 if os.path.exists(%r) else 1)\n"
+                 % (flag,))
+    root, mpath = _repo("rerun-after-record", task_ids=TASKS[:1],
+                        gate=('"%s" "%s"' % (sys.executable, probe),))
+    calls = _gate_calls(M)
+    run = drive(M, root, mpath, cap=3)
+    check("rm4 the fixture's gate is red first, and the drive asks: %r"
+          % (run["steps"][-1],), run["steps"][-1] == ("decide", "gate-red", None))
+    with open(flag, "w", encoding="utf-8") as fh:
+        fh.write("x\n")
+    with _Env(root):
+        hand = M.run_verb({"project": root, "log": []}, "run-test-gate.py", [
+            mpath, PHASE, "--task", "P1.1", "--record", "--no-reuse",
+            "--project-dir", root])
+    check("rm5 the hand-recorded run over the same tree is green: %r"
+          % (hand[0],), hand[0] == 0 and "GATE GREEN" in hand[1] + hand[2])
+    before = len(calls)
+    code, text = _next(M, root, mpath, "--answer", "rerun")
+    seen = calls[before:]
+    said = text + "".join(out for _a, out in seen)
+    check("rm6 `rerun` after the newer recorded green closes on a green and "
+          "never prints the red it superseded: %r" % ((code, said[-300:]),),
+          code == 0 and seen and "GATE RED" not in said
+          and "GATE-RED" not in text and "gate-red" not in text)
+    state = _drive_state(root)
+    state.pop("pending", None)
+    with open(os.path.join(root, ".claude", "state", "drive", "%s.json"
+                           % (PHASE,)), "w", encoding="utf-8") as fh:
+        json.dump(state, fh)
+    before = len(calls)
+    _next(M, root, mpath)
+    plain = "".join(out for _a, out in calls[before:])
+    check("rm7 THE TWIN: a plain gate run on this identity repeats a verdict "
+          "only if it is the GREEN one - the red is never what it names: %r"
+          % (plain[:300],), "GATE RED" not in plain)
 
 
 def _single_task_cases(check):
