@@ -1151,7 +1151,7 @@ def _selftest():
         mpath = os.path.join(tmp, MANIFEST_REL)
 
         def write_bugs(bugs, phases=None):
-            with open(mpath, "w", encoding="utf-8") as fh:
+            with open(mpath, "w", encoding="utf-8", newline="\n") as fh:
                 json.dump({"meta": {"version": 2}, "phases": phases or [],
                            "bugs": bugs}, fh)
 
@@ -1269,7 +1269,7 @@ def _selftest():
 
         # --- the bypass, both directions -------------------------------------
         slot = os.path.join(tmp, STATE_REL, "release-bypass-s1.json")
-        with open(slot, "w", encoding="utf-8") as fh:
+        with open(slot, "w", encoding="utf-8", newline="\n") as fh:
             json.dump({"armedAtEpoch": time.time(), "ttlSeconds": 3600}, fh)
         check("gr14 an armed bypass lets the release through",
               decide("git push origin v2.0.2", tmp, "s1") is None)
@@ -1281,14 +1281,14 @@ def _selftest():
         check("gr16 an EXPIRED bypass does not authorise anything",
               decide("git push origin v2.0.2", tmp, "s1",
                      now=time.time() + 7200) is not None)
-        with open(slot, "w", encoding="utf-8") as fh:
+        with open(slot, "w", encoding="utf-8", newline="\n") as fh:
             fh.write("{not json")
         check("gr17 an unreadable slot is not an armed one",
               decide("git push origin v2.0.2", tmp, "s1") is not None)
         os.remove(slot)
 
         # --- fail LOUD, which is this hook's inversion of the house rule ------
-        with open(mpath, "w", encoding="utf-8") as fh:
+        with open(mpath, "w", encoding="utf-8", newline="\n") as fh:
             fh.write("{not json")
         got = decide("git push origin v2.0.2", tmp, "s1")
         check("gr18 a manifest that cannot be READ refuses the release and says "
@@ -1345,7 +1345,7 @@ def _selftest():
         def write_plan(meta_extra, phases, bugs=None):
             meta = {"version": 2}
             meta.update(meta_extra or {})
-            with open(mpath2, "w", encoding="utf-8") as fh:
+            with open(mpath2, "w", encoding="utf-8", newline="\n") as fh:
                 json.dump({"meta": meta, "phases": phases or [],
                            "bugs": bugs or []}, fh)
 
@@ -1419,7 +1419,7 @@ def _selftest():
         edir = os.path.join(tmp2, "docs", "audit", "evidence")
         os.makedirs(edir, exist_ok=True)
         with open(os.path.join(edir, "2026-01.broken.jsonl"), "w",
-                  encoding="utf-8") as fh:
+                  encoding="utf-8", newline="\n") as fh:
             fh.write('{"not": "chained"}\n{also not valid json\n')
         provisional, problem = read_held_phases(tmp2)
         check("gr27 RED-FIRST: a ledger carrying a torn line is a PROBLEM, "
@@ -1451,12 +1451,12 @@ def _selftest():
             return out.stdout.decode("utf-8").strip()
 
         sh("init", "-q")
-        with open(os.path.join(tmp2, "a.txt"), "w", encoding="utf-8") as fh:
+        with open(os.path.join(tmp2, "a.txt"), "w", encoding="utf-8", newline="\n") as fh:
             fh.write("1\n")
         sh("add", "-A")
         sh("commit", "-qm", "one")
         merged_head = rev()
-        with open(os.path.join(tmp2, "a.txt"), "w", encoding="utf-8") as fh:
+        with open(os.path.join(tmp2, "a.txt"), "w", encoding="utf-8", newline="\n") as fh:
             fh.write("2\n")
         sh("add", "-A")
         sh("commit", "-qm", "two")
@@ -1581,7 +1581,7 @@ def _selftest():
               "unanswerable phase - it is not a publishing command",
               decide("git push origin main", tmp2, "s1") is None)
         slot2 = os.path.join(tmp2, STATE_REL, "release-bypass-s1.json")
-        with open(slot2, "w", encoding="utf-8") as fh:
+        with open(slot2, "w", encoding="utf-8", newline="\n") as fh:
             json.dump({"armedAtEpoch": time.time(), "ttlSeconds": 3600}, fh)
         check("gr39 the maintainer's armed bypass covers an unanswerable "
               "phase exactly as it covers an open bug...",
@@ -1597,7 +1597,7 @@ def _selftest():
         with open(mpath2, "r", encoding="utf-8") as fh:
             plan = json.load(fh)
         del plan["bugs"]
-        with open(mpath2, "w", encoding="utf-8") as fh:
+        with open(mpath2, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(plan, fh)
         got = decide("git tag -a v1 -m x", tmp2, "s1")
         check("gr41 RED-FIRST: the bug list unreadable, the phase list "
@@ -1613,7 +1613,7 @@ def _selftest():
                   bugs=[{"id": "BUG-2", "status": "open", "severity": "med",
                          "title": "a real one"}])
         torn = os.path.join(edir, "2026-01.torn.jsonl")
-        with open(torn, "w", encoding="utf-8") as fh:
+        with open(torn, "w", encoding="utf-8", newline="\n") as fh:
             fh.write('{"not": "chained"}\n{also not valid json\n')
         got = decide("git tag -a v1 -m x", tmp2, "s1")
         check("gr42 RED-FIRST: the bug list readable, the ledger torn - the "
@@ -1679,7 +1679,7 @@ def _selftest():
             def write_tree_plan(path, bugs):
                 os.makedirs(os.path.join(path, "docs", "audit"), exist_ok=True)
                 with open(os.path.join(path, MANIFEST_REL), "w",
-                          encoding="utf-8") as fh:
+                          encoding="utf-8", newline="\n") as fh:
                     json.dump({"meta": {"version": 2}, "phases": [],
                                "bugs": bugs}, fh)
 
@@ -1861,7 +1861,7 @@ def _selftest():
             write_tree_plan(tmp2, [{"id": "BUG-2", "status": "open",
                                     "severity": "med", "title": "a real one"}])
             slot_note = os.path.join(tmp2, STATE_REL, "release-bypass-s1.json")
-            with open(slot_note, "w", encoding="utf-8") as fh:
+            with open(slot_note, "w", encoding="utf-8", newline="\n") as fh:
                 json.dump({"armedAtEpoch": time.time(), "ttlSeconds": 3600},
                           fh)
             got = decide(note, tmp2, "s1", payload=payload_note)
@@ -1906,7 +1906,7 @@ def _selftest():
                                  "mergedHead": "d" * 40, "tasks": []}],
                      "bugs": []}
             with open(os.path.join(tmp4, MANIFEST_REL), "w",
-                      encoding="utf-8") as fh:
+                      encoding="utf-8", newline="\n") as fh:
                 json.dump(plan4, fh)
             cmds4 = [c for _n, c in
                      evidence_io.resolved_commands(plan4, ["full"])]

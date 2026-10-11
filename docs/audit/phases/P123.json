@@ -3936,7 +3936,7 @@
     {
       "id": "P123.51-64p",
       "title": "sr23 waits for its child honestly, so the red-first helper's own suite is green inside a throwaway",
-      "status": "in_progress",
+      "status": "done",
       "description": "(F637) test_stamp_verification's sr23 starts a nested `stamp-verification red` and waits at most a fixed short window for the child's `started` mark before sending SIGTERM; inside the red-first helper's own throwaway, under load, the child has not started when the signal lands, sr23 fails, HEAD's run of the suite is red, and every red-first over this suite is graded could-not-prove (P123.40 and P123.44 lost their proved red to it). Poll for the `started` mark against a deadline long enough for a loaded nested run; if the mark never appears, the case reports that it could not start the child (a could-not-run with its reason through the harness, not a FAIL of the removal it asserts); the removal assertion itself is unchanged. Regression: a child slowed past the old window still lets sr23 pass; a removal that leaves a throwaway worktree still fails it; the suite run inside `stamp-verification red`'s throwaway at HEAD is green. Also (F638): an executor that puts its new cases in a NEW stage and names `--stage <label>` after `--` is graded 'already red at HEAD', because at HEAD the label does not exist and the house runner fails on its unknown-stage check (P123.38, P123.44 and P123.45 all lost their proved red to this). When HEAD's run fails ONLY on that unknown-stage check, for a label the task's own test files introduce (absent at HEAD, present in the working tree), stamp-verification reads the baseline as 'the stage is new at HEAD' - green, the basis saying so - exactly as it reads a brand-new test file; any other HEAD failure keeps today's grading. Regression for this part: a task adding stage `zz` with one case red before the fix and green after proves; the same command where HEAD already has a red `zz` still grades already-red. Faults: F637, F638.",
       "files": [
         "plugins/audit/tests/test_stamp_verification.py",
@@ -3969,25 +3969,48 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d24b3047d570",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stamp-verification.py: new section 'a stage the task's own test files add' - UNKNOWN_STAGE prefix, unknown_stage_labels() (parses the harness's unknown-stage FAIL label back to its labels; None for any other label or one with a detail appended), new_stages(cmd, head_texts, wt_texts) (the --stage labels the command names that are a string literal of a declared test file's working-tree copy and of none of HEAD's copies; none when HEAD is unreadable or a HEAD copy does not parse), new_stage_baseline(head, cmd, stages) (HEAD's house run failed ONLY unknown-stage cases, every failing case one of them and the tally's failed count equal, labels all new). baseline_problem() takes stages and reads that baseline as green; red_verdict()'s proved basis then says 'failing only the unknown-stage check for `zz`, which the task's test files add - the stage is new at HEAD'; run_red() computes stages from HEAD's blobs (_cat_blobs) and the working tree, passes them to the fix-run decision and the verdict, and the payload's baseline carries newStages. _harness.py: could_not_run(check, label, reason) (a FAILING case labelled 'COULD NOT RUN HERE - reason', id kept), UNKNOWN_STAGE + unknown_stage_label(); staged_selftest uses it; selftest cases bk9, bk10. test_stamp_verification.py: sr23 moved out of sr-process into a new stage sr-sigterm: the nested red's command writes its pid to a mark (atomic rename), the case polls against START_DEADLINE instead of a fixed window, a mark never seen is _harness.could_not_run, the removal assertion (_removal_holds) is unchanged. A SECOND cause of sr23 red inside the helper's throwaway was found and fixed: the old leftover filter was a substring test of every worktree line for the throwaway prefix, so the fixture repo itself - built under a TMPDIR that lies inside a throwaway holder - read as a throwaway left behind (observed: running the working-tree helper with --stage sr-sigterm before this fix, sr23 FAILed with left=[the fixture root]); _throwaways_of() now lists only trees whose holder carries the prefix, never root. New cases: sr23b (command reaches its mark only after a delay past the old window - red with the old 10 s window emulated, started=False; green with the deadline), sr23c (SIGKILL strands a throwaway and _removal_holds is False; leftover worktree and holder removed), sr23d (repo inside a throwaway-named dir is not a leftover, a registered one beside it is); ns1-ns4 in _new_stage_cases (called from sr-red-baseline): ns1 new stage zz red-then-green PROVES with the basis naming `zz` new at HEAD (red on HEAD's helper: could-not-prove 'already red'), ns2 HEAD already holding a red zz stays already-red, ns3 new zz beside a stage red at HEAD stays already-red, ns4 a typo label new in neither copy stays already-red; nu1-nu3 in new stage sr-new-stage-units (label parse round-trip, this suite's own unknown-stage output parsed by the helper, new_stages units). Reds watched first: ns1 FAIL exit=3 could-not-prove on the unfixed helper; sr-new-stage-units raised AttributeError (unknown_stage_labels absent); sr23b FAIL with START_DEADLINE=10 (the old window). Red-first command chosen: `--stage sr-red-baseline`, an EXISTING stage, because submit runs the driver checkout's stamp-verification.py, which does not have the new-stage reading - a new label would be graded already-red there; dry run of the driver's helper on that command: proved, ns1 the task's own. In-throwaway check: working-tree helper `red ... -- python3 plugins/audit/tests/test_stamp_verification.py --selftest --stage sr-sigterm` -> baseline read as a new stage (green), task run ALL PASS 4/4, i.e. sr23 green inside the helper's throwaway (the helper then answers 'passed, proves nothing', as expected for a test-side fix). Gates by exit code: python3 tools/sweep-selftests.py exit 0 (331/331 files ok); python3 tools/sweep-selftests.py --spaced exit 0; ruff check plugins/audit tools exit 0; vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests exit 0; own command exit 0 (ALL PASS 17/17). PLUGIN-BUILD-GUIDE.md not edited: no file added, and the module-map fence contains `_deps.py --render`'s output verbatim (checked by substring, True).",
+        "descriptive": "sr23 now waits honestly and no longer mistakes its own fixture for a stranded throwaway, so the suite is green inside a red-first throwaway; and a task whose new cases sit in a new --stage can now have its red proved."
       },
       "startedAt": "2026-10-11T15:21:51Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-11T15:55:27Z",
+      "verifiedBy": [
+        "test_stamp_verification.py ns1",
+        "ns2",
+        "ns3",
+        "ns4",
+        "nu1",
+        "nu2",
+        "nu3",
+        "sr23b",
+        "sr23c",
+        "sr23d",
+        "_harness.py bk9",
+        "bk10"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-11T15:55:26Z.9afd17",
         "status": "passed",
         "at": "2026-10-11T15:55:26Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "d24b3047d570",
+        "at": "2026-10-11T15:55:27Z"
+      },
+      "redFirst": {
+        "at": "2026-10-11T15:46:49Z",
+        "basis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest --stage sr-red-baseline` in a throwaway tree at HEAD exited 1 with 1 of 17 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ns1 (house FAIL): SELFTEST FAILED: 16/17 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.52-64p",
       "title": "The newline lint reads this repository's own hooks too, and none of them writes text with a platform newline",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Follow-up to the newline task, which emptied the pending list and extended `_output.text_write_newline_violations` to the plugin's hooks but left `.claude/hooks/` out of `NEWLINE_DIRS` because its files were outside that task's scope: arm-release-bypass.py, guard-release.py, guard-uncommitted.py and require-claim-block.py open text files for write with no newline. Give each write an explicit `newline=\"\\n\"` (or `newline=None` with a comment saying why the platform newline is wanted), add `.claude/hooks` to the lint's default walk when that directory exists, and keep the pending list empty. Regression: the lint flags a bare text-mode write in a `.claude/hooks`-shaped directory and reports nothing on the real tree.",
       "files": [
         ".claude/hooks/arm-release-bypass.py",
@@ -4021,16 +4044,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-11T15:55:28Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T16:16:08Z.cf0d18",
+        "status": "passed",
+        "at": "2026-10-11T16:16:08Z"
+      }
     }
   ],
   "reviewPerTask": "phase",

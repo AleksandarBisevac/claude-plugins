@@ -126,7 +126,7 @@ def arm(project, session_id):
         if not os.path.isdir(state):
             os.makedirs(state)
         path = os.path.join(state, "release-bypass-%s.json" % (session_id or "none",))
-        with open(path, "w", encoding="utf-8") as fh:
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
             json.dump({"armedAtEpoch": time.time(),
                        "ttlSeconds": TTL_SECONDS}, fh)
         return path
@@ -241,7 +241,7 @@ def _selftest():
     try:
         os.makedirs(os.path.join(tmp, "docs", "audit"))
         mpath = os.path.join(tmp, MANIFEST_REL)
-        with open(mpath, "w", encoding="utf-8") as fh:
+        with open(mpath, "w", encoding="utf-8", newline="\n") as fh:
             json.dump({"bugs": [
                 {"id": "BUG-1", "status": "fixed", "severity": "high", "title": "a"},
                 {"id": "BUG-2", "status": "open", "severity": "med", "title": "b"},
@@ -252,7 +252,7 @@ def _selftest():
               "states and a guard that counted them would never let anything "
               "ship: %r" % (got,),
               [b[0] for b in got[0]] == ["BUG-2"] and got[1] is None)
-        with open(mpath, "w", encoding="utf-8") as fh:
+        with open(mpath, "w", encoding="utf-8", newline="\n") as fh:
             fh.write("{not json")
         got = open_bugs(tmp)
         check("rb6 an unreadable manifest yields no bugs AND the reason the "
@@ -293,7 +293,7 @@ def _selftest():
               "carries the reason, as open_bugs does: %r" % (got_p,),
               got_p[0] == [] and bool(got_p[1]))
         os.makedirs(os.path.join(tmp, "docs", "audit"))
-        with open(mpath, "w", encoding="utf-8") as fh:
+        with open(mpath, "w", encoding="utf-8", newline="\n") as fh:
             json.dump({"meta": {"fullGate": ["full"],
                                "buildCommands": {"full": "echo full"}},
                       "phases": [{"id": "P9", "title": "p", "status": "done",
@@ -315,7 +315,7 @@ def _selftest():
         # surely as a provisional one, so the maintainer arming past it is
         # told so - by name, with the guard's basis, and apart from the
         # provisional phases because it is settled a different way.
-        with open(mpath, "w", encoding="utf-8") as fh:
+        with open(mpath, "w", encoding="utf-8", newline="\n") as fh:
             json.dump({"meta": {"fullGate": ["full"],
                                "buildCommands": {"full": "echo full"}},
                       "phases": [{"id": "P8", "title": "p", "status": "done",
@@ -334,7 +334,7 @@ def _selftest():
         # a message saying the slot "authorises nothing" is false - it
         # authorises exactly the release the maintainer cannot see into.
         import subprocess
-        with open(mpath, "w", encoding="utf-8") as fh:
+        with open(mpath, "w", encoding="utf-8", newline="\n") as fh:
             fh.write("{not json")
         env = dict(os.environ)
         env["CLAUDE_PROJECT_DIR"] = tmp
@@ -384,7 +384,7 @@ def _selftest():
         # THE FULL LIST IN THE ARMING MESSAGE, even where the guard's refusal
         # summarises its tail: this is the moment the maintainer authorises
         # shipping over every one of them.
-        with open(mpath, "w", encoding="utf-8") as fh:
+        with open(mpath, "w", encoding="utf-8", newline="\n") as fh:
             json.dump({"meta": {"fullGate": ["full"],
                                "buildCommands": {"full": "echo full"}},
                       "phases": [{"id": "Q%02d" % (i,), "title": "m",

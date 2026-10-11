@@ -896,9 +896,23 @@ def _cases(check):
               [h[:2] for h in nw_hk] == [("hook.py", 2)]
               and M.HOOKS_DIR in M.NEWLINE_DIRS
               and M.SCRIPTS_DIR in M.NEWLINE_DIRS)
+        # a .claude/hooks-shaped directory: the same open convicts there too
+        nw_proj = os.path.join(nw, ".claude", "hooks")
+        os.makedirs(nw_proj)
+        with open(os.path.join(nw_proj, "guard.py"), "w", encoding="utf-8",
+                  newline="\n") as fh:
+            fh.write('def f(p):\n    return open(p, "w", encoding="utf-8")\n')
+        nw_pj = M.text_write_newline_violations((nw_proj,), ())
+        nw_real = os.path.join(M.REPO_ROOT, ".claude", "hooks")
+        check("nw6 a bare text-mode write in a .claude/hooks-shaped directory is "
+              "reported, and the default walk reaches the repository's own "
+              "project hooks whenever that directory exists: %r"
+              % (nw_pj,),
+              [h[:2] for h in nw_pj] == [("guard.py", 2)]
+              and (nw_real in M.NEWLINE_DIRS) == os.path.isdir(nw_real))
     finally:
         shutil.rmtree(nw, ignore_errors=True)
-    check("nw4 ...and the pending table holds no row and the real tree "
+    check("nw4...and the pending table holds no row and the real tree "
           "(scripts and hooks) opens no text handle for writing without a "
           "newline: %r pending, %r found"
           % (M.NEWLINE_PENDING, M.text_write_newline_violations()),

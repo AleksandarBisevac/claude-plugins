@@ -472,7 +472,7 @@ def _selftest():
                     "fixtures/data.json"):
             p = os.path.join(tmp, rel)
             os.makedirs(os.path.dirname(p), exist_ok=True)
-            io.open(p, "w").write("x\n")
+            io.open(p, "w", newline="\n").write("x\n")
 
         import shlex
 
@@ -517,7 +517,7 @@ def _selftest():
         v, r = decide(payload('git commit -m "docs"'), tmp)
         check("s5 a staged .md is a covered surface", v == "deny", (v, r[:60]))
         # 6. -F file carries the block -> allow
-        mf = os.path.join(tmp, "msg.txt"); io.open(mf, "w").write(good)
+        mf = os.path.join(tmp, "msg.txt"); io.open(mf, "w", newline="\n").write(good)
         v, r = decide(payload('git commit -F msg.txt'), tmp)
         check("s6 a message from -F <file> is read and its block honoured",
               v == "allow" and "-F" in r, (v, r))
@@ -578,7 +578,7 @@ def _selftest():
         try:
             subprocess.run(["git", "init", "-q"], cwd=tmp2, check=True)
             os.makedirs(os.path.join(tmp2, "tools"))
-            with io.open(os.path.join(tmp2, "tools", "y.py"), "w") as fh:
+            with io.open(os.path.join(tmp2, "tools", "y.py"), "w", newline="\n") as fh:
                 fh.write("x = 1\n")
             subprocess.run(["git", "add", "tools/y.py"], cwd=tmp2)
             v, r = decide(payload('git -C %s commit -m "fix: there"' % shlex.quote(tmp2)), tmp)
@@ -609,7 +609,7 @@ def _selftest():
         # case about a block has to put something covered in the index.
         subprocess.run(["git", "add", "tools/x.py"], cwd=tmp)
         msg = os.path.join(tmp, "msg.txt")
-        io.open(msg, "w").write("subject\n\nbody with no block\n")
+        io.open(msg, "w", newline="\n").write("subject\n\nbody with no block\n")
         # EVERY INTERPOLATED PATH IS QUOTED, THE WAY s13's `-C` CASES ALREADY
         # ARE. `tmp` is this platform's own temp directory, not a literal this
         # fixture chose, and on windows that is routinely a backslash path
@@ -634,7 +634,7 @@ def _selftest():
         # nothing does, so the hook read the old file and refused. The case was right to
         # be red.
         msg_ok = os.path.join(tmp, "msg-ok.txt")
-        io.open(msg_ok, "w").write(good)
+        io.open(msg_ok, "w", newline="\n").write(good)
         v, r = decide(payload(heredoc.replace(msg, msg_ok)), tmp)
         check("s14c the allow case: the same shape WITH the block passes",
               v == "allow", (v, r[:90]))

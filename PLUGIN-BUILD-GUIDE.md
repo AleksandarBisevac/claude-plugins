@@ -1318,6 +1318,12 @@ through `_journal_io.row_moment`. An order over `stamp_moment(r.get("ts"))` is a
 number and is quiet with no row; a stamp bound to a name before it is ordered is outside what
 the lint reads, and its docstring says so.
 
+**`text_write_newline_violations()` holds the newline rule**: a text-mode `open` for writing
+names its `newline`, so a committed file is the same bytes on every platform. Its default walk
+(`NEWLINE_DIRS`) is the plugin's `scripts/` and `hooks/` plus the repository's own
+`.claude/hooks/` whenever that directory exists; an installed copy of the plugin has no such
+sibling and walks the first two alone.
+
 It is also **the anchor**, and that is why it is the one file that never moves.
 `SCRIPTS_DIR`, `PLUGIN_ROOT`, `HOOKS_DIR`, `TESTS_DIR` and `REPO_ROOT` are the single
 written-down statement of where the tree's directories are; seventeen sites used to derive

@@ -2196,10 +2196,12 @@ _NEWLINE_POSITION = {"open": 4, "fdopen": 5}
 # only shrink. Everything the plan, its shards, the journal, evidence or a filed
 # return is written through already names its newline.
 NEWLINE_PENDING = ()
-# The directories the lint walks: the plugin's scripts and its hooks. The
-# repository's own project hooks are not shipped with the plugin and are not
-# walked here.
-NEWLINE_DIRS = (SCRIPTS_DIR, HOOKS_DIR)
+# The directories the lint walks: the plugin's scripts and its hooks, plus the
+# repository's own project hooks when that directory exists (an installed copy
+# of the plugin has no such sibling).
+_PROJECT_HOOKS_DIR = os.path.join(REPO_ROOT, ".claude", "hooks")
+NEWLINE_DIRS = (SCRIPTS_DIR, HOOKS_DIR) + (
+    (_PROJECT_HOOKS_DIR,) if os.path.isdir(_PROJECT_HOOKS_DIR) else ())
 _NEWLINE_WRITE = ("a text-mode open for writing that names no `newline` - on "
                   "Windows it writes CRLF into a file other machines write "
                   "with LF; pass newline=\"\\n\"")

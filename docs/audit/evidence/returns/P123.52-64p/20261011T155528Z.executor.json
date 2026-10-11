@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "sweep-selftests": "pass",
+    "sweep-selftests --spaced": "pass",
+    "hook selftests (4)": "pass",
+    "gate-parity": "pass",
+    "ruff": "pass",
+    "vermin": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-11T16:07:26Z",
+    "basis": "`python3 plugins/audit/tests/test__output.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 259 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - nw6 (house FAIL): SELFTEST FAILED: 258/259 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "Added case nw6 to test__output.py (failed on unfixed code), then NEWLINE_DIRS in _output.py now adds REPO_ROOT/.claude/hooks when that directory exists. 32 text-mode opens in the four .claude/hooks files given newline=\"\\n\" (only open() write calls changed; NEWLINE_PENDING stays empty). PLUGIN-BUILD-GUIDE.md gained a paragraph on the rule and its walk. Exit codes 0: four hook selftests, test__output selftest 259/259, tools/sweep-selftests.py, same with --spaced, tools/gate-parity.py, ruff check plugins/audit tools, vermin.",
+    "descriptive": "The newline lint now walks the repo's own .claude/hooks and none of them writes a platform newline."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__output.py: nw6"
+  ],
+  "claims": "claims:\n- no command-reading logic in the hooks was touched; only open() write calls gained newline.\n- the new walk entry is conditional on the directory existing, so an installed plugin is unaffected.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:faa769b1c4ae3ccf25f4ba013cd9aaefa98a1e90771d32800bf7259a1bcea8f2\",\"dirtyDigest\":\"sha256:4262a53b35c0ff416e29ca49cf2699deda6e316de1b235dd47577b83a2803264\",\"dirtyPaths\":{\".claude/hooks/arm-release-bypass.py\":\"f0fa72b713637f59\",\".claude/hooks/guard-release.py\":\"555cc8572d595ca9\",\".claude/hooks/guard-uncommitted.py\":\"d91531c8d81b8e5b\",\".claude/hooks/require-claim-block.py\":\"1a3dfacbaba64985\",\"PLUGIN-BUILD-GUIDE.md\":\"e31c896758fd1896\",\"plugins/audit/scripts/_output.py\":\"46e56e4481dea5d2\",\"plugins/audit/tests/test__output.py\":\"7e1221d0d95d24a0\"},\"head\":\"d24b3047\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".claude/hooks/arm-release-bypass.py\",\".claude/hooks/guard-release.py\",\".claude/hooks/guard-uncommitted.py\",\".claude/hooks/require-claim-block.py\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/_output.py\",\"plugins/audit/tests/test__output.py\"],\"scopeDigest\":\"sha256:774c9a54839e6dd8bbe8951fd6f48eb0f748e748e2581276f8c7f703e8b06200\",\"v\":2}"
+}

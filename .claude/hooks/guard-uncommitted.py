@@ -602,21 +602,21 @@ def _fixture(root, dirty):
                        check=True)
 
     run("init", "-q")
-    with open(os.path.join(root, "kept.txt"), "w") as fh:
+    with open(os.path.join(root, "kept.txt"), "w", newline="\n") as fh:
         fh.write("committed\n")
     run("add", "kept.txt")
     run("commit", "-qm", "base")
     if not dirty:
         return
-    with open(os.path.join(root, "kept.txt"), "a") as fh:
+    with open(os.path.join(root, "kept.txt"), "a", newline="\n") as fh:
         fh.write("an unstaged edit nobody has proven yet\n")
-    with open(os.path.join(root, "staged.txt"), "w") as fh:
+    with open(os.path.join(root, "staged.txt"), "w", newline="\n") as fh:
         fh.write("staged\n")
     run("add", "staged.txt")
-    with open(os.path.join(root, "untracked.txt"), "w") as fh:
+    with open(os.path.join(root, "untracked.txt"), "w", newline="\n") as fh:
         fh.write("untracked\n")
     os.makedirs(os.path.join(root, "newdir"))
-    with open(os.path.join(root, "newdir", "deep.txt"), "w") as fh:
+    with open(os.path.join(root, "newdir", "deep.txt"), "w", newline="\n") as fh:
         fh.write("inside an untracked directory\n")
 
 
@@ -822,7 +822,8 @@ def _selftest():
         os.makedirs(wide)
         _fixture(wide, False)
         for n in range(NAMED_CAP + 5):
-            with open(os.path.join(wide, "f%02d.txt" % (n,)), "w") as fh:
+            with open(os.path.join(wide, "f%02d.txt" % (n,)), "w",
+                      newline="\n") as fh:
                 fh.write("x\n")
         got = decide("git clean -fd", wide)
         check("gu42 a refusal naming two hundred paths is not read, so the list "
