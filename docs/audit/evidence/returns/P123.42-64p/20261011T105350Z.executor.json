@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "python3 .claude/hooks/guard-release.py --selftest": "pass",
+    "TMPDIR=<spaced> python3 .claude/hooks/guard-release.py --selftest": "pass",
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/sweep-selftests.py --spaced": "pass",
+    "python3 tools/gate-parity.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task over an inline suite: the guard and its --selftest are one file, so the red-first helper cannot lay the test over HEAD without the fix (the case that turned this task from tdd to regression). The red was observed by hand before the fix: gr70/gr70b failed 99/100 on the unfixed guard-release.py."
+  },
+  "outcome": {
+    "descriptive": "The release guard finds a publishing git or gh command however it is spelled - past assignments, wrappers, git's global options and a shell's -c - and its own suite runs under a temp path holding a space.",
+    "technical": "Written by the orchestrator (guard command-reading code). .claude/hooks/guard-release.py: `_GIT_GLOBAL_VALUE`, `_GIT_REPO_MOVES` and `_git_verb` read git's verb past its global options; `_words_publishers` reads publishing commands from shell words, recursing through `sh -c` via `_config._handed_command` and finding the program past assignments and wrappers via `_config.program_candidates`/`program_name`; `_publishers` takes that word reading and falls back to the regex reading only when the command will not tokenise; `_tag_creates_words` grades tag creation from words. Cases gr70/gr70b pin the spellings that passed unread before (assignment and wrapper prefixes, `git -C <dir> tag`, `sh -c 'git push --tags'`). The suite's gr34/gr34c fixtures now quote the worktree path (`shlex.quote`), so a temp path holding a space builds the same command, and the file's SPACED_EXEMPT row in tools/sweep-selftests.py is removed - the spaced sweep leg runs it and it passes. Sweep and spaced sweep 331/331 files ok; gate-parity ok."
+  },
+  "testsAdded": [
+    ".claude/hooks/guard-release.py: gr70, gr70b (publishers past assignments, wrappers, global options and sh -c)"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:0c159a7b60709ffd512c11643f0217b992d70d2a04b4f498209f51aa0df72e0a\",\"dirtyDigest\":\"sha256:49247f254ba2c32c2106da3170b86af644cd89a208a95b5ccec744748869f145\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"2eaa27dddc8c8784\",\"tools/sweep-selftests.py\":\"aeb8ace0c0459574\"},\"head\":\"0082528b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".claude/hooks/guard-release.py\",\"tools/sweep-selftests.py\"],\"scopeDigest\":\"sha256:2c4b8d97a0add1e12b8f7512bc9d88bb5804f2eb539627fc37e80dde860fcff9\",\"v\":2}"
+}

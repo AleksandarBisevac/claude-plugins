@@ -163,12 +163,6 @@ SPACED_EXEMPT = {
         "two of its cases split a child's printed temp listing on whitespace, so "
         "a temp path holding a space reads as two words: a fixture defect in the "
         "harness itself, outside the files the leg was introduced with",
-    # Assembled, because `.claude/hooks/` is not among the trees the basename lint
-    # resolves a `.py` literal against, and this is a reference to a swept file.
-    "/".join((".claude", "hooks", "guard-release")) + ".py":
-        "two of its cases build `cd <worktree>` and `git -C <worktree>` with the "
-        "path unquoted, so a worktree under a spaced root is a different command: "
-        "a fixture defect in a file the leg was introduced without",
     "plugins/audit/tests/test_stamp_verification.py":
         "`child_env` names a path under the shared root inside an option string "
         "only when the word is a bare absolute path, so a quoted `--require "

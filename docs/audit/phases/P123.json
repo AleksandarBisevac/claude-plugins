@@ -3164,7 +3164,7 @@
     {
       "id": "P123.41-64p",
       "title": "no script cuts a failing tool's output to its head: the last five route through the excerpt helper and the pending list is empty",
-      "status": "in_progress",
+      "status": "done",
       "description": "P123.6 landed the excerpt helper (_excerpt.excerpt / reason_of) and the bare_output_cut_violations lint, with five scripts parked in _output.BARE_CUT_PENDING: git/close-phase.py (two cuts, one through _worktrees' runner which the lint cannot see), governance/drive-phase.py (two), manifest/ado-connect.py (one), status/_live_copy.py (five), status/audit-lookup.py (three). Route every one through the helper (head + tail + failure lines with the elision marker), empty BARE_CUT_PENDING, and confirm bc4 stays green with the table empty. The release does not ship with a pending row.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -3207,25 +3207,37 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0082528b74c3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Routed all twelve flagged head-only cuts through _excerpt (excerpt/reason_of): close-phase.py x3 (the _commit_verb cut, plus the two through the _worktrees runner at the switch reason and the fetch reason that the lint cannot see), drive-phase.py x2, ado-connect.py x1, _live_copy.py x5, audit-lookup.py x3; added `import _excerpt` to close-phase, drive-phase, ado-connect, _live_copy. BARE_CUT_PENDING emptied to () in _output.py (comment rewritten). bc4 in test__output.py now asserts the table is empty and the real tree has no violations. PLUGIN-BUILD-GUIDE.md module-map fence updated for the four new _excerpt edges (4 lines, matches _deps.py --render). No file beyond the declared list touched; _worktrees.py needed no change. Sweep: 331/331 files ok exit 0; --spaced exit 0; ruff exit 0; vermin exit 0. No timeouts.",
+        "descriptive": "No script cuts a failing tool's output to its head any more; the bare-cut pending table is empty and still green."
       },
       "startedAt": "2026-10-11T10:33:42Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-11T10:53:50Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__output.py::bc4 (tightened: pending table empty and real tree clean)"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-11T10:53:49Z.94ed7a",
         "status": "passed",
         "at": "2026-10-11T10:53:49Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "0082528b74c3",
+        "at": "2026-10-11T10:53:50Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task, expectRedFirst false; no helper run. I did watch bc4 (tightened to also require BARE_CUT_PENDING == ()) FAIL on the unrouted tree via python3 plugins/audit/tests/test__output.py --selftest: 'FAIL bc4 ... pending [five rows], [] found', then PASS after routing and emptying the table.",
+        "at": "before the routing edits, this session"
       }
     },
     {
       "id": "P123.42-64p",
       "title": "The release guard finds git and gh past assignments, wrappers, global options and sh -c (re-added as regression: inline suite)",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F524's missed-deny half (re-added from P123.36, cancelled because its tdd mode cannot be proved for an inline suite - F621). guard-release._publishers reads each clause by its shell words: sh -c/eval operands are read recursively through _config._handed_command, the program is found past assignments and wrappers by _config.program_candidates, git's global options are skipped (-C chain kept; --git-dir/--work-tree make the tree unreadable, the loud answer), and an unclosed quote falls back to the anchored patterns. GUARD COMMAND-READING CODE: written by the orchestrator under the user's permission. The red was observed on the unfixed file (gr70 failed, 99/100). Also (F628, fixture): the suite's gr34/gr34c build `cd %s` and `git -C %s` with an unquoted path - quote with shlex.quote, then remove guard-release.py's SPACED_EXEMPT row in tools/sweep-selftests.py so the spaced leg runs it. Faults add: F628.",
       "files": [
         ".claude/hooks/guard-release.py",
@@ -3254,16 +3266,22 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-11T10:53:50Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T11:08:53Z.a961b5",
+        "status": "passed",
+        "at": "2026-10-11T11:08:53Z"
+      }
     },
     {
       "id": "P123.43-64p",

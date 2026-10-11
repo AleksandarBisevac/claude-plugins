@@ -54,6 +54,7 @@ Exit codes: 0 always (the decision travels in the payload, never in the code).
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -286,6 +287,11 @@ def _tag_creates(rest):
     words = _invocation_words(rest)
     if words is None:
         return True
+    return _tag_creates_words(words)
+
+
+def _tag_creates_words(words):
+    """`_tag_creates` over words already split by the shell's rules."""
     if not words:
         return False
     if any(_forces_list(word) or _option_name(word) in _TAG_NOT_CREATE
@@ -328,17 +334,99 @@ def _c_operands(copts):
     return found
 
 
-def _publishers(command, cfg_mod=None):
+# git's global options, read between `git` and its verb. These take the next
+# word as their value unless it is glued on with `=`.
+_GIT_GLOBAL_VALUE = ("-C", "-c", "--git-dir", "--work-tree", "--namespace",
+                     "--super-prefix", "--config-env", "--exec-path",
+                     "--attr-source", "--list-cmds")
+# The ones that move the repository somewhere `-C` does not say. Which plan
+# such a release answers to cannot be read off the words, so its tree is
+# unknown - the loud answer - rather than the session's.
+_GIT_REPO_MOVES = ("--git-dir", "--work-tree")
+
+
+def _git_verb(words):
+    """`(verb, words after it, -C operands or None)` for the words after `git`.
+
+    None when no verb follows. The operands are None when one is missing or
+    when a global option moves the repository (`_GIT_REPO_MOVES`).
+    """
+    operands, index = [], 0
+    while index < len(words):
+        word = words[index]
+        if not word.startswith("-"):
+            return word, words[index + 1:], operands
+        name = _option_name(word)
+        if word == "-C":
+            if index + 1 >= len(words):
+                return None
+            if operands is not None:
+                operands.append(words[index + 1])
+            index += 2
+            continue
+        if word.startswith("-C"):
+            if operands is not None:
+                operands.append(word[2:])
+            index += 1
+            continue
+        if name in _GIT_REPO_MOVES:
+            operands = None
+        if word in _GIT_GLOBAL_VALUE:
+            index += 2
+            continue
+        index += 1
+    return None
+
+
+def _words_publishers(cfg_mod, words, depth=0):
+    """Publishing invocations read off one command's shell words.
+
+    The program is the one the shell runs: assignments and wrappers are
+    stepped over by `program_candidates`, and a command handed to `sh -c` or
+    `eval` is read as a command in its own right (to a bounded depth).
+    """
+    handed = getattr(cfg_mod, "_handed_command", None)
+    if handed is not None and depth < 4:
+        inner = handed(words)
+        if inner is not None:
+            return _publishers(inner[1], cfg_mod, depth + 1)
+    rest, _candidates = cfg_mod.program_candidates(words)
+    if not rest:
+        return []
+    program = cfg_mod.program_name(rest[0])
+    if program == "gh":
+        args = rest[1:]
+        if args[:2] == ["release", "create"]:
+            return [("publishes a GitHub Release", [])]
+        return []
+    if program != "git":
+        return []
+    verb = _git_verb(rest[1:])
+    if verb is None:
+        return []
+    name, after, operands = verb
+    if name == "tag" and _tag_creates_words(after):
+        return [("creates a git tag", operands)]
+    if name == "push" and _PUSH_PUBLISHES.search(" " + " ".join(after)):
+        return [("pushes a tag", operands)]
+    return []
+
+
+def _publishers(command, cfg_mod=None, depth=0):
     """Every publishing invocation, as `(reason, operands)`.
 
     `operands` is that git's `-C` chain, [] when it names none, None when an
-    operand is missing. A `gh` release names no git `-C`. Each publishing
-    invocation is returned: a later one, in another tree, is still a release.
+    operand is missing or a global option moves the repository. A `gh`
+    release names no git `-C`. Each publishing invocation is returned: a
+    later one, in another tree, is still a release.
 
     A clause begins where a shell can begin a command. Matching only there
     keeps a `git tag` example inside a quoted argument from reading as a
     publisher, while `command_clauses` still separates every live publisher.
-    `runnable_text` removes heredoc data before either reader sees it.
+    `runnable_text` removes heredoc data before either reader sees it. Within a
+    clause the program is found past assignments, wrappers, git's global
+    options and `sh -c`; a clause whose quotes do not close falls back to the
+    anchored patterns.
     """
     found = []
     cfg_mod = cfg_mod or _hooks_config(project_dir())
@@ -346,6 +434,12 @@ def _publishers(command, cfg_mod=None):
     clauses = (cfg_mod.command_clauses(cfg_mod.runnable_text(text))
                if cfg_mod is not None else [text])
     for clause in clauses:
+        words = (cfg_mod.shell_words(clause)
+                 if cfg_mod is not None and hasattr(cfg_mod, "shell_words")
+                 else None)
+        if words is not None:
+            found.extend(_words_publishers(cfg_mod, words, depth))
+            continue
         match = _TAG_AT.match(clause)
         if match and _tag_creates(clause[match.start("rest"):]):
             found.append(("creates a git tag",
@@ -1017,6 +1111,37 @@ def _selftest():
     check("gr63b ALLOW-TWIN: a tag after a live separator remains a publisher",
           publishing("echo ready; git tag -a v1 -m x")
           == "creates a git tag")
+    # The program is found the way the shell runs it, not by the first word:
+    # an assignment, a wrapper, a git global option or a `sh -c` operand in
+    # front of the verb still publishes.
+    wrapped_publishers = (
+        "GH_REPO=x gh release create v1",
+        "env GH_REPO=x gh release create v1",
+        "git --git-dir=.git tag v1",
+        "git -c user.name=x tag v1",
+        "sudo git tag v1",
+        "bash -c 'git tag v3'",
+        "sh -c \"git push origin v1.2.3\"",
+        "git --no-pager -c a=b push --tags",
+    )
+    check("gr70 RED-FIRST: a release behind an assignment, a wrapper, a git "
+          "global option or `sh -c` is still a publisher: %r"
+          % ([(command, publishing(command)) for command in wrapped_publishers],),
+          all(publishing(command) for command in wrapped_publishers))
+    wrapped_readers = (
+        "GH_REPO=x gh release view v1",
+        "env GH_REPO=x gh release list",
+        "git --git-dir=.git tag -l",
+        "git -c user.name=x tag --contains HEAD",
+        "sudo git push origin main",
+        "bash -c 'git tag -d v3'",
+        "bash -c 'echo git tag v3'",
+        "echo 'bash -c \"git tag v3\"'",
+    )
+    check("gr70b ALLOW-TWIN: the same wrappers around a read, a list, a "
+          "delete or quoted text are not a publisher: %r"
+          % ([(command, publishing(command)) for command in wrapped_readers],),
+          not any(publishing(command) for command in wrapped_readers))
 
     # --- the rule, end to end -------------------------------------------------
     tmp = tempfile.mkdtemp(prefix="guard-release-")
@@ -1526,7 +1651,7 @@ def _selftest():
                       cwd=tmp2, check=True, capture_output=True, timeout=30)
         try:
             payload_elsewhere = {"cwd": tmp2, "tool_input": {
-                "command": "cd %s && git tag -a v1 -m x" % (wt,)}}
+                "command": "cd %s && git tag -a v1 -m x" % (shlex.quote(wt),)}}
             moved = resolved_tree(payload_elsewhere, tmp2)
             check("gr34 ...and a command that `cd`s into a LINKED WORKTREE "
                   "before tagging is judged against THAT worktree's own "
@@ -1537,7 +1662,7 @@ def _selftest():
                   moved is not None
                   and os.path.realpath(moved) == os.path.realpath(wt))
             payload_cdir = {"cwd": tmp2, "tool_input": {
-                "command": "git -C %s tag -a v1 -m x" % (wt,)}}
+                "command": "git -C %s tag -a v1 -m x" % (shlex.quote(wt),)}}
             check("gr34c `git -C` into the linked worktree answers to its "
                   "plan too: %r" % (resolved_tree(payload_cdir, tmp2),),
                   os.path.realpath(resolved_tree(payload_cdir, tmp2))
