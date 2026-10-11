@@ -416,9 +416,11 @@ def resolve_project(manifest_path, project_dir):
 
     WITHOUT `--project-dir` the project is the one the MANIFEST belongs to,
     by the plugin's one answer to that question,
-    `_panel_write.project_of_manifest` - the answer `audit-task.py` reads for
-    a named manifest: the first ancestor holding `.claude/` or `.git`, and
-    without one `<T>` for the default `<T>/docs/audit/<file>` layout or the
+    `_output.project_of_manifest` - the answer `audit-task.py` reads for
+    a named manifest: walking up from the manifest, the first ancestor
+    holding `.git` (any `.claude/` inside the `docs/audit` record directory
+    is never a project's), a nested project's own `.claude/` otherwise, and
+    without either `<T>` for the default `<T>/docs/audit/<file>` layout or the
     manifest's own directory anywhere else. A count of directories up from
     the file is right for the default layout alone. The
     current directory is not asked: an import typed from anywhere else would

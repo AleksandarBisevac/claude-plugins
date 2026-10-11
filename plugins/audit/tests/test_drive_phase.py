@@ -42,6 +42,7 @@ so the replayed case order is the one a run in one process gives. `sb1` reads
 that each block runs in exactly one stage, since a cut half-made runs cases
 twice or never and a green run looks the same either way.
 """
+import argparse
 import contextlib
 import io
 import json
@@ -905,6 +906,29 @@ def _lock_stop_cases(check):
     check("dl3 an index-lock exit 3 from audit-task has its own followed rule, "
           "printed under the verb's words: %r" % (text,),
           rule and all(line in text for line in rule))
+
+    # The project a context carries is the manifest's own when no --project-dir
+    # was typed: the session's directory may be another checkout.
+    M.run_verb = real
+    root, mpath = _repo("ctxproj", task_ids=TASKS[:1])
+    other = os.path.realpath(_harness.fixture_root("drive-ctxother-"))
+    held_env = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = other
+    try:
+        ns = argparse.Namespace(project_dir=None, manifest=mpath, verbose=False)
+        _m, ctx = M.project_context(ns)
+        ns_typed = argparse.Namespace(project_dir=root, manifest=mpath,
+                                      verbose=False)
+        _m, typed = M.project_context(ns_typed)
+    finally:
+        if held_env is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = held_env
+    check("dl4 with no --project-dir the context's project is the manifest's own "
+          "project, not the session's directory: %r" % (ctx["project"],),
+          os.path.realpath(ctx["project"]) == root
+          and os.path.realpath(typed["project"]) == root)
 
 
 def _key_cases(check):

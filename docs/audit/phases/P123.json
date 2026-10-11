@@ -3237,7 +3237,7 @@
     {
       "id": "P123.42-64p",
       "title": "The release guard finds git and gh past assignments, wrappers, global options and sh -c (re-added as regression: inline suite)",
-      "status": "in_progress",
+      "status": "done",
       "description": "F524's missed-deny half (re-added from P123.36, cancelled because its tdd mode cannot be proved for an inline suite - F621). guard-release._publishers reads each clause by its shell words: sh -c/eval operands are read recursively through _config._handed_command, the program is found past assignments and wrappers by _config.program_candidates, git's global options are skipped (-C chain kept; --git-dir/--work-tree make the tree unreadable, the loud answer), and an unclosed quote falls back to the anchored patterns. GUARD COMMAND-READING CODE: written by the orchestrator under the user's permission. The red was observed on the unfixed file (gr70 failed, 99/100). Also (F628, fixture): the suite's gr34/gr34c build `cd %s` and `git -C %s` with an unquoted path - quote with shlex.quote, then remove guard-release.py's SPACED_EXEMPT row in tools/sweep-selftests.py so the spaced leg runs it. Faults add: F628.",
       "files": [
         ".claude/hooks/guard-release.py",
@@ -3268,25 +3268,36 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1fe63e7df35d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Written by the orchestrator (guard command-reading code). .claude/hooks/guard-release.py: `_GIT_GLOBAL_VALUE`, `_GIT_REPO_MOVES` and `_git_verb` read git's verb past its global options; `_words_publishers` reads publishing commands from shell words, recursing through `sh -c` via `_config._handed_command` and finding the program past assignments and wrappers via `_config.program_candidates`/`program_name`; `_publishers` takes that word reading and falls back to the regex reading only when the command will not tokenise; `_tag_creates_words` grades tag creation from words. Cases gr70/gr70b pin the spellings that passed unread before (assignment and wrapper prefixes, `git -C <dir> tag`, `sh -c 'git push --tags'`). The suite's gr34/gr34c fixtures now quote the worktree path (`shlex.quote`), so a temp path holding a space builds the same command, and the file's SPACED_EXEMPT row in tools/sweep-selftests.py is removed - the spaced sweep leg runs it and it passes. Sweep and spaced sweep 331/331 files ok; gate-parity ok.",
+        "descriptive": "The release guard finds a publishing git or gh command however it is spelled - past assignments, wrappers, git's global options and a shell's -c - and its own suite runs under a temp path holding a space."
       },
       "startedAt": "2026-10-11T10:53:50Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-11T11:08:54Z",
+      "verifiedBy": [
+        ".claude/hooks/guard-release.py: gr70, gr70b (publishers past assignments, wrappers, global options and sh -c)"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-11T11:08:53Z.a961b5",
         "status": "passed",
         "at": "2026-10-11T11:08:53Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "1fe63e7df35d",
+        "at": "2026-10-11T11:08:54Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task over an inline suite: the guard and its --selftest are one file, so the red-first helper cannot lay the test over HEAD without the fix (the case that turned this task from tdd to regression). The red was observed by hand before the fix: gr70/gr70b failed 99/100 on the unfixed guard-release.py."
       }
     },
     {
       "id": "P123.43-64p",
       "title": "every reader of a manifest's project asks the one resolver; MANIFEST_DIRNAME_PROJECTS is empty",
-      "status": "pending",
+      "status": "in_progress",
       "description": "P123.5 put one project resolver in _output.project_of_manifest (git toplevel first; never a .claude/ inside the manifest's docs/audit record dir) and a lint, with four sites parked in _output.MANIFEST_DIRNAME_PROJECTS because the plan gate refused them as other tasks' files: repair-commits.project_of, repair-tests-add.project_of, _proposals.run, record-risk-confirmation._project_of. Move each onto the resolver and drop its row; drive-phase.project_context still picks its root as --project-dir, else CLAUDE_PROJECT_DIR, else the cwd - make it ask the resolver when no --project-dir is given; and import-evidence's docstring still describes the old walk ('first ancestor holding .claude/ or .git'). The release does not ship with a parked row.",
       "files": [
         "plugins/audit/scripts/manifest/repair-commits.py",
@@ -3303,7 +3314,8 @@
         "plugins/audit/tests/test_repair_commits.py",
         "plugins/audit/tests/test_repair_tests_add.py",
         "plugins/audit/tests/test_record_risk_confirmation.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/gate-parity.py"
       ],
       "tests": {
         "mode": "regression",
@@ -3330,16 +3342,22 @@
         "P123.5"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-11T11:08:55Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T11:46:37Z.7d15a3",
+        "status": "passed",
+        "at": "2026-10-11T11:46:37Z"
+      }
     },
     {
       "id": "P123.44-64p",
@@ -3629,6 +3647,56 @@
           "plugins/audit/tests/test__gate_feed.py: a review-only offered entry is never returned as a gate command and its asks sentence is offered to the reviewer",
           "plugins/audit/tests/test_run_test_gate.py: a review-only: step is recorded as not a command, runs no shell and leaves the gate green",
           "plugins/audit/tests/test_audit_task.py: scope --gate-set replaces a pending task's gate; on a started task the refusal names the allowed spelling"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.50-64p",
+      "title": "A reused gate verdict is the newest measurement for its tree, and rerun never repeats a red a newer run superseded",
+      "status": "pending",
+      "description": "(F636, reported from the testbed on 3.2.0) After the orchestrator recorded a green gate by hand (`run-test-gate --record`) and answered the drive's gate-red question with `rerun`, the drive sometimes printed GATE VERDICT REUSED and repeated its own OLDER red row for the same tree identity instead of the newer green row; three cycles passed before it took the green. Reuse selects the newest MEASURED row for the identity across every recorder, ordered by the one moment reader (`_evidence_io` ts order); a `rerun` answer never reuses a red row when a newer row exists for the same identity; and when a verdict is reused the banner names the row it repeats and, if a newer row for the identity exists, why that one was not taken. Regression: identity X holding an older drive red and a newer --record green -> `next --answer rerun` closes on the green (or measures afresh) and never prints the old red; identity X with only the old red still reuses it, banner naming it. Faults: F636.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/reference/execute-task.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: an identity with an older red and a newer green row reuses the green; with only the red, the banner names the row it repeats",
+          "plugins/audit/tests/test_drive_phase.py: next --answer rerun after a newer --record green closes green and never prints the superseded red"
         ],
         "expectRedFirst": true,
         "gate": [

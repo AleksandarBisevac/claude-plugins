@@ -2346,11 +2346,6 @@ AUDITED_EXEMPTIONS = {
     # reports a reach of the raw writer from a site no row names, and a row whose
     # site no longer reaches it; whether its reason is true it does not judge.
     "RAW_JSON_WRITERS": ("live", "raw_json_writer_violations"),
-    # `manifest_dirname_project_violations` reports a site that works out the
-    # project from a manifest path on its own instead of asking the one resolver,
-    # and a row whose site no longer does; whether its reason is true it does not
-    # judge.
-    "MANIFEST_DIRNAME_PROJECTS": ("live", "manifest_dirname_project_violations"),
     # `ts_order_violations` reports a site that orders evidence or journal rows by
     # their `ts` text instead of the moment reader, and a row whose site no
     # longer does; whether its reason is true it does not judge.

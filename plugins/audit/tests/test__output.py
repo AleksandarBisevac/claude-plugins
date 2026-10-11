@@ -3679,9 +3679,10 @@ def _project_of_manifest_cases(check):
     finally:
         _harness.remove_tree(md)
     check("md4 ...and the real tree derives no project by dirname of a manifest "
-          "beyond the sites MANIFEST_DIRNAME_PROJECTS names, each of which still "
-          "does: %r" % (M.manifest_dirname_project_violations(),),
-          M.manifest_dirname_project_violations() == [])
+          "with MANIFEST_DIRNAME_PROJECTS empty: %r"
+          % (M.manifest_dirname_project_violations(),),
+          M.MANIFEST_DIRNAME_PROJECTS == ()
+          and M.manifest_dirname_project_violations() == [])
 
 
 def _ts_order_cases(check):

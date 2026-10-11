@@ -3114,7 +3114,13 @@ def project_context(args):
             ", ".join(p for p, _w in found.get("looked") or []),))
     manifest_path = os.path.abspath(found["path"])
     manifest = _mio.load_manifest(manifest_path)
-    project, config = _evio.project_config_for(manifest_path, project)
+    # The session's directory only STARTS the search for a manifest; once one is
+    # found, the project is --project-dir when typed and otherwise the one the
+    # manifest belongs to, so the evidence lands where the gate and the report
+    # read it whatever directory the run was started from.
+    project, config = _evio.project_config_for(
+        manifest_path, os.path.abspath(args.project_dir) if args.project_dir
+        else None)
     return manifest, {
         "project": project, "manifest": manifest_path, "phase": None,
         "config": config,

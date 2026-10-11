@@ -1291,21 +1291,7 @@ def depth_sensitive_paths(script_dir=None):
 # manifest, each a statement about code that EXISTS: a row whose site no longer
 # matches is reported, so the table cannot keep permission nobody uses.
 # (file under scripts/, innermost function, reason)
-MANIFEST_DIRNAME_PROJECTS = (
-    ("manifest/repair-commits.py", "project_of",
-     "a git-only walk falling back to the manifest's directory; moving it onto "
-     "project_of_manifest is its own task's change, not this lint's."),
-    ("manifest/repair-tests-add.py", "project_of",
-     "the same walk as repair-commits.py, kept beside it; it moves with that "
-     "one."),
-    ("manifest/_proposals.py", "run",
-     "the project is only handed to the lock library, which asks git from any "
-     "directory inside the checkout; it moves to the resolver with its own "
-     "task."),
-    ("governance/record-risk-confirmation.py", "_project_of",
-     "a .claude/-only walk falling back to the manifest's directory; moving it "
-     "onto project_of_manifest is its own task's change."),
-)
+MANIFEST_DIRNAME_PROJECTS = ()
 
 
 def _identifier(node):

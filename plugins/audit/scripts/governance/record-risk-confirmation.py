@@ -224,17 +224,10 @@ def _parser():
 
 def _project_of(args, mpath):
     """Which root owns the journal and the config: --project when given, else the
-    directory the manifest's `docs/audit/` sits under, walked up from the file."""
+    plugin's one answer for the manifest, `_output.project_of_manifest`."""
     if args.project:
         return os.path.abspath(args.project)
-    here = os.path.dirname(os.path.abspath(mpath))
-    while True:
-        if os.path.isdir(os.path.join(here, ".claude")):
-            return here
-        up = os.path.dirname(here)
-        if up == here:
-            return os.path.dirname(os.path.abspath(mpath))
-        here = up
+    return _output.project_of_manifest(mpath)
 
 
 def render(answer, out=print):

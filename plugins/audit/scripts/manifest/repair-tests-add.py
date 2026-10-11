@@ -97,24 +97,10 @@ OWED_REASON = {
 
 # --- reading the plan -------------------------------------------------------------
 def project_of(mpath):
-    """The root that owns the journal, the lock and the config.
-
-    Derived UPWARD FROM THE MANIFEST, never from the manifest's own directory:
-    `dirname(manifest)` is `docs/audit/`, and the journal then resolves
-    `manifestPath` against it a second time and lands in
-    `docs/audit/docs/audit/journal/`. `repair-commits.py` carries the same walk
-    for the same reason, and it was a real run rather than a case that found it
-    there.
-    """
-    here = os.path.dirname(os.path.abspath(mpath)) or "."
-    for _ in range(8):
-        if os.path.isdir(os.path.join(here, ".git")):
-            return here
-        nxt = os.path.dirname(here)
-        if nxt == here:
-            break
-        here = nxt
-    return os.path.dirname(os.path.abspath(mpath)) or "."
+    """The root that owns the journal, the lock and the config: the plugin's one
+    answer, `_output.project_of_manifest`, which walks up from the manifest and
+    never settles on the manifest's own `docs/audit/` directory."""
+    return _output.project_of_manifest(mpath)
 
 
 def rows_for(manifest):

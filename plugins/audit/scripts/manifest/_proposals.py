@@ -740,7 +740,7 @@ def run(mpath, verb, pids, policy=None, reason=None, now=None, locked=False):
             return False, refusal
         return True, {"plan": plan_for(manifest, pids)}
 
-    project = os.path.dirname(os.path.abspath(mpath)) or "."
+    project = _output.project_of_manifest(mpath)
     # THE RETURN VALUE IS A STATUS CODE, AND BOTH THINGS DONE WITH IT HERE USED
     # TO BE WRONG. It was named `handle` and tested with `isinstance(..., dict)`,
     # which is never true of an int - so the release never ran and every write left
