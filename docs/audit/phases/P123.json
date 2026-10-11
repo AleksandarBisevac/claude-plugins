@@ -40,8 +40,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/_deps.py:2490-2492 (lint); stale at _deps.py:355,371,526,683,749,804,820,850; manifest/_manifest_io.py:774; panel/_panel_write.py:443; panel/_panel_composition.py:66,1014; report/_report_page.py:2; status/_status_facts.py:593",
         "issue": "P123.33's invariant ('a layer number in prose is checked or not written') is not met. _NAMED_LAYER_MENTION only reads `name` (LN)/(layer N) with a dot-free name, so module-qualified mentions (`_manifest_io.iter_tasks` (L1), `_loader.script_path` (L1), `_gate_derive.derive` (L3), `_locks.acquire` (layer 1), `audit-status.effective_bug_status` (layer 7), `_report_html._bug_view` (layer 2)), comma forms (`_evidence_io`, L2), `_panel_write`, L6)) and unclosed forms (`_manifest_io` (layer 1 ...) are unchecked - and all of the ones listed are one below _deps.LAYERS today (e.g. _manifest_io, _fmt, _journal_io, _loader, _locks at 2; _gate_derive 4; _evidence_io 3; audit-status 8; _report_html 3). These are the off-by-one class the task was opened for, and the descriptive outcome says 'the stale ones are gone'.",
-        "resolution": "Widen the regex to take the module part before a dot (`name.attr`) and the comma/unclosed shapes, then delete each number where the layer is not the argument (keep the module name), correcting it where it is; add an lmd case planting a wrong module-qualified mention and a prove-gates red row for it.",
-        "fixTask": "P123.54-64p"
+        "resolution": "fixed in P123.54-64p (8036bbb60936): Widen the regex to take the module part before a dot (`name.attr`) and the comma/unclosed shapes, then delete each number where the layer is not the argument (keep the module name), correcting it where it is; add an lmd case planting a wrong module-qualified mention and a prove-gates red row for it.",
+        "fixTask": "P123.54-64p",
+        "commit": "8036bbb60936",
+        "status": "fixed"
       },
       {
         "id": "P123-R3",
@@ -84,7 +86,7 @@
         "fixTask": "P123.59-64p"
       }
     ],
-    "outcome": "[findings: 7 - 0 high, 4 med, 3 low; 1 with a recorded fix commit]"
+    "outcome": "[findings: 7 - 0 high, 4 med, 3 low; 2 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -4208,7 +4210,7 @@
     {
       "id": "P123.54-64p",
       "title": "fix P123-R2: P123.33's invariant ('a layer number in prose is checked or not ...",
-      "status": "in_progress",
+      "status": "done",
       "description": "P123.33's invariant ('a layer number in prose is checked or not written') is not met. _NAMED_LAYER_MENTION only reads `name` (LN)/(layer N) with a dot-free name, so module-qualified mentions (`_manifest_io.iter_tasks` (L1), `_loader.script_path` (L1), `_gate_derive.derive` (L3), `_locks.acquire` (layer 1), `audit-status.effective_bug_status` (layer 7), `_report_html._bug_view` (layer 2)), comma forms (`_evidence_io`, L2), `_panel_write`, L6)) and unclosed forms (`_manifest_io` (layer 1 ...) are unchecked - and all of the ones listed are one below _deps.LAYERS today (e.g. _manifest_io, _fmt, _journal_io, _loader, _locks at 2; _gate_derive 4; _evidence_io 3; audit-status 8; _report_html 3). These are the off-by-one class the task was opened for, and the descriptive outcome says 'the stale ones are gone'.\n\nResolution asked: Widen the regex to take the module part before a dot (`name.attr`) and the comma/unclosed shapes, then delete each number where the layer is not the argument (keep the module name), correcting it where it is; add an lmd case planting a wrong module-qualified mention and a prove-gates red row for it.",
       "files": [
         "plugins/audit/scripts/_deps.py",
@@ -4249,14 +4251,17 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8036bbb60936",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The work was done by the previous attempt and verified by me. Diff read: _NAMED_LAYER_MENTION in _deps.py now takes name.attr, the comma form and the unclosed form; stale layer numbers deleted in _deps.py, _manifest_io.py, _panel_write.py, _panel_composition.py, _report_page.py, _status_facts.py; lmd8/lmd9 added to test__deps.py; two prove-gates rows added (a wrong qualified mention, and the regex narrowed back). layer_mention_drift() over the tree returned [] . Exit codes: test__deps.py --selftest 0 (316/316), sweep-selftests.py 0 (331/331 files), --spaced 0, gate-parity.py 0, ruff 0, vermin 0. I changed nothing.",
+        "descriptive": "Module-qualified, comma and unclosed layer mentions are now graded, and the stale layer numbers they exposed are gone."
       },
       "startedAt": "2026-10-11T17:03:34Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-11T17:24:50Z",
+      "verifiedBy": [
+        "lmd8",
+        "lmd9"
+      ],
       "notes": [
         {
           "at": "2026-10-11T16:30:48Z",
@@ -4271,12 +4276,23 @@
         "runId": "2026-10-11T17:24:49Z.2d39d7",
         "status": "passed",
         "at": "2026-10-11T17:24:49Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "8036bbb60936",
+        "at": "2026-10-11T17:24:50Z",
+        "basis": "a fix task for P123-R2: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-11T17:15:48Z",
+        "basis": "`python3 plugins/audit/tests/test__deps.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 316 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - lmd8 (house FAIL), lmd9 (house FAIL): SELFTEST FAILED: 314/316 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.55-64p",
       "title": "A review-only entry in meta.fullGate is never run as a command either",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(P123-R3, med) P123.49 part (2) - 'run-test-gate, handed such a step anyway, records it as not a command: no shell run, no red gate' - holds only on main's task/phase path (split_not_commands at :4809). `_run_full` resolves meta.fullGate with `_ev.resolved_commands` and hands every entry to run_gate, so a fullGate naming claimsMatchCode (or any `review-only:` value) still runs the prose through the shell, exits 2 and records a red full run, which keeps phases provisional and holds a release through the guard. The executor disclosed the path as 'not split'.\n\nResolution: Run `split_not_commands` in `_run_full` too (print the same not-a-command line naming `meta.fullGate`), or have `_ev.resolved_commands` drop review-only values for every caller; add an xg-style case with `fullGate: [\"claimsMatchCode\"]` asserting no step ran and the run is not red. Faults: P123-R3.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py"
@@ -4302,14 +4318,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-11T17:24:51Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -4320,7 +4336,13 @@
       ],
       "fixes": [
         "P123-R3"
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T17:41:48Z.b04de9",
+        "status": "passed",
+        "at": "2026-10-11T17:41:48Z"
+      }
     },
     {
       "id": "P123.56-64p",

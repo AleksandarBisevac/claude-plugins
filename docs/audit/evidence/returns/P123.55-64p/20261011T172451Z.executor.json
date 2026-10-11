@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "sweep-selftests": "pass",
+    "sweep-selftests --spaced": "pass",
+    "ruff": "pass",
+    "vermin": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only task, expectRedFirst false, tests.add none; the xg-style fullGate case named in the resolution lives outside the declared files and was not added",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "In run-test-gate.py _run_full, the resolved meta.fullGate is now passed through split_not_commands; each review-only entry prints a not-a-command line (suppressed under as_json) and is never run; if only review-only entries remain, returns E_ASK with a distinct message instead of recording a red run. Exit codes: sweep-selftests 0, --spaced 0, ruff 0, vermin 0. No new case added (outside declared files).",
+    "descriptive": "A review-only entry in meta.fullGate is no longer run through the shell, so it can no longer record a red full run."
+  },
+  "testsAdded": [],
+  "claims": "claims: the full path now matches the phase/task path (split_not_commands at both); evidence is the four exit-0 gate runs above; the fullGate:[claimsMatchCode] case is not added and so that behaviour is unproven by a test.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:8909275b434fca68bc2ef71d4abde2ab57f76692333fd1066c0218f88cff618b\",\"dirtyDigest\":\"sha256:3235e8d3ff49066a88ce848929c31921594f9424bc790db7690c9f69c9ea9c1c\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/run-test-gate.py\":\"6fbdf4df7a89e2cd\"},\"head\":\"8036bbb6\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/run-test-gate.py\"],\"scopeDigest\":\"sha256:f02f1e1d17f8fb5759c6f9bf0d91a882e0ae98a64e3a743908451222db9c7bf2\",\"v\":2}"
+}

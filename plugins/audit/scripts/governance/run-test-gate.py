@@ -4499,10 +4499,22 @@ def _run_full(project, args, manifest, out=print):
     (`_evidence_io._full_disqualification` reads exactly this key).
     """
     entries = ((manifest.get("meta") or {}).get("fullGate") or [])
-    commands = _ev.resolved_commands(manifest, entries)
+    commands, not_commands = split_not_commands(
+        _ev.resolved_commands(manifest, entries))
+    for name in not_commands:
+        # SAID, NEVER RUN, NEVER RED - the same rule the phase/task path holds:
+        # a review-only value handed to a shell is a syntax error that would
+        # record a red full run and keep phases provisional.
+        if not getattr(args, "as_json", False):
+            out("[run-test-gate] %s is not a command (it declares itself "
+                "review-only) - not run, and not a failure. Remedy: drop it "
+                "from meta.fullGate; the reviewer is asked it instead."
+                % (name,))
     if not commands:
         out("[run-test-gate] no meta.fullGate declared - this plan names no "
-            "third place")
+            "third place" if not not_commands else
+            "[run-test-gate] meta.fullGate names only review-only entries - "
+            "no command to run")
         return E_ASK
     recorded_excl, _unexcluded = _ev.recorded_paths(project, args.manifest)
     # TAKEN BEFORE THE FIRST COMMAND RUNS - `run_gate` below takes its OWN,
