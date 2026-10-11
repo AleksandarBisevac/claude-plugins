@@ -1,0 +1,26 @@
+{
+  "gates": {
+    "sweep-selftests": "pass",
+    "sweep-selftests --spaced": "pass",
+    "gate-parity": "pass",
+    "ruff": "pass",
+    "vermin": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only task, expectRedFirst false; selftest cases p1-p4 added in the tool's own suite but no red proof owed",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "tools/check-example-pins.py: check_example/check take pending= and lag=; a pin equal to the pending tag (tag not yet existing) is read against HEAD's tree; new --pending vX.Y.Z flag (parse_argv now returns root, pending, problem); lag=False drops pin-behind-newest-tag. Selftest: i1 adapted, new p1-p4, l1 now calls check(lag=False). tools/verify.sh passes --pending v$version in follower 4b. CONTRIBUTING.md updated. All exit 0: check-example-pins.py --selftest (18/18), sweep-selftests.py, --spaced, gate-parity.py, ruff, vermin. Design holds for (a) preflight before tag with example repinned to plugin.json version, (b) per-commit sweep after tag exists (l1 no longer claims lag).",
+    "descriptive": "The example-pin check accepts a pin to the release being cut and the per-commit sweep no longer goes red once the new tag exists."
+  },
+  "testsAdded": [
+    "check-example-pins.py p1",
+    "p2",
+    "p3",
+    "p4"
+  ],
+  "claims": "claims: l1 asks only script presence over existing tags (evidence: check(lag=False) selftest passes); pending acceptance is evidenced by p1/p2/p3 in the selftest, exit 0.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:47b90d14129104579eb68a4d61f7497538422df95c40fac3cbd56b629a48940b\",\"dirtyDigest\":\"sha256:ba45be046d08682211eb7dcd615317d9dab7e76c6f86fd51df8a7ef02edb7ff8\",\"dirtyPaths\":{\"CONTRIBUTING.md\":\"4961d20984d52d93\",\"tools/check-example-pins.py\":\"41d196549612e208\",\"tools/verify.sh\":\"3c4356f2a84c0b16\"},\"head\":\"fff8ae99\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CONTRIBUTING.md\",\"tools/check-example-pins.py\",\"tools/verify.sh\"],\"scopeDigest\":\"sha256:549fe2cfec87445aa51741a582bd1359a167e2bb6b7071a6a761beca776da375\",\"v\":2}"
+}

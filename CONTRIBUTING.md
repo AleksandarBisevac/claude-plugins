@@ -684,14 +684,19 @@ python3 tools/check-release-published.py
 **An example that clones the plugin is a bump follower too.** The pinned tag in
 `docs/examples/azure-pipelines.yml` must hold every plugin script the example
 calls, and must be the newest tag that exists. `tools/verify.sh --release` runs
-the check; run it by hand with:
+the check before the tag exists and passes `--pending v<version>`, so the release
+commit itself repins the example to the version it is cutting; run it by hand with:
 
 ```bash
-python3 tools/check-example-pins.py
+python3 tools/check-example-pins.py [--pending v<version>]
 ```
 
 Like the Release check it belongs to the release set alone, and it refuses
-rather than passing when a pinned tag is not available locally.
+rather than passing when a pinned tag is not available locally. Its selftest
+carries one live case over this repository's own tags, which asks only whether
+the pinned tags hold the scripts the example calls; whether the pin trails the
+newest tag is a question about the moment of a release, so the per-commit sweep
+does not ask it.
 
 **That check belongs to the release set and to nothing else.** It asks a remote,
 which no other gate here does, so a plain `tools/verify.sh` never needs the

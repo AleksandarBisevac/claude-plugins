@@ -27,7 +27,12 @@ line saying nothing was checked; so is a repository with no tags at all. A run t
 cleared nothing must not print what a run that found nothing prints.
 
 IT IS A RELEASE-SET GATE. `tools/verify.sh --release` runs it; `ci.yml` does not,
-because a CI checkout does not promise to carry tags.
+because a CI checkout does not promise to carry tags. The release run passes
+`--pending v<version>`: a pin naming the tag the release is about to create is read
+against HEAD's tree (what the tag will point at) instead of being refused as
+unavailable, so the example can be repinned in the release commit itself. The
+selftest's live case asks with the lag question off, since "the pin trails the
+newest tag" is true of a release moment and not of every later commit.
 
 Exit codes: 0 clean - 1 a finding or a refusal - 2 usage error.
 """
@@ -52,7 +57,8 @@ TAG_PATTERNS = (
 )
 SCRIPT_PATTERN = re.compile(r"plugins/audit/scripts/[A-Za-z0-9_./-]+\.py")
 
-USAGE = "usage: check-example-pins.py [--repo <path>] [--selftest]\n"
+USAGE = ("usage: check-example-pins.py [--repo <path>] [--pending <vX.Y.Z>] "
+         "[--selftest]\n")
 
 FINDINGS = {
     "script-missing-at-tag": ("the example invokes a plugin script the pinned "
@@ -131,15 +137,22 @@ def example_files(root):
             if n.endswith(EXAMPLE_SUFFIXES)]
 
 
-def check_example(name, text, git, tags):
-    """The `(finding or refusal, detail)` rows for one example's text."""
+def check_example(name, text, git, tags, pending=None, lag=True):
+    """The `(finding or refusal, detail)` rows for one example's text.
+
+    `pending` is the tag the release being cut will create. A pin naming it while
+    it does not exist yet is read against HEAD's tree, which is what the tag will
+    point at. `lag=False` leaves out the question whether the pin trails the newest
+    tag: that is a claim about the moment of a release, not about every commit.
+    """
     rows = []
     pins, scripts = read_pins(text), read_scripts(text)
     if scripts and not pins:
         return [("no-pin", name)]
-    newest = newest_tag(tags)
+    newest = newest_tag(list(tags) + ([pending] if pending else []))
     for tag in pins:
-        out, code = git(["ls-tree", "-r", "--name-only", tag, "--",
+        ref = "HEAD" if tag == pending and tag not in tags else tag
+        out, code = git(["ls-tree", "-r", "--name-only", ref, "--",
                          SCRIPTS_PREFIX.rstrip("/")])
         if code != 0:
             rows.append(("tag-unavailable", "%s pins %s" % (name, tag)))
@@ -149,13 +162,13 @@ def check_example(name, text, git, tags):
             if path not in held:
                 rows.append(("script-missing-at-tag",
                              "%s: %s is not in %s" % (name, path, tag)))
-        if newest and version_key(tag) < version_key(newest):
+        if lag and newest and version_key(tag) < version_key(newest):
             rows.append(("pin-behind-newest-tag",
                          "%s pins %s, newest tag is %s" % (name, tag, newest)))
     return rows
 
 
-def check(root=None, git=None, files=None):
+def check(root=None, git=None, files=None, pending=None, lag=True):
     """`{"examples": [...], "rows": [(name, detail)]}` for the whole directory."""
     git = git_reader(root) if git is None else git
     run = {"examples": [], "rows": []}
@@ -172,7 +185,7 @@ def check(root=None, git=None, files=None):
         with io.open(path, encoding="utf-8") as handle:
             text = handle.read()
         run["examples"].append(name)
-        run["rows"].extend(check_example(name, text, git, tags))
+        run["rows"].extend(check_example(name, text, git, tags, pending, lag))
     return run
 
 
@@ -204,32 +217,40 @@ def report(run):
 
 # --- command line -------------------------------------------------------------
 def parse_argv(argv):
-    """`(root, problem)` -- exactly one of the two is None."""
+    """`(root, pending, problem)` -- `problem` is None exactly when the rest is usable."""
     rest = list(argv)
     root = None
+    pending = None
     if "--repo" in rest:
         index = rest.index("--repo")
         if index + 1 >= len(rest):
-            return None, "--repo needs a path"
+            return None, None, "--repo needs a path"
         root = rest[index + 1]
         del rest[index:index + 2]
         if not os.path.isdir(root):
-            return None, "--repo %r is not a directory" % (root,)
+            return None, None, "--repo %r is not a directory" % (root,)
+    if "--pending" in rest:
+        index = rest.index("--pending")
+        if index + 1 >= len(rest) or not re.match(r"^v\d+\.\d+\.\d+$",
+                                                  rest[index + 1]):
+            return None, None, "--pending needs a tag like v1.2.3"
+        pending = rest[index + 1]
+        del rest[index:index + 2]
     if rest:
-        return None, "unknown argument(s): %s" % (" ".join(rest),)
-    return root, None
+        return None, None, "unknown argument(s): %s" % (" ".join(rest),)
+    return root, pending, None
 
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else list(argv)
     if "--selftest" in argv:
         return _selftest()
-    root, problem = parse_argv(argv)
+    root, pending, problem = parse_argv(argv)
     if problem is not None:
         sys.stderr.write("check-example-pins.py: %s\n" % (problem,))
         sys.stderr.write(USAGE)
         return 2
-    code, lines = report(check(root))
+    code, lines = report(check(root, pending=pending))
     for line in lines:
         sys.stdout.write(line + "\n")
     return code
@@ -334,17 +355,41 @@ def _cases(check_case):
                [n for n, _d in no_tags["rows"]] == ["no-tags"])
 
     check_case("i1 a wrong command line is a usage error and not a verdict: %r"
-               % ([parse_argv(["--repo"])[1], parse_argv(["--wat"])[1]],),
-               parse_argv([]) == (None, None)
-               and parse_argv(["--repo"])[1] is not None
-               and parse_argv(["--wat"])[1] is not None
+               % ([parse_argv(["--repo"])[2], parse_argv(["--wat"])[2]],),
+               parse_argv([]) == (None, None, None)
+               and parse_argv(["--repo"])[2] is not None
+               and parse_argv(["--wat"])[2] is not None
+               and parse_argv(["--pending", "3.3"])[2] is not None
+               and parse_argv(["--pending", "v3.3.0"]) == (None, "v3.3.0", None)
                and _quietly(["--wat"]) == 2)
 
-    live = check()
+    head_trees = {"v3.2.0": [_GATE], "HEAD": [_GATE]}
+    git = _fake_git(head_trees, tags=["v3.2.0"])
+    pinned_new = _NEW_EXAMPLE.replace("v3.2.0", "v3.3.0")
+    rows = check_example("x.yml", pinned_new, git, ["v3.2.0"], pending="v3.3.0")
+    check_case("p1 a pin naming the tag this release is about to create is read "
+               "against HEAD and passes, not refused: %r" % (rows,), rows == [])
+
+    rows = check_example("x.yml", pinned_new, git, ["v3.2.0"])
+    check_case("p2 the same pin without a pending release still refuses: %r"
+               % (rows,), [n for n, _d in rows] == ["tag-unavailable"])
+
+    rows = check_example("x.yml", _NEW_EXAMPLE, git, ["v3.2.0"], pending="v3.3.0")
+    check_case("p3 leaving the example on the previous tag during a release is "
+               "still the lag finding: %r" % (rows,),
+               [n for n, _d in rows] == ["pin-behind-newest-tag"])
+
+    git = _fake_git({"v3.2.0": [_GATE], "v3.3.0": [_GATE]})
+    rows = check_example("x.yml", _NEW_EXAMPLE, git, ["v3.2.0", "v3.3.0"],
+                         lag=False)
+    check_case("p4 with the lag question off an older pin that holds the script "
+               "is clean: %r" % (rows,), rows == [])
+
+    live = check(lag=False)
     check_case("l1 THE LIVE CLAIM: the committed examples, asked of this "
-               "repository's own tags, carry no finding. A checkout without the "
-               "tags answers with a refusal, which is the honest answer there and "
-               "not a clean one: %r" % (live["rows"],),
+               "repository's own tags, name no missing script. A checkout without "
+               "the tags answers with a refusal, which is the honest answer there "
+               "and not a clean one: %r" % (live["rows"],),
                bool(live["examples"] or live["rows"])
                and all(is_refusal(n) for n, _d in live["rows"]))
 

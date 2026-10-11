@@ -50,8 +50,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/run-test-gate.py:4501-4502 (_run_full)",
         "issue": "P123.49 part (2) - 'run-test-gate, handed such a step anyway, records it as not a command: no shell run, no red gate' - holds only on main's task/phase path (split_not_commands at :4809). `_run_full` resolves meta.fullGate with `_ev.resolved_commands` and hands every entry to run_gate, so a fullGate naming claimsMatchCode (or any `review-only:` value) still runs the prose through the shell, exits 2 and records a red full run, which keeps phases provisional and holds a release through the guard. The executor disclosed the path as 'not split'.",
-        "resolution": "Run `split_not_commands` in `_run_full` too (print the same not-a-command line naming `meta.fullGate`), or have `_ev.resolved_commands` drop review-only values for every caller; add an xg-style case with `fullGate: [\"claimsMatchCode\"]` asserting no step ran and the run is not red.",
-        "fixTask": "P123.55-64p"
+        "resolution": "fixed in P123.55-64p (fff8ae991840): Run `split_not_commands` in `_run_full` too (print the same not-a-command line naming `meta.fullGate`), or have `_ev.resolved_commands` drop review-only values for every caller; add an xg-style case with `fullGate: [\"claimsMatchCode\"]` asserting no step ran and the run is not red.",
+        "fixTask": "P123.55-64p",
+        "commit": "fff8ae991840",
+        "status": "fixed"
       },
       {
         "id": "P123-R4",
@@ -86,7 +88,7 @@
         "fixTask": "P123.59-64p"
       }
     ],
-    "outcome": "[findings: 7 - 0 high, 4 med, 3 low; 2 with a recorded fix commit]"
+    "outcome": "[findings: 7 - 0 high, 4 med, 3 low; 3 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -4292,10 +4294,78 @@
     {
       "id": "P123.55-64p",
       "title": "A review-only entry in meta.fullGate is never run as a command either",
-      "status": "in_progress",
+      "status": "done",
       "description": "(P123-R3, med) P123.49 part (2) - 'run-test-gate, handed such a step anyway, records it as not a command: no shell run, no red gate' - holds only on main's task/phase path (split_not_commands at :4809). `_run_full` resolves meta.fullGate with `_ev.resolved_commands` and hands every entry to run_gate, so a fullGate naming claimsMatchCode (or any `review-only:` value) still runs the prose through the shell, exits 2 and records a red full run, which keeps phases provisional and holds a release through the guard. The executor disclosed the path as 'not split'.\n\nResolution: Run `split_not_commands` in `_run_full` too (print the same not-a-command line naming `meta.fullGate`), or have `_ev.resolved_commands` drop review-only values for every caller; add an xg-style case with `fullGate: [\"claimsMatchCode\"]` asserting no step ran and the run is not red. Faults: P123-R3.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "fff8ae991840",
+      "outcome": {
+        "technical": "In run-test-gate.py _run_full, the resolved meta.fullGate is now passed through split_not_commands; each review-only entry prints a not-a-command line (suppressed under as_json) and is never run; if only review-only entries remain, returns E_ASK with a distinct message instead of recording a red run. Exit codes: sweep-selftests 0, --spaced 0, ruff 0, vermin 0. No new case added (outside declared files).",
+        "descriptive": "A review-only entry in meta.fullGate is no longer run through the shell, so it can no longer record a red full run."
+      },
+      "startedAt": "2026-10-11T17:24:51Z",
+      "completedAt": "2026-10-11T17:41:49Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-11T16:31:09Z",
+          "text": "scope: plugins/audit/scripts/governance/run-test-gate.py, every path the finding(s) P123-R3 name"
+        }
+      ],
+      "fixes": [
+        "P123-R3"
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T17:41:48Z.b04de9",
+        "status": "passed",
+        "at": "2026-10-11T17:41:48Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "fff8ae991840",
+        "at": "2026-10-11T17:41:49Z",
+        "basis": "a fix task for P123-R3: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task, expectRedFirst false, tests.add none; the xg-style fullGate case named in the resolution lives outside the declared files and was not added",
+        "at": "n/a"
+      }
+    },
+    {
+      "id": "P123.56-64p",
+      "title": "The example-pin check passes across a release: the pending tag is accepted and the per-commit sweep makes no live pin-behind claim",
+      "status": "in_progress",
+      "description": "(P123-R4, med) The example-pin check (P123.27) cannot be satisfied across a release. verify.sh --release runs it before the tag exists (`tag v$version does not exist yet` is checked in the same block), so repinning the example to the new tag in the release commit is a `tag-unavailable` refusal (exit 1) and the release preflight fails; leaving it on the previous tag passes preflight, but the moment the new tag exists `pin-behind-newest-tag` (a finding, not a refusal) fires. And the live case l1 accepts only refusals, so it goes red in the ordinary per-commit sweep - which CI runs with fetch-depth 0, tags included - on every commit after the release until a follow-up repin. CONTRIBUTING.md says the check 'belongs to the release set alone', which l1 contradicts. This lands at the imminent 3.3.0 tag.\n\nResolution: Let the release check accept a pin equal to the version being released (plugin.json's) as 'pending this release's tag' rather than tag-unavailable, so the follower can be repinned in the release commit; and drop the pin-behind arm from l1 (keep l1 to script-missing-at-tag over existing tags), or move the live claim out of the per-commit sweep. Faults: P123-R4.",
+      "files": [
+        "tools/check-example-pins.py",
+        "tools/verify.sh",
+        "CONTRIBUTING.md"
       ],
       "tests": {
         "mode": "gate-only",
@@ -4325,64 +4395,7 @@
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-11T17:24:51Z",
-      "completedAt": null,
-      "verifiedBy": [],
-      "notes": [
-        {
-          "at": "2026-10-11T16:31:09Z",
-          "text": "scope: plugins/audit/scripts/governance/run-test-gate.py, every path the finding(s) P123-R3 name"
-        }
-      ],
-      "fixes": [
-        "P123-R3"
-      ],
-      "reviewPerTask": "phase",
-      "testEvidence": {
-        "runId": "2026-10-11T17:41:48Z.b04de9",
-        "status": "passed",
-        "at": "2026-10-11T17:41:48Z"
-      }
-    },
-    {
-      "id": "P123.56-64p",
-      "title": "The example-pin check passes across a release: the pending tag is accepted and the per-commit sweep makes no live pin-behind claim",
-      "status": "pending",
-      "description": "(P123-R4, med) The example-pin check (P123.27) cannot be satisfied across a release. verify.sh --release runs it before the tag exists (`tag v$version does not exist yet` is checked in the same block), so repinning the example to the new tag in the release commit is a `tag-unavailable` refusal (exit 1) and the release preflight fails; leaving it on the previous tag passes preflight, but the moment the new tag exists `pin-behind-newest-tag` (a finding, not a refusal) fires. And the live case l1 accepts only refusals, so it goes red in the ordinary per-commit sweep - which CI runs with fetch-depth 0, tags included - on every commit after the release until a follow-up repin. CONTRIBUTING.md says the check 'belongs to the release set alone', which l1 contradicts. This lands at the imminent 3.3.0 tag.\n\nResolution: Let the release check accept a pin equal to the version being released (plugin.json's) as 'pending this release's tag' rather than tag-unavailable, so the follower can be repinned in the release commit; and drop the pin-behind arm from l1 (keep l1 to script-missing-at-tag over existing tags), or move the live claim out of the per-commit sweep. Faults: P123-R4.",
-      "files": [
-        "tools/check-example-pins.py",
-        "tools/verify.sh",
-        "CONTRIBUTING.md"
-      ],
-      "tests": {
-        "mode": "gate-only",
-        "add": [],
-        "expectRedFirst": false,
-        "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive"
-        ],
-        "gateBasis": "phase-no-spelling"
-      },
-      "model": "sonnet",
-      "skills": [],
-      "risk": "low",
-      "blockedBy": [],
-      "dependsOn": [],
-      "attempts": 0,
-      "maxAttempts": 3,
-      "commit": null,
-      "outcome": {
-        "technical": null,
-        "descriptive": null
-      },
-      "startedAt": null,
+      "startedAt": "2026-10-11T17:41:50Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -4393,7 +4406,13 @@
       ],
       "fixes": [
         "P123-R4"
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T17:59:23Z.9785fe",
+        "status": "passed",
+        "at": "2026-10-11T17:59:23Z"
+      }
     },
     {
       "id": "P123.57-64p",
@@ -4560,6 +4579,48 @@
           "plugins/audit/tests/test_audit_task.py: a finding naming manifest/_manifest_io.py:774 scopes the full repo path; an ambiguous basename is named in the note, not written"
         ],
         "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.61-64p",
+      "title": "A review-only entry in meta.fullGate is pinned by a case: no step runs and no red full run is recorded",
+      "status": "pending",
+      "description": "Follow-up to the fix of the phase review finding P123-R3: `run-test-gate._run_full` now passes the resolved meta.fullGate through `split_not_commands`, so a review-only entry prints a not-a-command line and is never run, and a fullGate holding only review-only entries returns the ask exit instead of recording a red full run. The fix landed without the case the finding's resolution asked for, because the fix task's files held no test file. Add the xg-style cases in test_run_test_gate.py (in a stage that exists at HEAD): fullGate [\"claimsMatchCode\"] with a `review-only:` value runs no step, prints the not-a-command line and records no red full run; a fullGate mixing one real command with one review-only entry runs only the real one. Prove each case can fail by putting the old `_run_full` (no split) back in a scratch copy outside the repo and watching it go red there; say so in the return. Faults: P123-R3.",
+      "files": [
+        "plugins/audit/tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: a plan whose meta.fullGate is [\"claimsMatchCode\"] with a review-only value runs no step, prints the not-a-command line and records no red full run; a fullGate mixing a real command with a review-only one runs only the real one"
+        ],
+        "expectRedFirst": false,
         "gate": [
           "selftests",
           "validate",

@@ -708,8 +708,10 @@ PYEOF
   run "follower 4: screenshots were shot at v$version" refs_rule screenshot_capture_drift
   # Asks git, not the network: a pinned tag missing locally is a refusal, never a
   # pass. Release set only, because a CI checkout does not promise to carry tags.
+  # --pending: the tag does not exist yet at this point (the block below checks it),
+  # so a pin naming this release is read against HEAD instead of being refused.
   run "follower 4b: example pins hold the scripts they call" \
-    python3 tools/check-example-pins.py
+    python3 tools/check-example-pins.py --pending "v$version"
   # THE ARM THE PLAIN RUN LEAVES OUT. A release is cut from a commit, so here the
   # question has an answer: does HEAD carry the pages the render above found current.
   # A re-render left unstaged is green in every before-commit check and absent from
