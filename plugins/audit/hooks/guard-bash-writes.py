@@ -1986,7 +1986,7 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
         # Measured on the pass where the file first turns dirty and not again:
         # a later pass sees only paths that are new to `seenDirty`.
         if slot is None:
-            slot = _config.trivial_slot(sd, session_id)
+            slot = _config.trivial_slot(sd, _config.slot_key(data))
         if is_source and rel in slot:
             size = slot_write_magnitude(
                 _config.git_root_dir(root, cfg),

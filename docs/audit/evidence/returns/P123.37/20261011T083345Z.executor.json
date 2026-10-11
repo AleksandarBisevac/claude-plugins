@@ -1,0 +1,25 @@
+{
+  "gates": {
+    "sweep-selftests": "pass",
+    "sweep-selftests --spaced": "pass",
+    "ruff": "pass",
+    "vermin": "pass",
+    "bench-hooks --gate": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-11T08:48:00Z",
+    "basis": "`python3 plugins/audit/tests/test_require_plan.py --selftest` in a throwaway tree at HEAD exited 1 with 4 of 219 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - b9 (house FAIL), b10 (house FAIL), b11 (house FAIL), b12 (house FAIL): SELFTEST FAILED: 215/219 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "Added _config.slot_key (session for main loop; session[:48]+'.'+agent_of for a dispatched agent), slot_owner_of, slot_owner, slot_spender_words; take_trivial_slot takes owner=None and records agent+at in the slot file. require-plan, guard-secrets-read and guard-bash-writes all key the slot through slot_key. REASON_SLOT_SPENT now 'this writer's one free file was already spent on %s by %s at %s' (single template, GATE_REASONS floor u1-u4 still green); the shell refusal appends the same spender sentence. taskId is NOT recorded: no cheap source exists in these hooks without a manifest read in the hot path. Docs: require-plan docstring and PLUGIN-BUILD-GUIDE paragraph updated. New cases: test_require_plan b8-b12, test_guard_secrets_read ts26 (same agent Edit and sed -i share one slot, other agent and main loop have own), test__config sk1-sk5. Gates by exit code: bench-hooks --gate 0, sweep-selftests 0, --spaced 0, ruff 0, vermin 0.",
+    "descriptive": "A dispatched agent gets its own free file, and a refusal names who spent the slot and when."
+  },
+  "testsAdded": [
+    "test_require_plan b8-b12",
+    "test_guard_secrets_read ts26",
+    "test__config sk1-sk5"
+  ],
+  "claims": "claims: the slot is per agent id (not per task); taskId not recorded; no manifest read added to any hook.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:c00a90905fb8e23aaa04c5f94be8727af423aac192e61a1eb0d840b8b87156c3\",\"dirtyDigest\":\"sha256:97c1eea14d7551fc1f4d797b9d85d65ba051d86432a74693cd44d25b821515ae\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\"PLUGIN-BUILD-GUIDE.md\":\"4d99f084458feae3\",\"plugins/audit/hooks/_config.py\":\"907121b3a80a5bb6\",\"plugins/audit/hooks/guard-bash-writes.py\":\"ac6e28ee1f7a7836\",\"plugins/audit/hooks/guard-secrets-read.py\":\"a9494d4e631c835a\",\"plugins/audit/hooks/require-plan.py\":\"fc23be0c4f934dd9\",\"plugins/audit/tests/test__config.py\":\"6b295c1f5e4482f9\",\"plugins/audit/tests/test_guard_secrets_read.py\":\"b2fbe60cc953157d\",\"plugins/audit/tests/test_require_plan.py\":\"8d649d035a147edb\"},\"head\":\"7179658d\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/guard-bash-writes.py\",\"plugins/audit/hooks/guard-secrets-read.py\",\"plugins/audit/hooks/require-plan.py\",\"plugins/audit/tests/test__config.py\",\"plugins/audit/tests/test_guard_bash_writes.py\",\"plugins/audit/tests/test_guard_secrets_read.py\",\"plugins/audit/tests/test_require_plan.py\"],\"scopeDigest\":\"sha256:f5417e37bac5ededf701a36838bf71a059d5aca5680ec894b655211c28f7468b\",\"v\":2}"
+}

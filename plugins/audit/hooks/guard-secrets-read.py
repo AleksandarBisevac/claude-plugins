@@ -2708,7 +2708,8 @@ def _slot_write_verdict(data, project, cfg, hits, magnitude):
     finds it taken re-reads it and is judged against the winner's file - the
     second pass below. Only an unwritable state directory leaves the door open,
     and that function's docstring says so."""
-    sid = (data or {}).get("session_id")
+    sid = _config.slot_key(data)
+    owner = _config.slot_owner_of(data)
     state = _config.state_dir(project, cfg)
     threshold = int(cfg.get("trivialLineThreshold") or 80)
     large = magnitude > threshold
@@ -2734,11 +2735,17 @@ def _slot_write_verdict(data, project, cfg, hits, magnitude):
                                            hit["surface"])
             if verdict is None or _VERDICT_RANK[one[0]] > _VERDICT_RANK[verdict[0]]:
                 verdict = one
+        if verdict is not None and verdict[0] != "allow" and spent:
+            who, at = _config.slot_spender_words(
+                _config.slot_owner(state, sid))
+            verdict = (verdict[0], "%s\nThis writer's one free file was "
+                       "already spent on %s by %s at %s." % (
+                           verdict[1], ", ".join(spent), who, at))
         if taker is None:
             return verdict
         if verdict is not None and verdict[0] == "block":
             return verdict
-        took = _config.take_trivial_slot(state, sid, [taker["rel"]])
+        took = _config.take_trivial_slot(state, sid, [taker["rel"]], owner=owner)
         if took is False:
             continue
         if verdict is not None:

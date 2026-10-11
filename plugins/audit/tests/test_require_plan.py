@@ -93,7 +93,8 @@ def _cases(check):
     big = "\n".join("line %d" % i for i in range(120))  # 120 lines > 80
 
     def payload(tool, file_path, *, new_string=None, old_string=None,
-                content=None, edits=None, new_source=None, sid=session):
+                content=None, edits=None, new_source=None, sid=session,
+                agent=None):
         ti = {}
         if tool == "NotebookEdit":
             ti["notebook_path"] = file_path
@@ -109,8 +110,11 @@ def _cases(check):
             ti["edits"] = edits
         if new_source is not None:
             ti["new_source"] = new_source
-        return {"tool_name": tool, "tool_input": ti, "session_id": sid,
-                "cwd": str(tmp)}
+        out = {"tool_name": tool, "tool_input": ti, "session_id": sid,
+               "cwd": str(tmp)}
+        if agent is not None:
+            out["agent_id"] = agent
+        return out
 
     def _read_events(path):
         """Non-blank rows of a gate-events feed, or [] when it was never
@@ -377,6 +381,39 @@ def _cases(check):
     _expect("b6 second distinct file after Post blocks", "block",
           payload("Write", "src/foo/b.ts", content="export const b = 2;", sid=sess_b))
     _expect("b7 same first file again allowed", "allow", p_first)
+
+    # (b2) the free file is per dispatched attempt, not per session: every
+    #      subagent of one orchestrator session carries the SAME session_id, so
+    #      the first executor spent the budget for all the later ones and a later
+    #      refusal named a file the current executor never edited.
+    sess_ag = "selftest-session-agents"
+
+    def small(name, agent=None):
+        return payload("Write", "src/ag/%s.ts" % name,
+                       content="export const x = 1;", sid=sess_ag, agent=agent)
+
+    _expect("b8 the first agent's first small file is its free file", "allow",
+            small("one", "exec-aaaa"))
+    _expect("b9 a second agent of the same session gets its own free file",
+            "allow", small("two", "exec-bbbb"))
+    _expect("b10 the main loop still has its own, apart from both agents",
+            "allow", small("main"))
+    def _verdict_text(data):
+        return M.decide(data, cfg=cfg, state_dir=sd, logs_dir=ld,
+                        event="PreToolUse")
+
+    msg_ag = _verdict_text(small("three", "exec-aaaa"))
+    check("b11 a second file of the first agent is refused, naming its own "
+          "file, the agent that spent the slot and when",
+          msg_ag[0] == "block" and "src/ag/one.ts" in msg_ag[1]
+          and "exec-aaaa" in msg_ag[1] and "src/ag/two.ts" not in msg_ag[1]
+          and re.search(r"at 20\d\d-\d\d-\d\dT", msg_ag[1]) is not None,
+          repr(msg_ag))
+    msg_main = _verdict_text(small("four"))
+    check("b12 the main loop's refusal names the main loop, not an agent",
+          msg_main[0] == "block" and "src/ag/main.ts" in msg_main[1]
+          and "exec-" not in msg_main[1] and "main" in msg_main[1],
+          repr(msg_main))
 
     # (c) magnitude: many lines, single-line blob, deletion-heavy edit
     _expect("c1 large new file blocks", "block",

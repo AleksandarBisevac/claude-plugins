@@ -1223,8 +1223,8 @@ def logs_dir(root, cfg):
 
 
 # --- the session's free-file slot ----------------------------------------------
-# `trivialLineThreshold`'s allowance is ONE file per session, whichever tool
-# writes it. `require-plan.py` grades Edit/Write against it,
+# `trivialLineThreshold`'s allowance is ONE file per writer - the main loop, or
+# one dispatched agent (`slot_key`) - whichever tool writes it. `require-plan.py` grades Edit/Write against it,
 # `guard-secrets-read.py` grades a shell write against it and
 # `guard-bash-writes.py` measures that shell write once it has landed, and the
 # slot has one reader and one writer here so the hooks cannot disagree about
@@ -1241,6 +1241,65 @@ def _slot_path(state, session_id):
     it would otherwise place the slot outside the state directory."""
     sid = _SLOT_UNSAFE.sub("_", str(session_id or "no-session"))[:_SLOT_ID_MAX]
     return Path(state) / (TRIVIAL_SLOT % sid)
+
+
+_SLOT_SESSION_KEEP = 48
+
+
+def slot_key(data):
+    """The name a free-file slot is kept under for the call in `data`.
+
+    The main loop keeps the plain session id. A dispatched agent keeps its own:
+    every subagent an orchestrator dispatches carries the SAME `session_id`, so
+    a slot keyed by the session alone was spent by the first executor for every
+    later one, and the refusal a later executor met named a file it never
+    edited. The agent id is the attempt's identity - one dispatch, one id - and
+    it is already in every payload, so no manifest is read to find it.
+
+    The session part is cut so session plus agent fit `_SLOT_ID_MAX` whole; the
+    agent part is `agent_of`'s, already bounded, so two agents of one long
+    session are never folded onto one slot by the bound in `_slot_path`.
+    Every hook that takes or reads the slot asks this one function."""
+    sid = str((data or {}).get("session_id", "") or "no-session")
+    if not is_subagent(data):
+        return sid
+    return "%s.%s" % (sid[:_SLOT_SESSION_KEEP], agent_of(data))
+
+
+def slot_owner_of(data):
+    """Who is taking a slot, and when: the record `take_trivial_slot` stores."""
+    return {"agent": agent_of(data),
+            "at": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime())}
+
+
+def slot_owner(state, key):
+    """{"agent", "at"} recorded in the slot under `key`; both None for an absent
+    slot, one taken without an owner, or one that cannot be read - an
+    unrecorded spender is said as unrecorded, never guessed."""
+    none = {"agent": None, "at": None}
+    try:
+        with open(_slot_path(state, key), "r", encoding="utf-8") as fh:
+            loaded = json.load(fh)
+    except Exception:
+        return none
+    if not isinstance(loaded, dict):
+        return none
+    return {k: (loaded.get(k) if isinstance(loaded.get(k), str) else None)
+            for k in ("agent", "at")}
+
+
+SLOT_UNRECORDED_WHO = "an unrecorded writer"
+SLOT_UNRECORDED_AT = "an unrecorded time"
+
+
+def slot_spender_words(owner):
+    """(who, when) in words for a `slot_owner` answer - the one spelling every
+    refusal that names a slot's spender uses, the plan gate's and the shell
+    guard's alike. An unrecorded half is said as unrecorded."""
+    agent = owner.get("agent")
+    who = ("the main loop" if agent == MAIN_AGENT
+           else "agent %s" % agent if agent else SLOT_UNRECORDED_WHO)
+    return who, owner.get("at") or SLOT_UNRECORDED_AT
 
 
 def text_lines(text):
@@ -1308,8 +1367,19 @@ def trivial_slot(state, session_id):
         return [SLOT_UNREADABLE]
 
 
-def take_trivial_slot(state, session_id, files):
-    """Take this session's slot for `files`.
+def _slot_body(files, owner):
+    """The slot file's JSON: the files, and who took it and when when known."""
+    body = {"files": list(files)}
+    if isinstance(owner, dict):
+        body.update((k, owner[k]) for k in ("agent", "at")
+                    if isinstance(owner.get(k), str))
+    return body
+
+
+def take_trivial_slot(state, session_id, files, owner=None):
+    """Take this session's slot (keyed by `slot_key`) for `files`, recording
+    `owner` ({"agent", "at"}, see `slot_owner_of`) so a later refusal can name
+    who spent it.
 
     -> True   taken
        False  another write took it first: the slot file already exists, so
@@ -1343,13 +1413,13 @@ def take_trivial_slot(state, session_id, files):
         fd, tmp = tempfile.mkstemp(dir=str(state), prefix="plan-gate-tmp-",
                                    suffix=".json")
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump({"files": list(files)}, fh)
+            json.dump(_slot_body(files, owner), fh)
         try:
             os.link(tmp, str(_slot_path(state, session_id)))
         except FileExistsError:
             raise
         except OSError:
-            return _take_slot_exclusive(state, session_id, files)
+            return _take_slot_exclusive(state, session_id, files, owner)
         return True
     except FileExistsError:
         return False
@@ -1363,7 +1433,7 @@ def take_trivial_slot(state, session_id, files):
                 pass
 
 
-def _take_slot_exclusive(state, session_id, files):
+def _take_slot_exclusive(state, session_id, files, owner=None):
     """`take_trivial_slot` on a volume that refuses hard links.
 
     FAT/exFAT, some SMB and FUSE mounts and some container bind mounts raise
@@ -1383,7 +1453,7 @@ def _take_slot_exclusive(state, session_id, files):
         return None
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump({"files": list(files)}, fh)
+            json.dump(_slot_body(files, owner), fh)
         return True
     except Exception:
         return None

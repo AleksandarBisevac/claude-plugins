@@ -47,7 +47,8 @@ ASK = permissionDecision "ask" when planGate pins that tier):
   4. A single-use bypass is armed for this session (and not older than
      BYPASS_TTL_SECONDS via its armedAtEpoch; a legacy slot without the field
      has no TTL) → ALLOW.
-  5. Trivial-edit allowance: the FIRST non-exempt code file in a session with
+  5. Trivial-edit allowance: the FIRST non-exempt code file of a writer (the
+     main loop, or one dispatched agent - `_config.slot_key`) with
      change magnitude <= trivialLineThreshold → ALLOW. A 2nd distinct
      non-exempt file, or a change over the threshold → the gate's tier decides
      (observe/warn/ask/deny — _config.plan_gate_mode).
@@ -132,7 +133,7 @@ import _config  # noqa: E402
 REASON_FIRST_SMALL = "first small file (magnitude %d)"
 REASON_BYPASS_EXPIRED = "expired unused"
 REASON_BYPASS_CONSUMED = "single-use bypass consumed"
-REASON_SLOT_SPENT = "this session's one free file was already spent on %s"
+REASON_SLOT_SPENT = "this writer's one free file was already spent on %s by %s at %s"
 REASON_MAGNITUDE = "change magnitude %d (> %d)"
 
 _OUT_OF_POLICY = (REASON_SLOT_SPENT, REASON_MAGNITUDE)
@@ -613,7 +614,7 @@ def _uncovered_tally(count):
     return "%d uncovered file%s" % (count, "" if count == 1 else "s")
 
 
-def _slot_reason(files_list):
+def _slot_reason(files_list, owner):
     """Why an edit is out of policy once the session's free slot is spent, with
     the file that spent it named.
 
@@ -627,8 +628,13 @@ def _slot_reason(files_list):
 
     The wording is `REASON_SLOT_SPENT` rather than a literal here, so the
     surfaces that paint this row read it instead of retyping it.
+
+    WHO SPENT IT IS NAMED, because the slot is per writer and a refusal that
+    names a file without its spender reads as a file the reader never edited.
+    A slot with no recorded owner says so (`_config.SLOT_UNRECORDED_WHO`) rather than guessing.
     """
-    return REASON_SLOT_SPENT % ", ".join(files_list)
+    who, at = _config.slot_spender_words(owner)
+    return REASON_SLOT_SPENT % (", ".join(files_list), who, at)
 
 
 # --- which path an MCP write is decided on ------------------------------------
@@ -1014,7 +1020,10 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     #    state directory refused the write then). A Pre take whose edit a
     #    sibling hook or the operator then refuses has still spent the slot -
     #    the stricter direction, the one the shell arm already pays.
-    files_list = _config.trivial_slot(sd, session_id)
+    #    KEYED BY THE WRITER (`_config.slot_key`): the main loop, or the one
+    #    dispatched agent whose call this is.
+    slot_id = _config.slot_key(data)
+    files_list = _config.trivial_slot(sd, slot_id)
 
     if rel in files_list:
         return ("allow", "already being worked: %s" % rel)
@@ -1022,7 +1031,8 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     magnitude = _change_magnitude(tool, ti)
 
     if len(files_list) == 0 and magnitude <= threshold:
-        took = _config.take_trivial_slot(sd, session_id, [rel])
+        took = _config.take_trivial_slot(sd, slot_id, [rel],
+                                         owner=_config.slot_owner_of(data))
         if took is True:
             _config.append_gate_event(ld, {
                 "event": "allow.trivial", "file": rel, "mode": "allow",
@@ -1039,12 +1049,12 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
                     "could not be recorded: %s" % (magnitude, rel))
         # Lost the race: another write took the slot first, so this file is
         # graded against it like any second file.
-        files_list = _config.trivial_slot(sd, session_id)
+        files_list = _config.trivial_slot(sd, slot_id)
         if rel in files_list:
             return ("allow", "already being worked: %s" % rel)
 
     reason = (
-        _slot_reason(files_list)
+        _slot_reason(files_list, _config.slot_owner(sd, slot_id))
         if len(files_list) > 0
         else REASON_MAGNITUDE % (magnitude, threshold)
     )

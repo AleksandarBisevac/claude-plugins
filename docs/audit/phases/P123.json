@@ -2741,7 +2741,7 @@
     {
       "id": "P123.35",
       "title": "Shared command readers keep floor candidates and read escapes as the shell does, pinned",
-      "status": "in_progress",
+      "status": "done",
       "description": "(F542) `_config.program_candidates` returns `(fallback, fallback)` when an inner wrapper is uncertain, discarding the floor candidates collected from an exact outer wrapper; return them with the fallback. The secrets guard's here-string no-raise lines are covered by no test (b5h12a stays green with them deleted) - add a row that reaches them and prove it red with them removed. (F547) `_config.effective_cwd`'s cd reader, probed on main: `cd a\\\\ b` resolves `a\\ b` (the shell reads an escaped backslash and a word break - return no answer), `cd [x]` resolves literally though SECURITY.md says a glob is unresolvable (add `[` to `UNRESOLVED_MARKS` or document), `cd \\-d` keeps the backslash; state the double-quote reduction limit in the docstring; add test__config unit rows for the escape and for literal Windows backslashes. Also the product fail-open the spaced-paths triage handed over: the plan gate's shell reader does not grade a redirect whose QUOTED target is an absolute path containing a space (`echo y > '<root with space>/src/undeclared.ts'` allowed in the deny tier while the unspaced twin and `sed -i` into the spaced path are blocked; test_guard_secrets_read tt2, tt3, ww10a) - fix it and remove that file's SPACED_EXEMPT row in tools/sweep-selftests.py. And: a heredoc or interpreter write after `cd <dir> &&` must be graded at the path relative to <dir> (a declared file written as `cd plugins/audit && python3 - <<EOF` with `scripts/x.py` was refused as undeclared, quoting the unprefixed path) - red-first both ways, in scope allowed, out of scope refused naming the full path. Red-first each. Also F614: a shell-write refusal names the rule that refused it (the plan gate), not the hook that hosts the check. Faults: F542, F547, F614, F622, F625. GUARD COMMAND-READING CODE: written by the orchestrator with the user's permission (auto mode off when possible); if the API refuses, record it verbatim and hand the remainder to the human.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -2780,19 +2780,32 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7179658d37cd",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Written by the orchestrator (guard command-reading code). guard-secrets-read: new `_shell_word_at` reads a redirect target as the whole shell word (quotes and escapes removed, ending at an unquoted unescaped blank/operator or a group closer) when the target starts outside quotes - `> 'src/a b.py'` was read as `src/a` and the write went ungraded; inside a quoted string another program runs the bare token is kept as before; `tee` operands are split by `_config.shell_words` on the same condition. Refusals are signed by the rule: `PLAN_GATE_TAG` heads the plan-gate templates (_PLAN_WRITE_DENY/ASK, _BEYOND_DENY/ASK) and `_signed` adds `[guard-secrets-read]` only to a message that names no rule. _config.program_candidates returns the floor candidates an exact outer wrapper collected beside an uncertain inner one's fallback. _config.effective_cwd returns no answer for a doubled backslash (escaped backslash + word break) and an escaped leading dash. A bracket stays a literal path character (route directories like `[locale]`), documented in SECURITY.md rather than added to UNRESOLVED_MARKS, which would stop grading those writes. The spaced sweep leg's SPACED_EXEMPT row for test_guard_secrets_read.py is removed; the file runs in the leg and passes. The heredoc-after-cd write (installed 3.2.0 refused a declared file after `cd`) is pinned as cdh1/cdh2 and passes on this tree: fixed before 3.3.0, now held. New cases: rq1-rq6 (quoted/escaped spaced targets, tee, declared twin), cdh1-cdh2, pgn1 (refusal signer), b5h12c (reaches the here-string no-raise branch: red with program_candidates unfixed, and it raises with the no-raise lines removed), pf1-pf2, ce1-ce5. Seen red before the fix: rq1-rq5, pgn1, b5h12c, pf1, ce2, ce3. Sweep 331/331 files ok, --spaced 331/331, bench-hooks, gate-parity, ruff, vermin clean.",
+        "descriptive": "The shared command readers read a quoted or escaped target with a space as the whole path, keep the candidates an outer wrapper already found, refuse to guess a cd target the shell would split differently, and a plan-gate refusal is signed by the plan gate."
       },
       "startedAt": "2026-10-11T08:06:59Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-11T08:33:45Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_guard_secrets_read.py: rq1-rq6, cdh1-cdh2, pgn1, b5h12c",
+        "plugins/audit/tests/test__config.py: pf1-pf2 floor candidates, ce1-ce5 cd target edges"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-11T08:33:44Z.00b18d",
         "status": "passed",
         "at": "2026-10-11T08:33:44Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "7179658d37cd",
+        "at": "2026-10-11T08:33:45Z"
+      },
+      "redFirst": {
+        "at": "2026-10-11T08:24:22Z",
+        "basis": "`python3 plugins/audit/tests/test_guard_secrets_read.py --selftest` in a throwaway tree at HEAD exited 1 with 7 of 699 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rq1 (house FAIL), rq2 (house FAIL), rq3 (house FAIL), rq4 (house FAIL), rq5 (house FAIL), pgn1 (house FAIL), b5h12c (house FAIL): SELFTEST FAILED: 692/699 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
@@ -2847,14 +2860,20 @@
     {
       "id": "P123.37",
       "title": "the plan gate's free-file budget is per task attempt for subagents, and a refusal names who spent it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F616: require-plan's one-free-file-per-session budget is shared by every subagent an orchestrator session dispatches, so an early executor spends it for every later one, and the refusal names a file the current executor never edited. Key the budget per task attempt for an edit made under a dispatched task (session id plus the in_progress task the edit is covered toward or the driver state names), keep the per-session budget for the main loop, and have the refusal name the task or agent that spent it and when. The directory-entry half of the report is already fixed by P122's covers() (step 3 runs before the done-owner check). Plan-gate hook code, not shell-command parsing. Faults: F616.",
       "files": [
         "plugins/audit/hooks/require-plan.py",
         "plugins/audit/hooks/_config.py",
         "plugins/audit/tests/test_require_plan.py",
         "plugins/audit/tests/test__config.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_guard_bash_writes.py",
+        "tools/capture-screenshots.mjs",
+        "docs/screenshots"
       ],
       "tests": {
         "mode": "tdd",
@@ -2881,16 +2900,22 @@
         "P123.14"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-11T08:33:45Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T09:14:06Z.01acd2",
+        "status": "passed",
+        "at": "2026-10-11T09:14:06Z"
+      }
     },
     {
       "id": "P123.38",

@@ -26,7 +26,7 @@
       "uiDigest": "1ca0bc542594a200b41db63804e7f8ef8c0a9a76c968222198bdea67a3edc3fd"
     },
     "filtered.png": {
-      "sha256": "713a22ab55dec5ef89f74912feb07280ebcf2a52b4153317e4d14e8c5a449b0b",
+      "sha256": "a2187a0b23b8e2bd62fbb867f70fa20d967a1af4563c99b8efc6fe1550af14e0",
       "version": "3.2.0",
       "surface": "report",
       "uiDigest": "1ca0bc542594a200b41db63804e7f8ef8c0a9a76c968222198bdea67a3edc3fd"
@@ -44,7 +44,7 @@
       "uiDigest": "1ca0bc542594a200b41db63804e7f8ef8c0a9a76c968222198bdea67a3edc3fd"
     },
     "overview.png": {
-      "sha256": "755a1dab3d8cd039870c0b89b45bb2ecbc54b5343326fde6a74af54bc7dbd816",
+      "sha256": "6aa1ff028af81ba1b12bcf5e5c404920bbde9f2655e836aaaba3fc240eff084b",
       "version": "3.2.0",
       "surface": "report",
       "uiDigest": "1ca0bc542594a200b41db63804e7f8ef8c0a9a76c968222198bdea67a3edc3fd"
@@ -86,7 +86,7 @@
       "uiDigest": "6f2179a43368195da87f3c72fefe0d4b6e3803171841f92e71982aadd695ccc7"
     },
     "panel-gate.png": {
-      "sha256": "32bb49b980a5b09b3d73e3173b84d9bc6f47a0bce73ce7cd538cd878a931ccb8",
+      "sha256": "76ff29150ad68b764c361b3e36402c3652803475769c3d50441805b5feb729ad",
       "version": "3.2.0",
       "surface": "panel",
       "uiDigest": "6f2179a43368195da87f3c72fefe0d4b6e3803171841f92e71982aadd695ccc7"

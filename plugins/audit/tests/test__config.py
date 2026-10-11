@@ -165,6 +165,42 @@ def _cases(check):
 
     tmp = Path(_harness.fixture_root("config-selftest-"))
 
+    # --- sk: the free-file slot's key and the record inside it -----------------
+    sk_main = {"session_id": "sk-sess"}
+    sk_a = {"session_id": "sk-sess", "agent_id": "exec-aaaa"}
+    sk_b = {"session_id": "sk-sess", "agent_id": "exec-bbbb"}
+    sk_long = {"session_id": "s" * 200, "agent_id": "a" * 200}
+    sk_long_b = {"session_id": "s" * 200, "agent_id": "b" + "a" * 199}
+    check("sk1 the main loop keeps the plain session key",
+          M.slot_key(sk_main) == "sk-sess" and M.slot_key({}) == "no-session",
+          repr((M.slot_key(sk_main), M.slot_key({}))))
+    check("sk2 a dispatched agent's key is the session's plus the agent, apart "
+          "from the main loop's and from another agent's",
+          len(set([M.slot_key(sk_main), M.slot_key(sk_a), M.slot_key(sk_b)])) == 3
+          and M.slot_key(sk_a).startswith("sk-sess")
+          and "exec-aaaa" in M.slot_key(sk_a),
+          repr([M.slot_key(d) for d in (sk_main, sk_a, sk_b)]))
+    sk_paths = set(M._slot_path("/x", M.slot_key(d)).name
+                   for d in (sk_long, sk_long_b, sk_main))
+    check("sk3 the key stays inside the slot name's bound without folding two "
+          "long-named agents of one session onto one slot",
+          len(M.slot_key(sk_long)) <= M._SLOT_ID_MAX and len(sk_paths) == 3,
+          repr(sorted(sk_paths)))
+    sk_dir = Path(tempfile.mkdtemp(prefix="sk-slot-", dir=str(tmp)))
+    sk_took = M.take_trivial_slot(sk_dir, M.slot_key(sk_a), ["src/x.py"],
+                                  owner=M.slot_owner_of(sk_a))
+    sk_rec = M.slot_owner(sk_dir, M.slot_key(sk_a))
+    check("sk4 the slot records who took it and when",
+          sk_took is True and sk_rec["agent"] == "exec-aaaa"
+          and isinstance(sk_rec["at"], str) and sk_rec["at"][:2] == "20",
+          repr(sk_rec))
+    check("sk5 a slot taken with no owner, or absent, answers an unrecorded "
+          "spender rather than a made-up one",
+          M.slot_owner(sk_dir, "never-taken") == {"agent": None, "at": None}
+          and M.take_trivial_slot(sk_dir, "plain", ["src/y.py"]) is True
+          and M.slot_owner(sk_dir, "plain") == {"agent": None, "at": None},
+          repr(M.slot_owner(sk_dir, "plain")))
+
     # (a) absent config → pure defaults, no error marker
     cfg = M.load(tmp)
     check("a1 absent config -> defaults, no _configError",

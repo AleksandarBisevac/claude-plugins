@@ -7528,7 +7528,8 @@ async function main() {
           { ts: '2026-04-18T09:40:31Z', event: 'allow.trivial',
             file: FREE, mode: 'allow', fills: [41] },
           { ts: '2026-04-19T10:02:47Z', event: 'warn',
-            file: 'src/mobile/mod07_01.ts', mode: 'warn', fills: [FREE] },
+            file: 'src/mobile/mod07_01.ts', mode: 'warn',
+            fills: [FREE, 'the main loop', '2026-04-18T09:40:31Z'] },
           { ts: '2026-04-19T14:21:09Z', event: 'deny',
             file: 'src/mobile/mod07_03.ts', mode: 'deny', fills: [214, BAR] },
           // The one row whose sentence comes from a different writer, so it names

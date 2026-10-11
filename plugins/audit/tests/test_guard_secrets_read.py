@@ -138,12 +138,15 @@ def _slot_cases(check):
         ok, got = _harness.attempt(M.decide, data, cfg=use_cfg or cfg)
         return got if ok else ("raised", str(got))
 
-    def edit(sid, rel, event="PreToolUse"):
-        ok, got = _harness.attempt(rp.decide, {
+    def edit(sid, rel, event="PreToolUse", agent=None):
+        data = {
             "tool_name": "Edit", "session_id": sid, "cwd": str(root),
             "hook_event_name": event,
             "tool_input": {"file_path": str(root / rel), "old_string": "A = 1",
-                           "new_string": "A = 2"}}, cfg=cfg, event=event)
+                           "new_string": "A = 2"}}
+        if agent:
+            data["agent_id"] = agent
+        ok, got = _harness.attempt(rp.decide, data, cfg=cfg, event=event)
         return got if ok else ("raised", str(got))
 
     try:
@@ -199,6 +202,20 @@ def _slot_cases(check):
               "the slot is consulted: %r, slot %r"
               % (covered, _slot_file(root, cfg, "ts-d")),
               covered[0] == "allow" and _slot_file(root, cfg, "ts-d") == [])
+        ag_edit = edit("ts-ag", "src/ag1.py", event="PostToolUse",
+                       agent="exec-aaaa")
+        ag_shell = shell("ts-ag", "sed -i '' 's/A = 1/A = 2/' src/ag2.py",
+                         agent="exec-aaaa")
+        other = shell("ts-ag", "sed -i '' 's/A = 1/A = 2/' src/ag3.py",
+                      agent="exec-bbbb")
+        main_w = shell("ts-ag", "sed -i '' 's/A = 1/A = 2/' src/ag4.py")
+        check("ts26 one agent's Edit and its own sed -i share ONE free file, "
+              "and a second agent and the main loop of the same session each "
+              "have their own: edit %r, shell %r, other agent %r, main %r"
+              % (ag_edit[:1], ag_shell[:1], other[:1], main_w[:1]),
+              ag_edit[0] == "allow" and ag_shell[0] == "block"
+              and "src/ag2.py" in ag_shell[1] and "exec-aaaa" in ag_shell[1]
+              and other[0] == "allow" and main_w[0] == "allow")
         _ts_more(check, root, cfg, shell)
         _ts_unreadable(check, root, cfg, shell, edit)
     finally:
