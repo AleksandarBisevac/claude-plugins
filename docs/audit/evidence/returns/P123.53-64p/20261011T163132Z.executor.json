@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "sweep-selftests": "pass",
+    "sweep-selftests --spaced": "pass",
+    "ruff": "pass",
+    "vermin": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only task, expectRedFirst false; the change removes a dependency of the suite on the live plan's findings",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "In plugins/audit/tests/test_validate_manifest.py added LIVE_PLANS and made case sp1 skip the --strict exit code for docs/audit/audit-plan.json, keeping its schema-line check (_schema_lines == []); the starter and the acme example still pass --strict. Exit codes: sweep-selftests 0, --spaced 0, ruff 0, vermin 0.",
+    "descriptive": "The validator suite no longer reddens when the live plan carries a finding."
+  },
+  "testsAdded": [],
+  "claims": "claims: sp1 still asserts schema-clean for the live plan (_schema_lines == []); only the --strict exit code of the live plan was dropped, left to the gate's validate step. Basis: sweep exit 0 after the edit.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:f430d7de73eaa93439ff2a3cb699429e9f0c7edd7ab58a4606833b172d831214\",\"dirtyDigest\":\"sha256:29fb953fd52339200b970d7e7f854ef5797068f1b860ea3f3b4f60f624b289f9\",\"dirtyPaths\":{\"plugins/audit/tests/test_validate_manifest.py\":\"e3ca7b4fd26f12a4\"},\"head\":\"540bbedf\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/test_validate_manifest.py\"],\"scopeDigest\":\"sha256:32d93227ce59d959938d7ce8341a1ec21cdc4b0914611bf8028d6792ad5cc74a\",\"v\":2}"
+}

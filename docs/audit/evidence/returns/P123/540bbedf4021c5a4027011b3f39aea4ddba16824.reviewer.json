@@ -1,0 +1,815 @@
+{
+  "findings": [
+    {
+      "id": 1,
+      "severity": "med",
+      "file": "plugins/audit/tests/test_validate_manifest.py:441-472",
+      "issue": "sp1 (P123.20) runs `validate-manifest.py --strict` over the live, mutable dogfood plan (SCHEMA_PLANS[1] = docs/audit/audit-plan.json) and asserts exit 0. --strict exits 1 on any FINDING the plan carries, not only on schema lines (main() moves schema warnings into findings and keeps every structural finding), so test_validate_manifest's verdict depends on whatever state the plan is in - filing a bug or any plan fault reddens a unit suite of the validator, and a red-first over this suite reads HEAD as already red (the orchestrator saw exactly that blind a red-first). The live plan's validity is already the gate's own `validate` step.",
+      "resolution": "Read a frozen copy: commit a snapshot of a real plan as a test fixture (or build one under mkdtemp from the starter plus representative phases) and point SCHEMA_PLANS at it; leave the live plan to the gate's `validate` step. If the live plan must stay, assert only `_schema_lines(...) == []` for it, not the --strict exit code."
+    },
+    {
+      "id": 2,
+      "severity": "med",
+      "file": "plugins/audit/scripts/_deps.py:2490-2492 (lint); stale at _deps.py:355,371,526,683,749,804,820,850; manifest/_manifest_io.py:774; panel/_panel_write.py:443; panel/_panel_composition.py:66,1014; report/_report_page.py:2; status/_status_facts.py:593",
+      "issue": "P123.33's invariant ('a layer number in prose is checked or not written') is not met. _NAMED_LAYER_MENTION only reads `name` (LN)/(layer N) with a dot-free name, so module-qualified mentions (`_manifest_io.iter_tasks` (L1), `_loader.script_path` (L1), `_gate_derive.derive` (L3), `_locks.acquire` (layer 1), `audit-status.effective_bug_status` (layer 7), `_report_html._bug_view` (layer 2)), comma forms (`_evidence_io`, L2), `_panel_write`, L6)) and unclosed forms (`_manifest_io` (layer 1 ...) are unchecked - and all of the ones listed are one below _deps.LAYERS today (e.g. _manifest_io, _fmt, _journal_io, _loader, _locks at 2; _gate_derive 4; _evidence_io 3; audit-status 8; _report_html 3). These are the off-by-one class the task was opened for, and the descriptive outcome says 'the stale ones are gone'.",
+      "resolution": "Widen the regex to take the module part before a dot (`name.attr`) and the comma/unclosed shapes, then delete each number where the layer is not the argument (keep the module name), correcting it where it is; add an lmd case planting a wrong module-qualified mention and a prove-gates red row for it."
+    },
+    {
+      "id": 3,
+      "severity": "med",
+      "file": "plugins/audit/scripts/governance/run-test-gate.py:4501-4502 (_run_full)",
+      "issue": "P123.49 part (2) - 'run-test-gate, handed such a step anyway, records it as not a command: no shell run, no red gate' - holds only on main's task/phase path (split_not_commands at :4809). `_run_full` resolves meta.fullGate with `_ev.resolved_commands` and hands every entry to run_gate, so a fullGate naming claimsMatchCode (or any `review-only:` value) still runs the prose through the shell, exits 2 and records a red full run, which keeps phases provisional and holds a release through the guard. The executor disclosed the path as 'not split'.",
+      "resolution": "Run `split_not_commands` in `_run_full` too (print the same not-a-command line naming `meta.fullGate`), or have `_ev.resolved_commands` drop review-only values for every caller; add an xg-style case with `fullGate: [\"claimsMatchCode\"]` asserting no step ran and the run is not red."
+    },
+    {
+      "id": 4,
+      "severity": "med",
+      "file": "tools/check-example-pins.py:150-154,343-349; tools/verify.sh:711-712; CONTRIBUTING.md:684-694",
+      "issue": "The example-pin check (P123.27) cannot be satisfied across a release. verify.sh --release runs it before the tag exists (`tag v$version does not exist yet` is checked in the same block), so repinning the example to the new tag in the release commit is a `tag-unavailable` refusal (exit 1) and the release preflight fails; leaving it on the previous tag passes preflight, but the moment the new tag exists `pin-behind-newest-tag` (a finding, not a refusal) fires. And the live case l1 accepts only refusals, so it goes red in the ordinary per-commit sweep - which CI runs with fetch-depth 0, tags included - on every commit after the release until a follow-up repin. CONTRIBUTING.md says the check 'belongs to the release set alone', which l1 contradicts. This lands at the imminent 3.3.0 tag.",
+      "resolution": "Let the release check accept a pin equal to the version being released (plugin.json's) as 'pending this release's tag' rather than tag-unavailable, so the follower can be repinned in the release commit; and drop the pin-behind arm from l1 (keep l1 to script-missing-at-tag over existing tags), or move the live claim out of the per-commit sweep."
+    },
+    {
+      "id": 5,
+      "severity": "low",
+      "file": "plugins/audit/scripts/governance/drive-phase.py:2643-2661,620,3256-3260",
+      "issue": "drive()'s one release point covers only a returned E_STOPPED. load_phase raises ValueError('phase ... is no longer in ...') inside drive_locked after take_lock; main catches it at :3260 and prints 'stopped - ...' without passing through drive(), so that stop strands phase-<id> (as does any unexpected exception) - the class P123.2 was opened for.",
+      "resolution": "Wrap drive_locked in try/except ValueError inside drive() (convert to the E_STOPPED tuple before the release check) or release in a finally when state['lock'] == 'taken' and the outcome is a stop; add a dl case where the phase vanishes after the lock is taken."
+    },
+    {
+      "id": 6,
+      "severity": "low",
+      "file": "plugins/audit/hooks/guard-bash-writes.py:2132-2133",
+      "issue": "P123.13 records every authored out-of-scope path in state['outOfScope'] 'so attempt-bound-commit's check reads the same fact', but nothing reads the key (git grep finds only the default, the load and this write); commit-task-work's attempt_strays recomputes from its own snapshot. The key is write-only state that implies a contract that does not exist.",
+      "resolution": "Either have commit-task-work/_scoped_commit read the session's outOfScope list as corroborating evidence (and name it in the refusal), or drop the key and the sentence."
+    },
+    {
+      "id": 7,
+      "severity": "low",
+      "file": "plugins/audit/hooks/_config.py:2231-2280; plugins/audit/hooks/guard-secrets-read.py:1823",
+      "issue": "P123.13 adds a second reader of where cp/mv/install write (_config.copy_destinations) beside guard-secrets-read._copy_destinations, and they disagree: the new one has no `install -d` (creates directories, writes no file) or `-T` handling and no is_dir reading, so guard-bash-writes can attribute or block a path the plan gate's PreToolUse reader grades differently - the two-readers-of-one-command shape P123.35 consolidates elsewhere.",
+      "resolution": "Make one reader in hooks/_config (with install -d, -T and the is_dir seam) and have both hooks call it; pin the agreement with a case per spelling."
+    }
+  ],
+  "preExisting": [],
+  "intent": {
+    "answer": "matches",
+    "note": "The phase diff delivers the desired outcome's five clauses: a missing plan is created by the first add-phase/add --from-file with no placeholder (P123.1); /audit:run passes --task so a phase id is refused naming /audit:phase (P123.3); a drive stop releases the phase lock at one exit (P123.2, one ValueError path excepted - finding 5); gate evidence lands in the project through one resolver with no parked site left (P123.5 + P123.43); a clean single-checkout landing switches to the parent (P123.4). The phase also carries many tasks beyond that outcome (lints, guards, red-first helper, spaced/newline/Windows legs); every pending/exempt table they opened (BARE_CUT_PENDING, NEWLINE_PENDING, MANIFEST_DIRNAME_PROJECTS, SPACED_EXEMPT) is empty at head and its lint still has a planted-violation case (bc1, nw1/nw5/nw6, md1 + prove-gates md4, sp3/sp4). Orchestrator candidates: 1 holds (finding 1); 2 does not - no hook imports or shells to validate(), hooks may not import scripts/ and meter-usage loads usage_ledger, which imports _manifest_io only, so the cost is per verb; 3 holds (finding 2); 4 confirmed, no finding; 5 does not - no doc, test or panel reader expects `[guard-secrets-read]` on a plan-gate refusal. With no phase.request saved, where a task chose what the request left open cannot be asked.",
+    "missing": [
+      "phase.request and phase.openChoices (absent: the open-choice question cannot be asked of the record)"
+    ],
+    "redFirst": "not-attempted",
+    "redFirstBasis": "mode: phase - red-first is answered per task in `tasks`",
+    "inheritedTests": "not-asked",
+    "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked"
+  },
+  "verdict": "findings",
+  "tasks": [
+    {
+      "id": "P123.1",
+      "commit": "7f5984379554",
+      "answer": "matches",
+      "note": "audit-task.py _under_lock(create=True) for add-phase and add --from-file writes seed's meta via _create_then and removes the file unless the body returned 0; seed gains --no-task; task verbs keep the missing-manifest refusal; phase.md, init.md, verbs-in-full.md, README rows and QUICKSTART say it. The executor's outcome describes this diff.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage fp-block` in a throwaway tree at HEAD exited 1 with failing cases fp1 (house FAIL), fp2 (house FAIL), fp6 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 3/6 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.1/20261010T081245Z.executor.json, at 2026-10-10T08:20:14Z)"
+    },
+    {
+      "id": "P123.2",
+      "commit": "7af7085b8f65",
+      "answer": "matches",
+      "note": "drive() takes the lock and releases it at one exit for E_STOPPED; audit-task exit 3 maps to stop-index-lock with a README followed row and orchestrator.md rule; outcome describes it. A ValueError raised after take_lock (load_phase at drive-phase.py:620) is caught in main and bypasses that exit - finding 5.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 178 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dl2 (house FAIL), dl3 (house FAIL): SELFTEST FAILED: 176/178 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.2/20261010T090537Z.executor.json, at 2026-10-10T09:12:13Z)"
+    },
+    {
+      "id": "P123.3",
+      "commit": "7e9dc3f8a61a",
+      "answer": "diverges",
+      "note": "Code half matches: drive-phase next --task refuses a phase-shaped id naming /audit:phase and the tasks it would run, picks no task, dt3 holds; run.md/verbs-in-full/README updated. The description's first clause - establish from the testbed transcript whether the script or the model picked P1.2 and write it into the task note - was not done (P123.3 carries no notes); the outcome says so.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 184 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dt7 (house FAIL), dt8 (house FAIL), dt9 (house FAIL): SELFTEST FAILED: 181/184 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.3/20261010T102635Z.executor.json, at 2026-10-10T10:34:10Z)"
+    },
+    {
+      "id": "P123.4",
+      "commit": "abf2c1601632",
+      "answer": "matches",
+      "note": "_worktrees.landing_switch + close-phase switch the main checkout to the parent after a ref-only merge when clean and the parent is held nowhere, then commit the landing there; otherwise the old path with a 'still on <branch>' line naming git switch; phase-signoff.md's 'never moves your HEAD' rewritten, mt0-mt2 rewritten; COMPATIBILITY checked. Outcome describes the diff.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_close_phase.py --selftest` in a throwaway tree at HEAD exited 1 with 5 of 229 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - mt0 (house FAIL), mt1 (house FAIL), mt2 (house FAIL), mt3-keep (house FAIL), lt3 (house FAIL): SELFTEST FAILED: 223/229 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.4/20261010T104215Z.executor.json, at 2026-10-10T11:05:52Z)"
+    },
+    {
+      "id": "P123.5",
+      "commit": "b9e73093b92b",
+      "answer": "diverges",
+      "note": "One resolver _output.project_of_manifest, project_config_for loses the manifest-dir fallback, render-report/audit-status/commit-task-work use it, doctor stray-record check, dirname lint + prove-gates rows. But the description's 'ONE project resolver for every writer' was not met at this commit: four sites were parked in MANIFEST_DIRNAME_PROJECTS and drive-phase.project_context kept its own tier (both disclosed); P123.43 closes both, and the table is empty at head.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_run_test_gate.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 501 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - hr1 (house FAIL): SELFTEST FAILED: 500/501 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.5/20261010T111509Z.executor.json, at 2026-10-10T11:38:09Z)"
+    },
+    {
+      "id": "P123.6-z4y",
+      "commit": "2b9605486429",
+      "answer": "diverges",
+      "note": "_excerpt.py added with the five obligations, _scoped_commit/_ado_* routed, _journal_io keeps excerpts whole, verify.sh show_failure, bare_output_cut lint. The description said 'a site outside the declared files is a scope widening, not a skip', yet five scripts were parked in BARE_CUT_PENDING (disclosed); P123.41 routes them and empties the table at head.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test__scoped_commit.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 31 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code, its declared test files new at HEAD (plugins/audit/tests/test__excerpt.py) laid over as empty files), each passing with the working tree's implementation - sc30 (house FAIL): SELFTEST FAILED: 30/31 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.6-z4y/20261010T083142Z.executor.json, at 2026-10-10T08:48:49Z)"
+    },
+    {
+      "id": "P123.7",
+      "commit": "eea4ae7b72a8",
+      "answer": "matches",
+      "note": "Position-keyed exemption table beside scrubbed_plan (buildCommands, phaseGate, fullGate, testGate, tests.gate, ...), keep= replaced, executed_value_refusal at the --gate/--gate-set doors, the panel and derive-phase-gate, every plan writer journals its redactions, _invariants baseline keyed on the scrubbed spelling, SECURITY.md updated. Outcome describes the diff.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test__manifest_io.py --selftest` in a throwaway tree at HEAD exited 1 with 4 of 185 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ex1 (house FAIL): SELFTEST FAILED: 181/185 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.7/20261010T114657Z.executor.json, at 2026-10-10T12:33:18Z)"
+    },
+    {
+      "id": "P123.8",
+      "commit": "def0f5175211",
+      "answer": "matches",
+      "note": "The four stubs call selftest_requested(); selftest_argv_violations reads names bound from sys.argv and a parameter called argv, with a prove-gates row. The filed (latest) outcome describes only the retry's change to selftest_requested (flag counts anywhere before `--`), not the stub/lint work in the same commit - under-described, not wrong.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test__output.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 245 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sfl4 (house FAIL), sfl9 (house FAIL), sfl7 (house FAIL): SELFTEST FAILED: 242/245 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.8/20261010T125725Z.executor.json, at 2026-10-10T13:01:31Z)"
+    },
+    {
+      "id": "P123.9",
+      "commit": "ae63b88592e6",
+      "answer": "matches",
+      "note": "add_fix_tasks hands the batch to one `add --from-file -` with `fixes` in BATCH_TASK_KEYS (all or nothing), fix tasks default via _paths_discipline, --answer rerun marks the start and the next gate passes --no-reuse, fix_refusal wording and run_signoff comment fixed, F617 refresh_triage. Outcome describes the diff.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage rm-block --stage fx-block --stage ht-block --stage of-block` in a throwaway tree at HEAD exited 1 with failing cases rm1 (house FAIL), fb1 (house FAIL), ht1 (house FAIL), ht2 (house FAIL), ht3 (house FAIL), of4 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 5/6 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 7/14 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.9/20261010T130930Z.executor.json, at 2026-10-10T13:30:51Z)"
+    },
+    {
+      "id": "P123.10",
+      "commit": "44bb7417044b",
+      "answer": "matches",
+      "note": "audit-lookup red_step_lines names each red step's command and its excerpt (or why it could not be read); executor_return_lines puts the submit block first; no-executor-return offers resume (no attempt spent) with README/orchestrator rows. Outcome describes the diff; the measuring step is deferred to the next phase as the description says.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`sh -c python3 plugins/audit/tests/test_audit_lookup.py --selftest && python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases bf3a (house FAIL), bf3b (house FAIL), bf3c (house FAIL), but none is the task's own (bf3a a retry after a red gate step names THAT step's command and its failing line, and does not list the green step beside it: \"Retry - what attempt 1 left on the record\\noutcome.technical (verbatim):\\nattempt 1: gate red on bf_case\\ntestEvidence: runId run-red, status failed, at z\\nredFirst: none recorded\\nThe working tree is the last attempt; this is what it answered.\\n\\n## Your return\\nYour last act files the return object agents/audit-executor.md declares - it checks the shape, runs the red-first helper on the command after `--`, takes the stamp and files the return once. Put the return object in place of the middle line and run the block as it stands - the object goes on the command's stdin and nothing is written to disk:\": the runner locates it in no declared test file; bf3b a retry whose recorded run has no ledger row SAYS the steps were not read and why, rather than printing 'none recorded' for them: \"Retry - what attempt 1 left on the record\\noutcome.technical (verbatim):\\nattempt 1: gate red on bf_case\\ntestEvidence: runId run-red, status failed, at z\\nredFirst: none recorded\\nThe working tree is the last attempt; this is what it answered.\\n\\n## Your return\\nYour last act files the return object agents/audit-executor.md declares - it checks the shape, runs the red-first helper on the command after `--`, takes the stamp and files the return once. Put the return object in place of the middle line and run the block as it stands - the object goes on the command's stdin and nothing is written to disk:\": the runner locates it in no declared test file; bf3c the submit block is the FIRST thing in 'Your return' - before the paragraph that says what it files: 'Your last act files the return object agents/audit-executor.md declares - it checks the shape, runs the red-first helper on the command after `--`, takes the stamp and files the return once. Put the r': the runner locates it in no declared test file) - a case is the task's only when the runner locates it in a declared test file (plugins/audit/tests/test_audit_lookup.py, plugins/audit/tests/test_drive_phase.py) whose named class defines it, with no identical def in HEAD's test files - SELFTEST FAILED: 81/84 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.10/20261010T133915Z.executor.json, at 2026-10-10T13:52:45Z)"
+    },
+    {
+      "id": "P123.11",
+      "commit": "3994386aefbb",
+      "answer": "matches",
+      "note": "Finding $def names status/acceptedReason/carriedTo with writers, carriedTo joins SCALAR_REFS (ir13b), record_fix_on_findings changes appended to the task.done row (hd6b). The gen-demo-manifest SCHEMA_EXEMPTIONS rows the executor could not add are in the same commit (gen-demo-manifest.py:928-931).",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test__id_refs.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 16 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ir13b (house FAIL): SELFTEST FAILED: 15/16 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.11/20261010T141120Z.executor.json, at 2026-10-10T14:18:43Z)"
+    },
+    {
+      "id": "P123.12",
+      "commit": "9ed765c3d3f6",
+      "answer": "matches",
+      "note": "status_paths reads porcelain -z (renames give both names); start refuses a dirty file held by another started task and records a blob snapshot; commit-task-work and done --commit refuse predating/mixed declared changes and in-attempt strays no in_progress task covers; docs updated. MIXED is refused rather than hunk-split, which the description allows ('where it can').",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage lo-block` in a throwaway tree at HEAD exited 1 with 5 of 16 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ae1 (house FAIL), ae4 (house FAIL), ae4 (house FAIL), ae5 (house FAIL), ae6 (house FAIL): SELFTEST FAILED: 11/16 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.12/20261010T142710Z.executor.json, at 2026-10-10T14:53:18Z)"
+    },
+    {
+      "id": "P123.13",
+      "commit": "3836bca84360",
+      "answer": "diverges",
+      "note": "_config.copy_destinations, guard-bash-writes blocks (PostToolUse decision block) a non-source file a command authored outside scope in the deny tier, warn/observe tiers unchanged, SECURITY.md. The clause 'recorded in the session state so attempt-bound-commit's check reads the same fact' is half done: state.outOfScope is written and read by nothing (finding 6).",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_guard_bash_writes.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 226 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - co1 (house FAIL): SELFTEST FAILED: 224/226 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.13/20261010T150130Z.executor.json, at 2026-10-10T15:09:04Z)"
+    },
+    {
+      "id": "P123.14",
+      "commit": "4eddbe5c08e2",
+      "answer": "matches",
+      "note": "_TASK_RULE_LIB cached via _task_rule(), covering_key returns None before loading on an empty map; ck4/ck5. Outcome describes the diff.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`python3 plugins/audit/tests/test__config.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 292/293 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.14/20261010T151701Z.executor.json, at 2026-10-10T15:18:12Z)"
+    },
+    {
+      "id": "P123.15",
+      "commit": "582ff91a4c6d",
+      "answer": "matches",
+      "note": "Every listed ts ordering routed through stamp_moment/newest_row/oldest_first or _journal_io.row_moment, _epoch folded, windowless other run undecided, run-test-gate uses row_is_red, import-evidence decision recorded, ts_order_violations lint with prove-gates rows; the _deps/gate-parity follow-ups the executor could not edit are in the same commit.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`python3 plugins/audit/tests/test__gate_derive.py --selftest` in a throwaway tree at HEAD exited 1, but no case --case names failed an assertion as the task's own: dg-red-moment the newest red row is the newest MOMENT, not the greatest spelling - an offset stamp an hour earlier must not win: {'scope': 'phase', 'phaseId': 'P1', 'status': 'failed', 'ts': '2026-01-06T10:30:00+02:00', 'steps': []} (house FAIL) and 1 more - SELFTEST FAILED: 42/44 cases passed; --case dg-red-moment names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.15/20261010T152613Z.executor.json, at 2026-10-10T16:02:12Z)"
+    },
+    {
+      "id": "P123.16",
+      "commit": "6ab0c7dc276d",
+      "answer": "matches",
+      "note": "E_UNRECORDED=3 for a --record run that stored nothing (GATE NOT RECORDED), banners stored on the row and reprinted on reuse, _declared_by line-range/directory cases through classify_mutations, COMPATIBILITY/docs rows. Outcome describes the diff.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_run_test_gate.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module 'rtg' has no attribute 'E_UNRECORDED'\", and the task introduces 'E_UNRECORDED': absent from HEAD's plugins/audit/scripts/governance/run-test-gate.py, plugins/audit/scripts/governance/_evidence_io.py, COMPATIBILITY.md, plugins/audit/reference/phase-signoff.md, plugins/audit/reference/execute-task.md, PLUGIN-BUILD-GUIDE.md and present in the working tree's plugins/audit/scripts/governance/run-test-gate.py, PLUGIN-BUILD-GUIDE.md; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.16/20261010T161223Z.executor.json, at 2026-10-10T16:34:11Z)"
+    },
+    {
+      "id": "P123.17",
+      "commit": "9b7a30d46fa4",
+      "answer": "matches",
+      "note": "_gate_catches_payload ships {catches, readError} with the evidence tab's basis; _usage_shape default empty-but-readable; regression cases. Outcome describes the diff.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test__panel_usage.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 10 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - usage_state carries gateCatches even before any evidence is written - absent evidence reads as an empty list, never a missing key (house FAIL): SELFTEST FAILED: 8/10 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.17/20261010T090538Z.executor.json, at 2026-10-10T09:30:58Z)"
+    },
+    {
+      "id": "P123.18",
+      "commit": "f96824a4a2d8",
+      "answer": "diverges",
+      "note": "F535 (_replaces reads for/with targets, bare annotation proves), F573 (--derive-introduces from the diff), F576 (source mark) and hyphen --case are done. F613 (JS missing-module table), the house-runner abort reading and F621 (inline suite) - all in the description - were not; the outcome says NOT DONE. P123.44 delivers them at head.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`python3 plugins/audit/tests/test__filed_returns.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 53/54 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.18/20261010T164349Z.executor.json, at 2026-10-10T17:04:28Z)"
+    },
+    {
+      "id": "P123.19",
+      "commit": "5a30e1d8bdc4",
+      "answer": "matches",
+      "note": "close-phase.ignored_stamp_refusal asks _scoped_commit's classifier before the merge and refuses 'Nothing was merged'; post-merge text says the merge landed; COMPATIBILITY and phase-signoff rows; ie1/ie2. Skipped when the plan file itself is ignored, disclosed with reason.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_close_phase.py --selftest --stage lt-block` in a throwaway tree at HEAD exited 1 with 1 of 10 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ie1 (house FAIL): SELFTEST FAILED: 9/10 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.19/20261010T171244Z.executor.json, at 2026-10-10T17:23:07Z)"
+    },
+    {
+      "id": "P123.20",
+      "commit": "d5ef38b77f31",
+      "answer": "matches",
+      "note": "_json_schema.py stdlib reader with the five obligations, whole-plan schema check as 4.0.0-naming warnings (findings under --strict), bug reader folded in, list/object ids never raise, bound_validator for the fallback writers, ecma_pattern/unreadable-schema fixes, ado.id 7.0 kept and explained, cost measured. sp1 couples the suite to the live plan - finding 1.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_validate_manifest.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases c21 (house FAIL), sp1 (house FAIL), sp2 (house FAIL), sp3 (house FAIL), nr1 (house FAIL), nr2 (house FAIL), but with the working tree's implementation the task's tests do not all pass (SELFTEST FAILED: 54/55 cases passed), so the red is not one the fix turns green - SELFTEST FAILED: 49/55 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.20/20261010T181114Z.executor.json, at 2026-10-10T18:12:04Z)"
+    },
+    {
+      "id": "P123.21",
+      "commit": "96f7f5db6c4c",
+      "answer": "matches",
+      "note": "audit-task reindex and bug-close verbs, bug-add --ado/--ado-parent/--reported-by, _bug_for_add refuses a live taskId, crossref remedy names reindex, commit-task-work carries the index for a completed bug link (and _invariants allows exactly that), docs no longer spell hand edits. Outcome describes the diff.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_commit_task_work.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 101 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ctw82 (house FAIL): SELFTEST FAILED: 99/101 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.21/20261010T182054Z.executor.json, at 2026-10-10T18:53:04Z)"
+    },
+    {
+      "id": "P123.22",
+      "commit": "170ff6829b4c",
+      "answer": "matches",
+      "note": "_tip_only_remedy says the holder is unknown with git's reason on an unreadable listing and names git worktree prune before the add for a prunable holder; hs5d/hs5e. Outcome describes it.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_audit_task.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 986 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - hs5d (house FAIL), hs5e (house FAIL): SELFTEST FAILED: 984/986 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.22/20261010T190119Z.executor.json, at 2026-10-10T19:11:45Z)"
+    },
+    {
+      "id": "P123.23",
+      "commit": "92f738a98500",
+      "answer": "matches",
+      "note": "Backups park under <checkout>/.claude/audit-backups/ with a targeted ignore line through the shared _mio.ensure_claude_ignored (panel-server delegates), docs and doctor remedy updated; bk1-bk8. Outcome describes it.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_migrate_manifest.py --selftest` in a throwaway tree at HEAD exited 1 with 4 of 5 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bk1 (house FAIL), bk2 (house FAIL), bk3 (house FAIL), bk4 (house FAIL): SELFTEST FAILED: 0/5 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.23/20261010T192053Z.executor.json, at 2026-10-10T19:26:37Z)"
+    },
+    {
+      "id": "P123.24",
+      "commit": "162c8f03429c",
+      "answer": "matches",
+      "note": "Backslash-normalising $0 in builtins in py-launch.sh and the other scripts, sh_self_dir lint, text_write_newline lint with a shrink-only pending table, LF writers, pg18i, junction fallback for i39-i41, F615 breaker retry. Pending rows were for files outside the task (closed by P123.46/P123.52).",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_py_launch.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 22 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pl20 (house FAIL): SELFTEST FAILED: 19/22 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.24/20261010T193521Z.executor.json, at 2026-10-10T19:59:41Z)"
+    },
+    {
+      "id": "P123.25",
+      "commit": "90b2e3290352",
+      "answer": "matches",
+      "note": "_loader.script_index/script_path/load_script gain a root seam, test__loader runs its probe under mkdtemp and asserts scripts/ unchanged, test__journal_io walks through lint_py_files (pw8). Outcome describes it.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "not-attempted",
+      "redFirstBasis": "regression mode with expectRedFirst false (tests.mode `regression` in P123.json); the executor's return reads 'regression mode, expectRedFirst false: fix implemented first, then tests locking it' - the mode owes no red."
+    },
+    {
+      "id": "P123.26",
+      "commit": "890e3e0bfff7",
+      "answer": "matches",
+      "note": "Fixture paths quoted with shlex.quote, --spaced leg (space + non-suffix symlink TMPDIR, spaced interpreter) wired into verify.sh/ci.yml/CONTRIBUTING/CLAUDE.md with gate-parity rows; surviving product reds exempted with reasons and handed on, as the description asked (closed by P123.35/42/47; SPACED_EXEMPT is {} at head).",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "not-attempted",
+      "redFirstBasis": "regression mode with expectRedFirst false (tests.mode `regression`); the return reads 'regression task, expectRedFirst false. Reds watched before the fix under a spaced + symlinked TMPDIR...' - the mode owes no red; the watched reds carry no command and exit code, so nothing beyond not-attempted is graded."
+    },
+    {
+      "id": "P123.27",
+      "commit": "3c23b4592e44",
+      "answer": "matches",
+      "note": "tools/check-example-pins.py added, azure example repinned to v3.2.0 and rewritten to call the clone, wired into verify.sh --release and the docs. Its live case l1 runs in the per-commit sweep and cannot be satisfied across a release - finding 4.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 tools/check-example-pins.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 14 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code, its declared test files new at HEAD (tools/check-example-pins.py) laid over as empty files), each passing with the working tree's implementation - l1 (house FAIL): SELFTEST FAILED: 13/14 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.27/20261010T210332Z.executor.json, at 2026-10-10T21:18:51Z)"
+    },
+    {
+      "id": "P123.28",
+      "commit": "f6849116d22f",
+      "answer": "matches",
+      "note": "_report_html.e_title inserts <wbr> in long unbroken runs (HTML only), title call sites use it, tables.css comment, FRAMED_BELOW exported from responsive.mjs, leg 10b plants per table and prints it, artifacts re-rendered. Outcome describes it.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SyntaxError: The requested module './ui-checks/responsive.mjs' does not provide an export named 'FRAMED_BELOW'; HEAD's own tests on HEAD's code are not green (no tally or error reader matched its output, so no line of it is quoted as decisive) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.28/20261010T214548Z.executor.json, at 2026-10-10T21:48:57Z)"
+    },
+    {
+      "id": "P123.29",
+      "commit": "bf8430742f54",
+      "answer": "matches",
+      "note": "One window helper in hooks/_config used by journal-writes (Pre notes the start; Post skips a move a verb row in the window accounts for, marks an unaccounted one unattributed only when a peer is evidenced) and guard-bash-writes (absorbs paths older than the start; names both candidates under a live peer lock). The 'unattributed only with a peer' narrowing is disclosed with reason.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_journal_writes.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 137/138 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.29/20261010T215658Z.executor.json, at 2026-10-10T22:13:09Z)"
+    },
+    {
+      "id": "P123.30",
+      "commit": "bab5e0a455a3",
+      "answer": "matches",
+      "note": "api() races fetch and the body read against one API_BOUND_MS timer with an AbortController; a write resolves to NO_ANSWER, a read rejects with noAnswer; timer cleared; three vitest cases. Outcome describes it.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`npx vitest run tools/ui-tests/server-offline.test.mjs` in a throwaway tree at HEAD exited 1 with 2 of 12 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - resolves a WRITE to the no-answer refusal once the bound passes (AssertionError: expected +0 to be 1 // Object.is equality) and 1 more: Tests  3 failed | 9 passed (12); run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.30/20261010T090538Z.executor.json, at 2026-10-10T09:40:35Z)"
+    },
+    {
+      "id": "P123.31",
+      "commit": "15248caca1d5",
+      "answer": "matches",
+      "note": "tools/_suite marker helpers; prove-gates holds the marker for the run; sweep-selftests refuses on a live/unreadable marker and proceeds past a dead pid's; orchestrator-state reports it. Outcome describes it (end-to-end mutating run not exercised, disclosed).",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`python3 tools/sweep-selftests.py` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: ImportError: cannot import name 'git_dir_of' from '_suite' (/private/var/folders/d1/pwtx3bsx53g9w4w6wslwxkjr0000gn/T/audit-red-f5627tj4/tree/tools/_suite.py); HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 54/55 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.31/20261010T222241Z.executor.json, at 2026-10-10T22:43:54Z)"
+    },
+    {
+      "id": "P123.32",
+      "commit": "95e29ccfda3a",
+      "answer": "matches",
+      "note": "The listed ratio/count phrases are gone (the description's grep is empty at head outside fixtures), fo2 prints its measured table, the _worktrees comment drops its count, CLAUDE.md states the under-ten exception. Outcome describes it.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "not-attempted",
+      "redFirstBasis": "gate-only mode with expectRedFirst false (tests.mode `gate-only`); the return reads 'gate-only task, expectRedFirst false' - the mode owes no red."
+    },
+    {
+      "id": "P123.33",
+      "commit": "2dfff566352a",
+      "answer": "diverges",
+      "note": "layer_mention_drift reads `name` (layer N)/(LN) and 'this file (LN)' and the flagged mentions were repaired; the close-phase HEAD comment fixed. The invariant 'a layer number in prose is checked or not written' is not met: module-qualified and comma forms stay wrong at head, and the descriptive outcome ('the stale ones are gone') overstates the diff (the technical half discloses the module-qualified gap) - finding 2.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test__deps.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_deps' has no attribute 'layer_mention_drift'. Did you mean: 'layer_doc_drift'?\", and the task introduces 'layer_mention_drift': absent from HEAD's plugins/audit/scripts/_deps.py, tools/prove-gates.py, plugins/audit/scripts/demo/gen-demo-usage.py, plugins/audit/scripts/panel/_panel_page.py, plugins/audit/scripts/panel/_panel_state.py, plugins/audit/scripts/config/_config_rules.py, plugins/audit/scripts/config/validate-config.py, plugins/audit/scripts/manifest/_ado_drift.py, plugins/audit/scripts/manifest/_manifest_io.py, plugins/audit/scripts/manifest/_manifest_phases.py, plugins/audit/scripts/manifest/_manifest_vocab.py, plugins/audit/scripts/manifest/_priority.py, plugins/audit/scripts/usage/_usage_core.py, plugins/audit/scripts/status/_doctor_ado.py, plugins/audit/scripts/status/_doctor_completions.py, plugins/audit/scripts/status/_doctor_hygiene.py, plugins/audit/scripts/status/_doctor_setup.py, plugins/audit/scripts/status/_doctor_trail.py, plugins/audit/scripts/status/_status_facts.py, plugins/audit/scripts/status/audit-status.py, plugins/audit/scripts/governance/_locks.py, plugins/audit/scripts/governance/audit-journal.py, plugins/audit/scripts/report/_report_html.py, plugins/audit/scripts/report/_report_md.py, plugins/audit/scripts/report/_report_page.py, plugins/audit/scripts/report/render-report.py, PLUGIN-BUILD-GUIDE.md, plugins/audit/scripts/manifest/migrate-manifest.py, plugins/audit/scripts/manifest/validate-manifest.py, plugins/audit/scripts/report/_report_usage.py, plugins/audit/scripts/usage/audit-usage.py, docs/screenshots/areas.png, docs/screenshots/authors.png, docs/screenshots/captured-at.json, docs/screenshots/dark.png, docs/screenshots/demo-gate.gif, docs/screenshots/expanded.png, docs/screenshots/filtered.png, docs/screenshots/filters.png, docs/screenshots/mobile.png, docs/screenshots/overview.png, docs/screenshots/panel-appearance.png, docs/screenshots/panel-blocks.png, docs/screenshots/panel-composition-expanded.png, docs/screenshots/panel-composition.png, docs/screenshots/panel-confirm.png, docs/screenshots/panel-dark.png, docs/screenshots/panel-gate.png, docs/screenshots/panel-guards.png, docs/screenshots/panel-help.png, docs/screenshots/panel-mobile.png, docs/screenshots/panel-monthly.png, docs/screenshots/panel-overview.png, docs/screenshots/panel-person.png, docs/screenshots/panel-policy-expanded.png, docs/screenshots/panel-policy.png, docs/screenshots/panel-proposals.png, docs/screenshots/panel-usage.png and present in the working tree's plugins/audit/scripts/_deps.py, tools/prove-gates.py, PLUGIN-BUILD-GUIDE.md; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.33/20261010T231935Z.executor.json, at 2026-10-10T23:39:07Z)"
+    },
+    {
+      "id": "P123.34",
+      "commit": "414dc7b090e9",
+      "answer": "matches",
+      "note": "guard-history-rewrite counts git only in command position (_command_positions over _op_tokens), substitutions read, _config.split_heredocs ignores quoted <<, opt-in pipe_data far-side reading with the two holes kept shut; cp1-cp17, hq1-hq8; SECURITY.md rewritten. Outcome describes it.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_guard_history_rewrite.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 0/1 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.34/20261010T234738Z.executor.json, at 2026-10-11T07:57:37Z)"
+    },
+    {
+      "id": "P123.35",
+      "commit": "7179658d37cd",
+      "answer": "matches",
+      "note": "program_candidates keeps floor candidates, b5h12c reaches the here-string no-raise lines, effective_cwd refuses the doubled backslash and escaped dash, `[` documented as literal in SECURITY.md, quoted spaced redirect targets read whole, cd-heredoc pinned, plan-gate refusals signed `[plan gate]`, SPACED_EXEMPT row removed. No reader expects `[guard-secrets-read]` on a plan-gate refusal (only s19/j1/pgn1 pin it, for non-plan messages).",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_guard_secrets_read.py --selftest` in a throwaway tree at HEAD exited 1 with 7 of 699 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rq1 (house FAIL), rq2 (house FAIL), rq3 (house FAIL), rq4 (house FAIL), rq5 (house FAIL), pgn1 (house FAIL), b5h12c (house FAIL): SELFTEST FAILED: 692/699 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.35/20261011T080659Z.executor.json, at 2026-10-11T08:24:22Z)"
+    },
+    {
+      "id": "P123.37",
+      "commit": "369ce4765bf3",
+      "answer": "matches",
+      "note": "slot_key keys the free-file slot by session+agent_id for a dispatched agent and by session for the main loop in require-plan, guard-secrets-read and guard-bash-writes; the refusal names the spending agent and when. Task id not recorded (no cheap source in the hot path), disclosed; the description allows 'task or agent'.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_require_plan.py --selftest` in a throwaway tree at HEAD exited 1 with 4 of 219 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - b9 (house FAIL), b10 (house FAIL), b11 (house FAIL), b12 (house FAIL): SELFTEST FAILED: 215/219 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.37/20261011T083345Z.executor.json, at 2026-10-11T08:48:00Z)"
+    },
+    {
+      "id": "P123.38",
+      "commit": "6f08d2a44101",
+      "answer": "matches",
+      "note": "Redo recut on integration-refused (no attempt), hooks_width demotes to width 1 on evidence (F620), phase-review head/commit prefixes accepted (7+ hex, resolved by git), KEPT TREES in status, the unpinned edges pinned, docs/hint/README fixed. Outcome describes it.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage wd-block` in a throwaway tree at HEAD exited 1 with failing cases wd1 (house FAIL), wd2 (house FAIL), wd3 (house FAIL), wd3a (house FAIL), wd4 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 1/6 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.38/20261011T091408Z.executor.json, at 2026-10-11T09:54:18Z)"
+    },
+    {
+      "id": "P123.39-64p",
+      "commit": "c8ff50d36817",
+      "answer": "matches",
+      "note": "project_context joins every relative manifest to the project (never the cwd); a wave brief's submit block prints the project's absolute manifest and says it runs from the project; ds9w-y, bf42/bf43. Outcome describes it.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 181 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ds9w (house FAIL): SELFTEST FAILED: 180/181 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.39-64p/20261010T090539Z.executor.json, at 2026-10-10T10:03:40Z)"
+    },
+    {
+      "id": "P123.40-64p",
+      "commit": "bbd44ed705ff",
+      "answer": "matches",
+      "note": "stored_manifest joins label segments with the native path module; require-plan prints the bound worktree as normpath(realpath); bt2 compares normcase(realpath); sr210b/c drive ntpath. The 8.3-expansion half is CI-only, stated.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases sr23 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 235/236 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 234/236 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.40-64p/20261011T100334Z.executor.json, at 2026-10-11T10:23:11Z)"
+    },
+    {
+      "id": "P123.41-64p",
+      "commit": "0082528b74c3",
+      "answer": "matches",
+      "note": "All twelve parked head-only cuts route through _excerpt (including the two via _worktrees' runner the lint cannot see), BARE_CUT_PENDING is () and bc4 asserts it with the real tree clean. Outcome describes it.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "not-attempted",
+      "redFirstBasis": "regression mode with expectRedFirst false (tests.mode `regression`); the return reads 'regression task, expectRedFirst false; no helper run. I did watch bc4 ... FAIL on the unrouted tree' - the mode owes no red, and the hand-watched FAIL carries no exit code."
+    },
+    {
+      "id": "P123.42-64p",
+      "commit": "1fe63e7df35d",
+      "answer": "matches",
+      "note": "guard-release reads publishers from shell words past assignments, wrappers, git global options and sh -c, falling back to the regex reading only when the command will not tokenise; gr70/gr70b; gr34/gr34c quoted and the SPACED_EXEMPT row removed. Outcome describes it.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "not-attempted",
+      "redFirstBasis": "regression mode with expectRedFirst false (tests.mode `regression`, set because the inline suite cannot be laid over HEAD); the return reads 'regression task over an inline suite ... The red was observed by hand before the fix: gr70/gr70b failed 99/100' - the mode owes no red."
+    },
+    {
+      "id": "P123.43-64p",
+      "commit": "23ad35e55c4e",
+      "answer": "matches",
+      "note": "repair-commits, repair-tests-add, _proposals.run and record-risk-confirmation ask the resolver; MANIFEST_DIRNAME_PROJECTS = (); drive-phase.project_context asks the resolver unless --project-dir; import-evidence docstring updated; md4, dl4. Outcome describes it.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test__output.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 257 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - md4 (house FAIL): SELFTEST FAILED: 256/257 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.43-64p/20261011T110855Z.executor.json, at 2026-10-11T11:38:15Z)"
+    },
+    {
+      "id": "P123.44-64p",
+      "commit": "12a41b30aca3",
+      "answer": "matches",
+      "note": "stamp-verification gains one per-runner MISSING_SPELLINGS table (house abort, vitest/node, Vite, jest), missing_subjects pairing reports with introduced symbols or declared files, inline-suite red via test-only hunks or could-not-prove with reason; audit-task add/scope pick regression for inline-only tests.add. Outcome describes it.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases sm1 (house FAIL), sh1 (house FAIL), sh3 (house FAIL), si1 (house FAIL), si2 (house FAIL), si4 (house FAIL), sr23 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 237/238 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 240/248 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.44-64p/20261011T114639Z.executor.json, at 2026-10-11T12:16:40Z)"
+    },
+    {
+      "id": "P123.45-64p",
+      "commit": "a3ec357ccd8d",
+      "answer": "matches",
+      "note": "_scoped_commit.close_evidence_refusal (not-attempted return over no change; absent tests.add file) asked by commit-task-work and done --commit; drive re-issues a printed brief whose scope changed with no attempt spent; F623 locked by ce4/ce5 since the start snapshot already lists every dirty path. Outcome describes it.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage ce-block` in a throwaway tree at HEAD exited 1 with failing cases ce1 (house FAIL), ce2 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 3/5 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.45-64p/20261011T122601Z.executor.json, at 2026-10-11T12:50:36Z)"
+    },
+    {
+      "id": "P123.46-64p",
+      "commit": "7516c6d9f40e",
+      "answer": "matches",
+      "note": "NEWLINE_PENDING emptied (kept with its stale-row check), NEWLINE_DIRS adds plugin hooks, every pending write and the hooks' writes name newline, render-report LF under a CRLF default (rl10). .claude/hooks left to P123.52, within the description's 'if the shared walk reaches it'.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_render_report.py --selftest --stage rl` in a throwaway tree at HEAD exited 1 with 1 of 295 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rl10 (house FAIL): SELFTEST FAILED: 294/295 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.46-64p/20261011T125924Z.executor.json, at 2026-10-11T13:11:22Z)"
+    },
+    {
+      "id": "P123.47-64p",
+      "commit": "a2602d6edc26",
+      "answer": "matches",
+      "note": "Known machine roots (checkout, parent, home, temp, as given and resolved) matched as literal prefixes longest first, spaced tail consumed under an outside root; NODE_OPTIONS read with node's quoting; _harness fr2/sr5 read lines; SPACED_EXEMPT = {}; check-committed-pii q2s; corpus rewrites recorded. Outcome describes it.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test__machine_paths.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 13 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - mp12 (house FAIL): SELFTEST FAILED: 12/13 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.47-64p/20261011T131929Z.executor.json, at 2026-10-11T13:52:04Z)"
+    },
+    {
+      "id": "P123.48-64p",
+      "commit": "4e9ff55b71b1",
+      "answer": "matches",
+      "note": "_fixes_targets refuses (writing nothing) any finding whose file names no usable path, shared by add --fixes and the batch/drive path; _runnerless_test_note when a test is asked for and no runner is derived. cz17/cz18 lock behaviour that already held, as disclosed.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage cz-block` in a throwaway tree at HEAD exited 1 with 3 of 25 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cz16 (house FAIL), cz16b (house FAIL), cz19 (house FAIL): SELFTEST FAILED: 22/25 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.48-64p/20261011T140011Z.executor.json, at 2026-10-11T14:11:52Z)"
+    },
+    {
+      "id": "P123.49-64p",
+      "commit": "e3b0fac32f53",
+      "answer": "diverges",
+      "note": "Review-only keys skipped once in phase_gate_default, catalog runs:false, reviewer briefs carry the asks sentence, scope --gate-set/--gate-drop on a not-started task, run-test-gate's main gate prints not-a-command and stays green. Part (2) is not met on the --full path: _run_full resolves meta.fullGate without split_not_commands (disclosed as 'not split') - finding 3.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test__gate_feed.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 38 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - gf30 (house FAIL): SELFTEST FAILED: 36/38 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.49-64p/20261011T142002Z.executor.json, at 2026-10-11T14:47:59Z)"
+    },
+    {
+      "id": "P123.50-64p",
+      "commit": "e406f1ee43f9",
+      "answer": "matches",
+      "note": "reusable_run takes the newest verdict row for the identity and returns None when that row is mute-excused instead of stepping to an older red; render_reuse names the repeated row and why a newer row was not taken. The testbed symptom was not reproduced on current code (rerun already passes --no-reuse since P123.9); rm4-rm7 lock it and pass on the unfixed code, as disclosed.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_run_test_gate.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 515 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ru41 (house FAIL): SELFTEST FAILED: 513/515 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.50-64p/20261011T145626Z.executor.json, at 2026-10-11T15:13:23Z)"
+    },
+    {
+      "id": "P123.51-64p",
+      "commit": "d24b3047d570",
+      "answer": "matches",
+      "note": "sr23 polls for the child's start mark against START_DEADLINE and reports could-not-run via _harness when it never appears; the throwaway-leftover filter fixed; stamp-verification reads a HEAD failure only on the unknown-stage check for a stage the task's test files add as a new stage (ns1-ns4, nu1-nu3). Outcome describes it.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest --stage sr-red-baseline` in a throwaway tree at HEAD exited 1 with 1 of 17 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ns1 (house FAIL): SELFTEST FAILED: 16/17 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.51-64p/20261011T152151Z.executor.json, at 2026-10-11T15:46:49Z)"
+    },
+    {
+      "id": "P123.52-64p",
+      "commit": "540bbedf4021",
+      "answer": "matches",
+      "note": "NEWLINE_DIRS adds REPO_ROOT/.claude/hooks when it exists, the four repo hooks' text writes name newline='\\n', nw6 pins the walk and a planted write; pending list stays empty. Outcome describes it.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "every task's tests.gate holds `selftests` -> `python3 tools/sweep-selftests.py`, which selects every suite in the project (beside validate, plugin-validate, status --gate, report, ruff+vermin, shots, interactive); the gate runs a whole project, so the question is not asked",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test__output.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 259 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - nw6 (house FAIL): SELFTEST FAILED: 258/259 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.52-64p/20261011T155528Z.executor.json, at 2026-10-11T16:07:26Z)"
+    }
+  ],
+  "computedAnswers": {
+    "P123.1": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.2": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.3": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.4": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.5": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.6-z4y": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.7": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.8": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.9": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.10": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.11": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.12": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.13": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.14": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.15": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.16": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.17": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.18": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.19": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.20": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.21": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.22": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.23": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.24": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.27": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.28": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.29": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.30": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.31": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.33": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.34": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.35": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.37": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.38": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.39-64p": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.40-64p": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.43-64p": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.44-64p": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.45-64p": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.46-64p": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.47-64p": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.48-64p": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.49-64p": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.50-64p": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.51-64p": [
+      "redFirst",
+      "redFirstBasis"
+    ],
+    "P123.52-64p": [
+      "redFirst",
+      "redFirstBasis"
+    ]
+  }
+}
