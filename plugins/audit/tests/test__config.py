@@ -2443,6 +2443,41 @@ def _cases(check):
               _got.get("bound") is True and bool(_got.get("error")))
         check("tb7 bound_worktrees of a repository with no linked worktree is "
               "empty", M.bound_worktrees(_plain) == [])
+
+        def _tb_phase_tree(name, status):
+            tree = os.path.join(_tb, name)
+            os.makedirs(tree)
+            with open(os.path.join(tree, "p.json"), "w") as fh:
+                json.dump({"meta": {"version": 2}, "fileIndex": {},
+                           "phases": [{"id": "P1", "status": "in_progress",
+                                       "tasks": [{"id": "T1", "status": status,
+                                                  "files": []}]}]}, fh)
+            return tree
+        for _tb_status in ("pending", "done", "blocked"):
+            _ptree = _tb_phase_tree("phase-" + _tb_status, _tb_status)
+            _got = M.task_binding(_tb_tree("wt-" + _tb_status, {
+                "createdBy": "audit", "taskId": "T1", "phaseTree": _ptree}),
+                "p.json")
+            _want = ("task T1 is %r in phase tree %s, not in_progress"
+                     % (_tb_status, _ptree))
+            check("tb8 a task the phase tree's plan holds as %s binds the tree "
+                  "to an error that says so, never to a scope: %r"
+                  % (_tb_status, _got),
+                  _got == {"bound": True, "error": _want})
+        _ptree = _tb_phase_tree("phase-running", "in_progress")
+        _got = M.task_binding(_tb_tree("wt-running", {
+            "createdBy": "audit", "taskId": "T1", "phaseTree": _ptree}), "p.json")
+        check("tb9 ALLOW: the same marker over an in_progress task binds to its "
+              "scope: %r" % (_got,),
+              _got.get("bound") is True and not _got.get("error")
+              and _got.get("taskId") == "T1" and _got.get("phaseTree") == _ptree)
+        _ptree = _tb_phase_tree("phase-other", "in_progress")
+        _got = M.task_binding(_tb_tree("wt-other", {
+            "createdBy": "audit", "taskId": "T9", "phaseTree": _ptree}), "p.json")
+        check("tb10 a marker naming a task the plan does not hold is an error "
+              "that names the task and the tree: %r" % (_got,),
+              _got.get("bound") is True and "T9" in (_got.get("error") or "")
+              and _ptree in (_got.get("error") or ""))
     finally:
         _harness.remove_tree(_tb)
 

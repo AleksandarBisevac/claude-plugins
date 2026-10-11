@@ -158,13 +158,22 @@ class _Env(object):
         self.root = root
         self.held = {}
 
+    # Claude Code's home, which the driver reads for the copy of the plugin
+    # whose hooks are loaded: a directory that does not exist unless a case
+    # that needs an install record puts one in `CLAUDE_HOME[0]`, so the
+    # machine's own installed copy never decides a wave here.
+    CLAUDE_HOME = [None]
+
     def __enter__(self):
-        names = list(self.PINNED) + list(self.DROPPED) + ["CLAUDE_PROJECT_DIR"]
+        names = list(self.PINNED) + list(self.DROPPED) + [
+            "CLAUDE_PROJECT_DIR", "CLAUDE_CONFIG_DIR"]
         self.held = dict((n, os.environ.get(n)) for n in names)
         for name in self.DROPPED:
             os.environ.pop(name, None)
         os.environ.update(self.PINNED)
         os.environ["CLAUDE_PROJECT_DIR"] = self.root
+        os.environ["CLAUDE_CONFIG_DIR"] = (
+            self.CLAUDE_HOME[0] or os.path.join(self.root, ".no-claude-home"))
         return self
 
     def __exit__(self, *exc):
@@ -1230,6 +1239,38 @@ def _submit_cases(check):
           "filing for that head is the verb's refusal: %r" % ((text, text_2),),
           code == 0 and "filed" in text and code_2 == 1
           and "already answers P1.1" in text_2)
+
+    # A commit or head spelled as a prefix of the one the plan or git holds is
+    # the same commit; the filing keys and records the longer spelling.
+    root_p, mpath_p = _repo("phaseprefix", task_ids=TASKS[:1], per_task="phase")
+    drive(M, root_p, mpath_p, phase_review=False)
+    done_p = tasks_of(mpath_p)["P1.1"]
+    recorded = done_p.get("commit") or ""
+    whole = _git_out(root_p, "rev-parse", recorded).strip()
+    entry_p = dict(entry, commit=whole)
+    review_p = {"findings": [], "intent": {"answer": "matches", "note": "done"},
+                "verdict": "clean", "tasks": [entry_p]}
+    head_p = _head(root_p)
+    code_p, text_p = _submit(None, root_p, mpath_p, PHASE, review_p,
+                             role="reviewer", tail=["--head", head_p[:12]])
+    project_p, config_p = _evio.project_config_for(mpath_p, root_p)
+    filed_p = _fr.phase_returns(_evio.evidence_dir(project_p, config_p), PHASE)
+    check("ds8p a phase review whose entry names the whole commit the plan records "
+          "in twelve characters, and whose --head is twelve characters of HEAD, "
+          "files keyed on the whole head and records the plan's spelling: %r"
+          % ((code_p, text_p, [(rel, (body or {}).get("tasks"))
+                               for rel, body, _why in filed_p]),),
+          len(whole) > len(recorded) and code_p == 0 and "filed" in text_p
+          and [rel for rel, _b, _w in filed_p] and all(
+              rel.endswith("%s.reviewer.json" % (head_p,))
+              and [e.get("commit") for e in body["tasks"]] == [recorded]
+              for rel, body, _w in filed_p))
+    ambiguous = dict(entry, commit="0" * 12)
+    code_q, text_q = _submit(None, root_p, mpath_p, PHASE, dict(
+        review_p, tasks=[ambiguous]), role="reviewer",
+        tail=["--head", "f" * 12])
+    check("ds8q ALLOW: a prefix that is not the recorded commit's is still the "
+          "verb's refusal: %r" % ((code_q, text_q),), code_q == 1)
 
     # The hand-back line is `submit`'s too, so its cases run in this block,
     # reading the phase review's two prints above for the reviewer's half.
@@ -3312,6 +3353,30 @@ def _preflight_cases(check):
     check("pf5 the same stop holds at a wave width above 1: %r" % (text,),
           instruction(text) == ("decide", "scope-gap", None)
           and not _dispatched(text))
+    root, mpath = _preflight_repo("pftask", "['tests/unit/**/*.test.ts']")
+    said = []
+    with _Env(root):
+        code = M.main(["next", "P1.1", mpath, "--project-dir", root],
+                      out=said.append)
+    text = "\n".join(said)
+    check("pf6 a width-1 run of ONE task, named by its id, stops at the same "
+          "scope-gap before any start: %r" % (text,),
+          code == 0 and instruction(text) == ("decide", "scope-gap", None)
+          and not _dispatched(text)
+          and tasks_of(mpath)["P1.1"].get("status") == "pending")
+    root, mpath = _preflight_repo("pfrule", "['tests/unit/**/*.test.ts']")
+    _next_wave(M, root, mpath)
+    _code, after = _answer_wave(M, root, mpath, "--answer", "widen")
+    rule = _loader.load_script("audit-lookup.py", "lookup_for_pf7",
+                               cache=False).WIDEN_RULE
+    brief = _brief_of(root, after, "P1.1")
+    plain_root, plain_mpath = _repo("pfplain", task_ids=TASKS[:1])
+    _code, plain = _next_wave(M, plain_root, plain_mpath)
+    check("pf7 the executor of a task that declares a test is dispatched with "
+          "the widen rule in its brief, and a task declaring none is not: %r %r"
+          % (rule, _dispatched(after)),
+          _dispatched(after) == ["P1.1"] and rule in brief
+          and rule not in _brief_of(plain_root, plain, "P1.1"))
 
 
 def _wave_width_cases(check):
@@ -3711,6 +3776,181 @@ def _width_one_cases(check):
           forced[0] != PINNED_320_DID or forced[1] != absent[1])
 
 
+def _answer_wave(M, root, mpath, *flags):
+    """One `next` over a wave fixture carrying `flags`: `(code, print)`."""
+    said = []
+    with _Env(root):
+        code = M.main(["next", PHASE, mpath, "--project-dir", root] + list(flags),
+                      out=said.append)
+    return code, "\n".join(said)
+
+
+def _wave_redo_cases(check):
+    """A wave member whose integration the phase tree refuses is offered `redo`
+    - its tree recut at the phase HEAD with the work carried over, no attempt
+    spent - and never a `retry`, which would spend one for work that was fine."""
+    M, why = _load("drive_phase_wave_redo")
+    if M is None:
+        check("wd1 the driver loads", False, why)
+        return
+    root, mpath = _wave_repo("waveredo", 2)
+    _code, first = _next_wave(M, root, mpath)
+    for t in _dispatched(first):
+        _file_wave_executor(root, mpath, t)
+    stray = os.path.join(root, "stray.txt")
+    with open(stray, "w") as fh:
+        fh.write("a change the phase tree holds that no task made\n")
+    _code, refused = _next_wave(M, root, mpath)
+    check("wd1 a dirty phase tree refuses the integration, and the decision "
+          "offers redo and block - not retry: %r" % (refused,),
+          instruction(refused) == ("decide", "integration-refused", None)
+          and "answer: next %s --answer redo|block" % (PHASE,) in refused
+          and "retry" not in refused)
+    code, wrong = _answer_wave(M, root, mpath, "--answer", "retry")
+    check("wd2 `retry` is not an answer to it any more: %r" % (wrong,),
+          code == 2 and "redo|block" in wrong)
+    os.remove(stray)
+    with open(os.path.join(root, "moved.txt"), "w") as fh:
+        fh.write("the phase tree moved on\n")
+    for argv in (["add", "moved.txt"], ["commit", "-qm", "the phase tree moved"]):
+        subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
+                       timeout=60)
+    head = _git_out(root, "rev-parse", "HEAD").strip()
+    made = len([a for a in _actions(root) if a == "task.worktree"])
+    code, after = _answer_wave(M, root, mpath, "--answer", "redo")
+    state = _drive_state(root)
+    check("wd3 redo recuts the member's tree at the phase HEAD - a new tree row, "
+          "a new base - dispatches no executor, spends no attempt, and carries "
+          "the work over so the task closes: %r %r"
+          % (after, (state.get("wave") or {}).get("bases")),
+          code == 0 and not _dispatched(after)
+          and (state.get("wave") or {}).get("bases", {}).get("P1.1") == head
+          and len([a for a in _actions(root) if a == "task.worktree"]) == made + 1
+          and _attempts(mpath, "P1.1") == 1
+          and tasks_of(mpath)["P1.1"].get("status") == "done"
+          and tasks_of(mpath)["P1.1"].get("commit"))
+    check("wd3a the carried work is the member's own bytes: %r"
+          % (_read(os.path.join(root, "src", "f1.txt")),),
+          _read(os.path.join(root, "src", "f1.txt")) == b"changed by P1.1\n")
+    check("wd3b the redo leaves no patch file behind once it applied: %r"
+          % (os.listdir(os.path.join(root, ".claude", "state", "drive")),),
+          not [n for n in os.listdir(os.path.join(root, ".claude", "state", "drive"))
+               if n.endswith(".patch")])
+    code, last = _answer_wave(M, root, mpath, "--answer", "redo")
+    check("wd4 the sibling the same stray refused is redone the same way and the "
+          "wave ends with both closed and no attempt past the first: %r" % (last,),
+          code == 0 and all(tasks_of(mpath)[t].get("status") == "done"
+                            for t in ("P1.1", "P1.2"))
+          and _attempts(mpath, "P1.2") == 1)
+
+
+def _wave_regate_cases(check):
+    """An integration that cannot say whether it overlapped a sibling
+    (`regate: null`) is re-gated on the phase tree, like an overlap; one that
+    says it did not (`regate: false`) is not."""
+    M, why = _load("drive_phase_wave_regate")
+    if M is None:
+        check("wg1 the driver loads", False, why)
+        return
+    seen = {}
+    for label, forced in (("null", None), ("false", False)):
+        root, mpath = _wave_repo("waveregate-" + label, 2)
+        _code, first = _next_wave(M, root, mpath)
+        for t in _dispatched(first):
+            _file_wave_executor(root, mpath, t)
+        real_run = M.run_verb
+        gates = []
+
+        def saying(ctx, script, args, stdin=None):
+            code, out, err = real_run(ctx, script, args, stdin=stdin)
+            if script == "run-test-gate.py":
+                gates.append((args[args.index("--task") + 1],
+                              "--tree" in args))
+            if script == "integrate-task.py":
+                body = json.loads(out)
+                body["regate"] = forced
+                out = json.dumps(body)
+            return code, out, err
+        M.run_verb = saying
+        try:
+            _code, text = _next_wave(M, root, mpath)
+        finally:
+            M.run_verb = real_run
+        seen[label] = (gates, text)
+    null_gates, null_text = seen["null"]
+    false_gates, false_text = seen["false"]
+    check("wg1 regate null re-gates each member on the phase tree after its own "
+          "tree's gate, and says so: %r %r" % (null_gates, null_text),
+          sorted(g for g in null_gates if not g[1]) == [("P1.1", False),
+                                                        ("P1.2", False)]
+          and "re-gate P1.1 green" in null_text
+          and "re-gate P1.2 green" in null_text)
+    check("wg2 ALLOW: regate false measures the gate once, in the member's tree: "
+          "%r %r" % (false_gates, false_text),
+          not [g for g in false_gates if not g[1]]
+          and "re-gate" not in false_text)
+
+
+def _wave_hooks_cases(check):
+    """Before a wave opens the driver asks which hooks Claude Code loads: a copy
+    whose hooks lack the task-tree binding runs the phase at width 1 and says
+    why; a copy that carries it, or no record at all, leaves the width alone."""
+    M, why = _load("drive_phase_wave_hooks")
+    if M is None:
+        check("wh1 the driver loads", False, why)
+        return
+    import tempfile
+    base = os.path.realpath(tempfile.mkdtemp(prefix="drive-hooks-"))
+    try:
+        def copy_of(name, binding):
+            root = os.path.join(base, name)
+            os.makedirs(os.path.join(root, "hooks"))
+            for fname, body in (("_config.py", "def task_binding(t, m):\n    pass\n"),
+                                ("require-plan.py", "x = task_binding(r, m)\n")):
+                with open(os.path.join(root, "hooks", fname), "w") as fh:
+                    fh.write(body if binding else "pass\n")
+            return root
+
+        def installed(path):
+            home = os.path.join(base, "home-%d" % (len(os.listdir(base)),))
+            os.makedirs(os.path.join(home, "plugins"))
+            with open(os.path.join(home, "plugins", "installed_plugins.json"),
+                      "w") as fh:
+                json.dump({"plugins": {"audit@quality-gates": [
+                    {"scope": "user", "installPath": path, "version": "1.0.0"}]}}, fh)
+            _Env.CLAUDE_HOME[0] = home
+
+        installed(copy_of("old", False))
+        root, mpath = _wave_repo("wavehooks-old", 2)
+        code, text = _next_wave(M, root, mpath)
+        check("wh1 hooks without the task-tree binding: the phase runs at width 1 "
+              "- one task dispatched, no wave recorded - and the print names the "
+              "copy and the width it ran at: %r" % (text,),
+              code == 0 and len(_dispatched(text)) == 1
+              and not _drive_state(root).get("wave")
+              and "task-tree binding" in text and os.path.join(base, "old") in text
+              and "width 1" in text)
+        installed(copy_of("new", True))
+        root, mpath = _wave_repo("wavehooks-new", 2)
+        code, text = _next_wave(M, root, mpath)
+        check("wh2 THE TWIN: hooks that carry it open the wave as asked, and "
+              "print nothing about the binding: %r" % (text,),
+              code == 0 and _dispatched(text) == ["P1.1", "P1.2"]
+              and "task-tree binding" not in text)
+        _Env.CLAUDE_HOME[0] = os.path.join(base, "no-home")
+        root, mpath = _wave_repo("wavehooks-none", 2)
+        code, text = _next_wave(M, root, mpath)
+        check("wh3 no record of a loaded copy: the wave opens as asked and the "
+              "print says the binding was not established, with what was looked "
+              "for: %r" % (text,),
+              code == 0 and _dispatched(text) == ["P1.1", "P1.2"]
+              and "task-tree binding not established" in text
+              and "installed_plugins.json" in text)
+    finally:
+        _Env.CLAUDE_HOME[0] = None
+        _harness.remove_tree(base)
+
+
 def _text_cases(check):
     """The texts a user meets name nothing a plugin install does not ship."""
     M, why = _load("drive_phase_text")
@@ -3777,6 +4017,8 @@ STAGES = (("dp-block", "_drive_cases"), ("dr-block", "_refusal_cases"),
           ("wz-block", "_wave_width_cases"),
           ("wt-block", "_wave_resume_cases"), ("wt5-block", "_wave_adopt_cases"),
           ("wt7-block", "_wave_review_discard_cases"),
+          ("wd-block", "_wave_redo_cases"), ("wg-block", "_wave_regate_cases"),
+          ("wh-block", "_wave_hooks_cases"),
           ("pf-block", "_preflight_cases"),
           ("tx-block", "_text_cases"), ("sb-block", "_stage_cases"))
 

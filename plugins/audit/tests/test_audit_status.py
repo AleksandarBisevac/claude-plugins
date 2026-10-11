@@ -4214,6 +4214,43 @@ def _success_line_cases(check):
                                                "--verbose"], root))
 
 
+def _kept_tree_cases(check):
+    """A task tree a wave left standing - a discarded change's, a blocked
+    member's - is named by the bare render for as long as the directory is
+    there, not only in the print of the run that kept it."""
+    root = _harness.fixture_root("audit-status-kt-")
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    mpath = os.path.join(root, "audit-plan.json")
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(_fixture(), fh)
+    quiet = _cli([mpath], root)[1]
+    kept = os.path.join(root, "kept-tree")
+    gone = os.path.join(root, "gone-tree")
+    os.makedirs(kept)
+    drive = os.path.join(root, ".claude", "state", "drive")
+    os.makedirs(drive)
+    with open(os.path.join(drive, "P2.json"), "w", encoding="utf-8") as fh:
+        json.dump({"keptTrees": {"P2.1": kept, "P2.2": gone}}, fh)
+    code, named = _cli([mpath], root)
+    check("kt1 a tree the driver recorded as kept is named - its task, its "
+          "phase, where it is and the verb that takes it down - and a recorded "
+          "tree whose directory is gone is not: %r" % (named[-500:],),
+          code == 0 and "KEPT TREES" in named and kept in named
+          and "P2.1" in named and "task-remove" in named and gone not in named)
+    check("kt2 ALLOW: a render with nothing kept is byte-identical to the one "
+          "before any state existed", quiet != named and "KEPT TREES" not in quiet)
+    shutil.rmtree(kept)
+    again = _cli([mpath], root)[1]
+    check("kt3 once the directory is removed the render stops naming it: %r"
+          % (again[-300:],), again == quiet)
+    os.makedirs(kept)
+    as_json = _cli([mpath, "--json"], root)[1]
+    check("kt4 --json carries no such block: it describes the plan, and the "
+          "bare payload is pinned against the rollup",
+          "keptTrees" not in json.loads(as_json))
+
+
 def _other_checkout_cases(check):
     """`/audit:status` run from ANOTHER checkout, no session behind it, answers
     about the checkout the plan is in. The discovery block is the observable:
@@ -4272,6 +4309,7 @@ def _selftest():
         _harness.stage(record, "es", _every_surface_cases)
         _harness.stage(record, "we", _worked_elsewhere_cases)
         _harness.stage(record, "sl-block", _success_line_cases)
+        _harness.stage(record, "kt-block", _kept_tree_cases)
     return _harness.run(body)
 
 

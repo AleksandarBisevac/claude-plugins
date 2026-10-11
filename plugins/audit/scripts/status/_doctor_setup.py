@@ -28,10 +28,12 @@ This module carries no `--selftest` of its own; its cases live in
 import json
 import os
 import io
+import pathlib
 import shutil
 import subprocess
 import sys
 import tarfile
+import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -1072,7 +1074,9 @@ def check_worktree_env(rep, cfg, git_root, platform=None, ask=None):
     block = (cfg or {}).get("executor")
     setup = block.get("worktreeSetup") if isinstance(block, dict) else None
     if isinstance(setup, str) and setup.strip():
-        rep.ok("worktree env", "executor.worktreeSetup runs in each task tree: %s"
+        rep.ok("worktree env", "executor.worktreeSetup runs in each task tree: %s "
+               "(it must not rewrite tracked files: a rewrite is read as a change "
+               "the task never declared, an `undeclared-change` decision)"
                % (setup.strip(),))
     else:
         rep.ok("worktree env",
@@ -1100,6 +1104,91 @@ def check_worktree_env(rep, cfg, git_root, platform=None, ask=None):
                  "core.longpaths is %s on this Windows machine%s"
                  % (value if code == 0 and value else "unset", reach),
                  "git config --global core.longpaths true")
+
+
+# --- the hooks a wave's trees are judged by -------------------------------------
+# A wave's trees are bound to their tasks by a marker only the hooks of a recent
+# copy read (`task_binding`). A session runs the copy it started with, so the
+# copy that decides is the one Claude Code loads, and two records name it: the
+# install record (`installed_plugins.json`) and the copies that stamped
+# themselves on a prompt (`running_plugin_stamps`). A stamp that has seen no
+# guarded tool call within this bound is history, not a loaded copy; the number
+# is the bound `_doctor_trail.IDLE_BOUND_SECONDS` uses for the same question,
+# held equal by a case rather than imported (same layer).
+LIVE_STAMP_SECONDS = 30 * 60
+_BINDING_FILES = (("_config.py", "def task_binding("),
+                  ("require-plan.py", "task_binding("))
+
+
+def _root_carries_binding(root):
+    """`(carries, why)` - whether the hooks under plugin root `root` define the
+    task-tree binding and the plan gate calls it: True or False read off the two
+    files, None beside the reason when either cannot be read."""
+    for name, needle in _BINDING_FILES:
+        path = os.path.join(root, "hooks", name)
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                text = fh.read()
+        except (OSError, ValueError) as exc:
+            return None, "%s could not be read (%s)" % (path, exc)
+        if needle not in text:
+            return False, "%s does not contain `task_binding`" % (path,)
+    return True, ""
+
+
+def hooks_task_binding(project, cfg, cfg_mod, home=None, now=None):
+    """Do the hooks Claude Code loads for `project` carry the task-tree binding?
+
+    -> {"verdict", "roots", "why"} with verdict one of
+      "lacks"          some copy named by a record has hooks without it - `why`
+                       names the copy, the record that named it and the file;
+      "carries"        at least one copy is named, every one carries it;
+      "unestablished"  nothing was named, or a named copy's hooks could not be
+                       read. NOT "carries": silence about the copies is not an
+                       answer about them, and `why` says what was looked for.
+
+    `cfg_mod` is the hooks' `_config` (the stamp reader lives beside its
+    writer); `home` and `now` are seams. Both records are files Claude Code or a
+    hook writes, so each is read fail-open and named where it is the basis."""
+    home = home or _claude_home.claude_home()
+    clock = time.time() if now is None else now
+    named, looked = [], []
+    copy, why = _claude_home.applicable_copy(home, project)
+    if copy and copy.get("installPath"):
+        named.append((copy["installPath"], "installed_plugins.json"))
+    else:
+        looked.append("installed_plugins.json names no copy for this project (%s)"
+                      % (why,))
+    state_dir = cfg_mod.state_dir(pathlib.Path(project), cfg or {})
+    read = cfg_mod.running_plugin_stamps(state_dir)
+    live = [s for s in read["stamps"]
+            if s.get("root") and clock - s.get("mtime", 0) <= LIVE_STAMP_SECONDS]
+    for stamp in live:
+        named.append((stamp["root"], "hook run record %s" % (
+            cfg_mod.RUNNING_STAMP % stamp["session"],)))
+    if not live:
+        looked.append("no hook run record in %s is live within %d minutes"
+                      % (state_dir, LIVE_STAMP_SECONDS // 60))
+    roots, unread, seen = [], [], {}
+    for root, source in named:
+        key = os.path.realpath(root)
+        if key in seen:
+            continue
+        seen[key] = True
+        carries, reason = _root_carries_binding(root)
+        roots.append({"root": root, "source": source, "carries": carries,
+                      "why": reason})
+        if carries is None:
+            unread.append(reason)
+    lacking = [r for r in roots if r["carries"] is False]
+    if lacking:
+        return {"verdict": "lacks", "roots": roots, "why": "; ".join(
+            "%s (named by %s): %s" % (r["root"], r["source"], r["why"])
+            for r in lacking)}
+    if roots and not unread:
+        return {"verdict": "carries", "roots": roots, "why": ""}
+    return {"verdict": "unestablished", "roots": roots,
+            "why": "; ".join(unread + looked) or "no copy was named"}
 
 
 # --- cli ------------------------------------------------------------------------

@@ -407,7 +407,7 @@ L8:
   audit-lock -> _claude_home, _locks, _output
   audit-logs -> _claude_home, _gate_feed, _output
   audit-lookup -> _areas, _claude_home, _config_rules, _evidence_io, _excerpt, _filed_returns, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output
-  audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
+  audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _filed_returns, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
   audit-task -> _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
@@ -417,7 +417,7 @@ L8:
   commit-manifest-index -> _claude_home, _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
   commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _loader, _machine_paths, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
-  drive-phase -> _areas, _claude_home, _config_rules, _evidence_io, _filed_returns, _gate_derive, _journal_io, _loader, _manifest_io, _manifest_phases, _output, _runner_collects, _scope_companions, _status_facts, _verdict_binding, _wave
+  drive-phase -> _areas, _claude_home, _config_rules, _doctor_setup, _evidence_io, _filed_returns, _gate_derive, _journal_io, _loader, _manifest_io, _manifest_phases, _output, _runner_collects, _scope_companions, _status_facts, _verdict_binding, _wave
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
@@ -4382,6 +4382,23 @@ per-task reviewer's dispatch is decided. `did_tasks` reads the driver's own did-
 (`FIX_ADDED`, `SIGNED`, `LANDED`, `RELEASED`); `tools/stream-cost.py` reads a driver session's
 task cycle, fix-task and close spans from them, since those steps run in subprocesses the
 session's stream never shows.
+
+**A wave's edges.** A member whose integration the phase tree refuses is offered `redo` and
+`block`, never `retry`: `redo` (`recut_tree`) reads the member's work from its tree as one binary
+patch, keeps it in a file of the state directory, takes the tree down, cuts a new one at the
+phase HEAD, applies the patch there and clears the gate mark so the gate is measured over the new
+tree - no executor is dispatched and no attempt is spent, because the work was not what failed
+(`wd1`-`wd4`). A patch the new base refuses stops the drive and names the file the work is kept
+in. Before a wave opens, `hooks_width` asks `_doctor_setup.hooks_task_binding` whether the hooks
+Claude Code loads - the copy `installed_plugins.json` records and the live copies the hook run
+records name - define the task-tree binding the plan gate judges a wave's trees by: a copy that
+lacks it runs the phase at width 1 and the print says which copy and why, a copy that carries it
+changes nothing, and no record at all leaves the width alone with a line saying the binding was
+not established (`wh1`-`wh3`). A task tree a wave leaves standing stays named in `/audit:status`
+(`kept_trees_block`) for as long as its directory exists, not only in the print of the run that
+kept it. A phase review's `submit` takes a `--head` and an entry commit written as any
+unambiguous prefix of the whole one (`whole_head`, `agreed_commits`), since the plan records
+twelve characters and git prints forty.
 
 **Bounded output.** Every print that is not a stop stays inside `INSTRUCTION_BYTES`; `dp3` holds
 it over the fixture drive, and `--verbose` adds each verb's run above the instruction. The brief

@@ -58,6 +58,7 @@ groups from claiming one id letter.
 import argparse
 import json
 import os
+import pathlib
 import sys
 import textwrap
 
@@ -100,6 +101,7 @@ import _status_facts  # noqa: E402  (what the manifest SAYS: rollup, readiness, 
 import _invariants  # noqa: E402  (what GIT says: the post-hoc check behind --fail-on invariant-breach)
 import _evidence_io  # noqa: E402  (where a run's record lives - and WHEN this
 #                                   plan could first have recorded one at all)
+import _filed_returns as _fr  # noqa: E402  (where the phase driver keeps its state)
 import _live_copy  # noqa: E402  (which copy holds a phase in flight live - the one
 #                                 reader the panel and the report read it through too)
 
@@ -872,6 +874,7 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None,
     lines += _proposal_lines(manifest, summary, pt=pt)
     lines += _resumable_lines(here, summary, pt=pt)
     lines += _unfinished_lines(summary, pt=pt)
+    lines += _kept_tree_lines(summary, pt=pt)
     return "\n".join(lines)
 
 
@@ -1924,6 +1927,59 @@ def success_line(lines):
     return None
 
 
+def kept_trees_block(manifest_path, project):
+    """Task trees a wave left standing: `{"trees": [{"phase", "taskId",
+    "path"}]}` read from the driver's state files, or `{"error": why}` when the
+    state directory could not be asked.
+
+    ONLY A TREE THAT IS STILL ON DISK IS LISTED. The driver names a kept tree
+    once, in the print of the run that kept it, and records it until a later
+    wave adopts it; a directory someone removed since is no longer a thing to
+    act on, and a record is not the tree. No state directory is an answer
+    (nothing kept), not an error."""
+    try:
+        project_root, config = _evidence_io.project_config_for(manifest_path,
+                                                               project)
+        hooks = _loader.load_hooks_config(modname="audit__config")
+        drive = os.path.join(str(hooks.state_dir(pathlib.Path(project_root),
+                                                 config or {})),
+                             _fr.DRIVE_DIRNAME)
+        names = sorted(os.listdir(drive)) if os.path.isdir(drive) else []
+    except Exception as exc:                       # defensive; see the docstring
+        return {"error": "the driver's state could not be read: %s" % (exc,)}
+    trees = []
+    for name in names:
+        if not name.endswith(".json"):
+            continue
+        body, _problem = _fr.drive_state(os.path.dirname(drive), name[:-len(".json")])
+        for task_id, path in sorted((body.get("keptTrees") or {}).items()):
+            if isinstance(path, str) and os.path.isdir(path):
+                trees.append({"phase": name[:-len(".json")], "taskId": task_id,
+                              "path": path})
+    return {"trees": trees}
+
+
+def _kept_tree_lines(summary, pt=None):
+    """`KEPT TREES` - the trees `kept_trees_block` found, one line each, with the
+    verb that takes one down. Nothing when the summary carries no such block
+    (every caller but the bare render) or it found none."""
+    pt = pt or _cli_fmt.PLAIN
+    block = (summary or {}).get("keptTrees")
+    if not isinstance(block, dict):
+        return []
+    if block.get("error"):
+        return ["", pt.paint("  KEPT TREES  unknown - %s" % block["error"], "warn")]
+    trees = block.get("trees") or []
+    if not trees:
+        return []
+    out = ["", pt.paint("  KEPT TREES  %d task tree(s) a wave left standing, each "
+                        "holding work the phase tree does not - take one down "
+                        "with /audit:worktree task-remove <taskId> once it is "
+                        "dealt with" % len(trees), "warn")]
+    out += ["    %-8s %-4s %s" % (t["taskId"], t["phase"], t["path"]) for t in trees]
+    return out
+
+
 def main(argv):
     try:
         args = build_parser().parse_args(list(argv))
@@ -2113,6 +2169,10 @@ def main(argv):
             or not (want_json or want_gate)):
         summary["locks"] = locks_block(manifest, project, manifest_path,
                                        flight=flight)
+    # Kept trees travel on the lock's asymmetry for the same reason: a fact about
+    # this checkout now, read by the surface a person opens, not by a payload.
+    if not (want_json or want_gate):
+        summary["keptTrees"] = kept_trees_block(manifest_path, project)
 
     # THE THIRD PLACE'S OWN ANSWER, injected on the SAME asymmetry as `locks`
     # above and for a sibling reason: the human render's `tests` column names it

@@ -464,7 +464,7 @@
         "worktreeSetup": {
           "type": "string",
           "minLength": 1,
-          "description": "A command run in each new task worktree, e.g. the dependency install. Absent: none. A failure is could-not-run, never red."
+          "description": "A command run in each new task worktree, e.g. the dependency install. Absent: none. A failure is could-not-run, never red. It must not rewrite files git tracks: a rewrite surfaces as an undeclared-change decision on a task that changed nothing there."
         },
         "worktreeRoot": {
           "type": "string",

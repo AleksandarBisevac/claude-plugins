@@ -293,7 +293,9 @@ FIELD_HELP = {
     "executor.worktreeSetup":
         "A command run inside each new task worktree before its executor starts - "
         "typically the dependency install. Unset runs none. A setup that fails is "
-        "reported as could-not-run, never as a red gate, and spends no attempt.",
+        "reported as could-not-run, never as a red gate, and spends no attempt. It "
+        "must not rewrite files git tracks: a rewrite surfaces as an "
+        "undeclared-change decision on a task that changed nothing there.",
     "executor.worktreeRoot":
         "The directory task worktrees are made in, relative to the git root. Unset "
         "uses the directory above the git root. A directory inside the project is "

@@ -18,7 +18,7 @@ Usage:
                 [--description TEXT|-] [--tests-mode tdd|regression|gate-only]
                 [--tests-add TEXT ...] [--gate CMD ... | --gate-clear]
                 [--failing-from RUNID] [--fixes finding,finding]
-                [--bug BUGID] [--dry-run]
+                [--bug BUGID] [--introduces KIND ...] [--dry-run]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py add --from-file PATH|- [manifest] [--project-dir DIR]
                 [--takeover] [--json]
@@ -63,6 +63,7 @@ Usage:
                 [--tests-mode tdd|regression|gate-only] [--tests-add TEXT ...]
                 [--gate CMD ... | --gate-clear] [--description TEXT|-]
                 [--risk low|med|high] [--blocked-by id,id] [--depends-on id,id]
+                [--introduces KIND ...]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py retarget <phaseId> [manifest]
                 [--gate CMD ... | --gate-clear | --gate-set entry ...

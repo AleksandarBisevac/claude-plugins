@@ -1262,10 +1262,124 @@ def _merge_driver_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _plugin_copy(root, binding=True, hooks=True):
+    """A plugin root whose hooks do or do not carry the task-tree binding."""
+    if not hooks:
+        os.makedirs(root)
+        return root
+    os.makedirs(os.path.join(root, "hooks"))
+    with open(os.path.join(root, "hooks", "_config.py"), "w") as fh:
+        fh.write("def task_binding(tree, manifest_rel):\n    return {}\n"
+                 if binding else "def in_progress_task_map(root, rel):\n    return {}\n")
+    with open(os.path.join(root, "hooks", "require-plan.py"), "w") as fh:
+        fh.write("binding = _config.task_binding(root, rel)\n" if binding
+                 else "pass\n")
+    return root
+
+
+def _binding_cases(check):
+    """`hooks_task_binding`: do the hooks Claude Code loads for this project -
+    the copy `installed_plugins.json` records and the copies the hook run
+    records name - carry the task-tree binding a wave's trees are judged by."""
+    import pathlib
+    import tempfile
+    import time
+    import _config as cfg_mod
+    import _doctor_trail as trail
+    tmp = os.path.realpath(tempfile.mkdtemp(prefix="doctor-binding-"))
+    try:
+        project = os.path.join(tmp, "proj")
+        os.makedirs(project)
+        home = os.path.join(tmp, "home")
+
+        def install(path, scope="user"):
+            os.makedirs(os.path.join(home, "plugins"), exist_ok=True)
+            with open(os.path.join(home, "plugins", "installed_plugins.json"),
+                      "w") as fh:
+                json.dump({"plugins": {"audit@quality-gates": [
+                    {"scope": scope, "installPath": path, "version": "9.9.9"}]}}, fh)
+
+        def stamp(session, root, age=0):
+            state = cfg_mod.state_dir(pathlib.Path(project), {})
+            cfg_mod.ensure_local_dir(state)
+            path = os.path.join(str(state), cfg_mod.RUNNING_STAMP % session)
+            with open(path, "w") as fh:
+                json.dump({"root": root, "version": "9.9.9"}, fh)
+            then = time.time() - age
+            os.utime(path, (then, then))
+
+        def ask(now=None):
+            return M.hooks_task_binding(project, {}, cfg_mod, home=home, now=now)
+
+        check("tbd1 the stale-stamp bound is the one the doctor's running-plugin "
+              "row uses - two copies of a number, held by comparison: %r"
+              % ((M.LIVE_STAMP_SECONDS, trail.IDLE_BOUND_SECONDS),),
+              M.LIVE_STAMP_SECONDS == trail.IDLE_BOUND_SECONDS)
+        got = ask()
+        check("tbd2 with no install record and no hook run record the answer is "
+              "'unestablished' and says what was looked for, never 'carries': %r"
+              % (got,),
+              got["verdict"] == "unestablished" and "installed_plugins.json" in got["why"]
+              and "hook run" in got["why"])
+        new = _plugin_copy(os.path.join(tmp, "new"))
+        old = _plugin_copy(os.path.join(tmp, "old"), binding=False)
+        install(new)
+        got = ask()
+        check("tbd3 an installed copy whose hooks hold the binding: carries, with "
+              "the copy named: %r" % (got,),
+              got["verdict"] == "carries" and got["roots"][0]["root"] == new
+              and got["roots"][0]["source"] == "installed_plugins.json")
+        install(old)
+        got = ask()
+        check("tbd4 an installed copy whose hooks predate it: lacks, naming the "
+              "copy and the file that does not define the binding: %r" % (got,),
+              got["verdict"] == "lacks" and old in got["why"]
+              and "task_binding" in got["why"])
+        install(new)
+        stamp("s1", old, age=60)
+        got = ask()
+        check("tbd5 a live hook run record naming an older copy outranks the "
+              "installed copy that carries it: %r" % (got,),
+              got["verdict"] == "lacks" and old in got["why"]
+              and "hook run" in got["why"])
+        stamp("s1", old, age=trail.IDLE_BOUND_SECONDS + 600)
+        got = ask()
+        check("tbd6 ALLOW: the same record gone idle past the bound is history, "
+              "not a copy that is loaded: %r" % (got,),
+              got["verdict"] == "carries")
+        stamp("s1", new, age=5)
+        got = ask()
+        check("tbd7 a live record naming the copy that carries it agrees with "
+              "the install record, and the copy is listed once: %r" % (got,),
+              got["verdict"] == "carries" and len(got["roots"]) == 1)
+        gone = os.path.join(tmp, "gone")
+        install(gone)
+        got = ask()
+        check("tbd8 an installed path with no hooks to read is 'unestablished', "
+              "never read as carrying: %r" % (got,),
+              got["verdict"] == "unestablished" and gone in got["why"])
+        bare = _plugin_copy(os.path.join(tmp, "bare"), hooks=False)
+        install(bare)
+        got = ask()
+        check("tbd9 a root with no hooks directory is the same: %r" % (got,),
+              got["verdict"] == "unestablished")
+        rep = base.Report()
+        M.check_worktree_env(rep, {"executor": {"worktreeSetup": "npm ci"}}, "",
+                             platform="linux")
+        check("tbd10 the row that names the setup says beside it that a setup "
+              "rewriting tracked files surfaces as an undeclared change: %r"
+              % (_detail(rep, "worktree env"),),
+              "npm ci" in _detail(rep, "worktree env")
+              and "undeclared-change" in _detail(rep, "worktree env"))
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _merge_driver_cases(check)
+        _binding_cases(check)
     return _harness.run(body)
 
 

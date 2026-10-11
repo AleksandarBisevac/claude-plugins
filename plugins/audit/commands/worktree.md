@@ -68,7 +68,11 @@ read-only output to the human and let them choose; never pass `--apply` on your 
 the given commit (the phase HEAD, resolved to a full SHA first), created **outside** the project
 directory, and marked with the task, its phase, the base and the phase tree. A root inside the
 project (or the git root) is refused, because the plan gate judges a tree under the project as the
-project. `--path` names somewhere else than the default `../<repo>-<taskId>`. Harness-made
+project. A tree already marked for the same task is **adopted** at the base it was cut from rather
+than refused (its setup runs again unless the marker records that it completed). The command
+`executor.worktreeSetup` names runs in the new tree and must not rewrite files git tracks: the
+integration reads a rewrite as a change the task never declared. `--path` names somewhere else
+than the default `../<repo>-<taskId>`. Harness-made
 isolation is not a substitute: it lives under the exempt `.claude/` and branches from the default
 branch.
 

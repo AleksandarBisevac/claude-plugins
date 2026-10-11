@@ -207,6 +207,7 @@ import _status_facts  # noqa: E402  (ready_tasks: the one readiness rule)
 import _verdict_binding as _vb  # noqa: E402  (phase_binding: whether a held phase
 #                                              gate run is still the one sign-off binds)
 import _wave  # noqa: E402  (select: which ready tasks may run together)
+import _doctor_setup  # noqa: E402  (hooks_task_binding: whether the loaded hooks bind a task tree)
 import _runner_collects  # noqa: E402  (collects: whether a runner takes a test path)
 import _gate_derive  # noqa: E402  (entry_runner: which runner a gate entry invokes)
 import _scope_companions  # noqa: E402  (derive: the runner config a widen declares)
@@ -285,8 +286,9 @@ STEPS = {
         "rule": (WAVE_RULE,)},
     "decide-integration-refused": {
         "line": "decide integration-refused %(task)s: %(why)s",
-        "rule": ("retry recuts its tree at the phase HEAD and spends an attempt; "
-                 "block keeps the tree and tells the human.",)},
+        "rule": ("redo recuts its tree at the phase HEAD with the work carried "
+                 "over and spends no attempt; block keeps the tree and tells "
+                 "the human.",)},
     "decide-undeclared-change": {
         "line": "decide undeclared-change %(task)s: changed outside its files: "
                 "%(why)s",
@@ -409,7 +411,7 @@ DECISIONS = {
     # A wave member's integration onto the phase tree: refused by name (a
     # conflict, a lockfile, a dirty phase tree), or owed a word on paths the
     # task changed and never declared.
-    "integration-refused": (("retry", "block"), ("block",)),
+    "integration-refused": (("redo", "block"), ("block",)),
     "undeclared-change": (("widen", "discard", "block"), ("block",)),
     # Before the start: a test the task declares and its runner will never
     # collect (`scope_gap`).
@@ -1058,6 +1060,26 @@ def wave_width(config):
     return max(1, cores - 2), "auto: %d cores less two" % (cores,), None
 
 
+def hooks_width(ctx, width, basis):
+    """`(width, basis)` for opening a wave: the asked width where the hooks
+    Claude Code loads carry the task-tree binding (or no record says which
+    copy that is, which the print says), and 1 - with the copy and the file
+    that lack it - where a record names a copy whose hooks do not. A wave's
+    trees are judged by that binding, so a copy without it would hold an
+    executor to a tree it cannot tell from the project's."""
+    seen = _doctor_setup.hooks_task_binding(
+        ctx["project"], ctx["config"], _loader.load_hooks_config(
+            modname="audit__config"))
+    if seen["verdict"] == "lacks":
+        ctx["did"].append("the hooks Claude Code loads lack the task-tree binding, "
+                          "so this phase runs at width 1: %s" % (seen["why"],))
+        return 1, "width 1: the loaded hooks lack the task-tree binding"
+    if seen["verdict"] == "unestablished":
+        ctx["did"].append("task-tree binding not established for the loaded "
+                          "hooks: %s" % (_clip(seen["why"], 300),))
+    return width, basis
+
+
 def _id_key(task_id):
     """A task id in natural order: `P1.10` after `P1.9`, not after `P1.1`."""
     return [(0, int(part), "") if part.isdigit() else (1, 0, part)
@@ -1300,9 +1322,8 @@ def retire_member(ctx, state, task):
 
 
 def drop_tree(ctx, state, task_id):
-    """Take a member's tree down whatever it holds - a retry the human chose
-    recuts it at the phase HEAD - so the walk makes a fresh one. None, or the
-    stop."""
+    """Take a member's tree down whatever it holds - a `redo` the human chose
+    recuts it at the phase HEAD - so a fresh one is made. None, or the stop."""
     wave = state.get("wave") or {}
     tree = (wave.get("trees") or {}).get(task_id)
     if not tree:
@@ -1317,6 +1338,65 @@ def drop_tree(ctx, state, task_id):
     (wave.get("bases") or {}).pop(task_id, None)
     wave["base"] = git_head(ctx) or wave.get("base")
     write_state(ctx, state)
+    return None
+
+
+def tree_work(tree):
+    """`(patch, why)` - everything the tree changed against its base, untracked
+    files included, as one binary patch; `patch` is None beside the reason git
+    could not say. Staging in the tree is harmless: it is about to be taken
+    down."""
+    for argv in (["add", "-A"], ["diff", "--cached", "--binary", "HEAD"]):
+        try:
+            done = subprocess.run(["git", "-C", tree] + argv, capture_output=True,
+                                  timeout=120)
+        except (OSError, subprocess.SubprocessError) as exc:
+            return None, exc.__class__.__name__
+        if done.returncode != 0:
+            return None, _clip(done.stderr.decode("utf-8", "replace").strip(), 120)
+    return done.stdout, ""
+
+
+def recut_tree(ctx, state, task):
+    """Recut a member's tree at the phase HEAD with its work in it, and measure
+    its gate again over the new tree. None, or the stop. The work is read before
+    the tree is taken down and kept in a file of the state directory until it
+    has applied, so a patch the new base refuses is never the only copy lost."""
+    tree = ((state.get("wave") or {}).get("trees") or {}).get(task["id"])
+    patch, why = (tree_work(tree) if tree and os.path.isdir(tree) else (b"", ""))
+    if patch is None:
+        return _stopped(ctx, "the work in the tree of %s could not be read (%s), "
+                        "so nothing was recut and no attempt is spent"
+                        % (task["id"], why))
+    kept = os.path.join(os.path.dirname(state_path(ctx)),
+                        "redo-%s.patch" % (task["id"],))
+    if patch:
+        with open(kept, "wb") as fh:
+            fh.write(patch)
+    stop = drop_tree(ctx, state, task["id"])
+    if stop is not None:
+        return stop
+    _new, stop = add_tree(ctx, state, task)
+    if stop is not None:
+        return stop
+    if patch:
+        done = subprocess.run(["git", "-C", state["wave"]["trees"][task["id"]],
+                               "apply", "--binary", "--whitespace=nowarn", kept],
+                              capture_output=True, timeout=120)
+        if done.returncode != 0:
+            return _stopped(ctx, "the tree of %s is recut at %s and its work does "
+                            "not apply there (%s); the work is kept as %s and no "
+                            "attempt is spent"
+                            % (task["id"], state["wave"]["base"][:12],
+                               _clip(done.stderr.decode("utf-8", "replace").strip(),
+                                     120), kept))
+        os.remove(kept)
+    (state.get("gated") or {}).pop(task["id"], None)
+    if not state.get("gated"):
+        state.pop("gated", None)
+    write_state(ctx, state)
+    ctx["did"].append("tree of %s recut at %s, its work carried over" % (
+        task["id"], state["wave"]["base"][:12]))
     return None
 
 
@@ -1566,13 +1646,12 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
         _mark(state, "rerun", task)
         write_state(ctx, state)
         return None
+    if answer == "redo":
+        # The work was fine and the phase tree refused it, so no attempt is
+        # spent: the tree is recut at the phase HEAD with the work in it, and
+        # the gate is measured again over the new tree.
+        return recut_tree(ctx, state, task)
     if answer == "retry":
-        if pending["decision"] == "integration-refused":
-            # The tree was cut from a base the phase tree has moved past; the
-            # retry is cut from the phase HEAD, so its work starts from there.
-            stop = drop_tree(ctx, state, task["id"])
-            if stop is not None:
-                return stop
         return start_task(ctx, task)
     if pending["decision"] == "scope-gap":
         # Declared before the start: the selection runs again, because the
@@ -2620,6 +2699,8 @@ def drive_phase(ctx, state, phase):
     width, basis, problem = wave_width(ctx["config"])
     if problem:
         return _stopped(ctx, problem)
+    if width > 1 and not state.get("wave"):
+        width, basis = hooks_width(ctx, width, basis)
     for _ in range(4 * len(_tasks(phase)) + 4):
         manifest, phase = load_phase(ctx)
         if width > 1 or state.get("wave"):
@@ -2797,6 +2878,45 @@ def submit_tree(ctx, phase, task):
     return tree, None
 
 
+_HEX_SHA = re.compile(r"^[0-9a-f]{7,40}$")
+
+
+def whole_head(ctx, head):
+    """`head` as the whole commit id a phase return is keyed on and the driver
+    looks it up under, when git resolves a shorter spelling of it to exactly one
+    commit; `head` unchanged otherwise, so an unknown or ambiguous one is still
+    the filing verb's refusal."""
+    if not isinstance(head, str) or not _HEX_SHA.match(head) or len(head) == 40:
+        return head
+    try:
+        done = subprocess.run(
+            ["git", "-C", ctx["gitRoot"], "rev-parse", "--verify", "--quiet",
+             head + "^{commit}"], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return head
+    found = done.stdout.strip()
+    return found if done.returncode == 0 and found.startswith(head) else head
+
+
+def agreed_commits(phase, entries):
+    """`entries` (a phase return's per-task answers) with each commit spelled as
+    the plan records it, where the two are the same commit written at different
+    lengths: the plan keeps twelve characters and git prints forty, and a
+    prefix of one is the other. An entry naming another commit, or a task the
+    phase does not hold, is left as typed for the verb to refuse."""
+    recorded = dict((t["id"], t.get("commit")) for t in _tasks(phase))
+    out = []
+    for entry in entries:
+        said = entry.get("commit") if isinstance(entry, dict) else None
+        want = recorded.get(entry.get("id")) if isinstance(entry, dict) else None
+        if (isinstance(said, str) and isinstance(want, str) and said != want
+                and _HEX_SHA.match(said) and _HEX_SHA.match(want)
+                and (said.startswith(want) or want.startswith(said))):
+            entry = dict(entry, commit=want)
+        out.append(entry)
+    return out
+
+
 def submit(ctx, manifest, args, cmd, text):
     """`(code, instruction_or_text)` for one `submit`."""
     task, phase = submit_target(manifest, args.id)
@@ -2847,7 +2967,13 @@ def submit(ctx, manifest, args, cmd, text):
         body["stamp"] = line
         ctx["did"].append("stamp taken")
         text = json.dumps(body, indent=2) + "\n"
-    extra = ["--head", args.head] if args.head else []
+    head = args.head
+    if task is None and args.role == "reviewer":
+        head = whole_head(ctx, head)
+        if isinstance(body, dict) and isinstance(body.get("tasks"), list):
+            body["tasks"] = agreed_commits(phase, body["tasks"])
+            text = json.dumps(body, indent=2) + "\n"
+    extra = ["--head", head] if head else []
     out, stop = _verb_or_stop(ctx, "audit-task.py", [
         "file-return", args.id, "--role", args.role, ctx["manifest"],
         "--project-dir", ctx["project"]] + extra, stdin=text)

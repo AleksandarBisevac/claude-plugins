@@ -2860,7 +2860,7 @@
     {
       "id": "P123.37",
       "title": "the plan gate's free-file budget is per task attempt for subagents, and a refusal names who spent it",
-      "status": "in_progress",
+      "status": "done",
       "description": "F616: require-plan's one-free-file-per-session budget is shared by every subagent an orchestrator session dispatches, so an early executor spends it for every later one, and the refusal names a file the current executor never edited. Key the budget per task attempt for an edit made under a dispatched task (session id plus the in_progress task the edit is covered toward or the driver state names), keep the per-session budget for the main loop, and have the refusal name the task or agent that spent it and when. The directory-entry half of the report is already fixed by P122's covers() (step 3 runs before the done-owner check). Plan-gate hook code, not shell-command parsing. Faults: F616.",
       "files": [
         "plugins/audit/hooks/require-plan.py",
@@ -2902,25 +2902,39 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "369ce4765bf3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added _config.slot_key (session for main loop; session[:48]+'.'+agent_of for a dispatched agent), slot_owner_of, slot_owner, slot_spender_words; take_trivial_slot takes owner=None and records agent+at in the slot file. require-plan, guard-secrets-read and guard-bash-writes all key the slot through slot_key. REASON_SLOT_SPENT now 'this writer's one free file was already spent on %s by %s at %s' (single template, GATE_REASONS floor u1-u4 still green); the shell refusal appends the same spender sentence. taskId is NOT recorded: no cheap source exists in these hooks without a manifest read in the hot path. Docs: require-plan docstring and PLUGIN-BUILD-GUIDE paragraph updated. New cases: test_require_plan b8-b12, test_guard_secrets_read ts26 (same agent Edit and sed -i share one slot, other agent and main loop have own), test__config sk1-sk5. Gates by exit code: bench-hooks --gate 0, sweep-selftests 0, --spaced 0, ruff 0, vermin 0.",
+        "descriptive": "A dispatched agent gets its own free file, and a refusal names who spent the slot and when."
       },
       "startedAt": "2026-10-11T08:33:45Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-11T09:14:07Z",
+      "verifiedBy": [
+        "test_require_plan b8-b12",
+        "test_guard_secrets_read ts26",
+        "test__config sk1-sk5"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-11T09:14:06Z.01acd2",
         "status": "passed",
         "at": "2026-10-11T09:14:06Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "369ce4765bf3",
+        "at": "2026-10-11T09:14:07Z"
+      },
+      "redFirst": {
+        "at": "2026-10-11T08:48:00Z",
+        "basis": "`python3 plugins/audit/tests/test_require_plan.py --selftest` in a throwaway tree at HEAD exited 1 with 4 of 219 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - b9 (house FAIL), b10 (house FAIL), b11 (house FAIL), b12 (house FAIL): SELFTEST FAILED: 215/219 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.38",
       "title": "the wave driver's remaining edges are pinned and its docs say what the code does",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Carried lows from P124's reviews: integration-refused offers retry and spends an attempt where the design offers redo with no attempt spent; F599 behaviours at width 1 (scope-gap preflight, WIDEN_RULE, add --fixes scoping) are unpinned because the w1 fixture has no tests.add; the driver re-gate on regate:null is unpinned (mutation survived); task_binding's not-in_progress branch survives mutation (pin its message); a worktreeSetup that rewrites tracked files surfaces as undeclared-change - say so beside the setting; plugins/audit/README.md's /audit:worktree row still says a second tree is refused (task-add adopts it now); a discarded change's kept tree is named only once - name it in status until removed; commands/task.md's argument-hint lacks --introduces; a phase-review submit refuses a full 40-char head SHA where the plan records 12 - accept any unambiguous prefix. Faults: P124-R5, P124-R6, P124-R7, P124-R8, P124-R9, P124-R10, P124-R11. Also F620: before opening a wave the driver checks that the hooks Claude Code loads (the copy installed_plugins.json and the hook run records name, as /audit:doctor reads it) carry the task-tree binding; otherwise it runs at width 1 and prints why.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2935,7 +2949,11 @@
         "plugins/audit/tests/test__refs.py",
         "plugins/audit/scripts/status/_doctor_setup.py",
         "plugins/audit/tests/test__doctor_setup.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/schema/audit-config.schema.json",
+        "plugins/audit/scripts/panel/_panel_settings.py",
+        "docs/screenshots"
       ],
       "tests": {
         "mode": "tdd",
@@ -2962,16 +2980,22 @@
         "P123.9"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-11T09:14:08Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T10:03:32Z.1288ee",
+        "status": "passed",
+        "at": "2026-10-11T10:03:32Z"
+      }
     },
     {
       "id": "P123.39-64p",
@@ -3475,6 +3499,62 @@
         "mode": "tdd",
         "add": [
           "plugins/audit/tests/test_audit_task.py: --fixes over a finding naming no path is refused naming the finding; a finding with a source path and a resolution asking for a unit test yields a gate holding the unit runner; 'src/a.ts (x, y)' scopes src/a.ts alone"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.49-64p",
+      "title": "A review-only offered gate entry never runs as a command; it reaches the reviewer, and scope can replace a task gate",
+      "status": "pending",
+      "description": "(F635, reported from the testbed on 3.2.0) `meta.buildCommands.claimsMatchCode` held `review-only: sign-off reviewer refuses diff prose...`; the phase gate's `always` carried it, run-test-gate handed it to bash (exit 2, syntax error) and every task gate in the phase went red. `_gate_feed.OFFERED_GATES` offers `claimsMatchCode` as a read of the diff's prose - it has no command form - but gate derivation (`add --from-file` from meta.buildCommands, the phase gate's `always`) treats every key as a command. (1) An offered entry the catalog marks review-only (a `runs: false` field on the catalog entry), or any buildCommands value declaring itself `review-only:`, never enters a task or phase gate as a command: derivation skips it and says so, and the reviewer's brief carries its `asks` sentence as an instruction. (2) run-test-gate, handed such a step anyway (an older plan), records it as not a command - no shell run, no red gate - naming the remedy. (3) `audit-task scope` takes `--gate-set` and `--gate-drop` on a not-started task the way `retarget` takes them on a phase (a started task keeps its append-only rule, and the refusal names the exact spelling that is allowed). Regression: a plan with `claimsMatchCode: \"review-only: ...\"` derives a gate without it and the reviewer brief carries its sentence; run-test-gate given that step stays green and says not-a-command; scope --gate-set replaces a pending task's gate. Faults: F635.",
+      "files": [
+        "plugins/audit/scripts/status/_gate_feed.py",
+        "plugins/audit/tests/test__gate_feed.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/tests/test_derive_phase_gate.py",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/README.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__gate_feed.py: a review-only offered entry is never returned as a gate command and its asks sentence is offered to the reviewer",
+          "plugins/audit/tests/test_run_test_gate.py: a review-only: step is recorded as not a command, runs no shell and leaves the gate green",
+          "plugins/audit/tests/test_audit_task.py: scope --gate-set replaces a pending task's gate; on a started task the refusal names the allowed spelling"
         ],
         "expectRedFirst": true,
         "gate": [
