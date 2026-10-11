@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/sweep-selftests.py --spaced": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests": "pass",
+    "python3 plugins/audit/tests/test_run_test_gate.py --selftest": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task, expectRedFirst false; the fix pre-exists. Red proved by hand in a scratch git-archive copy outside the repo with _run_full's split_not_commands removed: fo1 FAIL (exit 1, no not-a-command line, 1 row recorded) and fo2 FAIL (steps true + the review-only prose, so a red run); with the fix both pass.",
+    "at": "2026-10-11"
+  },
+  "outcome": {
+    "technical": "Added _full_review_only_cases (fo1, fo2) to plugins/audit/tests/test_run_test_gate.py, called after _layout_project_cases in _selftest. fo1: fullGate [claimsMatchCode] review-only -> E_ASK, one not-a-command line, no rows. fo2: fullGate [ok, claimsMatchCode] -> E_OK, one step 'true', FULL GATE GREEN, review-only said once. Selftest of the file 521/521 pass. Sweep, sweep --spaced, ruff, vermin all exit 0.",
+    "descriptive": "A review-only meta.fullGate entry is now pinned: said, never run, never recorded as a red full run."
+  },
+  "testsAdded": [
+    "fo1",
+    "fo2"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:b0795456351a1906da162a3a5a58f13e206e2da3560c1051658fde2a25fc3cac\",\"dirtyDigest\":\"sha256:dd0b4e36b812ba0eab996d96c8ae94cc28d40a6fadb91dabdd010b0f8baa5a9a\",\"dirtyPaths\":{\"plugins/audit/tests/test_run_test_gate.py\":\"3dc76c6dc89354ea\"},\"head\":\"de3c0758\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:38286a13a48abcc436070e892d804c8ed0a8ffa4c38d8450e94322ca84c77461\",\"v\":2}"
+}

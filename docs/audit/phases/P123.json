@@ -4663,7 +4663,7 @@
     {
       "id": "P123.60-64p",
       "title": "A triage's fix tasks are added whole from stdin, never stopped halfway by a finding's own text",
-      "status": "in_progress",
+      "status": "done",
       "description": "(F639) `drive-phase next --answer fix --fix <ids>` builds each fix task's `audit-task add` argv with the finding's free text as `--description`; audit-task refuses a description whose argv shape looks like shell substitution, so a finding that quotes code (`(split_not_commands at :4809)`) stopped the P123 triage after two of seven fix tasks, and the rest were added by hand on stdin. Hand every fix task's description to `audit-task add` on stdin (`--description -`), as the refusal itself prescribes, and make the batch whole: every requested fix task is added or none is, and the drive says which. Regression: a triage over a finding whose issue holds a backtick span with a spaced paren adds its fix task; an add the verb refuses for another reason leaves no partial batch. Also (F640): a fix task's files are the finding's path words as written - `manifest/_manifest_io.py`, `_deps.py` - relative to whatever directory the reviewer meant, so the plan gate covered none of them and P123.54 needed a widening with full paths. Resolve each path a finding names to an existing repo-relative path before it becomes a `files` entry: as written when it exists from the repo root, else by a unique suffix match among the project's tracked files; a word that resolves to none or to several is named in the add's note with its candidates and is not written. Regression: a finding naming `manifest/_manifest_io.py:774` scopes `plugins/audit/scripts/manifest/_manifest_io.py`; an ambiguous basename is named, not guessed. Faults: F639, F640.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -4696,25 +4696,41 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "de3c075856aa",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Part 1 (stdin batch) was already in HEAD: add_fix_tasks in drive-phase.py hands one add --from-file - call, locked by fb1 in test_drive_phase.py; no drive-phase.py change needed. Part 2 in audit-task.py: _tracked_files (git ls-files, else a walk), _resolve_finding_path (as written from the project root, else unique tail match among tracked files), _unresolved_sentence; _fix_scope now resolves each finding path (a word with several or no matches, and not a test file still to be written, goes to scope['unresolved'] and is named in the task note, not written) and also scopes an existing test file the finding's resolution names; _pathless_refusal and _fixes_targets take project and name unresolved words. Tests: bx6, bx6b, bx7, bx8, bx9 added to the bx-block of test_audit_task.py; existing fixtures (cz7, cz13, cz15-19 in test_audit_task.py; _repo in test_drive_phase.py) now create the source files they name, since a nonexistent path is no longer written. Full sweep, --spaced, ruff and vermin all exit 0.",
+        "descriptive": "A finding's path words become existing repo-relative files in a fix task's scope; ambiguous or missing ones are named in the note instead of guessed."
       },
       "startedAt": "2026-10-11T19:12:43Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-11T19:46:39Z",
+      "verifiedBy": [
+        "bx6",
+        "bx6b",
+        "bx7",
+        "bx8",
+        "bx9"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-11T19:46:37Z.4ec0fe",
         "status": "passed",
         "at": "2026-10-11T19:46:37Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "de3c075856aa",
+        "at": "2026-10-11T19:46:39Z"
+      },
+      "redFirst": {
+        "at": "2026-10-11T19:37:47Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage bx-block` in a throwaway tree at HEAD exited 1 with 5 of 10 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bx6 (house FAIL): SELFTEST FAILED: 5/10 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.61-64p",
       "title": "A review-only entry in meta.fullGate is pinned by a case: no step runs and no red full run is recorded",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Follow-up to the fix of the phase review finding P123-R3: `run-test-gate._run_full` now passes the resolved meta.fullGate through `split_not_commands`, so a review-only entry prints a not-a-command line and is never run, and a fullGate holding only review-only entries returns the ask exit instead of recording a red full run. The fix landed without the case the finding's resolution asked for, because the fix task's files held no test file. Add the xg-style cases in test_run_test_gate.py (in a stage that exists at HEAD): fullGate [\"claimsMatchCode\"] with a `review-only:` value runs no step, prints the not-a-command line and records no red full run; a fullGate mixing one real command with one review-only entry runs only the real one. Prove each case can fail by putting the old `_run_full` (no split) back in a scratch copy outside the repo and watching it go red there; say so in the return. Faults: P123-R3.",
       "files": [
         "plugins/audit/tests/test_run_test_gate.py"
@@ -4742,16 +4758,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-11T19:46:39Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T20:05:57Z.70c3ca",
+        "status": "passed",
+        "at": "2026-10-11T20:05:57Z"
+      }
     }
   ],
   "reviewPerTask": "phase",

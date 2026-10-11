@@ -8602,6 +8602,52 @@ def _layout_project_cases(check):
         _harness.remove_tree(base)
 
 
+def _full_review_only_cases(check):
+    """A review-only entry in `meta.fullGate` is said and never run - a shell
+    handed its prose would exit non-zero and record a red full run."""
+    review = {"ok": "true",
+              "claimsMatchCode": "review-only: the sign-off reviewer refuses "
+                                 "diff prose that claims more than the code"}
+    root, mpath, _head = _full_repo("review-only",
+                                    fullgate=("claimsMatchCode",),
+                                    buildcommands=review)
+    try:
+        lines = []
+        code = M.main([mpath, "--full", "--project-dir", root, "--record"],
+                      out=lines.append)
+        rows = _ev_io.read_rows(root)["rows"]
+        said = [ln for ln in lines if "not a command" in ln]
+        check("fo1 RED-FIRST: a meta.fullGate holding only a `review-only:` "
+              "entry runs no step, prints the not-a-command line naming it, "
+              "exits with the ask code and records no full run at all: %r"
+              % ((code, said, len(rows)),),
+              code == M.E_ASK and len(said) == 1
+              and "claimsMatchCode" in said[0] and rows == [])
+    finally:
+        _harness.remove_tree(root)
+
+    root_m, mpath_m, _head_m = _full_repo("review-only-mixed",
+                                          fullgate=("ok", "claimsMatchCode"),
+                                          buildcommands=review)
+    try:
+        lines = []
+        code = M.main([mpath_m, "--full", "--project-dir", root_m, "--record"],
+                      out=lines.append)
+        full_rows = [r for r in _ev_io.read_rows(root_m)["rows"]
+                     if r.get("scope") == "full"]
+        said = [ln for ln in lines if "not a command" in ln]
+        steps = full_rows[0]["steps"] if len(full_rows) == 1 else []
+        check("fo2 RED-FIRST: a fullGate mixing one real command with one "
+              "`review-only:` entry runs only the real one - one step, "
+              "`true`, a green run, and the review-only entry said once: %r"
+              % ((code, [s.get("command") for s in steps], said),),
+              code == M.E_OK and [s.get("command") for s in steps] == ["true"]
+              and "FULL GATE GREEN" in "\n".join(lines)
+              and len(said) == 1 and "claimsMatchCode" in said[0])
+    finally:
+        _harness.remove_tree(root_m)
+
+
 def _hand_run_project_cases(check):
     """A FRESH repository - `.git` and nothing else, no `.claude/` - gated by
     hand: no `--project-dir`, no `CLAUDE_PROJECT_DIR`, the manifest named
@@ -9632,6 +9678,7 @@ def _selftest():
         _crowd_cases(check)
         _full_scope_cases(check)
         _layout_project_cases(check)
+        _full_review_only_cases(check)
         _hand_run_project_cases(check)
         _selection_miss_cases(check)
     return _harness.run(body)
