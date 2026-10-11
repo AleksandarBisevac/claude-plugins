@@ -1835,8 +1835,14 @@ def effective_cwd(cmd, payload_cwd):
         verb = m.group(1).lower()
         if verb == "popd":
             return None
-        words = shell_words(m.group(2) or "")
-        if words is None:
+        raw = m.group(2) or ""
+        words = shell_words(raw)
+        # An escaping backslash that is itself escaped (`a\\ b`) is a literal
+        # backslash and a word break to the shell, which `shell_words` reads as
+        # one escaped blank; and `\-d` is the option `-d`, not a directory.
+        # Neither has a target this can name.
+        if words is None or "\\\\" in raw or any(w.startswith("\\-")
+                                                 for w in words):
             return None
         args = [w for w in words if not w.startswith("-")]
         if len(args) != 1 or not resolvable_destination(args[0]):
@@ -2130,7 +2136,10 @@ def program_candidates(words):
         fallback = _wrapper_fallback(words[1:])
         rest = _wrapper_rest(_program_of(words[0]), words[1:])
         if rest is None:
-            return (fallback, fallback)
+            # The floor words an exact outer wrapper already collected stay
+            # candidates beside this one's fallback: an option VALUE that names
+            # an interpreter is still a word the command may run.
+            return (fallback, fallback + fallback_candidates)
         fallback_candidates.extend(fallback)
         words = rest
     candidates = words[:1] if words else []

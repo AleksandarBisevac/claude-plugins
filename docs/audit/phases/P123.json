@@ -2671,7 +2671,7 @@
     {
       "id": "P123.34",
       "title": "The history guard reads git only in command position and quoted << as data",
-      "status": "in_progress",
+      "status": "done",
       "description": "Probed on main (`git_invocations`): `echo attempt used git stash` -> [('stash', [])] and `cat <<'EOF' | python3 x.py --technical -` with stash words in the body -> stash push (false denies, F505); `sh -c 'echo \"a<<b\"; git stash drop'` and `sh -c 'echo a<<b; git stash drop'` -> [] (F536: `_config.split_heredocs` treats `<<` inside a single-quoted -c argument as a heredoc and drops the rest - a missed git call). Fix: a git invocation counts only in command position (start, ;, &&, ||, |, newline, or after a command-running prefix found by `_config.program_candidates`); a piped heredoc body is classified by the far side of the pipe (a script reading `-` = data, a shell = commands, unknown = conservative); `split_heredocs` ignores `<<` inside quotes as the shell does. Red-first both directions: `true && git stash push`, `sudo git stash drop`, `xargs git stash drop` stay deny; the two F505 shapes allow; the quoted-<< git call is read. Check `tools/bench-hooks.py --gate` after. Faults: F505, F536. GUARD COMMAND-READING CODE: written by the orchestrator with the user's permission (auto mode off when possible); if the API refuses, record it verbatim and hand the remainder to the human.",
       "files": [
         "plugins/audit/hooks/guard-history-rewrite.py",
@@ -2710,25 +2710,38 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "414dc7b090e9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Written by the orchestrator (guard command-reading code). guard-history-rewrite: `_shell_pieces` now lexes with `_op_tokens` (operators only outside quotes, comments dropped), replacing shlex plus `_SEP_SPLIT`, which cut a shell's quoted -c argument at a quoted `<<`/`;` and lost the command after it; `_quoted_substitutions` became `_substitutions` (every $( ) and backquote outside single quotes, since the lexer now keeps a bare one whole inside its word); new `_command_positions` counts a git only at the program word of a command past reserved words, assignments and run-their-argument wrappers (`_config.program_candidates`), fallback candidates included; new `_substituted_command` reads a substitution in command position as running what its body prints; `_printed` reads printf's arguments and its format; new `_is_sourced_at_start` treats a write into a shell/env start-up file (.bashrc, .zshenv, .profile, .envrc, profile.d, fish config) as running it. _config.split_heredocs: a marker counts only where the shell reads one (`_scan_quotes` carries a quote stack across lines; `$(` reopens command context inside double quotes, so the house `-m \"$(cat <<'EOF' ...)\"` form is still a heredoc); new opt-in `pipe_data` (history guard only, via runnable_text) reads a quoted body that `cat` pipes to a plain script run (`_pipes_to_script_run`, the same `_plain_script_run` rule as the head form) as data, keeping the two holes that removed the earlier far-side reading shut: a second pipe and an interpreter option assigned in the command (NODE_OPTIONS, PYTHONINSPECT, PYTHONSTARTUP, PERL5OPT, RUBYOPT) keep the body; any head but bare `cat` keeps it. guard-secrets-read keeps the strict reading (its hp1 unchanged and green). Rows that pinned the old every-word base flipped to allow with new rationale: gp1, gp2, gp3, gp7, gp11, gp17, gp19, gq1, gq2, and test_hooks' unquoted-git-words class (n17b). SECURITY.md: the history-guard paragraph, the piped-body sentence and the residual list rewritten to the command-position reading. New cases: cp1-cp17 (history), hq1-hq8 (config). Before the fix cp1, cp2, cp14, cp15 and hq1, hq2, hq4, hq5 were red; hq6/hq7/hq8 were added after a regression seen in gw14d/gw14e (a heredoc inside double-quoted $( ) must stay a heredoc) and gq27 (an awk head runs the body). Sweep 331/331 files ok, --spaced 331/331, bench-hooks gate ok, ruff and vermin clean.",
+        "descriptive": "The history guard reads a git command where the shell runs it: prose that names an operation is no longer refused, a quoted `<<` no longer hides the command after it, and a quoted heredoc body that cat pipes to a plain script run is that script's input."
       },
       "startedAt": "2026-10-10T23:47:38Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-11T08:06:59Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_guard_history_rewrite.py: cp1-cp17 command position, quoted operators, substitutions, piped heredoc far side",
+        "plugins/audit/tests/test__config.py: hq1-hq8 quoted << is no marker, real heredocs still lifted, pipe_data far side and its two shut holes, heredoc inside double-quoted $( )"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-11T08:06:57Z.5d8316",
         "status": "passed",
         "at": "2026-10-11T08:06:57Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "414dc7b090e9",
+        "at": "2026-10-11T08:06:59Z"
+      },
+      "redFirst": {
+        "at": "2026-10-11T07:57:37Z",
+        "basis": "`python3 plugins/audit/tests/test_guard_history_rewrite.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 0/1 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
       "id": "P123.35",
       "title": "Shared command readers keep floor candidates and read escapes as the shell does, pinned",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(F542) `_config.program_candidates` returns `(fallback, fallback)` when an inner wrapper is uncertain, discarding the floor candidates collected from an exact outer wrapper; return them with the fallback. The secrets guard's here-string no-raise lines are covered by no test (b5h12a stays green with them deleted) - add a row that reaches them and prove it red with them removed. (F547) `_config.effective_cwd`'s cd reader, probed on main: `cd a\\\\ b` resolves `a\\ b` (the shell reads an escaped backslash and a word break - return no answer), `cd [x]` resolves literally though SECURITY.md says a glob is unresolvable (add `[` to `UNRESOLVED_MARKS` or document), `cd \\-d` keeps the backslash; state the double-quote reduction limit in the docstring; add test__config unit rows for the escape and for literal Windows backslashes. Also the product fail-open the spaced-paths triage handed over: the plan gate's shell reader does not grade a redirect whose QUOTED target is an absolute path containing a space (`echo y > '<root with space>/src/undeclared.ts'` allowed in the deny tier while the unspaced twin and `sed -i` into the spaced path are blocked; test_guard_secrets_read tt2, tt3, ww10a) - fix it and remove that file's SPACED_EXEMPT row in tools/sweep-selftests.py. And: a heredoc or interpreter write after `cd <dir> &&` must be graded at the path relative to <dir> (a declared file written as `cd plugins/audit && python3 - <<EOF` with `scripts/x.py` was refused as undeclared, quoting the unprefixed path) - red-first both ways, in scope allowed, out of scope refused naming the full path. Red-first each. Also F614: a shell-write refusal names the rule that refused it (the plan gate), not the hook that hosts the check. Faults: F542, F547, F614, F622, F625. GUARD COMMAND-READING CODE: written by the orchestrator with the user's permission (auto mode off when possible); if the API refuses, record it verbatim and hand the remainder to the human.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -2765,16 +2778,22 @@
         "P123.34"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-11T08:06:59Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T08:33:44Z.00b18d",
+        "status": "passed",
+        "at": "2026-10-11T08:33:44Z"
+      }
     },
     {
       "id": "P123.36",

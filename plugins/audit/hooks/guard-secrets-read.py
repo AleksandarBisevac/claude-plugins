@@ -1058,13 +1058,25 @@ def _sandbox_disabled(ti):
     return str(value).strip().lower() == "true"
 
 
+# A refusal names the RULE that refused it. The plan gate's shell-write arms
+# live in this hook, and their refusals were signed `[guard-secrets-read]` - an
+# executor reverting its own declared file read a secrets-guard refusal and
+# looked for a secret. A message that already names its rule keeps that name.
+PLAN_GATE_TAG = "[plan gate] "
+
+
+def _signed(msg):
+    """`msg` with the name of the rule that refused it in front."""
+    return msg if msg.startswith(PLAN_GATE_TAG) else "[guard-secrets-read] " + msg
+
+
 def _deny_payload(msg):
     """Canonical PreToolUse deny payload (printed to stdout with exit 0)."""
     return {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "deny",
-            "permissionDecisionReason": "[guard-secrets-read] " + msg,
+            "permissionDecisionReason": _signed(msg),
         }
     }
 
@@ -1078,7 +1090,7 @@ def _ask_payload(msg):
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "ask",
-            "permissionDecisionReason": "[guard-secrets-read] " + msg,
+            "permissionDecisionReason": _signed(msg),
         }
     }
 
@@ -2062,27 +2074,61 @@ def _shell_write_targets(cmd, cwd=None, expands=None):
     shell or `eval` is handed, is skipped (`_quoted_text_skipper`): the first is
     text and the second is graded in its own view, at its own directory."""
     targets = []
-    depths = _shell_states(cmd)[1]
+    states = _shell_states(cmd)
+    depths = states[1]
     skip = _quoted_text_skipper(cmd)
     for m in _SHELL_REDIRECT.finditer(cmd):
         if skip(m.start()):
             continue
-        t = cmd[m.start(1):_word_end(depths, m.start(1), m.end(1))].strip(
-            _TARGET_QUOTES)
+        if states[0][m.start(1)] is None:
+            t = _shell_word_at(cmd, m.start(1), states)
+        else:
+            # Inside a quoted string another program runs (`os.system('...')`,
+            # a pager option): its own quoting is not this shell's, so the
+            # target is the bare token the pattern took.
+            t = cmd[m.start(1):_word_end(depths, m.start(1), m.end(1))].strip(
+                _TARGET_QUOTES)
         if t and not t.startswith(("&", "(")) and t != "/dev/null":
             targets.append(t)
     for m in _TEE_CLAUSE.finditer(cmd):
         if skip(m.start()):
             continue
-        operands = cmd[m.start(1):_word_end(depths, m.start(1), m.end(1))]
-        for tok in operands.split():
-            tok = tok.strip(_TARGET_QUOTES)
+        end = _word_end(depths, m.start(1), m.end(1))
+        operands = (_config.shell_words(cmd[m.start(1):end])
+                    if states[0][m.start()] is None else None)
+        if operands is None:
+            operands = [w.strip(_TARGET_QUOTES)
+                        for w in cmd[m.start(1):end].split()]
+        for tok in operands:
             if tok and not tok.startswith("-"):
                 targets.append(tok)
     targets.extend(_inplace_targets(cmd, _SED_INPLACE_CLAUSE, _sed_file_operands))
     targets.extend(_copy_targets(cmd, cwd, expands))
     targets.extend(_git_output_targets(cmd))
     return targets
+
+
+def _shell_word_at(text, start, states):
+    """The shell WORD that starts at `start`, quotes and escapes removed: it runs
+    to the first blank or operator outside quotes and not escaped, or to the
+    closer of the group it sits in. A quoted or escaped blank is part of the
+    word - reading a target only up to its first blank named `/tmp/s` for
+    `'/tmp/s p/x.ts'`, a path nobody writes, and the write went ungraded.
+    `states` is `_shell_states(text)`."""
+    quotes, depths = states
+    end, n = start, len(text)
+    while end < n:
+        ch = text[end]
+        if _closes_group(depths, end):
+            break
+        if quotes[end] is None and (ch.isspace() or ch in "|&;<>"):
+            break
+        end += 1
+    raw = text[start:end]
+    words = _config.shell_words(raw)
+    if words is not None and len(words) == 1:
+        return words[0]
+    return raw.strip(_TARGET_QUOTES)
 
 
 # What the redirect and `tee` readings strip from a target's ends: the quote
@@ -2495,13 +2541,13 @@ def _eval_write_hit(graded, root, cfg, cwd):
 
 
 _PLAN_WRITE_DENY = (
-    "%s bypasses the plan-first gate: %s\n%s This path is outside the running "
+    PLAN_GATE_TAG + "%s bypasses the plan-first gate: %s\n%s This path is outside the running "
     "task's `files` - widen it with `/audit:task scope <taskId> --files ...`, "
     "or stop and ask the operator. Exempt paths (docs, tests, .claude/**) are "
     "unaffected."
 )
 _PLAN_WRITE_ASK = (
-    "%s outside the plan: %s\n"
+    PLAN_GATE_TAG + "%s outside the plan: %s\n"
     "planGate is set to \"ask\" in .claude/audit.config.json, so this write waits "
     "for your approval - approving covers this one command. Widen the running "
     "task's `files` with `/audit:task scope <taskId> --files ...`, or stop and "
@@ -2566,7 +2612,7 @@ _VERDICT_RANK = {"allow": 0, "ask": 1, "block": 2}
 
 _BEYOND_SHOWN = "a command handed deeper than %d levels: %s"
 _BEYOND_DENY = (
-    "A command handed to a shell or `eval` is nested deeper than this guard "
+    PLAN_GATE_TAG + "A command handed to a shell or `eval` is nested deeper than this guard "
     "follows, and it writes or hands on a command of its own, so the files it "
     "writes cannot be graded: %s\n%s A write the plan "
     "gate cannot place is refused at this tier rather than read as nothing. "
@@ -2574,7 +2620,7 @@ _BEYOND_DENY = (
     "graded, or stop and ask the operator."
 )
 _BEYOND_ASK = (
-    "A command handed to a shell or `eval` is nested deeper than this guard "
+    PLAN_GATE_TAG + "A command handed to a shell or `eval` is nested deeper than this guard "
     "follows, and it writes or hands on a command of its own, so the files it "
     "writes cannot be graded: %s\n"
     "planGate is set to \"ask\" in .claude/audit.config.json, so this command "

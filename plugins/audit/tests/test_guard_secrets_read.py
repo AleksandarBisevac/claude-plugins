@@ -921,6 +921,57 @@ def _handed_spelling_cases(check, root, outside, journal, shell, same_as_bare,
     def deny_of(seen):
         return dict((t, w) for t, _b, w in seen)["deny"]
 
+    # (rq) A write target is the WORD the shell hands the redirect: quotes and
+    # an escaped blank keep a space inside it, so the target is the whole path.
+    _gt = ">"
+    for rid, cmd, want in (
+            ("rq1", "echo y %s 'src/a b.py'" % _gt, "src/a b.py"),
+            ("rq2", 'echo y %s "src/a b.py"' % _gt, "src/a b.py"),
+            ("rq3", "echo y %s src/a\\ b.py" % _gt, "src/a b.py"),
+            ("rq4", "echo y %s %s" % (_gt, shlex.quote(str(root) + "/src/a b.py")),
+             "src/a b.py"),
+            ("rq5", "echo y | tee 'src/a b.py'", "src/a b.py")):
+        sid = sid_of(rid, "spaced")
+        _spend_slot(root, cfg, sid)
+        got = shell(sid, cmd, use_cfg=deny_cfg)
+        check("%s a quoted or escaped target with a space is graded whole at the "
+              "deny tier, naming the file: %r" % (rid, got[:1] + (got[1][:160],)),
+              got[0] == "block" and want in got[1])
+    sid = sid_of("rq6", "spaced-declared")
+    _spend_slot(root, cfg, sid)
+    got = shell(sid, "echo y %s 'src/declared.py'" % _gt, use_cfg=deny_cfg)
+    check("rq6 SECOND DIRECTION: the same quoting around a DECLARED file is "
+          "allowed: %r" % (got[:1],), got[0] == "allow")
+
+    # (cd) A program fed through a heredoc after `cd <dir> &&` writes relative
+    # to <dir>: its target is placed there before the plan is asked.
+    for cid, target, want in (("cdh1", "declared.py", "allow"),
+                              ("cdh2", "undeclared.py", "block")):
+        sid = sid_of(cid, "cd-heredoc")
+        _spend_slot(root, cfg, sid)
+        got = shell(sid, "cd src && python3 - <<'PY'\nopen('%s', 'w').write('x')"
+                    "\nPY" % target, use_cfg=deny_cfg)
+        check("%s a heredoc program after `cd src &&` writing %s is %s%s: %r"
+              % (cid, target, want, ", naming src/" + target
+                 if want == "block" else "", got[:1] + (got[1][:160],)),
+              got[0] == want and (want == "allow" or "src/" + target in got[1]))
+
+    # (pg) A plan-gate refusal names the rule that refused it, not the hook
+    # that hosts the check; a secret refusal still names the secrets guard.
+    sid = sid_of("pgn1", "plan-gate-name")
+    _spend_slot(root, cfg, sid)
+    got = shell(sid, "echo y %s src/named.py" % _gt, use_cfg=deny_cfg)
+    said = M._deny_payload(got[1])["hookSpecificOutput"][
+        "permissionDecisionReason"] if got[0] == "block" else ""
+    secret = shell(sid_of("pgn1", "secret"), "cat .env", use_cfg=deny_cfg)
+    said_secret = M._deny_payload(secret[1])["hookSpecificOutput"][
+        "permissionDecisionReason"] if secret[0] == "block" else ""
+    check("pgn1 a shell write the plan gate refuses is worded as the plan gate's, "
+          "and a secret read as the secrets guard's: %r"
+          % ((said[:40], said_secret[:40]),),
+          said.startswith("[plan gate] ")
+          and said_secret.startswith("[guard-secrets-read] "))
+
     # A copy onto a directory that EXISTS writes the source's name inside it,
     # whether or not the directory carries a trailing slash.
     for cname, copy in (("cp", "cp notes.py src"), ("mv", "mv notes.py src"),
@@ -2056,6 +2107,15 @@ def _cases(check):
     for _prefix in _hs_prefixes:
         _expect("b5h12b %s still blocks its secret here-string" % (_prefix,),
                 "block", bash(_prefix + " <<< \"" + _hs_body + "\""))
+    # An exact outer wrapper whose option VALUE is an interpreter, then an
+    # uncertain inner one: the interpreter stays a candidate while the program
+    # word the parse reached is another, so the reader must not look it up in
+    # the words past the prefix.
+    _floor = "env -u python3 timeout --weird cat <<< \"" + _hs_body + "\""
+    _floor_ok, _floor_body = _harness.attempt(M._interpreter_herestrings, _floor)
+    check("b5h12c a floor-word interpreter outside the parsed program word is "
+          "graded and does not raise: %r" % ((_floor_ok, _floor_body),),
+          _floor_ok and _floor_body == [_hs_body])
     _expect("b5h8 a here-string glued to the interpreter's name is read", "block",
           bash("python3<<<\"print(open('.env').read())\""))
     _expect("b5h5 ...and code-shaped text in a here-string to a program that only "

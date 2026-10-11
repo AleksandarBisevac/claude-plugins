@@ -169,11 +169,6 @@ SPACED_EXEMPT = {
         "two of its cases build `cd <worktree>` and `git -C <worktree>` with the "
         "path unquoted, so a worktree under a spaced root is a different command: "
         "a fixture defect in a file the leg was introduced without",
-    "plugins/audit/tests/test_guard_secrets_read.py":
-        "the plan-gate shell reader does not grade a redirect whose quoted target "
-        "is an absolute path holding a space (`echo y > '/a b/src/x.ts'` is "
-        "allowed where the same spelling without the space is blocked), so the "
-        "cases that redirect into such a path stay red under quoting",
     "plugins/audit/tests/test_stamp_verification.py":
         "`child_env` names a path under the shared root inside an option string "
         "only when the word is a bare absolute path, so a quoted `--require "

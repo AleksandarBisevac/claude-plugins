@@ -2519,6 +2519,39 @@ def _cases(check):
     check("hq8 a heredoc inside a double-quoted `$( )` is a heredoc - the shell "
           "reads commands there - so the house commit-message form is still "
           "lifted: %r" % (hq_house,), _rm not in hq_house[0])
+
+    # (pf) An exact outer wrapper's floor words survive an uncertain inner one.
+    pf_rest, pf_cands = M.program_candidates(
+        ["env", "-u", "python3", "timeout", "--weird", "cat"])
+    check("pf1 an uncertain inner wrapper keeps the floor candidates the exact "
+          "outer one collected, beside its own fallback: %r"
+          % ((pf_rest, pf_cands),),
+          pf_rest == ["cat"] and "cat" in pf_cands and "python3" in pf_cands)
+    pf_exact = M.program_candidates(["sudo", "env", "FOO=1", "git"])
+    check("pf2 SECOND DIRECTION: an exact chain still narrows to its program "
+          "word: %r" % (pf_exact,),
+          pf_exact[0] == ["git"] and set(pf_exact[1]) == {"git"})
+
+    # (ce) `cd`'s target is the word the shell reads, or no answer.
+    _base = os.path.join(os.sep, "base")
+    ce = M.effective_cwd
+    check("ce1 an escaped blank keeps the space in the cd target: %r"
+          % (ce("cd a\\ b && x", _base),),
+          ce("cd a\\ b && x", _base) == os.path.join(_base, "a b"))
+    check("ce2 a doubled backslash before a blank is an escaped backslash and a "
+          "word break to the shell, so there is no single target: %r"
+          % (ce("cd a\\\\ b && x", _base),), ce("cd a\\\\ b && x", _base) is None)
+    check("ce3 an escaped leading dash is an option to cd, not a directory: %r"
+          % (ce("cd \\-d && x", _base),), ce("cd \\-d && x", _base) is None)
+    check("ce4 a backslash before an ordinary character stays literal, so a "
+          "Windows path is one word: %r" % (ce("cd C:\\work\\repo && x", _base),),
+          ce("cd C:\\work\\repo && x", _base)
+          == os.path.normpath(os.path.join(_base, "C:\\work\\repo")))
+    check("ce5 a bracket is read literally (a route directory such as "
+          "`[locale]`), as SECURITY.md states: %r"
+          % (ce("cd app/[locale] && x", _base),),
+          ce("cd app/[locale] && x", _base)
+          == os.path.join(_base, "app", "[locale]"))
     check("hq6 ...while every other far side keeps it as shell, as before: a "
           "shell, an interpreter reading its program from stdin, a second pipe "
           "and a live substitution: %r"

@@ -542,8 +542,14 @@ same verdict with the reason thrown away. Symlinks are resolved on both sides, b
 repo reached through one is the same repo; an unresolvable path answers *inside*, so an
 error in the test can only leave a gate where it already was, never switch one off.
 **And a destination that cannot be established at all is a third answer, not a quiet version
-of either.** A shell write whose target carries an expansion, a substitution, a glob or a home
-reference names a place only the shell knows: resolving that spelling against the repository
+of either.** A shell write whose target carries an expansion, a substitution, a glob (`*`, `?`,
+a brace) or a home reference names a place only the shell knows. A bracket is NOT one of those
+marks: `app/[locale]/page.tsx` is how a route directory is spelled, a bracket matching no file
+is the literal name, and treating it as unresolvable would stop grading those writes at all, so
+it is read literally. A target is the whole shell word the redirect is handed, quotes and
+escapes removed, so `> 'src/a b.py'` is graded as `src/a b.py`. A `cd` whose word the shell
+would split differently from this reading - a doubled backslash before a blank, an escaped
+leading dash - has no target and ends the walk. Resolving a marked spelling against the repository
 root put `$HOME/notes.py` inside the tree and refused it for plan coverage under a name no
 `task.files` entry can ever hold — a refusal whose whole content came from the resolution that
 produced it, and one nobody can act on. `_config.resolvable_destination` is the question both
