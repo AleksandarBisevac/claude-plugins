@@ -687,6 +687,20 @@ def claims_from_return(manifest_path, project, task):
     return claims, None
 
 
+def executor_return(manifest_path, project, task):
+    """`(body, refusal)` - the executor's return filed for `task`'s current
+    start under THIS manifest's evidence directory, or None when none is filed.
+    A filed return that will not parse is a refusal, never an absence."""
+    proj, cfg = _evidence_io.project_config_for(manifest_path, project)
+    _text, body, problem = _filed_returns.read_filed_return(
+        _filed_returns.return_path(_evidence_io.evidence_dir(proj, cfg), task,
+                                   "executor"))
+    if problem:
+        return None, ("the executor's filed return %s - nothing was committed"
+                      % (problem,))
+    return body, None
+
+
 def record_row(project, task_id, phase_id, nonce, config=None):
     """Anchor the commit in the trail. Returns the file the row landed in, or False.
 
@@ -803,6 +817,21 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
         return E_FAIL, _scoped_commit.answer(skipped, refused=why)
     if not pending:
         return E_OK, _scoped_commit.answer(skipped, quiet=NOTHING_UNCOMMITTED)
+
+    # WHAT THE CLOSE STANDS ON, still before staging: the records alone are
+    # pending often enough - the filed return itself is one - so a commit of
+    # them over a return that attempted nothing, or over a `tests.add` file
+    # never written, would read as the task's finished work.
+    executor, why = executor_return(manifest_path, project, task)
+    if why:
+        return E_FAIL, _scoped_commit.answer(skipped, refused=why)
+    changed = any(_scoped_commit.under_any(p, targets["declared"])
+                  for p in pending)
+    refusal = _scoped_commit.close_evidence_refusal(task, project, executor,
+                                                    changed)
+    if refusal:
+        return E_FAIL, _scoped_commit.answer(
+            skipped, refused="%s. Nothing was staged" % (refusal,))
 
     # THE ATTEMPT, still before staging: older dirt in a declared file and a
     # change nobody declares are both refused with nothing to undo.

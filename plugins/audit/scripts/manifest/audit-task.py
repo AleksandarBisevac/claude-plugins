@@ -5320,6 +5320,30 @@ def _uncommitted_leftovers(project, config, mpath, raw_index, git_root, plan,
     return left, seen["during"], seen["basis"]
 
 
+def _commit_touches(project, git_root, task, sha):
+    """Whether commit `sha` changes any file `task` declares - None when git
+    will not list what it changed."""
+    code, listed = _git_answer(git_root, "diff-tree", "--no-commit-id",
+                               "--name-only", "-r", "-z", "--root", sha)
+    if code != 0:
+        return None
+    mine = _declared_rels(project, git_root, task)
+    return any(_touts.covers(rel, path) for path in (listed or "").split("\0")
+               if path.strip() for rel in mine)
+
+
+def _close_evidence_refusal(project, mpath, git_root, task, sha, verified):
+    """`_scoped_commit.close_evidence_refusal` over a close on `sha`: the
+    executor's return filed for the current start, and whether the commit
+    carries a change to a declared file - asked only of a SHA git verified. A
+    filed return that will not parse leaves the first question unasked here;
+    `--from-return` is where that refuses."""
+    _text, executor, _problem = _fr.read_filed_return(
+        return_path(project, mpath, task, "executor"))
+    changed = _commit_touches(project, git_root, task, sha) if verified else None
+    return _scoped_commit.close_evidence_refusal(task, project, executor, changed)
+
+
 def _done_task(task, now, commit, descriptive, technical, verified, intent,
                intent_basis=None, no_change=None, red_first=None,
                intent_return=None):
@@ -5853,6 +5877,12 @@ def _locked_done(args, project, config, mpath, tid, out):
                 % (tid, sha[:7], ", ".join(during),
                    "it" if len(during) == 1 else "them", basis, tid,
                    "it" if len(during) == 1 else "them"))
+            return E_USAGE
+        evidence = _close_evidence_refusal(project, mpath, git_root, node, sha,
+                                           unverified is None)
+        if evidence:
+            out("[audit-task] REFUSED: %s closes on %s, but %s. Nothing "
+                "written." % (tid, sha[:7], evidence))
             return E_USAGE
     key, key_source, refusal = _review_key_for(config, node, phase)
     filed = {}

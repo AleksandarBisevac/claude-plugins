@@ -3994,7 +3994,159 @@ def _text_cases(check):
           "benchmark" in basis and "design" not in basis)
 
 
-_TALLY = "%s: %d/%d cases " + "passed"
+def _submit_unchanged(root, mpath, task_id, over=None):
+    """Play an executor that was blocked: it files its return and changes
+    nothing in the tree."""
+    return _verb(root, DRIVER, ["submit", task_id, "--role", "executor", mpath,
+                                "--project-dir", root],
+                 stdin=json.dumps(_executor_body(task_id, over)))
+
+
+TESTS_ADD_FILE = "tests/test_f1.py"
+
+
+def _with_tests_add(plan):
+    """P1.1 owes the test file `tests.add` names, as a regression task."""
+    task = plan["phases"][0]["tasks"][0]
+    task["files"] = ["src/f1.txt", TESTS_ADD_FILE]
+    task["tests"] = {"mode": "regression", "add": [
+        "%s: the f1 case" % (TESTS_ADD_FILE,)], "gate": ["true"],
+        "expectRedFirst": False}
+    plan["fileIndex"][TESTS_ADD_FILE] = ["P1.1"]
+
+
+def _close_evidence_cases(check):
+    """A green gate over an unchanged tree proves only that nothing broke: the
+    close refuses a return that attempted nothing over an empty change, and a
+    `tests.add` file that was never written; real work with its tests present
+    closes."""
+    M, why = _load("drive_phase_close_evidence")
+    if M is None:
+        check("ce1 the driver loads", False, why)
+        return
+    blocked = {"outcome": {"technical": "blocked: the guard refused the edit",
+                           "descriptive": "nothing was changed"}}
+    root, mpath = _repo("ce-empty", task_ids=TASKS[:1], per_task="phase")
+    _next(M, root, mpath)
+    _submit_unchanged(root, mpath, "P1.1", blocked)
+    code, text = _next(M, root, mpath)
+    task = tasks_of(mpath).get("P1.1", {})
+    check("ce1 a return filed `not-attempted` over an empty change is refused at "
+          "the close - the task stays in progress, nothing is printed closed, "
+          "and the refusal names the evidence and offers restart or cancel: %r"
+          % ((code, task.get("status"), text[:600]),),
+          code != 0 and task.get("status") == "in_progress"
+          and not task.get("commit") and M.CLOSED not in text
+          and "not-attempted" in text and "cancel" in text)
+
+    root, mpath = _repo("ce-absent", task_ids=TASKS[:1], per_task="phase")
+    _commit_plan(root, mpath, _with_tests_add, "fixture: tests.add")
+    _next(M, root, mpath)
+    _file_executor(root, mpath, "P1.1")
+    code, text = _next(M, root, mpath)
+    task = tasks_of(mpath).get("P1.1", {})
+    check("ce2 a `tests.add` file absent at the close refuses it by name, with "
+          "the source change made and the gate green: %r"
+          % ((code, task.get("status"), text[:600]),),
+          code != 0 and task.get("status") == "in_progress"
+          and not task.get("commit") and TESTS_ADD_FILE in text
+          and M.CLOSED not in text)
+
+    root, mpath = _repo("ce-present", task_ids=TASKS[:1], per_task="phase")
+    _commit_plan(root, mpath, _with_tests_add, "fixture: tests.add")
+    _next(M, root, mpath)
+    os.makedirs(os.path.join(root, "tests"))
+    with open(os.path.join(root, "tests", "test_f1.py"), "w") as fh:
+        fh.write("assert True\n")
+    _file_executor(root, mpath, "P1.1")
+    code, text = _next(M, root, mpath)
+    task = tasks_of(mpath).get("P1.1", {})
+    check("ce3 ALLOW: a real change with its `tests.add` file present closes - "
+          "and a `not-attempted` red-first beside a real change is no refusal: %r"
+          % ((code, task.get("status"), text[:400]),),
+          task.get("status") == "done" and task.get("commit")
+          and "%s P1.1" % (M.CLOSED,) in text)
+
+    root, mpath = _repo("ce-tracked", task_ids=TASKS[:1], per_task="phase")
+    with open(os.path.join(root, "notes.txt"), "w") as fh:
+        fh.write("v0\n")
+    subprocess.run(_GIT + ["add", "notes.txt"], cwd=root, check=True,
+                   capture_output=True, timeout=60)
+    subprocess.run(_GIT + ["commit", "-qm", "fixture: notes"], cwd=root,
+                   check=True, capture_output=True, timeout=60)
+    _next(M, root, mpath)
+    with open(os.path.join(root, "notes.txt"), "w") as fh:
+        fh.write("an allowlist the gate needed\n")
+    _file_executor(root, mpath, "P1.1")
+    code, text = _next(M, root, mpath)
+    task = tasks_of(mpath).get("P1.1", {})
+    check("ce4 a TRACKED file outside the task's files, clean at the start and "
+          "modified during the attempt, refuses the close by name and offers "
+          "the scope widening - the drive never prints it closed: %r"
+          % ((code, task.get("status"), text[:600]),),
+          code != 0 and task.get("status") == "in_progress"
+          and "notes.txt" in text and "/audit:task scope" in text
+          and M.CLOSED not in text)
+
+    root, mpath = _repo("ce-older", task_ids=TASKS[:1], per_task="phase")
+    with open(os.path.join(root, "notes.txt"), "w") as fh:
+        fh.write("v0\n")
+    subprocess.run(_GIT + ["add", "notes.txt"], cwd=root, check=True,
+                   capture_output=True, timeout=60)
+    subprocess.run(_GIT + ["commit", "-qm", "fixture: notes"], cwd=root,
+                   check=True, capture_output=True, timeout=60)
+    with open(os.path.join(root, "notes.txt"), "w") as fh:
+        fh.write("dirty before the start\n")
+    _next(M, root, mpath)
+    _file_executor(root, mpath, "P1.1")
+    code, text = _next(M, root, mpath)
+    task = tasks_of(mpath).get("P1.1", {})
+    check("ce5 ALLOW: the same tracked file already dirty before `start` is not "
+          "this task's, and the close goes through without it: %r"
+          % ((code, task.get("status"), text[:400]),),
+          task.get("status") == "done" and task.get("commit")
+          and "notes.txt" not in _git_out(root, "show", "--name-only",
+                                          "--format=", task["commit"]))
+
+
+def _brief_scope_cases(check):
+    """A brief printed and then made stale by a scope widening was never the
+    current scope's dispatch: the next `next` issues it again, spending no
+    attempt, rather than grading an executor that never received it."""
+    M, why = _load("drive_phase_brief_scope")
+    if M is None:
+        check("bs1 the driver loads", False, why)
+        return
+    root, mpath = _repo("brief-scope", task_ids=TASKS[:1])
+    _code, first = _next(M, root, mpath)
+    before = _attempts(mpath, "P1.1")
+    with _Env(root):
+        scode, sout = _verb(root, "audit-task.py", [
+            "scope", "P1.1", mpath, "--project-dir", root,
+            "--files", "src/f1.txt,src/extra.txt"])
+    code, again = _next(M, root, mpath)
+    brief = _BRIEF.search(again)
+    held = ""
+    if brief:
+        with open(os.path.join(root, *brief.group(1).split("/"))) as fh:
+            held = fh.read()
+    check("bs1 after `scope` widens a task whose brief was printed and no return "
+          "filed, `next` issues the brief again over the widened scope - not "
+          "`decide no-executor-return` - and spends no attempt: %r"
+          % ((instruction(first), scode, sout[-300:], code, again,
+              before, _attempts(mpath, "P1.1")),),
+          instruction(first) == ("dispatch", "executor", "P1.1")
+          and scode == 0 and code == 0
+          and instruction(again) == ("dispatch", "executor", "P1.1")
+          and "src/extra.txt" in held
+          and _attempts(mpath, "P1.1") == before)
+    _code, third = _next(M, root, mpath)
+    check("bs2 THE TWIN: with the scope unchanged since the brief was issued, "
+          "an unfiled executor is still the no-executor-return decision: %r"
+          % (third,), instruction(third)[1] == "no-executor-return")
+
+
+_TALLY ="%s: %d/%d cases " + "passed"
 
 
 def _house_suite(cases):
@@ -4044,7 +4196,9 @@ STAGES = (("dp-block", "_drive_cases"), ("dr-block", "_refusal_cases"),
           ("wd-block", "_wave_redo_cases"), ("wg-block", "_wave_regate_cases"),
           ("wh-block", "_wave_hooks_cases"),
           ("pf-block", "_preflight_cases"),
-          ("tx-block", "_text_cases"), ("sb-block", "_stage_cases"))
+          ("tx-block", "_text_cases"),
+          ("ce-block", "_close_evidence_cases"),
+          ("bs-block", "_brief_scope_cases"), ("sb-block", "_stage_cases"))
 
 
 def _stage_cases(check):

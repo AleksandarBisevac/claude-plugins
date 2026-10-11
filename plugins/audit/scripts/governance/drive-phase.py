@@ -788,7 +788,8 @@ def dispatch(ctx, state, phase, task, role):
         return relay_refusal(ctx, "audit-lookup.py", 0,
                              "%s\n(the driver found no `written:` path in this)"
                              % (out,))
-    _mark(state, "dispatched-%s" % (role,), task)
+    _mark(state, "dispatched-%s" % (role,), task,
+          {"scope": brief_scope(task)} if role == "executor" else True)
     write_state(ctx, state)
     model = (task.get("model") if role == "executor"
              else (phase.get("review") or {}).get("model")) or "unset"
@@ -796,6 +797,26 @@ def dispatch(ctx, state, phase, task, role):
     return instruction("dispatch", step_text(
         "dispatch-%s" % (role,), agent=agent, task=task["id"], model=model,
         brief=project_relative(ctx, found.group(1).strip())))
+
+
+def brief_scope(task):
+    """What an executor's brief was written over: the task's `files` and
+    `tests`, in one canonical spelling. A brief printed under one scope and
+    then overtaken by a widening was never the dispatch of the scope the task
+    holds now."""
+    return json.dumps({"files": list(task.get("files") or []),
+                       "tests": task.get("tests")
+                       if isinstance(task.get("tests"), dict) else {}},
+                      sort_keys=True)
+
+
+def stale_brief(state, task):
+    """Whether `task`'s executor brief was printed under a scope the task no
+    longer holds - a widening between the print and any return. A mark from
+    before the scope was recorded beside it answers False: it says nothing
+    about which scope it was printed under."""
+    held = _marked(state, "dispatched-executor", task)
+    return isinstance(held, dict) and held.get("scope") != brief_scope(task)
 
 
 def project_relative(ctx, path):
@@ -926,6 +947,13 @@ def advance(ctx, state, manifest, phase, task, tree=None):
     if problem:
         return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], problem)
     if executor is None:
+        if stale_brief(state, task):
+            # The brief went out before a scope widening, so no executor holds
+            # the task as it stands: it is issued again, with no decision and
+            # no attempt spent, rather than graded as one that returned nothing.
+            ctx["did"].append("%s's brief issued again: its scope changed after "
+                              "the last one was printed" % (task["id"],))
+            return dispatch(ctx, state, phase, task, "executor")
         if _marked(state, "dispatched-executor", task):
             return decision(ctx, state, "no-executor-return", task, "")
         return dispatch(ctx, state, phase, task, "executor")

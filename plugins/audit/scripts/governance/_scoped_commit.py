@@ -85,6 +85,7 @@ import _invariants  # noqa: E402  (`_under`: the one answer to "is this inside";
 import _task_outputs  # noqa: E402  (`covers`: the one rule for whether a declared path holds a file)
 import _journal_io  # noqa: E402  (the withdrawing row's append)
 import _manifest_io as _mio  # noqa: E402  (atomic_write_text: the start snapshot's one writer)
+import _manifest_phases as _phases  # noqa: E402  (tests_add_path: the file a `tests.add` entry names)
 
 
 # --- asking git ---------------------------------------------------------------
@@ -1038,6 +1039,63 @@ def attempt_strays(git_root, record, started_at, owned, skip):
             if not any(_task_outputs.covers(entry, p) for entry in owned)
             and not under_any(p, skip)]
     return attribute(git_root, rest, record, started_at), ""
+
+
+# --- what a close stands on ---------------------------------------------------
+# A green gate over an unchanged tree proves only that nothing broke. So a close
+# - the task commit, and `done --commit` after it - asks two things of the
+# evidence before it calls the task finished: whether the executor's filed
+# return says it attempted nothing while the task's declared files carry no
+# change, and whether every file the task's `tests.add` names exists. Either
+# answer refuses, naming the evidence; a task whose honest answer was that
+# nothing needed to change closes through `--no-change`, which asks neither.
+RED_FIRST_NOT_ATTEMPTED = "not-attempted"
+
+
+def absent_tests_add(task, project):
+    """The paths the task's `tests.add` entries name that are not on disk under
+    `project`, in the order the entries give them."""
+    tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
+    named = [_phases.tests_add_path(entry) for entry in tests.get("add") or []
+             if isinstance(entry, str)]
+    absent = []
+    for path in named:
+        if path and path not in absent \
+                and not os.path.exists(os.path.join(project, path)):
+            absent.append(path)
+    return absent
+
+
+def close_evidence_refusal(task, project, executor, changed):
+    """The sentence refusing a close whose evidence shows no work, or "".
+
+    `executor` is the executor's filed return for the task's current start, or
+    None; `changed` is whether the task's declared files carry a change in what
+    is being closed - None when that could not be read, which asks only the
+    `tests.add` question rather than guessing an answer to the other."""
+    tid = str(task.get("id"))
+    parts = []
+    red = ((executor or {}).get("redFirst") or {}) \
+        if isinstance(executor, dict) else {}
+    if changed is False and red.get("status") == RED_FIRST_NOT_ATTEMPTED:
+        said = ((executor.get("outcome") or {}).get("descriptive") or "").strip()
+        parts.append("the executor's filed return records red-first `%s`%s and "
+                     "the task's declared files carry no change, so a green "
+                     "gate here proves only that nothing broke"
+                     % (RED_FIRST_NOT_ATTEMPTED,
+                        " (its outcome: %r)" % (said[:120],) if said else ""))
+    absent = absent_tests_add(task, project)
+    if absent:
+        parts.append("%s, named by the task's tests.add, %s not on disk"
+                     % (", ".join(absent),
+                        "is" if len(absent) == 1 else "are"))
+    if not parts:
+        return ""
+    return ("%s. Restart it so the work is done (/audit:task start %s), or "
+            "cancel it (/audit:task cancel %s --reason <why>); a task whose "
+            "answer was that nothing needed to change closes with /audit:task "
+            "done %s --no-change --reason <why>"
+            % ("; ".join(parts), tid, tid, tid))
 
 
 # --- what happened ------------------------------------------------------------

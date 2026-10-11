@@ -14817,6 +14817,7 @@ def _leftover_cases(check):
     try:
         _attempt_cases(check, project, task, write, close, start, read, git,
                        backdate)
+        _close_evidence_cases(check, project, task, write, close, read, git)
         proj, mpath = project("clean", [task("P1.1", ["src/a.ts"])])
         code, text = close(proj)
         check("lo1 a clean tree closes: %r" % ((code, text[-700:]),), code == 0)
@@ -14919,6 +14920,65 @@ def _leftover_cases(check):
               "`outputs` beside a test of its own): %r" % ((code2, code3, _t[-400:]),), code2 == 0 and code3 == 0)
     finally:
         _harness.remove_tree(root)
+
+
+def _close_evidence_cases(check, project, task, write, close, read, git):
+    """`done --commit` asks what the commit stands on: a return that attempted
+    nothing over a commit touching no declared file, and a `tests.add` file
+    absent at the close, both refuse; real work with its test present closes."""
+    def file_executor(proj, mpath):
+        node = _mio.tasks_by_id(_mio.load_manifest(mpath))["P1.1"]
+        path = M.return_path(proj, mpath, node, "executor")
+        os.makedirs(os.path.dirname(path))
+        with open(path, "w") as fh:
+            json.dump({"gates": {}, "stamp": "audit-stamp: v2 x",
+                       "outcome": {"technical": "blocked by a guard",
+                                   "descriptive": "nothing was changed"},
+                       "testsAdded": [],
+                       "redFirst": {"status": "not-attempted",
+                                    "basis": "blocked"}}, fh)
+
+    def commit(proj, message):
+        git(proj, "add", "-A", "--", *[d for d in ("src", "tests")
+                                        if os.path.isdir(os.path.join(proj, d))])
+        git(proj, "commit", "-q", "-m", message)
+
+    owes = {"mode": "regression", "add": ["tests/a.test.ts: the a case"],
+            "expectRedFirst": False, "gate": ["test"]}
+
+    proj, mpath = project("ce-empty", [task("P1.1", ["src/a.ts"])])
+    file_executor(proj, mpath)
+    write(proj, "src/b.ts", "not this task's file\n")
+    commit(proj, "touches no declared file")
+    before = read(mpath)
+    code, text = close(proj)
+    check("lo-ce1 a close on a commit touching no declared file, over a return "
+          "filed `not-attempted`, refuses naming the evidence and offering "
+          "restart or cancel, writing nothing: %r" % ((code, text[-700:]),),
+          code == M.E_USAGE and "not-attempted" in text and "cancel" in text
+          and read(mpath) == before)
+
+    proj, mpath = project("ce-absent", [task(
+        "P1.1", ["src/a.ts", "tests/a.test.ts"], tests=dict(owes))])
+    write(proj, "src/a.ts", "the work\n")
+    commit(proj, "the work, without its test")
+    before = read(mpath)
+    code, text = close(proj)
+    check("lo-ce2 a `tests.add` file absent at the close refuses it by name, "
+          "over a commit carrying real work: %r" % ((code, text[-700:]),),
+          code == M.E_USAGE and "tests/a.test.ts" in text
+          and read(mpath) == before)
+
+    proj, mpath = project("ce-present", [task(
+        "P1.1", ["src/a.ts", "tests/a.test.ts"], tests=dict(owes))])
+    file_executor(proj, mpath)
+    write(proj, "src/a.ts", "the work\n")
+    write(proj, "tests/a.test.ts", "the case\n")
+    commit(proj, "the work and its test")
+    code, text = close(proj)
+    check("lo-ce3 ALLOW: real work with its `tests.add` file present closes - a "
+          "`not-attempted` red-first beside a real change is no refusal: %r"
+          % ((code, text[-500:]),), code == 0)
 
 
 def _attempt_cases(check, project, task, write, close, start, read, git,

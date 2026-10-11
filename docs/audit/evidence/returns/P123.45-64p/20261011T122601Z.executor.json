@@ -1,0 +1,31 @@
+{
+  "gates": {
+    "selftests": "pass",
+    "lint": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-11T12:50:36Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage ce-block` in a throwaway tree at HEAD exited 1 with failing cases ce1 (house FAIL), ce2 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 3/5 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "F632: _scoped_commit gains absent_tests_add() and close_evidence_refusal() (a filed executor return with redFirst not-attempted over no declared change, or a tests.add file absent on disk -> a refusal naming the evidence, offering /audit:task start, cancel, or done --no-change). commit-task-work asks it before staging (new executor_return() reader; a return that will not parse refuses), so the drive's close stops at commit-task-work and never prints closed. audit-task done --commit asks it too (_commit_touches via git diff-tree -z over a verified SHA; _close_evidence_refusal). F624: drive-phase marks dispatched-executor with brief_scope(task) (files+tests); advance() re-issues the brief, with no decision and no attempt spent, when the task's scope changed after the print (stale_brief); an unchanged scope still decides no-executor-return; legacy True marks are left as before. F623: the start snapshot already lists every dirty path, so a tracked file clean at start and modified during the attempt is absent from it and is attributed 'during', refused at commit-task-work and done --commit. Locked with drive cases ce4/ce5, no product change needed. Docs: verbs-in-full.md done section, execute-task.md step 4c; PLUGIN-BUILD-GUIDE.md module map line for _scoped_commit -> _manifest_phases. Tests: test_drive_phase ce-block (ce1-ce5) and bs-block (bs1-bs2); test_commit_task_work ce-block (ctw-ce1..3); test_audit_task lo-block (lo-ce1..3). Red seen: ce1, ce2, bs1 on the unfixed tree before implementing; ctw-ce1/2 and lo-ce1/2 red in a git-archive HEAD export with the new test files copied in. Gates: tools/sweep-selftests.py exit 0 (331/331 files); --spaced exit 0; ruff exit 0; vermin exit 0; test__deps g1 green after the guide fence update.",
+    "descriptive": "A close now refuses a return that attempted nothing over an empty change and a missing tests.add file. A brief made stale by a scope widening is issued again instead of being graded as an executor that returned nothing."
+  },
+  "testsAdded": [
+    "test_drive_phase ce1",
+    "test_drive_phase ce2",
+    "test_drive_phase ce3",
+    "test_drive_phase ce4",
+    "test_drive_phase ce5",
+    "test_drive_phase bs1",
+    "test_drive_phase bs2",
+    "test_commit_task_work ctw-ce1",
+    "test_commit_task_work ctw-ce2",
+    "test_commit_task_work ctw-ce3",
+    "test_audit_task lo-ce1",
+    "test_audit_task lo-ce2",
+    "test_audit_task lo-ce3"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:2d11b5c13083b9688aa99ab27bbe0585c8054cc087c8b584c0be7d60eb3e4a59\",\"dirtyDigest\":\"sha256:33fd72d12f8cf03ca3615e008969ef3031157ccf7b8e68b51e5cebb83fd57734\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"014883a385c0590a\",\"plugins/audit/reference/execute-task.md\":\"c47aa5c7b48523de\",\"plugins/audit/reference/verbs-in-full.md\":\"28b8cfe19e39c9cc\",\"plugins/audit/scripts/governance/_scoped_commit.py\":\"356ba2f0af49a611\",\"plugins/audit/scripts/governance/commit-task-work.py\":\"357b33f16fd4db50\",\"plugins/audit/scripts/governance/drive-phase.py\":\"20a8f51fd287151a\",\"plugins/audit/scripts/manifest/audit-task.py\":\"59503ee6140e0001\",\"plugins/audit/tests/test_audit_task.py\":\"9d783acf9e609c30\",\"plugins/audit/tests/test_commit_task_work.py\":\"88aa2f6812bcd527\",\"plugins/audit/tests/test_drive_phase.py\":\"84ea7d1944755519\"},\"head\":\"12a41b30\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/governance/_scoped_commit.py\",\"plugins/audit/scripts/governance/commit-task-work.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\",\"plugins/audit/tests/test_commit_task_work.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:fd5f345443d04d2677643727659b7fc1f42e471553a00fe3abaff81785787ff2\",\"v\":2}"
+}

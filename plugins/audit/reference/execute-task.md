@@ -583,8 +583,16 @@ verb writes and refuses, and what the run commands leave behind, is
         declares — an image `cp`-ed in, a generated file — is refused by name as well. Widen
         the scope (`/audit:task scope`, then record the gate again) or remove the file. When a
         task has no snapshot, each file's mtime against `startedAt` decides instead, and the
-        refusal says that this is its basis. `/audit:task done --commit` makes the second check
-        again.
+        refusal says that this is its basis. A tracked file that was clean at the start is in no
+        snapshot entry, so a change to it reads as made during the attempt. `/audit:task done
+        --commit` makes the second check again.
+
+        **And it refuses a commit that would stand for work nobody did.** The records alone are
+        often pending — the filed return is one — so the commit refuses, staging nothing, when the
+        executor's filed return records red-first `not-attempted` and no declared file carries a
+        change, and when a file the task's `tests.add` names is not on disk. Restart the task or
+        cancel it; a task whose answer was that nothing needed to change closes with `/audit:task
+        done <id> --no-change --reason`. `done --commit` asks the same two of the commit it names.
 
         **The commit is bound to the gate you recorded above, and the script enforces it.** It
         reads the task's newest evidence row — the rows carrying its task id, so a task measured

@@ -651,6 +651,8 @@ def _cases(check):
                        lambda c: _default_project_cases(c, repos))
         _harness.stage(check, "ae-block", lambda c: _attempt_cases(c, repos))
         _harness.stage(check, "bl-block", lambda c: _bug_link_cases(c, repos))
+        _harness.stage(check, "ce-block",
+                       lambda c: _close_evidence_cases(c, repos))
     finally:
         repos.close()
 
@@ -1856,6 +1858,63 @@ def _attempt_cases(check, repos):
           "the task's work: %r" % ((scode, code, text[:300]),),
           scode == 0 and code == 0
           and "src/img.png" in _carried(fx, _head(fx)))
+
+
+CE_TEST = "tests/test_a.py"
+
+
+def _owe_test(fx):
+    """The fixture task names `CE_TEST` in its `tests.add` and declares it."""
+    shard = _mio.read_json(fx["shard"])
+    task = [t for t in shard["tasks"] if t.get("id") == TASK][0]
+    task["tests"]["add"] = ["%s: the a case" % (CE_TEST,)]
+    task["files"] = [OWNED, CE_TEST]
+    TI._write_json(fx["shard"], shard)
+
+
+def _close_evidence_cases(check, repos):
+    """A commit standing for a task's close refuses a return that attempted
+    nothing over no declared change, and a `tests.add` file never written;
+    real work with its test present commits."""
+    fx = repos.make()
+    _file_executor_return(fx)
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw-ce1 a filed return whose red-first is `not-attempted`, with no "
+          "change in any declared file - only the records pending - is refused "
+          "by name and offers restart or cancel; nothing is committed or left "
+          "staged: %r" % ((code, text[:500]),),
+          code == 1 and "not-attempted" in text and "cancel" in text
+          and "/audit:task start" in text and _head(fx) == before
+          and _staged(fx) == [])
+
+    fx = repos.make()
+    _file_executor_return(fx)
+    _owe_test(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 2  # the task's own work\n")
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw-ce2 a `tests.add` file absent at the commit refuses it by name, "
+          "over a real change in a declared file: %r" % ((code, text[:500]),),
+          code == 1 and CE_TEST in text and _head(fx) == before
+          and _staged(fx) == [])
+
+    fx = repos.make()
+    _file_executor_return(fx)
+    _owe_test(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 2  # the task's own work\n")
+    os.makedirs(os.path.join(fx["root"], "tests"), exist_ok=True)
+    _write(os.path.join(fx["root"], CE_TEST), "assert True\n")
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    carried = _carried(fx, _head(fx)) if _head(fx) != before else []
+    check("ctw-ce3 ALLOW: the same `not-attempted` return beside a real change, "
+          "with the `tests.add` file written, commits both: %r"
+          % ((code, text[:300], carried),),
+          code == 0 and OWNED in carried and CE_TEST in carried)
 
 
 def _selftest():

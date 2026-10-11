@@ -768,6 +768,16 @@ so a path with a space or a non-ASCII byte is matched as written. The plan's own
 (manifest, journal, evidence) and the plugin's state directory are never counted. A successful
 close removes the task's start snapshot.
 
+**A green gate over an unchanged tree proves only that nothing broke, so the close also asks
+what the commit stands on**, and is refused, writing nothing, on either of two more things:
+the executor's return filed for the current start records red-first `not-attempted` while the
+commit touches none of the task's declared files, or a file the task's `tests.add` names is
+not on disk. The refusal names the evidence and offers a restart (`/audit:task start <id>`) or
+a cancel; a task whose honest answer was that nothing needed to change closes with
+`--no-change --reason`, which asks neither question. `commit-task-work.py` asks the same two
+before it stages anything, so the drive's close stops there first. The first question is put
+only of a SHA git verified; a `not-attempted` return beside a real change is no refusal.
+
 What it writes — exactly the fields step 4 prescribes, and nothing besides:
 
 - `status: "done"`, `completedAt` stamped at the moment of the call, and `commit` set to
