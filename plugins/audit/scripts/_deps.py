@@ -356,15 +356,15 @@ LAYERS = (
      # SHAPE the rules' warnings are printed in - nineteen lines that differ only
      # in the task they name, rendered as one. It sits beside the pieces rather
      # than above them because it never reads a rule; it reads the LINES, plus
-     # `_manifest_io.iter_tasks` (L1) for the only sound task -> phase map and
-     # `_fmt.plural` (L1) so a noun agrees with its count in one place. L2 is
-     # therefore its floor, and free: every consumer is L4 or higher (the doctor's
+     # `_manifest_io.iter_tasks` for the only sound task -> phase map and
+     # `_fmt.plural` so a noun agrees with its count in one place. The layer
+     # above both is therefore its floor, and free: every consumer is L4 or higher (the doctor's
      # setup check, the panel's write, and the four commands that print a
      # revalidation), and nothing at L2 reaches it.
      "_warning_groups",
      # `_ado_drift` answers who wrote a linked work item last, and whether pushing
      # would overwrite them. It is L2 rather than L1 for one concrete reason: it
-     # reuses `_usage_core.parse_ts` (L1) instead of writing the tree's FOURTH ISO
+     # reuses `_usage_core.parse_ts` instead of writing the tree's FOURTH ISO
      # parser, and a same-layer edge is not a downward edge. Its consumers are the
      # `explain-ado-drift` door and `_doctor_ado`, both above it.
      "_ado_drift",
@@ -372,7 +372,7 @@ LAYERS = (
      # HEAD, a digest of the declared work, a digest of which paths were dirty,
      # and the three-word comparison over them. It is L2 rather than L1 for
      # `_ado_drift`'s reason word for word: it reuses `_journal_io.canonical` and
-     # `_journal_io.file_hash` (L1) instead of becoming the tree's second hashing
+     # `_journal_io.file_hash` instead of becoming the tree's second hashing
      # subsystem, and a same-layer edge is not a downward edge. It sits here
      # rather than inside `run-test-gate` - which is where it was written and
      # which still records it - because `stamp-verification` needs the SAME
@@ -558,7 +558,7 @@ LAYERS = (
     #   `_panel_viewer`       who is driving the panel, and its identity cache
     #   `_panel_composition`  the plan as shown: phases, tasks, bugs, ADO, areas
     #   `_panel_policy`       the capability policy and what it decides today
-    #                         (the one that also reaches `_panel_discovery`, L3)
+    #                         (the one that also reaches `_panel_discovery`)
     #   `_panel_runstate`     locks, the on-disk change stamp, the Plan gate card
     #   `_panel_usage`        the Usage tab's facts (runtime-loads usage_ledger, L3)
     # `_invariants` is the post-hoc reader of `reference/orchestrator.md`'s rules:
@@ -682,7 +682,7 @@ LAYERS = (
      "fetch-ado-items",
      # `read-ado-links` is the MANIFEST side of the same question `fetch-ado-items`
      # asks the board: which items carry a link, and what ADO state each one's
-     # status means. It reads `_ado_drift.link_inventory` (L2) for the first half -
+     # status means. It reads `_ado_drift.link_inventory` for the first half -
      # the same walk the fetch asks, so "linked" cannot come to mean two things -
      # and `_manifest_io` for the loader and `effective_bug_status`. A command
      # rather than a paragraph for `check-ado-item`'s reason twice over: the caller
@@ -753,7 +753,7 @@ LAYERS = (
      # reason - so until this existed nothing committed the index at all and the
      # structural edits piled up in a working tree. It carries the index and
      # NOTHING else, which is what keeps two parallel phases off one another's
-     # commits, and it takes the index lock (`_panel_write`, L6) because unlike a
+     # commits, and it takes the index lock (`_panel_write`) because unlike a
      # shard the index is the file every structural command writes. It reaches
      # `_invariants` for the layout test and the action name, and
      # `_scoped_commit` for the staging discipline it shares with its
@@ -807,7 +807,7 @@ LAYERS = (
      # for a plan with no `meta.fullGate`. An entry point for this layer's
      # usual reason - it never imports `run-test-gate` or `audit-task` (an
      # entry point may not import another entry point), it resolves both by
-     # basename through `_loader.script_path` (L1) and runs them as
+     # basename through `_loader.script_path` and runs them as
      # subprocesses, which is why no edge to either appears here at all. It
      # reaches `_manifest_io` for the presence check that decides
      # whether to invoke anything, `_evidence_io` for the row a red run
@@ -822,7 +822,7 @@ LAYERS = (
      # main loop. It sits beside `full-gate` for the same reason - every verb it
      # performs (`audit-task`, `audit-lookup`, `run-test-gate`,
      # `stamp-verification`, `commit-task-work`, `audit-lock`) is an entry point
-     # it may not import, so each is resolved through `_loader.script_path` (L1)
+     # it may not import, so each is resolved through `_loader.script_path`
      # and run as a subprocess, and no edge to any of them appears here. It
      # reads `_manifest_io` for the plan, `_filed_returns` for where a
      # return is filed, `_evidence_io` for the project and the evidence
@@ -848,11 +848,11 @@ LAYERS = (
      # of off a hand-typed list, which is the held model of state it is about.
      "stamp-verification",
      # `derive-phase-gate` computes a PHASE's sign-off gate from
-     # `_gate_derive.derive` (L3) rather than deriving it itself: it gathers the
+     # `_gate_derive.derive` rather than deriving it itself: it gathers the
      # observations that pure function needs -- the version answer, the two
      # importer listings, changed paths since `baseRef`, the newest red
-     # phase-scope row (`_evidence_io`, L2) and the plan gate's own exempt
-     # verdict (`_loader.load_hooks_config()`, L1, the one door scripts/ has
+     # phase-scope row (`_evidence_io`) and the plan gate's own exempt
+     # verdict (`_loader.load_hooks_config()`, the one door scripts/ has
      # into `hooks/_config.py`) -- and writes the result under the index lock
      # through `_panel_write`, the same lock/snapshot/rollback pair every
      # other manifest writer uses. `_proc_group` runs each listing so a
@@ -2481,14 +2481,17 @@ def layer_doc_drift(script_dir=None, hooks_dir=None, layers=None):
 
 
 # A layer number written beside a module name in running prose: "`name` (layer N)"
-# and "`name` (LN)", plus "this file (LN)" for the file's own. These are the shapes
+# and "`name` (LN)", the same with a member after the module ("`name.attr` (LN)"),
+# the comma form ("`name`, LN)") and a parenthesis left open ("`name` (layer N ..."),
+# plus "this file (LN)" for the file's own. These are the shapes
 # that can be read without guessing which module a sentence means; a number in any
 # other wording stays author-enforced, and a green run here says only that none of
-# these three matched wrongly. A name LAYERS does not hold is not graded - it may
+# these shapes matched wrongly. A name LAYERS does not hold is not graded - it may
 # be a script, a hook or a word - and `layer_violations` already names a module
 # nobody placed.
 _NAMED_LAYER_MENTION = re.compile(
-    r"`([A-Za-z_][A-Za-z_0-9-]*)(?:\.py)?`\s*\((?:[Ll]ayer |L)(\d+)\)")
+    r"`([A-Za-z_][A-Za-z_0-9-]*)(?:\.[A-Za-z_0-9.]*)?(?:\(\))?`"
+    r"(?:\s*\(|,\s*)(?:[Ll]ayer |L)(\d+)\b")
 _OWN_LAYER_MENTION = re.compile(r"\bthis file \((?:[Ll]ayer |L)(\d+)\)")
 
 

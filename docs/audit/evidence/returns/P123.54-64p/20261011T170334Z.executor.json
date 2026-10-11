@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "sweep-selftests": "pass",
+    "sweep-selftests --spaced": "pass",
+    "gate-parity": "pass",
+    "ruff": "pass",
+    "vermin": "pass",
+    "test__deps --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-11T17:15:48Z",
+    "basis": "`python3 plugins/audit/tests/test__deps.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 316 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - lmd8 (house FAIL), lmd9 (house FAIL): SELFTEST FAILED: 314/316 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "The work was done by the previous attempt and verified by me. Diff read: _NAMED_LAYER_MENTION in _deps.py now takes name.attr, the comma form and the unclosed form; stale layer numbers deleted in _deps.py, _manifest_io.py, _panel_write.py, _panel_composition.py, _report_page.py, _status_facts.py; lmd8/lmd9 added to test__deps.py; two prove-gates rows added (a wrong qualified mention, and the regex narrowed back). layer_mention_drift() over the tree returned [] . Exit codes: test__deps.py --selftest 0 (316/316), sweep-selftests.py 0 (331/331 files), --spaced 0, gate-parity.py 0, ruff 0, vermin 0. I changed nothing.",
+    "descriptive": "Module-qualified, comma and unclosed layer mentions are now graded, and the stale layer numbers they exposed are gone."
+  },
+  "testsAdded": [
+    "lmd8",
+    "lmd9"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:8ceb70ecfb713e6cc02ffbb0e9c92f4ba73434dd0bf9107996a1f8c0cd11afe7\",\"dirtyDigest\":\"sha256:5a8eb1b31a4830762649d0ae363d84dcc5ce9e7557448c49f0d35f1a5befc34b\",\"dirtyPaths\":{\"plugins/audit/scripts/_deps.py\":\"1fe2aa8113f0b71e\",\"plugins/audit/scripts/manifest/_manifest_io.py\":\"1eb70ad39c324b52\",\"plugins/audit/scripts/panel/_panel_composition.py\":\"5cf73a1bdda5d441\",\"plugins/audit/scripts/panel/_panel_write.py\":\"00345651d80c9176\",\"plugins/audit/scripts/report/_report_page.py\":\"c57e773085ff7dff\",\"plugins/audit/scripts/status/_status_facts.py\":\"0da37969c263ad4a\",\"plugins/audit/tests/test__deps.py\":\"25aae1162ade84a8\",\"tools/prove-gates.py\":\"740c44d6791609bc\"},\"head\":\"dbd0a519\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"_deps.py\",\"manifest/_manifest_io.py\",\"panel/_panel_composition.py\",\"panel/_panel_write.py\",\"plugins/audit/scripts/_deps.py\",\"plugins/audit/scripts/manifest/_manifest_io.py\",\"plugins/audit/scripts/panel/_panel_composition.py\",\"plugins/audit/scripts/panel/_panel_write.py\",\"plugins/audit/scripts/report/_report_page.py\",\"plugins/audit/scripts/status/_status_facts.py\",\"plugins/audit/tests/test__deps.py\",\"report/_report_page.py\",\"status/_status_facts.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:c3befe6ac18bfef4e5f3fcafe35204bb016a85b9f6de8bd44bb84f95f3a0a24e\",\"v\":2}"
+}

@@ -618,6 +618,15 @@ def _cases(check):
         check("lmd7 a layer number in a string that is neither docstring nor "
               "comment is not prose and is left alone",
               _lm('X = "`_other` (L1)"\n') == [])
+        check("lmd8 a module-qualified mention is graded by its module part: wrong "
+              "is named, right is silent",
+              len(_lm("# `_manifest_io.iter_tasks` (L3) reads it\nX = 1\n")) == 1
+              and _lm("# `_manifest_io.iter_tasks` (L1) reads it\nX = 1\n") == [])
+        check("lmd9 the comma form and the unclosed form are read too",
+              len(_lm("# see `_other`, L1) for it\nX = 1\n")) == 1
+              and len(_lm("# see `_manifest_io` (layer 3 and up\nX = 1\n")) == 1
+              and _lm("# see `_other`, L2) and `_manifest_io` (layer 1 and up\n"
+                      "X = 1\n") == [])
     finally:
         shutil.rmtree(lm_tmp, ignore_errors=True)
 

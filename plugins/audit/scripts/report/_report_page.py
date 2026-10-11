@@ -32,8 +32,8 @@ hero renders the "could not be evaluated" state the product already has for a
 gate that raises — an honest unknown, never a fabricated Clear.
 
 Imports go one way only: `_report_md` (the Markdown twin this page embeds),
-`_report_usage`, `_report_ui`, `_report_html`, `_status_facts` (layer 2, for
-`is_parked_proposal`) and `_manifest_io` (layer 1, which owns reading a
+`_report_usage`, `_report_ui`, `_report_html`, `_status_facts` (for
+`is_parked_proposal`) and `_manifest_io` (which owns reading a
 manifest's shape) are all below this file; it must never import render-report.
 `_status_facts` is imported for that ONE predicate and nothing else -- the gate
 verdict it also holds still arrives as the injected `verdict` callable, for the

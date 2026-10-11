@@ -445,7 +445,7 @@ def acquire_index_lock(project, config, mpath, takeover, out, prefix, note):
     the standard shape a human already knows from audit-lock.py and the panel;
     the caller adds only its own next step.
 
-    `_locks.acquire` (layer 1), not a loaded COMMAND. The old spelling built an
+    `_locks.acquire`, not a loaded COMMAND. The old spelling built an
     argv for `audit-lock.py` and reached it through the panel's read-side
     accessor, which meant a very real dependency on the lock was attributed by
     `_deps` to whichever module held the literal. A hidden edge is not a retired

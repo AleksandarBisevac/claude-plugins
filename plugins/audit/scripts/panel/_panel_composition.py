@@ -66,7 +66,7 @@ _areas_of = _areas.areas_of
 # `_proposals_view` USED TO SIT HERE, and it was the panel's own reading of
 # `proposals[]` - including a `_parked_blockers` walk that answered the question
 # `_proposals.unresolved_refs` already answers. It moved to `_proposals.py`
-# (layer 4, imported by `_panel_state` at 5) when `/audit:propose list` stopped
+# (imported by `_panel_state`) when `/audit:propose list` stopped
 # being prose a model rendered and became a table the script prints: two surfaces
 # reading one array two ways is two answers about one manifest. A parked phase is
 # also not part of the plan yet, which is why it was never part of the
@@ -1022,7 +1022,7 @@ def _composition_view(manifest, boundary=None, full_run_rows=None,
 
     `full_run_rows` AND `git_root` ARE THE SAME KIND OF ARGUMENT, ONE LAYER
     OVER. Both name inputs this module has no business reading itself - the
-    full-scope rows live in the evidence ledger (`_evidence_io`, layer 2) and
+    full-scope rows live in the evidence ledger (`_evidence_io`) and
     resolving a git root is `_panel_state`'s own convention, not this file's -
     so a caller that has not wired them yet gets NO `fullRun` key at all on
     any phase row, never a PROVISIONAL built from a ledger nobody actually

@@ -608,6 +608,15 @@ TABLE = (
  ("layer_mention_drift", S + "status/_doctor_ado.py", "replace",
   "`_doctor_report` for the collector",
   "`_doctor_report` (layer 9) for the collector", DEP, "lmd1"),
+ # The module-qualified shape: a wrong number planted beside `module.member` in a
+ # shipped docstring, and the regex narrowed back to the bare-name spelling, which
+ # is the reading that left every such mention unchecked.
+ ("layer_mention_drift", S + "status/_doctor_ado.py", "replace",
+  "`_doctor_report` for the collector",
+  "`_doctor_report.collect` (layer 9) for the collector", DEP, "lmd1"),
+ ("layer_mention_drift", S + "_deps.py", "replace",
+  '    r"`([A-Za-z_][A-Za-z_0-9-]*)(?:\\.[A-Za-z_0-9.]*)?(?:\\(\\))?`"\n',
+  '    r"`([A-Za-z_][A-Za-z_0-9-]*)`"\n', DEP, "lmd8"),
  # The defect is a PAIR - a function nothing names, and a docstring saying
  # something depends on it - so the mutation has to plant both halves at once. A
  # probe function planted in a shipped module is exactly that: nothing calls it,

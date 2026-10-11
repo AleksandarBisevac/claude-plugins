@@ -592,8 +592,8 @@ areas_of = _areas.areas_of
 
 # A bug's status, DERIVING 'fixed' from its linked task. Re-exported rather than
 # reimplemented, the same move `areas_of` above makes: this rule had two homes that
-# could drift — here (layer 7) and `_report_html._bug_view` (layer 2) — and layer 2
-# cannot import layer 7, so the copy was structural. `_manifest_io` is the only
+# could drift — here and `_report_html._bug_view` — and the report module
+# cannot import this one, so the copy was structural. `_manifest_io` is the only
 # place underneath both readers. Its docstring carries the rule and says why the
 # falsy-taskId guard is load-bearing; `_panel_state` reaches this name through
 # `_cores()`, so the name stays.

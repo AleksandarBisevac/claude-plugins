@@ -30,8 +30,10 @@
         "severity": "med",
         "file": "plugins/audit/tests/test_validate_manifest.py:441-472",
         "issue": "sp1 (P123.20) runs `validate-manifest.py --strict` over the live, mutable dogfood plan (SCHEMA_PLANS[1] = docs/audit/audit-plan.json) and asserts exit 0. --strict exits 1 on any FINDING the plan carries, not only on schema lines (main() moves schema warnings into findings and keeps every structural finding), so test_validate_manifest's verdict depends on whatever state the plan is in - filing a bug or any plan fault reddens a unit suite of the validator, and a red-first over this suite reads HEAD as already red (the orchestrator saw exactly that blind a red-first). The live plan's validity is already the gate's own `validate` step.",
-        "resolution": "Read a frozen copy: commit a snapshot of a real plan as a test fixture (or build one under mkdtemp from the starter plus representative phases) and point SCHEMA_PLANS at it; leave the live plan to the gate's `validate` step. If the live plan must stay, assert only `_schema_lines(...) == []` for it, not the --strict exit code.",
-        "fixTask": "P123.53-64p"
+        "resolution": "fixed in P123.53-64p (dbd0a51942c9): Read a frozen copy: commit a snapshot of a real plan as a test fixture (or build one under mkdtemp from the starter plus representative phases) and point SCHEMA_PLANS at it; leave the live plan to the gate's `validate` step. If the live plan must stay, assert only `_schema_lines(...) == []` for it, not the --strict exit code.",
+        "fixTask": "P123.53-64p",
+        "commit": "dbd0a51942c9",
+        "status": "fixed"
       },
       {
         "id": "P123-R2",
@@ -82,7 +84,7 @@
         "fixTask": "P123.59-64p"
       }
     ],
-    "outcome": "[findings: 7 - 0 high, 4 med, 3 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 7 - 0 high, 4 med, 3 low; 1 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -4140,7 +4142,7 @@
     {
       "id": "P123.53-64p",
       "title": "fix P123-R1: sp1 (P123.20) runs `validate-manifest.py --strict` over the live...",
-      "status": "in_progress",
+      "status": "done",
       "description": "sp1 (P123.20) runs `validate-manifest.py --strict` over the live, mutable dogfood plan (SCHEMA_PLANS[1] = docs/audit/audit-plan.json) and asserts exit 0. --strict exits 1 on any FINDING the plan carries, not only on schema lines (main() moves schema warnings into findings and keeps every structural finding), so test_validate_manifest's verdict depends on whatever state the plan is in - filing a bug or any plan fault reddens a unit suite of the validator, and a red-first over this suite reads HEAD as already red (the orchestrator saw exactly that blind a red-first). The live plan's validity is already the gate's own `validate` step.\n\nResolution asked: Read a frozen copy: commit a snapshot of a real plan as a test fixture (or build one under mkdtemp from the starter plus representative phases) and point SCHEMA_PLANS at it; leave the live plan to the gate's `validate` step. If the live plan must stay, assert only `_schema_lines(...) == []` for it, not the --strict exit code.",
       "files": [
         "plugins/audit/tests/test_validate_manifest.py"
@@ -4168,13 +4170,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "dbd0a51942c9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "In plugins/audit/tests/test_validate_manifest.py added LIVE_PLANS and made case sp1 skip the --strict exit code for docs/audit/audit-plan.json, keeping its schema-line check (_schema_lines == []); the starter and the acme example still pass --strict. Exit codes: sweep-selftests 0, --spaced 0, ruff 0, vermin 0.",
+        "descriptive": "The validator suite no longer reddens when the live plan carries a finding."
       },
       "startedAt": "2026-10-11T16:31:32Z",
-      "completedAt": null,
+      "completedAt": "2026-10-11T16:48:20Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -4190,12 +4192,23 @@
         "runId": "2026-10-11T16:48:19Z.4a1587",
         "status": "passed",
         "at": "2026-10-11T16:48:19Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "dbd0a51942c9",
+        "at": "2026-10-11T16:48:20Z",
+        "basis": "a fix task for P123-R1: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task, expectRedFirst false; the change removes a dependency of the suite on the live plan's findings",
+        "at": "n/a"
       }
     },
     {
       "id": "P123.54-64p",
       "title": "fix P123-R2: P123.33's invariant ('a layer number in prose is checked or not ...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "P123.33's invariant ('a layer number in prose is checked or not written') is not met. _NAMED_LAYER_MENTION only reads `name` (LN)/(layer N) with a dot-free name, so module-qualified mentions (`_manifest_io.iter_tasks` (L1), `_loader.script_path` (L1), `_gate_derive.derive` (L3), `_locks.acquire` (layer 1), `audit-status.effective_bug_status` (layer 7), `_report_html._bug_view` (layer 2)), comma forms (`_evidence_io`, L2), `_panel_write`, L6)) and unclosed forms (`_manifest_io` (layer 1 ...) are unchecked - and all of the ones listed are one below _deps.LAYERS today (e.g. _manifest_io, _fmt, _journal_io, _loader, _locks at 2; _gate_derive 4; _evidence_io 3; audit-status 8; _report_html 3). These are the off-by-one class the task was opened for, and the descriptive outcome says 'the stale ones are gone'.\n\nResolution asked: Widen the regex to take the module part before a dot (`name.attr`) and the comma/unclosed shapes, then delete each number where the layer is not the argument (keep the module name), correcting it where it is; add an lmd case planting a wrong module-qualified mention and a prove-gates red row for it.",
       "files": [
         "plugins/audit/scripts/_deps.py",
@@ -4204,7 +4217,14 @@
         "panel/_panel_write.py",
         "panel/_panel_composition.py",
         "report/_report_page.py",
-        "status/_status_facts.py"
+        "status/_status_facts.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/scripts/panel/_panel_composition.py",
+        "plugins/audit/scripts/report/_report_page.py",
+        "plugins/audit/tests/test__deps.py",
+        "tools/prove-gates.py"
       ],
       "tests": {
         "mode": "gate-only",
@@ -4227,14 +4247,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-11T17:03:34Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -4245,7 +4265,13 @@
       ],
       "fixes": [
         "P123-R2"
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T17:24:49Z.2d39d7",
+        "status": "passed",
+        "at": "2026-10-11T17:24:49Z"
+      }
     },
     {
       "id": "P123.55-64p",
@@ -4499,15 +4525,17 @@
       "id": "P123.60-64p",
       "title": "A triage's fix tasks are added whole from stdin, never stopped halfway by a finding's own text",
       "status": "pending",
-      "description": "(F639) `drive-phase next --answer fix --fix <ids>` builds each fix task's `audit-task add` argv with the finding's free text as `--description`; audit-task refuses a description whose argv shape looks like shell substitution, so a finding that quotes code (`(split_not_commands at :4809)`) stopped the P123 triage after two of seven fix tasks, and the rest were added by hand on stdin. Hand every fix task's description to `audit-task add` on stdin (`--description -`), as the refusal itself prescribes, and make the batch whole: every requested fix task is added or none is, and the drive says which. Regression: a triage over a finding whose issue holds a backtick span with a spaced paren adds its fix task; an add the verb refuses for another reason leaves no partial batch. Faults: F639.",
+      "description": "(F639) `drive-phase next --answer fix --fix <ids>` builds each fix task's `audit-task add` argv with the finding's free text as `--description`; audit-task refuses a description whose argv shape looks like shell substitution, so a finding that quotes code (`(split_not_commands at :4809)`) stopped the P123 triage after two of seven fix tasks, and the rest were added by hand on stdin. Hand every fix task's description to `audit-task add` on stdin (`--description -`), as the refusal itself prescribes, and make the batch whole: every requested fix task is added or none is, and the drive says which. Regression: a triage over a finding whose issue holds a backtick span with a spaced paren adds its fix task; an add the verb refuses for another reason leaves no partial batch. Also (F640): a fix task's files are the finding's path words as written - `manifest/_manifest_io.py`, `_deps.py` - relative to whatever directory the reviewer meant, so the plan gate covered none of them and P123.54 needed a widening with full paths. Resolve each path a finding names to an existing repo-relative path before it becomes a `files` entry: as written when it exists from the repo root, else by a unique suffix match among the project's tracked files; a word that resolves to none or to several is named in the add's note with its candidates and is not written. Regression: a finding naming `manifest/_manifest_io.py:774` scopes `plugins/audit/scripts/manifest/_manifest_io.py`; an ambiguous basename is named, not guessed. Faults: F639, F640.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/tests/test_drive_phase.py"
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py"
       ],
       "tests": {
         "mode": "tdd",
         "add": [
-          "plugins/audit/tests/test_drive_phase.py: --answer fix over findings whose issue text holds a backtick span with a spaced paren adds every fix task, and a refused add leaves none added"
+          "plugins/audit/tests/test_audit_task.py: a finding naming manifest/_manifest_io.py:774 scopes the full repo path; an ambiguous basename is named in the note, not written"
         ],
         "expectRedFirst": true,
         "gate": [

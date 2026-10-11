@@ -773,10 +773,10 @@ HUMAN_BUG_VERDICT = ("wontfix", "not_a_bug")
 def effective_bug_status(bug, task_by_id):
     """A bug's status, DERIVING 'fixed' from its linked task.
 
-    Lives at layer 1 because the rule had two homes that could drift:
-    `audit-status.effective_bug_status` (layer 7) and `_report_html._bug_view`
-    (layer 2), whose own docstring says it "mirrors" the other. Layer 2 cannot
-    import layer 7, so that copy was STRUCTURAL rather than lazy — the only place
+    Lives below both readers because the rule had two homes that could drift:
+    `audit-status.effective_bug_status` and `_report_html._bug_view`, whose own
+    docstring says it "mirrors" the other. The report module cannot import the
+    status entry point above it, so that copy was STRUCTURAL rather than lazy — the only place
     one implementation can serve both readers is underneath them.
 
     The rule itself: a bug materialized into a task (`bug.taskId` <->
