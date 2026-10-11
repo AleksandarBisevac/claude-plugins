@@ -504,7 +504,7 @@ def main(argv):
     written = []
     if fmt in ("html", "both"):
         p = os.path.join(out_dir, basename + ".html")
-        with open(p, "w", encoding="utf-8") as fh:
+        with open(p, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(render_html(plan, summary, basename, usage,
                                  css=_css, show_proposals=show_proposals,
                                  evidence=evidence, portability=_port,
@@ -515,7 +515,7 @@ def main(argv):
         # open from disk and what CI diffs the live demo against; overwriting it
         # with a fragment would leave both looking fine and one of them broken.
         p = os.path.join(out_dir, basename + ".artifact.html")
-        with open(p, "w", encoding="utf-8") as fh:
+        with open(p, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(render_html(plan, summary, basename, usage,
                                  fragment=True, css=_css,
                                  show_proposals=show_proposals,
@@ -524,7 +524,7 @@ def main(argv):
         written.append(p)
     if fmt in ("md", "both"):
         p = os.path.join(out_dir, basename + ".md")
-        with open(p, "w", encoding="utf-8") as fh:
+        with open(p, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(render_md(plan, summary, usage, evidence, own=live["own"]))
         written.append(p)
     for p in written:

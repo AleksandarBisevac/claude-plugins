@@ -364,7 +364,7 @@ def _write_slot(root, cfg, data, rel):
         slot = _slot_path(root, cfg, data, rel)
         sha, text = _snapshot(os.path.join(str(root), rel))
         _config.ensure_local_dir(os.path.dirname(slot))
-        with open(slot, "w", encoding="utf-8") as fh:
+        with open(slot, "w", encoding="utf-8", newline="\n") as fh:
             json.dump({"path": rel,
                        "ts": _config.utc_stamp(),
                        "sha256": sha, "content": text}, fh)
@@ -1273,7 +1273,7 @@ def record_plugin_write(root, cfg, data, written_path):
         if rel not in wrote:
             wrote.append(rel)
             _config.ensure_local_dir(os.path.dirname(slot))
-            with open(slot, "w", encoding="utf-8") as fh:
+            with open(slot, "w", encoding="utf-8", newline="\n") as fh:
                 json.dump({"pluginWrote": wrote}, fh)
         return slot
     except Exception:

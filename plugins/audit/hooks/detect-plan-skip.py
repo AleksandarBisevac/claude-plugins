@@ -155,9 +155,10 @@ def _arm_bypass(state_dir, logs_dir, session_id,
     _config.ensure_local_dir(state_dir)
     _config.ensure_local_dir(logs_dir)
     with open(state_dir / ("plan-bypass-%s.json" % session_id), "w",
-              encoding="utf-8") as fh:
+              encoding="utf-8", newline="\n") as fh:
         json.dump({"ts": ts, "armedAtEpoch": int(time.time())}, fh)
-    with open(logs_dir / "plan-bypass.log", "a", encoding="utf-8") as fh:
+    with open(logs_dir / "plan-bypass.log", "a", encoding="utf-8",
+              newline="\n") as fh:
         fh.write("%s session=%s bypass armed (single-use, expires unused "
                  "after %d minutes): %s\n" % (ts, session_id, minutes, snippet))
     _config.append_gate_event(logs_dir, {
@@ -202,7 +203,7 @@ def _observed_message(state_dir, session_id, cfg=None):
             return []
         tally["notified"] = True
         try:
-            with open(path, "w", encoding="utf-8") as fh:
+            with open(path, "w", encoding="utf-8", newline="\n") as fh:
                 json.dump(tally, fh)
         except Exception:
             pass

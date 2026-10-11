@@ -708,7 +708,7 @@ def ensure_ledger_dir(ledger_dir):
     marker = os.path.join(ledger_dir, ".gitignore")
     try:
         if not os.path.exists(marker):
-            with open(marker, "w", encoding="utf-8") as fh:
+            with open(marker, "w", encoding="utf-8", newline="\n") as fh:
                 fh.write(LOCAL_IGNORE_MARKER)
     except Exception:
         pass

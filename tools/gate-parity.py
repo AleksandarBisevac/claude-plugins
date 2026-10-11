@@ -2350,11 +2350,6 @@ AUDITED_EXEMPTIONS = {
     # their `ts` text instead of the moment reader, and a row whose site no
     # longer does; whether its reason is true it does not judge.
     "TS_ORDER_SITES": ("live", "ts_order_violations"),
-    # The files still opening a text handle for writing without naming the
-    # newline. The lint that reads the table reports a row whose file no longer
-    # holds such a write, so it can only shrink; whether its reason is true it
-    # does not judge.
-    "NEWLINE_PENDING": ("live", "text_write_newline_violations"),
     # ...and the two whose instrument is a CASE rather than a function. This tree's
     # suites lint other files' source, so an auditor living in one is not a lesser
     # auditor - `r2` is the strongest row in this table, refusing a NEW debt and a

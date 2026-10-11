@@ -515,7 +515,7 @@ def record_opened(project, config=None):
         # `.gitignore` every other plugin-local directory gets, so a project where
         # no hook has run yet does not leave this directory untracked.
         _paths.hooks_config().ensure_local_dir(os.path.dirname(path))
-        with open(path, "w", encoding="utf-8") as fh:
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
             json.dump({"count": prior["count"] + 1}, fh)
     except Exception:
         pass

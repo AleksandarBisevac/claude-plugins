@@ -2991,7 +2991,7 @@ def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
         dst = os.path.join(path, *rel.split("/"))
         if not os.path.isdir(os.path.dirname(dst)):
             os.makedirs(os.path.dirname(dst))
-        open(dst, "w").close()
+        open(dst, "w", newline="\n").close()
     problem = link_dependencies(path, deps)
     if problem is not None:
         return {"code": None, "text": "", "problem": problem, "seconds": 0.0}, copied
@@ -3123,7 +3123,8 @@ def run_red(args, cmd, out):
     holder = tempfile.mkdtemp(prefix=THROWAWAY_PREFIX, dir=base)
     path = os.path.join(holder, "tree")
     try:
-        with open(os.path.join(holder, OWNER_FILE), "w", encoding="utf-8") as fh:
+        with open(os.path.join(holder, OWNER_FILE), "w", encoding="utf-8",
+                  newline="\n") as fh:
             json.dump({"pid": os.getpid()}, fh)
     except OSError:
         pass

@@ -2195,27 +2195,11 @@ _NEWLINE_POSITION = {"open": 4, "fdopen": 5}
 # permission: it is reported once the file holds no such open, so the table can
 # only shrink. Everything the plan, its shards, the journal, evidence or a filed
 # return is written through already names its newline.
-NEWLINE_PENDING = {
-    "git/manage-worktrees.py": "the worktree provenance record, written into "
-                               "git's admin directory and never committed",
-    "governance/_invariants.py": "scratch copies of plan files read out of a "
-                                 "commit, and the clone-id token under git's "
-                                 "common directory; none is committed",
-    "governance/run-test-gate.py": "the gate's own captured-output log under "
-                                   "the plugin-local directory",
-    "governance/stamp-verification.py": "stub files and the owner record in a "
-                                        "throwaway verification tree",
-    "panel/_panel_runstate.py": "the panel's run counter under the "
-                                "plugin-local directory",
-    "panel/panel-server.py": "the panel's log truncation and its owner-only "
-                             "pidfile",
-    "report/render-report.py": "the rendered HTML and Markdown report, which "
-                               "the committed example is compared against byte "
-                               "for byte - the first row to convert once the "
-                               "file is in a task's scope",
-    "usage/usage_ledger.py": "the ledger directory's self-ignoring marker "
-                             "file, which is not itself committed",
-}
+NEWLINE_PENDING = ()
+# The directories the lint walks: the plugin's scripts and its hooks. The
+# repository's own project hooks are not shipped with the plugin and are not
+# walked here.
+NEWLINE_DIRS = (SCRIPTS_DIR, HOOKS_DIR)
 _NEWLINE_WRITE = ("a text-mode open for writing that names no `newline` - on "
                   "Windows it writes CRLF into a file other machines write "
                   "with LF; pass newline=\"\\n\"")
@@ -2258,11 +2242,11 @@ def text_write_newline_violations(dirs=None, pending=None):
     WHAT IT CANNOT SEE: a mode that is not a literal, a handle opened through a
     wrapper, `Path.write_text` (which takes no newline argument before Python
     3.10 - the floor here is 3.8), `tempfile` handles, a `**kwargs` forward
-    (read as naming one), and any file outside `dirs` - `hooks/` is not in the
-    default. So a clean result means "none of this shape here", not "no file is
-    written with the wrong ending".
+    (read as naming one), and any file outside `dirs`, which defaults to
+    `NEWLINE_DIRS`. So a clean result means "none of this shape here", not "no
+    file is written with the wrong ending".
     """
-    dirs = dirs if dirs is not None else (SCRIPTS_DIR,)
+    dirs = dirs if dirs is not None else NEWLINE_DIRS
     pending = set(NEWLINE_PENDING if pending is None else pending)
     violations, holding = [], set()
     for d in dirs:

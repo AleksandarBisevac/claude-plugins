@@ -149,7 +149,8 @@ def _save_state(state_dir, session_id, state):
         # audit-doctor.check_local_artifacts then reported the plugin's own
         # directory as a hygiene finding. Never raises (hook context).
         _config.ensure_local_dir(state_dir)
-        with open(_state_file(state_dir, session_id), "w", encoding="utf-8") as fh:
+        with open(_state_file(state_dir, session_id), "w", encoding="utf-8",
+                  newline="\n") as fh:
             json.dump(state, fh)
     except Exception:
         pass

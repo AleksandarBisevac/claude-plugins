@@ -1,0 +1,25 @@
+{
+  "gates": {
+    "sweep-selftests": "pass",
+    "sweep-selftests --spaced": "pass",
+    "ruff": "pass",
+    "vermin": "pass",
+    "gate-parity": "pass",
+    "bench-hooks --gate": "pass",
+    "check-rendered-artifacts --before-commit": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-11T13:11:22Z",
+    "basis": "`python3 plugins/audit/tests/test_render_report.py --selftest --stage rl` in a throwaway tree at HEAD exited 1 with 1 of 295 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rl10 (house FAIL): SELFTEST FAILED: 294/295 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "NEWLINE_PENDING emptied (kept as empty tuple with stale-row check); NEWLINE_DIRS = scripts + plugin hooks added as the default walk; every pending scripts write plus 14 hooks writes now name newline=\"\\n\"; gate-parity NEWLINE_PENDING row deleted (reported stale when empty). .claude/hooks is NOT walked: it holds bare writes (arm-release-bypass.py and others) outside this task's files; left as follow-up. Rendered artifacts unchanged (check-rendered-artifacts exit 0). One _output.py docstring edit was made via a python heredoc, not Edit.",
+    "descriptive": "Every text write in scripts and plugin hooks states its newline; the pending list is empty and render-report writes LF on Windows."
+  },
+  "testsAdded": [
+    "test_render_report.py rl10",
+    "test__output.py nw4 (rewritten), nw5"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:8284e5fe1ebbd5896db4304773c8171bc4f4a11fe3e9ad5e9230a6cab5b70118\",\"dirtyDigest\":\"sha256:a2643f38b819ab37f67bbc05ba5a31198d40f8a831794ab387590cf32fe9adfd\",\"dirtyPaths\":{\"plugins/audit/hooks/_config.py\":\"435ed44923b7d65d\",\"plugins/audit/hooks/detect-plan-skip.py\":\"758ec03860ac937d\",\"plugins/audit/hooks/guard-bash-writes.py\":\"cc7dcdf62129875b\",\"plugins/audit/hooks/journal-writes.py\":\"45a73a2f51b1d1cf\",\"plugins/audit/hooks/remind-tdd.py\":\"605144160ac13a76\",\"plugins/audit/hooks/require-plan.py\":\"e2690e3dbba22a87\",\"plugins/audit/scripts/_output.py\":\"19ffe7ec72492007\",\"plugins/audit/scripts/git/manage-worktrees.py\":\"83f2d954eb345cc3\",\"plugins/audit/scripts/governance/_invariants.py\":\"39d2e4157e8b03cb\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"de67ce0da24f8443\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"1ea93d2201d16fb0\",\"plugins/audit/scripts/panel/_panel_runstate.py\":\"89aa62616c8bdb47\",\"plugins/audit/scripts/panel/panel-server.py\":\"e9f8c16f992d46ae\",\"plugins/audit/scripts/report/render-report.py\":\"74d9c8ae757e6ea3\",\"plugins/audit/scripts/usage/usage_ledger.py\":\"bcbbbc4b36a546d9\",\"plugins/audit/tests/test__output.py\":\"cedb05200fa3fa30\",\"plugins/audit/tests/test_render_report.py\":\"56b300b7d8bbc65f\",\"tools/gate-parity.py\":\"1d1951d687a078f4\"},\"head\":\"a3ec357c\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/hooks\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/detect-plan-skip.py\",\"plugins/audit/hooks/guard-bash-writes.py\",\"plugins/audit/hooks/journal-writes.py\",\"plugins/audit/hooks/remind-tdd.py\",\"plugins/audit/hooks/require-plan.py\",\"plugins/audit/scripts/_output.py\",\"plugins/audit/scripts/git/manage-worktrees.py\",\"plugins/audit/scripts/governance/_invariants.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/scripts/panel/_panel_runstate.py\",\"plugins/audit/scripts/panel/panel-server.py\",\"plugins/audit/scripts/report/render-report.py\",\"plugins/audit/scripts/usage/usage_ledger.py\",\"plugins/audit/tests/test__output.py\",\"plugins/audit/tests/test_render_report.py\",\"tools/gate-parity.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:d905fc8e02e521da84374cbaf0a13d0cb5868677875c947b838256bfd1614e4b\",\"v\":2}"
+}

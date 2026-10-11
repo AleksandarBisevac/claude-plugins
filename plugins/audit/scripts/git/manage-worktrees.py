@@ -432,7 +432,7 @@ def _write_record(tree_path, record, run=None):
         return "", "git would not name the admin directory of %s" % (tree_path,)
     path = os.path.join(admin, _wt.PROVENANCE_FILE)
     try:
-        with io.open(path, "w", encoding="utf-8") as fh:
+        with io.open(path, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(json.dumps(record, indent=1, sort_keys=True))
             fh.write("\n")
     except Exception as exc:

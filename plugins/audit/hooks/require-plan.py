@@ -201,7 +201,8 @@ def _ensure_dir(p):
 def _append_log(logs, line):
     try:
         _ensure_dir(logs)
-        with open(logs / "plan-bypass.log", "a", encoding="utf-8") as fh:
+        with open(logs / "plan-bypass.log", "a", encoding="utf-8",
+                  newline="\n") as fh:
             fh.write(line + "\n")
     except Exception:
         pass
@@ -361,7 +362,7 @@ def _record_observed(state_dir, session_id, rel, reason):
         if rel not in seen["files"]:
             seen["files"].append(rel)
         _ensure_dir(state_dir)
-        with open(path, "w", encoding="utf-8") as fh:
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(seen, fh)
     except Exception:
         pass
@@ -439,7 +440,7 @@ def _owner_note(root, cfg, state_dir, session_id, rel,
             return None
         try:
             _ensure_dir(state_dir)
-            with open(note_file, "w", encoding="utf-8") as fh:
+            with open(note_file, "w", encoding="utf-8", newline="\n") as fh:
                 json.dump({"areas": mentioned + [tag]}, fh)
         except Exception:
             pass
@@ -596,7 +597,7 @@ def _record_warned(state_dir, session_id, files):
     try:
         _ensure_dir(Path(state_dir))
         path = Path(state_dir) / ("plan-gate-warned-%s.json" % session_id)
-        with open(path, "w", encoding="utf-8") as fh:
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
             json.dump({"files": list(files)}, fh)
     except Exception:
         pass

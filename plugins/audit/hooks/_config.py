@@ -1412,7 +1412,7 @@ def take_trivial_slot(state, session_id, files, owner=None):
         ensure_local_dir(Path(state))
         fd, tmp = tempfile.mkstemp(dir=str(state), prefix="plan-gate-tmp-",
                                    suffix=".json")
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(_slot_body(files, owner), fh)
         try:
             os.link(tmp, str(_slot_path(state, session_id)))
@@ -1452,7 +1452,7 @@ def _take_slot_exclusive(state, session_id, files, owner=None):
     except Exception:
         return None
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(_slot_body(files, owner), fh)
         return True
     except Exception:
@@ -4138,7 +4138,7 @@ def stamp_running_plugin(state_dir, session_id):
         payload = {"root": root, "version": hook_plugin_version(root)}
         ensure_local_dir(state_dir)
         with open(Path(state_dir) / (RUNNING_STAMP % session_id), "w",
-                  encoding="utf-8") as fh:
+                  encoding="utf-8", newline="\n") as fh:
             json.dump(payload, fh)
         return payload
     except Exception:

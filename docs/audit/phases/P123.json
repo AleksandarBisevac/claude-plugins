@@ -3459,7 +3459,7 @@
     {
       "id": "P123.45-64p",
       "title": "A close refuses while an undeclared tracked file changed during the attempt, and a printed brief survives a scope widening",
-      "status": "in_progress",
+      "status": "done",
       "description": "(F623, reported from the testbed on 3.2.0) An executor edited a TRACKED file outside its task's files (an allowlist in a test the gate needed); the drive printed 'gate green; closed at <sha>' and the commit held only the declared files, so the commit alone fails the suite the gate passed. The during-attempt refusal in commit-task-work pins a file the attempt CREATED outside scope (ctw-at3), but the start snapshot holds the DECLARED files' blob ids only, so a tracked undeclared file modified during the attempt is attributed by mtime at best. Record at `start` the blob id of every tracked dirty-or-clean path the attempt could touch cheaply (the porcelain set at start plus HEAD's blob for any path that later shows dirty is enough: a path clean at start and dirty at close changed during the attempt), so a tracked file modified during the attempt that no in_progress task covers is refused at commit-task-work, at `done --commit` and therefore at the drive's close, naming the path and offering `/audit:task scope` widening; the drive never prints 'closed' while one exists. Allow: the same file already dirty before `start` is not this task's (the existing before-attempt wording). (F624) After `drive next` printed a dispatch and the orchestrator ran `audit-task scope` on that started task, the next `drive next` answered `decide no-executor-return` for a brief no executor ever received, and `retry` spent an attempt: a printed brief with no return and no dispatch evidence is re-printed (or re-issued after scope), never graded as an executor that returned nothing, and costs no attempt. (F632, reported from the testbed) The drive closed a fix task done and green over a return filed `not-attempted` (the executor was blocked) and an empty diff, after its scope was widened with two `tests.add` files that were never written: a green gate over an unchanged tree proves only that nothing broke. The close (and `done --commit`) refuses when the filed return records a not-attempted/blocked outcome and the task's change is empty, and when a `tests.add` entry names a file absent at close - each refusal naming the evidence and offering restart or cancel; a no-change close stays possible only through its explicit `--no-change` reason. Regression: not-attempted return + empty diff -> close refused; an absent tests.add file -> close refused; a real change with its tests present closes. Faults: F623, F624, F632.",
       "files": [
         "plugins/audit/scripts/governance/_scoped_commit.py",
@@ -3498,25 +3498,49 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a3ec357ccd8d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "F632: _scoped_commit gains absent_tests_add() and close_evidence_refusal() (a filed executor return with redFirst not-attempted over no declared change, or a tests.add file absent on disk -> a refusal naming the evidence, offering /audit:task start, cancel, or done --no-change). commit-task-work asks it before staging (new executor_return() reader; a return that will not parse refuses), so the drive's close stops at commit-task-work and never prints closed. audit-task done --commit asks it too (_commit_touches via git diff-tree -z over a verified SHA; _close_evidence_refusal). F624: drive-phase marks dispatched-executor with brief_scope(task) (files+tests); advance() re-issues the brief, with no decision and no attempt spent, when the task's scope changed after the print (stale_brief); an unchanged scope still decides no-executor-return; legacy True marks are left as before. F623: the start snapshot already lists every dirty path, so a tracked file clean at start and modified during the attempt is absent from it and is attributed 'during', refused at commit-task-work and done --commit. Locked with drive cases ce4/ce5, no product change needed. Docs: verbs-in-full.md done section, execute-task.md step 4c; PLUGIN-BUILD-GUIDE.md module map line for _scoped_commit -> _manifest_phases. Tests: test_drive_phase ce-block (ce1-ce5) and bs-block (bs1-bs2); test_commit_task_work ce-block (ctw-ce1..3); test_audit_task lo-block (lo-ce1..3). Red seen: ce1, ce2, bs1 on the unfixed tree before implementing; ctw-ce1/2 and lo-ce1/2 red in a git-archive HEAD export with the new test files copied in. Gates: tools/sweep-selftests.py exit 0 (331/331 files); --spaced exit 0; ruff exit 0; vermin exit 0; test__deps g1 green after the guide fence update.",
+        "descriptive": "A close now refuses a return that attempted nothing over an empty change and a missing tests.add file. A brief made stale by a scope widening is issued again instead of being graded as an executor that returned nothing."
       },
       "startedAt": "2026-10-11T12:26:01Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-11T12:59:24Z",
+      "verifiedBy": [
+        "test_drive_phase ce1",
+        "test_drive_phase ce2",
+        "test_drive_phase ce3",
+        "test_drive_phase ce4",
+        "test_drive_phase ce5",
+        "test_drive_phase bs1",
+        "test_drive_phase bs2",
+        "test_commit_task_work ctw-ce1",
+        "test_commit_task_work ctw-ce2",
+        "test_commit_task_work ctw-ce3",
+        "test_audit_task lo-ce1",
+        "test_audit_task lo-ce2",
+        "test_audit_task lo-ce3"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-11T12:59:22Z.44797f",
         "status": "passed",
         "at": "2026-10-11T12:59:22Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "a3ec357ccd8d",
+        "at": "2026-10-11T12:59:24Z"
+      },
+      "redFirst": {
+        "at": "2026-10-11T12:50:36Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage ce-block` in a throwaway tree at HEAD exited 1 with failing cases ce1 (house FAIL), ce2 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 3/5 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
       "id": "P123.46-64p",
       "title": "Every text write states its newline: the pending list is empty and hooks are read too",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Follow-up to the Windows-leftovers task, which added text_write_newline_violations with a shrink-only NEWLINE_PENDING table naming the files outside its scope. Convert every pending row so the table is EMPTY (and the table is removed, or kept as an empty shrink-only list with its stale-row check): render-report.py first - it writes the rendered report and its Markdown twin, which are committed and compared byte for byte, so a Windows render writes CRLF the comparison refuses - then manage-worktrees, _invariants, run-test-gate, stamp-verification, _panel_runstate, panel-server and usage_ledger. Each write states newline explicitly (\"\\n\" for anything read back or committed; a write whose platform newline is genuinely wanted says newline=None with a comment saying why, which the lint accepts as stated). Extend the lint's walk to plugins/audit/hooks/ (and .claude/hooks/ if the shared walk reaches it) and fix what it finds there. Regression: the CRLF-default simulation (the nl-block shape in test__journal_io) over render-report's writer produces LF bytes; the lint flags a hooks/ file with a bare text-mode write open; NEWLINE_PENDING carries no row. Faults: F585.",
       "files": [
         "plugins/audit/scripts/_output.py",
@@ -3532,7 +3556,13 @@
         "plugins/audit/scripts/usage/usage_ledger.py",
         "plugins/audit/hooks",
         "tools/gate-parity.py",
-        "tools/prove-gates.py"
+        "tools/prove-gates.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/detect-plan-skip.py",
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/hooks/remind-tdd.py",
+        "plugins/audit/hooks/require-plan.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -3558,16 +3588,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-11T12:59:24Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T13:19:27Z.a9927f",
+        "status": "passed",
+        "at": "2026-10-11T13:19:27Z"
+      }
     },
     {
       "id": "P123.47-64p",
@@ -3782,15 +3818,19 @@
       "id": "P123.51-64p",
       "title": "sr23 waits for its child honestly, so the red-first helper's own suite is green inside a throwaway",
       "status": "pending",
-      "description": "(F637) test_stamp_verification's sr23 starts a nested `stamp-verification red` and waits at most a fixed short window for the child's `started` mark before sending SIGTERM; inside the red-first helper's own throwaway, under load, the child has not started when the signal lands, sr23 fails, HEAD's run of the suite is red, and every red-first over this suite is graded could-not-prove (P123.40 and P123.44 lost their proved red to it). Poll for the `started` mark against a deadline long enough for a loaded nested run; if the mark never appears, the case reports that it could not start the child (a could-not-run with its reason through the harness, not a FAIL of the removal it asserts); the removal assertion itself is unchanged. Regression: a child slowed past the old window still lets sr23 pass; a removal that leaves a throwaway worktree still fails it; the suite run inside `stamp-verification red`'s throwaway at HEAD is green. Faults: F637.",
+      "description": "(F637) test_stamp_verification's sr23 starts a nested `stamp-verification red` and waits at most a fixed short window for the child's `started` mark before sending SIGTERM; inside the red-first helper's own throwaway, under load, the child has not started when the signal lands, sr23 fails, HEAD's run of the suite is red, and every red-first over this suite is graded could-not-prove (P123.40 and P123.44 lost their proved red to it). Poll for the `started` mark against a deadline long enough for a loaded nested run; if the mark never appears, the case reports that it could not start the child (a could-not-run with its reason through the harness, not a FAIL of the removal it asserts); the removal assertion itself is unchanged. Regression: a child slowed past the old window still lets sr23 pass; a removal that leaves a throwaway worktree still fails it; the suite run inside `stamp-verification red`'s throwaway at HEAD is green. Also (F638): an executor that puts its new cases in a NEW stage and names `--stage <label>` after `--` is graded 'already red at HEAD', because at HEAD the label does not exist and the house runner fails on its unknown-stage check (P123.38, P123.44 and P123.45 all lost their proved red to this). When HEAD's run fails ONLY on that unknown-stage check, for a label the task's own test files introduce (absent at HEAD, present in the working tree), stamp-verification reads the baseline as 'the stage is new at HEAD' - green, the basis saying so - exactly as it reads a brand-new test file; any other HEAD failure keeps today's grading. Regression for this part: a task adding stage `zz` with one case red before the fix and green after proves; the same command where HEAD already has a red `zz` still grades already-red. Faults: F637, F638.",
       "files": [
         "plugins/audit/tests/test_stamp_verification.py",
-        "plugins/audit/tests/_harness.py"
+        "plugins/audit/tests/_harness.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
-        "mode": "regression",
-        "add": [],
-        "expectRedFirst": false,
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: a task adding a new --stage whose case is red before the fix and green after proves; a HEAD-existing red stage still grades already-red; sr23 passes inside the helper's throwaway"
+        ],
+        "expectRedFirst": true,
         "gate": [
           "selftests",
           "validate",

@@ -2148,11 +2148,51 @@ def _status_facts_ready(manifest_path):
     return _status_facts.rollup(_mio.load_manifest(manifest_path), [], [])["ready"]
 
 
+def _newline_cases(check):
+    """The rendered HTML and its Markdown twin are committed and compared byte
+    for byte, so a platform whose text default is CRLF must not write CRLF."""
+    import shutil
+    import tempfile
+    import test__journal_io as JIO
+    root = tempfile.mkdtemp(prefix="render-report-newline-")
+    try:
+        proj = os.path.join(root, "proj")
+        mp = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mp))
+        with open(mp, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump({"meta": {"version": 2, "title": "Newline plan"},
+                       "phases": [{"id": "P1", "title": "Only phase",
+                                   "status": "pending", "tasks": [
+                                       {"id": "P1.1", "title": "t",
+                                        "status": "pending"}]}]}, fh)
+        out = os.path.join(root, "out")
+        code, err = JIO._under_crlf_default(
+            lambda: _in_project(proj, [mp, "--out-dir", out,
+                                       "--format", "both"]))
+        raw = {}
+        for ext in (".html", ".md"):
+            with open(os.path.join(out, "audit-report" + ext), "rb") as fh:
+                raw[ext] = fh.read()
+        check("rl10 under a CRLF-default text mode the rendered HTML and "
+              "Markdown are written with LF bytes: html CR=%d md CR=%d"
+              % (raw[".html"].count(b"\r"), raw[".md"].count(b"\r")),
+              code == 0 and b"Only phase" in raw[".md"]
+              and b"\n" in raw[".html"] and b"\r" not in raw[".html"]
+              and b"\r" not in raw[".md"], "code=%r err=%r" % (code, err))
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def _rl_stage(check):
+    _live_copy_cases(check)
+    _newline_cases(check)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _resolve_cases(check)
-        _harness.stage(check, "rl", _live_copy_cases)
+        _harness.stage(check, "rl", _rl_stage)
     return _harness.run(body)
 
 

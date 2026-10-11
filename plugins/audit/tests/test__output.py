@@ -883,12 +883,26 @@ def _cases(check):
               "only shrink: %r" % (nw_held,),
               not [h for h in nw_held if h[0] == "bare.py"]
               and [h for h in nw_held if h[0] == "read.py" and h[1] == 0])
+        # a hooks/-shaped directory: the same open convicts there too
+        nw_hooks = os.path.join(nw, "hooks")
+        os.mkdir(nw_hooks)
+        with open(os.path.join(nw_hooks, "hook.py"), "w", encoding="utf-8",
+                  newline="\n") as fh:
+            fh.write('def f(p):\n    return open(p, "w", encoding="utf-8")\n')
+        nw_hk = M.text_write_newline_violations((nw_hooks,), ())
+        check("nw5 a bare text-mode write open in a hooks/ file is reported, "
+              "and the default walk reaches the hooks directory: %r"
+              % (nw_hk,),
+              [h[:2] for h in nw_hk] == [("hook.py", 2)]
+              and M.HOOKS_DIR in M.NEWLINE_DIRS
+              and M.SCRIPTS_DIR in M.NEWLINE_DIRS)
     finally:
         shutil.rmtree(nw, ignore_errors=True)
-    check("nw4 ...and the real tree opens no text handle for writing without "
-          "a newline beyond the files the pending table names: %r"
-          % (M.text_write_newline_violations(),),
-          M.text_write_newline_violations() == [])
+    check("nw4 ...and the pending table holds no row and the real tree "
+          "(scripts and hooks) opens no text handle for writing without a "
+          "newline: %r pending, %r found"
+          % (M.NEWLINE_PENDING, M.text_write_newline_violations()),
+          not M.NEWLINE_PENDING and M.text_write_newline_violations() == [])
 
     # --------------------------- a shell script finds its dir on any $0
     sd = tempfile.mkdtemp(prefix="audit-shself-")

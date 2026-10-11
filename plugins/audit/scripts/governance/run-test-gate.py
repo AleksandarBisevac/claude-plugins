@@ -4321,7 +4321,8 @@ def _write_own_log(manifest_path, project_dir, step_text):
     """
     directory = _own_log_dir(manifest_path, project_dir)
     path = directory / own_log_name(_ev.new_run_id())
-    with open(str(path), "w", encoding="utf-8", errors="replace") as fh:
+    with open(str(path), "w", encoding="utf-8", errors="replace",
+              newline="\n") as fh:
         for name, text in step_text:
             fh.write("=== %s ===\n" % (name,))
             fh.write(text or "")

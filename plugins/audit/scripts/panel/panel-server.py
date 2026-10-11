@@ -677,7 +677,7 @@ def _clear_launch_stderr(project):
     if not os.path.exists(path):
         return True
     try:
-        with open(path, "w", encoding="utf-8"):
+        with open(path, "w", encoding="utf-8", newline="\n"):
             pass
         return True
     except OSError:
@@ -785,7 +785,7 @@ def _write_pidfile(project, info):
                         "WARNING: could not set the pidfile to owner-only "
                         "(%s) - it may be readable by other local users\n"
                         % (exc,))
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(data)
         os.replace(tmp_path, path)
     except Exception:

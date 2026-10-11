@@ -1298,7 +1298,7 @@ def _materialize(git_root, sha, index_rel, tmpdir):
     parent = os.path.dirname(out_path)
     if parent:
         os.makedirs(parent, exist_ok=True)
-    with open(out_path, "w", encoding="utf-8") as fh:
+    with open(out_path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
     if not _mio.is_sharded(index):
         return out_path
@@ -1312,7 +1312,7 @@ def _materialize(git_root, sha, index_rel, tmpdir):
             return None
         shard_path = os.path.join(tmpdir, rel.replace("/", os.sep))
         os.makedirs(os.path.dirname(shard_path), exist_ok=True)
-        with open(shard_path, "w", encoding="utf-8") as fh:
+        with open(shard_path, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(body)
     return out_path
 
@@ -1952,7 +1952,7 @@ def clone_id(git_root, create=False):
         return token or None
     fd, tmp = tempfile.mkstemp(dir=common, prefix=".clone-id-", suffix=".tmp")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(uuid.uuid4().hex + "\n")
         if present:
             os.replace(tmp, path)
