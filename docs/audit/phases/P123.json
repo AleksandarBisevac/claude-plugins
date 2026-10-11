@@ -3858,7 +3858,7 @@
     {
       "id": "P123.50-64p",
       "title": "A reused gate verdict is the newest measurement for its tree, and rerun never repeats a red a newer run superseded",
-      "status": "in_progress",
+      "status": "done",
       "description": "(F636, reported from the testbed on 3.2.0) After the orchestrator recorded a green gate by hand (`run-test-gate --record`) and answered the drive's gate-red question with `rerun`, the drive sometimes printed GATE VERDICT REUSED and repeated its own OLDER red row for the same tree identity instead of the newer green row; three cycles passed before it took the green. Reuse selects the newest MEASURED row for the identity across every recorder, ordered by the one moment reader (`_evidence_io` ts order); a `rerun` answer never reuses a red row when a newer row exists for the same identity; and when a verdict is reused the banner names the row it repeats and, if a newer row for the identity exists, why that one was not taken. Regression: identity X holding an older drive red and a newer --record green -> `next --answer rerun` closes on the green (or measures afresh) and never prints the old red; identity X with only the old red still reuses it, banner naming it. Faults: F636.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -3897,25 +3897,46 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e406f1ee43f9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_evidence_io.reusable_run now selects the newest VERDICT row for the identity (candidates filtered by identity/scope/subject/not-a-repeat/repeatable word) and returns None when that newest row is mute-excused, instead of stepping over it to an older red. New helper newer_for_identity. run-test-gate.py: reused_result takes newer, render_reuse prints a 'repeats:' line naming the row and a 'newer row:' line saying why a newer row for the identity was not taken (it is itself a repeat). reference/execute-task.md documents it. Tests: ru40-ru45 in test_run_test_gate.py (ru41 and ru43/ru44 were red first: ru41 FAIL, ru0 AttributeError newer_for_identity); rm4-rm7 in test_drive_phase.py (pass before the fix too: the drive's rerun already passes --no-reuse, so rerun-after-record closes green on current code; they lock it). Not reproduced: I could not find a path where the old filter chose an older red over a newer plain green; the demonstrable path is a newer mute-excused row being stepped over, which is what is fixed. ru24 (newer could-not-run row still stepped over to an older verdict) is kept as is. Process disclosures: I used a python heredoc to rename labels in test_run_test_gate.py (allowed by the gate as a test path, against the house rule) and one attempt on run-test-gate.py was refused by guard-secrets-read, after which I used Edit. plugins/audit/commands/task.md carried the prior task's one-line change untouched. PLUGIN-BUILD-GUIDE.md not edited (no change needed).",
+        "descriptive": "A reused gate verdict is the newest verdict for its tree, a mute-excused newer row forces a measurement, and the banner names the row it repeats and any newer row."
       },
       "startedAt": "2026-10-11T14:56:26Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-11T15:21:50Z",
+      "verifiedBy": [
+        "test_run_test_gate.py ru40",
+        "ru41",
+        "ru42",
+        "ru43",
+        "ru44",
+        "ru45",
+        "test_drive_phase.py rm4",
+        "rm5",
+        "rm6",
+        "rm7"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-11T15:21:49Z.aafb86",
         "status": "passed",
         "at": "2026-10-11T15:21:49Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "e406f1ee43f9",
+        "at": "2026-10-11T15:21:50Z"
+      },
+      "redFirst": {
+        "at": "2026-10-11T15:13:23Z",
+        "basis": "`python3 plugins/audit/tests/test_run_test_gate.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 515 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ru41 (house FAIL): SELFTEST FAILED: 513/515 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.51-64p",
       "title": "sr23 waits for its child honestly, so the red-first helper's own suite is green inside a throwaway",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(F637) test_stamp_verification's sr23 starts a nested `stamp-verification red` and waits at most a fixed short window for the child's `started` mark before sending SIGTERM; inside the red-first helper's own throwaway, under load, the child has not started when the signal lands, sr23 fails, HEAD's run of the suite is red, and every red-first over this suite is graded could-not-prove (P123.40 and P123.44 lost their proved red to it). Poll for the `started` mark against a deadline long enough for a loaded nested run; if the mark never appears, the case reports that it could not start the child (a could-not-run with its reason through the harness, not a FAIL of the removal it asserts); the removal assertion itself is unchanged. Regression: a child slowed past the old window still lets sr23 pass; a removal that leaves a throwaway worktree still fails it; the suite run inside `stamp-verification red`'s throwaway at HEAD is green. Also (F638): an executor that puts its new cases in a NEW stage and names `--stage <label>` after `--` is graded 'already red at HEAD', because at HEAD the label does not exist and the house runner fails on its unknown-stage check (P123.38, P123.44 and P123.45 all lost their proved red to this). When HEAD's run fails ONLY on that unknown-stage check, for a label the task's own test files introduce (absent at HEAD, present in the working tree), stamp-verification reads the baseline as 'the stage is new at HEAD' - green, the basis saying so - exactly as it reads a brand-new test file; any other HEAD failure keeps today's grading. Regression for this part: a task adding stage `zz` with one case red before the fix and green after proves; the same command where HEAD already has a red `zz` still grades already-red. Faults: F637, F638.",
       "files": [
         "plugins/audit/tests/test_stamp_verification.py",
@@ -3946,16 +3967,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-11T15:21:51Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T15:55:26Z.9afd17",
+        "status": "passed",
+        "at": "2026-10-11T15:55:26Z"
+      }
     },
     {
       "id": "P123.52-64p",

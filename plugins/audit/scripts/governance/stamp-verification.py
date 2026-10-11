@@ -1237,7 +1237,87 @@ def _js_none_found(head, tally):
                              and not tally["failed"])
 
 
-def baseline_problem(head, cmd):
+# --- a stage the task's own test files add ---
+# A staged house suite run with `--stage LABEL` for a block it does not hold
+# prints ONE failing case, this prefix and the labels as a list. A task that puts
+# its new cases in a new block and names it after `--` meets that check at HEAD,
+# where the label does not exist yet: the block is new, exactly as a new test
+# file is, and HEAD is not red. The tests' harness spells the same prefix, and a
+# case runs a real suite to pin that the two agree.
+UNKNOWN_STAGE = "--stage names a block of this suite"
+
+
+def unknown_stage_labels(label):
+    """The labels a house FAIL label reports as unknown stages, or None when
+    it is not that check - a detail appended after the list included."""
+    head = UNKNOWN_STAGE + ": "
+    if not label.startswith(head):
+        return None
+    try:
+        value = ast.literal_eval(label[len(head):].strip())
+    except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
+        return None
+    if not isinstance(value, list) or not value \
+            or not all(isinstance(v, str) for v in value):
+        return None
+    return value
+
+
+def _string_constants(text):
+    """Every string literal of a Python module's text, or None when it does
+    not parse."""
+    tree = _parse(text)
+    if tree is None:
+        return None
+    return set(node.value for node in ast.walk(tree)
+               if isinstance(node, ast.Constant) and isinstance(node.value, str))
+
+
+def new_stages(cmd, head_texts, wt_texts):
+    """The `--stage` labels `cmd` names that the task's own test files
+    introduce: a string literal of a declared test file's working-tree copy
+    (`wt_texts`, `{rel: text}`) and of none of HEAD's copies (`head_texts`).
+    None of them when HEAD's copies could not be read, or one does not parse -
+    absent at HEAD then cannot be told from unread."""
+    args = [str(a) for a in cmd or ()]
+    named = [args[i + 1] for i, a in enumerate(args[:-1]) if a == "--stage"]
+    if not named or head_texts is None:
+        return []
+    at_head = set()
+    for text in head_texts.values():
+        found = _string_constants(text)
+        if found is None:
+            return []
+        at_head |= found
+    in_wt = set()
+    for text in wt_texts.values():
+        in_wt |= _string_constants(text) or set()
+    return sorted(set(label for label in named
+                      if label in in_wt and label not in at_head))
+
+
+def new_stage_baseline(head, cmd, stages):
+    """The labels HEAD's run failed on as unknown stages, when that check is
+    ALL it failed - every failing case one of it, no escape uncounted - and
+    each label is one of `stages`, new in the task's test files; else None."""
+    if not stages or head is None or head.get("problem") or head.get("code") in (0, None):
+        return None
+    tally = read_tally(head["text"], cmd)
+    if tally is None or tally["runner"] != "house":
+        return None
+    failing = failing_cases(head["text"], "house")
+    labels = []
+    for failure in failing:
+        got = unknown_stage_labels(failure.get("label") or "")
+        if got is None:
+            return None
+        labels.extend(got)
+    if not failing or tally["failed"] != len(failing) or not set(labels) <= set(stages):
+        return None
+    return sorted(set(labels))
+
+
+def baseline_problem(head, cmd, stages=()):
     """Why HEAD's own run is not a GREEN baseline, or None when it is.
 
     `head` is `{"code", "text", "problem", "absent"}` of HEAD's own test files
@@ -1258,7 +1338,13 @@ def baseline_problem(head, cmd):
     The stubs and the absent files remove the new files' CONTENT, and with it
     everything that content reaches - a HEAD case a new file imports, inherits
     or loads is not run here. `credit_problem` is what keeps such a case from
-    being credited."""
+    being credited.
+
+    A house run that failed ONLY its unknown-stage check, for labels among
+    `stages` - the ones the task's test files introduce - is green too
+    (`new_stage_baseline`): the block is new at HEAD, as a new file is."""
+    if new_stage_baseline(head, cmd, stages) is not None:
+        return None
     if head is None:
         return "HEAD's own run was not made - %s" % (NARROW,)
     if head.get("problem"):
@@ -2776,8 +2862,9 @@ def red_verdict(run, ctx):
     made when the task's run is red on a green baseline. Every run has an
     isolated environment of its own. `ctx` is `{"root", "implementation",
     "tests", "cases", "symbols", "dropped", "new", "absent", "head_files",
-    "head_defs", "head_modules", "head_js", "path"}` - `head_tree`'s answer,
-    and the throwaway's path."""
+    "head_defs", "head_modules", "head_js", "path", "stages"}` - `head_tree`'s
+    answer, the throwaway's path and the `--stage` labels the task's test
+    files introduce (`new_stages`)."""
     at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     shown = " ".join(run["cmd"])
     env_clause = "; run without %s" % (", ".join(ctx["dropped"]) or "nothing",)
@@ -2817,7 +2904,11 @@ def red_verdict(run, ctx):
                                    deps_clause(ctx.get("deps"))))
     failing = (failing_cases(text, tally["runner"])
                if tally is not None and tally["runner"] is not None else [])
-    how = "HEAD's own tests green on HEAD's code"
+    fresh = new_stage_baseline(run.get("head"), run["cmd"], ctx.get("stages"))
+    how = ("HEAD's own tests on HEAD's code failing only the unknown-stage check "
+           "for %s, which the task's test files add - the stage is new at HEAD"
+           % (", ".join("`%s`" % (s,) for s in fresh),) if fresh
+           else "HEAD's own tests green on HEAD's code")
     absent = ctx.get("absent") or []
     stubbed = [rel for rel in ctx.get("new") or [] if rel not in absent]
     if stubbed:
@@ -2830,7 +2921,7 @@ def red_verdict(run, ctx):
         how += ", the task's run with its " + inline_clause
     if ctx["cases"]:
         how = "named by --case, " + how
-    baseline = baseline_problem(run.get("head"), run["cmd"])
+    baseline = baseline_problem(run.get("head"), run["cmd"], ctx.get("stages"))
     if verdict == V_RED:
         problem = baseline or fix_problem(run.get("fix"), run["cmd"], tally)
         if problem is not None:
@@ -3182,7 +3273,7 @@ def run_red(args, cmd, out):
         pass
     run = {"cmd": cmd, "code": None, "text": "", "problem": None, "second": None,
            "head": None, "fix": None}
-    state = {"new": [], "absent": [], "head_files": None, "head_defs": None,
+    state = {"new": [], "absent": [], "stages": [], "head_files": None, "head_defs": None,
              "head_modules": None, "head_js": None}
     copied = []
     previous = _arm()
@@ -3201,6 +3292,10 @@ def run_red(args, cmd, out):
                 (state["head_files"], state["head_defs"], state["head_modules"],
                  state["head_js"]) = head_tree(
                     root, set(scope["tests"]), deadline)
+                head_texts, unread = _cat_blobs(root, scope["tests"], deadline)
+                state["stages"] = new_stages(
+                    cmd, None if unread else head_texts,
+                    _test_texts(root, scope["tests"]))
                 _copied, run["problem"] = _build_throwaway(
                     root, path, [], timeout=max(1, _left(deadline)))
             if run["problem"] is None and _left(deadline) < 1:
@@ -3227,7 +3322,8 @@ def run_red(args, cmd, out):
             verdict1 = (classify_run(run["code"], run["text"], cmd)[0]
                         if run["problem"] is None and run["code"] is not None
                         else None)
-            if verdict1 == V_RED and baseline_problem(run["head"], cmd) is None:
+            if verdict1 == V_RED and baseline_problem(run["head"], cmd,
+                                                      state["stages"]) is None:
                 run["fix"], _c = _isolated_run(
                     root, path, scope["declared"] + scope["implementation"], cmd,
                     deadline, args.timeout, env, holder, "fix", deps=deps)
@@ -3243,7 +3339,7 @@ def run_red(args, cmd, out):
             "head_files": state["head_files"],
             "head_defs": state["head_defs"],
             "head_modules": state["head_modules"],
-            "head_js": state["head_js"], "path": path,
+            "head_js": state["head_js"], "path": path, "stages": state["stages"],
             "deadline": deadline, "deps": deps, "sources": sources,
             "inline": inline})
     finally:
@@ -3263,7 +3359,8 @@ def run_red(args, cmd, out):
                                 "npmrc": deps["npmrc"]},
                "baseline": {"stubbed": [rel for rel in state["new"]
                                         if rel not in state["absent"]],
-                            "absent": state["absent"]},
+                            "absent": state["absent"],
+                            "newStages": state["stages"]},
                "inline": dict((rel, {"applied": a, "held": h})
                               for rel, (a, h) in sorted(inline.items())),
                "environment": {"dropped": dropped, "naming": naming,

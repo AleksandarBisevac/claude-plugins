@@ -329,6 +329,31 @@ def skip(check, label, mechanism, absent):
           "nothing and the reason printed for skipping it is false")
 
 
+def could_not_run(check, label, reason):
+    """Record `label` as a case that could NOT BE RUN here, and why.
+
+    The case's own assertion was never reached - a child it needed never
+    started, a resource it waits for never came - so reporting it as that
+    assertion failing would name a defect nobody saw. It is still a FAILING
+    case: a case that ran nothing has proved nothing, and a pass would be the
+    silent kind. The identifier stays at the front, as `skip()` keeps it, so
+    the case keeps its name in every report.
+    """
+    check("%s COULD NOT RUN HERE - %s" % (label, reason), False, reason)
+
+
+# What a suite run with `--stage LABEL` prints when it holds no such block. The
+# red-first helper reads this case back: a label that is new in the task's own
+# test files makes HEAD's run fail on this check alone, and that is the stage
+# being new, not HEAD being red.
+UNKNOWN_STAGE = "--stage names a block of this suite"
+
+
+def unknown_stage_label(unknown):
+    """The failing case's label for the `--stage` labels `unknown` names."""
+    return "%s: %r" % (UNKNOWN_STAGE, list(unknown))
+
+
 def module_source(mod):
     """The SOURCE TEXT of `mod`, read off `mod.__file__`.
 
@@ -838,7 +863,7 @@ def staged_selftest(stages, namespace, prefix, only=()):
 
     def body(check):
         if unknown:
-            check("--stage names a block of this suite: %r" % (unknown,), False)
+            check(unknown_stage_label(unknown), False)
         if not only:
             with open(script, "r", encoding="utf-8") as fh:
                 src = fh.read()
@@ -1062,6 +1087,20 @@ def _cases(check):
           "calling it with the evidence this platform actually reports - a skip "
           "that fires on posix has to go red: %r" % (_sk2,),
           len(_sk2) == 1 and _sk2[0][1] is False and _sk2[0][2])
+
+    # -- could_not_run(): a case whose assertion was never reached -------------
+    _cn = []
+    could_not_run(lambda *a: _cn.append(a), "y9 the removal", "child never started")
+    check("bk9 could_not_run() records ONE FAILING case that keeps its id, says it "
+          "could not run, and carries the reason - never a pass, and never the "
+          "assertion's own failure: %r" % (_cn,),
+          len(_cn) == 1 and _cn[0][1] is False and case_id(_cn[0][0]) == "y9"
+          and "COULD NOT RUN HERE - child never started" in _cn[0][0]
+          and _cn[0][2] == "child never started")
+    check("bk10 the unknown-stage label names the labels as a list, behind the "
+          "one prefix the red-first helper reads: %r"
+          % (unknown_stage_label(("zz",)),),
+          unknown_stage_label(("zz",)) == UNKNOWN_STAGE + ": ['zz']")
 
     # -- the label extractor the migration proof leans on ----------------------
     check("l1 _labels() recovers the labels a report printed, and nothing else - "

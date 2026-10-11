@@ -896,34 +896,7 @@ def _process_cases(check):
           and not os.path.exists(late)
           and (got_t.get("throwaway") or {}).get("removed") is True)
 
-    script = os.path.join(_output.PLUGIN_ROOT, "scripts", "governance",
-                          "stamp-verification.py")
-    if not hasattr(signal, "SIGTERM") or os.name == "nt":
-        _harness.skip(check, "sr23 SIGTERM removes the throwaway", "posix",
-                      "no POSIX SIGTERM delivery on this platform")
-    else:
-        started = os.path.join(marks, "started")
-        wait = ("import time\nopen(%r, 'w').close()\ntime.sleep(60)\n" % (started,))
-        proc = subprocess.Popen([py, script, "red", "--project", root, "--manifest",
-                                 man, "--task", "P1.1", "--json", "--", py, "-c",
-                                 wait], stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, universal_newlines=True)
-        for _i in range(200):
-            if os.path.exists(started):
-                break
-            time.sleep(0.05)
-        proc.send_signal(signal.SIGTERM)
-        out, _e = proc.communicate(timeout=60)
-        left = [ln for ln in _worktrees(root).splitlines()
-                if ln.startswith("worktree ") and M.THROWAWAY_PREFIX in ln]
-        check("sr23 SIGTERM mid-run still removes the throwaway: the signal is "
-              "turned into an exception, so the `finally` runs, and nothing is "
-              "left in git's worktree list: exit=%r left=%r %r"
-              % (proc.returncode, left, out[-200:]),
-              os.path.exists(started) and left == []
-              and proc.returncode == M.E_CANNOT_PROVE)
-
-    leftover = os.path.join(_harness.fixture_root("stamp-red-left-"),
+    leftover =os.path.join(_harness.fixture_root("stamp-red-left-"),
                             M.THROWAWAY_PREFIX + "stale", "tree")
     _git(root, "worktree", "add", "--detach", "--quiet", leftover, "HEAD")
     code_l, got_l = _red(root, man, [py, "tests/test_mine.py"])
@@ -957,6 +930,138 @@ def _process_cases(check):
           and by.get(os.path.realpath(states["live"])) == "running")
     for tree in states.values():
         _git(root, "worktree", "remove", "--force", tree)
+
+
+# --- a signal mid-run: the throwaway is still removed ---
+# How long a case waits for the nested `red` to reach its command. A nested run
+# inside a red-first proof's own throwaway, on a loaded machine, takes far longer
+# than a run in the shared tree to build its throwaway and reach the command, so
+# the wait is a deadline polled against, not a window the child must beat.
+START_DEADLINE = 180
+
+
+def _await_mark(path, seconds, poll=0.05):
+    """Whether `path` exists within `seconds`, polled every `poll`."""
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if os.path.exists(path):
+            return True
+        time.sleep(poll)
+    return os.path.exists(path)
+
+
+def _signal_mid_run(root, man, marks, tag, sig, delay=0.0, wait_s=START_DEADLINE):
+    """`{"started", "code", "left", "out"}` - a nested `red` whose command
+    sleeps `delay` seconds, then writes its pid to a mark and holds; `sig` is
+    sent once the mark is seen, or when `wait_s` runs out without it."""
+    py = sys.executable
+    script = os.path.join(_output.PLUGIN_ROOT, "scripts", "governance",
+                          "stamp-verification.py")
+    mark = os.path.join(marks, tag + "-started")
+    # The pid is written beside the mark and renamed onto it, so a mark seen
+    # always carries its whole pid.
+    hold = ("import os, time\ntime.sleep(%r)\n"
+            "with open(%r, 'w') as fh:\n    fh.write(str(os.getpid()))\n"
+            "os.replace(%r, %r)\ntime.sleep(60)\n"
+            % (delay, mark + ".part", mark + ".part", mark))
+    proc = subprocess.Popen([py, script, "red", "--project", root, "--manifest",
+                             man, "--task", "P1.1", "--json", "--", py, "-c", hold],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            universal_newlines=True)
+    started = _await_mark(mark, wait_s)
+    proc.send_signal(sig)
+    out, _e = proc.communicate(timeout=120)
+    if started and sig == getattr(signal, "SIGKILL", None):
+        # A SIGKILL'd helper tears nothing down, so its command is still
+        # holding; it is stopped here rather than left to outlive the case.
+        try:
+            with open(mark, encoding="utf-8") as fh:
+                pid = int(fh.read().strip() or "0")
+            if pid > 0:
+                os.kill(pid, sig)
+        except (OSError, ValueError):
+            pass
+    return {"started": started, "code": proc.returncode,
+            "left": _throwaways_of(root), "out": out}
+
+
+def _throwaways_of(root):
+    """The throwaways git's worktree list names for `root`: a tree whose
+    HOLDER carries the throwaway prefix, never `root` itself. A substring test
+    of the whole line read the fixture repository as a throwaway whenever the
+    temp directory it was built in lay inside one - which is every run of this
+    suite inside a red-first proof's own throwaway."""
+    return [rec["path"] for rec in _wt.parse_list(_worktrees(root))
+            if not _wt.same_tree(rec["path"], root)
+            and os.path.basename(os.path.dirname(rec["path"].rstrip("/\\")))
+            .startswith(M.THROWAWAY_PREFIX)]
+
+
+def _removal_holds(got):
+    """sr23's assertion: the signal turned into an exception, the `finally`
+    ran, and git's worktree list names no throwaway."""
+    return got["left"] == [] and got["code"] == M.E_CANNOT_PROVE
+
+
+def _drop_leftovers(root, left):
+    """Remove what a killed `red` stranded: each worktree and its holder."""
+    for tree in left:
+        _git(root, "worktree", "remove", "--force", tree)
+        shutil.rmtree(os.path.dirname(tree), ignore_errors=True)
+
+
+def _sigterm_cases(check):
+    """A SIGTERM mid-run still removes the throwaway - read only once the
+    nested run has reached its command; a run that never got there is a case
+    that could not run, never a failed removal."""
+    inner = os.path.join(_harness.fixture_root(M.THROWAWAY_PREFIX + "outer-"), "tree")
+    os.makedirs(inner)
+    _git(inner, "init", "-q")
+    _write(os.path.join(inner, "a.txt"), "a\n")
+    _git(inner, "add", "a.txt")
+    _git(inner, "commit", "-q", "-m", "a")
+    before = _throwaways_of(inner)
+    stray = os.path.join(_harness.fixture_root(M.THROWAWAY_PREFIX + "held-"), "tree")
+    _git(inner, "worktree", "add", "--detach", "--quiet", stray, "HEAD")
+    after = _throwaways_of(inner)
+    _git(inner, "worktree", "remove", "--force", stray)
+    check("sr23d a repository that itself lies inside a throwaway - as this "
+          "suite's fixtures do in a red-first proof - is not read as a "
+          "throwaway left behind, and one registered beside it still is: "
+          "%r then %r" % (before, after),
+          before == [] and len(after) == 1 and _wt.same_tree(after[0], stray))
+    if not hasattr(signal, "SIGTERM") or os.name == "nt":
+        for cid in ("sr23", "sr23b", "sr23c"):
+            _harness.skip(check, "%s a signal mid-run" % (cid,), "posix",
+                          "no POSIX SIGTERM delivery on this platform")
+        return
+    root, man = _red_repo("stamp-red-term-", _red_test("import mine", "mine.v == 2"))
+    marks = _harness.fixture_root("stamp-red-term-marks-")
+    got = _signal_mid_run(root, man, marks, "term", signal.SIGTERM)
+    label = ("sr23 SIGTERM mid-run still removes the throwaway: the signal is "
+             "turned into an exception, so the `finally` runs, and nothing is "
+             "left in git's worktree list")
+    if not got["started"]:
+        _harness.could_not_run(check, label, "the nested `red` did not reach its "
+                               "command within %ds: %r"
+                               % (START_DEADLINE, got["out"][-200:]))
+    else:
+        check("%s: exit=%r left=%r %r" % (label, got["code"], got["left"],
+                                         got["out"][-200:]), _removal_holds(got))
+    slow = _signal_mid_run(root, man, marks, "slow", signal.SIGTERM, delay=12.0)
+    check("sr23b a nested run that reaches its command only after the fixed "
+          "window sr23 once waited is still waited for, and its removal "
+          "asserted: started=%r exit=%r left=%r"
+          % (slow["started"], slow["code"], slow["left"]),
+          slow["started"] and _removal_holds(slow))
+    killed = _signal_mid_run(root, man, marks, "kill", signal.SIGKILL)
+    _drop_leftovers(root, killed["left"])
+    check("sr23c ...and a removal that leaves a throwaway still FAILS sr23's "
+          "assertion: a SIGKILL, which no `finally` survives, strands one: "
+          "started=%r exit=%r left=%r"
+          % (killed["started"], killed["code"], killed["left"]),
+          killed["started"] and killed["left"] != []
+          and not _removal_holds(killed))
 
 
 def _own_case_cases(check):
@@ -1845,6 +1950,7 @@ def _red_baseline_cases(check):
           "and skip its red case on, is not there - so the red baseline is seen: "
           "exit=%r %s" % (code_t, basis_t[:300]),
           code_t == M.E_CANNOT_PROVE and "already red" in basis_t)
+    _new_stage_cases(check)
 
 
 def _baseline_unit_cases(check):
@@ -4523,6 +4629,121 @@ def _inline_suite_cases(check):
           and "    return 1\n" in text and "('new1', value() == 2)" in text
           and len(head_lines) + 1 == len(wt_lines))
 
+
+# --- a stage the task's own test files add: new at HEAD, not red there ---
+def _staged_test(stages):
+    """A staged house suite. `stages` is `[(label, [(case, cond)])]`; `--stage
+    LABEL` runs the named blocks, and a label the suite does not hold is ONE
+    failing case spelled as the harness spells its unknown-stage check."""
+    body = ["import os, sys", _PATH_LINE, "import mine", "argv = sys.argv[1:]",
+            "only = [argv[i + 1] for i, a in enumerate(argv[:-1]) "
+            "if a == '--stage']",
+            "results = []"]
+    for label, cases in stages:
+        body.append("if not only or %r in only:" % (label,))
+        for case, cond in cases:
+            body += ["    ok = bool(%s)" % (cond,), "    results.append(ok)",
+                     "    print('%%s %s' %% ('PASS' if ok else 'FAIL'))" % (case,)]
+    body += ["unknown = [o for o in only if o not in %r]"
+             % ([label for label, _c in stages],),
+             "if unknown:",
+             "    results.append(False)",
+             "    print('FAIL %s: %%r' %% (unknown,))" % (_harness.UNKNOWN_STAGE,),
+             "n = sum(results)",
+             "print(%r %% ('ALL PASS' if n == len(results) else 'SELFTEST FAILED',"
+             " n, len(results)))" % (_TALLY,),
+             "sys.exit(0 if n == len(results) else 1)"]
+    return "\n".join(body) + "\n"
+
+
+def _new_stage_cases(check):
+    """A task whose new cases sit in a NEW stage, named by `--stage` after the
+    `--`: at HEAD that label does not exist, so HEAD's run fails on the
+    unknown-stage check alone - which is the stage being new, read exactly
+    as a brand-new test file is, and only when nothing else at HEAD failed
+    and the task's own test files are what introduce the label."""
+    py = sys.executable
+    old = ("aa", [("old1", "mine.v >= 1")])
+    root, man = _red_repo("stamp-newstage-", _staged_test(
+        [old, ("zz", [("new1", "mine.v == 2")])]), head_test=_staged_test([old]))
+    code, got = _red(root, man, [py, "tests/test_mine.py", "--stage", "zz"])
+    block = got.get("redFirst") or {}
+    check("ns1 a task adding stage `zz`, its one case red on HEAD's code and "
+          "green on the fix, PROVES - HEAD's run failing only the unknown-stage "
+          "check for `zz` is the stage being new, and the basis says so: "
+          "exit=%r %r" % (code, block or got.get("note") or got),
+          code == M.E_PROVED and block.get("status") == "proved"
+          and "new1" in block.get("basis", "")
+          and "`zz`" in block.get("basis", "")
+          and "new at HEAD" in block.get("basis", ""))
+
+    red_zz = ("zz", [("old2", "mine.v == 2")])
+    root_r, man_r = _red_repo("stamp-newstage-red-", _staged_test(
+        [old, ("zz", [("old2", "mine.v == 2"), ("new1", "mine.v == 2")])]),
+        head_test=_staged_test([old, red_zz]))
+    code_r, got_r = _red(root_r, man_r, [py, "tests/test_mine.py", "--stage", "zz"])
+    block_r = got_r.get("redFirst") or {}
+    check("ns2 the same command where HEAD ALREADY holds a red `zz` still grades "
+          "already-red - the label exists at HEAD, so its red is HEAD's: "
+          "exit=%r %r" % (code_r, block_r or got_r),
+          code_r == M.E_CANNOT_PROVE and block_r.get("status") == "could-not-prove"
+          and M.NARROW in block_r.get("basis", ""))
+
+    root_m, man_m = _red_repo("stamp-newstage-mixed-", _staged_test(
+        [("aa", [("old1", "mine.v == 2")]), ("zz", [("new1", "mine.v == 2")])]),
+        head_test=_staged_test([("aa", [("old1", "mine.v == 2")])]))
+    code_m, got_m = _red(root_m, man_m, [py, "tests/test_mine.py", "--stage", "zz",
+                                         "--stage", "aa"])
+    block_m = got_m.get("redFirst") or {}
+    check("ns3 a new `zz` beside a stage HEAD runs RED is still already-red: "
+          "the unknown-stage check is not the ONLY thing HEAD's run failed: "
+          "exit=%r %r" % (code_m, block_m or got_m),
+          code_m == M.E_CANNOT_PROVE and block_m.get("status") == "could-not-prove"
+          and M.NARROW in block_m.get("basis", ""))
+
+    code_t, got_t = _red(root, man, [py, "tests/test_mine.py", "--stage", "qq"])
+    block_t = got_t.get("redFirst") or {}
+    check("ns4 a label the task's test files do not introduce - a typo, unknown "
+          "in the working tree too - is not read as a new stage: exit=%r %r"
+          % (code_t, block_t or got_t),
+          code_t == M.E_CANNOT_PROVE and block_t.get("status") == "could-not-prove"
+          and M.NARROW in block_t.get("basis", ""))
+
+
+def _new_stage_unit_cases(check):
+    """How the unknown-stage check is read, and which labels count as new."""
+    said = _harness.unknown_stage_label(["zz", "yy"])
+    check("nu1 the harness's unknown-stage label parses back to the labels it "
+          "names; a label with a detail appended, or any other label, is not "
+          "one: %r" % (said,),
+          M.unknown_stage_labels(said) == ["zz", "yy"]
+          and M.unknown_stage_labels(said + " (why)") is None
+          and M.unknown_stage_labels("new1 v is two") is None
+          and M.unknown_stage_labels(_harness.UNKNOWN_STAGE + ": []") is None)
+    done = subprocess.run(
+        [sys.executable, os.path.abspath(__file__), "--selftest", "--stage",
+         "no-such-zz"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        universal_newlines=True, encoding="utf-8", timeout=120)
+    failing = _runner_output.failing_cases(done.stdout, "house")
+    check("nu2 THIS suite's own unknown-stage check is the one the helper reads: "
+          "run with a label it lacks, its one failing case parses to that label: "
+          "%r" % ([f["label"] for f in failing],),
+          done.returncode == 1 and len(failing) == 1
+          and M.unknown_stage_labels(failing[0]["label"]) == ["no-such-zz"])
+    head = {"tests/t.py": "STAGES = (('aa', '_a'),)\n# zz in a comment\n"}
+    wt = {"tests/t.py": "STAGES = (('aa', '_a'), ('zz', '_z'))\n"}
+    cmd = ["python3", "tests/t.py", "--selftest", "--stage", "zz", "--stage", "aa",
+           "--stage", "qq"]
+    check("nu3 a label is new when a declared test file's working-tree copy holds "
+          "it as a string and none of HEAD's copies does - a comment is not a "
+          "stage, a label at HEAD is not new, an unreadable HEAD makes none new: "
+          "%r" % (M.new_stages(cmd, head, wt),),
+          M.new_stages(cmd, head, wt) == ["zz"]
+          and M.new_stages(cmd, None, wt) == []
+          and M.new_stages(cmd, {"tests/t.py": "def ("}, wt) == []
+          and M.new_stages(cmd, wt, wt) == [])
+
+
 # Every block, in run order. `--stage LABEL` narrows a run to the blocks it
 # names, which is what lets a red-first proof in a throwaway tree fit its
 # deadline: the whole suite does not.
@@ -4556,6 +4777,8 @@ STAGES = (
     ("sr-directory", "_directory_scope_cases"),
     ("sr-sandbox-words", "_sandbox_words_cases"),
     ("sr-process", "_process_cases"),
+    ("sr-sigterm", "_sigterm_cases"),
+    ("sr-new-stage-units", "_new_stage_unit_cases"),
     ("sr-own", "_own_case_cases"),
     ("sr-label", "_label_cases"),
     ("sr-label-id", "_label_id_cases"),
@@ -4591,7 +4814,7 @@ def _cases(check, only=()):
             _harness.stage(check, label, globals()[fn])
     unknown = sorted(set(only) - set(label for label, _fn in STAGES))
     if unknown:
-        check("--stage names a block of this suite: %r" % (unknown,), False)
+        check(_harness.unknown_stage_label(unknown), False)
 
 
 def _cli(argv, stdin_text=None):
