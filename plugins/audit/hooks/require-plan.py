@@ -909,7 +909,8 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
         held = [t for t in owners if t in mine]
         if held:
             return ("block", _BOUND_ELSEWHERE % (
-                rel, held[0], mine[held[0]]))
+                rel, held[0],
+                os.path.normpath(os.path.realpath(mine[held[0]]))))
 
     # 3. covered by an in_progress task (exact match OR directory prefix match).
     #    A covered edit is allowed on every tier — but on the Post pass it may

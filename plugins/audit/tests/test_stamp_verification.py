@@ -3339,6 +3339,16 @@ def _jest_cases(check):
           and M.stored_manifest(task_tree, label_out)
           == os.path.join(os.path.abspath(task_tree), "docs", "audit",
                           "audit-plan.json"))
+    win_project = "C:\\Users\\runner\\proj"
+    win_got = M.stored_manifest(win_project, "docs/audit/audit-plan.json",
+                                pathmod=ntpath)
+    check("sr210b a posix label joins onto a Windows-shaped project as ONE "
+          "native path, no forward slash left in it: %r" % (win_got,),
+          win_got == "C:\\Users\\runner\\proj\\docs\\audit\\audit-plan.json")
+    check("sr210c ...and an absolute label is returned as it came: %r"
+          % (M.stored_manifest(win_project, "D:\\x\\p.json", pathmod=ntpath),),
+          M.stored_manifest(win_project, "D:\\x\\p.json", pathmod=ntpath)
+          == "D:\\x\\p.json")
     check("sr211 THE ALLOW TWIN: a manifest inside the project keeps its "
           "project-relative label: %r" % (label_in,),
           label_in == "docs/audit/audit-plan.json")

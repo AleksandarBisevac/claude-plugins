@@ -1820,7 +1820,9 @@ def _cases(check):
             _v = _bt_edit(_bt["main"], "src/a.ts", "bt-2")
             check("bt2 an edit in the PHASE tree to a file of a task bound to "
                   "a worktree is refused, naming that worktree: %r" % (_v,),
-                  _v[0] == "block" and _w["A"] in _v[1])
+                  _v[0] == "block"
+                  and os.path.normcase(os.path.realpath(_w["A"]))
+                  in os.path.normcase(_v[1]))
             _v = _bt_edit(_bt["main"], "src/c.ts", "bt-2b")
             check("bt2b ...but a file of a task with no worktree is judged as "
                   "before, and the refusal does not claim a binding: %r" % (_v,),

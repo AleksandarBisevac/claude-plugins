@@ -441,15 +441,18 @@ def _own_checkout_rel(path):
         here = up
 
 
-def stored_manifest(project, label):
+def stored_manifest(project, label, pathmod=os.path):
     """The absolute path a stamp's stored `manifest` names, or None.
 
     The inverse of `recorder_exclusion`'s `label`: relative means relative to the
-    project, never to whichever directory `compare` happens to run from."""
+    project, never to whichever directory `compare` happens to run from. The label
+    is written in posix form, so it is joined segment by segment: on Windows a
+    whole label appended as one piece leaves forward slashes in the middle of a
+    native path. `pathmod` lets a test drive the Windows shape (`ntpath`) anywhere."""
     if not isinstance(label, str) or not label.strip():
         return None
-    return label if os.path.isabs(label) else os.path.join(
-        os.path.abspath(project), label)
+    return label if pathmod.isabs(label) else pathmod.join(
+        pathmod.abspath(project), *label.split("/"))
 
 
 def read_stamp_text(args, stdin=None):

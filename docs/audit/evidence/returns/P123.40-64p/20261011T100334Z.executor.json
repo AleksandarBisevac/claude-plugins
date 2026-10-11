@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "sweep-selftests": "pass (--spaced leg exit 0; plain sweep: two files timed out at 300s under load, test__deps and test_drive_phase, both ALL PASS run alone)",
+    "ruff": "pass",
+    "vermin": "pass",
+    "bench-hooks --gate": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-11T10:23:11Z",
+    "basis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases sr23 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 235/236 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 234/236 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove"
+  },
+  "outcome": {
+    "technical": "stored_manifest takes pathmod=os.path and joins label.split('/') segment-wise; require-plan's bound-elsewhere refusal prints os.path.normpath(os.path.realpath(worktree)); bt2 compares normcase(realpath(worktree)) in normcase(message); added sr210b/sr210c driving ntpath. Only CI on Windows can prove realpath expands the 8.3 short name to the long name git lists.",
+    "descriptive": "Windows stamp labels read back as one native path and the binding refusal names the worktree in native form."
+  },
+  "testsAdded": [
+    "sr210b",
+    "sr210c"
+  ],
+  "claims": "claims: stored_manifest ntpath case asserts exact backslash path (sr210b); the realpath half is unproven off Windows.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:d6f2534e61beb876fbf834321e1de1a874e21dc14e4e085a2f5cc5014c6d1157\",\"dirtyDigest\":\"sha256:e8eb8289f73fd29ad7de74d39d51efda27b3e50965743a2f6125fc57a1a6650d\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"3ef456b6af34d180\",\"plugins/audit/hooks/require-plan.py\":\"694fcb3a2625b458\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"d39a1c462f584df0\",\"plugins/audit/tests/test_require_plan.py\":\"b1fe372ea198da6a\",\"plugins/audit/tests/test_stamp_verification.py\":\"2890706341cf8b8c\"},\"head\":\"6f08d2a4\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/require-plan.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/tests/test_require_plan.py\",\"plugins/audit/tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:8855e2c3e0b26a8679c764dbeb91969211f610c66c70742fc9afba40efe074cd\",\"v\":2}"
+}

@@ -2934,7 +2934,7 @@
     {
       "id": "P123.38",
       "title": "the wave driver's remaining edges are pinned and its docs say what the code does",
-      "status": "in_progress",
+      "status": "done",
       "description": "Carried lows from P124's reviews: integration-refused offers retry and spends an attempt where the design offers redo with no attempt spent; F599 behaviours at width 1 (scope-gap preflight, WIDEN_RULE, add --fixes scoping) are unpinned because the w1 fixture has no tests.add; the driver re-gate on regate:null is unpinned (mutation survived); task_binding's not-in_progress branch survives mutation (pin its message); a worktreeSetup that rewrites tracked files surfaces as undeclared-change - say so beside the setting; plugins/audit/README.md's /audit:worktree row still says a second tree is refused (task-add adopts it now); a discarded change's kept tree is named only once - name it in status until removed; commands/task.md's argument-hint lacks --introduces; a phase-review submit refuses a full 40-char head SHA where the plan records 12 - accept any unambiguous prefix. Faults: P124-R5, P124-R6, P124-R7, P124-R8, P124-R9, P124-R10, P124-R11. Also F620: before opening a wave the driver checks that the hooks Claude Code loads (the copy installed_plugins.json and the hook run records name, as /audit:doctor reads it) carry the task-tree binding; otherwise it runs at width 1 and prints why.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2982,19 +2982,50 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6f08d2a44101",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Redo recut (recut_tree) replaces retry on integration-refused; hooks_width/_doctor_setup.hooks_task_binding demote to width 1 on evidence (F620); phase-review submit accepts head/commit prefixes; KEPT TREES block in audit-status; task_binding, regate-null, scope-gap task path and WIDEN_RULE pinned (each proven red by mutation in a scratch copy); docs, hint, usage block, schema and panel text updated. Red seen before fix: wd1-wd4, ds8p, wh1, wh3, tbd*, kt1, kt2. Sweep, sweep --spaced, ruff, vermin all exit 0 after the last edit.",
+        "descriptive": "A wave's integration refusal offers a no-attempt redo, the driver checks the loaded hooks bind task trees, and the remaining wave edges are pinned and documented."
       },
       "startedAt": "2026-10-11T09:14:08Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-11T10:03:33Z",
+      "verifiedBy": [
+        "wd1",
+        "wd2",
+        "wd3",
+        "wd3a",
+        "wd3b",
+        "wd4",
+        "wg1",
+        "wg2",
+        "wh1",
+        "wh2",
+        "wh3",
+        "pf6",
+        "pf7",
+        "ds8p",
+        "ds8q",
+        "tb8",
+        "tb9",
+        "tb10",
+        "tbd1-tbd10",
+        "kt1-kt4"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-11T10:03:32Z.1288ee",
         "status": "passed",
         "at": "2026-10-11T10:03:32Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "6f08d2a44101",
+        "at": "2026-10-11T10:03:33Z"
+      },
+      "redFirst": {
+        "at": "2026-10-11T09:54:18Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage wd-block` in a throwaway tree at HEAD exited 1 with failing cases wd1 (house FAIL), wd2 (house FAIL), wd3 (house FAIL), wd3a (house FAIL), wd4 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 1/6 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove"
       }
     },
     {
@@ -3067,7 +3098,7 @@
     {
       "id": "P123.40-64p",
       "title": "on Windows a stamp's manifest label reads back to the native path and a binding refusal names the worktree in the native form",
-      "status": "pending",
+      "status": "in_progress",
       "description": "CI windows-latest on ci/p124 (run 38036907164) went red on two P124 cases, both Windows path shape. sr210: stamp-verification.stored_manifest returns os.path.join(project, label) with label in posix form, so on Windows the result mixes separators and does not equal the expected native path - join label.split('/') (or normpath the result). bt2: require-plan's binding refusal names the bound worktree as git lists it (forward slashes, the long user name), while the fixture's path is Python's (backslashes, an 8.3 short name of the runner's home), so the case's substring check fails - present the worktree in os.path.normpath form in the message, and make the case compare normcase(realpath) of both sides. Exercise the Windows shapes on every platform through ntpath where the code allows (no Windows box here), and say which half only CI can prove.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -3100,16 +3131,22 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-11T10:03:34Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-11T10:33:41Z.a49fcd",
+        "status": "passed",
+        "at": "2026-10-11T10:33:41Z"
+      }
     },
     {
       "id": "P123.41-64p",
