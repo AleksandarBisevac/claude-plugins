@@ -184,7 +184,7 @@
     {
       "id": "P126.3",
       "title": "The red-first helper reads a Windows interpreter's abort and an inline suite's hunks on Windows",
-      "status": "in_progress",
+      "status": "done",
       "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest, test_stamp_verification.py: FAIL sh1 a house suite printing SELFTEST FAILED: N-1/N because its body aborted on an AttributeError naming the symbol the task introduces (derived from the diff) is a missing-symbol red, proved: exit=3 '`<outside-repo> tests/test_mine.py` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 1/2 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError' | FAIL sh3 ...and a TypeError naming the introduced name - a keyword the task adds, given by --introduces - aborts the same way and is the same red: exit=3 '`<outside-repo> tests/test_mine.py` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 1/2 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError' | FAIL si1 an inline suite - its test file is its implementation file - is red-proved by laying HEAD plus only its added test hunks over the throwaway, and the basis says so: exit=3 '`<outside-repo> tools/inline.py` in a throwaway tree at HEAD: inline suite tools/inline.py (its test file is its implementation file): none of its 1 changed hunk(s) lies inside a test definition (a def named test*/selftest*/*cases, or a Test* class), so no c' note=None | FAIL si4 an inline suite whose test-only copy PASSES on HEAD's code is could-not-prove naming the split, not the green no-block answer - the split is read from definition names and may be misread: exit=3 {'at': '2026-10-12T19:59:19Z', 'basis': '`<outside-repo> tools/inline.py` in a throwaway tree at HEAD: inline suite tools/inline.py (its test file is its implementation file): none of its 1 changed hunk(s) lies inside a test definition (a def named test*/selftest*/*cases, or a Test* class), so no copy holding the new cases without the fix can be  | FAIL sr44 ...and the redFirst basis carries it, for a double-quoted --require preload whose path holds a space: '1 (house FAIL): SELFTEST FAILED: 1/2 cases passed; run without nothing; no ignored dependency directory linked from the project root; no .npmrc to carry or drop'. sh1/sh3 report 'no error the run printed' for a run whose AttributeError/TypeError the macOS run reads - likely the traceback reader misses CRLF line ends or a backslash path in the frame lines; si1/si4 report 'none of its 1 changed hunk(s) lies inside a test definition' - likely the hunk reader splits on LF only or the diff carries CRLF; sr44 reads no red for a double-quoted --require preload whose path holds a space (Windows quoting). Fix each at the reader (a CRLF-tolerant split, a native-path-tolerant frame match), keeping macOS green. It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -215,14 +215,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "897c7c2abff8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Three reader fixes, reasoned from the CI lines (no Windows run here). (1) _HOUSE_ABORT now ends `[ \\t\\r]*$`: a Windows interpreter writes print() to a pipe with CRLF, `$` under re.M stops before \\n and the stray \\r defeated `[ \\t]*$`, so the house-abort FAIL line (AttributeError/TypeError) was never read -> sh1, sh3. (2) _wt_text opens with newline='': universal-newline read turned the CRLF working file (the fixtures' _write uses text mode, so CRLF on Windows; autocrlf pinned false so the HEAD blob is CRLF too) into LF while _head_text keeps the blob as is, so every line differed, difflib gave ONE whole-file hunk covering the implementation, and 'none of its 1 changed hunk(s) lies inside a test definition' -> si1, si4. (3) sr44 was a fixture error, not a reader one: node reads a backslash inside double quotes as an escape on every platform, so the test's NODE_OPTIONS value for a Windows path must double its backslashes; the fixture now does (identity on POSIX); _node_words unchanged. Windows behaviour assumed: text-mode stdout writes \\r\\n (Python io docs, newline=None translation on write); open(...,'w') default writes \\r\\n on Windows; git show returns the blob bytes under core.autocrlf=false; node NODE_OPTIONS parser (node src/node_options.cc ParseNodeOptionsEnvVar) treats backslash in a quoted string as an escape. The first two are inferred from the CI failure text, not observed in a Windows traceback. Files: plugins/audit/scripts/governance/stamp-verification.py, plugins/audit/tests/test_stamp_verification.py. Selftest: 263/263 passed, exit 0; ruff clean.",
+        "descriptive": "The red-first helper now reads CRLF house aborts and CRLF inline suites, and the sr44 fixture quotes a Windows path the way node reads it."
       },
       "startedAt": "2026-10-12T21:23:06Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T21:38:08Z",
+      "verifiedBy": [
+        "sh4 CRLF house abort read as LF",
+        "si5 CRLF inline split",
+        "si6 _wt_text keeps line ends",
+        "sr44b Windows path escaped for node reads back whole"
+      ],
       "reviewPerTask": "phase",
       "notes": [
         {
@@ -234,12 +239,22 @@
         "runId": "2026-10-12T21:38:07Z.06c5e5",
         "status": "passed",
         "at": "2026-10-12T21:38:07Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "897c7c2abff8",
+        "at": "2026-10-12T21:38:08Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with expectRedFirst false; the Windows failures reproduce only on windows-latest, the new CRLF cases are fixtures simulating the shape on any OS",
+        "at": "n/a"
       }
     },
     {
       "id": "P126.4",
       "title": "A sweep marker whose pid is dead reads as stale on Windows too",
-      "status": "pending",
+      "status": "cancelled",
       "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest: FAIL o3 a marker whose pid is dead is reported as stale, never as live (a mutating sweep is live (pid 3024, since 2026-10-12T20:02:18Z) - the tree is mid-mutation, do not read a gate over it) | FAIL mk2 a marker whose pid is DEAD is ignored - the sweep proceeds - and says that it did: '' / 'sweep-selftests: refusing to start - <outside-repo> says a mutating sweep (pid 2496, since 2026-10-12T20:02:29Z) is rewriting the tree; a run now reads mid-mutation files and reports false reds. Wait for it, or stop it.\\n'. Both tools/orchestrator-state.py (o3) and tools/sweep-selftests.py (mk2) read a mutation marker naming a DEAD pid as a LIVE sweep. On Windows `os.kill(pid, 0)` does not probe - signal 0 is not a no-op there (it maps to TerminateProcess / CTRL events) - so a liveness probe written for POSIX is wrong on Windows. Find the one place (or the duplicated places - make them one helper if they are two) that decides pid liveness, and give it a Windows branch using a probe that exists in the stdlib there (e.g. ctypes OpenProcess + GetExitCodeProcess == STILL_ACTIVE), with the POSIX branch unchanged. Grep for every other caller of the same probe in plugins/audit and tools and route it through the helper (fix the class, not the two instances). It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
       "files": [
         "tools/orchestrator-state.py",
@@ -270,16 +285,18 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: re-added unchanged as a new task: it was held so P126.10 could go first, and a held task blocks P126.10's gate while starting it collides with P126.10's files"
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-12T21:38:09Z",
+      "completedAt": "2026-10-12T22:12:32Z",
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "blockedReason": "reorder: the owner asked for P126.10 (CI runs every independent step) first; P126.4 resumes after it"
     },
     {
       "id": "P126.5",
@@ -498,7 +515,7 @@
     {
       "id": "P126.10-13q",
       "title": "CI runs every independent step of a job after a failure, and gate-parity holds that property",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Observed in release run 38299118105: in the windows-latest selftests job the sweep step failed and the nine steps after it were SKIPPED (the legacy-code-page sweep, the spaced TMPDIR sweep, both launcher end-to-end steps, the plan gate end to end, the capability policy, the TDD nudge, the write half against a real git repo); in the manifest validation job 'The report is interactive' failed and the ajv schema step was skipped. So a red CI run is not a complete list: each layer of failure behind the first costs another 30-40 minute Windows round. tools/verify.sh already runs every step and says the list is complete; ci.yml does not. Give every INDEPENDENT step after a job's setup steps `if: ${{ !cancelled() }}`, so each runs and reports its own result while the job still fails when any step failed; keep checkout, setup-python/setup-node and installs unconditional, since their failure invalidates what follows. Then hold the property rather than remember it: tools/gate-parity.py gains a check that every step of ci.yml after the setup steps of each job carries that condition (a step that truly depends on an earlier non-setup step declares it in a reasoned exemption the check reads), with its selftest cases and a prove-gates row. Source: testbed monitor, 2026-10-12.",
       "files": [
         ".github/workflows/ci.yml",
@@ -511,6 +528,57 @@
           "tools/gate-parity.py: a ci.yml step after a job's setup steps without if: !cancelled() and without a reasoned exemption is reported by name; setup steps and exempted dependent steps are not"
         ],
         "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-12T21:38:19Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T22:21:07Z.fc1eef",
+        "status": "passed",
+        "at": "2026-10-12T22:21:07Z"
+      }
+    },
+    {
+      "id": "P126.11-13q",
+      "title": "A sweep marker whose pid is dead reads as stale on Windows too",
+      "status": "pending",
+      "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest: FAIL o3 a marker whose pid is dead is reported as stale, never as live (a mutating sweep is live (pid 3024, since 2026-10-12T20:02:18Z) - the tree is mid-mutation, do not read a gate over it) | FAIL mk2 a marker whose pid is DEAD is ignored - the sweep proceeds - and says that it did: '' / 'sweep-selftests: refusing to start - <outside-repo> says a mutating sweep (pid 2496, since 2026-10-12T20:02:29Z) is rewriting the tree; a run now reads mid-mutation files and reports false reds. Wait for it, or stop it.\\n'. Both tools/orchestrator-state.py (o3) and tools/sweep-selftests.py (mk2) read a mutation marker naming a DEAD pid as a LIVE sweep. On Windows `os.kill(pid, 0)` does not probe - signal 0 is not a no-op there (it maps to TerminateProcess / CTRL events) - so a liveness probe written for POSIX is wrong on Windows. Find the one place (or the duplicated places - make them one helper if they are two) that decides pid liveness, and give it a Windows branch using a probe that exists in the stdlib there (e.g. ctypes OpenProcess + GetExitCodeProcess == STILL_ACTIVE), with the POSIX branch unchanged. Grep for every other caller of the same probe in plugins/audit and tools and route it through the helper (fix the class, not the two instances). It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
+      "files": [
+        "tools/orchestrator-state.py",
+        "tools/sweep-selftests.py",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/sweep-selftests.py: mk2 passes on windows-latest CI",
+          "tools/orchestrator-state.py: o3 passes on windows-latest CI"
+        ],
+        "expectRedFirst": false,
         "gate": [
           "selftests",
           "validate",

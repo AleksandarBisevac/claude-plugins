@@ -1,0 +1,28 @@
+{
+  "gates": {
+    "python3 tools/gate-parity.py --selftest": "pass",
+    "python3 tools/gate-parity.py": "pass",
+    "python3 tools/prove-gates.py --selftest": "pass",
+    "npx --yes js-yaml .github/workflows/ci.yml": "pass",
+    "ruff check tools/gate-parity.py tools/prove-gates.py": "pass",
+    "python3 tools/prove-gates.py --only step_guard_drift": "could-not-run"
+  },
+  "redFirst": {
+    "at": "2026-10-12T21:45:31Z",
+    "basis": "`python3 tools/gate-parity.py --selftest` in a throwaway tree at HEAD exited 1 on \"NameError: name 'step_guard_drift' is not defined\" (read as python), and the task introduces 'step_guard_drift': absent from HEAD's .github/workflows/ci.yml, tools/prove-gates.py, tools/gate-parity.py and present in the working tree's tools/prove-gates.py, tools/gate-parity.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "ci.yml: added `if: ${{ !cancelled() }}` to all 32 independent non-setup steps (the two with existing Windows conditions combined: `!cancelled() && runner.os ==/!= 'Windows'`), left checkout/setup-*/installs unconditional, explained at top. The manifests job's 'The report is interactive' step is exempted in gate-parity STEP_GUARD_EXEMPT because it reads /tmp/dl produced by the Scale demo step. gate-parity.py: _job_steps parser, step_guard_drift(text, exempt), step_guard_findings, wired into job_timeout_verdict so parity() fails on it; STEP_GUARD_EXEMPT registered in AUDITED_EXEMPTIONS; selftest cases sg0-sg4 (live claim, reported by job+step name, setup and exempted not reported, combined if accepted, bare `if: !cancelled()` without ${{}} rejected, verdict carries it). prove-gates.py: one RED row (strip condition from ruff step -> sg0) and one ALLOW row (drop the setup carve-out -> sg2). gate-parity selftest 120/120, gate-parity.py exit 0, prove-gates selftest 37/37, js-yaml parses ci.yml, ruff clean. Not run: full sweep (started and left to the orchestrator), prove-gates live run (refused on dirty tree).",
+    "descriptive": "A red CI run now lists every independent failing step instead of stopping at the first, and gate-parity fails the build if a step loses the condition."
+  },
+  "testsAdded": [
+    "tools/gate-parity.py sg0",
+    "tools/gate-parity.py sg1",
+    "tools/gate-parity.py sg2",
+    "tools/gate-parity.py sg3",
+    "tools/gate-parity.py sg4"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:eeba2f0ef07761be4469f6a88048c937726854ffdf5f692e208124295a040367\",\"dirtyDigest\":\"sha256:4ce8e59e883661e5a64670df85d123b9a4fb4475c4f4a608a46147cdb4954596\",\"dirtyPaths\":{\".github/workflows/ci.yml\":\"396d95106d4826a0\",\"tools/gate-parity.py\":\"29b9f6e976f650f0\",\"tools/prove-gates.py\":\"d94121f0c60a79bd\"},\"head\":\"897c7c2a\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".github/workflows/ci.yml\",\"tools/gate-parity.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:e6ce2c086648610b32b0ecc639edea19864cec98bbf22d759eead3e0774edf63\",\"v\":2}"
+}

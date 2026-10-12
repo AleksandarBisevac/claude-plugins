@@ -1134,6 +1134,16 @@ TABLE = (
  # unique in the document and whose hook stays wired after it goes.
  ("failmode_table_drift", "SECURITY.md", "drop", r"^\| `remind-tdd` \|",
   None, "tools/gate-parity.py", "fm0"),
+ # A RED CI RUN MUST BE A COMPLETE LIST. A step after a job's setup without
+ # `!cancelled()` is skipped when anything above it fails, so one broken check
+ # hides the rest and each hidden layer costs another full round. Strip the
+ # condition from one lint step and `sg0`, which reads the live workflow, must go
+ # red naming that step.
+ ("step_guard_drift", ".github/workflows/ci.yml", "replace",
+  "      - name: ruff (rules and py38 target from pyproject.toml)\n"
+  "        if: ${{ !cancelled() }}\n",
+  "      - name: ruff (rules and py38 target from pyproject.toml)\n",
+  "tools/gate-parity.py", "sg0"),
 
  # --- The remainder the hand-written source list was hiding --------------------
  # Fifteen lints arrived the moment `_gate_sources()` became a walk. Every row
@@ -1950,6 +1960,15 @@ ALLOW = (
   "            if not any(word in step for word in _COMPARES):",
   "            if False:",
   "tools/gate-parity.py", "er2"),
+ # THE SETUP CARVE-OUT, REMOVED. A checkout, a setup-* or an install is left
+ # unconditional on purpose - its failure invalidates what follows, so running on
+ # past it only reports a second, spurious failure. Stop skipping them and the
+ # rule convicts every job's first steps. `sg2` is the fixture with setup steps
+ # and an exempted step in it, and it must go red on that version.
+ ("step_guard_drift", "tools/gate-parity.py", "replace",
+  "        if _is_setup_step(keys):\n            continue\n",
+  "        if False:\n            continue\n",
+  "tools/gate-parity.py", "sg2"),
  # THE DERIVATION, WIDENED PAST THE THING IT SEPARATES. A reason is a SENTENCE;
  # the length floor is what tells an excuse from a label, and `{"P1": "done"}` is
  # data. Drop it to nothing and every string-to-string map in the tree becomes an

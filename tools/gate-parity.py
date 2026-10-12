@@ -2334,6 +2334,7 @@ AUDITED_EXEMPTIONS = {
     "SHARED_CONCERNS": ("live", "shared_concern_violations"),
     "CONTRAST_EXEMPTIONS": ("live", "cr_violations"),
     "SCRATCH_EXEMPT": ("live", "scratch_isolation"),
+    "STEP_GUARD_EXEMPT": ("live", "step_guard_drift"),
     "NOT_LEG_FLAGS": ("live", "sweep_leg_drift"),
     "BASELINE": ("live", "dead_baseline"),
     "KNOWN_CONFIG_MIRRORS": ("reason", "config_read_violations"),
@@ -2838,6 +2839,132 @@ def untimed_jobs(text):
             "names": [job for job, _keys in jobs], "problem": None}
 
 
+# --- ...and a red job reports every independent step, not only the first ------
+# GitHub skips every step after a failed one unless the step's `if:` says
+# otherwise. A red Windows round then names one failure and hides the rest, and
+# each hidden layer costs another full round. `tools/verify.sh` runs every check
+# and says the list is complete; this holds ci.yml to the same promise: every
+# step after a job's setup carries `!cancelled()`, so it runs and reports itself
+# while the job still fails when any step did.
+_SETUP_USES = re.compile(
+    r"actions/(checkout|setup-[a-z0-9-]+|cache)(/[a-z-]+)?@")
+_SETUP_RUN = re.compile(
+    r"^(pip3?|python3? -m pip) install\b|^npm (ci|install)\b"
+    r"|^npx (--yes )?playwright install\b")
+# (job, step name) -> why the step has to keep the implicit success(): it reads
+# something an earlier non-setup step produced, so running it after that step
+# failed would report a second, spurious failure.
+STEP_GUARD_EXEMPT = {
+    ("manifests", "The report is interactive, not just well-formed"):
+        "its one-status leg cuts /tmp/dl, the tree the earlier `Scale demo` "
+        "step generates",
+}
+
+
+def _job_steps(text):
+    """[(job, {key: value})] for every step under every job's `steps:`.
+
+    Indentation is read, as in `untimed_jobs`: a step starts at a `- ` at the
+    depth of the first one under `steps:`, and its own keys sit two columns in,
+    so a key inside a `run: |` body is never taken for the step's. A `run` block
+    scalar contributes its first non-comment line as the key's value.
+    """
+    lines = text.splitlines()
+    out = []
+    job = None
+    in_steps = False
+    dash = None
+    jobs_at = None
+    job_depth = None
+    for i, line in enumerate(lines):
+        if jobs_at is None:
+            if re.match(r"jobs:\s*(#.*)?$", line):
+                jobs_at = i
+            continue
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 0:
+            break
+        if job_depth is None:
+            job_depth = indent
+        if indent == job_depth:
+            job = line.strip().rstrip(":")
+            in_steps = False
+            dash = None
+            continue
+        stripped = line.strip()
+        if indent == job_depth + 2 and stripped.startswith("steps:"):
+            in_steps = True
+            dash = None
+            continue
+        if indent == job_depth + 2:
+            in_steps = False
+            continue
+        if not in_steps:
+            continue
+        if dash is None and stripped.startswith("- "):
+            dash = indent
+        if dash is None:
+            continue
+        if indent == dash and stripped.startswith("- "):
+            out.append((job, {}))
+            stripped = stripped[2:]
+        elif indent != dash + 2:
+            continue
+        got = re.match(r"([A-Za-z_-]+):\s*(.*)$", stripped)
+        if got and out:
+            key, value = got.group(1), got.group(2).strip()
+            if key == "run" and value in ("|", ">", "|-", ">-"):
+                value = ""
+                for later in lines[i + 1:]:
+                    body = later.strip()
+                    if body and not body.startswith("#"):
+                        value = body
+                        break
+            out[-1][1][key] = value
+    return out
+
+
+def _is_setup_step(keys):
+    if _SETUP_USES.search(keys.get("uses", "")):
+        return True
+    return bool(_SETUP_RUN.match(keys.get("run", "")))
+
+
+def step_guard_drift(text, exempt=None):
+    """[(job, step, why)] for each step that a failed earlier step would skip.
+
+    A setup step (checkout, setup-*, cache, an install) is left alone: its
+    failure invalidates what follows. Every other step needs an `if:` holding
+    `!cancelled()` inside `${{ }}` - an `if:` it already had must be combined
+    with it, never replaced - unless `exempt` ({(job, step name): reason}, the
+    table above by default) names it with a reason.
+    """
+    table = STEP_GUARD_EXEMPT if exempt is None else exempt
+    findings = []
+    for job, keys in _job_steps(text):
+        if _is_setup_step(keys):
+            continue
+        name = keys.get("name") or keys.get("run") or keys.get("uses") or "?"
+        if table.get((job, name)):
+            continue
+        cond = keys.get("if", "")
+        if "!cancelled()" in cond and cond.startswith("${{"):
+            continue
+        findings.append((job, name, "no `if: ${{ !cancelled() ... }}`, so a "
+                         "failure above it skips this step and hides its result"
+                         if "!cancelled()" not in cond else
+                         "`!cancelled()` outside `${{ }}` is not an expression"))
+    return findings
+
+
+def step_guard_findings(text):
+    """`step_guard_drift()` as the [(subject, why)] rows `render()` takes."""
+    return [("%s / %s" % (job, step), why)
+            for job, step, why in step_guard_drift(text)]
+
+
 # --- ...and every bound is twice the longest run it was measured against ------
 # A bound set by feel is either too tight - a slow runner fails a green job - or
 # so loose it is the six hours again under another number. So the workflow
@@ -2906,7 +3033,8 @@ def job_timeout_verdict(repo=None):
     got = untimed_jobs(text)
     if got["problem"] is not None:
         return [("ci.yml", got["problem"])]
-    return got["findings"] + job_bound_evidence(text)
+    return (got["findings"] + job_bound_evidence(text)
+            + step_guard_findings(text))
 
 
 def parity(repo=None):
@@ -4578,6 +4706,66 @@ def _cases(check):
           _jt_none["problem"] is not None and _jt_none["jobs"] == 0
           and _jt_jobless == [("ci.yml", _jt_none["problem"])]
           and len(_jt_absent) == 1 and "could not be read" in _jt_absent[0][1])
+
+    with io.open(os.path.join(REPO, CI_REL), encoding="utf-8") as fh:
+        _sg_live_text = fh.read()
+    _sg_live = step_guard_drift(_sg_live_text)
+    _sg_read = _job_steps(_sg_live_text)
+    check("sg0 THE LIVE CLAIM: every step of ci.yml after a job's setup runs "
+          "after an earlier failure (or is exempted with a reason), over %d "
+          "step(s) read - the count keeps an unread workflow from passing: %r"
+          % (len(_sg_read), _sg_live),
+          len(_sg_read) > 0 and _sg_live == [])
+
+    _sg_wf = ("jobs:\n"
+              "  one:\n"
+              "    steps:\n"
+              "      - uses: actions/checkout@v5\n"
+              "      - uses: actions/setup-node@v5\n"
+              "        with:\n"
+              "          node-version: 20\n"
+              "      - name: Install tools\n"
+              "        run: pip install ruff\n"
+              "      - name: First check\n"
+              "        run: echo one\n"
+              "      - name: Second check\n"
+              "        if: ${{ !cancelled() }}\n"
+              "        run: |\n"
+              "          echo two\n"
+              "      - name: Needs the first\n"
+              "        run: cat /tmp/x\n"
+              "  two:\n"
+              "    steps:\n"
+              "      - name: Windows only\n"
+              "        if: runner.os == 'Windows'\n"
+              "        run: echo w\n"
+              "      - name: Combined\n"
+              "        if: ${{ !cancelled() && runner.os == 'Windows' }}\n"
+              "        run: echo c\n")
+    _sg_got = step_guard_drift(_sg_wf, exempt={})
+    check("sg1 a step after the setup steps with no condition, and one whose "
+          "own `if:` replaced nothing of `!cancelled()`, are reported by job "
+          "and step name: %r" % (_sg_got,),
+          [(j, n) for j, n, _w in _sg_got]
+          == [("one", "First check"), ("one", "Needs the first"),
+              ("two", "Windows only")])
+    _sg_ex = step_guard_drift(_sg_wf, exempt={
+        ("one", "Needs the first"): "reads /tmp/x from First check"})
+    check("sg2 setup steps (checkout, setup-*, an install) and an exempted "
+          "dependent step are NOT reported, and an `if:` that combines "
+          "`!cancelled()` with another condition is accepted: %r" % (_sg_ex,),
+          [(j, n) for j, n, _w in _sg_ex]
+          == [("one", "First check"), ("two", "Windows only")])
+    _sg_bare = step_guard_drift(
+        "jobs:\n  one:\n    steps:\n      - name: Bare\n"
+        "        if: !cancelled()\n        run: echo\n", exempt={})
+    check("sg3 `if: !cancelled()` without `${{ }}` is not a YAML expression "
+          "and is reported, not accepted: %r" % (_sg_bare,),
+          len(_sg_bare) == 1 and "outside" in _sg_bare[0][2])
+    check("sg4 the verdict `parity()` renders carries the finding, named by "
+          "job and step, so it fails the command and not only this function",
+          ("one / First check" in
+           [s for s, _w in step_guard_findings(_sg_wf)]))
 
 
 def _selftest():
