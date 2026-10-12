@@ -110,8 +110,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/run-test-gate.py:2192-2204 (with plugins/audit/scripts/governance/_evidence_io.py:138-143 and plugins/audit/scripts/manifest/_manifest_phases.py:255-260)",
         "issue": "split_not_commands classifies the RESOLVED command, and `resolved_commands` has already prefixed `meta.nodePreamble` to it ('<lead> && review-only: ...'). `is_review_only` only accepts a value that begins with 'review-only:', so in any plan that sets nodePreamble a review-only entry is not split out. Its prose then runs through the shell on the task/phase path (:4821) and on the full path this phase added (:4502), and records a red gate: the defect P123.49 and P123.55 exist to stop. No case pairs nodePreamble with a review-only entry (test_run_test_gate.py names nodePreamble only in the rg1b resolution cases).",
-        "resolution": "Classify each entry by its raw buildCommands value (or the entry itself) before the preamble is joined. For example, have split_not_commands take the entries and meta.buildCommands, or have resolved_commands return the review-only flag beside each pair. Add a case with nodePreamble set and a review-only entry in testGate and in fullGate, asserting no step ran.",
-        "fixTask": "P123.63-64p"
+        "resolution": "fixed in P123.68-64p (ecd8e502e781): Classify each entry by its raw buildCommands value (or the entry itself) before the preamble is joined. For example, have split_not_commands take the entries and meta.buildCommands, or have resolved_commands return the review-only flag beside each pair. Add a case with nodePreamble set and a review-only entry in testGate and in fullGate, asserting no step ran.",
+        "fixTask": "P123.68-64p",
+        "commit": "ecd8e502e781321e147ffa43a6fe963753a9ce1c",
+        "status": "fixed"
       },
       {
         "id": "P123-R10",
@@ -148,19 +150,79 @@
         "severity": "low",
         "file": "plugins/audit/tests/test_drive_phase.py:2292-2297 (COLON_FINDINGS)",
         "issue": "P123.60's task text asks for the regression 'a triage over a finding whose issue holds a backtick span with a spaced paren adds its fix task'. The diff relies on fb1, whose finding carries ' :400' and no backtick span. The stdin batch makes the shape irrelevant to argv, so the risk is low, but the named regression is not pinned.",
-        "resolution": "Give COLON_FINDINGS' second issue the literal shape that stopped the P123 triage (e.g. 'see `(split_not_commands at :4809)`'), so fb1 covers it.",
-        "fixTask": "P123.66-64p"
+        "resolution": "fixed in P123.69-64p (6638217110a2): Give COLON_FINDINGS' second issue the literal shape that stopped the P123 triage (e.g. 'see `(split_not_commands at :4809)`'), so fb1 covers it.",
+        "fixTask": "P123.69-64p",
+        "commit": "6638217110a2c677313d79dfb27f9e615d60480d",
+        "status": "fixed"
       },
       {
         "id": "P123-R14",
         "severity": "low",
         "file": "plugins/audit/tests/test_audit_task.py:15983, plugins/audit/tests/test_audit_task.py:16013, plugins/audit/tests/test_commit_task_work.py:1901",
         "issue": "Unrelated existing lines were rewritten to `before =open(...)`, `gate =(...)` and `CE_TEST =\"tests/test_a.py\"`. These are stray whitespace edits (E225) that ruff's selected rules do not catch, and the same artefact appears in two separate task commits, which points at an editing tool rather than intent.",
-        "resolution": "Restore `X = Y` on those lines, and find what rewrote them before it touches non-test code.",
-        "fixTask": "P123.66-64p"
+        "resolution": "fixed in P123.69-64p (6638217110a2): Restore `X = Y` on those lines, and find what rewrote them before it touches non-test code.",
+        "fixTask": "P123.69-64p",
+        "commit": "6638217110a2c677313d79dfb27f9e615d60480d",
+        "status": "fixed"
+      },
+      {
+        "id": "P123-R15",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/_status_facts.py:1646, plugins/audit/scripts/status/_status_facts.py:1744 (lint: plugins/audit/scripts/_deps.py:2434 _LAYER_WORD_NUMERAL)",
+        "issue": "P123-R11 is not closed: present-tense layer numerals spelled as words survive. Both docstrings say 'this module (layer two)' about _status_facts, which _deps.LAYERS holds at index 3, so these are the same off-by-one class P123.33/P123.54/P123.65 were opened for. layer_mention_drift() returns [] only because _LAYER_WORD_NUMERAL is r'\\blayers?[\\s-]+\\d+' and reads digits alone, while CLAUDE.md states that a number in prose may be spelled as a word and _output._numeral_span() already reads both spellings. P123.65's task text asks the lint to refuse ANY layer numeral and to delete every existing one. No lmd case plants a word-spelled numeral, so lmd1 is green over a tree that still carries a wrong one.",
+        "resolution": "Read the numeral through the shared word-or-digit reader (_output._numeral_span or its table) in _LAYER_WORD_NUMERAL, delete the two 'layer two' mentions (keep the reasoning), and add an lmd3 shape ('this module (layer two)') plus a prove-gates RED row for the word spelling. While there, decide on the ordinal 'BOTTOM LAYER' claims (_priority.py:28, _ado_parent.py:33, _ado_tracked.py:53, _manifest_io.py:674): all four modules sit at LAYERS index 2, not the bottom.",
+        "fixTask": "P123.70-64p"
+      },
+      {
+        "id": "P123-R16",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/audit-lookup.py:766; plugins/audit/tests/test_drive_phase.py:4254; plugins/audit/tests/test_stamp_verification.py:899",
+        "issue": "P123-R14 is not closed. Its resolution had two halves: restore the lines, and find what rewrote them before it touches non-test code. P123.69 restored the three named lines. The same artefact (an existing 'X = Y' rewritten to 'X =Y') is still in the phase diff three more times, and one of them is in product code: audit-lookup.py:766 'lines =[...' (rewritten in P123.41 0082528b from 'lines = ['), test_drive_phase.py:4254 '_TALLY =...' (P123.45 a3ec357c), and test_stamp_verification.py:899 'leftover =os.path.join' (P123.51 d24b3047). Each git show shows the original spaced line removed and the unspaced one added. Ruff's selected rules do not catch E225, so the gate stays green.",
+        "resolution": "Restore 'X = Y' on the three lines. Add a check that fails on the shape (enable ruff E225 for plugins/audit and tools, or add a small AST/token lint in _output), so the rewriter is caught wherever it strikes next.",
+        "fixTask": "P123.71-64p"
+      },
+      {
+        "id": "P123-R17",
+        "severity": "low",
+        "file": "plugins/audit/hooks/guard-bash-writes.py:701-713 (consumer: :2131-2148); plugins/audit/tests/test_guard_bash_writes.py:2605-2645",
+        "issue": "Outcome agreement is the right invariant for R10, because guard-bash-writes runs PostToolUse only and the pre-command disk cannot be reread. _config.copy_destinations' docstring now says what holds. The new comment in _statement_targets, though, says taking both landings 'costs nothing ... never makes a finding of its own'. That is false under the deny tier: a path in `named` goes to `authored` and is BLOCKED even while a peer session is active (`clauses`), and the union adds a directory destination the shared reader alone did not give. For `cp -r src/ lib/` with lib pre-existing, the is_dir=False reading adds `lib`, and writing_statement's directory rule (:776-779) then names every changed path under lib/. A peer's concurrent write to lib/other.py is attributed to this command and blocked instead of noticed. The (ca) cases compute `named` only over files the copy landed, so they cannot see over-attribution.",
+        "resolution": "Either restrict the extra is_dir=False landing to destinations that did not exist as directories before (or to the specific <dest>/<source-basename> subtree), or correct the comment to state the deny-tier cost. Add a (ca) negative: a file under the destination directory that the copy did not write is not named.",
+        "fixTask": "P123.72-64p"
+      },
+      {
+        "id": "P123-R18",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py:823-842 (verdict_returns could-not-establish branches); close-phase.py:2393-2396",
+        "issue": "The fail-closed branches of verdict_returns are unpinned: verdict_commit naming no commit, a merged side whose returns git will not list, and rev-list failing. The executor states this ('the could-not-establish path is unpinned'). A regression that turned any of them fail-open would land an unseen diverges return with no case going red. The cannot-see list in landed_answers_refusal's docstring also no longer names any post-verdict history change. A rebase of the phase branch onto the target after the verdict rewrites the verdict commit so that it holds the target's later return, and that return then reads as seen.",
+        "resolution": "Add a vr24c case that makes the verdict commit unnameable (e.g. a tip whose plan-dir history holds no verdict-recording run) and asserts the refusal names why. Add the rebase-after-verdict shape to the cannot-see sentence.",
+        "fixTask": "P123.73-64p"
+      },
+      {
+        "id": "P123-R19",
+        "severity": "low",
+        "file": "plugins/audit/README.md:1530 (other side: plugins/audit/scripts/governance/_evidence_io.py:148-174 full_gate; full_status NOT_DECLARED)",
+        "issue": "P123.62 changed what not_declared means: a fullGate holding only review-only entries now answers NOT_DECLARED everywhere. The user-facing README still says 'not_declared means the plan names no meta.fullGate'. The executor disclosed this and left it as out of scope.",
+        "resolution": "Reword README.md:1530 to 'names no runnable meta.fullGate entry (none, or only review-only ones)', matching full_status's basis.",
+        "fixTask": "P123.74-64p"
+      },
+      {
+        "id": "P123-R20",
+        "severity": "low",
+        "file": "plugins/audit/scripts/demo/gen-demo-manifest.py:2223-2228",
+        "issue": "The demo's full-run row says it is 'Resolved the way the runner resolves it, so its steps publish the exact commands full_status compares them with'. It reads meta.fullGate directly and resolves it with build.get(e, e). It applies neither _evidence_io.full_gate's review-only split nor the nodePreamble, so it is a second reading of the runnable full gate, which R8's redesign was meant to remove. The demo's fullGate holds no review-only entry today, so nothing renders wrong yet.",
+        "resolution": "Build `full` from _evidence_io.full_gate(manifest)['commands'].",
+        "fixTask": "P123.74-64p"
+      },
+      {
+        "id": "P123-R21",
+        "severity": "low",
+        "file": "docs/audit/phases/P123.json review.findings P123-R9, P123-R13, P123-R14",
+        "issue": "The three findings still name the cancelled fix tasks P123.63-64p and P123.66-64p as fixTask, with no status or commit. The replacement tasks P123.68-64p and P123.69-64p carry no `fixes`, so the record does not say that R9 (med) and R13 are closed in code (R9 at run-test-gate.py:2192-2211, _evidence_io.py:148-174 with fo4/fo5; R13 by fb4).",
+        "resolution": "Link P123.68-64p to P123-R9 and P123.69-64p to P123-R13/P123-R14 through the verb (or record status fixed with commit ecd8e502 / 66382171 for R9 and R13). Leave R14 open until finding 2 lands.",
+        "fixTask": "P123.74-64p"
       }
     ],
-    "outcome": "[findings: 14 - 0 high, 8 med, 6 low; 11 with a recorded fix commit]"
+    "outcome": "[findings: 21 - 0 high, 10 med, 11 low; 14 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -5423,7 +5485,7 @@
     {
       "id": "P123.69-64p",
       "title": "A triage over reviewer text holding a spaced code span adds its fix task (fb4), and stray whitespace edits are undone",
-      "status": "in_progress",
+      "status": "done",
       "description": "Closes review findings P123-R13 and P123-R14 (re-added from cancelled P123.66 as regression: the fix is at HEAD). (R13) Case fb4 in test_drive_phase.py's _fix_batch_cases: a finding whose issue is \"the split reads wrong, see `(split_not_commands at :4809)`\" goes through `drive-phase next --answer fix --fix P1-R1`; exit 0, exactly one fix task for P1-R1, the span carried whole in its description, the drive going on to dispatch. Its red was shown outside the repo: with the pre-batch per-finding argv `--description` add_fix_tasks (git show ae63b885^) restored in a scratch copy, fb4 failed with the verb's command-substitution refusal and no fix task added. (R14) The unrelated whitespace edits are undone: test_audit_task.py `before =open(...)` -> `before = open(...)`, `gate =(...)` -> `gate = (...)`; test_commit_task_work.py `CE_TEST =\"...\"` -> `CE_TEST = \"...\"`. Both edits are already in the tree.",
       "files": [
         "plugins/audit/tests/test_drive_phase.py",
@@ -5455,20 +5517,371 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6638217110a2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Read git diff of the three files: test_drive_phase.py holds only case fb4 in _fix_batch_cases; test_audit_task.py only the two whitespace reverts (before =open, gate =(...)); test_commit_task_work.py only CE_TEST. Nothing changed by me. Exit codes: test_drive_phase --selftest 0 (230/230); sweep-selftests 0 and --spaced 0 (331/331 files ok); ruff 0; vermin 0.",
+        "descriptive": "fb4 locks that a spaced backtick span in a finding goes through --answer fix as one fix task; stray whitespace edits are undone."
       },
       "startedAt": "2026-10-12T10:00:53Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T10:18:09Z",
+      "verifiedBy": [
+        "test_drive_phase.py fb4"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-12T10:18:08Z.6f4451",
         "status": "passed",
         "at": "2026-10-12T10:18:08Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "6638217110a2",
+        "at": "2026-10-12T10:18:09Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task, fix at HEAD; red was shown by the earlier task in a scratch copy with the pre-batch per-finding argv --description add_fix_tasks (git show ae63b885^) restored: fb4 failed with the verb's command-substitution refusal and no fix task added",
+        "at": "earlier cancelled task, scratch copy"
       }
+    },
+    {
+      "id": "P123.70-64p",
+      "title": "The layer lint reads a layer number spelled as a word too, through the one numeral reader",
+      "status": "in_progress",
+      "description": "(P123-R15, med) P123-R11 is not closed: present-tense layer numerals spelled as words survive. Both docstrings say 'this module (layer two)' about _status_facts, which _deps.LAYERS holds at index 3, so these are the same off-by-one class P123.33/P123.54/P123.65 were opened for. layer_mention_drift() returns [] only because _LAYER_WORD_NUMERAL is r'\\blayers?[\\s-]+\\d+' and reads digits alone, while CLAUDE.md states that a number in prose may be spelled as a word and _output._numeral_span() already reads both spellings. P123.65's task text asks the lint to refuse ANY layer numeral and to delete every existing one. No lmd case plants a word-spelled numeral, so lmd1 is green over a tree that still carries a wrong one.\nResolution: Read the numeral through the shared word-or-digit reader (_output._numeral_span or its table) in _LAYER_WORD_NUMERAL, delete the two 'layer two' mentions (keep the reasoning), and add an lmd3 shape ('this module (layer two)') plus a prove-gates RED row for the word spelling. While there, decide on the ordinal 'BOTTOM LAYER' claims (_priority.py:28, _ado_parent.py:33, _ado_tracked.py:53, _manifest_io.py:674): all four modules sit at LAYERS index 2, not the bottom.\n\nTHIRD ROUND on this class: read the number through `_output._numeral_span` (the reader the prose-number lint already uses for both spellings) rather than a digit-only regex, so every numeral spelling the repo knows is covered by construction; fix the two `this module (layer two)` sites in _status_facts.py; prove-gates row: a planted word-spelled layer number fails. Faults: P123-R15.",
+      "files": [
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/tests/test__deps.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "tools/prove-gates.py",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/scripts/report/_report_page.py",
+        "docs/screenshots"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__deps.py: `layer two`, `Layer Three`, `layer-four` are refused like their digit spellings, and the shipped tree has none"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-12T10:25:21Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-12T10:24:55Z",
+          "text": "scope: plugins/audit/scripts/status/_status_facts.py, plugins/audit/scripts/_deps.py, every path the finding(s) P123-R15 name"
+        }
+      ],
+      "fixes": [
+        "P123-R15"
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T10:52:06Z.886aba",
+        "status": "passed",
+        "at": "2026-10-12T10:52:06Z"
+      }
+    },
+    {
+      "id": "P123.71-64p",
+      "title": "No assignment loses its spaces again: ruff's whitespace-around-operator rule is on, and every site is fixed",
+      "status": "pending",
+      "description": "(P123-R16, med) P123-R14 is not closed. Its resolution had two halves: restore the lines, and find what rewrote them before it touches non-test code. P123.69 restored the three named lines. The same artefact (an existing 'X = Y' rewritten to 'X =Y') is still in the phase diff three more times, and one of them is in product code: audit-lookup.py:766 'lines =[...' (rewritten in P123.41 0082528b from 'lines = ['), test_drive_phase.py:4254 '_TALLY =...' (P123.45 a3ec357c), and test_stamp_verification.py:899 'leftover =os.path.join' (P123.51 d24b3047). Each git show shows the original spaced line removed and the unspaced one added. Ruff's selected rules do not catch E225, so the gate stays green.\nResolution: Restore 'X = Y' on the three lines. Add a check that fails on the shape (enable ruff E225 for plugins/audit and tools, or add a small AST/token lint in _output), so the rewriter is caught wherever it strikes next.\n\nRECURRING CLASS (the stray `X =Y` rewrite reached four task commits from four different executors, product code included), so a LINT, not another revert: enable ruff's E225 (missing-whitespace-around-operator) explicitly in pyproject.toml (`preview = true` with `explicit-preview-rules = true` so no other preview rule turns on), fix all six sites ruff reports (audit-lookup.py:766, test__evidence_io.py:1105, test_audit_lookup.py:1203, test_drive_phase.py:2866 and :4254, test_stamp_verification.py:899), and say in CONTRIBUTING's lint line that the rule is on. Show the rule can fail: with one site un-fixed in a scratch copy, ruff exits 1. Faults: P123-R16.",
+      "files": [
+        "pyproject.toml",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "CONTRIBUTING.md",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "pyproject.toml: E225 is selected (preview rule, enabled explicitly) and `ruff check plugins/audit tools` exits 0 with every `X =Y` fixed"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-12T10:24:55Z",
+          "text": "scope: plugins/audit/scripts/status/audit-lookup.py, plugins/audit/tests/test_drive_phase.py, plugins/audit/tests/test_stamp_verification.py, every path the finding(s) P123-R16 name"
+        }
+      ],
+      "fixes": [
+        "P123-R16"
+      ]
+    },
+    {
+      "id": "P123.72-64p",
+      "title": "The bash-write guard names a copy's second landing only for files that copy created, and a peer's file under it stays unnamed (orchestrator-written guard reading code)",
+      "status": "pending",
+      "description": "(P123-R17, low) Outcome agreement is the right invariant for R10, because guard-bash-writes runs PostToolUse only and the pre-command disk cannot be reread. _config.copy_destinations' docstring now says what holds. The new comment in _statement_targets, though, says taking both landings 'costs nothing ... never makes a finding of its own'. That is false under the deny tier: a path in `named` goes to `authored` and is BLOCKED even while a peer session is active (`clauses`), and the union adds a directory destination the shared reader alone did not give. For `cp -r src/ lib/` with lib pre-existing, the is_dir=False reading adds `lib`, and writing_statement's directory rule (:776-779) then names every changed path under lib/. A peer's concurrent write to lib/other.py is attributed to this command and blocked instead of noticed. The (ca) cases compute `named` only over files the copy landed, so they cannot see over-attribution.\nResolution: Either restrict the extra is_dir=False landing to destinations that did not exist as directories before (or to the specific <dest>/<source-basename> subtree), or correct the comment to state the deny-tier cost. Add a (ca) negative: a file under the destination directory that the copy did not write is not named.\n\nThe union of landings costs something under the deny tier, where a named path is blocked: take the alternative landing (no operand pre-existed) only for a file that did not exist before - a path git reports untracked-new inside a directory that is itself untracked - so a pre-existing directory's other contents are never pulled in. GUARD COMMAND-READING CODE: written by the orchestrator. Faults: P123-R17.",
+      "files": [
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/tests/test_guard_bash_writes.py",
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/tests/test_guard_bash_writes.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_bash_writes.py: cp -r src/ lib/ with lib already present attributes the copy's lib/src/* files and does NOT name a peer's lib/peer.py; the ca cases still hold"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-12T10:24:56Z",
+          "text": "scope: plugins/audit/hooks/guard-bash-writes.py, plugins/audit/tests/test_guard_bash_writes.py, every path the finding(s) P123-R17 name"
+        }
+      ],
+      "fixes": [
+        "P123-R17"
+      ]
+    },
+    {
+      "id": "P123.73-64p",
+      "title": "close-phase's fail-closed branches for the verdict's returns are pinned, and its docstring names a rebase after the verdict",
+      "status": "pending",
+      "description": "(P123-R18, low) The fail-closed branches of verdict_returns are unpinned: verdict_commit naming no commit, a merged side whose returns git will not list, and rev-list failing. The executor states this ('the could-not-establish path is unpinned'). A regression that turned any of them fail-open would land an unseen diverges return with no case going red. The cannot-see list in landed_answers_refusal's docstring also no longer names any post-verdict history change. A rebase of the phase branch onto the target after the verdict rewrites the verdict commit so that it holds the target's later return, and that return then reads as seen.\nResolution: Add a vr24c case that makes the verdict commit unnameable (e.g. a tip whose plan-dir history holds no verdict-recording run) and asserts the refusal names why. Add the rebase-after-verdict shape to the cannot-see sentence.\n\nAdd the cases that reach close-phase.py:823-842's could-not-establish branches (prove each can fail by making the branch pass in a scratch copy), and add a rebase after the verdict to the docstring's list of what it cannot see. Faults: P123-R18.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/git/close-phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_close_phase.py: a verdict commit close-phase cannot read, and a verdict that names no commit, each refuse the landing with the could-not-establish reason"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-12T10:24:56Z",
+          "text": "scope: plugins/audit/scripts/git/close-phase.py, close-phase.py, every path the finding(s) P123-R18 name"
+        }
+      ],
+      "fixes": [
+        "P123-R18"
+      ]
+    },
+    {
+      "id": "P123.74-64p",
+      "title": "The README's full-run status and the demo's full-run row say what full_gate decides, and the review record names the tasks that fixed each finding",
+      "status": "pending",
+      "description": "(P123-R19, low) P123.62 changed what not_declared means: a fullGate holding only review-only entries now answers NOT_DECLARED everywhere. The user-facing README still says 'not_declared means the plan names no meta.fullGate'. The executor disclosed this and left it as out of scope.\nResolution: Reword README.md:1530 to 'names no runnable meta.fullGate entry (none, or only review-only ones)', matching full_status's basis.\n\n(P123-R20, low) The demo's full-run row says it is 'Resolved the way the runner resolves it, so its steps publish the exact commands full_status compares them with'. It reads meta.fullGate directly and resolves it with build.get(e, e). It applies neither _evidence_io.full_gate's review-only split nor the nodePreamble, so it is a second reading of the runnable full gate, which R8's redesign was meant to remove. The demo's fullGate holds no review-only entry today, so nothing renders wrong yet.\nResolution: Build `full` from _evidence_io.full_gate(manifest)['commands'].\n\n(P123-R21, low) The three findings still name the cancelled fix tasks P123.63-64p and P123.66-64p as fixTask, with no status or commit. The replacement tasks P123.68-64p and P123.69-64p carry no `fixes`, so the record does not say that R9 (med) and R13 are closed in code (R9 at run-test-gate.py:2192-2211, _evidence_io.py:148-174 with fo4/fo5; R13 by fb4).\nResolution: Link P123.68-64p to P123-R9 and P123.69-64p to P123-R13/P123-R14 through the verb (or record status fixed with commit ecd8e502 / 66382171 for R9 and R13). Leave R14 open until finding 2 lands.\n\n(R19) README's `not_declared` row reads as full_status now says it (no runnable meta.fullGate entry). (R20) gen-demo-manifest resolves the demo's fullGate through _evidence_io.full_gate, as its own comment claims. (R21) The record half is already repaired by the orchestrator through `resolve-finding`: R9 -> P123.68-64p, R13 and R14 -> P123.69-64p; confirm it in the plan and say so. Faults: P123-R19, P123-R20, P123-R21.",
+      "files": [
+        "plugins/audit/README.md",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        "plugins/audit/README.md",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "docs/audit/phases/P123.json"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_gen_demo_manifest.py: the demo's full-run row is resolved through _evidence_io.full_gate (a review-only entry in a demo fullGate is left out)"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-12T10:24:57Z",
+          "text": "scope: plugins/audit/README.md, plugins/audit/scripts/governance/_evidence_io.py, plugins/audit/scripts/demo/gen-demo-manifest.py, docs/audit/phases/P123.json, review.findings, every path the finding(s) P123-R19, P123-R20, P123-R21 name"
+        }
+      ],
+      "fixes": [
+        "P123-R19",
+        "P123-R20",
+        "P123-R21"
+      ]
+    },
+    {
+      "id": "P123.75-64p",
+      "title": "No prose claims a module's layer position by ordinal: the bottom-layer claims are gone and the layer lint refuses them",
+      "status": "pending",
+      "description": "The second half of review finding P123-R15: four docstrings claim their module is at the BOTTOM LAYER (_priority.py near :28, _ado_parent.py near :33, _ado_tracked.py near :53, _manifest_io.py near :674) while _deps.LAYERS holds all four one layer above the bottom - the same stale-position class the numeral lint closed, spelled as an ordinal. The invariant again, not four edits: the layer lint (_deps.layer_mention_drift) also refuses an ordinal layer position in prose - bottom/top/first/second/lowest/highest layer, any case - since the module map prints every position; relational wording (a layer below, layer-mate, the floor of what it imports) stays allowed. Rewrite the four claims relationally and keep their reasoning; `layer_mention_drift()` returns []; add a prove-gates row planting an ordinal claim. If the lint flags a file outside the declared files, stop and name it. Faults: P123-R15.",
+      "files": [
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/tests/test__deps.py",
+        "tools/prove-gates.py",
+        "plugins/audit/scripts/manifest/_priority.py",
+        "plugins/audit/scripts/manifest/_ado_parent.py",
+        "plugins/audit/scripts/manifest/_ado_tracked.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__deps.py: 'the bottom layer', 'BOTTOM LAYER', 'the top layer', 'the first layer' beside a module claim are refused; 'a layer below' and 'its layer-mate' stay allowed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "reviewPerTask": "phase",

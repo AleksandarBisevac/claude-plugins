@@ -1,0 +1,25 @@
+{
+  "gates": {
+    "sweep-selftests": "pass",
+    "sweep-selftests --spaced": "pass",
+    "gate-parity": "pass",
+    "ruff": "pass",
+    "vermin": "pass",
+    "test__deps --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-12T10:43:04Z",
+    "basis": "`python3 plugins/audit/tests/test__deps.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 309 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - lmd3 (house FAIL): SELFTEST FAILED: 308/309 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "_deps.py: _LAYER_WORD_NUMERAL lifts up to two tokens after 'layer' and the new _layer_word_numerals() judges them through _output._numeral_span(small=True) (_deps already imports _output; no new edge). Deleted 'layer two' at both _status_facts.py sites and 'a layer one' in report/_report_page.py's docstring. test__deps: four word-spelled lmd3 shapes (layer two, Layer Three, layer-four, layer twenty-one) and one lmd7 allow case. prove-gates.py: re-anchored the lmd3 row and added two rows (planted 'layer two' in _doctor_ado.py -> lmd1; reader degraded to digits -> lmd3). layer_mention_drift() returned [] (observed). Earlier 308/309 failure was lmd1 (inferred, now 309/309 after the _report_page edit). Exit codes all 0: sweep-selftests, --spaced (331/331 files ok), gate-parity, ruff, vermin. test__refs stayed green in the sweep (no sc1/sc2 red). The new prove-gates rows were NOT run; they run on the committed tree at phase end. BOTTOM LAYER ordinal claims in the description were not touched.",
+    "descriptive": "The layer lint now refuses a layer number spelled as a word through the shared numeral reader, and the three shipped word-spelled mentions are gone."
+  },
+  "testsAdded": [
+    "test__deps lmd3 (layer two / Layer Three / layer-four / layer twenty-one shapes)",
+    "test__deps lmd7 (allow: 'Each layer owns its names...')"
+  ],
+  "claims": "layer_mention_drift() == [] observed via python3 call; sweep/--spaced/gate-parity/ruff/vermin exit 0 observed; prove-gates rows not run.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:eaeb32976d1f16583bc44f649ef7bcc997a06b644152d4b78d8e288728888f35\",\"dirtyDigest\":\"sha256:734b4c288e093f6c118a890190c35ca8e14fa53c48a4223fb23f13257c6b259f\",\"dirtyPaths\":{\"plugins/audit/scripts/_deps.py\":\"8a95078b8d3137d3\",\"plugins/audit/scripts/report/_report_page.py\":\"98934b5f8d7c0d5e\",\"plugins/audit/scripts/status/_status_facts.py\":\"28df3b9b66e311fe\",\"plugins/audit/tests/test__deps.py\":\"db5f97a8251e04cc\",\"tools/prove-gates.py\":\"1c9ad1393d0d9c79\"},\"head\":\"66382171\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"docs/screenshots\",\"plugins/audit/scripts/_deps.py\",\"plugins/audit/scripts/_output.py\",\"plugins/audit/scripts/report/_report_page.py\",\"plugins/audit/scripts/status/_status_facts.py\",\"plugins/audit/tests/test__deps.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:c14ceb1fde2d82c55746f14df30bd4c2cceb402e688a63644cc9166a804570d8\",\"v\":2}"
+}

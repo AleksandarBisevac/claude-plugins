@@ -1643,7 +1643,7 @@ def stranded_skills(summary):
 
     THE SAME THREE STATES `invariant_breaches` has, for the same reason and with
     the same spelling of the trip: the block is INJECTED by `audit-status.py`,
-    which owns the filesystem scan this module (layer two) may not reach, so an
+    which owns the filesystem scan this module may not reach, so an
     ABSENT block means nobody asked — and a gate that read that as clean would
     pass every repository where the enrichment silently failed.
 
@@ -1741,7 +1741,7 @@ def unfinished_runs(summary):
 
     THE SAME THREE STATES `invariant_breaches` AND `stranded_skills` HAVE, plus
     the reading of a lock this one adds. The `locks` block is INJECTED by
-    `audit-status.py` - a lock lives in the git dir and this module (layer two)
+    `audit-status.py` - a lock lives in the git dir and this module
     may open nothing - so an ABSENT block means nobody asked, and a gate that
     read that as clean would pass every run where the injection silently failed.
     `evaluate_gate` therefore trips on `is not None`, which reads oddly until you

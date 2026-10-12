@@ -565,6 +565,10 @@ def _cases(check):
             ("import os  # noqa: E402 (the shared base, L1)\n", "L1"),
             ("# Nothing else reads `_other`.\n# Both consumers are L7.\nX = 1\n", "L7"),
             ("# an edge from audit-task.py, L7 -> L1\nX = 1\n", "L7"),
+            ('"""This module (layer two) may not reach it."""\n', "layer two"),
+            ('"""A Layer Three module reads it."""\n', "Layer Three"),
+            ('"""The two are layer-four peers."""\n', "layer-four"),
+            ('"""It sits at layer twenty-one."""\n', "layer twenty-one"),
         )
         lm_missed = [(body, want, hits) for body, want, hits in
                      ((b, w, _lm(b)) for b, w in lm_shapes)
@@ -594,6 +598,7 @@ def _cases(check):
             '"""Uses CSS Selectors L4 for the :has() pseudo-class."""\n',
             '"""Counts `_output` (2 of them) on each side."""\n',
             '"""A layer above it, never the same layer."""\n',
+            '"""Each layer owns its names, and a layer below is read first."""\n',
         )
         lm_overfired = [(b, _lm(b)) for b in lm_allowed if _lm(b)]
         check("lmd7 a numeral that is not a layer - a URL line anchor, a path, a "

@@ -19,7 +19,7 @@ returning them together makes that one value from one place instead. The header
 above `_anchor()` states the contract, including why `parts` is a list.
 
 WHY THE GATE VERDICT IS AN ARGUMENT AND NOT A CALL. The verdict at the top of the
-report is the CI gate's own word. This reason used to be a layer one — the gate
+report is the CI gate's own word. This reason used to be a layering reason — the gate
 was reached through `_loader` as an entry point, so calling it from here would
 have been a helper reaching UP — and that has not been true since the gate's
 conditions came down to `_status_facts`, which this module already

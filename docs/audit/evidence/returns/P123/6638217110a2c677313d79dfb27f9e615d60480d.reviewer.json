@@ -1,0 +1,105 @@
+{
+  "findings": [
+    {
+      "id": 1,
+      "severity": "med",
+      "file": "plugins/audit/scripts/status/_status_facts.py:1646, plugins/audit/scripts/status/_status_facts.py:1744 (lint: plugins/audit/scripts/_deps.py:2434 _LAYER_WORD_NUMERAL)",
+      "issue": "P123-R11 is not closed: present-tense layer numerals spelled as words survive. Both docstrings say 'this module (layer two)' about _status_facts, which _deps.LAYERS holds at index 3, so these are the same off-by-one class P123.33/P123.54/P123.65 were opened for. layer_mention_drift() returns [] only because _LAYER_WORD_NUMERAL is r'\\blayers?[\\s-]+\\d+' and reads digits alone, while CLAUDE.md states that a number in prose may be spelled as a word and _output._numeral_span() already reads both spellings. P123.65's task text asks the lint to refuse ANY layer numeral and to delete every existing one. No lmd case plants a word-spelled numeral, so lmd1 is green over a tree that still carries a wrong one.",
+      "resolution": "Read the numeral through the shared word-or-digit reader (_output._numeral_span or its table) in _LAYER_WORD_NUMERAL, delete the two 'layer two' mentions (keep the reasoning), and add an lmd3 shape ('this module (layer two)') plus a prove-gates RED row for the word spelling. While there, decide on the ordinal 'BOTTOM LAYER' claims (_priority.py:28, _ado_parent.py:33, _ado_tracked.py:53, _manifest_io.py:674): all four modules sit at LAYERS index 2, not the bottom."
+    },
+    {
+      "id": 2,
+      "severity": "med",
+      "file": "plugins/audit/scripts/status/audit-lookup.py:766; plugins/audit/tests/test_drive_phase.py:4254; plugins/audit/tests/test_stamp_verification.py:899",
+      "issue": "P123-R14 is not closed. Its resolution had two halves: restore the lines, and find what rewrote them before it touches non-test code. P123.69 restored the three named lines. The same artefact (an existing 'X = Y' rewritten to 'X =Y') is still in the phase diff three more times, and one of them is in product code: audit-lookup.py:766 'lines =[...' (rewritten in P123.41 0082528b from 'lines = ['), test_drive_phase.py:4254 '_TALLY =...' (P123.45 a3ec357c), and test_stamp_verification.py:899 'leftover =os.path.join' (P123.51 d24b3047). Each git show shows the original spaced line removed and the unspaced one added. Ruff's selected rules do not catch E225, so the gate stays green.",
+      "resolution": "Restore 'X = Y' on the three lines. Add a check that fails on the shape (enable ruff E225 for plugins/audit and tools, or add a small AST/token lint in _output), so the rewriter is caught wherever it strikes next."
+    },
+    {
+      "id": 3,
+      "severity": "low",
+      "file": "plugins/audit/hooks/guard-bash-writes.py:701-713 (consumer: :2131-2148); plugins/audit/tests/test_guard_bash_writes.py:2605-2645",
+      "issue": "Outcome agreement is the right invariant for R10, because guard-bash-writes runs PostToolUse only and the pre-command disk cannot be reread. _config.copy_destinations' docstring now says what holds. The new comment in _statement_targets, though, says taking both landings 'costs nothing ... never makes a finding of its own'. That is false under the deny tier: a path in `named` goes to `authored` and is BLOCKED even while a peer session is active (`clauses`), and the union adds a directory destination the shared reader alone did not give. For `cp -r src/ lib/` with lib pre-existing, the is_dir=False reading adds `lib`, and writing_statement's directory rule (:776-779) then names every changed path under lib/. A peer's concurrent write to lib/other.py is attributed to this command and blocked instead of noticed. The (ca) cases compute `named` only over files the copy landed, so they cannot see over-attribution.",
+      "resolution": "Either restrict the extra is_dir=False landing to destinations that did not exist as directories before (or to the specific <dest>/<source-basename> subtree), or correct the comment to state the deny-tier cost. Add a (ca) negative: a file under the destination directory that the copy did not write is not named."
+    },
+    {
+      "id": 4,
+      "severity": "low",
+      "file": "plugins/audit/scripts/git/close-phase.py:823-842 (verdict_returns could-not-establish branches); close-phase.py:2393-2396",
+      "issue": "The fail-closed branches of verdict_returns are unpinned: verdict_commit naming no commit, a merged side whose returns git will not list, and rev-list failing. The executor states this ('the could-not-establish path is unpinned'). A regression that turned any of them fail-open would land an unseen diverges return with no case going red. The cannot-see list in landed_answers_refusal's docstring also no longer names any post-verdict history change. A rebase of the phase branch onto the target after the verdict rewrites the verdict commit so that it holds the target's later return, and that return then reads as seen.",
+      "resolution": "Add a vr24c case that makes the verdict commit unnameable (e.g. a tip whose plan-dir history holds no verdict-recording run) and asserts the refusal names why. Add the rebase-after-verdict shape to the cannot-see sentence."
+    },
+    {
+      "id": 5,
+      "severity": "low",
+      "file": "plugins/audit/README.md:1530 (other side: plugins/audit/scripts/governance/_evidence_io.py:148-174 full_gate; full_status NOT_DECLARED)",
+      "issue": "P123.62 changed what not_declared means: a fullGate holding only review-only entries now answers NOT_DECLARED everywhere. The user-facing README still says 'not_declared means the plan names no meta.fullGate'. The executor disclosed this and left it as out of scope.",
+      "resolution": "Reword README.md:1530 to 'names no runnable meta.fullGate entry (none, or only review-only ones)', matching full_status's basis."
+    },
+    {
+      "id": 6,
+      "severity": "low",
+      "file": "plugins/audit/scripts/demo/gen-demo-manifest.py:2223-2228",
+      "issue": "The demo's full-run row says it is 'Resolved the way the runner resolves it, so its steps publish the exact commands full_status compares them with'. It reads meta.fullGate directly and resolves it with build.get(e, e). It applies neither _evidence_io.full_gate's review-only split nor the nodePreamble, so it is a second reading of the runnable full gate, which R8's redesign was meant to remove. The demo's fullGate holds no review-only entry today, so nothing renders wrong yet.",
+      "resolution": "Build `full` from _evidence_io.full_gate(manifest)['commands']."
+    },
+    {
+      "id": 7,
+      "severity": "low",
+      "file": "docs/audit/phases/P123.json review.findings P123-R9, P123-R13, P123-R14",
+      "issue": "The three findings still name the cancelled fix tasks P123.63-64p and P123.66-64p as fixTask, with no status or commit. The replacement tasks P123.68-64p and P123.69-64p carry no `fixes`, so the record does not say that R9 (med) and R13 are closed in code (R9 at run-test-gate.py:2192-2211, _evidence_io.py:148-174 with fo4/fo5; R13 by fb4).",
+      "resolution": "Link P123.68-64p to P123-R9 and P123.69-64p to P123-R13/P123-R14 through the verb (or record status fixed with commit ecd8e502 / 66382171 for R9 and R13). Leave R14 open until finding 2 lands."
+    }
+  ],
+  "preExisting": [],
+  "intent": {
+    "answer": "matches",
+    "note": "Re-review of the second fix round, against the desired outcome and each fix task's text. R8 is closed: _evidence_io.full_gate (_evidence_io.py:148-174) is the one runnable list. run-test-gate._run_full (:4510) records it and exits 0 on a gate that is only review-only. full-gate.declares_full_gate (:134-142), guard-release.read_held_phases (:814), audit-status (:418), render-report (:207), _panel_composition.full_gate_commands (:899-911), both _doctor_trail sites (:1555, :1867) and full_status/_full_disqualification all count against it. fo3 pins a mixed [ok, claimsMatchCode] row as whole. R9 is closed: review_only_entry judges the raw entry before the preamble (_manifest_vocab.py:320-329), on the task/phase path through split_not_commands (run-test-gate.py:2192-2211, fo4) and on the full path (fo5). R10 is closed in substance: the (ca) cases run real copies and outcome agreement is the right invariant, though one comment overclaims (finding 3). R12 is closed: the docstring names no shape count. R13 is closed (fb4). P123.67 does what F569 asked. Not closed: R11 (finding 1: word-spelled layer numerals, wrong, still in _status_facts) and the second half of R14 (finding 2).",
+    "missing": [],
+    "redFirst": "not-attempted",
+    "redFirstBasis": "mode: phase - red-first is asked per owed task, not of the phase diff.",
+    "inheritedTests": "not-asked",
+    "inheritedTestsBasis": "The phase gate (selftests -> python3 tools/sweep-selftests.py) runs the whole project, so the question does not apply."
+  },
+  "verdict": "findings",
+  "tasks": [
+    {
+      "id": "P123.67-64p",
+      "commit": "430207f445a7",
+      "answer": "matches",
+      "note": "Task: read the returns at the verdict's own commit, refuse a return merged in after the verdict, and let the twin land. The diff adds verdict_commit (close-phase.py:779), the oldest first-parent commit in the run whose plan records the verdict, and verdict_returns (:804). verdict_returns marks a tip return late when a merge after that commit brought it and the commit does not hold it. unseen_returns then stops crediting late returns through the tip or the signing checkout's evidence. vr24 covers the refused case and vr24b the twin. It is scoped to merges and does not cover every post-verdict commit, with a stated reason: hl2 pins that a return the branch's own line committed after the verdict was filed before it. That is a reasoned reading of 'arrived later', and the outcome describes it accurately. Its fail-closed branches are unpinned (finding 4).",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate's selftests entry is python3 tools/sweep-selftests.py, a whole-project run; the other entries are validate/lint/report/browser gates selecting no task test.",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_close_phase.py --selftest --stage sc-block` in a throwaway tree at HEAD exited 1 with 1 of 6 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - vr24 (house FAIL): SELFTEST FAILED: 5/6 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.67-64p/20261012T091802Z.executor.json, at 2026-10-12T09:35:17Z)"
+    },
+    {
+      "id": "P123.68-64p",
+      "commit": "ecd8e502e781",
+      "answer": "matches",
+      "note": "The task asks for fo5: nodePreamble 'cd .', fullGate [ok, claimsMatchCode], one step without the review-only text, FULL GATE GREEN, and one not-a-command line. The diff (test_run_test_gate.py:8705-8726) asserts exactly that plus E_OK. The executor's outcome describes the diff. fo5 can fail on the unfixed shape: if the split read the preamble-led command, the review-only prose would run through the shell, giving two steps and a red run.",
+      "missing": [],
+      "redFirst": "not-attempted",
+      "redFirstBasis": "Executor: 'Regression task, fix at HEAD (b89a1b10) ... I re-ran no red.' tests.mode is regression with expectRedFirst false, so the mode owes none and the basis holds. A red was reported from the cancelled P123.63 scratch copy but not recorded here.",
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate's selftests entry is python3 tools/sweep-selftests.py, a whole-project run; no entry selects a narrower test set."
+    },
+    {
+      "id": "P123.69-64p",
+      "commit": "6638217110a2",
+      "answer": "matches",
+      "note": "The task asks for fb4 (a backtick span with a spaced paren through --answer fix: exit 0, one fix task for P1-R1, the span whole in its description, dispatch next) and the three whitespace reverts. The diff adds fb4 at test_drive_phase.py:2347-2357 with exactly those assertions, and reverts test_audit_task.py:15983 and :16013 and test_commit_task_work.py:1901. The outcome matches the diff. The same artefact elsewhere in the phase is finding 2, which is outside this task's text.",
+      "missing": [],
+      "redFirst": "not-attempted",
+      "redFirstBasis": "Executor: 'regression task, fix at HEAD; red was shown by the earlier task in a scratch copy'. tests.mode is regression with expectRedFirst false, so the mode owes none and the basis holds.",
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate's selftests entry is python3 tools/sweep-selftests.py, a whole-project run; no entry selects a narrower test set."
+    }
+  ],
+  "computedAnswers": {
+    "P123.67-64p": [
+      "redFirst",
+      "redFirstBasis"
+    ]
+  }
+}

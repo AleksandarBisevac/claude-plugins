@@ -608,8 +608,17 @@ TABLE = (
  # One spelling dropped from the rule: the word spelling never matches, which is
  # a lint that reads one of the shapes the class shipped in and not the other.
  ("layer_mention_drift", S + "_deps.py", "replace",
-  '_LAYER_WORD_NUMERAL = re.compile(r"\\blayers?[\\s-]+\\d+", re.IGNORECASE)',
-  '_LAYER_WORD_NUMERAL = re.compile(r"(?!x)x")', DEP, "lmd3"),
+  'r"\\blayers?[\\s-]+(\\d+|[A-Za-z]+)(?:[\\s-]+([A-Za-z]+))?", re.IGNORECASE)',
+  'r"(?!x)x", re.IGNORECASE)', DEP, "lmd3"),
+ # The same numeral spelled as a word, planted into a shipped docstring: the
+ # digit-only reader this lint once had passes it.
+ ("layer_mention_drift", S + "status/_doctor_ado.py", "replace",
+  "`_doctor_report` for the collector",
+  "`_doctor_report` (layer two) for the collector", DEP, "lmd1"),
+ # The word reader dropped back to digits alone: the number words are not read.
+ ("layer_mention_drift", S + "_deps.py", "replace",
+  "span = _output._numeral_span(tokens, 0, small=True)",
+  "span = (tokens[0], 1) if tokens[0].isdigit() else None", DEP, "lmd3"),
  # The `L<N>` spelling read only where the block names a layer or a module -
  # the import-comment shape "(the shared base, L1)" carries neither, and it is
  # the one a context-only reading leaves standing.

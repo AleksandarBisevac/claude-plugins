@@ -2430,8 +2430,12 @@ def hooks_rule_drift(guide_path=None):
 # sentences ("is at", "sits at", "(now") lost to the next wording.
 #
 # The word spelling is a layer whatever surrounds it - "layer", any case, then a
-# space or a hyphen, then digits.
-_LAYER_WORD_NUMERAL = re.compile(r"\blayers?[\s-]+\d+", re.IGNORECASE)
+# space or a hyphen, then a number in either spelling. The number is read by
+# `_output._numeral_span`, the one reader the prose-number lint uses, so a digit
+# and a number word cannot be read by different rules here; this pattern only
+# lifts the one or two tokens after the word for it to judge.
+_LAYER_WORD_NUMERAL = re.compile(
+    r"\blayers?[\s-]+(\d+|[A-Za-z]+)(?:[\s-]+([A-Za-z]+))?", re.IGNORECASE)
 # The `L<N>` spelling is also a cache level, a spec level, a line anchor in a URL
 # and a directory name. Glued to a `#`, a `/` or a word it is never a layer, and
 # otherwise it is one where the prose is talking about layers: the block names a
@@ -2449,9 +2453,21 @@ _LAYER_PAREN_NUMERAL = re.compile(
     r"`([A-Za-z_][A-Za-z_0-9-]*)(?:\.[A-Za-z_0-9.]*)?(?:\(\))?`\s*(\(\d+\))")
 
 
+def _layer_word_numerals(text):
+    """`[(position, text as written), ...]` for "layer <number>", digits or words."""
+    found = []
+    for m in _LAYER_WORD_NUMERAL.finditer(text):
+        tokens = [g.lower() for g in (m.group(1), m.group(2)) if g]
+        span = _output._numeral_span(tokens, 0, small=True)
+        if span:
+            end = m.end(1) if span[1] == 1 else m.end(2)
+            found.append((m.start(), text[m.start():end]))
+    return found
+
+
 def _layer_numerals(text, names):
     """Every layer numeral in one prose block, in reading order, as written."""
-    found = [(m.start(), m.group(0)) for m in _LAYER_WORD_NUMERAL.finditer(text)]
+    found = _layer_word_numerals(text)
     found += [(m.start(2), m.group(2)) for m in _LAYER_PAREN_NUMERAL.finditer(text)
               if m.group(1) in names]
     in_context = (bool(_LAYER_CONTEXT.search(text))
