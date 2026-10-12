@@ -1,0 +1,19 @@
+{
+  "gates": {
+    "own-test: python3 plugins/audit/tests/test_stamp_verification.py --selftest": "pass",
+    "ruff check test_stamp_verification.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "mode regression, expectRedFirst false; the failure reproduces only on windows-latest (read-only git loose objects), not on this darwin host"
+  },
+  "outcome": {
+    "technical": "Sole creator of stamp-derive-* is test_stamp_verification.py (sr213 block, tempfile.mkdtemp(prefix='stamp-derive-')), which builds a git repo and removed it with shutil.rmtree(ignore_errors=True). Git writes loose objects read-only; Windows refuses to unlink read-only files (documented in _output.remove_tree's docstring), so the removal failed silently and, with TMPDIR==cwd under the sweep, left the dir in the watched cwd. Fix: use _harness.remove_tree (rmtree, then chmod pass, then rmtree; returns whether the tree is gone) and new case sr214 asserts it returned True, the path is gone, and no stamp-derive-* sibling remains in the directory it was made in (the cwd under the sweep) - on every OS. Selftest: 264/264 passed. stamp-verification.py unchanged (no need). Not run: full sweep (Windows-only behaviour cannot be reproduced on darwin).",
+    "descriptive": "The red-first suite's git fixture is now removed with the read-only-tolerant helper and the removal is asserted, so no stamp-derive directory survives on Windows."
+  },
+  "testsAdded": [
+    "sr214 the derive fixture leaves nothing behind"
+  ],
+  "claims": "claims:\n- Windows refuses to unlink read-only files and git writes loose objects read-only: source is _output.remove_tree's docstring in this repo; not re-measured on Windows here.\n- sr214 was not proved red on this host: the failure is Windows-only.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:5d15135ae0c9be726817a644b2aa392161ff7b2f9e031221e3fff1d4366dda4b\",\"dirtyDigest\":\"sha256:aadf6094f7252189a8419d93d12624b0a8faa9a719d2c640ec153891b15aac6e\",\"dirtyPaths\":{\"plugins/audit/tests/test_stamp_verification.py\":\"e1ffea5af9ca9fe2\"},\"head\":\"aec0a2ab\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:c9ddf6983180023691dff515d942d5cd7c3b3c004186fe76a0363c4e9a4bc581\",\"v\":2}"
+}

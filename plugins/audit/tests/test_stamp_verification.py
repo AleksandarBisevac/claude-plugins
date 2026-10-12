@@ -34,7 +34,6 @@ import ntpath
 import os
 import posixpath
 import shlex
-import shutil
 import signal
 import subprocess
 import sys
@@ -863,7 +862,7 @@ def _sandbox_words_cases(check):
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = v
-        M.shutil.rmtree(fake_home, ignore_errors=True)
+        _harness.remove_tree(fake_home)
     check("sr209 the sentence about a user .npmrc spells no ~ and no machine "
           "path: %r" % (said,),
           any("home directory" in w and "dropped" in w for w in said)
@@ -1004,10 +1003,17 @@ def _removal_holds(got):
 
 
 def _drop_leftovers(root, left):
-    """Remove what a killed `red` stranded: each worktree and its holder."""
+    """Remove what a killed `red` stranded: each worktree and its holder. The
+    holder carries git objects, which are read-only (Windows will not unlink
+    them), so it goes through `remove_tree`; the holders it could not remove
+    are returned, never swallowed."""
+    stuck = []
     for tree in left:
         _git(root, "worktree", "remove", "--force", tree)
-        shutil.rmtree(os.path.dirname(tree), ignore_errors=True)
+        holder = os.path.dirname(tree)
+        if not _harness.remove_tree(holder):
+            stuck.append(holder)
+    return stuck
 
 
 def _sigterm_cases(check):
@@ -1055,12 +1061,12 @@ def _sigterm_cases(check):
           % (slow["started"], slow["code"], slow["left"]),
           slow["started"] and _removal_holds(slow))
     killed = _signal_mid_run(root, man, marks, "kill", signal.SIGKILL)
-    _drop_leftovers(root, killed["left"])
+    stuck = _drop_leftovers(root, killed["left"])
     check("sr23c ...and a removal that leaves a throwaway still FAILS sr23's "
           "assertion: a SIGKILL, which no `finally` survives, strands one: "
-          "started=%r exit=%r left=%r"
-          % (killed["started"], killed["code"], killed["left"]),
-          killed["started"] and killed["left"] != []
+          "started=%r exit=%r left=%r not removed afterwards=%r"
+          % (killed["started"], killed["code"], killed["left"], stuck),
+          killed["started"] and killed["left"] != [] and stuck == []
           and not _removal_holds(killed))
 
 
@@ -2909,7 +2915,18 @@ def _located_cases(check):
         derived = M.derive_introduced(root_d, ["src/old.py", "src/integrate-task.py",
                                                "src/notes.md"])
     finally:
-        shutil.rmtree(root_d, ignore_errors=True)
+        # `git init` + commit writes loose objects read-only, which Windows refuses
+        # to unlink; `remove_tree` retries after a chmod pass and reports whether
+        # the tree is gone, so a failed removal is asserted below, not swallowed.
+        removed_d = _harness.remove_tree(root_d)
+    scratch_d = os.path.dirname(root_d)
+    check("sr214 the derive fixture leaves nothing behind - not itself, and no "
+          "stamp-derive-* sibling in the directory it was made in, which is the "
+          "suite's working directory under the sweep: removed=%r left=%r"
+          % (removed_d, [n for n in os.listdir(scratch_d)
+                         if n.startswith("stamp-derive-")]),
+          removed_d is True and not os.path.lexists(root_d)
+          and not [n for n in os.listdir(scratch_d) if n.startswith("stamp-derive-")])
     check("sr213 the symbols a task's diff introduces are the new top-level def, "
           "class and assignment names of its declared Python files, plus the "
           "name of a file HEAD does not have - hyphenated included - and nothing "

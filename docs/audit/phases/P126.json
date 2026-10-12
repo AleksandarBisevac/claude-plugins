@@ -735,7 +735,7 @@
     {
       "id": "P126.12-13q",
       "title": "A wave's carried work is compared as the member's own bytes on Windows",
-      "status": "in_progress",
+      "status": "done",
       "description": "Run 38316180338 (ci/p126 @ a07bf893), windows-latest, test_drive_phase.py: \"FAIL wd3a the carried work is the member's own bytes: b'changed by P1.1\\r\\n'\". The carried bytes hold CRLF, so the fixture wrote the member's change in text mode (Windows translates \\n to \\r\\n) and then compares against an LF literal, or the integrate path rewrote the newline. Find which: if the fixture, write it with an explicit newline (the house rule: every text write states its newline) and keep the assertion byte-exact; if the product carried bytes other than the member's own, that is a defect in the integration and the fix goes there (say so, and widen scope). Pin the Windows shape on every OS where possible. It reproduces only on windows-latest; state the Windows behaviour the fix assumes with its source.",
       "files": [
         "plugins/audit/tests/test_drive_phase.py"
@@ -765,25 +765,36 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "aec0a2ab97c5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Cause is the fixture, not the product. _file_wave_executor (and _edit) wrote the member's change with open(...,'w'), which on Windows translates \\n to \\r\\n, so the member's tree held CRLF before the driver carried anything; tree_work (git add -A; git diff --cached --binary HEAD) and recut_tree (git apply --binary) then carried those bytes faithfully, and wd3a compared with an LF literal. Evidence: CI log 38316180338 shows wd3 PASS (redo carried the work, task closed) and only wd3a FAIL with b'changed by P1.1\\r\\n'; wv6 passes on the same OS because it reads in text mode (universal newlines hides CR); the product code path uses only binary git plumbing and kw 'wb' for the patch file. Assumed Windows behaviour: Python text-mode open('w') without newline= writes os.linesep (CRLF) on Windows (Python io docs). Fix: new helper _write_lf using newline='\\n', used by both fixture writes; wd3a stays byte-exact. Pin added: wd3c asserts the helper writes exactly b'a\\nb\\n' (fails on Windows with the old text-mode write, runs on every OS). test_drive_phase.py --selftest: 237/237 pass on macOS. Not run: Windows CI; full sweep.",
+        "descriptive": "The wave-redo fixture writes the member's change with LF on Windows, so wd3a compares the member's own bytes."
       },
       "startedAt": "2026-10-12T23:31:17Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T23:42:15Z",
+      "verifiedBy": [
+        "wd3c"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-12T23:42:14Z.26ac9b",
         "status": "passed",
         "at": "2026-10-12T23:42:14Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "aec0a2ab97c5",
+        "at": "2026-10-12T23:42:15Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression mode, expectRedFirst false: the failure reproduces only on windows-latest (text-mode write); not reproducible on this macOS host, so no red was watched here"
       }
     },
     {
       "id": "P126.13-13q",
       "title": "The red-first helper's suite leaves no stamp-derive directory behind on Windows",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Run 38316180338 (ci/p126 @ a07bf893), windows-latest: the sweep marks test_stamp_verification.py red because it \"wrote outside the fixtures it makes for itself: working directory: left behind: stamp-derive-8srsathk\". A `stamp-derive-*` temp directory is created in the CURRENT working directory (not under tempfile.mkdtemp()'s TMPDIR) and not removed on Windows - most likely a shutil.rmtree failing on a file a child process still holds open (Windows refuses to delete an open file) with the error swallowed, or a mkdtemp(dir=\".\")/relative path. Find the creator (grep 'stamp-derive'), make it create under the temp root and remove it reliably (close handles before removal; on Windows retry rmtree with an onerror that clears the read-only bit and retries after the child exits), and never swallow a failed removal silently. Pin on every OS: the suite leaves its cwd unchanged. It reproduces only on windows-latest; state the Windows behaviour the fix assumes with its source.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -812,16 +823,28 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T23:44:44Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "notes": [
+        {
+          "at": "2026-10-12T23:48:26Z",
+          "text": "The filed return (20261012T234444Z) predates the executor's last edit: it records ruff as pass while an unused `import shutil` was still present; the executor removed it after filing (the second filing was refused, once per start). The tree the gate measures carries the removal - ruff and the gate's own lint step are the evidence, not the return's text. Final change: sr213/sr214 and the worktree holder in _drop_leftovers (sr23c) and fake_home (sr209) all remove through _harness.remove_tree; the child-script atexit rmtree is left, as it cannot import _harness and holds no git objects."
+        }
+      ],
+      "testEvidence": {
+        "runId": "2026-10-12T23:56:51Z.977eba",
+        "status": "passed",
+        "at": "2026-10-12T23:56:51Z"
+      }
     }
   ],
   "request": "Make 3.3.0's release commit green on every OS CI runs: fix the windows-latest selftest failures and the ubuntu report hostile-content failure that CI run 38299118105 reported, before the release is cut.",

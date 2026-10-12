@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "own-test: python3 plugins/audit/tests/test_stamp_verification.py --selftest": "pass",
+    "ruff check test_stamp_verification.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "mode regression, expectRedFirst false; failure is Windows-only (read-only git objects), not reproducible on darwin"
+  },
+  "outcome": {
+    "technical": "Kept sr213/sr214 fix. Additionally: _drop_leftovers (worktree holder, carries git objects) now removes via _harness.remove_tree and returns the holders it could not remove; sr23c asserts that list is empty. The sr209 fake_home removal (no git objects) was also converted to _harness.remove_tree because every other fixture removal in the file already uses it (house idiom); it is not pinned separately. Left alone: the atexit shutil.rmtree inside the generated child-script string (_TMP), which runs in a child that cannot import _harness and holds no git objects. Dropped the now-unused shutil import. ruff clean; selftest 264/264.",
+    "descriptive": "Every git-bearing fixture removal in the red-first suite now tolerates Windows read-only objects and its failure is asserted."
+  },
+  "testsAdded": [
+    "sr214 the derive fixture leaves nothing behind",
+    "sr23c (extended: holder removal asserted)"
+  ],
+  "claims": "claims:\n- Windows read-only unlink behaviour: source _output.remove_tree docstring, not re-measured on Windows.\n- No red proved: Windows-only failure.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:c824a5960bf6d7e77735acf44d1673d48d4a7f2fa96213551e44bcaa552b9439\",\"dirtyDigest\":\"sha256:aadf6094f7252189a8419d93d12624b0a8faa9a719d2c640ec153891b15aac6e\",\"dirtyPaths\":{\"plugins/audit/tests/test_stamp_verification.py\":\"98741606a14a1ff2\"},\"head\":\"aec0a2ab\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:27de14ec2cdf6110f13a70d5f221815cdf1894435e0141f23b709b6b9be075e8\",\"v\":2}"
+}
