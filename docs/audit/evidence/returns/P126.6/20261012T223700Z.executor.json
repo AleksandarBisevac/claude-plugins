@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "machine_paths selftest": "pass",
+    "check-committed-pii selftest (incl q2s)": "pass",
+    "ruff": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-12T22:38:07Z",
+    "basis": "`python3 plugins/audit/tests/test__machine_paths.py --selftest` in a throwaway tree at HEAD: inline suite tools/check-committed-pii.py (its test file is its implementation file): none of its 0 changed hunk(s) lies inside a test definition (a def named test*/selftest*/*cases, or a Test* class), so no copy holding the new cases without the fix can be laid over HEAD; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "_machine_paths._spellings now also adds the path as given (backslashes to /, trailing / stripped) before the abspath/realpath spellings. Assumption: on Windows os.path.abspath('<outside-repo> One') returns '<outside-repo> One' (ntpath.abspath prefixes the current drive to a drive-less rooted path; Python os.path docs), so the known root became '<outside-repo> One', and the drive-root pattern needs a drive in the text; the CI fixture text '<outside-repo> One/My Projects/...' has none, leaving the root unmatched and the token grammar to stop at the space (CI line: left One My Projects proj notes). Adding the as-given spelling matches the drive-less text; a drive-letter home still matches via the existing [/\\\\] alternative. Added mp14 in tests/test__machine_paths.py, run on every OS: backslash <outside-repo> One home and drive-less posix home, both scrubbed whole via _known_roots(None, environ=...). Ran test__machine_paths.py --selftest (15/15), check-committed-pii.py --selftest (0 FAIL), ruff clean. Not run: full sweep, Windows. tools/check-committed-pii.py unchanged. Caveat: mp14 backslash case should be red before the fix on posix (abspath mangles it), drive-less case only guards Windows; not proven red here.",
+    "descriptive": "A space-holding home path, however spelled, is scrubbed whole on Windows (to be confirmed by the next windows CI run)."
+  },
+  "testsAdded": [
+    "test__machine_paths.py: mp14"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:9e512822bb8b7183689294844b1af5188e89c53175c0b72588bfb54545cbf766\",\"dirtyDigest\":\"sha256:4e397d2e28951b97259a5b26b9b06dafb0a77e7a04e02996514227a97841f4ea\",\"dirtyPaths\":{\"plugins/audit/scripts/_machine_paths.py\":\"45c50903ac2f1372\",\"plugins/audit/tests/test__machine_paths.py\":\"9a2bffa1bb021f31\"},\"head\":\"11745d06\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/_machine_paths.py\",\"plugins/audit/tests/test__machine_paths.py\",\"tools/check-committed-pii.py\"],\"scopeDigest\":\"sha256:6a5aab1a798fa61c9b468701ebd8bb32622f0e88aae5fe984d1f401f0dbb1901\",\"v\":2}"
+}

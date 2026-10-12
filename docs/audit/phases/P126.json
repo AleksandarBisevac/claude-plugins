@@ -301,7 +301,7 @@
     {
       "id": "P126.5",
       "title": "The sweep's spaced leg says what it means on Windows",
-      "status": "in_progress",
+      "status": "done",
       "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest, tools/sweep-selftests.py: FAIL sp3 a child run with `spaced` sees a TMPDIR holding a space and a link, an UNQUOTED path in a shell command is a different command there (exit 2) while the quoted word names the directory (exit 0) - the defect class the leg exists to keep measured: '<outside-repo> p'. sp3 asserts that an UNQUOTED spaced path in a shell command is a different command (exit 2) while the quoted one names the directory - a POSIX-shell property; CLAUDE.md says the --spaced leg is 'posix only'. Make sp3 (and anything else the spaced leg asserts about a POSIX shell) apply where the leg applies: skip with a printed reason on Windows rather than asserting a POSIX shell's word splitting, unless the case is meant to hold there too, in which case say why and fix it. It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
       "files": [
         "tools/sweep-selftests.py"
@@ -331,25 +331,35 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "11745d06040b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Cause: on windows-latest sp3 required the literal '/via/' in a backslash TMPDIR (<outside-repo> p), and its shell half runs 'test -d' under subprocess shell=True, which is cmd.exe on Windows (Python subprocess docs) and has no 'test', so QUOTED could never be 0. Fix in tools/sweep-selftests.py: the TMPDIR half (space, reached through the via link) compares os.sep+'via'+os.sep and runs everywhere; the unquoted-vs-quoted exit-code half is gated on os.name != 'nt' and prints 'sp3: skipping ... on Windows' with its reason. POSIX assertion unchanged. Windows assumptions: shell=True is cmd.exe (Python docs); cmd has no 'test' (my knowledge, not in CI output); symlinks work on windows-latest and TMPDIR is backslash-spelled (both from the CI line). Commands: python3 tools/sweep-selftests.py --selftest -> ALL PASS 64/64; python3 tools/sweep-selftests.py -> exit 0, 331/331 files ok, 15782 cases; ruff check tools/sweep-selftests.py -> all checks passed. Other gates not run (own-tests). Unverified until the next windows-latest CI run.",
+        "descriptive": "sp3 no longer asserts a POSIX shell's word splitting on Windows and matches the platform path separator, so the sweep selftest can pass on windows-latest."
       },
       "startedAt": "2026-10-12T22:21:09Z",
-      "completedAt": null,
+      "completedAt": "2026-10-12T22:37:00Z",
       "verifiedBy": [],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-12T22:36:59Z.7436d8",
         "status": "passed",
         "at": "2026-10-12T22:36:59Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "11745d06040b",
+        "at": "2026-10-12T22:37:00Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with expectRedFirst false; the red only appears on windows-latest, which cannot be run here",
+        "at": "n/a"
       }
     },
     {
       "id": "P126.6",
       "title": "A home path holding a space is scrubbed whole on Windows",
-      "status": "pending",
+      "status": "in_progress",
       "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest, tools/check-committed-pii.py: FAIL q2s a home path holding a space is found, and the writer's scrub of it leaves no fragment of the user's path and no finding: found ['posix-home'], scrubbed 'sandbox read <outside-repo> One/My Projects/proj/notes.md', left ['One', 'My', 'Projects', 'proj', 'notes']. The scrub left the tail of a home path that holds a space ('One/My Projects/proj/notes.md') after replacing its head - P123's 'a machine path containing a space is scrubbed whole' holds on macOS but not where the home is a Windows path or the fixture builds one with backslashes. Find the scrub (the shared machine-path writer the PII tool calls) and make the space-holding home path match whole for both separators. It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
       "files": [
         "tools/check-committed-pii.py",
@@ -379,16 +389,28 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T22:37:00Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "notes": [
+        {
+          "at": "2026-10-12T22:38:26Z",
+          "text": "Orchestrator red-first: test__machine_paths.py run against HEAD's _machine_paths.py fails mp14 ('read <outside-repo> One\\\\My Projects\\\\proj\\\\notes.md ok' - the tail of a backslash home holding a space leaked) at 14/15, and passes 15/15 with the fix; restored in the same command, pycache purged both ways. The backslash shape leaks on macOS too, so this is a real scrub gap on every OS, not only a Windows test artefact."
+        }
+      ],
+      "testEvidence": {
+        "runId": "2026-10-12T22:46:52Z.07c9ec",
+        "status": "passed",
+        "at": "2026-10-12T22:46:52Z"
+      }
     },
     {
       "id": "P126.7",

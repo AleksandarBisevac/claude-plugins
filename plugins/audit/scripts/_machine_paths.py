@@ -326,6 +326,11 @@ def _spellings(path):
     out = set()
     if not path:
         return out
+    # As written first: on Windows `abspath` prefixes the current drive to a
+    # drive-less `/Users/x`, so the text spelling would match no root.
+    given = str(path).replace("\\", "/").rstrip("/")
+    if given and "/" in given:
+        out.add(given)
     for way in (os.path.abspath, os.path.realpath):
         try:
             root = way(str(path)).replace("\\", "/").rstrip("/")

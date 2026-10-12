@@ -268,6 +268,20 @@ def _spaced_root_cases(check, proj):
           % (M.redacted_free_text(repo, plain),),
           M.redacted_free_text(repo, plain) == plain)
 
+    # The Windows shape, built on every OS: the home is named with a drive
+    # and backslashes, and a posix-spelled home is named drive-less - the
+    # spelling `abspath` rewrites with the current drive on Windows.
+    for label, home, line in (
+            ("backslash", "C:\\Users\\Some One",
+             "read C:\\Users\\Some One\\My Projects\\proj\\notes.md ok"),
+            ("drive-less", "/Users/Some One",
+             "read /Users/Some One/My Projects/proj/notes.md ok")):
+        known = M._known_roots(None, environ={"HOME": home})
+        got = M.redacted_free_text(None, line, known=known)
+        check("mp14 a home holding a space, spelled the Windows way (%s), is "
+              "replaced whole: %r" % (label, got),
+              got == "read %s ok" % (M.OUTSIDE_TOKEN,))
+
 
 def _selftest():
     return _harness.run(_cases)
