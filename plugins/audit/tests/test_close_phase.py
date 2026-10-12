@@ -1924,6 +1924,41 @@ def _same_checkout_reach_cases(check):
               "fast-forward: exit %r, %r" % (code, text[-360:]),
               _reach_outcome(git, sha, code, text, False)
               and "could not have read" in text)
+
+        root, git, mpath, sha = _same_root("target-merged-after")
+        made.append(root)
+        _reach_sign(mpath, git, commit=True)
+        git("worktree", "add", "-q", root + "-main", "main")
+        mgit = _fixture_git(root + "-main")
+        _reach_put(root + "-main", sha)
+        _reach_commit(mgit)
+        git("merge", "-q", "--no-edit", "main")
+        code, text = _reach_close(mpath, root)
+        check("vr24 THE TARGET MERGED IN AFTER THE VERDICT: the vr17 return, "
+              "committed on the target after the tip's verdict and then merged "
+              "into the branch, sits at the tip and in the signing checkout's "
+              "evidence - neither of which the verdict's own commit held - and "
+              "is refused, naming it as committed after that commit: "
+              "exit %r, %r" % (code, text[-420:]),
+              _reach_outcome(git, sha, code, text, False)
+              and "could not have read" in text
+              and "after the commit that wrote the verdict" in text)
+
+        root, git, mpath, sha = _same_root("target-merged-held")
+        made.append(root)
+        _reach_put(root, sha)
+        _reach_sign(mpath, git, commit=True)
+        git("worktree", "add", "-q", root + "-main", "main")
+        mgit = _fixture_git(root + "-main")
+        _reach_put(root + "-main", sha)
+        _reach_commit(mgit)
+        git("merge", "-q", "--no-edit", "main")
+        code, text = _reach_close(mpath, root)
+        check("vr24b THE TWIN: the same merge after the verdict bringing in a "
+              "byte-for-byte copy of a return the verdict's own commit already "
+              "held lands - a landing refusing every return a merge brought "
+              "to the tip would stop here: exit %r, %r" % (code, text[-300:]),
+              _reach_outcome(git, sha, code, text, True))
     finally:
         for root in made:
             for path in (root, root + "-main"):

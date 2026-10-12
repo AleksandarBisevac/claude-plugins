@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "own-tests: python3 plugins/audit/tests/test_close_phase.py --selftest --stage sc-block": "pass",
+    "selftests: python3 tools/sweep-selftests.py": "pass",
+    "selftests-spaced: python3 tools/sweep-selftests.py --spaced": "pass",
+    "lint: ruff check plugins/audit tools": "pass",
+    "lint: vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-12T09:35:17Z",
+    "basis": "`python3 plugins/audit/tests/test_close_phase.py --selftest --stage sc-block` in a throwaway tree at HEAD exited 1 with 1 of 6 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - vr24 (house FAIL): SELFTEST FAILED: 5/6 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "close-phase.py: under a tip verdict recording no read set, landed_answers_refusal now calls verdict_returns(), which finds the commit that wrote the verdict (verdict_commit: walk git log --first-parent over the plan's directory from the tip, the oldest of the run whose plan copy records the verdict), lists the merges on the branch's first-parent line after it (rev-list --first-parent --merges --parents), and marks late every tip return whose signature a merged side holds and the verdict commit does not. unseen_returns reports late returns as their own group first and stops crediting them through the tip or through the signing checkout's on-disk evidence (where the merge also put a copy). When the verdict commit or a merged side cannot be read, every tip return is late and the refusal names why. A return the branch's own line committed after the verdict is NOT late (filed before the verdict in the signing checkout and committed later; existing hl2 pins this - a first version that read the verdict commit alone turned hl2 red, which is why the rule is scoped to merges). Factored _plan_rel/_phase_at out of phase_as_landed. _filed_returns.ref_phase_returns gains commit=: reads a commit instead of the branch tip, labelling returns by the branch either way so one return read at both is one signature. Docstrings of landed_answers_refusal and unseen_returns updated (the 'brought to the tip by a merge' gap removed from the cannot-see list). Tests: vr24 (refused) and vr24b (twin, lands) in sc-block. Red before fix: sc-block 5/6, vr24 FAIL exit 0 landed. After: sc-block 6/6; whole test_close_phase.py 264/264 exit 0; sweep-selftests exit 0 (331/331 files); --spaced exit 0; ruff exit 0; vermin exit 0. test__filed_returns.py not touched; the could-not-establish path is unpinned.",
+    "descriptive": "A diverges return merged into a phase branch after its verdict no longer lands unasked; one the verdict commit already held still lands."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_close_phase.py::vr24",
+    "plugins/audit/tests/test_close_phase.py::vr24b"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:168e0a5df0bc76fe42984b16ecf5146456a39419c9a87c31ee4f102a5734951a\",\"dirtyDigest\":\"sha256:1f41def940b74e6896d52df3a67464614025e9e1aa5cc522f9ca244650345720\",\"dirtyPaths\":{\"plugins/audit/scripts/git/close-phase.py\":\"403ae2b366725183\",\"plugins/audit/scripts/manifest/_filed_returns.py\":\"aa24845f0f12c98d\",\"plugins/audit/tests/test_audit_task.py\":\"e7e784d7332a4df2\",\"plugins/audit/tests/test_close_phase.py\":\"8a8c61cee3fc0870\",\"plugins/audit/tests/test_commit_task_work.py\":\"995b47dfa892e697\",\"plugins/audit/tests/test_drive_phase.py\":\"4128bfc8b10b92db\",\"plugins/audit/tests/test_run_test_gate.py\":\"5e0587f1eca56952\"},\"head\":\"f73c286b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/git/close-phase.py\",\"plugins/audit/scripts/manifest/_filed_returns.py\",\"plugins/audit/tests/test__filed_returns.py\",\"plugins/audit/tests/test_close_phase.py\"],\"scopeDigest\":\"sha256:e3b51cf5a3cb93e6c904b54f45f962516d784bb74ad14e71e197dbc8344ed8bf\",\"v\":2}"
+}

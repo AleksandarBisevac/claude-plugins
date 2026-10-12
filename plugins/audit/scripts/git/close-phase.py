@@ -748,17 +748,101 @@ def phase_as_landed(git_root, manifest_path, branch, phase_id):
     and the second run it forced moved `mergedAt`. Once the branch is gone - the
     re-run after a cleanup - the tree's own copy is the landed one, and says so.
     """
-    # The path is relative to the tree that HOLDS the manifest: a worktree's
-    # manifest handed from the main checkout sits outside `git_root`, and a path
-    # taken against `git_root` would name a file no commit holds.
+    ph = _phase_at(git_root, "refs/heads/" + branch,
+                   _plan_rel(git_root, manifest_path), phase_id)
+    if ph is not None:
+        return ph, "the phase as %s holds it" % (branch,)
+    return None, "the plan on disk (%s is not there to read)" % (branch,)
+
+
+def _plan_rel(git_root, manifest_path):
+    """The plan's path inside a commit, `/`-separated.
+
+    It is relative to the tree that HOLDS the manifest: a worktree's manifest
+    handed from the main checkout sits outside `git_root`, and a path taken
+    against `git_root` would name a file no commit holds."""
     holder = _wt.tree_root(os.path.dirname(os.path.abspath(manifest_path)))["root"]
     rel = os.path.relpath(os.path.realpath(os.path.abspath(manifest_path)),
                           os.path.realpath(holder or git_root))
-    landed = _mio.load_manifest_at(git_root, "refs/heads/" + branch, rel.replace(os.sep, "/"))
-    for ph in ((landed or {}).get("phases") or []):
+    return rel.replace(os.sep, "/")
+
+
+def _phase_at(git_root, commit, rel, phase_id):
+    """The phase as the plan `commit` holds at `rel` has it, or None."""
+    plan = _mio.load_manifest_at(git_root, commit, rel)
+    for ph in ((plan or {}).get("phases") or []):
         if isinstance(ph, dict) and str(ph.get("id")) == str(phase_id):
-            return ph, "the phase as %s holds it" % (branch,)
-    return None, "the plan on disk (%s is not there to read)" % (branch,)
+            return ph
+    return None
+
+
+def verdict_commit(git_root, manifest_path, branch, phase_id):
+    """`(sha, problem)` - the commit on `branch` that wrote the sign-off
+    verdict its tip records: walking the branch's own line back from the tip
+    through each commit that touched the plan's directory, the oldest of the
+    run whose copy records a verdict. A merge into the branch is a commit on
+    that line, so what it brought in is after the verdict, never part of it.
+    `problem` says why no such commit could be named."""
+    rel = _plan_rel(git_root, manifest_path)
+    code, text = _git_text(git_root, [
+        "log", "--first-parent", "--format=%H", "refs/heads/%s" % (branch,),
+        "--", posixpath.dirname(rel) or "."])
+    if code != 0:
+        return None, ("git would not list the commits on %s that touched the "
+                      "plan" % (branch,))
+    found = None
+    for sha in text.split():
+        if not _mio.signoff_recorded(_phase_at(git_root, sha, rel, phase_id)):
+            break
+        found = sha
+    if found is None:
+        return None, ("no commit on %s that touched the plan records the "
+                      "verdict its tip holds" % (branch,))
+    return found, ""
+
+
+def verdict_returns(git_root, manifest_path, places, phase_id):
+    """`places` (`returns_by_place`) with `late` added - the returns the tip
+    commits that a merge into the branch brought in after the commit that
+    wrote the tip's verdict, and that commit does not hold - beside
+    `signedAt`, that commit, or `signedWhy`, why it could not be named, every
+    return the tip commits then late. Nothing is added when the tip commits
+    no return: none can be late there.
+
+    A RETURN THE BRANCH'S OWN LINE COMMITTED AFTER THE VERDICT IS NOT LATE.
+    The filing verb refuses once the signing checkout's copy records a
+    verdict, so such a return was filed there before it, read by that
+    sign-off, and committed in a later commit. A merge brings in history no
+    sign-off on the branch read: what the merged side commits beyond the
+    verdict's own commit is the one class the per-place reading credited
+    the tip with and must not."""
+    if not places["tip"]:
+        return places
+    branch = places["branch"]
+    commit, problem = verdict_commit(git_root, manifest_path, branch, phase_id)
+    if not commit:
+        return dict(places, late=list(places["tip"]), signedAt=None,
+                    signedWhy=problem)
+    code, text = _git_text(git_root, [
+        "rev-list", "--first-parent", "--merges", "--parents",
+        "%s..refs/heads/%s" % (commit, branch)])
+    # Every parent of a merge but its first is history the merge brought in.
+    sides = [sha for line in text.splitlines() for sha in line.split()[2:]]
+    held, unread = {}, []
+    for rev in ([commit] + sides if code == 0 else []):
+        entries = _fr.ref_phase_returns(git_root, branch, places["returnsRel"],
+                                        phase_id, commit=rev)
+        unread += [why for name, _body, why in entries
+                   if name == "%s:%s" % (branch, places["returnsRel"])]
+        held[rev] = set(_fr.return_signature(e) for e in entries)
+    if code != 0 or unread:
+        return dict(places, late=list(places["tip"]), signedAt=None,
+                    signedWhy="; ".join(unread) or (
+                        "git would not list the merges into %s after %s"
+                        % (branch, commit[:12])))
+    merged = set(sig for rev in sides for sig in held[rev]) - held[commit]
+    late = [e for e in places["tip"] if _fr.return_signature(e) in merged]
+    return dict(places, late=late, signedAt=commit, signedWhy="")
 
 
 def _store_derived(phase):
@@ -2285,7 +2369,12 @@ def landed_answers_refusal(project, manifest_path, phase, landed, branch,
     - the tip: lands when the return is at the tip (vr4) or in the worktree
       (vr2, vr6b); refused when it sits only in the parent's evidence (vr1,
       vr3, vr5), and under a name the branch carries with another answer
-      (vr7); lands when the parent's copy is the same answer (vr6).
+      (vr7); lands when the parent's copy is the same answer (vr6). A
+      return a merge into the branch brought to the tip after the commit
+      that wrote the verdict, and which that commit does not hold
+      (`verdict_returns`), is refused wherever else a copy sits (vr24); one
+      that commit already held lands (vr24b), and so does one the branch's
+      own line committed after it (hl2).
     - the branch checked out in this checkout itself: a return the target
       commits (vr17, vr19) or its worktree holds (vr17b) is refused; a copy
       of one the tip commits lands (vr18).
@@ -2302,9 +2391,9 @@ def landed_answers_refusal(project, manifest_path, phase, landed, branch,
       settled or not: no checkout is left to name as the signer, so no
       record is read for it. Unpinned.
     What the per-place reading cannot see, and the read set does: a return
-    filed in a checkout it does not name, in the signing checkout after a
-    switch away and back, or brought to the tip by a merge after the
-    verdict. A verdict needs a sign-off by this version for those.
+    filed in a checkout it does not name, or in the signing checkout after a
+    switch away and back. A verdict needs a sign-off by this version for
+    those.
 
     Unreachable, and why: a tip verdict with the tip itself unreadable -
     refused above as unestablished before any return is asked. Not told
@@ -2346,6 +2435,9 @@ def landed_answers_refusal(project, manifest_path, phase, landed, branch,
                    "while such an answer is unsettled")
     if landed is not None:
         if _mio.signoff_recorded(landed):
+            if _fr.read_set(landed.get("review")) is None:
+                places = verdict_returns(git_root, manifest_path, places,
+                                         phase_id)
             return _reach_refusal(project, manifest_path, phase_id, places,
                                   wide, landed, VERDICT_AT_TIP, branch)
         # A verdict the worktree's copy holds and the tip does not is one
@@ -2419,7 +2511,9 @@ def returns_by_place(project, manifest_path, git_root, branch, phase_tree,
                      phase_id, parent=None, parent_tree=None):
     """Every phase return filed for `phase_id` the landing can see, by where
     it sits - `{"dirs", "tip", "target", "project", "tree", "home",
-    "evidence", "branch", "parent"}`.
+    "evidence", "branch", "parent", "returnsRel"}`, the last the returns'
+    folder inside a commit, None when the evidence lies outside the
+    repository.
 
     `dirs` holds one entry per distinct evidence directory - `{"dir",
     "trees", "returns"}` - over the checkouts the landing knows: the one it
@@ -2457,12 +2551,13 @@ def returns_by_place(project, manifest_path, git_root, branch, phase_tree,
                      "returns": list(_fr.phase_returns(where, phase_id))})
     places = {"dirs": dirs, "tip": [], "target": [], "project": project,
               "tree": tree, "home": home, "evidence": evidence,
-              "branch": branch, "parent": parent}
+              "branch": branch, "parent": parent, "returnsRel": None}
     folder = os.path.join(evidence, _fr.RETURNS_DIRNAME, str(phase_id))
     rel = (os.path.relpath(folder, git_root).replace(os.sep, "/")
            if git_root else "..")
     if rel.startswith(".."):
         return places
+    places["returnsRel"] = rel
     if branch:
         places["tip"] = _fr.ref_phase_returns(git_root, branch, rel,
                                                 phase_id)
@@ -2505,7 +2600,10 @@ def unseen_returns(places, verdict_at):
     sign-off verb reads the evidence of the checkout it runs in, and the
     filing verb refuses once that checkout's copy records a verdict. So a tip
     verdict - written in the checkout holding the branch - read that
-    checkout's evidence and every return the tip commits; a verdict on a copy
+    checkout's evidence and every return the tip commits, except one a merge
+    into the branch brought in after the commit that wrote it
+    (`_late_at_tip`) - unseen even where the merge also put a copy of it in
+    the signing checkout's evidence; a verdict on a copy
     on disk read that copy's checkout's evidence; the target branch's
     committed returns were read only by a sign-off in the checkout holding
     it. Every other place a return can sit is a candidate, whenever it was
@@ -2524,17 +2622,22 @@ def unseen_returns(places, verdict_at):
     def signed_here(trees):
         return bool(signer) and any(_same_path(signer, t) for t in trees)
 
+    late = _late_at_tip(places) if verdict_at == VERDICT_AT_TIP else []
+    after = set(_fr.return_signature(e) for e in late)
     seen = list(places["tip"]) if verdict_at == VERDICT_AT_TIP else []
     if signer and home and _same_path(signer, home):
         seen += places["target"]
     for d in places["dirs"]:
         if len(d["trees"]) == 1 and signed_here(d["trees"]):
             seen += d["returns"]
-    taken = set(_fr.return_signature(e) for e in seen)
+    taken = set(_fr.return_signature(e) for e in seen) - after
     who = ("the checkout at %s" % (signer,) if signer else
            "a checkout this plan outside the repository cannot name" if either
            else "the worktree that held the branch, now gone")
     groups = []
+    if late:
+        groups.append((late, _late_words(places), "the returns %s commits"
+                       % (places["branch"],), []))
     for d in places["dirs"]:
         if len(d["trees"]) == 1 and signed_here(d["trees"]):
             continue
@@ -2574,6 +2677,26 @@ def unseen_returns(places, verdict_at):
         if fresh:
             unseen.append((fresh, why, folder, settle))
     return unseen
+
+
+def _late_at_tip(places):
+    """The returns the tip commits that a merge brought in after the commit
+    which wrote its verdict (`verdict_returns`) - none when that was never
+    asked."""
+    return list(places.get("late") or [])
+
+
+def _late_words(places):
+    """The clause saying where a late tip return sits and why the verdict
+    could not have read it."""
+    if places.get("signedAt"):
+        return ("committed at the tip of %s, brought in by a merge into the "
+                "branch after the commit that wrote the verdict (%s), which "
+                "does not hold it" % (places["branch"], places["signedAt"][:12]))
+    return ("committed at the tip of %s, and what the commit that wrote the "
+            "verdict held could not be established (%s), so no return the tip "
+            "commits is known to be one the sign-off read"
+            % (places["branch"], places["signedWhy"]))
 
 
 def _known_checkouts(places):

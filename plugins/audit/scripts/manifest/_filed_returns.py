@@ -1133,22 +1133,25 @@ def ref_known(git_root, ref):
     return {0: True, 1: False}.get(code)
 
 
-def ref_phase_returns(git_root, ref, rel, phase_id):
+def ref_phase_returns(git_root, ref, rel, phase_id, commit=None):
     """`[(rel, body, problem)]` - the phase returns branch `ref` commits under
     `rel` (root-relative, `/`-separated), named as the filing verb names them
-    on disk. A listing git would not give is a problem entry, never no return
-    filed: an unread tree is not an empty one."""
+    on disk; with `commit`, the ones that commit holds instead of the branch
+    tip. A return is labelled by `ref` either way, so one return read at the
+    tip and at a commit is one signature (`return_signature`). A listing git
+    would not give is a problem entry, never no return filed: an unread tree
+    is not an empty one."""
+    rev = commit or "refs/heads/%s" % (ref,)
     code, out = _git(git_root, ["ls-tree", "-r", "--name-only", "-z",
-                                "refs/heads/%s" % (ref,), "--", rel])
+                                rev, "--", rel])
     if code != 0:
         return [("%s:%s" % (ref, rel), None,
-                 "git would not list %s at %s" % (rel, ref))]
+                 "git would not list %s at %s" % (rel, commit or ref))]
     paths = [p for p in out.decode("utf-8", "replace").split("\0") if p]
     found = []
     for path in sorted(p for p in paths if p.endswith(".reviewer.json")
                        and posixpath.dirname(p) == rel):
-        code, raw = _git(git_root, ["cat-file", "blob", "refs/heads/%s:%s"
-                                    % (ref, path)])
+        code, raw = _git(git_root, ["cat-file", "blob", "%s:%s" % (rev, path)])
         text = raw.decode("utf-8", "replace") if code == 0 else None
         body, problem = return_body(text, "%s:%s" % (ref, path))
         found.append(("%s/%s/%s" % (RETURNS_DIRNAME, phase_id,

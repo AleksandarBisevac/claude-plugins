@@ -128,16 +128,20 @@
         "severity": "med",
         "file": "plugins/audit/scripts/_deps.py:2483-2494 (and e.g. plugins/audit/scripts/_output.py:577, plugins/audit/scripts/_deps.py:251, plugins/audit/scripts/_deps.py:515, plugins/audit/scripts/panel/_panel_paths.py:7, plugins/audit/scripts/report/_report_page.py:2)",
         "issue": "The layer-number class P123.33 promised to close ('Every layer number written in prose is checked against _deps.LAYERS or not written') is still open one wording over. R2 widened the regex to the shapes the finding listed. But present-tense mentions in the 'at LN' / 'is at layer N' / '(now LN' / 'sits at layer N' wordings are not read, and many are the same off-by-one. Examples: '`_refs` is at layer 1' (LAYERS index 2), '`_manifest_ado` at L2 grades the config' (3), '`_help` (now L2)' (3, while _deps.py:214 says L3 and passes), '`_panel_state` sits at layer 5' (6). A read-only probe that widened `_NAMED_LAYER_MENTION` to those connectives over `_real_source_files`/`_prose_blocks` matched dozens of disagreements with LAYERS. A few are history ('sat at', 'came down to'); most are present tense. This is a second round on one class, so enumerating more wordings will not close it.",
-        "resolution": "Grade by invariant, not by wording: for every prose block, any `L<n>` / `layer <n>` within the same sentence as a backticked LAYERS name is checked, with an explicit history exemption ('sat at', 'moved', 'came down', 'used to'). Or delete the numbers where the layer is not the argument, as the R2 resolution asked. Add an lmd case and a prove-gates row for the 'at LN' shape.",
-        "fixTask": "P123.65-64p"
+        "resolution": "fixed in P123.65-64p (f73c286b3a29): Grade by invariant, not by wording: for every prose block, any `L<n>` / `layer <n>` within the same sentence as a backticked LAYERS name is checked, with an explicit history exemption ('sat at', 'moved', 'came down', 'used to'). Or delete the numbers where the layer is not the argument, as the R2 resolution asked. Add an lmd case and a prove-gates row for the 'at LN' shape.",
+        "fixTask": "P123.65-64p",
+        "commit": "f73c286b3a29",
+        "status": "fixed"
       },
       {
         "id": "P123-R12",
         "severity": "low",
         "file": "plugins/audit/scripts/_deps.py:2541-2543",
         "issue": "layer_mention_drift's docstring still says it 'reads the three shapes it can read reliably' after P123.54 widened `_NAMED_LAYER_MENTION` to the qualified, comma and unclosed forms. The comment above the regex was updated and the function's docstring was not.",
-        "resolution": "Drop the count ('reads the shapes `_NAMED_LAYER_MENTION` and `_OWN_LAYER_MENTION` name').",
-        "fixTask": "P123.65-64p"
+        "resolution": "fixed in P123.65-64p (f73c286b3a29): Drop the count ('reads the shapes `_NAMED_LAYER_MENTION` and `_OWN_LAYER_MENTION` name').",
+        "fixTask": "P123.65-64p",
+        "commit": "f73c286b3a29",
+        "status": "fixed"
       },
       {
         "id": "P123-R13",
@@ -156,7 +160,7 @@
         "fixTask": "P123.66-64p"
       }
     ],
-    "outcome": "[findings: 14 - 0 high, 8 med, 6 low; 9 with a recorded fix commit]"
+    "outcome": "[findings: 14 - 0 high, 8 med, 6 low; 11 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -5090,7 +5094,7 @@
     {
       "id": "P123.65-64p",
       "title": "No layer number is written in prose: the module map prints the layers, and a lint refuses a numeral beside a layer word anywhere",
-      "status": "in_progress",
+      "status": "done",
       "description": "(P123-R11, med) The layer-number class P123.33 promised to close ('Every layer number written in prose is checked against _deps.LAYERS or not written') is still open one wording over. R2 widened the regex to the shapes the finding listed. But present-tense mentions in the 'at LN' / 'is at layer N' / '(now LN' / 'sits at layer N' wordings are not read, and many are the same off-by-one. Examples: '`_refs` is at layer 1' (LAYERS index 2), '`_manifest_ado` at L2 grades the config' (3), '`_help` (now L2)' (3, while _deps.py:214 says L3 and passes), '`_panel_state` sits at layer 5' (6). A read-only probe that widened `_NAMED_LAYER_MENTION` to those connectives over `_real_source_files`/`_prose_blocks` matched dozens of disagreements with LAYERS. A few are history ('sat at', 'came down to'); most are present tense. This is a second round on one class, so enumerating more wordings will not close it.\nResolution: Grade by invariant, not by wording: for every prose block, any `L<n>` / `layer <n>` within the same sentence as a backticked LAYERS name is checked, with an explicit history exemption ('sat at', 'moved', 'came down', 'used to'). Or delete the numbers where the layer is not the argument, as the R2 resolution asked. Add an lmd case and a prove-gates row for the 'at LN' shape.\n\n(P123-R12, low) layer_mention_drift's docstring still says it 'reads the three shapes it can read reliably' after P123.54 widened `_NAMED_LAYER_MENTION` to the qualified, comma and unclosed forms. The comment above the regex was updated and the function's docstring was not.\nResolution: Drop the count ('reads the shapes `_NAMED_LAYER_MENTION` and `_OWN_LAYER_MENTION` name').\n\n RECURRING CLASS (second round), so the INVARIANT, not more wordings: `_deps.py --render` prints every module's layer, and CLAUDE.md's rule is not to write a number something already prints. Replace layer_mention_drift's shape-list with a lint that refuses ANY layer numeral in comments and docstrings - `layer N`, `L<N>` beside a layer word or a module name, `at LN`, `(now LN`, `sits at layer N` - across scripts/ and hooks/, with LAYERS itself and the render as the only places numbers live; delete every existing numeral (keep the module names and the reasoning, drop the number). Also (R12) its docstring no longer claims a fixed set of shapes. prove-gates rows red both ways. Faults: P123-R11, P123-R12.",
       "files": [
         "plugins/audit/scripts/_deps.py",
@@ -5189,14 +5193,23 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f73c286b3a29",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "layer_mention_drift in _deps.py now refuses any layer numeral in a docstring or comment under scripts/ and hooks/, right or wrong: the word spelling (layer/LAYER N, layer-N), L<N> where the prose talks about layers (not glued to #, / or a word; block names layer, a .py file, -> or a LAYERS module, or the word before is at/now/(/,/->), and `mod` (N) for a LAYERS module. Docstring rewritten to say what it reads; layer_doc_drift retired (subsumed) with its lyd cases and prove-gates rows. 431 numerals removed across 63 files, keeping module names and reasoning; layer_mention_drift() now returns []. test__deps lmd1-8 (lmd7 = allow: URL #L120, path, L1 cache, Selectors L4, count in parens). prove-gates: 4 RED rows (two plants in _doctor_ado.py -> lmd1; word spelling dropped, L<N> lead rule dropped -> lmd3) and 2 ALLOW rows (#// exclusion dropped, context forced on -> lmd7); prove-gates.py --only refused them on the dirty tree (REFUSED (DIRTY)), so each was proven red in a scratch copy of plugins/ against a control run where lmd1-8 passed. PLUGIN-BUILD-GUIDE.md paragraph rewritten; gate-parity names neither lint, so unchanged. The orchestrator re-captured the screenshots (node tools/capture-screenshots.mjs) after the docstring edits moved the report/panel source digests. Final: sweep-selftests.py exit 0 '331/331 files ok, 15726 cases'; --spaced exit 0 '331/331 files ok'; gate-parity exit 0; ruff exit 0; vermin exit 0; test__deps.py --selftest 309/309.",
+        "descriptive": "A layer number now lives only in LAYERS and the --render output; prose that writes one fails the build"
       },
       "startedAt": "2026-10-12T07:58:49Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T08:58:59Z",
+      "verifiedBy": [
+        "lmd1",
+        "lmd2",
+        "lmd3",
+        "lmd4",
+        "lmd5",
+        "lmd6",
+        "lmd7",
+        "lmd8"
+      ],
       "notes": [
         {
           "at": "2026-10-11T20:14:09Z",
@@ -5212,12 +5225,23 @@
         "runId": "2026-10-12T08:58:57Z.9fbce2",
         "status": "passed",
         "at": "2026-10-12T08:58:57Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "f73c286b3a29",
+        "at": "2026-10-12T08:58:59Z",
+        "basis": "a fix task for P123-R11, P123-R12: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-12T08:50:19Z",
+        "basis": "`python3 plugins/audit/tests/test__deps.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 309 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - lmd2 (house FAIL), lmd3 (house FAIL), lmd4 (house FAIL): SELFTEST FAILED: 306/309 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.66-64p",
       "title": "The triage regression pins the exact reviewer-text shape, and stray whitespace edits are undone",
-      "status": "pending",
+      "status": "cancelled",
       "description": "(P123-R13, low) P123.60's task text asks for the regression 'a triage over a finding whose issue holds a backtick span with a spaced paren adds its fix task'. The diff relies on fb1, whose finding carries ' :400' and no backtick span. The stdin batch makes the shape irrelevant to argv, so the risk is low, but the named regression is not pinned.\nResolution: Give COLON_FINDINGS' second issue the literal shape that stopped the P123 triage (e.g. 'see `(split_not_commands at :4809)`'), so fb1 covers it.\n\n(P123-R14, low) Unrelated existing lines were rewritten to `before =open(...)`, `gate =(...)` and `CE_TEST =\"tests/test_a.py\"`. These are stray whitespace edits (E225) that ruff's selected rules do not catch, and the same artefact appears in two separate task commits, which points at an editing tool rather than intent.\nResolution: Restore `X = Y` on those lines, and find what rewrote them before it touches non-test code.\n\n (R13) Add the case the fix task's text named: a finding whose issue holds a backtick span with a spaced paren (e.g. `(split_not_commands at :4809)`) goes through --answer fix and its fix task is added. (R14) Undo the unrelated whitespace edits at test_audit_task.py:15983 and :16013 and test_commit_task_work.py:1901 (`X =Y`). Faults: P123-R13, P123-R14.",
       "files": [
         "plugins/audit/tests/test_drive_phase.py",
@@ -5250,15 +5274,15 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: The stdin batch this task's case pins was already at HEAD (P123.9, fb1), so a tdd red is impossible and the helper rightly refused it. The work - case fb4 and the R14 whitespace reverts - is complete in the tree and re-added as a regression task; fb4's red was shown in a scratch copy outside the repo with the pre-batch argv add_fix_tasks restored."
       },
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-10-12T08:58:59Z",
+      "completedAt": "2026-10-12T09:17:51Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -5269,12 +5293,13 @@
       "fixes": [
         "P123-R13",
         "P123-R14"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P123.67-64p",
       "title": "close-phase reads the returns at the verdict's own commit, so one merged in after the verdict is still unseen",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(F569) close-phase's landing check (`unseen_returns`) treats every return committed at the branch tip as seen by a tip verdict, so a `diverges` phase return filed and committed on the target branch AFTER the verdict, then merged into the phase branch, sits at the tip and lands with no human asked - while the same return read from the target ref directly is refused (vr17). The docstring names the case as 'not told apart'. Read the returns at the verdict's OWN commit (the head the reviewer's verdict names) rather than at the tip: a return the verdict commit already contained is seen; one that arrived later is unseen and refused, naming it. Regression: the merge-after-verdict case is refused; its twin (contained at the verdict commit) lands. Faults: F569.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -5305,16 +5330,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T09:18:02Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T09:43:58Z.7363c6",
+        "status": "passed",
+        "at": "2026-10-12T09:43:58Z"
+      }
     },
     {
       "id": "P123.68-64p",
@@ -5328,6 +5359,50 @@
         "mode": "regression",
         "add": [
           "plugins/audit/tests/test_run_test_gate.py: fo5 - with nodePreamble set and fullGate [ok, claimsMatchCode], one step runs without the review-only text, FULL GATE GREEN, one not-a-command line"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.69-64p",
+      "title": "A triage over reviewer text holding a spaced code span adds its fix task (fb4), and stray whitespace edits are undone",
+      "status": "pending",
+      "description": "Closes review findings P123-R13 and P123-R14 (re-added from cancelled P123.66 as regression: the fix is at HEAD). (R13) Case fb4 in test_drive_phase.py's _fix_batch_cases: a finding whose issue is \"the split reads wrong, see `(split_not_commands at :4809)`\" goes through `drive-phase next --answer fix --fix P1-R1`; exit 0, exactly one fix task for P1-R1, the span carried whole in its description, the drive going on to dispatch. Its red was shown outside the repo: with the pre-batch per-finding argv `--description` add_fix_tasks (git show ae63b885^) restored in a scratch copy, fb4 failed with the verb's command-substitution refusal and no fix task added. (R14) The unrelated whitespace edits are undone: test_audit_task.py `before =open(...)` -> `before = open(...)`, `gate =(...)` -> `gate = (...)`; test_commit_task_work.py `CE_TEST =\"...\"` -> `CE_TEST = \"...\"`. Both edits are already in the tree.",
+      "files": [
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_commit_task_work.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: fb4 - a finding whose issue holds a backtick span with a spaced paren goes through --answer fix and exactly one fix task carries the span whole"
         ],
         "expectRedFirst": false,
         "gate": [
