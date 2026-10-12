@@ -1,0 +1,27 @@
+{
+  "gates": {
+    "test_render_report --selftest": "pass",
+    "check-report-interactive docs/demo-large.html (macOS)": "pass",
+    "check-report-interactive docs/index.html (macOS)": "pass",
+    "check-report-interactive example (macOS)": "pass",
+    "check-report-interactive live plan (macOS)": "pass",
+    "check-report-interactive demo-large + example (playwright:v1.56.0-jammy + fonts-dejavu-core)": "pass",
+    "check-report-interactive live plan (container)": "could-not-run",
+    "check-rendered-artifacts": "pass",
+    "ruff": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression mode, expectRedFirst false. The failure was reproduced before the fix (below) but the new case u14kt is a CSS-text pin, not run red in a throwaway tree.",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Clip rule removed. Reproduced the CI FAIL exactly (got 833px (818 -> 849)) in mcr.microsoft.com/playwright:v1.56.0-jammy after apt-get install fonts-dejavu-core (the stock image's fonts do not reproduce it), on docs/demo-large.html - NOT the live plan: the failing report in the CI log is the third file of the loop, the 40-phase demo, with four planted tables. A probe (planting per table, prose-only/token-only/both) named the cell: the bare title cell of table.data.bugs, +31px from the token (prose alone adds 0). Cause: the bugs table (8 columns) is already at 783px min width in a 770px column at 833px with a wide font; the test-gate cell's pills are .chip{white-space:nowrap} so that column's narrowest width was 170px; the title's 16-char <wbr> chunk then pushed the document over. Fix (tables.css): `table.bugs td.tevcell,table.bugs td.tevcell *{white-space:normal}` so the pills wrap at their spaces; break-word on tables untouched, so no word splits mid-letter. Probe measured: this variant 0 px widening (a chip-only variant still 16px; td overflow-wrap:anywhere also 0 but splits title words). In-container after the fix: hostile and 10a legs pass on demo-large and the acme example. Also on macOS: demo-large, docs/index.html, example and live plan all pass. Container live-plan run crashes in page.pdf (Printing failed) before and after the change - an environment limit, not reported as a pass. Re-rendered examples/acme-store/acme-store-audit.html, docs/index.html (examples/report.sh) and docs/demo-large.html; check-rendered-artifacts OK; acme-store-audit.md only had a timestamp change and was reverted. test_render_report.py: u14kt now pins the tevcell rule and the absence of the clip rule; selftest all pass. Screenshots not recaptured; the bugs table's test-gate pills may now wrap at tight widths, which the orchestrator's shots would show.",
+    "descriptive": "The bugs table no longer widens the page at 833px with a wide font: its test-gate pills wrap; CI failure reproduced in a Playwright container and fixed at the named cell."
+  },
+  "testsAdded": [
+    "u14kt"
+  ],
+  "claims": "claims: the reproduction needs fonts-dejavu-core added to the playwright image (observed: stock image passes, +dejavu fails with 818 -> 849); the probe isolates the bugs title cell with token (31px) from prose (0); u14kt pins CSS text only, browser behaviour was measured by check-report-interactive in the container and on macOS.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:175839f7087f376bc79160bc8bf2d1c3a59b01a1e727b6f42973d758c29f57ef\",\"dirtyDigest\":\"sha256:b47653e232c871a1b79ce65275a430fa2c79366fcd669532dbedc41d8aa94d4a\",\"dirtyPaths\":{\"docs/demo-large.html\":\"530e7d219b47084e\",\"docs/index.html\":\"e110d8886571abc0\",\"examples/acme-store/acme-store-audit.html\":\"e110d8886571abc0\",\"plugins/audit/scripts/ui/report-css/tables.css\":\"96d7791756568ac3\",\"plugins/audit/tests/test_render_report.py\":\"1759cab15804379c\"},\"head\":\"e22f5011\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"docs/demo-large.html\",\"docs/index.html\",\"examples/acme-store/acme-store-audit.html\",\"plugins/audit/scripts/report/_evidence_view.py\",\"plugins/audit/scripts/report/_report_html.py\",\"plugins/audit/scripts/report/_report_page.py\",\"plugins/audit/scripts/report/render-report.py\",\"plugins/audit/scripts/ui/report-css/shell.css\",\"plugins/audit/scripts/ui/report-css/tables.css\",\"plugins/audit/tests/test_render_report.py\"],\"scopeDigest\":\"sha256:9a52683224bf881de28518fb45d6cabce1292a91178a57b8ad48a9a984fb8f2c\",\"v\":2}"
+}

@@ -1,0 +1,468 @@
+{
+  "id": "P126",
+  "title": "3.3.0 release: CI green on every OS",
+  "status": "in_progress",
+  "description": "The release candidate c298ac59 (main e22f5011 plus the version bump) failed CI run 38299118105: windows-latest selftests (nine files: invariants, audit_lookup, py_launch, stamp_verification, check-committed-pii, orchestrator-state, sweep-selftests, and two suites over the 300s budget) and the ubuntu 'report is interactive' hostile-content leg. 3.2.0 was green on Windows, so these are regressions from P122-P124 work that never ran on Windows CI, and they hold the release.",
+  "desiredOutcome": "CI on the 3.3.0 release candidate is green on ubuntu, macOS and windows: every selftest file passes on windows-latest within the sweep's budget, and the report's hostile-content check passes, with no fix weakening what a check asserts.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": "e22f5011046d3287e5d2787b4d5f225f476e1a16",
+  "branch": "audit/p126-3-3-0-release-ci-green-on-ever",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P126.1",
+      "title": "The report's tables never widen the page on hostile content, and phase titles do not split mid-letter",
+      "status": "in_progress",
+      "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), job 'manifest validation', step 'The report is interactive': FAIL hostile content (planted per table: phases [prose in 1 cell(s), token in 0 bare + 0 full-width + 1 evidence-mark cell(s)] + data [prose in 1 cell(s), token in 1 bare + 0 full-width + 0 evidence-mark cell(s)] + data bugs [prose in 1 cell(s), token in 1 bare + 0 full-width + 0 evidence-mark cell(s)] + data [prose in 1 cell(s), token in 1 bare + 0 full-width + 0 evidence-mark cell(s)]) widens the document at no width: got 833px (818 -> 849), want none. This is a regression from P123.90 (d434414), which added `.content :where(table){overflow-wrap:break-word}` after `.content{overflow-wrap:anywhere}` split phase titles mid-letter at 833px. `break-word` does not lower a cell's min-content width, so a planted unbroken token in a table cell widens the document again - the check `tools/check-report-interactive.mjs` (hostile content leg) exists for exactly that. Find a rule that satisfies BOTH: no table cell token widens the document at any width (the hostile leg), and ordinary phase titles in a wide table do not break mid-word when there is room (the reason P123.90 added the exception) - e.g. `anywhere` on the cells that carry free text with the title column given a min-width, or table-layout fixed on the tables whose columns are known; read the refactoring-the-assembled-ui skill and budget pins (`python3 tools/count-ui-pins.py`). Verify with `node tools/check-report-interactive.mjs` on the committed example AND the live plan render AND the hostile leg the CI step runs (read .github/workflows/ci.yml for its exact invocation). Re-render committed artifacts (examples/report.sh; docs/demo-large.html per check-rendered-artifacts.py) and do NOT recapture screenshots - the orchestrator does.",
+      "files": [
+        "plugins/audit/scripts/ui/report-css/shell.css",
+        "plugins/audit/tests/test_render_report.py",
+        "examples/acme-store/acme-store-audit.html",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "plugins/audit/scripts/ui/report-css/tables.css",
+        "plugins/audit/scripts/report/render-report.py",
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/scripts/report/_evidence_view.py",
+        "plugins/audit/scripts/report/_report_page.py",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/demo-gate.gif",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/mobile.png",
+        "docs/screenshots/overview.png",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_render_report.py: the report CSS carries the rule that keeps a table cell's unbroken token from setting the table's minimum width"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 2,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-12T20:30:45Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T21:10:39Z.aaf6ef",
+        "status": "passed",
+        "at": "2026-10-12T21:10:39Z"
+      }
+    },
+    {
+      "id": "P126.2",
+      "title": "py-launch.sh parses under Git's sh on Windows for every spelling of $0",
+      "status": "pending",
+      "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest, test_py_launch.py: FAIL pl20 a `$0` spelled with backslashes and NO slash (what Git's sh on Windows is handed) still names the launcher's directory - read as 'run from the cwd' it looked for the hook beside the cwd, found none and prompted on a healthy install: {'out': '', 'err': \"hooks\\\\py-launch.sh: -c: line 114: syntax error: unexpected end of file from `case' command on line 65\\n\", 'code': 2} | FAIL pl21 ...and an ABSOLUTE all-backslash `$0` (a drive letter on Windows) resolves from another working directory too: {'out': '', 'err': \"<outside-repo> -c: line 114: syntax error: unexpected end of file from `case' command on line 65\\n\", 'code': 2} | FAIL pl22 ...and a `$0` mixing the two separators resolves the same: {'out': '', 'err': \"hooks\\\\.\\\\py-launch.sh: -c: line 114: syntax error: unexpected end of file from `case' command on line 65\\n\", 'code': 2}. All three fail with the same shell syntax error ('-c: line 114: syntax error: unexpected end of file from `case' command on line 65'), so the launcher text the test hands to Git's sh does not parse there - most likely a line ending (a CR left in the script as written or as read), a backslash inside a case pattern that Git's sh reads differently, or a quoting difference under `sh -c`. Find which by reading py-launch.sh's case at line 65 and how test_py_launch builds and invokes the script for pl20-pl22 (P123.24 162c8f03 added them). If the product file itself would fail on a Windows user's machine, that is the fix (py-launch.sh stays POSIX-sh builtins only); if only the test's way of invoking it is wrong, fix the test and say so. It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
+      "files": [
+        "plugins/audit/hooks/py-launch.sh",
+        "plugins/audit/tests/test_py_launch.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_py_launch.py: pl20-pl22 pass on windows-latest CI"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P126.3",
+      "title": "The red-first helper reads a Windows interpreter's abort and an inline suite's hunks on Windows",
+      "status": "pending",
+      "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest, test_stamp_verification.py: FAIL sh1 a house suite printing SELFTEST FAILED: N-1/N because its body aborted on an AttributeError naming the symbol the task introduces (derived from the diff) is a missing-symbol red, proved: exit=3 '`<outside-repo> tests/test_mine.py` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 1/2 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError' | FAIL sh3 ...and a TypeError naming the introduced name - a keyword the task adds, given by --introduces - aborts the same way and is the same red: exit=3 '`<outside-repo> tests/test_mine.py` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 1/2 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError' | FAIL si1 an inline suite - its test file is its implementation file - is red-proved by laying HEAD plus only its added test hunks over the throwaway, and the basis says so: exit=3 '`<outside-repo> tools/inline.py` in a throwaway tree at HEAD: inline suite tools/inline.py (its test file is its implementation file): none of its 1 changed hunk(s) lies inside a test definition (a def named test*/selftest*/*cases, or a Test* class), so no c' note=None | FAIL si4 an inline suite whose test-only copy PASSES on HEAD's code is could-not-prove naming the split, not the green no-block answer - the split is read from definition names and may be misread: exit=3 {'at': '2026-10-12T19:59:19Z', 'basis': '`<outside-repo> tools/inline.py` in a throwaway tree at HEAD: inline suite tools/inline.py (its test file is its implementation file): none of its 1 changed hunk(s) lies inside a test definition (a def named test*/selftest*/*cases, or a Test* class), so no copy holding the new cases without the fix can be  | FAIL sr44 ...and the redFirst basis carries it, for a double-quoted --require preload whose path holds a space: '1 (house FAIL): SELFTEST FAILED: 1/2 cases passed; run without nothing; no ignored dependency directory linked from the project root; no .npmrc to carry or drop'. sh1/sh3 report 'no error the run printed' for a run whose AttributeError/TypeError the macOS run reads - likely the traceback reader misses CRLF line ends or a backslash path in the frame lines; si1/si4 report 'none of its 1 changed hunk(s) lies inside a test definition' - likely the hunk reader splits on LF only or the diff carries CRLF; sr44 reads no red for a double-quoted --require preload whose path holds a space (Windows quoting). Fix each at the reader (a CRLF-tolerant split, a native-path-tolerant frame match), keeping macOS green. It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: sh1, sh3, si1, si4 and sr44 pass on windows-latest CI"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P126.4",
+      "title": "A sweep marker whose pid is dead reads as stale on Windows too",
+      "status": "pending",
+      "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest: FAIL o3 a marker whose pid is dead is reported as stale, never as live (a mutating sweep is live (pid 3024, since 2026-10-12T20:02:18Z) - the tree is mid-mutation, do not read a gate over it) | FAIL mk2 a marker whose pid is DEAD is ignored - the sweep proceeds - and says that it did: '' / 'sweep-selftests: refusing to start - <outside-repo> says a mutating sweep (pid 2496, since 2026-10-12T20:02:29Z) is rewriting the tree; a run now reads mid-mutation files and reports false reds. Wait for it, or stop it.\\n'. Both tools/orchestrator-state.py (o3) and tools/sweep-selftests.py (mk2) read a mutation marker naming a DEAD pid as a LIVE sweep. On Windows `os.kill(pid, 0)` does not probe - signal 0 is not a no-op there (it maps to TerminateProcess / CTRL events) - so a liveness probe written for POSIX is wrong on Windows. Find the one place (or the duplicated places - make them one helper if they are two) that decides pid liveness, and give it a Windows branch using a probe that exists in the stdlib there (e.g. ctypes OpenProcess + GetExitCodeProcess == STILL_ACTIVE), with the POSIX branch unchanged. Grep for every other caller of the same probe in plugins/audit and tools and route it through the helper (fix the class, not the two instances). It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
+      "files": [
+        "tools/orchestrator-state.py",
+        "tools/sweep-selftests.py",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/sweep-selftests.py: mk2 passes on windows-latest CI",
+          "tools/orchestrator-state.py: o3 passes on windows-latest CI"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P126.5",
+      "title": "The sweep's spaced leg says what it means on Windows",
+      "status": "pending",
+      "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest, tools/sweep-selftests.py: FAIL sp3 a child run with `spaced` sees a TMPDIR holding a space and a link, an UNQUOTED path in a shell command is a different command there (exit 2) while the quoted word names the directory (exit 0) - the defect class the leg exists to keep measured: '<outside-repo> p'. sp3 asserts that an UNQUOTED spaced path in a shell command is a different command (exit 2) while the quoted one names the directory - a POSIX-shell property; CLAUDE.md says the --spaced leg is 'posix only'. Make sp3 (and anything else the spaced leg asserts about a POSIX shell) apply where the leg applies: skip with a printed reason on Windows rather than asserting a POSIX shell's word splitting, unless the case is meant to hold there too, in which case say why and fix it. It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
+      "files": [
+        "tools/sweep-selftests.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/sweep-selftests.py: sp3 passes or is skipped with its reason on windows-latest CI"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P126.6",
+      "title": "A home path holding a space is scrubbed whole on Windows",
+      "status": "pending",
+      "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest, tools/check-committed-pii.py: FAIL q2s a home path holding a space is found, and the writer's scrub of it leaves no fragment of the user's path and no finding: found ['posix-home'], scrubbed 'sandbox read <outside-repo> One/My Projects/proj/notes.md', left ['One', 'My', 'Projects', 'proj', 'notes']. The scrub left the tail of a home path that holds a space ('One/My Projects/proj/notes.md') after replacing its head - P123's 'a machine path containing a space is scrubbed whole' holds on macOS but not where the home is a Windows path or the fixture builds one with backslashes. Find the scrub (the shared machine-path writer the PII tool calls) and make the space-holding home path match whole for both separators. It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
+      "files": [
+        "tools/check-committed-pii.py",
+        "plugins/audit/scripts/_machine_paths.py",
+        "plugins/audit/tests/test__machine_paths.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/check-committed-pii.py: q2s passes on windows-latest CI"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P126.7",
+      "title": "The manifest-revalidated invariant counts preserved bytes on Windows",
+      "status": "pending",
+      "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest, test__invariants.py: FAIL iv39 ...and a row whose bytes a commit DID preserve is not counted against coverage: one of the two is recoverable, so the gap says so. This is the case that fails if the state hashed is the INDEX rather than the phase's own file - a mistake iv19 cannot see, because there every row is unrecoverable either way: [\"2 of the 2 journal-recorded writes to this phase's manifest file left bytes no commit preserved; the validator cannot be re-run on those states\"]. iv39 expects one of two journal-recorded writes to be recoverable (its bytes are in a commit) and Windows reports both unrecoverable - so the stateHash the journal records and the hash of the committed bytes disagree there: most likely CRLF (git's autocrlf checkout, or a write with a platform newline) or a path spelling in `git show`. Find which by reading how the invariant hashes `git show` output vs how the journal hashed the written bytes, and make the comparison newline- and path-exact on Windows. It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
+      "files": [
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/tests/test__invariants.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__invariants.py: iv39 passes on windows-latest CI"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P126.8",
+      "title": "A wave task's submit block names the phase tree's manifest absolutely on Windows",
+      "status": "pending",
+      "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest, test_audit_lookup.py: FAIL bf42 a wave task's submit block spells the phase tree's manifest absolutely and says the command runs from the project: \"cks the shape, runs the red-first helper on the command after `--`, takes the stamp and files the return once. Put the return object in place of the middle line and run the block as it stands - the object goes on the command's stdin and nothing is written to disk.\\nThe command after `--` is the gate entry that names your tests.add file; narrow it to your cases if HEAD's own tests are red under it.\\n\". The case asserts the submit block spells the phase tree's manifest as an absolute path and says the command runs from the project; on Windows the assertion fails - likely the absolute-path test (os.path.isabs vs a POSIX-looking path) or the separator in the printed path. Fix the writer of the block or the case's expectation, whichever holds the defect, and say which. It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
+      "files": [
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_lookup.py: bf42 passes on windows-latest CI"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P126.9",
+      "title": "test_commit_task_work and test_drive_phase finish inside the sweep's budget on Windows",
+      "status": "pending",
+      "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest (2 workers): '--- plugins/audit/tests/test_commit_task_work.py: did not finish within 300s ---' and the same for test_drive_phase.py. Both grew in P123 (drive lock cases dl7-dl11, close and wave cases) and both spawn many git and python subprocesses, which cost several times more on Windows. Measure each suite locally (`time python3 <suite> --selftest`) and its per-block cost, then make them fit with margin by the structurally right means: share fixture repos built once per block instead of per case, drop redundant subprocess round-trips, and only if a suite is irreducibly long, split it along its existing blocks into separately-swept files (each with its own `--selftest` contract, layer and guide entry as CLAUDE.md requires) - never by raising the sweep's timeout alone. Report before/after wall time on macOS. It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
+      "files": [
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/_harness.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ],
+  "request": "Make 3.3.0's release commit green on every OS CI runs: fix the windows-latest selftest failures and the ubuntu report hostile-content failure that CI run 38299118105 reported, before the release is cut.",
+  "openChoices": [],
+  "reviewPerTask": "phase",
+  "claim": {
+    "sessionId": "0a7c2fcc-df20-4990-96d6-d56b52648faf",
+    "branch": "audit/p126-3-3-0-release-ci-green-on-ever",
+    "at": "2026-10-12T20:10:57Z"
+  },
+  "startedAt": "2026-10-12T20:10:57Z"
+}

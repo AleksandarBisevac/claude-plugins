@@ -342,6 +342,11 @@ def _cases(check):
           re.search(r"\.content\{overflow-wrap:anywhere\}", M._CSS) is not None
           and ":where(p,li,dd,summary,blockquote)" not in M._CSS
           and ".content :where(table){overflow-wrap:break-word}" in M._CSS)
+    check("u14kt the bugs table's test-gate cell lets its pills wrap at their spaces, so the "
+          "column's narrowest width is not its widest pill (that width, plus a long title's "
+          "<wbr> chunk, widened the document just above the scroll breakpoint)",
+          M._CSS.count("table.bugs td.tevcell,table.bugs td.tevcell *{white-space:normal}") == 1
+          and ".tablewrap{overflow-x:clip}" not in M._CSS)
     # A missing `;` after a custom property annexes the comment and declarations
     # that follow it. Silent, and it killed every animation in this stylesheet once.
     _unterm = M._unterminated_css_decls(M._CSS)

@@ -51,6 +51,14 @@ td.when,td.mono{font-variant-numeric:tabular-nums}
    broken another way - the renderer puts a break opportunity inside any
    unbroken run in a title, so this sheet needs no rule for them. */
 :where(table.phases,table.data) td[colspan]{overflow-wrap:anywhere}
+/* The bugs table has the most columns of any table, and its test-gate cell is made of pills
+   that do not wrap (`.chip` is nowrap), so that one column's narrowest width was the widest
+   pill. Just above the breakpoint where the wrapper scrolls, with a wide fallback font, the
+   columns' narrowest widths summed past the content column by exactly what a long title's
+   16-character <wbr> chunk costs, and the document widened. Letting the cell's pills wrap
+   at their own spaces lowers that column's narrowest width without letting any word break
+   mid-letter, which is the one thing `break-word` on tables exists to keep. */
+table.bugs td.tevcell,table.bugs td.tevcell *{white-space:normal}
 /* vw: the label and its select are one control and wrap as one — the toolbar
    is a flex row, and letting the words break away from the box they name is
    how a reader ends up reading "View:" over an unrelated line.

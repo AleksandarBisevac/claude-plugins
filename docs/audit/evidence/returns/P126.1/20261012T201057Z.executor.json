@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "test_render_report --selftest": "pass",
+    "check-report-interactive example": "pass",
+    "check-report-interactive live plan": "pass",
+    "check-report-interactive docs/demo-large.html": "pass",
+    "check-rendered-artifacts": "pass",
+    "ruff": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression mode, expectRedFirst false; the CI failure did not reproduce on this machine (3 planted tables locally vs 4 in CI, mac fonts; letter-spacing 0.02-0.08em widening also did not reproduce it), so no red was watched for the hostile leg",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "shell.css: added `.tablewrap{overflow-x:clip}` after the existing break-word table rule (break-word kept, so P123.90 title behaviour is unchanged). clip makes no scroll container (sticky thead keeps working); the 52rem media rule (overflow-x:auto) and the print rule (overflow:visible) come later in the cascade and still win. Pinned by new case u14kt in test_render_report.py (rule present once, ordered before both overriders); selftest all pass. Re-rendered examples/acme-store/acme-store-audit.html, docs/index.html (via examples/report.sh) and docs/demo-large.html; check-rendered-artifacts OK. check-report-interactive passes on example, docs/demo-large.html and the live plan render. Rejected on mac measurement: `anywhere` on tables (title words split mid-letter at 833px), with nth-child(2) min-widths 11/16/20rem (still splits numerics or widens the document). CAVEAT: I could not reproduce the CI failure (4th planted data table, Linux fonts), so the fix is unproven against it; it enforces the invariant structurally (a table cannot widen the document above the scroll breakpoint) at the cost that a table wider than its column is clipped, not scrolled, between 52rem and where it fits. acme-store-audit.md only changed its generated stamp; I reverted it. Screenshots not recaptured.",
+    "descriptive": "Tables can no longer widen the document above the scroll breakpoint, keeping break-word titles; the CI-only hostile-content failure was not reproduced locally."
+  },
+  "testsAdded": [
+    "u14kt"
+  ],
+  "claims": "claims: u14kt asserts presence and order of the CSS rule only, not browser behaviour; browser behaviour was measured by check-report-interactive on three pages locally, none of which reproduced the CI failure before the fix.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:ded1a2490ca75216e81365f1d04864bb0db078d50f7f5612b70f1bf6f2c4d50c\",\"dirtyDigest\":\"sha256:c3079d68ff9c0ae14ffdfcabbd58e889907b8fa6d5dcc6df918375aad14f8b17\",\"dirtyPaths\":{\"docs/demo-large.html\":\"2d5acb82e7cda315\",\"docs/index.html\":\"66b1415e40b496c7\",\"examples/acme-store/acme-store-audit.html\":\"66b1415e40b496c7\",\"plugins/audit/scripts/ui/report-css/shell.css\":\"441ecc3ecba5e56c\",\"plugins/audit/tests/test_render_report.py\":\"e484f1084d0d70d6\"},\"head\":\"e22f5011\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"docs/demo-large.html\",\"docs/index.html\",\"examples/acme-store/acme-store-audit.html\",\"plugins/audit/scripts/ui/report-css/shell.css\",\"plugins/audit/tests/test_render_report.py\"],\"scopeDigest\":\"sha256:3dacae8f9b36cb44a2859cbc8c345bcaf96782e05e0c86c5816b95097ea932d7\",\"v\":2}"
+}
