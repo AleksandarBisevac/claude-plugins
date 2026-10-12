@@ -387,8 +387,10 @@
         "severity": "low",
         "file": "plugins/audit/scripts/ui/report-css/shell.css:90-91",
         "issue": "P123.88 asked for the rule of the CLASS (any long unbroken token in any text surface the report prints). The rule is a list of five elements under .content (p, li, dd, summary, blockquote), not the class. A render of the live plan shows the same worktree/branch token (audit/p109-...) also inside div.pmeta and span elements, and headings, divs and spans outside a table are not covered; .pmeta (gate-rail.css:60, shell.css:95) has no overflow-wrap of its own. Whether that div sits inside a scrolling .tablewrap on the live plan was not driven in a browser (browser gates were kept out of this review), so no overflow is demonstrated, only an uncovered surface of the same shape. The only test is u14k, a source-string pin on the rule (test_render_report.py:340); the task's gate runs the interactive checker on the acme-store example, which never overflowed, so nothing in the gate would catch the live-plan regression returning.",
-        "resolution": "Move the rule from an element list to the container (overflow-wrap:anywhere on .content, with :where() tables/pre excluded if their min-content sizing must stay) so it covers every text element, or name in the CSS comment why headings, div and span are safe. Add a case that renders a plan with a long unbroken token in a phase title, a finding and a worktree note and runs the 320px check, so the class is proved and not just the string.",
-        "fixTask": "P123.90-64p"
+        "resolution": "fixed in P123.90-64p (d434414a1828): Move the rule from an element list to the container (overflow-wrap:anywhere on .content, with :where() tables/pre excluded if their min-content sizing must stay) so it covers every text element, or name in the CSS comment why headings, div and span are safe. Add a case that renders a plan with a long unbroken token in a phase title, a finding and a worktree note and runs the 320px check, so the class is proved and not just the string.",
+        "fixTask": "P123.90-64p",
+        "commit": "d434414a1828",
+        "status": "fixed"
       },
       {
         "id": "P123-R38",
@@ -407,7 +409,7 @@
         "fixTask": "P123.92-64p"
       }
     ],
-    "outcome": "[findings: 39 - 0 high, 14 med, 25 low; 35 with a recorded fix commit]"
+    "outcome": "[findings: 39 - 0 high, 14 med, 25 low; 36 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -7226,7 +7228,7 @@
     {
       "id": "P123.90-64p",
       "title": "fix P123-R37: P123.88 asked for the rule of the CLASS (any long unbroken toke...",
-      "status": "in_progress",
+      "status": "done",
       "description": "P123.88 asked for the rule of the CLASS (any long unbroken token in any text surface the report prints). The rule is a list of five elements under .content (p, li, dd, summary, blockquote), not the class. A render of the live plan shows the same worktree/branch token (audit/p109-...) also inside div.pmeta and span elements, and headings, divs and spans outside a table are not covered; .pmeta (gate-rail.css:60, shell.css:95) has no overflow-wrap of its own. Whether that div sits inside a scrolling .tablewrap on the live plan was not driven in a browser (browser gates were kept out of this review), so no overflow is demonstrated, only an uncovered surface of the same shape. The only test is u14k, a source-string pin on the rule (test_render_report.py:340); the task's gate runs the interactive checker on the acme-store example, which never overflowed, so nothing in the gate would catch the live-plan regression returning.\n\nResolution asked: Move the rule from an element list to the container (overflow-wrap:anywhere on .content, with :where() tables/pre excluded if their min-content sizing must stay) so it covers every text element, or name in the CSS comment why headings, div and span are safe. Add a case that renders a plan with a long unbroken token in a phase title, a finding and a worktree note and runs the 320px check, so the class is proved and not just the string.",
       "files": [
         "plugins/audit/scripts/ui/report-css/shell.css",
@@ -7287,14 +7289,16 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d434414a1828",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "shell.css: replaced the .content :where(p,li,dd,summary,blockquote) element list with .content{overflow-wrap:anywhere} (inherited by every text surface). First live-plan run of check-report-interactive failed (phase titles split mid-letter at 833px: anywhere shrinks table min-content), so added .content :where(table){overflow-wrap:break-word}; after that live plan passes (175 checks) and acme-store passes (184 checks). u14k now pins the container rule, the table exception, and absence of the old list. Re-rendered examples/acme-store html + docs/index.html via examples/report.sh (md restored with git checkout), docs/demo-large.html via the printed commands, recaptured screenshots (rc 0). test_render_report 296/296, test__refs 334/334, check-rendered-artifacts --before-commit OK. Not added: a dedicated render case with long tokens in phase title/finding/worktree note (live plan checker covers the class).",
+        "descriptive": "The report's whole content column wraps unbroken tokens; tables keep column sizing."
       },
       "startedAt": "2026-10-12T17:53:46Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T18:12:34Z",
+      "verifiedBy": [
+        "u14k (rewritten) in plugins/audit/tests/test_render_report.py"
+      ],
       "notes": [
         {
           "at": "2026-10-12T17:53:34Z",
@@ -7309,12 +7313,23 @@
         "runId": "2026-10-12T18:12:33Z.441746",
         "status": "passed",
         "at": "2026-10-12T18:12:33Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "d434414a1828",
+        "at": "2026-10-12T18:12:34Z",
+        "basis": "a fix task for P123-R37: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task; no red owed",
+        "at": "n/a"
       }
     },
     {
       "id": "P123.91-64p",
       "title": "fix P123-R38: lock_to_give_back now calls dispatch_out -> load_phase -> _mio....",
-      "status": "pending",
+      "status": "in_progress",
       "description": "lock_to_give_back now calls dispatch_out -> load_phase -> _mio.load_manifest, which sits OUTSIDE drive()'s try/except. dispatch_out catches only ValueError; load_manifest raises OSError for a plan or shard that vanished or became unreadable between drive_locked's own read and this one. The exception then surfaces as a traceback with the phase lock still taken and recorded in state, the stranded-lock shape the desired outcome rules out. The window is small, but this predicate is the only place on the lock-release path that reads the plan a second time.\n\nResolution asked: In dispatch_out catch (ValueError, OSError) and return False (release), or move the lock_to_give_back call inside the same try that already releases on BaseException. Add a dl case with the plan removed between the refusal and the predicate.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -7343,14 +7358,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T18:12:35Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -7361,7 +7376,13 @@
       ],
       "fixes": [
         "P123-R38"
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T18:23:04Z.937eff",
+        "status": "passed",
+        "at": "2026-10-12T18:23:04Z"
+      }
     },
     {
       "id": "P123.92-64p",

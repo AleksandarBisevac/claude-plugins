@@ -2659,7 +2659,10 @@ def drive(ctx, answer=None, reason=None, fixes=()):
         if state.get("lock") == "taken":
             give_back_lock(ctx, state)
         raise
-    if not lock_to_give_back(code, state, ctx):
+    give, kept_why = lock_to_give_back(code, state, ctx)
+    if kept_why:
+        said = "%s\n%s" % (said, kept_why)
+    if not give:
         return code, said
     refused = give_back_lock(ctx, state)
     if refused is not None:
@@ -2668,33 +2671,44 @@ def drive(ctx, answer=None, reason=None, fixes=()):
 
 
 def lock_to_give_back(code, state, ctx):
-    """Whether a drive that returned `code` still holds a lock nobody will
-    answer for: the lock is taken and the return is a stop, or a usage refusal
-    with no decision pending and no dispatch out to keep it for."""
+    """`(give_back, note)`: whether a drive that returned `code` still holds a
+    lock nobody will answer for - the lock is taken and the return is a stop,
+    or a usage refusal with no decision pending and no dispatch out to keep it
+    for - and a line to print when the lock was kept for want of an answer."""
     if state.get("lock") != "taken":
-        return False
+        return False, None
     if code == E_STOPPED:
-        return True
-    return (code == E_USAGE and state.get("pending") is None
-            and not dispatch_out(ctx, state))
+        return True, None
+    if code != E_USAGE or state.get("pending") is not None:
+        return False, None
+    out, why = dispatch_out(ctx, state)
+    if why:
+        return False, "%s %s: phase lock kept - the plan could not be read to tell " \
+                      "whether a dispatch is out (%s); a later next releases it" \
+                      % (PREFIX, ctx["phase"], why)
+    return not out, None
 
 
 def dispatch_out(ctx, state):
-    """Whether a task of the phase was dispatched and its return is not filed:
-    an in-progress task holding a dispatch mark for its current start, with no
-    filed return of that role. A phase that has vanished has none."""
+    """`(out, why)`: whether a task of the phase was dispatched and its return
+    is not filed - an in-progress task holding a dispatch mark for its current
+    start, with no filed return of that role. A phase that has vanished has
+    none. `why` names the read error when the plan could not be read, in which
+    case `out` is False and means nothing."""
     try:
         _manifest, phase = load_phase(ctx)
     except ValueError:
-        return False
+        return False, None
+    except OSError as exc:
+        return False, "%s: %s" % (type(exc).__name__, exc)
     for task in _tasks(phase):
         if task.get("status") != "in_progress":
             continue
         for role in ("executor", "reviewer"):
             if (_marked(state, "dispatched-%s" % (role,), task)
                     and filed(ctx, task, role) == (None, None)):
-                return True
-    return False
+                return True, None
+    return False, None
 
 
 def give_back_lock(ctx, state):

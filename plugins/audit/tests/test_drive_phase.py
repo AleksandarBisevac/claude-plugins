@@ -1045,6 +1045,39 @@ def _lock_stop_cases(check):
           code0 == 0 and "dispatch" in text0 and code == 2 and "answers nothing" in text
           and held_now and _drive_state(root).get("lock") == "taken")
 
+    # The dispatch check reads the plan a second time; when that read fails the
+    # drive cannot tell whether an executor is out, so the lock is kept, the
+    # reason is printed, and nothing crashes.
+    root, mpath = _repo("lockunread", task_ids=TASKS[:1])
+    code0, text0 = _next(M, root, mpath)
+    real_locked = M.drive_locked
+    real_load = M.load_phase
+
+    def unreadable(ctx):
+        raise OSError("the plan vanished")
+
+    def arm_after(ctx, state, *rest):
+        result = real_locked(ctx, state, *rest)
+        M.load_phase = unreadable
+        return result
+    M.drive_locked = arm_after
+    crashed = None
+    try:
+        code, text = _next(M, root, mpath, "--answer", "fix", "--reason", "x")
+    except Exception as exc:
+        code, text, crashed = None, "", exc
+    finally:
+        M.drive_locked = real_locked
+        M.load_phase = real_load
+    held_now = "phase-%s" % (PHASE,) in _verb(
+        root, "audit-lock.py", ["status", "--project", root])[1]
+    check("dl11 a usage refusal whose dispatch check cannot read the plan (OSError) "
+          "neither crashes the drive nor leaves the outcome unstated: the lock is "
+          "kept and the line says why: %r" % ((code, text, crashed, held_now),),
+          crashed is None and code == 2 and held_now
+          and _drive_state(root).get("lock") == "taken"
+          and "lock kept" in text and "the plan vanished" in text)
+
     # The project a context carries is the manifest's own when no --project-dir
     # was typed: the session's directory may be another checkout.
     M.run_verb = real

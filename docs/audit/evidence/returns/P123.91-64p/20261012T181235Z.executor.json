@@ -1,0 +1,18 @@
+{
+  "gates": {
+    "dl-block stage (own tests)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-12T18:14:20Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage dl-block` in a throwaway tree at HEAD exited 1 with 1 of 11 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dl11 (house FAIL): SELFTEST FAILED: 10/11 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "dispatch_out now returns (out, why) and catches (ValueError, OSError): ValueError -> (False, None); OSError -> (False, 'OSError: msg'). lock_to_give_back returns (give_back, note); on a read failure it KEEPS the lock and drive appends one line '[drive-phase] P: phase lock kept - the plan could not be read ... (err); a later next releases it' to the output. Added case dl11 in test_drive_phase.py (plan load raises OSError after drive_locked, on a --answer usage refusal with a dispatch out): asserts exit 2, no crash, lock still taken in state and held, and the line names the error. Ran: python3 plugins/audit/tests/test_drive_phase.py --selftest --stage dl-block -> 11/11 passed, exit 0. Full sweep not run (own-tests only).",
+    "descriptive": "A drive whose dispatch check cannot read the plan keeps the phase lock and says so, instead of crashing."
+  },
+  "testsAdded": [
+    "dl11"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:0fd81cde717403ff36ad6ffe4f34652d1c833070aa2cc236a05e54ffb049b528\",\"dirtyDigest\":\"sha256:b5ad397336a35cec29449587ebead65c1acab246c54d92b69fa83bc1e8047b78\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/drive-phase.py\":\"844569415d80217a\",\"plugins/audit/tests/test_drive_phase.py\":\"15a4040d731b8021\"},\"head\":\"d434414a\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:3c906396dfbfc18e3b7bc48ff4fb50aba7bb372d51a28d82278fd8e52cc5cb5c\",\"v\":2}"
+}
