@@ -381,9 +381,33 @@
         "fixTask": "P123.86-64p",
         "commit": "814f57b4f2a6",
         "status": "fixed"
+      },
+      {
+        "id": "P123-R37",
+        "severity": "low",
+        "file": "plugins/audit/scripts/ui/report-css/shell.css:90-91",
+        "issue": "P123.88 asked for the rule of the CLASS (any long unbroken token in any text surface the report prints). The rule is a list of five elements under .content (p, li, dd, summary, blockquote), not the class. A render of the live plan shows the same worktree/branch token (audit/p109-...) also inside div.pmeta and span elements, and headings, divs and spans outside a table are not covered; .pmeta (gate-rail.css:60, shell.css:95) has no overflow-wrap of its own. Whether that div sits inside a scrolling .tablewrap on the live plan was not driven in a browser (browser gates were kept out of this review), so no overflow is demonstrated, only an uncovered surface of the same shape. The only test is u14k, a source-string pin on the rule (test_render_report.py:340); the task's gate runs the interactive checker on the acme-store example, which never overflowed, so nothing in the gate would catch the live-plan regression returning.",
+        "resolution": "Move the rule from an element list to the container (overflow-wrap:anywhere on .content, with :where() tables/pre excluded if their min-content sizing must stay) so it covers every text element, or name in the CSS comment why headings, div and span are safe. Add a case that renders a plan with a long unbroken token in a phase title, a finding and a worktree note and runs the 320px check, so the class is proved and not just the string.",
+        "fixTask": "P123.90-64p"
+      },
+      {
+        "id": "P123-R38",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:2670-2697",
+        "issue": "lock_to_give_back now calls dispatch_out -> load_phase -> _mio.load_manifest, which sits OUTSIDE drive()'s try/except. dispatch_out catches only ValueError; load_manifest raises OSError for a plan or shard that vanished or became unreadable between drive_locked's own read and this one. The exception then surfaces as a traceback with the phase lock still taken and recorded in state, the stranded-lock shape the desired outcome rules out. The window is small, but this predicate is the only place on the lock-release path that reads the plan a second time.",
+        "resolution": "In dispatch_out catch (ValueError, OSError) and return False (release), or move the lock_to_give_back call inside the same try that already releases on BaseException. Add a dl case with the plan removed between the refusal and the predicate.",
+        "fixTask": "P123.91-64p"
+      },
+      {
+        "id": "P123-R39",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_invariants.py:1174-1200",
+        "issue": "_PULL_ARG_SHORTS = \"sXoj\" omits -S (git pull --gpg-sign[=<keyid>] takes an attached key id), so in a cluster such as -Sr the r is the key id but is read as the rebase flag, a false history-rewrite breach of the same class P123.85 closed. The cluster test also needs t[1:].isalpha(), so a cluster that contains -4/-6 (e.g. -4r) is not seen at all. Both are rare and the resolution text allowed the cluster to be a documented non-goal.",
+        "resolution": "Add S to _PULL_ARG_SHORTS (and a clean rw9 row such as -Sr), or state in the docstring that digits and -S are unread.",
+        "fixTask": "P123.92-64p"
       }
     ],
-    "outcome": "[findings: 36 - 0 high, 14 med, 22 low; 35 with a recorded fix commit]"
+    "outcome": "[findings: 39 - 0 high, 14 med, 25 low; 35 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -7143,7 +7167,7 @@
     {
       "id": "P123.89-64p",
       "title": "run-test-gate's no-overlap banner survives a legacy code page",
-      "status": "in_progress",
+      "status": "done",
       "description": "Found by the release verify at 60448996: `python3 tools/sweep-selftests.py --encoding cp1252` turns test_run_test_gate.py red (522/524): FAIL ur9 \"SETUP: a measured run whose gate names nothing owned prints NO OVERLAP and stores that banner on its row: (1, ['NO OVERLAP WITH THIS WORK'])\" and FAIL ur10 (the re-run repeat prints NO OVERLAP again). Green under utf-8. Reproduce with the sweep's cp1252 mode on that one file, find which write or read in the no-overlap/reuse path depends on the locale's encoding (a character outside cp1252 in the banner or reuse line, or a stdout/file opened without an explicit encoding), and fix it at the write, per the house rule that every text write states its encoding and newline. If the cause is in the test's own subprocess setup, say so and fix that instead.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -7174,20 +7198,222 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "986da4cdfd41",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Cause was in the test's own subprocess setup, not run-test-gate.py. The fixture gate script emit.py did print('\\u2713 ...'); the gate child inherits PYTHONIOENCODING=cp1252, so the print raised UnicodeEncodeError, the gate went red (exit 1) and no NO OVERLAP banner was produced. Fix in plugins/audit/tests/test_run_test_gate.py _unrecorded_cases: emit.py now writes utf-8 bytes via sys.stdout.buffer. After the fix, run_one with encoding=cp1252 gives code 0 and 524/524, and run_one without encoding gives code 0 and 524/524. run-test-gate.py unchanged. The full sweep and the other gate commands were not run.",
+        "descriptive": "ur9/ur10 no longer depend on the locale code page: the fixture emits its tick as utf-8 bytes."
       },
       "startedAt": "2026-10-12T17:37:41Z",
-      "completedAt": null,
+      "completedAt": "2026-10-12T17:50:45Z",
       "verifiedBy": [],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-12T17:50:44Z.0f11ac",
         "status": "passed",
         "at": "2026-10-12T17:50:44Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "986da4cdfd41",
+        "at": "2026-10-12T17:50:45Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression mode, expectRedFirst false. Red was observed before the fix by calling tools/sweep-selftests.py run_one with encoding=cp1252 on the one file: exit 1, FAIL ur9 and ur10, 522/524. Green under utf-8 (524/524).",
+        "at": "before the fix, this session"
       }
+    },
+    {
+      "id": "P123.90-64p",
+      "title": "fix P123-R37: P123.88 asked for the rule of the CLASS (any long unbroken toke...",
+      "status": "in_progress",
+      "description": "P123.88 asked for the rule of the CLASS (any long unbroken token in any text surface the report prints). The rule is a list of five elements under .content (p, li, dd, summary, blockquote), not the class. A render of the live plan shows the same worktree/branch token (audit/p109-...) also inside div.pmeta and span elements, and headings, divs and spans outside a table are not covered; .pmeta (gate-rail.css:60, shell.css:95) has no overflow-wrap of its own. Whether that div sits inside a scrolling .tablewrap on the live plan was not driven in a browser (browser gates were kept out of this review), so no overflow is demonstrated, only an uncovered surface of the same shape. The only test is u14k, a source-string pin on the rule (test_render_report.py:340); the task's gate runs the interactive checker on the acme-store example, which never overflowed, so nothing in the gate would catch the live-plan regression returning.\n\nResolution asked: Move the rule from an element list to the container (overflow-wrap:anywhere on .content, with :where() tables/pre excluded if their min-content sizing must stay) so it covers every text element, or name in the CSS comment why headings, div and span are safe. Add a case that renders a plan with a long unbroken token in a phase title, a finding and a worktree note and runs the 320px check, so the class is proved and not just the string.",
+      "files": [
+        "plugins/audit/scripts/ui/report-css/shell.css",
+        "plugins/audit/tests/test_render_report.py",
+        "examples/acme-store/acme-store-audit.html",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/demo-gate.gif",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/mobile.png",
+        "docs/screenshots/overview.png",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [
+          "plugins/audit/tests/test_render_report.py: the report's content column itself carries overflow-wrap:anywhere, so every text surface inside it inherits the wrap"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 2,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-12T17:53:46Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-12T17:53:34Z",
+          "text": "scope: plugins/audit/scripts/ui/report-css/shell.css, every path the finding(s) P123-R37 name"
+        }
+      ],
+      "fixes": [
+        "P123-R37"
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T18:12:33Z.441746",
+        "status": "passed",
+        "at": "2026-10-12T18:12:33Z"
+      }
+    },
+    {
+      "id": "P123.91-64p",
+      "title": "fix P123-R38: lock_to_give_back now calls dispatch_out -> load_phase -> _mio....",
+      "status": "pending",
+      "description": "lock_to_give_back now calls dispatch_out -> load_phase -> _mio.load_manifest, which sits OUTSIDE drive()'s try/except. dispatch_out catches only ValueError; load_manifest raises OSError for a plan or shard that vanished or became unreadable between drive_locked's own read and this one. The exception then surfaces as a traceback with the phase lock still taken and recorded in state, the stranded-lock shape the desired outcome rules out. The window is small, but this predicate is the only place on the lock-release path that reads the plan a second time.\n\nResolution asked: In dispatch_out catch (ValueError, OSError) and return False (release), or move the lock_to_give_back call inside the same try that already releases on BaseException. Add a dl case with the plan removed between the refusal and the predicate.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a usage refusal whose dispatch check cannot read the plan (OSError) neither crashes the drive nor leaves the outcome unstated: the lock decision and its reason are printed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-12T17:53:34Z",
+          "text": "scope: plugins/audit/scripts/governance/drive-phase.py, every path the finding(s) P123-R38 name"
+        }
+      ],
+      "fixes": [
+        "P123-R38"
+      ]
+    },
+    {
+      "id": "P123.92-64p",
+      "title": "fix P123-R39: _PULL_ARG_SHORTS = \"sXoj\" omits -S (git pull --gpg-sign[=<keyid...",
+      "status": "pending",
+      "description": "_PULL_ARG_SHORTS = \"sXoj\" omits -S (git pull --gpg-sign[=<keyid>] takes an attached key id), so in a cluster such as -Sr the r is the key id but is read as the rebase flag, a false history-rewrite breach of the same class P123.85 closed. The cluster test also needs t[1:].isalpha(), so a cluster that contains -4/-6 (e.g. -4r) is not seen at all. Both are rare and the resolution text allowed the cluster to be a documented non-goal.\n\nResolution asked: Add S to _PULL_ARG_SHORTS (and a clean rw9 row such as -Sr), or state in the docstring that digits and -S are unread.",
+      "files": [
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/tests/test_verify_invariants.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_verify_invariants.py: pull -S<keyid> -r, pull -4r and pull -6r are rewrites; pull -Sr (r is the key id) is not"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-12T17:53:35Z",
+          "text": "scope: plugins/audit/scripts/governance/_invariants.py, every path the finding(s) P123-R39 name"
+        }
+      ],
+      "fixes": [
+        "P123-R39"
+      ]
     }
   ],
   "reviewPerTask": "phase",

@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "test_render_report --selftest": "pass",
+    "test__refs --selftest": "pass",
+    "check-rendered-artifacts --before-commit": "pass",
+    "check-report-interactive acme-store": "pass",
+    "check-report-interactive live plan": "pass",
+    "capture-screenshots": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only task; no red owed",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "shell.css: replaced the .content :where(p,li,dd,summary,blockquote) element list with .content{overflow-wrap:anywhere} (inherited by every text surface). First live-plan run of check-report-interactive failed (phase titles split mid-letter at 833px: anywhere shrinks table min-content), so added .content :where(table){overflow-wrap:break-word}; after that live plan passes (175 checks) and acme-store passes (184 checks). u14k now pins the container rule, the table exception, and absence of the old list. Re-rendered examples/acme-store html + docs/index.html via examples/report.sh (md restored with git checkout), docs/demo-large.html via the printed commands, recaptured screenshots (rc 0). test_render_report 296/296, test__refs 334/334, check-rendered-artifacts --before-commit OK. Not added: a dedicated render case with long tokens in phase title/finding/worktree note (live plan checker covers the class).",
+    "descriptive": "The report's whole content column wraps unbroken tokens; tables keep column sizing."
+  },
+  "testsAdded": [
+    "u14k (rewritten) in plugins/audit/tests/test_render_report.py"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:d8938e74f8dba93c13ccb27aecd7b26fc37620caf03e62ace3b01da0420b2ff1\",\"dirtyDigest\":\"sha256:35f2cc94526c33dea78a86290e127acd4dddc9b3b3a211c957554a03a6266eed\",\"dirtyPaths\":null,\"head\":\"986da4cd\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"docs/demo-large.html\",\"docs/index.html\",\"docs/screenshots/areas.png\",\"docs/screenshots/authors.png\",\"docs/screenshots/captured-at.json\",\"docs/screenshots/dark.png\",\"docs/screenshots/demo-gate.gif\",\"docs/screenshots/expanded.png\",\"docs/screenshots/filtered.png\",\"docs/screenshots/filters.png\",\"docs/screenshots/mobile.png\",\"docs/screenshots/overview.png\",\"docs/screenshots/panel-appearance.png\",\"docs/screenshots/panel-blocks.png\",\"docs/screenshots/panel-composition-expanded.png\",\"docs/screenshots/panel-composition.png\",\"docs/screenshots/panel-confirm.png\",\"docs/screenshots/panel-dark.png\",\"docs/screenshots/panel-gate.png\",\"docs/screenshots/panel-guards.png\",\"docs/screenshots/panel-help.png\",\"docs/screenshots/panel-mobile.png\",\"docs/screenshots/panel-monthly.png\",\"docs/screenshots/panel-overview.png\",\"docs/screenshots/panel-person.png\",\"docs/screenshots/panel-policy-expanded.png\",\"docs/screenshots/panel-policy.png\",\"docs/screenshots/panel-proposals.png\",\"docs/screenshots/panel-usage.png\",\"examples/acme-store/acme-store-audit.html\",\"plugins/audit/scripts/ui/report-css/shell.css\",\"plugins/audit/tests/test_render_report.py\"],\"scopeDigest\":\"sha256:3d599516cbec4a8bcb1bb0cc4f094ee24b677c7cab550903965fe3a64e924459\",\"v\":2}"
+}

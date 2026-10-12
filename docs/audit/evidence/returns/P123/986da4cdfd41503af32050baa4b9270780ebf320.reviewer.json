@@ -1,0 +1,77 @@
+{
+  "findings": [
+    {
+      "id": 1,
+      "severity": "low",
+      "file": "plugins/audit/scripts/ui/report-css/shell.css:90-91",
+      "issue": "P123.88 asked for the rule of the CLASS (any long unbroken token in any text surface the report prints). The rule is a list of five elements under .content (p, li, dd, summary, blockquote), not the class. A render of the live plan shows the same worktree/branch token (audit/p109-...) also inside div.pmeta and span elements, and headings, divs and spans outside a table are not covered; .pmeta (gate-rail.css:60, shell.css:95) has no overflow-wrap of its own. Whether that div sits inside a scrolling .tablewrap on the live plan was not driven in a browser (browser gates were kept out of this review), so no overflow is demonstrated, only an uncovered surface of the same shape. The only test is u14k, a source-string pin on the rule (test_render_report.py:340); the task's gate runs the interactive checker on the acme-store example, which never overflowed, so nothing in the gate would catch the live-plan regression returning.",
+      "resolution": "Move the rule from an element list to the container (overflow-wrap:anywhere on .content, with :where() tables/pre excluded if their min-content sizing must stay) so it covers every text element, or name in the CSS comment why headings, div and span are safe. Add a case that renders a plan with a long unbroken token in a phase title, a finding and a worktree note and runs the 320px check, so the class is proved and not just the string."
+    },
+    {
+      "id": 2,
+      "severity": "low",
+      "file": "plugins/audit/scripts/governance/drive-phase.py:2670-2697",
+      "issue": "lock_to_give_back now calls dispatch_out -> load_phase -> _mio.load_manifest, which sits OUTSIDE drive()'s try/except. dispatch_out catches only ValueError; load_manifest raises OSError for a plan or shard that vanished or became unreadable between drive_locked's own read and this one. The exception then surfaces as a traceback with the phase lock still taken and recorded in state, the stranded-lock shape the desired outcome rules out. The window is small, but this predicate is the only place on the lock-release path that reads the plan a second time.",
+      "resolution": "In dispatch_out catch (ValueError, OSError) and return False (release), or move the lock_to_give_back call inside the same try that already releases on BaseException. Add a dl case with the plan removed between the refusal and the predicate."
+    },
+    {
+      "id": 3,
+      "severity": "low",
+      "file": "plugins/audit/scripts/governance/_invariants.py:1174-1200",
+      "issue": "_PULL_ARG_SHORTS = \"sXoj\" omits -S (git pull --gpg-sign[=<keyid>] takes an attached key id), so in a cluster such as -Sr the r is the key id but is read as the rebase flag, a false history-rewrite breach of the same class P123.85 closed. The cluster test also needs t[1:].isalpha(), so a cluster that contains -4/-6 (e.g. -4r) is not seen at all. Both are rare and the resolution text allowed the cluster to be a documented non-goal.",
+      "resolution": "Add S to _PULL_ARG_SHORTS (and a clean rw9 row such as -Sr), or state in the docstring that digits and -S are unread."
+    }
+  ],
+  "preExisting": [],
+  "intent": {
+    "answer": "matches",
+    "note": "Desired outcome clause 2 (a stopped drive leaves no lock) re-checked against P123.86: drive() releases the lock for every E_STOPPED return and for any exception through the BaseException arm, and lock_to_give_back (drive-phase.py:2670) keeps it only for a usage refusal while a decision is pending or dispatch_out(ctx, state) finds an in_progress task holding a dispatched-executor/reviewer mark for its current start with no filed return. That is a live hand-off the next `next` re-enters (the E_OK dispatch arm already behaves so), not a stop, and dl10 pins it; the docstring now names exactly those two terms. One residual: dispatch_out can raise OSError outside the try (finding 2). Other clauses are unchanged by the five tasks: P123.85 reads git's --rebase=<value> and short clusters (false/no/off/0/empty are not a rebase; matches git's boolean-or-mode parsing), P123.87 fixes only the vitest fixture (tools/ui-tests/gate-reasons.test.mjs) and I ran `npx vitest run tools/ui-tests/gate-reasons.test.mjs` -> 20 passed; P123.88 adds one CSS rule, three re-rendered artifacts and screenshots recaptured with the new report uiDigest (6697ddae00c7 in captured-at.json), so the executor's note that sc1/sc2 and the artifacts were stale is resolved in the commit; P123.89 changes only a test fixture, run-test-gate.py untouched, which the description allowed.",
+    "missing": [],
+    "redFirst": "not-attempted",
+    "redFirstBasis": "Phase-level: the phase's diff does not owe one answer. Per task: P123.85 and P123.86 are fix tasks not owed here (their executors recorded proved via the helper: rw9/rw10, dl10); P123.87 and P123.89 are regression-mode fixes that added no failing-first test; P123.88 is computed.",
+    "inheritedTests": "not-asked",
+    "inheritedTestsBasis": "Every task's tests.gate is the phase gate: `python3 tools/sweep-selftests.py` runs the whole project, plus manifest validation, plugin validate, status gate, report render, ruff/vermin, screenshot check and the acme-store interactive check. A gate that runs a whole project is not-asked by the rule; I did not read the sweep's 300+ files against five behaviours."
+  },
+  "verdict": "findings",
+  "tasks": [
+    {
+      "id": "P123.87-64p",
+      "commit": "6984f7189603",
+      "answer": "matches",
+      "note": "The diff adds publishedTemplates() (reads GATE_REASONS from require-plan.py through python3, as the capture does) and fileArmValues() (the single all-%s arm, one value per conversion), and uses it for the SEEDED warn row and the deny/warn equality case. require-plan.py untouched; the assertions that every seeded reason is the hook's own sentence and that the capture owns none are unchanged. The executor's outcome describes this. Evidence: I ran npx vitest run tools/ui-tests/gate-reasons.test.mjs, 20 passed. Weakness, not a defect: fileArmValues throws if the hook ever publishes a second all-text warn/deny reason, loudly and with a clear message.",
+      "missing": [],
+      "redFirst": "not-attempted",
+      "redFirstBasis": "Executor filed not-attempted, regression mode (expectRedFirst false); the four failures were observed on current code before the edit. No test was added, a fixture was repaired. The basis holds.",
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "The gate (tests.gate) is `python3 tools/sweep-selftests.py` and its siblings, none of which selects tools/ui-tests/gate-reasons.test.mjs (the recorded run says NO OVERLAP, the gate named none of the task's files); the whole-project sweep is not asked."
+    },
+    {
+      "id": "P123.88-64p",
+      "commit": "4250f73ba881",
+      "answer": "matches",
+      "note": "The executor found the element (main.content > p.muted, the worktree note with an unbroken path/branch token) and added `.content :where(p,li,dd,summary,blockquote){overflow-wrap:anywhere}` in shell.css plus u14k; the three rendered artifacts and the screenshots were regenerated and captured-at.json carries the new report digest. The inert interaction is the same 320px check, as claimed. The description's class clause (any text surface) is only partly met by an element list: see finding 1.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate runs the whole project (`python3 tools/sweep-selftests.py`, render-report, check-report-interactive on the acme-store example); not asked. Reading note: u14k is a source-string pin, and the interactive gate on the acme-store example passed before the rule existed, so the 320px behaviour on the live plan is held by neither.",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_render_report.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 296 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - u14k (house FAIL): SELFTEST FAILED: 295/296 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.88-64p/20261012T171010Z.executor.json, at 2026-10-12T17:19:57Z)"
+    },
+    {
+      "id": "P123.89-64p",
+      "commit": "986da4cdfd41",
+      "answer": "matches",
+      "note": "The cause was in the test's subprocess setup: the fixture emit.py printed the tick with print() under an inherited PYTHONIOENCODING=cp1252. The diff writes utf-8 bytes through sys.stdout.buffer with a comment saying why; run-test-gate.py is untouched, which is the branch the description allowed. The tick now reaches the runner reader as utf-8 and the product evidently decodes the child output as utf-8, since ur9/ur10 are reported green under cp1252. I did not rerun the cp1252 sweep.",
+      "missing": [],
+      "redFirst": "not-attempted",
+      "redFirstBasis": "Executor filed not-attempted, regression mode; no test added (testsAdded empty). Its basis, ur9/ur10 failing under run_one with encoding=cp1252 before the fix, is a run-and-observation claim, not a helper block; nothing here for a red-first answer.",
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate runs the whole project via `python3 tools/sweep-selftests.py` (utf-8 mode); the cp1252 mode that failed is not a gate entry, so the gate would not have caught the original fault either."
+    }
+  ],
+  "computedAnswers": {
+    "P123.88-64p": [
+      "redFirst",
+      "redFirstBasis"
+    ]
+  }
+}
