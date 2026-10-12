@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "test__deps --selftest": "pass",
+    "sweep-selftests": "pass",
+    "ruff check plugins/audit tools": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-12T12:49:46Z",
+    "basis": "`python3 plugins/audit/tests/test__deps.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 314 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - lmd11 (house FAIL), lmd13 (house FAIL): SELFTEST FAILED: 312/314 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "_deps.py: _LAYER_ORDINAL inverted to refuse every ordinal layer phrase unless followed by a closed _LAYER_COMPLEMENT set (that/which/it/they/both/any/every/each/strictly/above/below, 'the X can', code-span list then can); '#' continuation markers joined in _layer_ordinals; ordinal hits get their own position-claim message pointing to relational rewrite; layer_mention_drift docstring names the arm; one comment at the _live_copy row reworded ('highest layer that the three'). Headings in _priority.py, _ado_parent.py, _ado_tracked.py reworded to 'WHY IT IMPORTS NOTHING BUT `_output`' (reasoning kept); _manifest_io.py, _panel_write.py, audit-task.py held no such heading, untouched. test__deps.py: lmd11, lmd12, lmd13 added. prove-gates.py: lmd9 plants 'the bottom layer holds ...', lmd10 anchor updated to the new lookahead. layer_mention_drift() == [] on tree; test__deps 314/314; sweep 331/331 files ok, exit 0; ruff clean. prove-gates rows not run (orchestrator, after commit).",
+    "descriptive": "The layer lint now fails closed on any ordinal layer position, allowing only relational complements, with a distinct rewrite message."
+  },
+  "testsAdded": [
+    "lmd11",
+    "lmd12",
+    "lmd13"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:71e452a04ae771a70732e67b9caa9668106f4d9d671b70c7a980b7caa982ae1e\",\"dirtyDigest\":\"sha256:ae32a81b114b1beb592db60b8089911ab731424c5a231d66a66559014145b61b\",\"dirtyPaths\":{\"plugins/audit/scripts/_deps.py\":\"e3bd51c1acabfcf1\",\"plugins/audit/scripts/manifest/_ado_parent.py\":\"a185d0f65a8cfb07\",\"plugins/audit/scripts/manifest/_ado_tracked.py\":\"85d7a6f3208f6012\",\"plugins/audit/scripts/manifest/_priority.py\":\"edf0e84195bb33b9\",\"plugins/audit/tests/test__deps.py\":\"9d7017bc66ecd104\",\"tools/prove-gates.py\":\"45da6324accc8e76\"},\"head\":\"718ebb11\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/_deps.py\",\"plugins/audit/scripts/manifest/_ado_parent.py\",\"plugins/audit/scripts/manifest/_ado_tracked.py\",\"plugins/audit/scripts/manifest/_manifest_io.py\",\"plugins/audit/scripts/manifest/_priority.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/scripts/panel/_panel_write.py\",\"plugins/audit/tests/test__deps.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:c6a13ec9dabd96f285129254a5a1e66a28fb8f09a3a0b3bb4ee272136f173255\",\"v\":2}"
+}

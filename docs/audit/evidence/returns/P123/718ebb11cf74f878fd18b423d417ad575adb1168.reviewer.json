@@ -1,0 +1,61 @@
+{
+  "findings": [
+    {
+      "id": 1,
+      "severity": "med",
+      "file": "plugins/audit/scripts/_deps.py:2441-2446",
+      "issue": "_LAYER_ORDINAL refuses an ordinal layer phrase only when a clause-ending token follows (punctuation, end of text, 'because' or 'and'). Read against the task's invariant (refuse bottom/top/first/second/lowest/highest layer in prose, allow relational wording) this lets absolute claims through whenever any other word follows. I ran the pattern on these strings and it returned no match for each: 'The bottom layer holds only _output', 'This sits at the bottom layer of the table', 'the bottom layer is why it imports nothing', 'the bottom layer (see LAYERS)'. The lint therefore enumerates the continuations that make a claim absolute, the shape that let the numeral lint be beaten one wording at a time in earlier rounds. lmd9 pins eight refusal shapes, all of which end the clause, so nothing in the suite goes red for a hole of this shape.",
+      "resolution": "Invert the test: refuse every ordinal layer phrase and allow only a closed set of relational complements (a relative clause such as 'layer that/it/both/any/the three can reach', 'layer strictly above', 'layer it can occupy'). Add 'holds', 'is', 'of the' and a parenthesis to lmd9 as shapes that must be refused."
+    },
+    {
+      "id": 2,
+      "severity": "low",
+      "file": "plugins/audit/scripts/_deps.py:2526-2559",
+      "issue": "layer_mention_drift's docstring still lists only the word numeral, the L<N> spelling and the parenthesised number. It does not mention the ordinal arm that _layer_numerals now feeds into it. The refusal message says 'writes the layer numeral ... delete the number' for a phrase like 'the bottom layer', which has no number to delete, so the remedy sentence points a writer at the wrong repair.",
+      "resolution": "Add the ordinal arm to the docstring and give an ordinal hit its own message: say it is a position claim and name the relational rewrite, 'a layer above `_x`'."
+    },
+    {
+      "id": 3,
+      "severity": "low",
+      "file": "plugins/audit/scripts/manifest/_priority.py:28; plugins/audit/scripts/manifest/_ado_parent.py:33; plugins/audit/scripts/manifest/_ado_tracked.py:53",
+      "issue": "The replacement heading 'WHY A LAYER ABOVE `_output` AND NO HIGHER' is still a claim about position, and no lint checks it. In _deps.LAYERS the three modules do not sit directly above `_output`: the _machine_paths/_excerpt row is between, and the modules are in the _manifest_io row (_deps.py:150-167). 'A layer above' reads as 'the next one up', and 'no higher' is an unverifiable ceiling that goes stale when a module is inserted. This is the stale-position class the task set out to close.",
+      "resolution": "State what the reasoning needs rather than a position: for example 'WHY THIS IMPORTS NOTHING BUT `_output`-level helpers, AND WHY EVERYTHING ARRIVES AS AN ARGUMENT', or name the layer-mate it must not import."
+    },
+    {
+      "id": 4,
+      "severity": "low",
+      "file": "tools/prove-gates.py:628-632,1596-1600",
+      "issue": "The two new prove-gates rows (lmd9 red row, lmd10 allow row) were never run. The executor reports REFUSED (DIRTY) for any row that mutates _deps.py, and substituted an anchor-count check. I confirmed that both anchors match exactly once, and that the planted red text '..., the bottom layer, for the collector' ends its clause with a comma. That does not show either row goes red or green in the way its table entry says.",
+      "resolution": "Run `python3 tools/prove-gates.py` for these two rows from a committed tree (now that the commit exists) and record the outcome. The quick check is that the lmd9 row reports the lint firing and the lmd10 row reports lmd10 failing."
+    }
+  ],
+  "preExisting": [],
+  "intent": {
+    "answer": "matches",
+    "note": "The phase brief carries 75 task sections, a diff of 327 files, and a desiredOutcome with five clauses: a first phase planned in one call with no placeholder, /audit:run refusing a phase id, no stranded lock after a stopped drive, evidence in the project's own directory, and a single-checkout landing leaving the user on the landed branch. Task sections P123.1-P123.5 carry those five clauses and name tests for them (P123.1 adds fp1-fp6). Most of the diff is later review-finding and fault-fix work (lints, guards, hooks, Windows and path edges, docs) that the desiredOutcome does not mention. I read in full only the owed task's diff and the P123.1 return. For the remaining tasks I relied on their recorded gates and returns, and I did not re-verify each of the five clauses against the final tree. A scan of the added lines under scripts/ and hooks/ found no breakpoint, pdb, TODO, FIXME or debug-print additions. Owed task P123.75-64p does what its description asks: it adds a lint arm for ordinal layer phrases, rewrites the claims relationally, and adds lmd9, lmd10 and two prove-gates rows. See findings 1-4 for where it falls short of the stated invariant. The executor's outcome describes the diff, including that six claims were rewritten rather than the four the description named; the two extra files are in the declared file list.",
+    "missing": [
+      "phase.request",
+      "phase.openChoices",
+      "review skill for the phase (the brief names none)",
+      "phase.testGateDerived basis"
+    ],
+    "redFirst": "not-attempted",
+    "redFirstBasis": "mode: phase; the phase's own intent.redFirst is not-attempted. Per-task red-first for P123.75-64p is computed by the filing verb (proved).",
+    "inheritedTests": "not-asked",
+    "inheritedTestsBasis": "P123.75-64p's tests.gate has `selftests` -> `python3 tools/sweep-selftests.py`, which runs the whole project. The other entries are validate-manifest, claude plugin validate, audit-status --gate, render-report, ruff and vermin, capture-screenshots --check and check-report-interactive. The question is bounded by what the gate selects, and a whole-project run selects every suite, so no per-test judgement is possible."
+  },
+  "verdict": "findings",
+  "tasks": [
+    {
+      "id": "P123.75-64p",
+      "commit": "718ebb11cf74",
+      "answer": "matches",
+      "note": "The diff adds _LAYER_ORDINAL, wires it into _layer_numerals, and rewrites six absolute 'bottom/lowest layer' claims relationally. It adds lmd9 (eight refusal shapes) and lmd10 (eight allow shapes), plus a red row and an allow row in prove-gates. Description and outcome agree. Two deviations from the stated invariant: the lint refuses only clause-ending ordinals, so absolute phrases followed by more words pass (finding 1), and the replacement heading 'a layer above `_output` and no higher' is a new unlinted position claim (finding 3).",
+      "missing": [],
+      "redFirst": "proved",
+      "redFirstBasis": "The executor's basis holds: `python3 plugins/audit/tests/test__deps.py --selftest` in a throwaway tree at HEAD failed lmd9 (310/311 cases passed), with the working tree's implementation then passing.",
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "The gate's `selftests` entry is `python3 tools/sweep-selftests.py`, a whole-project run; the other entries are not test suites that select named tests."
+    }
+  ]
+}

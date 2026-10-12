@@ -30,7 +30,7 @@ and it is why a declaration is an object and never a bare integer: two spellings
 of one answer are two answers, and the hierarchy check, the push plan and the
 panel all have to say where a parent came from.
 
-WHY A LAYER ABOVE `_output` AND NO HIGHER, AND WHY EVERYTHING ARRIVES AS AN ARGUMENT. `_manifest_crossrefs`
+WHY IT IMPORTS NOTHING BUT `_output`, AND WHY EVERYTHING ARRIVES AS AN ARGUMENT. `_manifest_crossrefs`
 and `_manifest_ado` are layer-mates, so neither can import the other while both
 need the SAME answer - as do `commands/sync.md` through `resolve-ado-parent.py`,
 and the panel after that. A second expression of "which parent" would BE a second

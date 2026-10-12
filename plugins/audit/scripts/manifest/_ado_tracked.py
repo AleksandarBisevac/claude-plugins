@@ -50,7 +50,7 @@ is also the feature: the whole point is telling apart two states that used to
 print the same, and a bare `false` on a status line is the state we started
 from one sentence later.
 
-WHY A LAYER ABOVE `_output` AND NO HIGHER, AND WHY EVERYTHING ARRIVES AS AN ARGUMENT. `_ado_parent` is this
+WHY IT IMPORTS NOTHING BUT `_output`, AND WHY EVERYTHING ARRIVES AS AN ARGUMENT. `_ado_parent` is this
 module's template throughout and the argument is its argument: the push plan,
 the status lens, the validator's neighbours and `resolve-ado-tracked.py` all
 need the SAME answer, and two of those are layer-mates that cannot import

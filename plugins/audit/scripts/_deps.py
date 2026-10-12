@@ -636,7 +636,7 @@ LAYERS = (
      # `_live_copy` is the one reader of a phase in flight elsewhere - which copy
      # holds it live, read from a linked worktree's file or a branch tip. Here
      # because it asks git through `_scoped_commit`, whose stderr is the
-     # reason in every sentence it writes. That is the highest layer the three
+     # reason in every sentence it writes. That is the highest layer that the three
      # surfaces showing such a phase can all import from: `audit-status`,
      # `render-report` and `panel-server`, all entry points. `_panel_state` is below
      # it, so `build_state` takes the reader as an argument the server hands
@@ -2437,13 +2437,26 @@ def hooks_rule_drift(guide_path=None):
 _LAYER_WORD_NUMERAL = re.compile(
     r"\blayers?[\s-]+(\d+|[A-Za-z]+)(?:[\s-]+([A-Za-z]+))?", re.IGNORECASE)
 # An absolute ordinal position is the same copy of the table in other words, and
-# goes stale the same way. It is absolute where the phrase ends its clause: a
-# punctuation mark, the end of the block, or "because"/"and" comes next. A phrase
-# followed by a restricting complement names no row and stays, as does a layer
-# below or a layer-mate.
+# goes stale the same way. Naming the continuations that make it absolute lost to
+# the next wording ("holds", "is", "of the", a parenthesis), so this is the inverse:
+# every ordinal phrase is refused unless what follows is in a CLOSED set of
+# relational complements, each a restrictive clause saying what the layer reaches
+# or holds, derived from the relational wordings the tree already carries:
+#   that / which / it / they / both / any / every / each - "the lowest layer it
+#       can occupy", "the first layer that holds the name"
+#   strictly / above / below - "the first layer strictly above the reader"
+#   the <determiner> ... can - "the highest layer the three can import from"
+#   a code span, or a list of them, then "can" - "the highest layer `_a` and
+#       `_b` can all reach"
+# A new relational wording is reworded into one of these; a new absolute one never
+# gets through, which is the point of closing the set.
+_LAYER_COMPLEMENT = (
+    r"(?:that|which|it|they|both|any|every|each|strictly|above|below)\b"
+    r"|the\s+\w+\s+can\b"
+    r"|`[^`]*`(?:\s*,?\s*(?:(?:and|or)\s+)?`[^`]*`)*\s+can\b")
 _LAYER_ORDINAL = re.compile(
-    r"\b(?:bottom|top|first|second|lowest|highest)[\s-]+layers?"
-    r"(?=\s*(?:[,.;:)]|$)|\s+(?:because|and)\b)", re.IGNORECASE)
+    r"\b(?:bottom|top|first|second|lowest|highest)[\s-]+layers?\b"
+    r"(?!\s+(?:" + _LAYER_COMPLEMENT + r"))", re.IGNORECASE)
 # The `L<N>` spelling is also a cache level, a spec level, a line anchor in a URL
 # and a directory name. Glued to a `#`, a `/` or a word it is never a layer, and
 # otherwise it is one where the prose is talking about layers: the block names a
@@ -2473,8 +2486,17 @@ def _layer_word_numerals(text):
     return found
 
 
+def _layer_ordinals(text):
+    """Every absolute ordinal layer phrase in one prose block, as written."""
+    joined = re.sub(r"\s#+(?=\s)", "", text)
+    return [m.group(0) for m in _LAYER_ORDINAL.finditer(joined)]
+
+
 def _layer_numerals(text, names):
-    """Every layer numeral in one prose block, in reading order, as written."""
+    """Every layer numeral in one prose block, in reading order, as written.
+
+    An ordinal phrase is a position claim, not a numeral; `_layer_ordinals` reads
+    those and `layer_mention_drift` words them apart."""
     found = _layer_word_numerals(text)
     found += [(m.start(2), m.group(2)) for m in _LAYER_PAREN_NUMERAL.finditer(text)
               if m.group(1) in names]
@@ -2482,7 +2504,6 @@ def _layer_numerals(text, names):
                   or any(name in names for name in _BACKTICK_NAME.findall(text)))
     found += [(m.start(), m.group(0)) for m in _LAYER_L_NUMERAL.finditer(text)
               if in_context or _LAYER_L_LEAD.search(text[:m.start()])]
-    found += [(m.start(), m.group(0)) for m in _LAYER_ORDINAL.finditer(text)]
     return [numeral for _pos, numeral in sorted(found)]
 
 
@@ -2525,6 +2546,10 @@ def _prose_blocks(source):
 def layer_mention_drift(script_dir=None, hooks_dir=None, layers=None):
     """[(relname:line, problem), ...] - every layer numeral in a docstring or comment.
 
+    An absolute ordinal position (an ordinal word, then "layer") is the same
+    claim and is refused too, with its own message, unless a closed set of
+    relational complements follows it (`_LAYER_COMPLEMENT` is the set).
+
     A module's layer is its index in LAYERS, and `_deps.py --render` prints it;
     those two are the only places the number lives. Every copy written into prose
     went stale the same way - one module given a layer of its own shifts every
@@ -2557,6 +2582,14 @@ def layer_mention_drift(script_dir=None, hooks_dir=None, layers=None):
                             "module's layer and `_deps.py --render` prints it, so "
                             "delete the number and keep the module's name and the "
                             "reasoning" % numeral))
+            for phrase in _layer_ordinals(text):
+                out.append(("%s:%d" % (rel, lineno),
+                            "claims a position with %r - that is the table's row "
+                            "in words and goes stale the same way; rewrite it "
+                            "relationally (`a layer above `_x``, `the floor of "
+                            "what it imports`) or follow it with what the layer "
+                            "reaches (`that`, `which`, `it can`, `strictly "
+                            "above`)" % phrase))
     return out
 
 

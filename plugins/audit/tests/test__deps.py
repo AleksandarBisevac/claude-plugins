@@ -645,6 +645,49 @@ def _cases(check):
         check("lmd10 an ordinal layer phrase followed by a restricting complement, "
               "or a layer below / a layer-mate, is relational and is left alone: %r"
               % (lm_rel_over,), lm_rel_over == [])
+        # THE INVERSE. The rule refuses every ordinal phrase and allows only a closed
+        # set of relational complements, so an absolute claim followed by an ordinary
+        # word (a verb, "of the", a parenthesis) is refused as well.
+        lm_absolute = (
+            '"""The bottom layer holds only _output."""\n',
+            '"""It sits at the bottom layer of the table."""\n',
+            '"""The bottom layer is why it imports nothing."""\n',
+            '"""The bottom layer (see LAYERS) reads nothing."""\n',
+            "# the top layer\n# holds the entry points\nX = 1\n",
+            '"""The SECOND LAYER owns the names."""\n',
+        )
+        lm_abs_missed = [b for b in lm_absolute if len(_lm(b)) != 1]
+        check("lmd11 an absolute ordinal claim followed by an ordinary word is "
+              "refused: %r" % (lm_abs_missed,), lm_abs_missed == [])
+        lm_complements = (
+            '"""The first layer that holds the name."""\n',
+            '"""The first layer which both reach."""\n',
+            '"""The lowest layer it can occupy."""\n',
+            '"""The lowest layer they import from."""\n',
+            '"""The lowest layer both can reach."""\n',
+            '"""The lowest layer any of them sat in."""\n',
+            '"""The first layer every reader can reach."""\n',
+            '"""The first layer each of them can use."""\n',
+            '"""The first layer strictly above the reader."""\n',
+            '"""The first layer above `_output`."""\n',
+            '"""The top layer below the entry points."""\n',
+            '"""The highest layer the three can import from."""\n',
+            '"""The highest layer `_a`, `_b` and `_c` can all reach."""\n',
+            "# the lowest layer\n# that holds the names\nX = 1\n",
+            "# the first layer\n# #  strictly above it\nX = 1\n",
+        )
+        lm_comp_over = [(b, _lm(b)) for b in lm_complements if _lm(b)]
+        check("lmd12 each relational complement in the closed allow set stays "
+              "allowed, wrapped or not: %r" % (lm_comp_over,), lm_comp_over == [])
+        ord_hit = _lm('"""The bottom layer holds only _output."""\n')
+        num_hit = _lm('"""It sits at layer 2."""\n')
+        check("lmd13 an ordinal hit's message names a position claim and the "
+              "relational rewrite, and a numeral's message is unchanged: %r"
+              % (ord_hit,),
+              len(ord_hit) == 1 and "position" in ord_hit[0][1]
+              and "a layer above" in ord_hit[0][1]
+              and "delete the number" not in ord_hit[0][1]
+              and len(num_hit) == 1 and "delete the number" in num_hit[0][1])
     finally:
         shutil.rmtree(lm_tmp, ignore_errors=True)
 

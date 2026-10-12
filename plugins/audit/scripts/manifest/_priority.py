@@ -25,7 +25,7 @@ quietly re-sort the rest, and a manifest carrying no `priority` at all must orde
 exactly as it did before this module existed — which is the case that goes red if
 `sort_key` ever becomes unconditional.
 
-WHY A LAYER ABOVE `_output` AND NO HIGHER. `_branch` is the precedent and `_deps.LAYERS` states the reason in the
+WHY IT IMPORTS NOTHING BUT `_output`. `_branch` is the precedent and `_deps.LAYERS` states the reason in the
 same words: four surfaces need the SAME answer — `_status_facts` for the ready
 list, `_manifest_crossrefs` for the findings, `_panel_composition` for the
 control, and `set-priority.py` for the write. A second expression of the order would
