@@ -428,7 +428,7 @@
     {
       "id": "P126.7",
       "title": "The manifest-revalidated invariant counts preserved bytes on Windows",
-      "status": "in_progress",
+      "status": "done",
       "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest, test__invariants.py: FAIL iv39 ...and a row whose bytes a commit DID preserve is not counted against coverage: one of the two is recoverable, so the gap says so. This is the case that fails if the state hashed is the INDEX rather than the phase's own file - a mistake iv19 cannot see, because there every row is unrecoverable either way: [\"2 of the 2 journal-recorded writes to this phase's manifest file left bytes no commit preserved; the validator cannot be re-run on those states\"]. iv39 expects one of two journal-recorded writes to be recoverable (its bytes are in a commit) and Windows reports both unrecoverable - so the stateHash the journal records and the hash of the committed bytes disagree there: most likely CRLF (git's autocrlf checkout, or a write with a platform newline) or a path spelling in `git show`. Find which by reading how the invariant hashes `git show` output vs how the journal hashed the written bytes, and make the comparison newline- and path-exact on Windows. It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
       "files": [
         "plugins/audit/scripts/governance/_invariants.py",
@@ -459,25 +459,37 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "602da24e95f1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Root cause is in the test fixture, not _invariants.py: the iv39 builder wrote its hash probe (the bytes of `git show <sha>:phases/P1.json`) with _write(), a text-mode open() that on Windows turns every \\n into \\r\\n, so file_hash(probe) hashed CRLF bytes while manifest_revalidated hashes the file _materialize writes with newline='\\n' (git's exact bytes, decoded/encoded losslessly by _commit_trail._git) - no match, both rows unrecoverable ('2 of the 2'). Fix: added _write_exact (newline='') and used it for the probe; production code unchanged (already newline-exact: _materialize opens newline='\\n', file_hash reads 'rb'). Added iv39a, runs on every OS: writes CRLF and LF text via _write_exact and asserts file_hash equals sha256 of the exact bytes and the two differ, so a newline-translating probe writer fails it wherever it runs (only on Windows would the old _write fail it). Selftest: 121/121 cases passed on macOS. Assumed Windows behaviour: Python open(path,'w') default newline=None translates '\\n' to os.linesep (docs.python.org io.open newline parameter); source for the diagnosis is the CI line for iv39 ('2 of the 2' unrecoverable) plus that docs behaviour. Whether git autocrlf stored CRLF or LF in the fixture commit does not matter: git show output, probe and materialised file are all the same bytes either way. Unverified on Windows until the next CI run.",
+        "descriptive": "iv39's hash probe is written byte-exact, so the recoverable-state coverage check no longer miscounts on Windows; plus an every-OS pin of the CRLF/LF hash."
       },
       "startedAt": "2026-10-12T22:46:54Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T22:57:10Z",
+      "verifiedBy": [
+        "iv39a"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-12T22:57:09Z.026c6f",
         "status": "passed",
         "at": "2026-10-12T22:57:09Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "602da24e95f1",
+        "at": "2026-10-12T22:57:10Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression-mode task (expectRedFirst false); the failure reproduces only on windows-latest, so no red can be watched on macOS",
+        "at": "n/a"
       }
     },
     {
       "id": "P126.8",
       "title": "A wave task's submit block names the phase tree's manifest absolutely on Windows",
-      "status": "pending",
+      "status": "in_progress",
       "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest, test_audit_lookup.py: FAIL bf42 a wave task's submit block spells the phase tree's manifest absolutely and says the command runs from the project: \"cks the shape, runs the red-first helper on the command after `--`, takes the stamp and files the return once. Put the return object in place of the middle line and run the block as it stands - the object goes on the command's stdin and nothing is written to disk.\\nThe command after `--` is the gate entry that names your tests.add file; narrow it to your cases if HEAD's own tests are red under it.\\n\". The case asserts the submit block spells the phase tree's manifest as an absolute path and says the command runs from the project; on Windows the assertion fails - likely the absolute-path test (os.path.isabs vs a POSIX-looking path) or the separator in the printed path. Fix the writer of the block or the case's expectation, whichever holds the defect, and say which. It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -506,21 +518,27 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T22:57:11Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T23:06:48Z.e77f8e",
+        "status": "passed",
+        "at": "2026-10-12T23:06:48Z"
+      }
     },
     {
       "id": "P126.9",
       "title": "test_commit_task_work and test_drive_phase finish inside the sweep's budget on Windows",
-      "status": "pending",
+      "status": "cancelled",
       "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest (2 workers): '--- plugins/audit/tests/test_commit_task_work.py: did not finish within 300s ---' and the same for test_drive_phase.py. Both grew in P123 (drive lock cases dl7-dl11, close and wave cases) and both spawn many git and python subprocesses, which cost several times more on Windows. Measure each suite locally (`time python3 <suite> --selftest`) and its per-block cost, then make them fit with margin by the structurally right means: share fixture repos built once per block instead of per case, drop redundant subprocess round-trips, and only if a suite is irreducibly long, split it along its existing blocks into separately-swept files (each with its own `--selftest` contract, layer and guide entry as CLAUDE.md requires) - never by raising the sweep's timeout alone. Report before/after wall time on macOS. It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
       "files": [
         "plugins/audit/tests/test_commit_task_work.py",
@@ -553,10 +571,10 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: Measured unnecessary: in run 38316180338 (ci/p126 @ a07bf893) test_commit_task_work is green and test_drive_phase finishes inside the 300s budget on windows-latest; the earlier timeouts coincided with a 2-worker run whose other suites were failing. Suite cost belongs to P125's affected-test-gate."
       },
       "startedAt": null,
-      "completedAt": null,
+      "completedAt": "2026-10-12T23:01:21Z",
       "verifiedBy": []
     },
     {
@@ -634,13 +652,109 @@
       "files": [
         "tools/orchestrator-state.py",
         "tools/sweep-selftests.py",
-        "tools/prove-gates.py"
+        "tools/prove-gates.py",
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/tests/test__locks.py",
+        "tools/_suite.py",
+        "plugins/audit/scripts/panel/panel-server.py",
+        "plugins/audit/tests/test_audit_task.py"
       ],
       "tests": {
         "mode": "regression",
         "add": [
-          "tools/sweep-selftests.py: mk2 passes on windows-latest CI",
-          "tools/orchestrator-state.py: o3 passes on windows-latest CI"
+          "plugins/audit/tests/test_audit_task.py: tk2 passes on windows-latest CI",
+          "plugins/audit/tests/test__locks.py: pid_alive answers dead for an exited process on every OS, through the one helper tools/_suite and panel-server also call"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-12T23:01:22Z",
+          "text": "Widened after run 38316180338: tk2 (test_audit_task) fails on windows-latest the same way o3 and mk2 do - a lock or marker naming a DEAD pid is judged live: \"(2, {'sessionId': 's-other-session', ...})\". There are three liveness probes: governance/_locks.pid_alive (has a Windows branch, _pid_alive_windows - and tk2 says it still answers alive for a dead pid; check OpenProcess on an exited pid and that GetExitCodeProcess is compared with STILL_ACTIVE, and the handle closed), tools/_suite.pid_alive (os.kill(pid, 0) - POSIX only) and panel/panel-server._pid_alive (os.kill(pid, 0) - POSIX only). Make _locks.pid_alive correct on Windows and route the other two through it (tools reach plugin scripts the way other tools do; panel-server per _deps.LAYERS), so there is one liveness rule. Pin: a test__locks case starting a short-lived child, waiting for it, and asserting pid_alive is False for its pid on every OS."
+        }
+      ]
+    },
+    {
+      "id": "P126.12-13q",
+      "title": "A wave's carried work is compared as the member's own bytes on Windows",
+      "status": "pending",
+      "description": "Run 38316180338 (ci/p126 @ a07bf893), windows-latest, test_drive_phase.py: \"FAIL wd3a the carried work is the member's own bytes: b'changed by P1.1\\r\\n'\". The carried bytes hold CRLF, so the fixture wrote the member's change in text mode (Windows translates \\n to \\r\\n) and then compares against an LF literal, or the integrate path rewrote the newline. Find which: if the fixture, write it with an explicit newline (the house rule: every text write states its newline) and keep the assertion byte-exact; if the product carried bytes other than the member's own, that is a defect in the integration and the fix goes there (say so, and widen scope). Pin the Windows shape on every OS where possible. It reproduces only on windows-latest; state the Windows behaviour the fix assumes with its source.",
+      "files": [
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: wd3a passes on windows-latest CI"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P126.13-13q",
+      "title": "The red-first helper's suite leaves no stamp-derive directory behind on Windows",
+      "status": "pending",
+      "description": "Run 38316180338 (ci/p126 @ a07bf893), windows-latest: the sweep marks test_stamp_verification.py red because it \"wrote outside the fixtures it makes for itself: working directory: left behind: stamp-derive-8srsathk\". A `stamp-derive-*` temp directory is created in the CURRENT working directory (not under tempfile.mkdtemp()'s TMPDIR) and not removed on Windows - most likely a shutil.rmtree failing on a file a child process still holds open (Windows refuses to delete an open file) with the error swallowed, or a mkdtemp(dir=\".\")/relative path. Find the creator (grep 'stamp-derive'), make it create under the temp root and remove it reliably (close handles before removal; on Windows retry rmtree with an onerror that clears the read-only bit and retries after the child exits), and never swallow a failed removal silently. Pin on every OS: the suite leaves its cwd unchanged. It reproduces only on windows-latest; state the Windows behaviour the fix assumes with its source.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: the sweep finds nothing left in its working directory on windows-latest CI"
         ],
         "expectRedFirst": false,
         "gate": [

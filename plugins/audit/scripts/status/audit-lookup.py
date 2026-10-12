@@ -687,6 +687,14 @@ RETURN_ON_STDIN = ("Put the return object in place of the middle line and run "
                    "stdin and nothing is written to disk")
 
 
+def absolute_manifest(project, manifest, path=os.path):
+    """`manifest` (spelled with `/`, as the plan records it) under `project`,
+    in one separator style: joined alone, a Windows project would print
+    `C:\\p\\docs/audit/audit-plan.json`, half of each. `path` is the path
+    module to spell it with, so a test can ask for the Windows shape anywhere."""
+    return path.normpath(path.join(project, manifest))
+
+
 def submit_command(ctx, node_id, role, tail="", in_tree=False):
     """The resolved `drive-phase.py submit` an agent's last act runs, as a
     fenced block carrying the return on stdin in a quoted heredoc. A task in a
@@ -695,7 +703,7 @@ def submit_command(ctx, node_id, role, tail="", in_tree=False):
     committed copy of the relative path, with the task still pending."""
     manifest = ctx["manifest"]
     if in_tree:
-        manifest = os.path.join(ctx["project"], manifest)
+        manifest = absolute_manifest(ctx["project"], manifest)
     block = [
         "```sh",
         "%s submit %s --role %s %s --project-dir %s%s <<'%s'" % (

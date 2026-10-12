@@ -1284,6 +1284,15 @@ def _brief_cases(check):
           % (wave_text[-400:],),
           (" submit P1.1 --role executor %s --project-dir " % (abs_manifest,)) in wave_text
           and "Run this command from the project" in wave_text)
+    import ntpath
+    import posixpath
+    win_abs = M.absolute_manifest("C:\\work\\proj", "docs/audit/audit-plan.json", ntpath)
+    check("bf44 on the Windows shape the absolute manifest is one separator "
+          "style, not the project's backslashes joined to the plan's slashes, "
+          "and the POSIX shape is unchanged: %r" % (win_abs,),
+          win_abs == "C:\\work\\proj\\docs\\audit\\audit-plan.json"
+          and M.absolute_manifest("/w/p", "docs/audit/audit-plan.json", posixpath)
+          == "/w/p/docs/audit/audit-plan.json")
     check("bf43 THE ALLOW TWIN: at width 1 the submit block keeps the relative "
           "manifest and carries no run-from-the-project line: %r" % (plain_text[-300:],),
           " submit P1.1 --role executor docs/audit/audit-plan.json --project-dir "

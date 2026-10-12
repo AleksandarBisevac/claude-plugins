@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "own-test: python3 plugins/audit/tests/test_audit_lookup.py --selftest": "pass",
+    "ruff check (two files)": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression mode, expectRedFirst false; the defect reproduces only on windows-latest",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Cause (reasoned from the CI line plus code, not run on Windows): submit_command built the in-tree manifest with os.path.join(project, 'docs/audit/audit-plan.json'). The plan records the manifest with '/'; on Windows os.path.join keeps it, giving 'C:\\\\p\\\\docs/audit/audit-plan.json' (mixed separators), while the case expected os.path.join of separate parts (all backslashes), so the substring did not match. The writer held the defect (mixed-separator path printed in an agent-run command), not the case. Fix: new absolute_manifest(project, manifest, path=os.path) = path.normpath(path.join(...)) in audit-lookup.py, used by submit_command. Assumption and source: ntpath.join does not rewrite '/' in a later component and ntpath.normpath converts '/' to '\\\\' (Python docs for os.path.normpath: 'On Windows, it converts forward slashes to backward slashes'). Pinned on every OS: new case bf44 calls absolute_manifest with ntpath and posixpath explicitly. Selftest 86/86 on macOS; ruff clean. Orchestrator's next windows CI run verifies bf42.",
+    "descriptive": "A wave task's submit block now prints the phase tree's manifest in one separator style on Windows."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_audit_lookup.py: bf44 (ntpath/posixpath shape of absolute_manifest); bf42 expected to pass on windows-latest"
+  ],
+  "claims": "claims: absolute_manifest docstring states only the separator behaviour (ntpath join/normpath), basis the Python docs; bf44 pins it with ntpath on all OSes, so it does not depend on the host.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:6fdecec13d0788d734a5d3660da6ca5caf062d4ba9ab49fd6558de9572788b52\",\"dirtyDigest\":\"sha256:35533deff6699b43a274f4348f8e808aa40ae14bd8ef660d86a649a9c7be1efb\",\"dirtyPaths\":{\"plugins/audit/scripts/status/audit-lookup.py\":\"047f80148948a937\",\"plugins/audit/tests/test_audit_lookup.py\":\"eee2c828801d0413\"},\"head\":\"602da24e\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/status/audit-lookup.py\",\"plugins/audit/tests/test_audit_lookup.py\"],\"scopeDigest\":\"sha256:efa4dc6ca9c0ccf142d7835503cae427269a1fb7b9af35c368a5a0348a6711c4\",\"v\":2}"
+}
