@@ -2344,6 +2344,18 @@ def _fix_batch_cases(check):
           and "declares no test file" in (red.get("basis") or "")
           and red.get("at"))
 
+    spaced = [dict(COLON_FINDINGS[0],
+                   issue="the split reads wrong, see `(split_not_commands at :4809)`")]
+    root_p, mpath_p = _triage_with(M, "fix-batch-paren", spaced)
+    code_p, text_p = _next(M, root_p, mpath_p, "--answer", "fix", "--fix", "P1-R1")
+    fix_p = [t for t in tasks_of(mpath_p).values() if t.get("fixes") == ["P1-R1"]]
+    check("fb4 --answer fix over a finding whose issue holds a backtick span with "
+          "a spaced paren adds its fix task, carrying that text whole: %r"
+          % ((code_p, [t.get("id") for t in fix_p], text_p[-300:]),),
+          code_p == 0 and len(fix_p) == 1
+          and "`(split_not_commands at :4809)`" in (fix_p[0].get("description") or "")
+          and instruction(text_p)[0] == "dispatch")
+
     mutant, _w = _load("drive_phase_fix_batch_bad")
     real_verb = mutant.run_verb
 

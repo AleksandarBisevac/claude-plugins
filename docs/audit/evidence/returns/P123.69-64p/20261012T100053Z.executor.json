@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "test_drive_phase --selftest": "pass",
+    "sweep-selftests": "pass",
+    "sweep-selftests --spaced": "pass",
+    "ruff": "pass",
+    "vermin": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task, fix at HEAD; red was shown by the earlier task in a scratch copy with the pre-batch per-finding argv --description add_fix_tasks (git show ae63b885^) restored: fb4 failed with the verb's command-substitution refusal and no fix task added",
+    "at": "earlier cancelled task, scratch copy"
+  },
+  "outcome": {
+    "technical": "Read git diff of the three files: test_drive_phase.py holds only case fb4 in _fix_batch_cases; test_audit_task.py only the two whitespace reverts (before =open, gate =(...)); test_commit_task_work.py only CE_TEST. Nothing changed by me. Exit codes: test_drive_phase --selftest 0 (230/230); sweep-selftests 0 and --spaced 0 (331/331 files ok); ruff 0; vermin 0.",
+    "descriptive": "fb4 locks that a spaced backtick span in a finding goes through --answer fix as one fix task; stray whitespace edits are undone."
+  },
+  "testsAdded": [
+    "test_drive_phase.py fb4"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:4a70c253662f69cf9e136081df1fb2834a1d4751f0b80c442ce279f8cb45b885\",\"dirtyDigest\":\"sha256:ed307965aa1e168bf488e11e13b4ee0f05e39644fe2c5dad41c8e55b6241c34b\",\"dirtyPaths\":{\"plugins/audit/tests/test_audit_task.py\":\"e7e784d7332a4df2\",\"plugins/audit/tests/test_commit_task_work.py\":\"995b47dfa892e697\",\"plugins/audit/tests/test_drive_phase.py\":\"4128bfc8b10b92db\"},\"head\":\"ecd8e502\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/test_audit_task.py\",\"plugins/audit/tests/test_commit_task_work.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:acbf2a98ffa9c15ddb55de0b7cb3a5b2f1d10b340e3f6113c2f10c08e5e97f93\",\"v\":2}"
+}

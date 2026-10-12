@@ -5363,7 +5363,7 @@
     {
       "id": "P123.68-64p",
       "title": "The full gate's review-only split is pinned with a node preamble set (fo5)",
-      "status": "in_progress",
+      "status": "done",
       "description": "Closes the last pin of review finding P123-R9 (the review-only split runs before a node preamble on every gate path), whose fix landed in P123.62 (b89a1b10): fo4 pins the task/phase path; the full path had no case with a preamble set. Case fo5 in test_run_test_gate.py (already written in the tree by the cancelled P123.63's executor) sets nodePreamble \"cd .\" with fullGate [ok, claimsMatchCode] and asserts one step without the review-only text, FULL GATE GREEN and one not-a-command line. Its red was shown outside the repo: with full_gate's split put back to classifying the preamble-led command, fo5 failed (523/524). Regression mode: the fix is at HEAD.",
       "files": [
         "plugins/audit/tests/test_run_test_gate.py"
@@ -5393,25 +5393,37 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ecd8e502e781",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Read git diff of test_run_test_gate.py: fo5 sets nodePreamble 'cd .' with fullGate [ok, claimsMatchCode], runs main --full --record, and asserts exit E_OK, exactly one recorded step whose command lacks claimsMatchCode, FULL GATE GREEN in output, and exactly one 'not a command' line naming claimsMatchCode. Matches the task text; nothing changed. Exit codes: test_run_test_gate.py --selftest 0 (524/524); tools/sweep-selftests.py 0 (331/331 files, 15729 cases); --spaced 0 (same tally); ruff check plugins/audit tools 0; vermin 0 (min 3.7).",
+        "descriptive": "Pins the full gate's review-only split behind a node preamble with case fo5."
       },
       "startedAt": "2026-10-12T09:44:00Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T10:00:53Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_run_test_gate.py: fo5"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-12T10:00:52Z.531b10",
         "status": "passed",
         "at": "2026-10-12T10:00:52Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "ecd8e502e781",
+        "at": "2026-10-12T10:00:53Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "Regression task, fix at HEAD (b89a1b10). The earlier cancelled task showed the red in a scratch copy outside the repo: with full_gate's split put back to classifying the preamble-led command, fo5 failed (523/524). I re-ran no red.",
+        "at": "earlier cancelled P123.63 run, not re-run here"
       }
     },
     {
       "id": "P123.69-64p",
       "title": "A triage over reviewer text holding a spaced code span adds its fix task (fb4), and stray whitespace edits are undone",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Closes review findings P123-R13 and P123-R14 (re-added from cancelled P123.66 as regression: the fix is at HEAD). (R13) Case fb4 in test_drive_phase.py's _fix_batch_cases: a finding whose issue is \"the split reads wrong, see `(split_not_commands at :4809)`\" goes through `drive-phase next --answer fix --fix P1-R1`; exit 0, exactly one fix task for P1-R1, the span carried whole in its description, the drive going on to dispatch. Its red was shown outside the repo: with the pre-batch per-finding argv `--description` add_fix_tasks (git show ae63b885^) restored in a scratch copy, fb4 failed with the verb's command-substitution refusal and no fix task added. (R14) The unrelated whitespace edits are undone: test_audit_task.py `before =open(...)` -> `before = open(...)`, `gate =(...)` -> `gate = (...)`; test_commit_task_work.py `CE_TEST =\"...\"` -> `CE_TEST = \"...\"`. Both edits are already in the tree.",
       "files": [
         "plugins/audit/tests/test_drive_phase.py",
@@ -5441,16 +5453,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T10:00:53Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T10:18:08Z.6f4451",
+        "status": "passed",
+        "at": "2026-10-12T10:18:08Z"
+      }
     }
   ],
   "reviewPerTask": "phase",

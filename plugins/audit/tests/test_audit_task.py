@@ -15980,7 +15980,7 @@ def _introduces_cases(check):
             finding("P1-R2", "src/a.ts"),
             finding("P1-R3", "see the review notes")])
         write(proj, "src/a.ts")
-        before =open(mpath, "rb").read()
+        before = open(mpath, "rb").read()
         code, text = verb(proj, "add", "Fix", "--phase", "P1", "--fixes",
                           "P1-R1,P1-R2,P1-R3")
         check("cz16 `--fixes` over findings naming no path is refused naming "
@@ -16010,7 +16010,7 @@ def _introduces_cases(check):
         write(proj, "src/a.ts")
         code, text = verb(proj, "add", "Fix", "--phase", "P1", "--fixes", "P1-R1")
         t = tasks(mpath).get("P1.2") or {}
-        gate =(t.get("tests") or {}).get("gate") or []
+        gate = (t.get("tests") or {}).get("gate") or []
         check("cz17 a finding naming src/a.ts whose resolution asks for a unit "
               "test: the gate holds the unit runner and not the e2e one: %r"
               % ((code, gate),),

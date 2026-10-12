@@ -1898,7 +1898,7 @@ def _attempt_cases(check, repos):
           and "bash-write guard" not in text)
 
 
-CE_TEST ="tests/test_a.py"
+CE_TEST = "tests/test_a.py"
 
 
 def _owe_test(fx):
