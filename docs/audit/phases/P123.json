@@ -6988,7 +6988,7 @@
     {
       "id": "P123.87-64p",
       "title": "The gate-reasons UI suite seeds the plan gate's reasons at the arity the hook publishes them",
-      "status": "in_progress",
+      "status": "done",
       "description": "Found by the release verify at 60448996 (`npx vitest run tools/ui-tests/gate-reasons.test.mjs`: 4 failed of 20). P123.37 (369ce476) made REASON_SLOT_SPENT in hooks/require-plan.py take three values (\"this writer's one free file was already spent on %s by %s at %s\") and the fixture still requires exactly one warn reason taking ONE value, so it throws \"require-plan.py publishes 0 reasons for \\\"warn\\\" taking 1 value(s)\". The fixture's arity assumption is the defect, not the hook's sentence: make the seeding read each template's own placeholder count and fill that many, so the next change to a reason's arity cannot turn this suite red again; keep the assertions that every seeded reason is the hook's own sentence and that the capture owns none of them. Do not edit require-plan.py. Gate this task with `npx vitest run` in addition to the phase gate, since the phase's task gate does not run vitest.",
       "files": [
         "tools/ui-tests/gate-reasons.test.mjs"
@@ -7018,31 +7018,74 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6984f7189603",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "gate-reasons.test.mjs: added publishedTemplates() (reads GATE_REASONS from require-plan.py via python3) and fileArmValues() (all-%s arm, value count = that template's conversion count); SEEDED warn row and the deny/warn equality case now use it. Before: 4 failed of 20. After: full npx vitest run 55 files, 809 tests passed. require-plan.py and capture-screenshots.mjs untouched (capture already seeds 3 values). Other gates not run (own-tests).",
+        "descriptive": "The gate-reasons suite seeds each reason at the arity its template declares, so a placeholder change no longer reddens it."
       },
       "startedAt": "2026-10-12T17:00:39Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T17:10:10Z",
+      "verifiedBy": [
+        "tools/ui-tests/gate-reasons.test.mjs: warn row seeded from template arity"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-12T17:10:09Z.33495b",
         "status": "passed",
         "at": "2026-10-12T17:10:09Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "6984f7189603",
+        "at": "2026-10-12T17:10:10Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression mode, expectRedFirst false; the 4 failures (20 cases) were observed on current code before the edit",
+        "at": "n/a"
       }
     },
     {
       "id": "P123.88-64p",
       "title": "The live plan's HTML report fits a 320px viewport and every interaction in it works",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Found by the release verify at 60448996, rendered-plan leg over THIS repo's own plan (live-plan/audit-report.html): \"FAIL report at 320px: the document scrolls sideways by 62px (body 62px) in a 320px viewport - widest: nothing outside its own frame, so a margin or a negative offset\", then \"REPORT IS INERT: 1 interaction(s) did not work\". The committed example reports pass; the live plan carries P123's long titles, finding text and code spans, so some surface the examples never exercise overflows - the class P120 fixed for task titles, on another surface. Reproduce by rendering docs/audit/audit-plan.json (`python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir <tmp>`) and running `node tools/check-report-interactive.mjs <tmp>/audit-report.html`; name the element and the interaction that failed (the checker's own output says which). Fix the rule for the CLASS of content (any long unbroken token in any text surface the report prints), not the one string, per the fix-across-all-surfaces rule; read the refactoring-the-assembled-ui skill first and budget the UI pins (`python3 tools/count-ui-pins.py`). The orchestrator owns the screenshot recapture; the declared ui directories are the report's ordered parts. If the inert interaction has a different cause than the overflow, fix it too and name both.",
       "files": [
         "plugins/audit/scripts/ui/report-css",
         "plugins/audit/scripts/ui/report",
         "plugins/audit/tests/test_render_report.py",
-        "docs/screenshots"
+        "docs/screenshots",
+        "plugins/audit/scripts/ui/report-css/shell.css",
+        "examples/acme-store/acme-store-audit.html",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/demo-gate.gif",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/mobile.png",
+        "docs/screenshots/overview.png",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
       ],
       "tests": {
         "mode": "regression",
@@ -7067,16 +7110,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T17:10:10Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T17:37:39Z.f8b997",
+        "status": "passed",
+        "at": "2026-10-12T17:37:39Z"
+      }
     },
     {
       "id": "P123.89-64p",

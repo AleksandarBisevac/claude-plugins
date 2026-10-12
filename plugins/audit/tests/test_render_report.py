@@ -337,6 +337,9 @@ def _cases(check):
     _esc = M._mangled_css_escapes(M._CSS)
     check("u14j no CSS escape was eaten by Python before the browser saw it",
           _esc == [], repr(_esc))
+    check("u14k prose in the content column wraps an unbroken token (a worktree path) inside a 320px frame",
+          re.search(r"\.content :where\(p,li,dd,summary,blockquote\)\{overflow-wrap:anywhere\}",
+                    M._CSS) is not None)
     # A missing `;` after a custom property annexes the comment and declarations
     # that follow it. Silent, and it killed every animation in this stylesheet once.
     _unterm = M._unterminated_css_decls(M._CSS)

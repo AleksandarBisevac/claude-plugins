@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "test_render_report.py --selftest": "pass",
+    "check-report-interactive live plan": "pass",
+    "check-report-interactive acme-store example": "pass",
+    "sweep-selftests": "fail"
+  },
+  "redFirst": {
+    "at": "2026-10-12T17:19:57Z",
+    "basis": "`python3 plugins/audit/tests/test_render_report.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 296 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - u14k (house FAIL): SELFTEST FAILED: 295/296 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Element: main.content > p.muted (the 'phase P109 read from the worktree file <outside-repo>, which has `audit/p109-...` checked out' note, from status/_live_copy.py:306). Its unbroken worktree path/branch token had scrollWidth 346 in a 248px box with overflow-wrap normal, making documentElement scrollWidth 382 vs 320 (62px). Found by bisecting display:none per element; hiding only that p returned 320. The INERT line was the same 320px check, not a separate cause. Fix: shell.css after .content{min-width:0}: `.content :where(p,li,dd,summary,blockquote){overflow-wrap:anywhere}` (class rule for all column prose). Added u14k in test_render_report.py. Before: checker printed 'FAIL report at 320px: the document scrolls sideways by 62px' + 'REPORT IS INERT: 1 interaction(s)'. After: live plan exit 0 'report is interactive: 175 checks passed'; acme-store example exit 0; test_render_report.py --selftest 296/296. Full sweep-selftests: 329/331 files ok; 2 FAIL are consequences of the CSS digest moving, not of my code: test__refs.py sc1/sc2 (screenshots recorded against report digest 7f40af1bbb8e, now 6697ddae00c7 - orchestrator recapture) and tools/check-rendered-artifacts.py ('2 committed artifact(s) no longer match their source': docs/demo-large.html and another committed rendered page need re-render with the commands that tool prints; outside my files). count-ui-pins.py not run separately; sweep covered the suites. Screenshots not recaptured.",
+    "descriptive": "Long unbroken tokens in any column prose now wrap, so the live plan's report fits 320px and passes the interactive checker."
+  },
+  "testsAdded": [
+    "test_render_report.py u14k"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:d69643c2f2f7be23f2d4b6de476038c92e572cb612c010d7af017ea5dfff2099\",\"dirtyDigest\":\"sha256:95f9dccc515fd5a08d5418954d5902de48bb8ba691577d2ff17b858941994a3a\",\"dirtyPaths\":{\"plugins/audit/scripts/ui/report-css/shell.css\":\"b0aecb1b1213dc85\",\"plugins/audit/tests/test_render_report.py\":\"324faf7b92d2bf28\"},\"head\":\"6984f718\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"docs/screenshots\",\"plugins/audit/scripts/ui/report\",\"plugins/audit/scripts/ui/report-css\",\"plugins/audit/scripts/ui/report-css/shell.css\",\"plugins/audit/tests/test_render_report.py\"],\"scopeDigest\":\"sha256:8a17b63e731f5bd1c13d47cf73ca19368c89897abeb2940366902d05f6af9f1c\",\"v\":2}"
+}

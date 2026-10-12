@@ -87,6 +87,8 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
 .shell{display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr);gap:var(--shell-gap);
   max-width:96rem;margin:0 auto;padding:1.25rem 1.5rem 4rem;align-items:start}
 .content{min-width:0}
+/* an unbroken token (a path, a branch name) in any prose of the column breaks instead of widening the page */
+.content :where(p,li,dd,summary,blockquote){overflow-wrap:anywhere}
 /* Prose keeps a measure even when the shell is wide. A 1400px-wide sentence is
    not "using the space", it is unreadable. Tables and charts take the full
    column; text does not. */
