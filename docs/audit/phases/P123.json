@@ -337,11 +337,29 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_invariants.py:1164-1178",
         "issue": "_rewrite_action classifies only actions that START with rebase, reset or filter-branch. The old substring test also caught a rebase run through another command, whose reflog action is the caller's GIT_REFLOG_ACTION, such as `pull --rebase (finish): ...` (from my knowledge of git, not observed here). Under the new test that entry is not a rewrite verb. The ancestry test still catches a rebase that moves the tip off its old line. A rebase that lands on a descendant of the old tip, the case the verb match exists for, is no longer named when it came through `pull --rebase`. rw1-rw6 cover no such entry.",
-        "resolution": "Match the verb inside the action as well as at its start, for example a word-boundary test for `rebase` over `action` (the text before the first ': '), and add an rw case with the message `pull --rebase (finish): returning to refs/heads/x`. A commit subject stays out of reach because only the action is searched.",
-        "fixTask": "P123.82-64p"
+        "resolution": "fixed in P123.82-64p (9959429633d9): Match the verb inside the action as well as at its start, for example a word-boundary test for `rebase` over `action` (the text before the first ': '), and add an rw case with the message `pull --rebase (finish): returning to refs/heads/x`. A commit subject stays out of reach because only the action is searched.",
+        "fixTask": "P123.82-64p",
+        "commit": "9959429633d9",
+        "status": "fixed"
+      },
+      {
+        "id": "P123-R33",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_invariants.py:1167-1180",
+        "issue": "P123.82-64p widened _rewrite_action to a word-boundary search over the whole action, but the action is not git's alone: `git merge <branch>` writes `merge <branch>: ...` and `git pull origin <branch>` writes `pull origin <branch>: ...`, so the branch name is caller text in the action, as the commit subject was in P123.81. Measured in a scratch repo: after `git merge fix/reset-flow` the phase branch's reflog holds `merge fix/reset-flow: Merge made by the 'ort' strategy.`, and _rewrite_action returns True for it (and for `pull origin rebase-docs: Fast-forward`). branch_history then raises a history-rewrite BREACH on a linear branch, the false-breach class P123.81 closed, now reachable through branch names. rw8 pins only `prebase`/`resets` and a commit subject, never a merge or pull naming a branch.",
+        "resolution": "Match the verb as the action's command, not as any word in it: a rewrite verb at the start (`^(?:rebase|reset|filter-branch)\\b`) or the `--rebase` flag token (`(?:^|\\s)--rebase(?:=\\S+)?(?:\\s|$)`, which a branch name cannot spell), so `pull -q --rebase (finish)` stays a rewrite while `merge fix/reset-flow` and `pull origin rebase-docs` do not. Add rw cases for those two messages (and a merge of `rebase-x`) beside rw7/rw8.",
+        "fixTask": "P123.83-64p"
+      },
+      {
+        "id": "P123-R34",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:2643-2662,2716-2729",
+        "issue": "drive() gives the phase lock back only when the code is E_STOPPED. The two E_USAGE returns in drive_locked (`--answer ... needs --reason`, and answer_refusal) come after take_lock and keep it, recorded as lock=taken in the state. A later next re-enters and releases it, so it is not lost, but a user who walks away after a mistyped --answer leaves phase-<id> held, which the desired outcome (a stopped drive leaves no lock behind) reads as stranded. dl2/dl3 pin only the verb-refusal stop. Reading only; not run.",
+        "resolution": "Decide and pin it: either release on E_USAGE when no decision is pending (state.get('pending') is None), or add a case saying the lock is deliberately kept across a refused answer because the pending decision is still this run.",
+        "fixTask": "P123.84-64p"
       }
     ],
-    "outcome": "[findings: 32 - 0 high, 13 med, 19 low; 30 with a recorded fix commit]"
+    "outcome": "[findings: 34 - 0 high, 14 med, 20 low; 31 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -6585,7 +6603,7 @@
     {
       "id": "P123.82-64p",
       "title": "fix P123-R32: _rewrite_action classifies only actions that START with rebase,...",
-      "status": "in_progress",
+      "status": "done",
       "description": "_rewrite_action classifies only actions that START with rebase, reset or filter-branch. The old substring test also caught a rebase run through another command, whose reflog action is the caller's GIT_REFLOG_ACTION, such as `pull --rebase (finish): ...` (from my knowledge of git, not observed here). Under the new test that entry is not a rewrite verb. The ancestry test still catches a rebase that moves the tip off its old line. A rebase that lands on a descendant of the old tip, the case the verb match exists for, is no longer named when it came through `pull --rebase`. rw1-rw6 cover no such entry.\n\nResolution asked: Match the verb inside the action as well as at its start, for example a word-boundary test for `rebase` over `action` (the text before the first ': '), and add an rw case with the message `pull --rebase (finish): returning to refs/heads/x`. A commit subject stays out of reach because only the action is searched.",
       "files": [
         "plugins/audit/scripts/governance/_invariants.py",
@@ -6616,14 +6634,17 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9959429633d9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_invariants.py: _REWRITE_ACTIONS is a compiled regex r'\\b(?:rebase|reset|filter-branch)\\b' searched over the action (text before first ': ') in _rewrite_action; 'branch: Reset to' kept. test_verify_invariants.py: added rw7 (the four measured pull -q --rebase start/pick/finish actions are rewrites) and rw8 (pull: Fast-forward, pull: Merge made by the 'ort' strategy., a commit subject naming pull --rebase, prebase, resets are not). Suite run: python3 plugins/audit/tests/test_verify_invariants.py --selftest; ruff check on _invariants.py exit 0.",
+        "descriptive": "A rebase run through pull --rebase is now named as a rewrite by the branch-history invariant, with rw7/rw8 locking it."
       },
       "startedAt": "2026-10-12T15:22:15Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T15:32:07Z",
+      "verifiedBy": [
+        "rw7",
+        "rw8"
+      ],
       "notes": [
         {
           "at": "2026-10-12T15:21:17Z",
@@ -6638,7 +6659,128 @@
         "runId": "2026-10-12T15:32:06Z.dec005",
         "status": "passed",
         "at": "2026-10-12T15:32:06Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "9959429633d9",
+        "at": "2026-10-12T15:32:07Z",
+        "basis": "a fix task for P123-R32: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-12T15:23:11Z",
+        "basis": "`python3 plugins/audit/tests/test_verify_invariants.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 69 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rw7 (house FAIL): SELFTEST FAILED: 67/69 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
+    },
+    {
+      "id": "P123.83-64p",
+      "title": "fix P123-R33: P123.82-64p widened _rewrite_action to a word-boundary search o...",
+      "status": "in_progress",
+      "description": "P123.82-64p widened _rewrite_action to a word-boundary search over the whole action, but the action is not git's alone: `git merge <branch>` writes `merge <branch>: ...` and `git pull origin <branch>` writes `pull origin <branch>: ...`, so the branch name is caller text in the action, as the commit subject was in P123.81. Measured in a scratch repo: after `git merge fix/reset-flow` the phase branch's reflog holds `merge fix/reset-flow: Merge made by the 'ort' strategy.`, and _rewrite_action returns True for it (and for `pull origin rebase-docs: Fast-forward`). branch_history then raises a history-rewrite BREACH on a linear branch, the false-breach class P123.81 closed, now reachable through branch names. rw8 pins only `prebase`/`resets` and a commit subject, never a merge or pull naming a branch.\n\nResolution asked: Match the verb as the action's command, not as any word in it: a rewrite verb at the start (`^(?:rebase|reset|filter-branch)\\b`) or the `--rebase` flag token (`(?:^|\\s)--rebase(?:=\\S+)?(?:\\s|$)`, which a branch name cannot spell), so `pull -q --rebase (finish)` stays a rewrite while `merge fix/reset-flow` and `pull origin rebase-docs` do not. Add rw cases for those two messages (and a merge of `rebase-x`) beside rw7/rw8.",
+      "files": [
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/tests/test_verify_invariants.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [
+          "plugins/audit/tests/test_verify_invariants.py: merge fix/reset-flow: Merge made by the 'ort' strategy., pull origin rebase-docs: Fast-forward and a commit subject naming a rebase are clean; rebase (finish), rebase -i (pick), pull -q --rebase (finish), pull --rebase=merges (finish), pull -r (finish), reset: moving to, filter-branch: rewrite and branch: Reset to are rewrites"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 2,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-12T15:37:17Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-12T15:37:06Z",
+          "text": "scope: plugins/audit/scripts/governance/_invariants.py, every path the finding(s) P123-R33 name"
+        }
+      ],
+      "fixes": [
+        "P123-R33"
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T15:47:21Z.3b1474",
+        "status": "passed",
+        "at": "2026-10-12T15:47:21Z"
+      }
+    },
+    {
+      "id": "P123.84-64p",
+      "title": "fix P123-R34: drive() gives the phase lock back only when the code is E_STOPP...",
+      "status": "pending",
+      "description": "drive() gives the phase lock back only when the code is E_STOPPED. The two E_USAGE returns in drive_locked (`--answer ... needs --reason`, and answer_refusal) come after take_lock and keep it, recorded as lock=taken in the state. A later next re-enters and releases it, so it is not lost, but a user who walks away after a mistyped --answer leaves phase-<id> held, which the desired outcome (a stopped drive leaves no lock behind) reads as stranded. dl2/dl3 pin only the verb-refusal stop. Reading only; not run.\n\nResolution asked: Decide and pin it: either release on E_USAGE when no decision is pending (state.get('pending') is None), or add a case saying the lock is deliberately kept across a refused answer because the pending decision is still this run.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a drive that took the phase lock and returns E_USAGE (a missing --reason, a refused --answer) with no decision pending leaves phase-<id> released"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-12T15:37:06Z",
+          "text": "scope: plugins/audit/scripts/governance/drive-phase.py, every path the finding(s) P123-R34 name"
+        }
+      ],
+      "fixes": [
+        "P123-R34"
+      ]
     }
   ],
   "reviewPerTask": "phase",

@@ -1164,20 +1164,41 @@ _PUSH_MESSAGE = "update by push"
 # Reflog ACTIONS that name a rewrite by verb. The non-fast-forward test below
 # catches the ones that MOVED the tip; these catch the ones that were run and
 # happened to land somewhere reachable, which the ancestry test cannot see.
-# Matched as whole words ANYWHERE in the action: a rebase run through another
-# command carries the caller's GIT_REFLOG_ACTION (`pull -q --rebase (finish)`).
-_REWRITE_ACTIONS = re.compile(r"\b(?:rebase|reset|filter-branch)\b")
+_REWRITE_COMMANDS = ("rebase", "reset", "filter-branch")
 _REWRITE_BRANCH_MESSAGE = "branch: Reset to"
+_PHASE_MARKER = re.compile(r"\s*\([a-z-]+\)$")
+
+
+def _pull_rebases(tokens):
+    """True when a `pull` command line carries the rebase flag as a token."""
+    return any(t == "--rebase" or t == "-r"
+               or (t.startswith("--rebase=") and t != "--rebase=false")
+               for t in tokens)
 
 
 def _rewrite_action(message):
-    """True when the reflog message's ACTION - the text before its first ': ' -
-    names a rewrite verb as a word. A commit's message is `commit: <subject>`, so the subject
-    is the author's prose and never evidence of what git did."""
+    """True when the reflog message's ACTION is a rewrite command.
+
+    The action - the text before the first ': ' - is git's GIT_REFLOG_ACTION:
+    a command line, optionally ending in a phase marker such as `(finish)`.
+    It is parsed as tokens, never searched: the marker is dropped, the first
+    token is the COMMAND, and the rest is arguments. It is a rewrite when the
+    command is rebase, reset or filter-branch, or is `pull` carrying `--rebase`,
+    `--rebase=<mode>` (not `=false`) or `-r`; the message `branch: Reset to`
+    is the one rewrite whose command is not a verb. Branch names, remotes and
+    commit subjects are caller text that the action can contain
+    (`merge fix/reset-flow`, `pull origin rebase-docs`), so matching any word
+    of the line - tried as substring, prefix and word search - read them as
+    git's own doing; only the command position and the flag tokens are git's."""
     if message.startswith(_REWRITE_BRANCH_MESSAGE):
         return True
-    action = message.split(": ", 1)[0]
-    return _REWRITE_ACTIONS.search(action) is not None
+    action = _PHASE_MARKER.sub("", message.split(": ", 1)[0])
+    tokens = action.split()
+    if not tokens:
+        return False
+    if tokens[0] in _REWRITE_COMMANDS:
+        return True
+    return tokens[0] == "pull" and _pull_rebases(tokens[1:])
 
 
 def _reflog(git_root, ref, fmt):

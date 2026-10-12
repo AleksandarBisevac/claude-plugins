@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "test_verify_invariants --selftest": "pass",
+    "ruff (two files)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-12T15:38:42Z",
+    "basis": "`python3 plugins/audit/tests/test_verify_invariants.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 71 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rw9 (house FAIL): SELFTEST FAILED: 69/71 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "Replaced the _REWRITE_ACTIONS regex word search in _invariants.py with a token grammar in _rewrite_action: strip a trailing (phase) marker, whitespace-split, first token is the command; rewrite iff command in rebase/reset/filter-branch, or command is pull with a token --rebase, --rebase=<mode> (not =false) or -r, or message starts with 'branch: Reset to'. Added _pull_rebases helper; docstring states the grammar and why free-text matching was dropped. Tests: rw8 kept, added rw9 (merge fix/reset-flow, pull origin rebase-docs, merge rebase-x, pull origin reset, pull --rebase=false origin main are clean) and rw10 (--rebase=merges, -r, --rebase pull entries are rewrites). Ran python3 plugins/audit/tests/test_verify_invariants.py --selftest: 71/71 passed, exit 0; ruff check on both files clean.",
+    "descriptive": "Reflog rewrite detection reads the action's command and flag tokens, so branch names like fix/reset-flow no longer raise false history-rewrite breaches."
+  },
+  "testsAdded": [
+    "rw9",
+    "rw10"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:567a8329fb9786a0714ad77ab7bd44037c859404ba11b1197202a9f9b1eef3fd\",\"dirtyDigest\":\"sha256:91e49980ce596d30bd50939d47de533c86caa6d1a3a6381e69e54f18cbfb277e\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_invariants.py\":\"ae2b8d60c4e45e44\",\"plugins/audit/tests/test_verify_invariants.py\":\"b2e29acb2bfa42af\"},\"head\":\"99594296\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_invariants.py\",\"plugins/audit/tests/test_verify_invariants.py\"],\"scopeDigest\":\"sha256:d484025dc443d684df30e6a0cd8d29c709eccae0e51f20059ca1350f08e083a9\",\"v\":2}"
+}

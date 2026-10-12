@@ -901,6 +901,25 @@ def _rewrite_cases(check, tmp):
           and not _invariants._rewrite_action("commit: pull --rebase it")
           and not _invariants._rewrite_action("prebase (x): y")
           and not _invariants._rewrite_action("resets: y"))
+    # a branch or remote name is caller text inside the action
+    named = (
+        "merge fix/reset-flow: Merge made by the 'ort' strategy.",
+        "pull origin rebase-docs: Fast-forward",
+        "merge rebase-x: Fast-forward",
+        "pull origin reset: Fast-forward",
+        "pull --rebase=false origin main: Fast-forward",
+    )
+    check("rw9 a merge or pull that merely NAMES a branch containing a rewrite "
+          "word is not a rewrite: %r" % (named,),
+          not any(_invariants._rewrite_action(m) for m in named))
+    flagged = (
+        "pull --rebase=merges (finish): refs/heads/x onto abc",
+        "pull -r (finish): refs/heads/x onto abc",
+        "pull --rebase (pick): c",
+    )
+    check("rw10 `pull` with --rebase, --rebase=<mode> or -r is a rewrite: %r"
+          % (flagged,),
+          all(_invariants._rewrite_action(m) for m in flagged))
 
 
 def _selftest():
