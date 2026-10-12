@@ -377,11 +377,13 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:2644-2648,2669-2675",
         "issue": "The new docstring says the lock is kept only while a decision is pending 'or a dispatch is out', but lock_to_give_back has no dispatch term: an E_USAGE return with state['pending'] None releases the lock even when an executor dispatch is outstanding (a mistyped `--answer` during a dispatch answers 'nothing pending' and gives the phase lock back while the executor runs, so a second session's drive can acquire it). dl7-dl9 pin only the none-pending/idle and pending cases, never a dispatch out. The E_STOPPED arm already behaves this way, so the desired outcome is met; the sentence and the pin are what disagree.",
-        "resolution": "Either narrow the docstring to 'kept for E_OK returns (decision or dispatch) and for a usage refusal while a decision is pending', or have lock_to_give_back also keep the lock when a task is in flight, and add a dl case for a refused --answer sent while a dispatch is out so the chosen rule is pinned.",
-        "fixTask": "P123.86-64p"
+        "resolution": "fixed in P123.86-64p (814f57b4f2a6): Either narrow the docstring to 'kept for E_OK returns (decision or dispatch) and for a usage refusal while a decision is pending', or have lock_to_give_back also keep the lock when a task is in flight, and add a dl case for a refused --answer sent while a dispatch is out so the chosen rule is pinned.",
+        "fixTask": "P123.86-64p",
+        "commit": "814f57b4f2a6",
+        "status": "fixed"
       }
     ],
-    "outcome": "[findings: 36 - 0 high, 14 med, 22 low; 34 with a recorded fix commit]"
+    "outcome": "[findings: 36 - 0 high, 14 med, 22 low; 35 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -6915,7 +6917,7 @@
     {
       "id": "P123.86-64p",
       "title": "fix P123-R36: The new docstring says the lock is kept only while a decision i...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The new docstring says the lock is kept only while a decision is pending 'or a dispatch is out', but lock_to_give_back has no dispatch term: an E_USAGE return with state['pending'] None releases the lock even when an executor dispatch is outstanding (a mistyped `--answer` during a dispatch answers 'nothing pending' and gives the phase lock back while the executor runs, so a second session's drive can acquire it). dl7-dl9 pin only the none-pending/idle and pending cases, never a dispatch out. The E_STOPPED arm already behaves this way, so the desired outcome is met; the sentence and the pin are what disagree.\n\nResolution asked: Either narrow the docstring to 'kept for E_OK returns (decision or dispatch) and for a usage refusal while a decision is pending', or have lock_to_give_back also keep the lock when a task is in flight, and add a dl case for a refused --answer sent while a dispatch is out so the chosen rule is pinned.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -6946,14 +6948,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "814f57b4f2a6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: lock_to_give_back(code,state,ctx) now keeps the lock on E_USAGE when dispatch_out(ctx,state) is true (an in_progress task of the phase holding a dispatched-executor/reviewer mark for its current start with no filed return of that role, read via _marked and filed); docstring of drive names pending OR dispatch out, and lock_to_give_back names pending and dispatch out. test_drive_phase.py: added dl10 (a plain next dispatches the executor, then a refused --answer exits 2, keeps phase lock taken in lock and state). Ran python3 plugins/audit/tests/test_drive_phase.py --selftest: 234/234 passed, dl7-dl9 still green.",
+        "descriptive": "A refused --answer during an outstanding dispatch no longer gives the phase lock back."
       },
       "startedAt": "2026-10-12T16:18:47Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T16:59:40Z",
+      "verifiedBy": [
+        "dl10"
+      ],
       "notes": [
         {
           "at": "2026-10-12T16:08:17Z",
@@ -6968,7 +6972,154 @@
         "runId": "2026-10-12T16:59:39Z.ed0d2c",
         "status": "passed",
         "at": "2026-10-12T16:59:39Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "814f57b4f2a6",
+        "at": "2026-10-12T16:59:40Z",
+        "basis": "a fix task for P123-R36: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-12T16:28:55Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 234 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dl10 (house FAIL): SELFTEST FAILED: 233/234 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
+    },
+    {
+      "id": "P123.87-64p",
+      "title": "The gate-reasons UI suite seeds the plan gate's reasons at the arity the hook publishes them",
+      "status": "in_progress",
+      "description": "Found by the release verify at 60448996 (`npx vitest run tools/ui-tests/gate-reasons.test.mjs`: 4 failed of 20). P123.37 (369ce476) made REASON_SLOT_SPENT in hooks/require-plan.py take three values (\"this writer's one free file was already spent on %s by %s at %s\") and the fixture still requires exactly one warn reason taking ONE value, so it throws \"require-plan.py publishes 0 reasons for \\\"warn\\\" taking 1 value(s)\". The fixture's arity assumption is the defect, not the hook's sentence: make the seeding read each template's own placeholder count and fill that many, so the next change to a reason's arity cannot turn this suite red again; keep the assertions that every seeded reason is the hook's own sentence and that the capture owns none of them. Do not edit require-plan.py. Gate this task with `npx vitest run` in addition to the phase gate, since the phase's task gate does not run vitest.",
+      "files": [
+        "tools/ui-tests/gate-reasons.test.mjs"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/ui-tests/gate-reasons.test.mjs: every warn and deny reason require-plan.py publishes is seeded with as many values as its template takes, and the suite derives that count from the template rather than assuming one"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-12T17:00:39Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T17:10:09Z.33495b",
+        "status": "passed",
+        "at": "2026-10-12T17:10:09Z"
+      }
+    },
+    {
+      "id": "P123.88-64p",
+      "title": "The live plan's HTML report fits a 320px viewport and every interaction in it works",
+      "status": "pending",
+      "description": "Found by the release verify at 60448996, rendered-plan leg over THIS repo's own plan (live-plan/audit-report.html): \"FAIL report at 320px: the document scrolls sideways by 62px (body 62px) in a 320px viewport - widest: nothing outside its own frame, so a margin or a negative offset\", then \"REPORT IS INERT: 1 interaction(s) did not work\". The committed example reports pass; the live plan carries P123's long titles, finding text and code spans, so some surface the examples never exercise overflows - the class P120 fixed for task titles, on another surface. Reproduce by rendering docs/audit/audit-plan.json (`python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir <tmp>`) and running `node tools/check-report-interactive.mjs <tmp>/audit-report.html`; name the element and the interaction that failed (the checker's own output says which). Fix the rule for the CLASS of content (any long unbroken token in any text surface the report prints), not the one string, per the fix-across-all-surfaces rule; read the refactoring-the-assembled-ui skill first and budget the UI pins (`python3 tools/count-ui-pins.py`). The orchestrator owns the screenshot recapture; the declared ui directories are the report's ordered parts. If the inert interaction has a different cause than the overflow, fix it too and name both.",
+      "files": [
+        "plugins/audit/scripts/ui/report-css",
+        "plugins/audit/scripts/ui/report",
+        "plugins/audit/tests/test_render_report.py",
+        "docs/screenshots"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_render_report.py: the rendered rule for the element that overflowed carries the wrap/containment that keeps it inside a 320px frame"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.89-64p",
+      "title": "run-test-gate's no-overlap banner survives a legacy code page",
+      "status": "pending",
+      "description": "Found by the release verify at 60448996: `python3 tools/sweep-selftests.py --encoding cp1252` turns test_run_test_gate.py red (522/524): FAIL ur9 \"SETUP: a measured run whose gate names nothing owned prints NO OVERLAP and stores that banner on its row: (1, ['NO OVERLAP WITH THIS WORK'])\" and FAIL ur10 (the re-run repeat prints NO OVERLAP again). Green under utf-8. Reproduce with the sweep's cp1252 mode on that one file, find which write or read in the no-overlap/reuse path depends on the locale's encoding (a character outside cp1252 in the banner or reuse line, or a stdout/file opened without an explicit encoding), and fix it at the write, per the house rule that every text write states its encoding and newline. If the cause is in the test's own subprocess setup, say so and fix that instead.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: ur9 and ur10 pass under PYTHONIOENCODING=cp1252 / the cp1252 sweep, and the banner bytes written to the row are the same as under utf-8"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "reviewPerTask": "phase",

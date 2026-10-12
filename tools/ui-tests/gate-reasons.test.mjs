@@ -23,6 +23,7 @@
 // substitution on what `gateReason` returned and asking the hook's source whether
 // it owns the result. A sentence typed into this file would be the same fault one
 // layer out, and the case at the bottom is the one that would find it.
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -61,10 +62,44 @@ const captureFlat = captureSrc.replace(/\n\s*\*?\s*/g, ' ').replace(/\s+/g, ' ')
  */
 const BAR = trivialLineDefault();
 const FILE = 'src/mobile/mod07_01.ts';
+
+/**
+ * The templates the hook publishes for an event, read from its own table
+ * (`GATE_REASONS`) the way the capture reads them.
+ * @param {string} event
+ * @returns {string[]}
+ */
+function publishedTemplates(event) {
+  const out = execFileSync('python3', ['-c',
+    'import importlib.util,json,sys;'
+    + 's=importlib.util.spec_from_file_location("rp",sys.argv[1]);'
+    + 'm=importlib.util.module_from_spec(s);s.loader.exec_module(m);'
+    + 'print(json.dumps({k:list(v) for k,v in m.GATE_REASONS.items()}))',
+    WRITER], { encoding: 'utf8' });
+  return JSON.parse(out)[event] || [];
+}
+
+/**
+ * The values for the arm that names a file rather than grading a magnitude: as
+ * many as that template has conversions, so a reason that gains or loses a
+ * placeholder cannot turn this suite red. The first is the file; the rest are
+ * distinct text, one per remaining `%s`.
+ * @param {string} event
+ * @returns {string[]}
+ */
+function fileArmValues(event) {
+  const arms = publishedTemplates(event)
+    .map((t) => t.match(/%[sd]/g) || [])
+    .filter((convs) => convs.length && convs.every((c) => c === '%s'));
+  if (arms.length !== 1) {
+    throw new Error(`${event} publishes ${arms.length} all-text reasons, not one`);
+  }
+  return arms[0].map((_, i) => (i === 0 ? FILE : `seed-value-${i}`));
+}
 const SEEDED = [
   ['observe', [96, BAR]],
   ['allow.trivial', [41]],
-  ['warn', [FILE]],
+  ['warn', fileArmValues('warn')],
   ['deny', [214, BAR]],
   ['bypass.consumed', []],
 ];
@@ -168,8 +203,9 @@ describe('gateReason refuses rather than inventing a sentence', () => {
     // asks for it, and a single event answers to either arm depending on what is
     // supplied. A derivation that could only ever fill one arm for a given event
     // would be narrower than the writer it derives from.
-    expect(gateReason('deny', FILE)).toBe(gateReason('warn', FILE));
-    expect(gateReason('deny', 214, 80)).not.toBe(gateReason('deny', FILE));
+    const named = fileArmValues('warn');
+    expect(gateReason('deny', ...named)).toBe(gateReason('warn', ...named));
+    expect(gateReason('deny', 214, 80)).not.toBe(gateReason('deny', ...named));
   });
 
   it('throws on a value a %d cannot print', () => {

@@ -1,0 +1,19 @@
+{
+  "gates": {
+    "npx vitest run tools/ui-tests/gate-reasons.test.mjs": "pass",
+    "npx vitest run": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression mode, expectRedFirst false; the 4 failures (20 cases) were observed on current code before the edit",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "gate-reasons.test.mjs: added publishedTemplates() (reads GATE_REASONS from require-plan.py via python3) and fileArmValues() (all-%s arm, value count = that template's conversion count); SEEDED warn row and the deny/warn equality case now use it. Before: 4 failed of 20. After: full npx vitest run 55 files, 809 tests passed. require-plan.py and capture-screenshots.mjs untouched (capture already seeds 3 values). Other gates not run (own-tests).",
+    "descriptive": "The gate-reasons suite seeds each reason at the arity its template declares, so a placeholder change no longer reddens it."
+  },
+  "testsAdded": [
+    "tools/ui-tests/gate-reasons.test.mjs: warn row seeded from template arity"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:29f5ae0b71efb7d76e272ad33db4d5309c9613080c42d2c1b6300bffdea3c79c\",\"dirtyDigest\":\"sha256:ceb1acf64fb681485e079d71f2f8a2308e21294211d8f31a4d8d8e361313bb15\",\"dirtyPaths\":{\"tools/ui-tests/gate-reasons.test.mjs\":\"985010387a951f05\"},\"head\":\"814f57b4\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/ui-tests/gate-reasons.test.mjs\"],\"scopeDigest\":\"sha256:1da84373704c522b4148bf81ba2f9d3e0c41330a2aa0e3647a8f572a9f54b25c\",\"v\":2}"
+}
