@@ -2645,7 +2645,11 @@ def drive(ctx, answer=None, reason=None, fixes=()):
     a decision is PENDING (handed to the human, the next `--answer` must find
     it) or a dispatch is OUT (a task started whose executor or reviewer return
     is not filed yet); every other non-zero return after it was taken
-    gives it back here, the one exit every arm shares, so no refusal strands it."""
+    gives it back here, the one exit every arm shares, so no refusal strands it.
+    The one exception is a usage refusal whose plan cannot be read to tell
+    whether a dispatch is out: the lock is kept, because releasing it could let
+    a second session take a phase whose executor may still be running, and the
+    next drive over a readable plan gives it back."""
     state = read_state(ctx)
     stop = take_lock(ctx, state)
     if stop is not None:

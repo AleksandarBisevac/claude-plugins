@@ -1047,9 +1047,9 @@ def _lock_stop_cases(check):
 
     # The dispatch check reads the plan a second time; when that read fails the
     # drive cannot tell whether an executor is out, so the lock is kept, the
-    # reason is printed, and nothing crashes.
+    # reason is printed, and nothing crashes. No dispatch is out here, so once
+    # the plan reads again a further next gives the kept lock back.
     root, mpath = _repo("lockunread", task_ids=TASKS[:1])
-    code0, text0 = _next(M, root, mpath)
     real_locked = M.drive_locked
     real_load = M.load_phase
 
@@ -1077,6 +1077,13 @@ def _lock_stop_cases(check):
           crashed is None and code == 2 and held_now
           and _drive_state(root).get("lock") == "taken"
           and "lock kept" in text and "the plan vanished" in text)
+    code2, text2 = _next(M, root, mpath, "--answer", "fix", "--reason", "x")
+    held_later = "phase-%s" % (PHASE,) in _verb(
+        root, "audit-lock.py", ["status", "--project", root])[1]
+    check("dl11b the kept lock is released by the next refusal over a readable "
+          "plan, as the printed line promises: %r" % ((code2, text2, held_later),),
+          code2 == 2 and not held_later
+          and _drive_state(root).get("lock") != "taken")
 
     # The project a context carries is the manifest's own when no --project-dir
     # was typed: the session's directory may be another checkout.

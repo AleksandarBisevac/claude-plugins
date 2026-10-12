@@ -1,0 +1,18 @@
+{
+  "gates": {
+    "test_drive_phase --selftest": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only task, expectRedFirst false; kept-lock behaviour unchanged, test extends dl11 with dl11b",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Kept the unreadable-plan lock (orchestrator decision). drive() docstring now names it as the one exception with the reason. dl11 no longer starts a dispatch (so none is out); after the kept-lock refusal, load_phase/drive_locked are restored and a further refused --answer is asserted to release the lock (dl11b). python3 plugins/audit/tests/test_drive_phase.py --selftest: 236/236 passed, exit 0; ruff check clean.",
+    "descriptive": "The kept lock on an unreadable plan is documented as the exception and its release by a later next is pinned."
+  },
+  "testsAdded": [
+    "dl11b"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:b70f0786e8387579d093cb34d88ea7717a76ae9aa9180fefc7753b1bcd933ec6\",\"dirtyDigest\":\"sha256:b5ad397336a35cec29449587ebead65c1acab246c54d92b69fa83bc1e8047b78\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/drive-phase.py\":\"53be5c29677a70b4\",\"plugins/audit/tests/test_drive_phase.py\":\"dbf98debc48c12ff\"},\"head\":\"8e1f03a1\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:441994ab2025b03a0793d9a85eca80f7d4a7cdf3dfd23d75bdb4d0b24cd3879b\",\"v\":2}"
+}

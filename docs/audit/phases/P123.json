@@ -411,9 +411,17 @@
         "fixTask": "P123.92-64p",
         "commit": "c84bb1ea9228",
         "status": "fixed"
+      },
+      {
+        "id": "P123-R40",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:2642-2646,2672-2685",
+        "issue": "P123.91 resolved the unreadable-plan case by KEEPING the phase lock (lock_to_give_back returns False plus a note), not by releasing it as the finding's resolution asked. drive()'s docstring still says every other non-zero return after the lock was taken gives it back 'so no refusal strands it', which the new branch contradicts, and the printed claim 'a later next releases it' is not pinned: dl11 asserts only that the lock is still held and the line is printed, never that a following next gives it back. If the plan stays unreadable the lock stays taken, which is the stranded-lock shape the phase's desired outcome rules out.",
+        "resolution": "Either release on OSError (return give_back True with the note) as the finding offered, or amend drive()'s docstring to name this one kept-lock case and extend dl11 with a second next over a readable plan asserting the lock is released.",
+        "fixTask": "P123.94-64p"
       }
     ],
-    "outcome": "[findings: 39 - 0 high, 14 med, 25 low; 38 with a recorded fix commit]"
+    "outcome": "[findings: 40 - 0 high, 14 med, 26 low; 38 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -7476,7 +7484,7 @@
     {
       "id": "P123.93-64p",
       "title": "Every prove-gates row goes red again: the four rows a full run left unproven are re-targeted or their lints made to assert",
-      "status": "in_progress",
+      "status": "done",
       "description": "A full `python3 tools/prove-gates.py` on 60448996 (run by the testbed monitor, log rc-prove.log) left four rows unproven, which blocks the release. RED direction: `ui_navigability_violations` STAYED GREEN (\"the gate asserts nothing about this\"), `exemption_reason_drift` STAYED GREEN, `sh_self_dir_violations` LABEL GONE (\"the case named sd1 is not in test__output.py any more\"). QUIET direction: `hook_tree_violations` LABEL GONE (\"ht3 is not in test__deps.py any more\").\n\nOrchestrator's first reading. (1) The ui_navigability row drops one `// ---` marker from ui/panel/composition.js, which is 1531 lines carrying 5 markers; one per 400 lines needs 4, so dropping one leaves it compliant. The row is stale the way n1 was, and `_nav_min_target()` is the precedent: ask which ui file sits exactly at the floor instead of naming one. (2) exemption_reason_drift's anchor 'check-rendered-artifacts.py, which is stronger because it compares bytes' is in tools/gate-parity.py once, so the mutation lands and the lint does not convict the changed sentence: diagnose whether the lint still reads that sentence, and either make it assert or re-anchor the row on a sentence it does read. (3)/(4) sd1 (test__output.py:935) and ht3 (test__deps.py:2385) both still exist as check labels, so LABEL GONE most likely means the mutated suite raised or stopped before printing them, or prove-gates' label reader no longer finds them: read prove-gates' own LABEL GONE logic and reproduce with `python3 tools/prove-gates.py --only <lint>`.\n\nFix each at its cause. Done when `python3 tools/prove-gates.py --only <lint>` exits 0 for each of the four lints on a tree where the mutated files are committed. prove-gates refuses a dirty mutated file, so run it for any row whose mutated file you did not edit, and for rows whose file you edited say so in the return; the orchestrator re-proves all four after the commit. If a row's lint truly asserts nothing, fixing the lint is in scope; name it.",
       "files": [
         "tools/prove-gates.py",
@@ -7509,19 +7517,89 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8e1f03a1b800",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Causes: (sd1) the test expression [..][0][1] raised IndexError once the lint returned [], killing the suite before sd1 printed -> test__output.py now uses any(...). (ht3) the widened mutation left reads[name] in the message, KeyError on state_only.py main, suite died before printing ht3 -> prove-gates row now mutates the message to reads.get(name,'?') as well (tools/prove-gates.py). (u1) added _ui_nav_min_target() (asked, not told, like _nav_min_target) returning the ui asset exactly at its marker floor plus its own marker regex; row uses it (now panel/usage-view.js). (er1) real lint hole: exemption_reason_drift accepted 'verify.sh' (a side itself, named in the reason's first sentence) as the gate making the comparison, so striking the real gate name stayed green; tools/gate-parity.py now excludes the sides' own basenames from the accepted set, plus new selftest case er3. Real tree still returns [] from exemption_reason_drift. Evidence, prove-gates --only rows, all exit 0, verbatim: sh_self_dir_violations 'RED sd1' (1 of 1 gates proven red) and 'RED sd2'; hook_tree_violations quiet side 'RED ht3, ht6' and 'RED ht10, ht11, ht6' (2 of 2 guards proven); ui_navigability_violations 'RED u1, u13, tn5' and quiet 'RED u1, u7, u8, u13'. exemption_reason_drift: I edited tools/gate-parity.py (the mutated file) so prove-gates refused it ('REFUSED (DIRTY): tools/gate-parity.py is not what HEAD has') - orchestrator must re-prove after commit; checked by hand that the er1 mutated reason is convicted by exemption_reason_drift(table=...). Selftests: gate-parity.py --selftest 115/115, test__output.py --selftest 259/259. Tree restored after each run. Files touched: tools/prove-gates.py, tools/gate-parity.py, plugins/audit/tests/test__output.py. _deps.py and test__deps.py unchanged.",
+        "descriptive": "Four prove-gates rows re-targeted or their lints/tests fixed so each goes red again; exemption_reason_drift now rejects umbrella-script-only reasons."
       },
       "startedAt": "2026-10-12T18:34:01Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T18:57:58Z",
+      "verifiedBy": [
+        "er3 (tools/gate-parity.py selftest)"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-12T18:57:57Z.d807e5",
         "status": "passed",
         "at": "2026-10-12T18:57:57Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "8e1f03a1b800",
+        "at": "2026-10-12T18:57:58Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task, expectRedFirst false; er3 added in gate-parity.py selftest and shown to convict the verify.sh-only reason by direct call",
+        "at": "n/a"
+      }
+    },
+    {
+      "id": "P123.94-64p",
+      "title": "fix P123-R40: P123.91 resolved the unreadable-plan case by KEEPING the phase ...",
+      "status": "in_progress",
+      "description": "P123.91 resolved the unreadable-plan case by KEEPING the phase lock (lock_to_give_back returns False plus a note), not by releasing it as the finding's resolution asked. drive()'s docstring still says every other non-zero return after the lock was taken gives it back 'so no refusal strands it', which the new branch contradicts, and the printed claim 'a later next releases it' is not pinned: dl11 asserts only that the lock is still held and the line is printed, never that a following next gives it back. If the plan stays unreadable the lock stays taken, which is the stranded-lock shape the phase's desired outcome rules out.\n\nResolution asked: Either release on OSError (return give_back True with the note) as the finding offered, or amend drive()'s docstring to name this one kept-lock case and extend dl11 with a second next over a readable plan asserting the lock is released.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: dl11 continues with a next over a readable plan and asserts the kept lock is then released; drive()'s docstring names the unreadable-plan keep as the one exception"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 2,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-12T19:00:27Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-12T19:00:25Z",
+          "text": "scope: plugins/audit/scripts/governance/drive-phase.py, every path the finding(s) P123-R40 name"
+        }
+      ],
+      "fixes": [
+        "P123-R40"
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T19:12:24Z.06be82",
+        "status": "passed",
+        "at": "2026-10-12T19:12:24Z"
       }
     }
   ],

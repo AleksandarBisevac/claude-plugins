@@ -1,0 +1,25 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/scripts/governance/drive-phase.py:2642-2646,2672-2685",
+   "issue": "P123.91 resolved the unreadable-plan case by KEEPING the phase lock (lock_to_give_back returns False plus a note), not by releasing it as the finding's resolution asked. drive()'s docstring still says every other non-zero return after the lock was taken gives it back 'so no refusal strands it', which the new branch contradicts, and the printed claim 'a later next releases it' is not pinned: dl11 asserts only that the lock is still held and the line is printed, never that a following next gives it back. If the plan stays unreadable the lock stays taken, which is the stranded-lock shape the phase's desired outcome rules out.",
+   "resolution": "Either release on OSError (return give_back True with the note) as the finding offered, or amend drive()'s docstring to name this one kept-lock case and extend dl11 with a second next over a readable plan asserting the lock is released."}
+ ],
+ "preExisting": [],
+ "intent": {"answer": "matches",
+  "note": "Phase-level: P123.90-92 do not touch the paths earlier rounds confirmed clause by clause, except drive-phase lock release touched by .91 (finding 1). .90 moves overflow-wrap to .content with a table exception (shell.css), .91 makes dispatch_out return (out, why) and keeps the lock on OSError, .92 adds S to _PULL_ARG_SHORTS and lets digits cluster; each does what its description asked. .93 is the owed task.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Phase mode: the owed task's section carries a gate-only return.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "see tasks entry"},
+ "verdict": "findings",
+ "tasks": [
+  {"id": "P123.93-64p", "commit": "8e1f03a1b800", "answer": "matches",
+   "note": "The diff does what the description asked, row by row. sd1: test__output.py:938 swaps [..][0][1]==2 for any(...), so an empty lint result is a failed check and no longer an IndexError that kills the suite before sd1 prints. ht3: the prove-gates mutation now also rewrites the message to reads.get(name,'?'), so the widened lint no longer KeyErrors on state_only.py. u1: new _ui_nav_min_target() asks which ui asset sits exactly at the marker floor; read-only I confirmed it returns panel/ado-connector.js (688 lines, 2 markers, one drop goes below the floor). The executor's outcome names usage-view.js, a different asset (453 lines, 2 markers, also at the floor): the first asset in ui_asset_names order is chosen, so the outcome text misnames the target but not the mechanism. er1: a real lint hole is fixed in tools/gate-parity.py: exemption_reason_drift accepted a side's own basename (verify.sh) as the gate making the comparison, and now subtracts the SIDES basenames. An in-memory run of the gate-parity source with and without the subtraction shows er3's table returns the render-report row with the fix and [] without it, and the live tree returns []. The orchestrator's prove-gates --only exemption_reason_drift exit 0 is the pointer's evidence. The claims block says er1 was unproven by the helper because the mutated file was dirty, which is honest.",
+   "missing": [],
+   "redFirst": "not-attempted",
+   "redFirstBasis": "Executor filed not-attempted (gate-only, expectRedFirst false), no red owed. The one new test, er3, I checked myself: with the fix reverted in memory its table returns [], so the case would fail; that is not a red the executor saw.",
+   "inheritedTests": "not-asked",
+   "inheritedTestsBasis": "tests.gate runs `python3 tools/sweep-selftests.py` (the whole project's selftests) plus validate, plugin-validate, status gate, report, ruff/vermin, screenshots check and the interactive checker; no entry selects a bounded set of tests, so the question has no bound."}
+ ]
+}
