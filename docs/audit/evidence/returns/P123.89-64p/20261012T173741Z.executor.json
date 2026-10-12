@@ -1,0 +1,17 @@
+{
+  "gates": {
+    "own-test cp1252 (sweep run_one, encoding=cp1252, test_run_test_gate.py)": "pass",
+    "own-test utf-8 (run_one, no encoding)": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression mode, expectRedFirst false. Red was observed before the fix by calling tools/sweep-selftests.py run_one with encoding=cp1252 on the one file: exit 1, FAIL ur9 and ur10, 522/524. Green under utf-8 (524/524).",
+    "at": "before the fix, this session"
+  },
+  "outcome": {
+    "technical": "Cause was in the test's own subprocess setup, not run-test-gate.py. The fixture gate script emit.py did print('\\u2713 ...'); the gate child inherits PYTHONIOENCODING=cp1252, so the print raised UnicodeEncodeError, the gate went red (exit 1) and no NO OVERLAP banner was produced. Fix in plugins/audit/tests/test_run_test_gate.py _unrecorded_cases: emit.py now writes utf-8 bytes via sys.stdout.buffer. After the fix, run_one with encoding=cp1252 gives code 0 and 524/524, and run_one without encoding gives code 0 and 524/524. run-test-gate.py unchanged. The full sweep and the other gate commands were not run.",
+    "descriptive": "ur9/ur10 no longer depend on the locale code page: the fixture emits its tick as utf-8 bytes."
+  },
+  "testsAdded": [],
+  "stamp": "audit-stamp: {\"content\":\"sha256:49e53c231dfe5983c3245b580addb9a67f570348141641783bf32e23f72b9135\",\"dirtyDigest\":\"sha256:dd0b4e36b812ba0eab996d96c8ae94cc28d40a6fadb91dabdd010b0f8baa5a9a\",\"dirtyPaths\":{\"plugins/audit/tests/test_run_test_gate.py\":\"48ea580c99deb1ab\"},\"head\":\"4250f73b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:b0c39628c074dcc70c1f0b4b7d3a727c73591f04642d5e68d49aeab8150b464d\",\"v\":2}"
+}

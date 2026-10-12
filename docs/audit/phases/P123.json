@@ -7048,7 +7048,7 @@
     {
       "id": "P123.88-64p",
       "title": "The live plan's HTML report fits a 320px viewport and every interaction in it works",
-      "status": "in_progress",
+      "status": "done",
       "description": "Found by the release verify at 60448996, rendered-plan leg over THIS repo's own plan (live-plan/audit-report.html): \"FAIL report at 320px: the document scrolls sideways by 62px (body 62px) in a 320px viewport - widest: nothing outside its own frame, so a margin or a negative offset\", then \"REPORT IS INERT: 1 interaction(s) did not work\". The committed example reports pass; the live plan carries P123's long titles, finding text and code spans, so some surface the examples never exercise overflows - the class P120 fixed for task titles, on another surface. Reproduce by rendering docs/audit/audit-plan.json (`python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir <tmp>`) and running `node tools/check-report-interactive.mjs <tmp>/audit-report.html`; name the element and the interaction that failed (the checker's own output says which). Fix the rule for the CLASS of content (any long unbroken token in any text surface the report prints), not the one string, per the fix-across-all-surfaces rule; read the refactoring-the-assembled-ui skill first and budget the UI pins (`python3 tools/count-ui-pins.py`). The orchestrator owns the screenshot recapture; the declared ui directories are the report's ordered parts. If the inert interaction has a different cause than the overflow, fix it too and name both.",
       "files": [
         "plugins/audit/scripts/ui/report-css",
@@ -7112,25 +7112,38 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4250f73ba881",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Element: main.content > p.muted (the 'phase P109 read from the worktree file <outside-repo>, which has `audit/p109-...` checked out' note, from status/_live_copy.py:306). Its unbroken worktree path/branch token had scrollWidth 346 in a 248px box with overflow-wrap normal, making documentElement scrollWidth 382 vs 320 (62px). Found by bisecting display:none per element; hiding only that p returned 320. The INERT line was the same 320px check, not a separate cause. Fix: shell.css after .content{min-width:0}: `.content :where(p,li,dd,summary,blockquote){overflow-wrap:anywhere}` (class rule for all column prose). Added u14k in test_render_report.py. Before: checker printed 'FAIL report at 320px: the document scrolls sideways by 62px' + 'REPORT IS INERT: 1 interaction(s)'. After: live plan exit 0 'report is interactive: 175 checks passed'; acme-store example exit 0; test_render_report.py --selftest 296/296. Full sweep-selftests: 329/331 files ok; 2 FAIL are consequences of the CSS digest moving, not of my code: test__refs.py sc1/sc2 (screenshots recorded against report digest 7f40af1bbb8e, now 6697ddae00c7 - orchestrator recapture) and tools/check-rendered-artifacts.py ('2 committed artifact(s) no longer match their source': docs/demo-large.html and another committed rendered page need re-render with the commands that tool prints; outside my files). count-ui-pins.py not run separately; sweep covered the suites. Screenshots not recaptured.",
+        "descriptive": "Long unbroken tokens in any column prose now wrap, so the live plan's report fits 320px and passes the interactive checker."
       },
       "startedAt": "2026-10-12T17:10:10Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T17:37:40Z",
+      "verifiedBy": [
+        "test_render_report.py u14k"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-12T17:37:39Z.f8b997",
         "status": "passed",
         "at": "2026-10-12T17:37:39Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "4250f73ba881",
+        "at": "2026-10-12T17:37:40Z"
+      },
+      "redFirst": {
+        "at": "2026-10-12T17:19:57Z",
+        "basis": "`python3 plugins/audit/tests/test_render_report.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 296 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - u14k (house FAIL): SELFTEST FAILED: 295/296 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P123.89-64p",
       "title": "run-test-gate's no-overlap banner survives a legacy code page",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Found by the release verify at 60448996: `python3 tools/sweep-selftests.py --encoding cp1252` turns test_run_test_gate.py red (522/524): FAIL ur9 \"SETUP: a measured run whose gate names nothing owned prints NO OVERLAP and stores that banner on its row: (1, ['NO OVERLAP WITH THIS WORK'])\" and FAIL ur10 (the re-run repeat prints NO OVERLAP again). Green under utf-8. Reproduce with the sweep's cp1252 mode on that one file, find which write or read in the no-overlap/reuse path depends on the locale's encoding (a character outside cp1252 in the banner or reuse line, or a stdout/file opened without an explicit encoding), and fix it at the write, per the house rule that every text write states its encoding and newline. If the cause is in the test's own subprocess setup, say so and fix that instead.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -7159,16 +7172,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T17:37:41Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T17:50:44Z.0f11ac",
+        "status": "passed",
+        "at": "2026-10-12T17:50:44Z"
+      }
     }
   ],
   "reviewPerTask": "phase",

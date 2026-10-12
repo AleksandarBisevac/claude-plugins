@@ -7352,8 +7352,12 @@ def _unrecorded_cases(check):
     # A gate that passes and names a suite file the work does not own, so the
     # runner reader finds a path and the overlap is EMPTY rather than unknown.
     with open(os.path.join(root, "emit.py"), "w") as fh:
-        fh.write("print('\\u2713 other/x.test.js (1 tests)')\n"
-                 "print('Test Files  1 passed (1)')\n")
+        # Bytes, not print(): the gate child inherits PYTHONIOENCODING, and a
+        # legacy code page cannot encode the tick the runner reader keys on.
+        fh.write("import sys\n"
+                 "sys.stdout.buffer.write(('\\u2713 other/x.test.js (1 tests)\\n'"
+                 "\n                          'Test Files  1 passed (1)\\n')"
+                 ".encode('utf-8'))\n")
     mp = os.path.join(root, "docs", "audit", "audit-plan.json")
     with open(mp, "w") as fh:
         json.dump({"meta": {"version": 3, "buildCommands": {
