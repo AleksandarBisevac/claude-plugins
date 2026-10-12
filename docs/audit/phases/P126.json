@@ -301,7 +301,7 @@
     {
       "id": "P126.5",
       "title": "The sweep's spaced leg says what it means on Windows",
-      "status": "pending",
+      "status": "in_progress",
       "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest, tools/sweep-selftests.py: FAIL sp3 a child run with `spaced` sees a TMPDIR holding a space and a link, an UNQUOTED path in a shell command is a different command there (exit 2) while the quoted word names the directory (exit 0) - the defect class the leg exists to keep measured: '<outside-repo> p'. sp3 asserts that an UNQUOTED spaced path in a shell command is a different command (exit 2) while the quoted one names the directory - a POSIX-shell property; CLAUDE.md says the --spaced leg is 'posix only'. Make sp3 (and anything else the spaced leg asserts about a POSIX shell) apply where the leg applies: skip with a printed reason on Windows rather than asserting a POSIX shell's word splitting, unless the case is meant to hold there too, in which case say why and fix it. It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
       "files": [
         "tools/sweep-selftests.py"
@@ -329,16 +329,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T22:21:09Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T22:36:59Z.7436d8",
+        "status": "passed",
+        "at": "2026-10-12T22:36:59Z"
+      }
     },
     {
       "id": "P126.6",
@@ -515,7 +521,7 @@
     {
       "id": "P126.10-13q",
       "title": "CI runs every independent step of a job after a failure, and gate-parity holds that property",
-      "status": "in_progress",
+      "status": "done",
       "description": "Observed in release run 38299118105: in the windows-latest selftests job the sweep step failed and the nine steps after it were SKIPPED (the legacy-code-page sweep, the spaced TMPDIR sweep, both launcher end-to-end steps, the plan gate end to end, the capability policy, the TDD nudge, the write half against a real git repo); in the manifest validation job 'The report is interactive' failed and the ajv schema step was skipped. So a red CI run is not a complete list: each layer of failure behind the first costs another 30-40 minute Windows round. tools/verify.sh already runs every step and says the list is complete; ci.yml does not. Give every INDEPENDENT step after a job's setup steps `if: ${{ !cancelled() }}`, so each runs and reports its own result while the job still fails when any step failed; keep checkout, setup-python/setup-node and installs unconditional, since their failure invalidates what follows. Then hold the property rather than remember it: tools/gate-parity.py gains a check that every step of ci.yml after the setup steps of each job carries that condition (a step that truly depends on an earlier non-setup step declares it in a reasoned exemption the check reads), with its selftest cases and a prove-gates row. Source: testbed monitor, 2026-10-12.",
       "files": [
         ".github/workflows/ci.yml",
@@ -547,19 +553,36 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a07bf893019d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "ci.yml: added `if: ${{ !cancelled() }}` to all 32 independent non-setup steps (the two with existing Windows conditions combined: `!cancelled() && runner.os ==/!= 'Windows'`), left checkout/setup-*/installs unconditional, explained at top. The manifests job's 'The report is interactive' step is exempted in gate-parity STEP_GUARD_EXEMPT because it reads /tmp/dl produced by the Scale demo step. gate-parity.py: _job_steps parser, step_guard_drift(text, exempt), step_guard_findings, wired into job_timeout_verdict so parity() fails on it; STEP_GUARD_EXEMPT registered in AUDITED_EXEMPTIONS; selftest cases sg0-sg4 (live claim, reported by job+step name, setup and exempted not reported, combined if accepted, bare `if: !cancelled()` without ${{}} rejected, verdict carries it). prove-gates.py: one RED row (strip condition from ruff step -> sg0) and one ALLOW row (drop the setup carve-out -> sg2). gate-parity selftest 120/120, gate-parity.py exit 0, prove-gates selftest 37/37, js-yaml parses ci.yml, ruff clean. Not run: full sweep (started and left to the orchestrator), prove-gates live run (refused on dirty tree).",
+        "descriptive": "A red CI run now lists every independent failing step instead of stopping at the first, and gate-parity fails the build if a step loses the condition."
       },
       "startedAt": "2026-10-12T21:38:19Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T22:21:09Z",
+      "verifiedBy": [
+        "tools/gate-parity.py sg0",
+        "tools/gate-parity.py sg1",
+        "tools/gate-parity.py sg2",
+        "tools/gate-parity.py sg3",
+        "tools/gate-parity.py sg4"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-12T22:21:07Z.fc1eef",
         "status": "passed",
         "at": "2026-10-12T22:21:07Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "a07bf893019d",
+        "at": "2026-10-12T22:21:09Z"
+      },
+      "redFirst": {
+        "at": "2026-10-12T21:45:31Z",
+        "basis": "`python3 tools/gate-parity.py --selftest` in a throwaway tree at HEAD exited 1 on \"NameError: name 'step_guard_drift' is not defined\" (read as python), and the task introduces 'step_guard_drift': absent from HEAD's .github/workflows/ci.yml, tools/prove-gates.py, tools/gate-parity.py and present in the working tree's tools/prove-gates.py, tools/gate-parity.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {

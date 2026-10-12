@@ -1543,15 +1543,27 @@ def _cases(check):
         sp_got = dict(line.split("=", 1) for line in run_one(
             sp_child, timeout=60, spaced=True)["output"].splitlines()
             if "=" in line)
+        sp_tmp = sp_got.get("TMP", "")
+        # The word-splitting half is a property of a POSIX shell: on Windows
+        # `shell=True` is cmd.exe, which has no `test`, so both words exit
+        # non-zero and say nothing about splitting. The TMPDIR half (a space,
+        # reached through the link, spelt with the platform's separator) holds
+        # on every platform and is still asserted there.
+        sp_posix = os.name != "nt"
+        if not sp_posix:
+            print("sp3: skipping the unquoted-vs-quoted shell word check on "
+                  "Windows - cmd.exe has no `test` and splits words by its own "
+                  "rules; the TMPDIR space-and-link half is still asserted")
         check("sp3 a child run with `spaced` sees a TMPDIR holding a space and "
               "a link, an UNQUOTED path in a shell command is a different "
               "command there (exit %s) while the quoted word names the "
               "directory (exit %s) - the defect class the leg exists to keep "
-              "measured: %r"
-              % (sp_got.get("BARE"), sp_got.get("QUOTED"), sp_got.get("TMP")),
-              " " in sp_got.get("TMP", "") and "/via/" in sp_got.get("TMP", "")
-              and sp_got.get("BARE") not in (None, "0")
-              and sp_got.get("QUOTED") == "0")
+              "measured (the shell half is POSIX-only): %r"
+              % (sp_got.get("BARE"), sp_got.get("QUOTED"), sp_tmp),
+              " " in sp_tmp and (os.sep + "via" + os.sep) in sp_tmp
+              and (not sp_posix
+                   or (sp_got.get("BARE") not in (None, "0")
+                       and sp_got.get("QUOTED") == "0")))
 
         # A TABLE OF THE CASE'S OWN, because the shipped one may be empty and
         # a case that borrowed its first row would then assert nothing.

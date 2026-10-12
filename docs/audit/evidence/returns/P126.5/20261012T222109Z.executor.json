@@ -1,0 +1,18 @@
+{
+  "gates": {
+    "selftests": "pass",
+    "sweep-selftests --selftest": "pass",
+    "ruff": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task with expectRedFirst false; the red only appears on windows-latest, which cannot be run here",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Cause: on windows-latest sp3 required the literal '/via/' in a backslash TMPDIR (<outside-repo> p), and its shell half runs 'test -d' under subprocess shell=True, which is cmd.exe on Windows (Python subprocess docs) and has no 'test', so QUOTED could never be 0. Fix in tools/sweep-selftests.py: the TMPDIR half (space, reached through the via link) compares os.sep+'via'+os.sep and runs everywhere; the unquoted-vs-quoted exit-code half is gated on os.name != 'nt' and prints 'sp3: skipping ... on Windows' with its reason. POSIX assertion unchanged. Windows assumptions: shell=True is cmd.exe (Python docs); cmd has no 'test' (my knowledge, not in CI output); symlinks work on windows-latest and TMPDIR is backslash-spelled (both from the CI line). Commands: python3 tools/sweep-selftests.py --selftest -> ALL PASS 64/64; python3 tools/sweep-selftests.py -> exit 0, 331/331 files ok, 15782 cases; ruff check tools/sweep-selftests.py -> all checks passed. Other gates not run (own-tests). Unverified until the next windows-latest CI run.",
+    "descriptive": "sp3 no longer asserts a POSIX shell's word splitting on Windows and matches the platform path separator, so the sweep selftest can pass on windows-latest."
+  },
+  "testsAdded": [],
+  "stamp": "audit-stamp: {\"content\":\"sha256:3f20aaa918f944736c1ba76f8886604a100ed4d23d881943abbc4876f4afa352\",\"dirtyDigest\":\"sha256:5c51a1bd1b36b41af28a116b9a27a391565cfc4d383b70bb14492fedbfb7923f\",\"dirtyPaths\":{\"tools/sweep-selftests.py\":\"4566f380253cf945\"},\"head\":\"a07bf893\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/sweep-selftests.py\"],\"scopeDigest\":\"sha256:ba86db24a2e7662e8e86a56a43f5c7d157e8fd1a7deafabfe7273c65220c3742\",\"v\":2}"
+}
