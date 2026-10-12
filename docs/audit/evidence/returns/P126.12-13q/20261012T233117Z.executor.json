@@ -1,0 +1,17 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_drive_phase.py --selftest": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression mode, expectRedFirst false: the failure reproduces only on windows-latest (text-mode write); not reproducible on this macOS host, so no red was watched here"
+  },
+  "outcome": {
+    "technical": "Cause is the fixture, not the product. _file_wave_executor (and _edit) wrote the member's change with open(...,'w'), which on Windows translates \\n to \\r\\n, so the member's tree held CRLF before the driver carried anything; tree_work (git add -A; git diff --cached --binary HEAD) and recut_tree (git apply --binary) then carried those bytes faithfully, and wd3a compared with an LF literal. Evidence: CI log 38316180338 shows wd3 PASS (redo carried the work, task closed) and only wd3a FAIL with b'changed by P1.1\\r\\n'; wv6 passes on the same OS because it reads in text mode (universal newlines hides CR); the product code path uses only binary git plumbing and kw 'wb' for the patch file. Assumed Windows behaviour: Python text-mode open('w') without newline= writes os.linesep (CRLF) on Windows (Python io docs). Fix: new helper _write_lf using newline='\\n', used by both fixture writes; wd3a stays byte-exact. Pin added: wd3c asserts the helper writes exactly b'a\\nb\\n' (fails on Windows with the old text-mode write, runs on every OS). test_drive_phase.py --selftest: 237/237 pass on macOS. Not run: Windows CI; full sweep.",
+    "descriptive": "The wave-redo fixture writes the member's change with LF on Windows, so wd3a compares the member's own bytes."
+  },
+  "testsAdded": [
+    "wd3c"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:88711a92acb2c7d28448ae9e420d42872af710f1e1c6da9091dfdfc556d44578\",\"dirtyDigest\":\"sha256:c77cb05772f2f258100317a5cbbd99801348c0f6b2a677e2a211847f1a6a9c32\",\"dirtyPaths\":{\"plugins/audit/tests/test_drive_phase.py\":\"06b4543c90ef2a3d\"},\"head\":\"ba4be31a\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:3579d0e7ca23db5d75445428c04bcc5cdbb0e9e2e698c08aa05691802009ecfd\",\"v\":2}"
+}

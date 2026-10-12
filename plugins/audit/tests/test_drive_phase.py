@@ -198,6 +198,14 @@ def _verb(root, name, args, stdin=None):
     return done.returncode, done.stdout + done.stderr
 
 
+def _write_lf(path, text):
+    """A member's change as the bytes it names: text mode would write CRLF on
+    Windows, and the member's own work would then be CRLF before the driver
+    carried anything."""
+    with open(path, "w", newline="\n") as fh:
+        fh.write(text)
+
+
 def _edit(root, task_id, text):
     """Write `text` into the task's own file: `src/f<n>.txt` for a fixture task,
     the first file the plan declares for any other - a fix task added in the
@@ -207,8 +215,7 @@ def _edit(root, task_id, text):
     else:
         mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
         rel = (tasks_of(mpath).get(task_id, {}).get("files") or ["src/f1.txt"])[0]
-    with open(os.path.join(root, *rel.split("/")), "w") as fh:
-        fh.write(text)
+    _write_lf(os.path.join(root, *rel.split("/")), text)
 
 
 def _executor_body(task_id, over=None):
@@ -3290,8 +3297,7 @@ def _file_wave_executor(root, mpath, task_id):
     if not tree:
         return 99, "no tree recorded for %s" % (task_id,)
     rel = "src/f%d.txt" % (TASKS.index(task_id) + 1,)
-    with open(os.path.join(tree, *rel.split("/")), "w") as fh:
-        fh.write("changed by %s\n" % (task_id,))
+    _write_lf(os.path.join(tree, *rel.split("/")), "changed by %s\n" % (task_id,))
     return _verb(root, DRIVER, ["submit", task_id, "--role", "executor", mpath,
                                 "--project-dir", root],
                  stdin=json.dumps(_executor_body(task_id)))
@@ -4046,6 +4052,12 @@ def _wave_redo_cases(check):
     check("wd3a the carried work is the member's own bytes: %r"
           % (_read(os.path.join(root, "src", "f1.txt")),),
           _read(os.path.join(root, "src", "f1.txt")) == b"changed by P1.1\n")
+    probe = os.path.join(root, "lf-probe.txt")
+    _write_lf(probe, "a\nb\n")
+    check("wd3c the fixture writes a member's change as the bytes it names, LF "
+          "on every OS (text mode gives CRLF on Windows): %r" % (_read(probe),),
+          _read(probe) == b"a\nb\n")
+    os.remove(probe)
     check("wd3b the redo leaves no patch file behind once it applied: %r"
           % (os.listdir(os.path.join(root, ".claude", "state", "drive")),),
           not [n for n in os.listdir(os.path.join(root, ".claude", "state", "drive"))
