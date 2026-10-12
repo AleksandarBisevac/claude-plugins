@@ -1,0 +1,19 @@
+{
+  "gates": {
+    "own-test: python3 plugins/audit/tests/test_audit_task.py --selftest": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "mode regression, expectRedFirst false; the case passes on current code because a0a4710 removed the staged .creating file and the seed-only planned_redactions call in _create_then (now a plain body(config, mpath, seed)); the code path that reported seed-only redactions no longer exists, so no red could be shown without re-creating it.",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Added case fp13 to _first_plan_cases in plugins/audit/tests/test_audit_task.py: a first `add --from-file` (project with no plan, .git dir present so the checkout root is known) whose phase title carries <outside-repo> exits 0, journals exactly one plan.redact row, and the written plan no longer holds the path. Note the first add-phase verb refuses a machine path in --title outright (exit 2), so the batch route is the one that reaches the scrub; the fixture needs a .git dir or the scrub still rewrites but no journal row can be written (checkout_of is None). audit-task.py untouched. Ran python3 plugins/audit/tests/test_audit_task.py --selftest: exit ALL PASS 1018/1018. Only the own test file was run, not the full sweep.",
+    "descriptive": "Regression pin: a first plan write that redacts a machine path in the first phase's title is reported by a plan.redact journal row."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_audit_task.py: fp13 a first add whose phase title carries a machine path journals a plan.redact row for it"
+  ],
+  "claims": "claims: the case passes on unmodified audit-task.py (observed 1018/1018 after adding it); no red shown, stated above.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:c7386431aac442ade750fda706c2a0297f63b384d4cb029a8a0596ea55f77832\",\"dirtyDigest\":\"sha256:32f8a401ad732ed4d439662306409ab958bb937841f777db25f634f8587467a5\",\"dirtyPaths\":{\"plugins/audit/tests/test_audit_task.py\":\"28a176e0e28e44b5\"},\"head\":\"a0a47109\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:11f0ebac0332fbe3cc4d0e431c26d0c25423617cb3c26f9e36be3852cc071bf7\",\"v\":2}"
+}

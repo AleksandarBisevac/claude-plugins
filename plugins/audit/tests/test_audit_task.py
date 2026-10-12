@@ -16266,6 +16266,28 @@ def _first_plan_cases(check):
           and all(t == want for _a, t in rows)
           and not os.path.exists(mpath + ".creating"))
 
+    proj, mpath = project("journal-redact")
+    os.makedirs(os.path.join(proj, ".git"))
+    leak = "/Users/someone/work/app"
+    path = os.path.join(proj, "plan-redact.json")
+    doc = _batch_doc(phase={"title": "Exact refunds in %s/x.py" % leak,
+                            "desiredOutcome": "refunds sum to the cent"})
+    for t in doc["tasks"]:
+        t.pop("dependsOn", None)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(doc))
+    code, _txt = _cli(["add", "--from-file", path, "--project-dir", proj], proj)
+    written = ""
+    if os.path.exists(mpath):
+        with open(mpath, "r", encoding="utf-8") as fh:
+            written = fh.read()
+    red = [r for r in _journal_io.read_all(proj)
+           if r.get("action") == "plan.redact"]
+    check("fp13 a first add whose phase title carries a machine path journals "
+          "a plan.redact row for it, and the written plan holds the redacted "
+          "form: %r" % ((code, len(red), leak in written),),
+          code == 0 and len(red) >= 1 and leak not in written)
+
 
 def _batch_fix_cases(check):
     """`add --from-file -` adding fix tasks to a phase that exists: a batch
