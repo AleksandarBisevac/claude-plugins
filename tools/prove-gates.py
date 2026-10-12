@@ -369,6 +369,43 @@ def _nav_min_target(script_dir=None, hooks_dir=None, repo=None):
         "GREEN this row exists to catch" % (_deps._NAV_MIN_LINES,))
 
 
+def _ui_nav_min_target(ui_dir=None):
+    """`(relpath, marker regex)` of a ui asset sitting EXACTLY at the marker
+    floor `ui_navigability_violations` applies, so that dropping its first
+    marker takes it below.
+
+    ASKED, NOT TOLD, for the reason `_nav_min_target()` gives: the row used to
+    name `panel/composition.js`, which grew to carry one marker more than its
+    length requires, so the drop left it compliant and the row printed STAYED
+    GREEN over a lint that was fine. The regex returned is the file's own
+    marker syntax, so a `.css` target gets its own and not the `.js` one.
+    Refuses loudly when no asset sits at the floor.
+    """
+    ui_dir = ui_dir if ui_dir is not None else _deps._UI_DIR
+    for name in _deps.ui_asset_names(ui_dir):
+        for ext, rex in _deps._UI_MARKER_RES:
+            if not name.endswith(ext):
+                continue
+            text = io.open(os.path.join(ui_dir, name), encoding="utf-8").read()
+            lines = text.splitlines(True)
+            if len(lines) < _deps._NAV_MIN_LINES:
+                break
+            markers = sum(1 for ln in lines if rex.match(ln))
+            want = max(2, -(-len(lines) // _deps._NAV_MIN_LINES))
+            if markers == want and _first_line(text, rex.pattern) is not None:
+                rel = "plugins/audit/scripts/ui/" + name
+                return rel, rex.pattern
+            break
+    raise RuntimeError(
+        "prove-gates.py: no asset under scripts/ui/ sits exactly at its marker "
+        "floor - the ui_navigability_violations row ('u1') has no file left to "
+        "drop a marker from, and a colour reported over that silence would be "
+        "the STAYED GREEN this row exists to catch")
+
+
+_UI_NAV_TARGET = _ui_nav_min_target()
+
+
 # --- the RED table: break the guarded thing, the guard must fire ---------------
 # (lint, file, kind, anchor, payload, suite, the case that must go red)#
 # kinds: "after" appends payload after anchor; "replace" swaps anchor for payload;
@@ -559,8 +596,10 @@ TABLE = (
  # it refuses loudly rather than answer with a name that no longer qualifies.
  ("navigability_violations", _nav_min_target(), "drop",
   r"^# -{2,}", None, DEP, "n1"),
- ("ui_navigability_violations", "plugins/audit/scripts/ui/panel/composition.js",
-  "drop", r"^ {0,2}//\s+-{2,}", None, DEP, "u1"),
+ # ASKED, NOT TOLD: see `_ui_nav_min_target()` - the file this row names is the
+ # one that sits at the floor today, not one that did the day it was typed.
+ ("ui_navigability_violations", _UI_NAV_TARGET[0],
+  "drop", _UI_NAV_TARGET[1], None, DEP, "u1"),
  # Added because `c1` refused the commit that introduced the lint: the coverage
  # rule caught its own author, which is the whole reason it is derived from the
  # modules rather than hand-listed. `responsive.mjs` carries exactly the two
@@ -1551,10 +1590,21 @@ ALLOW = (
   "                    (rel, \"line %d (%s): derives a project", OUT, "md2"),
  # The one-tree rule, widened to every `repo_root`. The config and the
  # session's own state live with the project on purpose, so a hook resolving
- # the project for those alone is honest code this would convict.
+ # the project for those alone is honest code this would convict. The message
+ # reads `reads` with a default, because indexing it raised KeyError on the
+ # very fixture the allow case names and the suite died before printing it.
  ("hook_tree_violations", S + "_deps.py", "replace",
-  "            if uses_root and name in reads:",
-  "            if uses_root:", DEP, "ht3"),
+  "            if uses_root and name in reads:\n"
+  "                violations.append((rel, \"%s resolves `_config.repo_root` and reads \"\n"
+  "                                        \"the plan's tree through %s - ask \"\n"
+  "                                        \"`_config.tree_for` which tree the work \"\n"
+  "                                        \"is in\" % (name, reads[name])))",
+  "            if uses_root:\n"
+  "                violations.append((rel, \"%s resolves `_config.repo_root` and reads \"\n"
+  "                                        \"the plan's tree through %s - ask \"\n"
+  "                                        \"`_config.tree_for` which tree the work \"\n"
+  "                                        \"is in\" % (name, reads.get(name, \"?\"))))",
+  DEP, "ht3"),
  # The exemption table, ignored: the one scope that reads the project's plan
  # on purpose, with its reason declared, would be convicted anyway.
  ("hook_tree_violations", S + "_deps.py", "replace",

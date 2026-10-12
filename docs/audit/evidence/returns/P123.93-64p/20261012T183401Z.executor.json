@@ -1,0 +1,17 @@
+{
+  "gates": {},
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only task, expectRedFirst false; er3 added in gate-parity.py selftest and shown to convict the verify.sh-only reason by direct call",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Causes: (sd1) the test expression [..][0][1] raised IndexError once the lint returned [], killing the suite before sd1 printed -> test__output.py now uses any(...). (ht3) the widened mutation left reads[name] in the message, KeyError on state_only.py main, suite died before printing ht3 -> prove-gates row now mutates the message to reads.get(name,'?') as well (tools/prove-gates.py). (u1) added _ui_nav_min_target() (asked, not told, like _nav_min_target) returning the ui asset exactly at its marker floor plus its own marker regex; row uses it (now panel/usage-view.js). (er1) real lint hole: exemption_reason_drift accepted 'verify.sh' (a side itself, named in the reason's first sentence) as the gate making the comparison, so striking the real gate name stayed green; tools/gate-parity.py now excludes the sides' own basenames from the accepted set, plus new selftest case er3. Real tree still returns [] from exemption_reason_drift. Evidence, prove-gates --only rows, all exit 0, verbatim: sh_self_dir_violations 'RED sd1' (1 of 1 gates proven red) and 'RED sd2'; hook_tree_violations quiet side 'RED ht3, ht6' and 'RED ht10, ht11, ht6' (2 of 2 guards proven); ui_navigability_violations 'RED u1, u13, tn5' and quiet 'RED u1, u7, u8, u13'. exemption_reason_drift: I edited tools/gate-parity.py (the mutated file) so prove-gates refused it ('REFUSED (DIRTY): tools/gate-parity.py is not what HEAD has') - orchestrator must re-prove after commit; checked by hand that the er1 mutated reason is convicted by exemption_reason_drift(table=...). Selftests: gate-parity.py --selftest 115/115, test__output.py --selftest 259/259. Tree restored after each run. Files touched: tools/prove-gates.py, tools/gate-parity.py, plugins/audit/tests/test__output.py. _deps.py and test__deps.py unchanged.",
+    "descriptive": "Four prove-gates rows re-targeted or their lints/tests fixed so each goes red again; exemption_reason_drift now rejects umbrella-script-only reasons."
+  },
+  "testsAdded": [
+    "er3 (tools/gate-parity.py selftest)"
+  ],
+  "claims": "claims: sd1, ht3 and u1 fixes evidenced by prove-gates --only exit 0; er1 unproven by the helper (dirty file refused), checked by direct call only.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:761886353b08dd6b5f38c5caefacaa4a0f2f43f0a5c47431f2d660c8ec203422\",\"dirtyDigest\":\"sha256:6bf2f93cfaa0f29169b4c1a7e74e50c7d1d8a7fffb2401844de3215c5b7b5b00\",\"dirtyPaths\":{\"plugins/audit/tests/test__output.py\":\"1f72139492e66b50\",\"tools/gate-parity.py\":\"3de5caf076b41b0c\",\"tools/prove-gates.py\":\"74e20085c4f4fb3d\"},\"head\":\"c84bb1ea\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/_deps.py\",\"plugins/audit/tests/test__deps.py\",\"plugins/audit/tests/test__output.py\",\"plugins/audit/tests/test_gate_parity.py\",\"tools/gate-parity.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:659c8f1290701ba88f132715bacfdb9db0ff35206b4c400a9a08bd683b27cfc5\",\"v\":2}"
+}

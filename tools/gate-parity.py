@@ -2258,7 +2258,14 @@ def exemption_reason_drift(repo=None, table=None):
             # the way a person says it, and the side names `tools/check-…`; an
             # equality on the full string calls a correct row drift, which this
             # did on its first run.
-            bases = set(os.path.basename(g) for g in local)
+            #
+            # NOT THE SIDES THEMSELVES. `verify.sh` is a side, and a reason that
+            # says "verify.sh's legs do exactly as CI does" names the umbrella
+            # that runs every local check, not the one making this claim - it
+            # satisfied the rule for a reason that named no comparing gate at
+            # all, which is the state `er1` strikes the real name back into.
+            umbrellas = set(os.path.basename(rel) for _label, rel in SIDES)
+            bases = set(os.path.basename(g) for g in local) - umbrellas
             named = [g for g in _REASON_GATE_RE.findall(reason)
                      if os.path.basename(g) in bases]
             if named:
@@ -4014,6 +4021,17 @@ def _cases(check):
           _er_readonly == []
           and [g for g, _w in _er_compared]
           == ["plugins/audit/scripts/demo/gen-demo-usage.py"])
+    _er_umbrella = exemption_reason_drift(table=(
+        ("plugins/audit/scripts/report/render-report.py", DOC_SIDES,
+         "renders throwaway reports, which verify.sh's legs do exactly as CI "
+         "does; a stronger local check compares the committed bytes"),))
+    check("er3 a reason that names only the umbrella script a side IS (verify.sh) "
+          "names no gate making the comparison, and is reported - the case that "
+          "stays green if the umbrella is allowed to satisfy the rule, which it "
+          "did until the sentence naming the real gate could be struck out "
+          "unnoticed: %r" % ([g for g, _w in _er_umbrella],),
+          [g for g, _w in _er_umbrella]
+          == ["plugins/audit/scripts/report/render-report.py"])
 
     # --- THE GENERAL RULE: every exemption names who audits its reason ---------
     # Two defects were recorded before this existed and both had one shape - a row

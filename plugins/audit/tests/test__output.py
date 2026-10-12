@@ -935,7 +935,7 @@ def _cases(check):
         check("sd1 a shell script that works out its directory from a raw $0 "
               "is reported - by a case, by dirname and by a pattern cut, "
               "naming the line: %r" % (sd_got,),
-              [v for v in sd_got if v[0] == "case.sh"][0][1] == 2
+              any(v[0] == "case.sh" and v[1] == 2 for v in sd_got)
               and "dirname.sh" in sd_files and "cut.sh" in sd_files)
         check("sd2 ...and the allow cases are silent - the normalised copy, a "
               "comment that names the pattern, and a file that is not a "

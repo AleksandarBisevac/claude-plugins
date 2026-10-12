@@ -407,11 +407,13 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_invariants.py:1174-1200",
         "issue": "_PULL_ARG_SHORTS = \"sXoj\" omits -S (git pull --gpg-sign[=<keyid>] takes an attached key id), so in a cluster such as -Sr the r is the key id but is read as the rebase flag, a false history-rewrite breach of the same class P123.85 closed. The cluster test also needs t[1:].isalpha(), so a cluster that contains -4/-6 (e.g. -4r) is not seen at all. Both are rare and the resolution text allowed the cluster to be a documented non-goal.",
-        "resolution": "Add S to _PULL_ARG_SHORTS (and a clean rw9 row such as -Sr), or state in the docstring that digits and -S are unread.",
-        "fixTask": "P123.92-64p"
+        "resolution": "fixed in P123.92-64p (c84bb1ea9228): Add S to _PULL_ARG_SHORTS (and a clean rw9 row such as -Sr), or state in the docstring that digits and -S are unread.",
+        "fixTask": "P123.92-64p",
+        "commit": "c84bb1ea9228",
+        "status": "fixed"
       }
     ],
-    "outcome": "[findings: 39 - 0 high, 14 med, 25 low; 37 with a recorded fix commit]"
+    "outcome": "[findings: 39 - 0 high, 14 med, 25 low; 38 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -7402,7 +7404,7 @@
     {
       "id": "P123.92-64p",
       "title": "fix P123-R39: _PULL_ARG_SHORTS = \"sXoj\" omits -S (git pull --gpg-sign[=<keyid...",
-      "status": "in_progress",
+      "status": "done",
       "description": "_PULL_ARG_SHORTS = \"sXoj\" omits -S (git pull --gpg-sign[=<keyid>] takes an attached key id), so in a cluster such as -Sr the r is the key id but is read as the rebase flag, a false history-rewrite breach of the same class P123.85 closed. The cluster test also needs t[1:].isalpha(), so a cluster that contains -4/-6 (e.g. -4r) is not seen at all. Both are rare and the resolution text allowed the cluster to be a documented non-goal.\n\nResolution asked: Add S to _PULL_ARG_SHORTS (and a clean rw9 row such as -Sr), or state in the docstring that digits and -S are unread.",
       "files": [
         "plugins/audit/scripts/governance/_invariants.py",
@@ -7433,14 +7435,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c84bb1ea9228",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_invariants.py: _PULL_ARG_SHORTS gains S; _pull_rebases cluster test uses isalnum() so digit flags -4/-6 cluster (scan left to right, r before an argument-taking letter means rebase, stop at first such letter), documented in the docstring. Tests: rw11 (-S0xABCD -r, -4r, -6r, -4qr are rewrites) and rw12 (-Sr, -4Sr are not). Selftest 73/73 pass; ruff clean.",
+        "descriptive": "git pull -Sr no longer reads as a false rebase breach and -4r/-6r are now seen."
       },
       "startedAt": "2026-10-12T18:23:06Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T18:34:00Z",
+      "verifiedBy": [
+        "rw11",
+        "rw12"
+      ],
       "notes": [
         {
           "at": "2026-10-12T17:53:35Z",
@@ -7455,12 +7460,23 @@
         "runId": "2026-10-12T18:33:59Z.0f6c9e",
         "status": "passed",
         "at": "2026-10-12T18:33:59Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "c84bb1ea9228",
+        "at": "2026-10-12T18:34:00Z",
+        "basis": "a fix task for P123-R39: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-12T18:24:55Z",
+        "basis": "`python3 plugins/audit/tests/test_verify_invariants.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 73 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rw11 (house FAIL), rw12 (house FAIL): SELFTEST FAILED: 71/73 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.93-64p",
       "title": "Every prove-gates row goes red again: the four rows a full run left unproven are re-targeted or their lints made to assert",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A full `python3 tools/prove-gates.py` on 60448996 (run by the testbed monitor, log rc-prove.log) left four rows unproven, which blocks the release. RED direction: `ui_navigability_violations` STAYED GREEN (\"the gate asserts nothing about this\"), `exemption_reason_drift` STAYED GREEN, `sh_self_dir_violations` LABEL GONE (\"the case named sd1 is not in test__output.py any more\"). QUIET direction: `hook_tree_violations` LABEL GONE (\"ht3 is not in test__deps.py any more\").\n\nOrchestrator's first reading. (1) The ui_navigability row drops one `// ---` marker from ui/panel/composition.js, which is 1531 lines carrying 5 markers; one per 400 lines needs 4, so dropping one leaves it compliant. The row is stale the way n1 was, and `_nav_min_target()` is the precedent: ask which ui file sits exactly at the floor instead of naming one. (2) exemption_reason_drift's anchor 'check-rendered-artifacts.py, which is stronger because it compares bytes' is in tools/gate-parity.py once, so the mutation lands and the lint does not convict the changed sentence: diagnose whether the lint still reads that sentence, and either make it assert or re-anchor the row on a sentence it does read. (3)/(4) sd1 (test__output.py:935) and ht3 (test__deps.py:2385) both still exist as check labels, so LABEL GONE most likely means the mutated suite raised or stopped before printing them, or prove-gates' label reader no longer finds them: read prove-gates' own LABEL GONE logic and reproduce with `python3 tools/prove-gates.py --only <lint>`.\n\nFix each at its cause. Done when `python3 tools/prove-gates.py --only <lint>` exits 0 for each of the four lints on a tree where the mutated files are committed. prove-gates refuses a dirty mutated file, so run it for any row whose mutated file you did not edit, and for rows whose file you edited say so in the return; the orchestrator re-proves all four after the commit. If a row's lint truly asserts nothing, fixing the lint is in scope; name it.",
       "files": [
         "tools/prove-gates.py",
@@ -7491,16 +7507,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T18:34:01Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T18:57:57Z.d807e5",
+        "status": "passed",
+        "at": "2026-10-12T18:57:57Z"
+      }
     }
   ],
   "reviewPerTask": "phase",
