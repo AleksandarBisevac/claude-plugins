@@ -1027,9 +1027,9 @@ def _handed_spelling_cases(check, root, outside, journal, shell, same_as_bare,
           "directory takes the source's name, anything else - or `-T` - is "
           "the file written",
           got == [x for _w, x in want], got)
-    # One command, one answer: the plan gate's reader here and the shared one
-    # guard-bash-writes attributes a landed write with read every spelling
-    # alike.
+    # This file's name for the shared reader answers as the shared reader does
+    # with no disk to ask; the two hooks' agreement on what a real copy lands
+    # is held by test_guard_bash_writes' (ca) cases, which run the copies.
     spellings = (["cp", "a.py", "b.py"], ["cp", "a.py", "src/"],
                  ["cp", "a.py", "b.py", "src"], ["mv", "-t", "out", "a", "b"],
                  ["cp", "--target-directory=out", "a"], ["install", "-d", "bin"],

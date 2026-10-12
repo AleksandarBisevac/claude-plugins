@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/sweep-selftests.py --spaced": "pass",
+    "python3 tools/bench-hooks.py --gate": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests": "pass"
+  },
+  "outcome": {
+    "descriptive": "The two shell-write hooks agree on what a real copy lands: every file it wrote is one the plan gate graded before the command and one the bash-write guard attributes to it after.",
+    "technical": "Written by the orchestrator (guard command-reading code). The finding asked for the same is_dir/files_of inputs in both hooks; that is not the structurally right answer, because guard-bash-writes runs AFTER the command (PostToolUse only) and the disk it could ask no longer says what it said before: `cp -r src/ lib/` that CREATED lib landed as lib/k.py, and a post-command disk reads the slash as inside an existing lib (lib/src). So the agreement is on the OUTCOME. guard-bash-writes._statement_targets now takes both landings the words allow - the shared reader's own reading and the one where no operand pre-existed (is_dir always False) - which costs nothing because it only names the statement that wrote a file already found changed, never a finding. New (ca) cases in test_guard_bash_writes run real copies in a scratch repo (cp a.py src, cp -r src/ lib/, mv a.py b.py out, cp a.py c.py) and require every landed file to be graded by guard-secrets-read._copy_targets beforehand AND named by writing_statement afterwards. ca2 was red before the change (named=[]) and passes after; 235/235. _config.copy_destinations' docstring no longer claims one command gets one answer - it says the two hooks read at two moments and the outcome is what agrees, held by (ca); the ww7c comment in test_guard_secrets_read is corrected the same way."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_guard_bash_writes.py: ca1-ca4 (real copies, outcome agreement across both hooks)"
+  ],
+  "redFirst": {
+    "at": "2026-10-12T07:47:27Z",
+    "basis": "`python3 plugins/audit/tests/test_guard_bash_writes.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 235 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ca2 (house FAIL): SELFTEST FAILED: 234/235 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:387b3314a12858a89352ea6a700487c521b3c057339c1562aa113504fdf9cefb\",\"dirtyDigest\":\"sha256:11ff469b4cbf35972d9ffc1c8edbd8b42e01557360391fc1d9577b0ebf93246e\",\"dirtyPaths\":{\"plugins/audit/hooks/_config.py\":\"d6a83c9492730f27\",\"plugins/audit/hooks/guard-bash-writes.py\":\"5624c956ceb5b93b\",\"plugins/audit/tests/test_guard_bash_writes.py\":\"cba8c03de1ce5b14\",\"plugins/audit/tests/test_guard_secrets_read.py\":\"7ab2ee08265fabc0\",\"plugins/audit/tests/test_run_test_gate.py\":\"5e0587f1eca56952\"},\"head\":\"b89a1b10\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/guard-bash-writes.py\",\"plugins/audit/hooks/guard-secrets-read.py\",\"plugins/audit/tests/test__config.py\",\"plugins/audit/tests/test_guard_bash_writes.py\",\"plugins/audit/tests/test_guard_secrets_read.py\"],\"scopeDigest\":\"sha256:f13c4cb5df5cb68bc0bd98e7e8a9e2bb7ef4d429e99ae0d84f34499eed9cd76b\",\"v\":2}"
+}

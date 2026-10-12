@@ -2270,9 +2270,14 @@ _COPY_RECURSIVE_SHORT = "rRa"
 def copy_destinations(words, is_dir=None, files_of=None):
     """Where one command's copying program puts its bytes: `[path, ...]`.
 
-    THE ONE READER, asked by both shell-write guards - the plan gate's
-    PreToolUse reading in `guard-secrets-read` and `guard-bash-writes`'
-    attribution of a write that landed - so one command gets one answer.
+    THE ONE READER, asked by both shell-write guards: the plan gate's
+    PreToolUse reading in `guard-secrets-read`, which hands it the disk as it
+    stands before the command (`is_dir`, `files_of`), and `guard-bash-writes`'
+    attribution of a write that already landed, which cannot see that disk any
+    more and takes both landings the words allow. They read one command at two
+    moments, so what agrees is the OUTCOME - every file the command landed is
+    one the plan gate graded and one the attribution names - and
+    test_guard_bash_writes' (ca) cases run real copies to hold that.
 
     [] when the program is not one that copies (`cp`, `mv`, `ln`, `install`,
     `tee`), or when it writes no file (`install -d` makes directories); None

@@ -100,8 +100,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/run-test-gate.py:4501-4518 (other side: plugins/audit/scripts/governance/_evidence_io.py:2674-2679, plugins/audit/scripts/governance/full-gate.py:130-141, .claude/hooks/guard-release.py:813-814, plugins/audit/scripts/status/audit-status.py:418-419)",
         "issue": "P123-R3 is closed only at the runner, and its consequence (phases kept provisional, release held) is still reachable. _run_full now records a row built from the filtered commands (`_record_full_run(..., commands, ...)`, published = filtered list). Every reader of that row builds `declared` from the unfiltered `_ev.resolved_commands(manifest, meta.fullGate)`, review-only value included. (a) For a mixed fullGate [ok, claimsMatchCode], the green row has one step against two declared entries, so `_full_disqualification` answers 'FULL RUN RAN 1 OF 2 DECLARED ENTRIES'. The run is never whole-bearing, every merged phase stays PROVISIONAL and guard-release holds the release. (b) For a fullGate holding only review-only entries, run-test-gate returns E_ASK (= 2). full-gate.py's `declares_full_gate` still says a third place is declared, and its docstring (':133 THE SAME PRESENCE CHECK run-test-gate's own _run_full makes') is now false. So the pre-push/CI step prints 'the run is still red - exit 2 blocks the push', and the readers wait for a full run nothing can record. fo2 (plugins/audit/tests/test_run_test_gate.py:8640) asserts only the exit code and the step list. It never asks `_ev.full_status` / `_full_disqualification` about the row it pins, and no case drives full-gate.py over either plan.",
-        "resolution": "Put one declared-full-gate list in _evidence_io: `resolved_commands` drops review-only values, or a new `full_gate_commands(manifest)` does. Make run-test-gate._run_full, full-gate.declares_full_gate, every full_status caller (audit-status, render-report, _doctor_trail, _panel_composition) and guard-release read that one list, so a fullGate holding only review-only entries reads as 'no third place' (NOT_DECLARED, exit 0) everywhere. Extend fo2 to assert `_ev._full_disqualification(row, declared)` is None for the recorded row, and add a test_full_gate case for the review-only-only plan exiting 0.",
-        "fixTask": "P123.62-64p"
+        "resolution": "fixed in P123.62-64p (b89a1b10c117): Put one declared-full-gate list in _evidence_io: `resolved_commands` drops review-only values, or a new `full_gate_commands(manifest)` does. Make run-test-gate._run_full, full-gate.declares_full_gate, every full_status caller (audit-status, render-report, _doctor_trail, _panel_composition) and guard-release read that one list, so a fullGate holding only review-only entries reads as 'no third place' (NOT_DECLARED, exit 0) everywhere. Extend fo2 to assert `_ev._full_disqualification(row, declared)` is None for the recorded row, and add a test_full_gate case for the review-only-only plan exiting 0.",
+        "fixTask": "P123.62-64p",
+        "commit": "b89a1b10c117",
+        "status": "fixed"
       },
       {
         "id": "P123-R9",
@@ -152,7 +154,7 @@
         "fixTask": "P123.66-64p"
       }
     ],
-    "outcome": "[findings: 14 - 0 high, 8 med, 6 low; 7 with a recorded fix commit]"
+    "outcome": "[findings: 14 - 0 high, 8 med, 6 low; 8 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -4847,7 +4849,7 @@
     {
       "id": "P123.62-64p",
       "title": "A fullGate is counted by its runnable entries everywhere: one function says what a full run must cover",
-      "status": "in_progress",
+      "status": "done",
       "description": "(P123-R8, med) P123-R3 is closed only at the runner, and its consequence (phases kept provisional, release held) is still reachable. _run_full now records a row built from the filtered commands (`_record_full_run(..., commands, ...)`, published = filtered list). Every reader of that row builds `declared` from the unfiltered `_ev.resolved_commands(manifest, meta.fullGate)`, review-only value included. (a) For a mixed fullGate [ok, claimsMatchCode], the green row has one step against two declared entries, so `_full_disqualification` answers 'FULL RUN RAN 1 OF 2 DECLARED ENTRIES'. The run is never whole-bearing, every merged phase stays PROVISIONAL and guard-release holds the release. (b) For a fullGate holding only review-only entries, run-test-gate returns E_ASK (= 2). full-gate.py's `declares_full_gate` still says a third place is declared, and its docstring (':133 THE SAME PRESENCE CHECK run-test-gate's own _run_full makes') is now false. So the pre-push/CI step prints 'the run is still red - exit 2 blocks the push', and the readers wait for a full run nothing can record. fo2 (plugins/audit/tests/test_run_test_gate.py:8640) asserts only the exit code and the step list. It never asks `_ev.full_status` / `_full_disqualification` about the row it pins, and no case drives full-gate.py over either plan.\nResolution: Put one declared-full-gate list in _evidence_io: `resolved_commands` drops review-only values, or a new `full_gate_commands(manifest)` does. Make run-test-gate._run_full, full-gate.declares_full_gate, every full_status caller (audit-status, render-report, _doctor_trail, _panel_composition) and guard-release read that one list, so a fullGate holding only review-only entries reads as 'no third place' (NOT_DECLARED, exit 0) everywhere. Extend fo2 to assert `_ev._full_disqualification(row, declared)` is None for the recorded row, and add a test_full_gate case for the review-only-only plan exiting 0.\n\n REDESIGN, not another call site: one function in _evidence_io returns the RUNNABLE fullGate (review-only entries removed, with the removed ones named) and every reader - the runner's record, _full_disqualification, full-gate.py, guard-release.py, audit-status - counts and compares against it, so a mixed [ok, claimsMatchCode] green run is a whole run, and a fullGate with only review-only entries reads as 'no runnable full gate declared' (the same answer as no fullGate) rather than a red that holds the push and the release. Cases through each reader, not only the runner. Faults: P123-R8.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -4905,14 +4907,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b89a1b10c117",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Moved the review-only rule down to _manifest_vocab (REVIEW_ONLY_PREFIX, REVIEW_ONLY_GATES, is_review_only, review_only_keys, new review_only_entry). REVIEW_ONLY_GATES is not named *_KEYS there, because that suffix on _manifest_vocab means a schema subset that mv23/mv26 anchor. _manifest_phases re-exports the same objects (REVIEW_ONLY_KEYS = _vocab.REVIEW_ONLY_GATES), pinned by the new mv63. Added _evidence_io.full_gate(manifest) -> {commands:[(name,cmd)], reviewOnly:[name]}, which judges each entry on its raw buildCommands value before the nodePreamble, plus full_gate_commands(manifest). Every reader now takes full_commands from it: run-test-gate._run_full (records exactly full_gate.commands), full-gate.declares_full_gate (it now names the review-only entries it left out), .claude/hooks/guard-release.read_held_phases, audit-status.full_run_block, render-report._full_run_block, _panel_composition.full_gate_commands (which _panel_state reaches, so _panel_state was not edited), and both _doctor_trail sites (check_full_run, _check_coupling_ageing). When a fullGate holds only review-only entries, run-test-gate --full now exits 0 (E_OK) and says no runnable full gate is declared. A plan with no fullGate at all still exits E_ASK at the runner, as fg4 pins, and full-gate.py turns both into exit 0. split_not_commands(commands, manifest) on the task/phase path now uses the same review_only_entry rule before the preamble, which closes the preamble gap P123.63 was opened for (fo4). full_status's NOT_DECLARED basis now reads 'names no runnable meta.fullGate entry'. Updated docstrings and PLUGIN-BUILD-GUIDE (the full-gate tree line and section, and the _evidence_io full_gate paragraph). Tests: test__evidence_io rfg1-rfg15 in stage block rfg-block, which go through full_gate, _full_disqualification/full_status, audit-status, render-report, the panel, the doctor, full-gate.py and guard-release. In test_run_test_gate, fo1 changed to expect exit 0 and a 'no runnable' line; fo3 (own counted fixture, because fo2's `true` counts nothing) asserts _full_disqualification is None for the recorded row; fo4 covers the preamble case on the phase path. guard-release inline selftest gained gr71; test__manifest_vocab gained mv63-mv64. Before the fix: test__evidence_io 294/308 (rfg1-4 and rfg6-15 failed by assertion, rfg5 ALLOW passed), test_run_test_gate 520/523 (fo1, fo3, fo4), test__manifest_vocab 71/73. After: 308/308, 523/523, 73/73, guard-release 101/101, and the sweep plus --spaced 331/331 files ok, 15728 cases, including test__refs. Not edited: plugins/audit/README.md:1530 still says not_declared means the plan names no meta.fullGate; it is out of scope and is now incomplete. Process: I used a read-only `cd plugins/audit/tests && python3 -c` probe once, and a read-only python heredoc string check; neither wrote a file.",
+        "descriptive": "One function says which fullGate entries are runnable, so a green run of the runnable entries counts as whole for every reader, and a fullGate with only review-only entries no longer holds a push or a release."
       },
       "startedAt": "2026-10-12T06:47:04Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T07:25:21Z",
+      "verifiedBy": [
+        "test__evidence_io rfg1-rfg15 (rfg-block)",
+        "test_run_test_gate fo3",
+        "test_run_test_gate fo4",
+        "test_run_test_gate fo1 (changed: exit 0)",
+        "guard-release gr71",
+        "test__manifest_vocab mv63",
+        "test__manifest_vocab mv64"
+      ],
       "notes": [
         {
           "at": "2026-10-11T20:14:07Z",
@@ -4927,12 +4937,23 @@
         "runId": "2026-10-12T07:25:19Z.b942eb",
         "status": "passed",
         "at": "2026-10-12T07:25:19Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "b89a1b10c117",
+        "at": "2026-10-12T07:25:21Z",
+        "basis": "a fix task for P123-R8: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-12T07:14:49Z",
+        "basis": "`python3 plugins/audit/tests/test__evidence_io.py --selftest` in a throwaway tree at HEAD exited 1 with 14 of 308 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rfg6 (house FAIL): SELFTEST FAILED: 294/308 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.63-64p",
       "title": "The review-only split happens before a node preamble is prepended, on every gate path",
-      "status": "pending",
+      "status": "cancelled",
       "description": "(P123-R9, med) split_not_commands classifies the RESOLVED command, and `resolved_commands` has already prefixed `meta.nodePreamble` to it ('<lead> && review-only: ...'). `is_review_only` only accepts a value that begins with 'review-only:', so in any plan that sets nodePreamble a review-only entry is not split out. Its prose then runs through the shell on the task/phase path (:4821) and on the full path this phase added (:4502), and records a red gate: the defect P123.49 and P123.55 exist to stop. No case pairs nodePreamble with a review-only entry (test_run_test_gate.py names nodePreamble only in the rg1b resolution cases).\nResolution: Classify each entry by its raw buildCommands value (or the entry itself) before the preamble is joined. For example, have split_not_commands take the entries and meta.buildCommands, or have resolved_commands return the review-only flag beside each pair. Add a case with nodePreamble set and a review-only entry in testGate and in fullGate, asserting no step ran.\n\n Split review-only entries out of the declared list BEFORE any `meta.nodePreamble` is joined onto a command, on the task/phase path and the full path alike; a case with a preamble and a review-only entry asserts no shell run. Faults: P123-R9.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -4965,15 +4986,15 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: Fixed before this task ran: P123.62 (b89a1b10) moved the review-only judgement before the nodePreamble on the task/phase path (pinned by fo4) and the full path. What remained is a full-path pin with a preamble (fo5), which cannot be red at HEAD because the fix is there, so the tdd form is impossible; re-added as a regression task carrying fo5."
       },
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-10-12T07:25:22Z",
+      "completedAt": "2026-10-12T07:37:02Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -4983,12 +5004,13 @@
       ],
       "fixes": [
         "P123-R9"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P123.64-64p",
       "title": "Both shell-write hooks ask the one copy reader with the same inputs, pinned through each hook's own entry (orchestrator-written guard reading code)",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(P123-R10, med) P123-R7 is partly open. There is now one reader, but the two hooks still call it with different seams. guard-secrets-read passes the disk `is_dir` and `files_of`. guard-bash-writes calls `_config.copy_destinations(words)` with neither. So `cp a.py src` (src an existing directory) is graded as src/a.py by the plan gate and attributed as `src` by guard-bash-writes, and `cp -r dir dest` / `mv dir dest` are listed per file by one and named as one word by the other. That is exactly the 'no is_dir reading' disagreement R7 named. In guard-bash-writes the mismatch moves a path from `named` to `unproven`, so with another session active (clauses) the deny tier only gives a notice where it would block. The new docstring's 'so one command gets one answer' (_config.py:2275) is false at runtime. ww7c compares `M._copy_destinations(w)` (now `_config.copy_destinations(w) or []`) against `_config.copy_destinations(w) or []`: the same function, with no seam on either side and only spellings that do not need the disk. It cannot see this disagreement.\nResolution: Have guard-bash-writes pass the same seams: an is_dir and files_of resolved at the command's cwd, ideally built by one helper in _config that both hooks call. Rewrite ww7c to drive both hooks' own call paths over a fixture holding an existing slashless directory and a recursive copy, and assert they agree.\n\n guard-bash-writes passes the same is_dir and files_of seams (at the command's own directory) that the plan gate passes, so `cp a.py src` with src an existing directory and a recursive copy get one answer from both hooks; the agreement case drives each hook's real entry (guard-bash-writes' attribution and guard-secrets-read's decide) over the same commands on a real fixture tree, never the shared function against itself. GUARD COMMAND-READING CODE: written by the orchestrator. Faults: P123-R10.",
       "files": [
         "plugins/audit/hooks/guard-bash-writes.py",
@@ -5024,14 +5046,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T07:37:19Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -5042,7 +5064,13 @@
       ],
       "fixes": [
         "P123-R10"
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T07:58:47Z.86ec38",
+        "status": "passed",
+        "at": "2026-10-12T07:58:47Z"
+      }
     },
     {
       "id": "P123.65-64p",
@@ -5233,6 +5261,48 @@
           "plugins/audit/tests/test_close_phase.py: a diverges return committed on the target after the phase verdict and merged into the phase branch is refused as unseen at landing; its twin, a return the verdict commit already contained, lands"
         ],
         "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P123.68-64p",
+      "title": "The full gate's review-only split is pinned with a node preamble set (fo5)",
+      "status": "pending",
+      "description": "Closes the last pin of review finding P123-R9 (the review-only split runs before a node preamble on every gate path), whose fix landed in P123.62 (b89a1b10): fo4 pins the task/phase path; the full path had no case with a preamble set. Case fo5 in test_run_test_gate.py (already written in the tree by the cancelled P123.63's executor) sets nodePreamble \"cd .\" with fullGate [ok, claimsMatchCode] and asserts one step without the review-only text, FULL GATE GREEN and one not-a-command line. Its red was shown outside the repo: with full_gate's split put back to classifying the preamble-led command, fo5 failed (523/524). Regression mode: the fix is at HEAD.",
+      "files": [
+        "plugins/audit/tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: fo5 - with nodePreamble set and fullGate [ok, claimsMatchCode], one step runs without the review-only text, FULL GATE GREEN, one not-a-command line"
+        ],
+        "expectRedFirst": false,
         "gate": [
           "selftests",
           "validate",

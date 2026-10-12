@@ -698,8 +698,19 @@ def _statement_targets(toks):
             # its own spelling below.
             rest, _candidates = _config.program_candidates(words)
             how = _config.program_name(rest[0]) if rest else "copy"
-            out.extend((how, dest)
-                       for dest in (_config.copy_destinations(words) or []))
+            # AFTER THE COPY, THE DISK NO LONGER SAYS WHAT IT SAID BEFORE IT.
+            # The plan gate read this command against the disk as it stood; a
+            # whole copy onto `lib/` that CREATED `lib` landed as `lib`, while
+            # the disk now holds `lib` and the slash alone reads as inside it.
+            # Both landings the reader cannot tell apart from here are taken,
+            # which costs nothing: this names the statement that wrote a file
+            # already found changed, and never makes a finding of its own.
+            landings = []
+            for dests in (_config.copy_destinations(words),
+                          _config.copy_destinations(
+                              words, is_dir=lambda _word: False)):
+                landings.extend(d for d in (dests or []) if d not in landings)
+            out.extend((how, dest) for dest in landings)
         if words[0] == "tee":
             out.extend(("tee", w) for w in words[1:] if not w.startswith("-"))
         elif words[0] == "sed" and any(_write_flag(w) for w in words[1:]):

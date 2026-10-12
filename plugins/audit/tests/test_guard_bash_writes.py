@@ -2255,6 +2255,7 @@ def _cases(check):
 
     _journal_origin_cases(check)
     _slot_size_cases(check)
+    _copy_outcome_cases(check)
 
 
 def _journal_origin_cases(check):
@@ -2599,6 +2600,62 @@ def _slot_size_cases(check):
         else:
             os.environ["CLAUDE_PROJECT_DIR"] = prev_env
         shutil.rmtree(str(root), ignore_errors=True)
+
+
+def _copy_outcome_cases(check):
+    """(ca) ONE COMMAND, ONE OUTCOME across the two hook timings.
+
+    The plan gate reads a copy BEFORE it runs, against the disk as it stands
+    then; this guard runs AFTER it and names the statement that wrote each file
+    the copy changed, a directory destination covering the files under it. The
+    two read one command at different moments, so the outcome is what must
+    agree: each spelling is run for real in a scratch repository, and every
+    file it landed is one the plan gate graded beforehand AND one this guard
+    attributes to the copy."""
+    secrets = _loader.load(os.path.join(_harness.HOOKS_DIR,
+                                        "guard-secrets-read.py"),
+                           "_ca_guard_secrets_read")
+    for cid, dirs, cmd in (
+            ("ca1", ["src"], "cp a.py src"),
+            ("ca2", ["src"], "cp -r src/ lib/"),
+            ("ca3", ["out"], "mv a.py b.py out"),
+            ("ca4", [], "cp a.py c.py")):
+        root = _harness.fixture_root("bash-writes-ca-")
+        try:
+            subprocess.run(["git", "init", "-q", root], check=True,
+                           capture_output=True, timeout=30)
+            for name in dirs:
+                os.makedirs(os.path.join(root, name))
+            for rel in ("a.py", "b.py", "src/k.py"):
+                if os.path.isdir(os.path.dirname(os.path.join(root, rel))):
+                    with open(os.path.join(root, rel), "w", encoding="utf-8",
+                              newline="\n") as fh:
+                        fh.write("x = 1\n")
+            before = set(_tree_files(root))
+            graded = sorted(secrets._copy_targets(cmd, cwd=root))
+            subprocess.run(cmd, shell=True, cwd=root, check=True,
+                           capture_output=True, timeout=30)
+            landed = sorted(set(_tree_files(root)) - before)
+            named = [rel for rel in landed
+                     if M.writing_statement(cmd, root, root, rel)]
+            check("%s `%s`: every file it landed was graded by the plan gate "
+                  "beforehand and is attributed to it here: landed=%r "
+                  "graded=%r named=%r" % (cid, cmd, landed, graded, named),
+                  bool(landed) and set(landed) <= set(graded)
+                  and named == landed)
+        finally:
+            _harness.remove_tree(root)
+
+
+def _tree_files(root):
+    """Every file under `root` outside `.git`, root-relative, `/`-separated."""
+    out = []
+    for at, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d != ".git"]
+        for name in files:
+            out.append(os.path.relpath(os.path.join(at, name), root)
+                       .replace(os.sep, "/"))
+    return out
 
 
 def _selftest():
