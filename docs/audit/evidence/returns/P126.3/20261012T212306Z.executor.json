@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_stamp_verification.py --selftest": "pass",
+    "ruff check (two files)": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task with expectRedFirst false; the Windows failures reproduce only on windows-latest, the new CRLF cases are fixtures simulating the shape on any OS",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Three reader fixes, reasoned from the CI lines (no Windows run here). (1) _HOUSE_ABORT now ends `[ \\t\\r]*$`: a Windows interpreter writes print() to a pipe with CRLF, `$` under re.M stops before \\n and the stray \\r defeated `[ \\t]*$`, so the house-abort FAIL line (AttributeError/TypeError) was never read -> sh1, sh3. (2) _wt_text opens with newline='': universal-newline read turned the CRLF working file (the fixtures' _write uses text mode, so CRLF on Windows; autocrlf pinned false so the HEAD blob is CRLF too) into LF while _head_text keeps the blob as is, so every line differed, difflib gave ONE whole-file hunk covering the implementation, and 'none of its 1 changed hunk(s) lies inside a test definition' -> si1, si4. (3) sr44 was a fixture error, not a reader one: node reads a backslash inside double quotes as an escape on every platform, so the test's NODE_OPTIONS value for a Windows path must double its backslashes; the fixture now does (identity on POSIX); _node_words unchanged. Windows behaviour assumed: text-mode stdout writes \\r\\n (Python io docs, newline=None translation on write); open(...,'w') default writes \\r\\n on Windows; git show returns the blob bytes under core.autocrlf=false; node NODE_OPTIONS parser (node src/node_options.cc ParseNodeOptionsEnvVar) treats backslash in a quoted string as an escape. The first two are inferred from the CI failure text, not observed in a Windows traceback. Files: plugins/audit/scripts/governance/stamp-verification.py, plugins/audit/tests/test_stamp_verification.py. Selftest: 263/263 passed, exit 0; ruff clean.",
+    "descriptive": "The red-first helper now reads CRLF house aborts and CRLF inline suites, and the sr44 fixture quotes a Windows path the way node reads it."
+  },
+  "testsAdded": [
+    "sh4 CRLF house abort read as LF",
+    "si5 CRLF inline split",
+    "si6 _wt_text keeps line ends",
+    "sr44b Windows path escaped for node reads back whole"
+  ],
+  "claims": "claims:\n- the sh1/sh3 cause is the CR before $ in _HOUSE_ABORT: basis = regex text read in stamp-verification.py and sh4 fails-by-construction only with the old `[ \\t]*$` (not run red here); not observed on Windows\n- the si1/si4 cause is LF-vs-CRLF mismatch between _wt_text and _head_text: basis = the one-hunk message in ci-rel-clean.log line 1774 and _write's text-mode open; not observed on Windows\n- sr44 is a fixture-escaping error: basis = node's quoted-backslash rule, cited from memory of node_options.cc, unverified here",
+  "stamp": "audit-stamp: {\"content\":\"sha256:bfe2d2230c7f4bad2de6766459f3efa972c907927c7704536b91739c78de44a0\",\"dirtyDigest\":\"sha256:78d8b94c5176b8b484a07c83764e4c9a9f88869de9c95ff4579791404f5b7eb8\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/stamp-verification.py\":\"dc5367858aaf5338\",\"plugins/audit/tests/test_stamp_verification.py\":\"3862740a11ee9ec2\"},\"head\":\"f213f182\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:70d49ab5fa35e5a510365b11b18c644d985b6b8711f24a42ee6d47aaa22ac3f8\",\"v\":2}"
+}

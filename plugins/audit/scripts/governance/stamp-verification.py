@@ -661,7 +661,7 @@ def _quotes(message, name):
 # its line, since it is printed as it is and a path may hold a space.
 _HOUSE_ABORT = re.compile(
     r"^FAIL .*?(?:%s).*\((?P<cls>[A-Za-z_][\w.]*(?:Error|Exception)): "
-    r"(?P<msg>.*)\)[ \t]*$" % ("|".join(re.escape(e) for e in
+    r"(?P<msg>.*)\)[ \t\r]*$" % ("|".join(re.escape(e) for e in
                                          _runner_output.HOUSE_ESCAPES[:2]),),
     re.M)
 MISSING_SPELLINGS = (
@@ -1010,9 +1010,12 @@ def _head_text(root, rel, timeout=120):
 
 
 def _wt_text(root, rel):
+    """The working tree's `rel` as text with its line endings as written
+    (`newline=""`): universal-newline reading would turn a CRLF file into LF
+    and make every line differ from the HEAD blob `_head_text` returns as-is."""
     try:
         with open(os.path.join(root, *rel.split("/")), "r", encoding="utf-8",
-                  errors="replace") as fh:
+                  errors="replace", newline="") as fh:
             return fh.read()
     except OSError:
         return None

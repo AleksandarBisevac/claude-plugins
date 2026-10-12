@@ -1313,8 +1313,10 @@ def _budget_cases(check):
     # holds a space. Node honours no single quote in NODE_OPTIONS, so a
     # shell-quoted word would be a different preload to the runner.
     held = os.environ.get("NODE_OPTIONS")
+    # Node reads a backslash inside the quotes as an escape on every platform,
+    # so a Windows path is written with each one doubled; a POSIX path has none.
     os.environ["NODE_OPTIONS"] = '--require "%s"' % (
-        os.path.join(root, "a b", "setup.js"),)
+        os.path.join(root, "a b", "setup.js").replace("\\", "\\\\"),)
     try:
         _c, got_n = _red(root, man, [py, "tests/test_mine.py"])
     finally:
@@ -1327,6 +1329,10 @@ def _budget_cases(check):
           % ((got_n.get("redFirst") or {}).get("basis", "")[-160:],),
           "kept, naming the shared root: NODE_OPTIONS"
           in (got_n.get("redFirst") or {}).get("basis", ""))
+    win = _node_words_of('--require "C:\\\\repo x\\\\a b\\\\setup.js"')
+    check("sr44b a Windows path written for node - backslashes doubled inside "
+          "double quotes - reads back as the one path, on every OS: %r" % (win,),
+          win == ["--require", "C:\\repo x\\a b\\setup.js"])
     spaced = {
         "NODE_OPTIONS": '--require "/repo x/a b/setup.js"',
         "ESCAPED": '--require "/repo x/say \\"hi\\".js"',
@@ -4508,6 +4514,10 @@ def _aborting_test(call):
     return "\n".join(body) + "\n"
 
 
+def _node_words_of(value):
+    return M._node_words(value)
+
+
 def _house_abort_cases(check):
     py = sys.executable
     fix = {"src/mine.py": "v = 2\n\n\ndef new_fn():\n    return 2\n"}
@@ -4546,6 +4556,19 @@ def _house_abort_cases(check):
           % (code_t, (got_t.get("redFirst") or {}).get("basis", "")[:300]),
           code_t == M.E_PROVED
           and "TypeError" in (got_t.get("redFirst") or {}).get("basis", ""))
+
+
+def _crlf_abort_cases(check):
+    line = ("FAIL %s (AttributeError: module 'mine' has no attribute 'new_fn')"
+            % (_ABORT,))
+    text = "PASS old1\n%s\nSELFTEST FAILED: 1/2 cases passed\n" % (line,)
+    lf = M.missing_reports(text, "house")
+    crlf = M.missing_reports(text.replace("\n", "\r\n"), "house")
+    check("sh4 a house abort printed with CRLF line ends - what a Windows "
+          "interpreter writes to a pipe - is read as the LF one is, to the "
+          "same class and message: %r" % (crlf,),
+          [(r["cls"], r["message"]) for r in crlf]
+          == [(r["cls"], r["message"]) for r in lf] and len(lf) == 1)
 
 
 # --- an inline suite: the test and the implementation in one file ---
@@ -4628,6 +4651,22 @@ def _inline_suite_cases(check):
           problem is None and held == 1 and applied == 1
           and "    return 1\n" in text and "('new1', value() == 2)" in text
           and len(head_lines) + 1 == len(wt_lines))
+    crlf_head, crlf_wt = (_INLINE_HEAD.replace("\n", "\r\n"),
+                          _INLINE_WT.replace("\n", "\r\n"))
+    text_c, held_c, applied_c, problem_c = M.inline_test_text(crlf_head, crlf_wt)
+    check("si5 two CRLF copies of an inline suite split as the LF ones do - one "
+          "test hunk applied, one held, the fix still at HEAD: %r"
+          % ((held_c, applied_c, problem_c),),
+          problem_c is None and held_c == 1 and applied_c == 1
+          and "    return 1\r\n" in text_c)
+    crlf_root = _harness.fixture_root("stamp-inline-crlf-")
+    with open(os.path.join(crlf_root, "f.py"), "w", encoding="utf-8",
+              newline="") as fh:
+        fh.write(crlf_wt)
+    check("si6 the working tree's copy is read with its line ends as written, "
+          "so a CRLF file compares to a CRLF HEAD blob line for line: %r"
+          % (M._wt_text(crlf_root, "f.py")[:40],),
+          M._wt_text(crlf_root, "f.py") == crlf_wt)
 
 
 # --- a stage the task's own test files add: new at HEAD, not red there ---
@@ -4773,6 +4812,7 @@ STAGES = (
     ("sr-introduces", "_introduces_cases"),
     ("sm-missing-module", "_missing_module_cases"),
     ("sh-house-abort", "_house_abort_cases"),
+    ("sh-crlf-abort", "_crlf_abort_cases"),
     ("si-inline", "_inline_suite_cases"),
     ("sr-directory", "_directory_scope_cases"),
     ("sr-sandbox-words", "_sandbox_words_cases"),
