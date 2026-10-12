@@ -1,7 +1,7 @@
 {
   "id": "P123",
   "title": "A first-time user's plan, run and landing do what they said",
-  "status": "in_progress",
+  "status": "done",
   "description": "Testbed faults from the danuvia-software run on 3.2.0: F588, F589, F595, F591, F594, F593. Each was hit by a real first-time user.",
   "desiredOutcome": "On a fresh repo a first phase is planned in one verb call with no placeholder, /audit:run never runs less or more than the user named, a stopped drive leaves no lock behind, the gate's evidence lands in the project's own directory, and a single-checkout landing leaves the user on the branch the work landed on.",
   "testGate": [
@@ -19,7 +19,7 @@
   ],
   "baseRef": "6575226053d1f69e448e6801f5d900a03a6aa3d2",
   "branch": "audit/p123-a-first-time-user-s-plan-run-a",
-  "mergedAt": null,
+  "mergedAt": "2026-10-12T19:30:44Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -7986,5 +7986,6 @@
     "runId": "2026-10-12T19:27:52Z.c73ba5",
     "status": "passed",
     "at": "2026-10-12T19:27:52Z"
-  }
+  },
+  "mergedHead": "330f5336cd2131d2785d1f6d0891140e5c313e4b"
 }
