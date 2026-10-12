@@ -626,10 +626,11 @@ TABLE = (
   "if in_context or _LAYER_L_LEAD.search(text[:m.start()])]",
   "if in_context]", DEP, "lmd3"),
  # An absolute ordinal position planted into a shipped docstring, followed by an
- # ordinary word rather than a clause end, which the lint must refuse.
+ # ordinary word rather than a clause end, which the shipped-tree case must
+ # refuse (a planted docstring is what makes that case red).
  ("layer_mention_drift", S + "status/_doctor_ado.py", "replace",
   "`_doctor_report` for the collector",
-  "the bottom layer holds `_doctor_report` for the collector", DEP, "lmd9"),
+  "the bottom layer holds `_doctor_report` for the collector", DEP, "lmd1"),
  # The defect is a PAIR - a function nothing names, and a docstring saying
  # something depends on it - so the mutation has to plant both halves at once. A
  # probe function planted in a shipped module is exactly that: nothing calls it,

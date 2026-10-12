@@ -1,0 +1,14 @@
+{
+  "gates": {},
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only task; the orchestrator reruns prove-gates --only layer_mention after the commit (the helper refuses a dirty tree)",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "tools/prove-gates.py: the row planting 'the bottom layer holds `_doctor_report` for the collector' into status/_doctor_ado.py now expects case lmd1 (the shipped-tree case, as its sibling rows do) instead of lmd9; comment reworded. File parses (ast.parse exit 0). prove-gates not run, per the order.",
+    "descriptive": "The bottom-layer plant row names the case a planted docstring actually turns red, lmd1."
+  },
+  "testsAdded": [],
+  "stamp": "audit-stamp: {\"content\":\"sha256:671e6daff62a8d0729e7a3f45f60e2ea8e2622d4b789169343ba90e2f3012f41\",\"dirtyDigest\":\"sha256:a201bda588a1542a6a6d2a817533f061611c289dadb4e853375c04298df80d95\",\"dirtyPaths\":{\"tools/prove-gates.py\":\"088bd8c0fdcfcf1a\"},\"head\":\"fd4beaf7\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:fb46b9dfe96da079ba4522d9f42ed85ab0e817381896b25ddb601268a72d28aa\",\"v\":2}"
+}
