@@ -28,8 +28,9 @@ evidence cannot ask at all: a guard that cannot answer refuses. Each is named
 with the basis `full_status` gave. `read_held_phases` asks the plugin's own
 `full_status` this question rather than restating it, the way `read_bugs`
 already asks `effective_bug_status` rather than reading a stored field. A
-plan naming no third place (`meta.fullGate` absent) has no phase to hold, so
-this guard then judges the bugs alone.
+plan naming no third place (`meta.fullGate` absent, or holding only
+review-only entries) has no phase to hold, so this guard then judges the bugs
+alone.
 
 THE WAY PAST IT is `arm-release-bypass.py`: the maintainer types the keyword and a
 single-use slot appears. Nothing the model writes can arm it. That is why the
@@ -787,8 +788,9 @@ def read_held_phases(project):
     means the caller cannot know whether any phase holds, so it says so
     rather than let a release through on a file nobody could read.
 
-    No `meta.fullGate` at all means nothing is held and this returns
-    `([], None)` - the guard then judges the bugs alone.
+    No runnable `meta.fullGate` entry - none declared, or only review-only
+    ones - means nothing is held and this returns `([], None)`; the guard
+    then judges the bugs alone.
     """
     mio = _effective(project)
     if mio is None:
@@ -806,12 +808,12 @@ def read_held_phases(project):
     data, problem = _read_plan(mio, project)
     if problem:
         return ([], problem)
-    meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
-    full_gate = meta.get("fullGate")
-    if not full_gate:
+    # THE RUNNABLE FULL GATE, the one list the runner records and every
+    # reader counts against: a fullGate holding only review-only entries
+    # holds nothing, exactly as no fullGate does.
+    full_commands = evidence_io.full_gate_commands(data)
+    if not full_commands:
         return ([], None)
-    full_commands = [c for _name, c in
-                     evidence_io.resolved_commands(data, full_gate)]
     ledger = evidence_io.read_rows(project)
     if ledger.get("unreadable"):
         return ([], "the evidence ledger carries file(s) that could not be "
@@ -1384,6 +1386,19 @@ def _selftest():
         check("gr25 ALLOW: no meta.fullGate at all means nothing is "
               "provisional, and the release goes through",
               decide("git tag -a v1 -m x", tmp2, "s1") is None)
+
+        # RED-FIRST: a fullGate holding only review-only entries has nothing
+        # runnable, so it holds exactly what no fullGate holds - nothing. A
+        # count of declared entries would hold P1 over a run nobody can make.
+        write_plan({"fullGate": ["claimsMatchCode"],
+                   "buildCommands": {"claimsMatchCode": "review-only: read"}},
+                  [{"id": "P1", "title": "p", "status": "done",
+                    "mergedAt": "2026-01-01T00:00:00Z",
+                    "mergedHead": "a" * 40, "tasks": []}])
+        got = decide("git tag -a v1 -m x", tmp2, "s1")
+        check("gr71 RED-FIRST: a fullGate of only review-only entries holds "
+              "no phase, and the release goes through: %r" % (got,),
+              got is None)
 
         # ALLOW: ordinary work is never refused by a provisional
         # phase either - only the publishing commands are judged.

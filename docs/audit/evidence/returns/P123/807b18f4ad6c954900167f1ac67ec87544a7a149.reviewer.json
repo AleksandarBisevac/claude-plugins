@@ -1,0 +1,94 @@
+{
+  "findings": [
+    {
+      "id": 1,
+      "severity": "med",
+      "file": "plugins/audit/scripts/governance/run-test-gate.py:4501-4518 (other side: plugins/audit/scripts/governance/_evidence_io.py:2674-2679, plugins/audit/scripts/governance/full-gate.py:130-141, .claude/hooks/guard-release.py:813-814, plugins/audit/scripts/status/audit-status.py:418-419)",
+      "issue": "P123-R3 is closed only at the runner, and its consequence (phases kept provisional, release held) is still reachable. _run_full now records a row built from the filtered commands (`_record_full_run(..., commands, ...)`, published = filtered list). Every reader of that row builds `declared` from the unfiltered `_ev.resolved_commands(manifest, meta.fullGate)`, review-only value included. (a) For a mixed fullGate [ok, claimsMatchCode], the green row has one step against two declared entries, so `_full_disqualification` answers 'FULL RUN RAN 1 OF 2 DECLARED ENTRIES'. The run is never whole-bearing, every merged phase stays PROVISIONAL and guard-release holds the release. (b) For a fullGate holding only review-only entries, run-test-gate returns E_ASK (= 2). full-gate.py's `declares_full_gate` still says a third place is declared, and its docstring (':133 THE SAME PRESENCE CHECK run-test-gate's own _run_full makes') is now false. So the pre-push/CI step prints 'the run is still red - exit 2 blocks the push', and the readers wait for a full run nothing can record. fo2 (plugins/audit/tests/test_run_test_gate.py:8640) asserts only the exit code and the step list. It never asks `_ev.full_status` / `_full_disqualification` about the row it pins, and no case drives full-gate.py over either plan.",
+      "resolution": "Put one declared-full-gate list in _evidence_io: `resolved_commands` drops review-only values, or a new `full_gate_commands(manifest)` does. Make run-test-gate._run_full, full-gate.declares_full_gate, every full_status caller (audit-status, render-report, _doctor_trail, _panel_composition) and guard-release read that one list, so a fullGate holding only review-only entries reads as 'no third place' (NOT_DECLARED, exit 0) everywhere. Extend fo2 to assert `_ev._full_disqualification(row, declared)` is None for the recorded row, and add a test_full_gate case for the review-only-only plan exiting 0."
+    },
+    {
+      "id": 2,
+      "severity": "med",
+      "file": "plugins/audit/scripts/governance/run-test-gate.py:2192-2204 (with plugins/audit/scripts/governance/_evidence_io.py:138-143 and plugins/audit/scripts/manifest/_manifest_phases.py:255-260)",
+      "issue": "split_not_commands classifies the RESOLVED command, and `resolved_commands` has already prefixed `meta.nodePreamble` to it ('<lead> && review-only: ...'). `is_review_only` only accepts a value that begins with 'review-only:', so in any plan that sets nodePreamble a review-only entry is not split out. Its prose then runs through the shell on the task/phase path (:4821) and on the full path this phase added (:4502), and records a red gate: the defect P123.49 and P123.55 exist to stop. No case pairs nodePreamble with a review-only entry (test_run_test_gate.py names nodePreamble only in the rg1b resolution cases).",
+      "resolution": "Classify each entry by its raw buildCommands value (or the entry itself) before the preamble is joined. For example, have split_not_commands take the entries and meta.buildCommands, or have resolved_commands return the review-only flag beside each pair. Add a case with nodePreamble set and a review-only entry in testGate and in fullGate, asserting no step ran."
+    },
+    {
+      "id": 3,
+      "severity": "med",
+      "file": "plugins/audit/hooks/guard-bash-writes.py:702 (other side: plugins/audit/hooks/guard-secrets-read.py:1966-1970); plugins/audit/hooks/_config.py:2273-2275; plugins/audit/tests/test_guard_secrets_read.py:1031-1044",
+      "issue": "P123-R7 is partly open. There is now one reader, but the two hooks still call it with different seams. guard-secrets-read passes the disk `is_dir` and `files_of`. guard-bash-writes calls `_config.copy_destinations(words)` with neither. So `cp a.py src` (src an existing directory) is graded as src/a.py by the plan gate and attributed as `src` by guard-bash-writes, and `cp -r dir dest` / `mv dir dest` are listed per file by one and named as one word by the other. That is exactly the 'no is_dir reading' disagreement R7 named. In guard-bash-writes the mismatch moves a path from `named` to `unproven`, so with another session active (clauses) the deny tier only gives a notice where it would block. The new docstring's 'so one command gets one answer' (_config.py:2275) is false at runtime. ww7c compares `M._copy_destinations(w)` (now `_config.copy_destinations(w) or []`) against `_config.copy_destinations(w) or []`: the same function, with no seam on either side and only spellings that do not need the disk. It cannot see this disagreement.",
+      "resolution": "Have guard-bash-writes pass the same seams: an is_dir and files_of resolved at the command's cwd, ideally built by one helper in _config that both hooks call. Rewrite ww7c to drive both hooks' own call paths over a fixture holding an existing slashless directory and a recursive copy, and assert they agree."
+    },
+    {
+      "id": 4,
+      "severity": "med",
+      "file": "plugins/audit/scripts/_deps.py:2483-2494 (and e.g. plugins/audit/scripts/_output.py:577, plugins/audit/scripts/_deps.py:251, plugins/audit/scripts/_deps.py:515, plugins/audit/scripts/panel/_panel_paths.py:7, plugins/audit/scripts/report/_report_page.py:2)",
+      "issue": "The layer-number class P123.33 promised to close ('Every layer number written in prose is checked against _deps.LAYERS or not written') is still open one wording over. R2 widened the regex to the shapes the finding listed. But present-tense mentions in the 'at LN' / 'is at layer N' / '(now LN' / 'sits at layer N' wordings are not read, and many are the same off-by-one. Examples: '`_refs` is at layer 1' (LAYERS index 2), '`_manifest_ado` at L2 grades the config' (3), '`_help` (now L2)' (3, while _deps.py:214 says L3 and passes), '`_panel_state` sits at layer 5' (6). A read-only probe that widened `_NAMED_LAYER_MENTION` to those connectives over `_real_source_files`/`_prose_blocks` matched dozens of disagreements with LAYERS. A few are history ('sat at', 'came down to'); most are present tense. This is a second round on one class, so enumerating more wordings will not close it.",
+      "resolution": "Grade by invariant, not by wording: for every prose block, any `L<n>` / `layer <n>` within the same sentence as a backticked LAYERS name is checked, with an explicit history exemption ('sat at', 'moved', 'came down', 'used to'). Or delete the numbers where the layer is not the argument, as the R2 resolution asked. Add an lmd case and a prove-gates row for the 'at LN' shape."
+    },
+    {
+      "id": 5,
+      "severity": "low",
+      "file": "plugins/audit/scripts/_deps.py:2541-2543",
+      "issue": "layer_mention_drift's docstring still says it 'reads the three shapes it can read reliably' after P123.54 widened `_NAMED_LAYER_MENTION` to the qualified, comma and unclosed forms. The comment above the regex was updated and the function's docstring was not.",
+      "resolution": "Drop the count ('reads the shapes `_NAMED_LAYER_MENTION` and `_OWN_LAYER_MENTION` name')."
+    },
+    {
+      "id": 6,
+      "severity": "low",
+      "file": "plugins/audit/tests/test_drive_phase.py:2292-2297 (COLON_FINDINGS)",
+      "issue": "P123.60's task text asks for the regression 'a triage over a finding whose issue holds a backtick span with a spaced paren adds its fix task'. The diff relies on fb1, whose finding carries ' :400' and no backtick span. The stdin batch makes the shape irrelevant to argv, so the risk is low, but the named regression is not pinned.",
+      "resolution": "Give COLON_FINDINGS' second issue the literal shape that stopped the P123 triage (e.g. 'see `(split_not_commands at :4809)`'), so fb1 covers it."
+    },
+    {
+      "id": 7,
+      "severity": "low",
+      "file": "plugins/audit/tests/test_audit_task.py:15983, plugins/audit/tests/test_audit_task.py:16013, plugins/audit/tests/test_commit_task_work.py:1901",
+      "issue": "Unrelated existing lines were rewritten to `before =open(...)`, `gate =(...)` and `CE_TEST =\"tests/test_a.py\"`. These are stray whitespace edits (E225) that ruff's selected rules do not catch, and the same artefact appears in two separate task commits, which points at an editing tool rather than intent.",
+      "resolution": "Restore `X = Y` on those lines, and find what rewrote them before it touches non-test code."
+    }
+  ],
+  "preExisting": [],
+  "intent": {
+    "answer": "matches",
+    "note": "Re-review of the fix tasks P123.53-61 against the first review's R1-R7. Per finding: R1 closed: test_validate_manifest.py:444 LIVE_PLANS and :467 skip the --strict exit for the live plan; _schema_lines (:447-451) keeps only rules.schema.* lines, so a filed bug or finding no longer reddens sp1. R2 closed as asked: _deps.py:2492-2494 reads `name.attr`, the comma form and the unclosed form; lmd8/lmd9 at test__deps.py:621,625; two prove-gates rows; a read-only `_deps.layer_mention_drift()` call over HEAD returned [] (exit 0). The class stays open in other wordings (finding 4). R3: no review-only entry runs any more (run-test-gate.py:4501-4518, fo1/fo2 at test_run_test_gate.py:8620,8640), but the provisional/held-release consequence survives at the reader boundary (finding 1), and a nodePreamble bypasses the split altogether (finding 2). R4 closed: check-example-pins.py:154 reads a pending pin at HEAD, :165 gates the lag arm, :388 l1 calls check(lag=False), and verify.sh passes --pending \"v$version\"; p1-p4. R5 closed: drive-phase.py:2651-2665 turns a ValueError into a stop that gives the lock back, and any other BaseException releases and re-raises. take_lock is only called at :2648 and does not call load_phase, so dl5/dl6 (test_drive_phase.py:975,997) reach the post-lock path. R6 closed: _config.py:1228-1256 out_of_scope_record, read at commit-task-work.py:546-558 from attempt_state_dir, the same _config.state_dir the guard writes (guard-bash-writes.py:1705). Both sides use git-root-relative porcelain paths; ctw-at5/at6 at :1880,1895. R7 partly closed: _config.copy_destinations (:2270) is the one reader and guard-secrets-read.py:1818-1825 delegates to it, but guard-bash-writes calls it without the is_dir/files_of seams and ww7c compares the function with itself (finding 3). Against desiredOutcome: the fix tasks serve its 'a stopped drive leaves no lock behind' clause (R5, closed), and the rest harden gate, guard and lint paths the outcome sentence does not name.",
+    "missing": [],
+    "redFirst": "not-attempted",
+    "redFirstBasis": "mode: phase - the phase's own diff owes no red-first; per-task red-first is answered in the tasks entries.",
+    "inheritedTests": "not-asked",
+    "inheritedTestsBasis": "The phase gate's `selftests` entry is `python3 tools/sweep-selftests.py`, which runs every suite in the tree. The other entries are whole-plan validate/status/report, lint and browser commands. The gate runs the whole project, so the bounded question does not apply."
+  },
+  "verdict": "findings",
+  "tasks": [
+    {
+      "id": "P123.60-64p",
+      "commit": "de3c075856aa",
+      "answer": "matches",
+      "note": "Description asked for two things. (1) Fix tasks are added from stdin as a whole batch. This was already at HEAD before the task (add_fix_tasks hands one `add --from-file -` call, introduced in ce8d5d29; fb1/fb2 lock the ' :400' text and the no-partial-batch refusal), and the executor says so. The diff changes drive-phase only in test fixtures (_repo creates src/f1-3). The asked backtick-with-spaced-paren regression shape is not pinned (finding 6). (2) Each path a finding names is resolved before it is written. audit-task.py `_resolve_finding_path` takes the path as written if it exists, else a unique tail match over `_tracked_files` (git ls-files, else a walk). Ambiguous or missing words go to scope['unresolved'] and are named in the note, not written, and a test file the resolution names is scoped too. bx6/bx6b (`manifest/_manifest_io.py:774` scopes the full path through both add forms), bx7 (ambiguous basename named with both candidates, ghost named, existing path kept), bx8, bx9 (tracked-only candidates). The executor's technical outcome describes this diff. The existing cz7/cz13/cz15-19 fixtures now create their sources, because a nonexistent path is no longer written.",
+      "missing": [],
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate's `selftests` resolves to `python3 tools/sweep-selftests.py`, the whole-tree sweep. validate/gate/report read the whole plan, lint is ruff+vermin over the plugin, and shots/interactive are browser gates. The gate runs the whole project.",
+      "redFirst": "proved",
+      "redFirstBasis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage bx-block` in a throwaway tree at HEAD exited 1 with 5 of 10 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bx6 (house FAIL): SELFTEST FAILED: 5/10 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P123.60-64p/20261011T191243Z.executor.json, at 2026-10-11T19:37:47Z)"
+    },
+    {
+      "id": "P123.61-64p",
+      "commit": "807b18f4ad6c",
+      "answer": "matches",
+      "note": "Description asked for xg-style cases in test_run_test_gate.py, in a stage that exists at HEAD. The diff adds `_full_review_only_cases`, called in `_selftest` after `_layout_project_cases`. fo1: fullGate [claimsMatchCode] with a `review-only:` value gives E_ASK, one not-a-command line naming it, and no ledger rows. fo2: [ok, claimsMatchCode] gives E_OK, one step `true`, FULL GATE GREEN, and the review-only entry said once. The executor's outcome describes this diff. Caveat, charged as finding 1: fo2 pins a green row that `_full_disqualification` rejects ('RAN 1 OF 2 DECLARED ENTRIES'), and fo1 pins an exit 2 that full-gate.py reports as a red run blocking the push. The cases hold the runner's half of R3 and not its consequence.",
+      "missing": [],
+      "redFirst": "not-attempted",
+      "redFirstBasis": "Executor: 'regression task, expectRedFirst false; the fix pre-exists. Red proved by hand in a scratch git-archive copy outside the repo with _run_full's split_not_commands removed: fo1 FAIL (exit 1, no not-a-command line, 1 row recorded) and fo2 FAIL (steps true + the review-only prose, so a red run); with the fix both pass.' tests.mode is `regression` with expectRedFirst false in P123.json, so not-attempted holds and is echoed. The hand-run report gives an exit code and the failing values but names no command line, so it is not upgraded to proved.",
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate's `selftests` resolves to `python3 tools/sweep-selftests.py`, the whole-tree sweep. The remaining entries are whole-plan, lint and browser commands. The gate runs the whole project."
+    }
+  ],
+  "computedAnswers": {
+    "P123.60-64p": [
+      "redFirst",
+      "redFirstBasis"
+    ]
+  }
+}

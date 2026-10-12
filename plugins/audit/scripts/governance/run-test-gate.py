@@ -2189,15 +2189,22 @@ def _resolved(entries, build, preamble=None):
         {"meta": {"buildCommands": build, "nodePreamble": preamble}}, entries)
 
 
-def split_not_commands(commands):
-    """`(commands, names)` - the gate with every `review-only:` step taken out,
+def split_not_commands(commands, manifest):
+    """`(commands, names)` - the gate with every review-only step taken out,
     and the names taken out, in order. A step is the `(name, command)` pair
-    `gate_of` returns; only the resolved command is read, so a plan whose entry
-    is spelled out in `testGate` itself is caught the same as one resolved
-    through `meta.buildCommands`."""
+    `gate_of` returns.
+
+    JUDGED ON THE ENTRY AND ITS RAW `buildCommands` VALUE, never on the
+    resolved command: a `nodePreamble` in front of that hides the prefix, and
+    a shell handed the result chokes on the prose. The rule is
+    `_manifest_vocab.review_only_entry`, the one `_evidence_io.full_gate`
+    reads too, so an entry spelled out in `testGate` itself is caught the same
+    as one resolved through `meta.buildCommands`."""
+    meta = (manifest.get("meta") if isinstance(manifest, dict) else None) or {}
+    build = meta.get("buildCommands") if isinstance(meta, dict) else None
     keep, left = [], []
     for name, command in commands or []:
-        if _phases.is_review_only(command):
+        if _phases.review_only_entry(name, build):
             left.append(name)
         else:
             keep.append((name, command))
@@ -4498,9 +4505,10 @@ def _run_full(project, args, manifest, out=print):
     happens and is still recorded, it just cannot bear WHOLE
     (`_evidence_io._full_disqualification` reads exactly this key).
     """
-    entries = ((manifest.get("meta") or {}).get("fullGate") or [])
-    commands, not_commands = split_not_commands(
-        _ev.resolved_commands(manifest, entries))
+    # THE RUNNABLE FULL GATE, the one list every reader counts a recorded run
+    # against - so the row this run records is whole-bearing for all of them.
+    gate = _ev.full_gate(manifest)
+    commands, not_commands = gate["commands"], gate["reviewOnly"]
     for name in not_commands:
         # SAID, NEVER RUN, NEVER RED - the same rule the phase/task path holds:
         # a review-only value handed to a shell is a syntax error that would
@@ -4510,11 +4518,17 @@ def _run_full(project, args, manifest, out=print):
                 "review-only) - not run, and not a failure. Remedy: drop it "
                 "from meta.fullGate; the reviewer is asked it instead."
                 % (name,))
+    if not commands and not_commands:
+        # A DECLARED GATE WITH NOTHING TO RUN IS NOT A USAGE ERROR. Every
+        # reader answers it as no third place, so exiting 2 here would block
+        # a push over a run nothing can record.
+        out("[run-test-gate] meta.fullGate names only review-only entries - "
+            "no runnable full gate is declared, so there is nothing to run "
+            "and nothing to record")
+        return E_OK
     if not commands:
         out("[run-test-gate] no meta.fullGate declared - this plan names no "
-            "third place" if not not_commands else
-            "[run-test-gate] meta.fullGate names only review-only entries - "
-            "no command to run")
+            "third place")
         return E_ASK
     recorded_excl, _unexcluded = _ev.recorded_paths(project, args.manifest)
     # TAKEN BEFORE THE FIRST COMMAND RUNS - `run_gate` below takes its OWN,
@@ -4818,7 +4832,7 @@ def main(argv, out=print):
     if err:
         out("[run-test-gate] %s" % err)
         return E_ASK
-    commands, not_commands = split_not_commands(commands)
+    commands, not_commands = split_not_commands(commands, manifest)
     for name in not_commands:
         # SAID, NEVER RUN, NEVER RED. A `review-only:` value is a read of the
         # diff for the sign-off reviewer; handed to a shell it is a syntax error

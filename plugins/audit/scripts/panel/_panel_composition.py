@@ -897,8 +897,10 @@ def evidence_view(project, composition, config=None, read=None,
 
 
 def full_gate_commands(manifest):
-    """The resolved commands `meta.fullGate` names, or `[]` when there are
-    none - the ONE reading of "does this plan have a third place at all".
+    """The RUNNABLE commands `meta.fullGate` names - `_evidence_io.full_gate_commands`,
+    review-only entries left out - or `[]` when there are none: the ONE
+    reading of "does this plan have a third place at all", shared with the
+    runner's record and every other reader.
 
     PUBLIC, because `_panel_state.build_state` needs the SAME answer before
     it decides whether reading the evidence ledger or resolving a git root is
@@ -906,9 +908,7 @@ def full_gate_commands(manifest):
     A second reading of `meta.fullGate` there would be free to disagree with
     this one about which plans have a third place to ask about.
     """
-    meta = manifest.get("meta") if isinstance(manifest, dict) else None
-    meta = meta if isinstance(meta, dict) else {}
-    return [c for _name, c in _ev.resolved_commands(manifest, meta.get("fullGate"))]
+    return _ev.full_gate_commands(manifest)
 
 
 _FULL_SHA = re.compile(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}")

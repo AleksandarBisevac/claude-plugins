@@ -16,15 +16,13 @@ declared, `run-test-gate.py --full` refuses (exit 2 - a phase-scope caller
 asking for a run with nothing to run is a usage error). A pre-push hook is
 not that caller: a plan that never declared a third place must not block
 every push from every contributor, forever, over a gate nobody asked for.
-So THIS file reads `meta.fullGate` itself, before invoking anything, and
-answers with the sentence and exit 0 rather than letting the runner's own
-usage refusal reach an operator's shell as a blocked push. Read directly
-off the manifest dict rather than through `_evidence_io.resolved_commands`:
-that function also resolves aliases and couplings, which is a question
-about WHAT the third place runs, and this file only asks whether one is
-declared at all - the identical presence check `run-test-gate.py`'s own
-`_run_full` makes one line above calling `resolved_commands` in the first
-place.
+So THIS file asks whether a RUNNABLE full gate is declared, before invoking
+anything, and answers with the sentence and exit 0 rather than letting the
+runner's own usage refusal reach an operator's shell as a blocked push. The
+question goes through `_evidence_io.full_gate`, the list `run-test-gate.py`'s
+own `_run_full` runs and every reader counts a recorded run against, so a
+`meta.fullGate` holding only review-only entries is no third place here
+either - the entries it left out are named in the sentence.
 
 THE RED BRANCH LEARNS, AND STILL BLOCKS. After the runner exits non-zero,
 this file reads the row it recorded (`_evidence_io.row_by_run`, with the run
@@ -63,7 +61,8 @@ Usage:
   full-gate.py <manifest> --learn-from RUNID [--project-dir DIR]
 
 Exit codes:
-  0  no meta.fullGate declared (nothing to run), or the full run was green;
+  0  no runnable meta.fullGate entry declared (nothing to run), or the full
+     run was green;
      with --learn-from, the learning ran - even when it filed nothing
   1  the full run was red - whether or not a miss was learned from it; with
      --learn-from, the row was refused, the ledger could not be read, a
@@ -127,18 +126,20 @@ NO_THIRD_PLACE = (
     "nothing here blocks the push" % (PREFIX,))
 
 
-def declares_full_gate(manifest):
-    """True when `meta.fullGate` names at least one entry.
+REVIEW_ONLY_LEFT_OUT = (
+    "%s meta.fullGate names only review-only entries (%s) - no runnable full "
+    "gate is declared, so nothing here blocks the push")
 
-    THE SAME PRESENCE CHECK `run-test-gate.py`'s own `_run_full` makes
-    (`entries = (meta.get("fullGate") or [])`), read here rather than through
-    `_evidence_io.resolved_commands` - that function also resolves aliases and
-    couplings, a question about WHAT the third place runs, while this file
-    only asks whether one is declared before deciding whether to invoke the
-    runner at all.
+
+def declares_full_gate(manifest):
+    """True when `meta.fullGate` names at least one RUNNABLE entry.
+
+    `_evidence_io.full_gate`, the one list the runner records and every
+    reader counts against - so a fullGate holding only review-only entries
+    is no third place here exactly as it is to the release guard and the
+    status, rather than a declared gate the runner can record nothing for.
     """
-    entries = ((manifest.get("meta") or {}).get("fullGate") or [])
-    return bool(entries)
+    return bool(_ev.full_gate(manifest)["commands"])
 
 
 def _stream_subprocess(cmd, out):
@@ -622,7 +623,9 @@ def main(argv, out=print):
     if args.learn_from is not None:
         return learn_from(args.manifest, project, args.learn_from, out)
     if not declares_full_gate(manifest):
-        out(NO_THIRD_PLACE)
+        left = _ev.full_gate(manifest)["reviewOnly"]
+        out(REVIEW_ONLY_LEFT_OUT % (PREFIX, ", ".join(left)) if left
+            else NO_THIRD_PLACE)
         return E_OK
     printed = []
 

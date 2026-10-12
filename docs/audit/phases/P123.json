@@ -94,9 +94,65 @@
         "fixTask": "P123.59-64p",
         "commit": "185f3f4ffed3",
         "status": "fixed"
+      },
+      {
+        "id": "P123-R8",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:4501-4518 (other side: plugins/audit/scripts/governance/_evidence_io.py:2674-2679, plugins/audit/scripts/governance/full-gate.py:130-141, .claude/hooks/guard-release.py:813-814, plugins/audit/scripts/status/audit-status.py:418-419)",
+        "issue": "P123-R3 is closed only at the runner, and its consequence (phases kept provisional, release held) is still reachable. _run_full now records a row built from the filtered commands (`_record_full_run(..., commands, ...)`, published = filtered list). Every reader of that row builds `declared` from the unfiltered `_ev.resolved_commands(manifest, meta.fullGate)`, review-only value included. (a) For a mixed fullGate [ok, claimsMatchCode], the green row has one step against two declared entries, so `_full_disqualification` answers 'FULL RUN RAN 1 OF 2 DECLARED ENTRIES'. The run is never whole-bearing, every merged phase stays PROVISIONAL and guard-release holds the release. (b) For a fullGate holding only review-only entries, run-test-gate returns E_ASK (= 2). full-gate.py's `declares_full_gate` still says a third place is declared, and its docstring (':133 THE SAME PRESENCE CHECK run-test-gate's own _run_full makes') is now false. So the pre-push/CI step prints 'the run is still red - exit 2 blocks the push', and the readers wait for a full run nothing can record. fo2 (plugins/audit/tests/test_run_test_gate.py:8640) asserts only the exit code and the step list. It never asks `_ev.full_status` / `_full_disqualification` about the row it pins, and no case drives full-gate.py over either plan.",
+        "resolution": "Put one declared-full-gate list in _evidence_io: `resolved_commands` drops review-only values, or a new `full_gate_commands(manifest)` does. Make run-test-gate._run_full, full-gate.declares_full_gate, every full_status caller (audit-status, render-report, _doctor_trail, _panel_composition) and guard-release read that one list, so a fullGate holding only review-only entries reads as 'no third place' (NOT_DECLARED, exit 0) everywhere. Extend fo2 to assert `_ev._full_disqualification(row, declared)` is None for the recorded row, and add a test_full_gate case for the review-only-only plan exiting 0.",
+        "fixTask": "P123.62-64p"
+      },
+      {
+        "id": "P123-R9",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:2192-2204 (with plugins/audit/scripts/governance/_evidence_io.py:138-143 and plugins/audit/scripts/manifest/_manifest_phases.py:255-260)",
+        "issue": "split_not_commands classifies the RESOLVED command, and `resolved_commands` has already prefixed `meta.nodePreamble` to it ('<lead> && review-only: ...'). `is_review_only` only accepts a value that begins with 'review-only:', so in any plan that sets nodePreamble a review-only entry is not split out. Its prose then runs through the shell on the task/phase path (:4821) and on the full path this phase added (:4502), and records a red gate: the defect P123.49 and P123.55 exist to stop. No case pairs nodePreamble with a review-only entry (test_run_test_gate.py names nodePreamble only in the rg1b resolution cases).",
+        "resolution": "Classify each entry by its raw buildCommands value (or the entry itself) before the preamble is joined. For example, have split_not_commands take the entries and meta.buildCommands, or have resolved_commands return the review-only flag beside each pair. Add a case with nodePreamble set and a review-only entry in testGate and in fullGate, asserting no step ran.",
+        "fixTask": "P123.63-64p"
+      },
+      {
+        "id": "P123-R10",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-bash-writes.py:702 (other side: plugins/audit/hooks/guard-secrets-read.py:1966-1970); plugins/audit/hooks/_config.py:2273-2275; plugins/audit/tests/test_guard_secrets_read.py:1031-1044",
+        "issue": "P123-R7 is partly open. There is now one reader, but the two hooks still call it with different seams. guard-secrets-read passes the disk `is_dir` and `files_of`. guard-bash-writes calls `_config.copy_destinations(words)` with neither. So `cp a.py src` (src an existing directory) is graded as src/a.py by the plan gate and attributed as `src` by guard-bash-writes, and `cp -r dir dest` / `mv dir dest` are listed per file by one and named as one word by the other. That is exactly the 'no is_dir reading' disagreement R7 named. In guard-bash-writes the mismatch moves a path from `named` to `unproven`, so with another session active (clauses) the deny tier only gives a notice where it would block. The new docstring's 'so one command gets one answer' (_config.py:2275) is false at runtime. ww7c compares `M._copy_destinations(w)` (now `_config.copy_destinations(w) or []`) against `_config.copy_destinations(w) or []`: the same function, with no seam on either side and only spellings that do not need the disk. It cannot see this disagreement.",
+        "resolution": "Have guard-bash-writes pass the same seams: an is_dir and files_of resolved at the command's cwd, ideally built by one helper in _config that both hooks call. Rewrite ww7c to drive both hooks' own call paths over a fixture holding an existing slashless directory and a recursive copy, and assert they agree.",
+        "fixTask": "P123.64-64p"
+      },
+      {
+        "id": "P123-R11",
+        "severity": "med",
+        "file": "plugins/audit/scripts/_deps.py:2483-2494 (and e.g. plugins/audit/scripts/_output.py:577, plugins/audit/scripts/_deps.py:251, plugins/audit/scripts/_deps.py:515, plugins/audit/scripts/panel/_panel_paths.py:7, plugins/audit/scripts/report/_report_page.py:2)",
+        "issue": "The layer-number class P123.33 promised to close ('Every layer number written in prose is checked against _deps.LAYERS or not written') is still open one wording over. R2 widened the regex to the shapes the finding listed. But present-tense mentions in the 'at LN' / 'is at layer N' / '(now LN' / 'sits at layer N' wordings are not read, and many are the same off-by-one. Examples: '`_refs` is at layer 1' (LAYERS index 2), '`_manifest_ado` at L2 grades the config' (3), '`_help` (now L2)' (3, while _deps.py:214 says L3 and passes), '`_panel_state` sits at layer 5' (6). A read-only probe that widened `_NAMED_LAYER_MENTION` to those connectives over `_real_source_files`/`_prose_blocks` matched dozens of disagreements with LAYERS. A few are history ('sat at', 'came down to'); most are present tense. This is a second round on one class, so enumerating more wordings will not close it.",
+        "resolution": "Grade by invariant, not by wording: for every prose block, any `L<n>` / `layer <n>` within the same sentence as a backticked LAYERS name is checked, with an explicit history exemption ('sat at', 'moved', 'came down', 'used to'). Or delete the numbers where the layer is not the argument, as the R2 resolution asked. Add an lmd case and a prove-gates row for the 'at LN' shape.",
+        "fixTask": "P123.65-64p"
+      },
+      {
+        "id": "P123-R12",
+        "severity": "low",
+        "file": "plugins/audit/scripts/_deps.py:2541-2543",
+        "issue": "layer_mention_drift's docstring still says it 'reads the three shapes it can read reliably' after P123.54 widened `_NAMED_LAYER_MENTION` to the qualified, comma and unclosed forms. The comment above the regex was updated and the function's docstring was not.",
+        "resolution": "Drop the count ('reads the shapes `_NAMED_LAYER_MENTION` and `_OWN_LAYER_MENTION` name').",
+        "fixTask": "P123.65-64p"
+      },
+      {
+        "id": "P123-R13",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_drive_phase.py:2292-2297 (COLON_FINDINGS)",
+        "issue": "P123.60's task text asks for the regression 'a triage over a finding whose issue holds a backtick span with a spaced paren adds its fix task'. The diff relies on fb1, whose finding carries ' :400' and no backtick span. The stdin batch makes the shape irrelevant to argv, so the risk is low, but the named regression is not pinned.",
+        "resolution": "Give COLON_FINDINGS' second issue the literal shape that stopped the P123 triage (e.g. 'see `(split_not_commands at :4809)`'), so fb1 covers it.",
+        "fixTask": "P123.66-64p"
+      },
+      {
+        "id": "P123-R14",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_audit_task.py:15983, plugins/audit/tests/test_audit_task.py:16013, plugins/audit/tests/test_commit_task_work.py:1901",
+        "issue": "Unrelated existing lines were rewritten to `before =open(...)`, `gate =(...)` and `CE_TEST =\"tests/test_a.py\"`. These are stray whitespace edits (E225) that ruff's selected rules do not catch, and the same artefact appears in two separate task commits, which points at an editing tool rather than intent.",
+        "resolution": "Restore `X = Y` on those lines, and find what rewrote them before it touches non-test code.",
+        "fixTask": "P123.66-64p"
       }
     ],
-    "outcome": "[findings: 7 - 0 high, 4 med, 3 low; 7 with a recorded fix commit]"
+    "outcome": "[findings: 14 - 0 high, 8 med, 6 low; 7 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -4730,7 +4786,7 @@
     {
       "id": "P123.61-64p",
       "title": "A review-only entry in meta.fullGate is pinned by a case: no step runs and no red full run is recorded",
-      "status": "in_progress",
+      "status": "done",
       "description": "Follow-up to the fix of the phase review finding P123-R3: `run-test-gate._run_full` now passes the resolved meta.fullGate through `split_not_commands`, so a review-only entry prints a not-a-command line and is never run, and a fullGate holding only review-only entries returns the ask exit instead of recording a red full run. The fix landed without the case the finding's resolution asked for, because the fix task's files held no test file. Add the xg-style cases in test_run_test_gate.py (in a stage that exists at HEAD): fullGate [\"claimsMatchCode\"] with a `review-only:` value runs no step, prints the not-a-command line and records no red full run; a fullGate mixing one real command with one review-only entry runs only the real one. Prove each case can fail by putting the old `_run_full` (no split) back in a scratch copy outside the repo and watching it go red there; say so in the return. Faults: P123-R3.",
       "files": [
         "plugins/audit/tests/test_run_test_gate.py"
@@ -4760,20 +4816,450 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "807b18f4ad6c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added _full_review_only_cases (fo1, fo2) to plugins/audit/tests/test_run_test_gate.py, called after _layout_project_cases in _selftest. fo1: fullGate [claimsMatchCode] review-only -> E_ASK, one not-a-command line, no rows. fo2: fullGate [ok, claimsMatchCode] -> E_OK, one step 'true', FULL GATE GREEN, review-only said once. Selftest of the file 521/521 pass. Sweep, sweep --spaced, ruff, vermin all exit 0.",
+        "descriptive": "A review-only meta.fullGate entry is now pinned: said, never run, never recorded as a red full run."
       },
       "startedAt": "2026-10-11T19:46:39Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-11T20:05:58Z",
+      "verifiedBy": [
+        "fo1",
+        "fo2"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-11T20:05:57Z.70c3ca",
         "status": "passed",
         "at": "2026-10-11T20:05:57Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "807b18f4ad6c",
+        "at": "2026-10-11T20:05:58Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task, expectRedFirst false; the fix pre-exists. Red proved by hand in a scratch git-archive copy outside the repo with _run_full's split_not_commands removed: fo1 FAIL (exit 1, no not-a-command line, 1 row recorded) and fo2 FAIL (steps true + the review-only prose, so a red run); with the fix both pass.",
+        "at": "2026-10-11"
       }
+    },
+    {
+      "id": "P123.62-64p",
+      "title": "A fullGate is counted by its runnable entries everywhere: one function says what a full run must cover",
+      "status": "in_progress",
+      "description": "(P123-R8, med) P123-R3 is closed only at the runner, and its consequence (phases kept provisional, release held) is still reachable. _run_full now records a row built from the filtered commands (`_record_full_run(..., commands, ...)`, published = filtered list). Every reader of that row builds `declared` from the unfiltered `_ev.resolved_commands(manifest, meta.fullGate)`, review-only value included. (a) For a mixed fullGate [ok, claimsMatchCode], the green row has one step against two declared entries, so `_full_disqualification` answers 'FULL RUN RAN 1 OF 2 DECLARED ENTRIES'. The run is never whole-bearing, every merged phase stays PROVISIONAL and guard-release holds the release. (b) For a fullGate holding only review-only entries, run-test-gate returns E_ASK (= 2). full-gate.py's `declares_full_gate` still says a third place is declared, and its docstring (':133 THE SAME PRESENCE CHECK run-test-gate's own _run_full makes') is now false. So the pre-push/CI step prints 'the run is still red - exit 2 blocks the push', and the readers wait for a full run nothing can record. fo2 (plugins/audit/tests/test_run_test_gate.py:8640) asserts only the exit code and the step list. It never asks `_ev.full_status` / `_full_disqualification` about the row it pins, and no case drives full-gate.py over either plan.\nResolution: Put one declared-full-gate list in _evidence_io: `resolved_commands` drops review-only values, or a new `full_gate_commands(manifest)` does. Make run-test-gate._run_full, full-gate.declares_full_gate, every full_status caller (audit-status, render-report, _doctor_trail, _panel_composition) and guard-release read that one list, so a fullGate holding only review-only entries reads as 'no third place' (NOT_DECLARED, exit 0) everywhere. Extend fo2 to assert `_ev._full_disqualification(row, declared)` is None for the recorded row, and add a test_full_gate case for the review-only-only plan exiting 0.\n\n REDESIGN, not another call site: one function in _evidence_io returns the RUNNABLE fullGate (review-only entries removed, with the removed ones named) and every reader - the runner's record, _full_disqualification, full-gate.py, guard-release.py, audit-status - counts and compares against it, so a mixed [ok, claimsMatchCode] green run is a whole run, and a fullGate with only review-only entries reads as 'no runnable full gate declared' (the same answer as no fullGate) rather than a red that holds the push and the release. Cases through each reader, not only the runner. Faults: P123-R8.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/full-gate.py",
+        "plugins/audit/tests/test_full_gate.py",
+        ".claude/hooks/guard-release.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/full-gate.py",
+        ".claude/hooks/guard-release.py",
+        "plugins/audit/scripts/report/render-report.py",
+        "plugins/audit/tests/test_render_report.py",
+        "plugins/audit/scripts/panel/_panel_composition.py",
+        "plugins/audit/tests/test__panel_composition.py",
+        "plugins/audit/scripts/panel/_panel_state.py",
+        "plugins/audit/tests/test__panel_state.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/tests/test__deps.py",
+        "docs/screenshots"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__evidence_io.py: a green full run of [ok, claimsMatchCode] is a whole run for _full_disqualification, full-gate.py and the release guard; a fullGate of only review-only entries reads as no runnable full gate, not a red"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-12T06:47:04Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-11T20:14:07Z",
+          "text": "scope: plugins/audit/scripts/governance/run-test-gate.py, plugins/audit/scripts/governance/_evidence_io.py, plugins/audit/scripts/governance/full-gate.py, .claude/hooks/guard-release.py, every path the finding(s) P123-R8 name"
+        }
+      ],
+      "fixes": [
+        "P123-R8"
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T07:25:19Z.b942eb",
+        "status": "passed",
+        "at": "2026-10-12T07:25:19Z"
+      }
+    },
+    {
+      "id": "P123.63-64p",
+      "title": "The review-only split happens before a node preamble is prepended, on every gate path",
+      "status": "pending",
+      "description": "(P123-R9, med) split_not_commands classifies the RESOLVED command, and `resolved_commands` has already prefixed `meta.nodePreamble` to it ('<lead> && review-only: ...'). `is_review_only` only accepts a value that begins with 'review-only:', so in any plan that sets nodePreamble a review-only entry is not split out. Its prose then runs through the shell on the task/phase path (:4821) and on the full path this phase added (:4502), and records a red gate: the defect P123.49 and P123.55 exist to stop. No case pairs nodePreamble with a review-only entry (test_run_test_gate.py names nodePreamble only in the rg1b resolution cases).\nResolution: Classify each entry by its raw buildCommands value (or the entry itself) before the preamble is joined. For example, have split_not_commands take the entries and meta.buildCommands, or have resolved_commands return the review-only flag beside each pair. Add a case with nodePreamble set and a review-only entry in testGate and in fullGate, asserting no step ran.\n\n Split review-only entries out of the declared list BEFORE any `meta.nodePreamble` is joined onto a command, on the task/phase path and the full path alike; a case with a preamble and a review-only entry asserts no shell run. Faults: P123-R9.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: with meta.nodePreamble set, a review-only gate entry runs no shell on the task path and the full path"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-11T20:14:08Z",
+          "text": "scope: plugins/audit/scripts/governance/run-test-gate.py, plugins/audit/scripts/governance/_evidence_io.py, every path the finding(s) P123-R9 name"
+        }
+      ],
+      "fixes": [
+        "P123-R9"
+      ]
+    },
+    {
+      "id": "P123.64-64p",
+      "title": "Both shell-write hooks ask the one copy reader with the same inputs, pinned through each hook's own entry (orchestrator-written guard reading code)",
+      "status": "pending",
+      "description": "(P123-R10, med) P123-R7 is partly open. There is now one reader, but the two hooks still call it with different seams. guard-secrets-read passes the disk `is_dir` and `files_of`. guard-bash-writes calls `_config.copy_destinations(words)` with neither. So `cp a.py src` (src an existing directory) is graded as src/a.py by the plan gate and attributed as `src` by guard-bash-writes, and `cp -r dir dest` / `mv dir dest` are listed per file by one and named as one word by the other. That is exactly the 'no is_dir reading' disagreement R7 named. In guard-bash-writes the mismatch moves a path from `named` to `unproven`, so with another session active (clauses) the deny tier only gives a notice where it would block. The new docstring's 'so one command gets one answer' (_config.py:2275) is false at runtime. ww7c compares `M._copy_destinations(w)` (now `_config.copy_destinations(w) or []`) against `_config.copy_destinations(w) or []`: the same function, with no seam on either side and only spellings that do not need the disk. It cannot see this disagreement.\nResolution: Have guard-bash-writes pass the same seams: an is_dir and files_of resolved at the command's cwd, ideally built by one helper in _config that both hooks call. Rewrite ww7c to drive both hooks' own call paths over a fixture holding an existing slashless directory and a recursive copy, and assert they agree.\n\n guard-bash-writes passes the same is_dir and files_of seams (at the command's own directory) that the plan gate passes, so `cp a.py src` with src an existing directory and a recursive copy get one answer from both hooks; the agreement case drives each hook's real entry (guard-bash-writes' attribution and guard-secrets-read's decide) over the same commands on a real fixture tree, never the shared function against itself. GUARD COMMAND-READING CODE: written by the orchestrator. Faults: P123-R10.",
+      "files": [
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/tests/test_guard_bash_writes.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test_guard_secrets_read.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_bash_writes.py: cp a.py src (src an existing directory) and cp -r src/ lib/ are attributed by guard-bash-writes to the same files guard-secrets-read grades, through each hook's own entry"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-11T20:14:08Z",
+          "text": "scope: plugins/audit/hooks/guard-bash-writes.py, plugins/audit/hooks/_config.py, plugins/audit/tests/test_guard_secrets_read.py, every path the finding(s) P123-R10 name"
+        }
+      ],
+      "fixes": [
+        "P123-R10"
+      ]
+    },
+    {
+      "id": "P123.65-64p",
+      "title": "No layer number is written in prose: the module map prints the layers, and a lint refuses a numeral beside a layer word anywhere",
+      "status": "pending",
+      "description": "(P123-R11, med) The layer-number class P123.33 promised to close ('Every layer number written in prose is checked against _deps.LAYERS or not written') is still open one wording over. R2 widened the regex to the shapes the finding listed. But present-tense mentions in the 'at LN' / 'is at layer N' / '(now LN' / 'sits at layer N' wordings are not read, and many are the same off-by-one. Examples: '`_refs` is at layer 1' (LAYERS index 2), '`_manifest_ado` at L2 grades the config' (3), '`_help` (now L2)' (3, while _deps.py:214 says L3 and passes), '`_panel_state` sits at layer 5' (6). A read-only probe that widened `_NAMED_LAYER_MENTION` to those connectives over `_real_source_files`/`_prose_blocks` matched dozens of disagreements with LAYERS. A few are history ('sat at', 'came down to'); most are present tense. This is a second round on one class, so enumerating more wordings will not close it.\nResolution: Grade by invariant, not by wording: for every prose block, any `L<n>` / `layer <n>` within the same sentence as a backticked LAYERS name is checked, with an explicit history exemption ('sat at', 'moved', 'came down', 'used to'). Or delete the numbers where the layer is not the argument, as the R2 resolution asked. Add an lmd case and a prove-gates row for the 'at LN' shape.\n\n(P123-R12, low) layer_mention_drift's docstring still says it 'reads the three shapes it can read reliably' after P123.54 widened `_NAMED_LAYER_MENTION` to the qualified, comma and unclosed forms. The comment above the regex was updated and the function's docstring was not.\nResolution: Drop the count ('reads the shapes `_NAMED_LAYER_MENTION` and `_OWN_LAYER_MENTION` name').\n\n RECURRING CLASS (second round), so the INVARIANT, not more wordings: `_deps.py --render` prints every module's layer, and CLAUDE.md's rule is not to write a number something already prints. Replace layer_mention_drift's shape-list with a lint that refuses ANY layer numeral in comments and docstrings - `layer N`, `L<N>` beside a layer word or a module name, `at LN`, `(now LN`, `sits at layer N` - across scripts/ and hooks/, with LAYERS itself and the render as the only places numbers live; delete every existing numeral (keep the module names and the reasoning, drop the number). Also (R12) its docstring no longer claims a fixed set of shapes. prove-gates rows red both ways. Faults: P123-R11, P123-R12.",
+      "files": [
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/tests/test__deps.py",
+        "tools/prove-gates.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/scripts/_ui_theme.py",
+        "plugins/audit/scripts/config/_config_rules.py",
+        "plugins/audit/scripts/config/_help.py",
+        "plugins/audit/scripts/demo/_demo_cast.py",
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/scripts/governance/_runner_output.py",
+        "plugins/audit/scripts/governance/audit-journal.py",
+        "plugins/audit/scripts/governance/audit-lock.py",
+        "plugins/audit/scripts/governance/propose-gates.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/scripts/manifest/_ado_connect.py",
+        "plugins/audit/scripts/manifest/_ado_parent.py",
+        "plugins/audit/scripts/manifest/_ado_tracked.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/scripts/manifest/_manifest_rules.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/manifest/_merge_install.py",
+        "plugins/audit/scripts/manifest/_priority.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/manifest/migrate-manifest.py",
+        "plugins/audit/scripts/manifest/resolve-ado-tracked.py",
+        "plugins/audit/scripts/panel/_panel_composition.py",
+        "plugins/audit/scripts/panel/_panel_paths.py",
+        "plugins/audit/scripts/panel/_panel_policy.py",
+        "plugins/audit/scripts/panel/_panel_runstate.py",
+        "plugins/audit/scripts/panel/_panel_settings.py",
+        "plugins/audit/scripts/panel/_panel_state.py",
+        "plugins/audit/scripts/panel/_panel_usage.py",
+        "plugins/audit/scripts/panel/_panel_viewer.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/scripts/report/_evidence_view.py",
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/scripts/report/_report_page.py",
+        "plugins/audit/scripts/report/render-report.py",
+        "plugins/audit/scripts/status/_doctor_ado.py",
+        "plugins/audit/scripts/status/_doctor_completions.py",
+        "plugins/audit/scripts/status/_doctor_hygiene.py",
+        "plugins/audit/scripts/status/_doctor_report.py",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/scripts/status/_gate_feed.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/status/audit-doctor.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/scripts/usage/_usage_bench.py",
+        "plugins/audit/scripts/usage/_usage_core.py",
+        "plugins/audit/scripts/usage/_usage_spend.py",
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/scripts/panel/_panel_paths.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__deps.py: a layer numeral in any prose shape (layer N, at LN, (now LN, sits at layer N, `mod` (LN)) is refused, and the shipped tree has none"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-11T20:14:09Z",
+          "text": "scope: plugins/audit/scripts/_deps.py, e.g, plugins/audit/scripts/_output.py, plugins/audit/scripts/panel/_panel_paths.py, every path the finding(s) P123-R11, P123-R12 name"
+        }
+      ],
+      "fixes": [
+        "P123-R11",
+        "P123-R12"
+      ]
+    },
+    {
+      "id": "P123.66-64p",
+      "title": "The triage regression pins the exact reviewer-text shape, and stray whitespace edits are undone",
+      "status": "pending",
+      "description": "(P123-R13, low) P123.60's task text asks for the regression 'a triage over a finding whose issue holds a backtick span with a spaced paren adds its fix task'. The diff relies on fb1, whose finding carries ' :400' and no backtick span. The stdin batch makes the shape irrelevant to argv, so the risk is low, but the named regression is not pinned.\nResolution: Give COLON_FINDINGS' second issue the literal shape that stopped the P123 triage (e.g. 'see `(split_not_commands at :4809)`'), so fb1 covers it.\n\n(P123-R14, low) Unrelated existing lines were rewritten to `before =open(...)`, `gate =(...)` and `CE_TEST =\"tests/test_a.py\"`. These are stray whitespace edits (E225) that ruff's selected rules do not catch, and the same artefact appears in two separate task commits, which points at an editing tool rather than intent.\nResolution: Restore `X = Y` on those lines, and find what rewrote them before it touches non-test code.\n\n (R13) Add the case the fix task's text named: a finding whose issue holds a backtick span with a spaced paren (e.g. `(split_not_commands at :4809)`) goes through --answer fix and its fix task is added. (R14) Undo the unrelated whitespace edits at test_audit_task.py:15983 and :16013 and test_commit_task_work.py:1901 (`X =Y`). Faults: P123-R13, P123-R14.",
+      "files": [
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_commit_task_work.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: --answer fix over a finding whose issue holds a backtick span with a spaced paren adds its fix task"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-11T20:14:09Z",
+          "text": "scope: plugins/audit/tests/test_drive_phase.py, plugins/audit/tests/test_audit_task.py, plugins/audit/tests/test_commit_task_work.py, every path the finding(s) P123-R13, P123-R14 name"
+        }
+      ],
+      "fixes": [
+        "P123-R13",
+        "P123-R14"
+      ]
+    },
+    {
+      "id": "P123.67-64p",
+      "title": "close-phase reads the returns at the verdict's own commit, so one merged in after the verdict is still unseen",
+      "status": "pending",
+      "description": "(F569) close-phase's landing check (`unseen_returns`) treats every return committed at the branch tip as seen by a tip verdict, so a `diverges` phase return filed and committed on the target branch AFTER the verdict, then merged into the phase branch, sits at the tip and lands with no human asked - while the same return read from the target ref directly is refused (vr17). The docstring names the case as 'not told apart'. Read the returns at the verdict's OWN commit (the head the reviewer's verdict names) rather than at the tip: a return the verdict commit already contained is seen; one that arrived later is unseen and refused, naming it. Regression: the merge-after-verdict case is refused; its twin (contained at the verdict commit) lands. Faults: F569.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_close_phase.py: a diverges return committed on the target after the phase verdict and merged into the phase branch is refused as unseen at landing; its twin, a return the verdict commit already contained, lands"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "reviewPerTask": "phase",

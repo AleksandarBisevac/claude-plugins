@@ -160,7 +160,7 @@ claude-plugins/                           # this repo (personal, public)
           record-outside-run.py           # a suite that ran where this plugin could not see it, so a gate run in the same window is not credited with its effects
           import-evidence.py              # a CI build's own evidence ledger file, brought in whole after its chain verifies - never rewrites a row, never re-chains; prints (never runs) the full-gate.py --learn-from command for each red full row it brought in
           drive-phase.py                  # the step driver: `next <phase>` runs every due step that needs no judgement through the existing verbs, as subprocesses, and prints one instruction - dispatch, decide or done; a refused verb stops it with the verb's own words. Sign-off is the phase review's dispatch, one triage decision, then gate, invariants, sign-off verb, commit, landing and lock release as one step. `submit` is an agent's last act: the stamp, the red-first helper and the filing in one call
-          full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, then a coupling and a bug per named selection miss of a red run (the red still blocks), or the sentence and exit 0 when no meta.fullGate is declared; --learn-from <runId> runs nothing and learns from an imported row through the same function
+          full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, then a coupling and a bug per named selection miss of a red run (the red still blocks), or the sentence and exit 0 when no runnable meta.fullGate entry is declared; --learn-from <runId> runs nothing and learns from an imported row through the same function
           _runner_output.py               # every reading of what a test runner printed: its summary line (how many checks ran) and the lines naming a failing check
           _runner_collects.py             # does the test runner collect this path: collected, not collected, or could not tell - from the runner's own file listing, else a literal include in its config text
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs; the one POSIX sh (and its PATH) every plan command runs under, or a refusal - never cmd.exe
@@ -3506,10 +3506,18 @@ unsupported.
 
 **`full_status()` answers the third place's own question from the ledger alone**, never from a
 manifest pointer: WHOLE only when a scope-`full` row that is green, measured, clean and running
-`meta.fullGate` verbatim has a head `_worktrees.merged_into` (git ancestry, never string equality)
-finds containing the phase's `mergedHead`, PROVISIONAL when every such row falls short of that,
-UNKNOWN when the phase carries no `mergedHead` or git itself could not say, and NOT_DECLARED when
-the plan names no third place at all.
+the runnable `meta.fullGate` verbatim has a head `_worktrees.merged_into` (git ancestry, never
+string equality) finds containing the phase's `mergedHead`, PROVISIONAL when every such row falls
+short of that, UNKNOWN when the phase carries no `mergedHead` or git itself could not say, and
+NOT_DECLARED when the plan names no runnable third place at all.
+
+**`full_gate()` is the one list a full run is counted against**: `meta.fullGate` resolved, with
+every review-only entry (`_manifest_vocab.review_only_entry`, judged on the raw `buildCommands`
+value before any `nodePreamble`) left out and named under `reviewOnly`. The runner records exactly
+its `commands`, and the release guard, the status, the report, the panel, the doctor and
+`full-gate.py` all read `full_gate_commands()`, so a green run of `[ok, claimsMatchCode]` is a
+whole run everywhere, and a fullGate holding only review-only entries reads as no third place
+everywhere rather than as a red that holds the push and the release.
 
 **`row_is_red()` is the one reading of "this run exited red"**: every `status` but `passed`
 (`RUN_PASSED`), because `run-test-gate.py` exits 0 exactly then — so a status no writer has
@@ -4209,9 +4217,11 @@ what a green or a red full run means; that verdict is `run-test-gate.py`'s alone
 **The one branch this file decides for itself.** `run-test-gate.py --full` refuses (exit 2) a
 plan with no `meta.fullGate` — a usage error for a phase-scope caller asking for a run with
 nothing to run. A pre-push hook is not that caller: a plan that never declared a third place must
-not block every push, forever, over a gate nobody asked for. So this file reads `meta.fullGate`
-itself, before invoking anything, and answers with the sentence and **exit 0** instead of letting
-that usage refusal reach an operator's shell as a blocked push.
+not block every push, forever, over a gate nobody asked for. So this file asks
+`_evidence_io.full_gate` whether a **runnable** full gate is declared, before invoking anything,
+and answers with the sentence and **exit 0** instead of letting that usage refusal reach an
+operator's shell as a blocked push. A `meta.fullGate` holding only review-only entries is no
+runnable gate, so it gets the same exit 0, with the entries it left out named.
 
 **A red run is learned from, and still blocks.** After a non-zero exit this file reads the row
 the run recorded (`_evidence_io.row_by_run`, with the id off the runner's own `evidence: recorded`

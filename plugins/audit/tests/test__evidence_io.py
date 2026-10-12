@@ -35,6 +35,11 @@ import _evidence_io as M                           # noqa: E402
 import _journal_io                                 # noqa: E402
 import _locks                                      # noqa: E402
 import _manifest_vocab                             # noqa: E402
+import _loader                                     # noqa: E402  (the entry points that read the full gate)
+import _output                                     # noqa: E402  (REPO_ROOT: where the release guard sits)
+import _panel_composition                          # noqa: E402  (the panel's reading of the full gate)
+import _doctor_trail                               # noqa: E402  (the doctor's full-run check)
+import _doctor_report                              # noqa: E402  (the collector that check reports into)
 
 
 def _project(root, config=None):
@@ -3937,12 +3942,218 @@ def _banner_cases(check):
           invented.get("banners") == [M.BANNER_NO_OVERLAP])
 
 
+# --- the runnable full gate, asked of every reader --------------------------------
+_RFG_REVIEW = ("review-only: the sign-off reviewer refuses diff prose that "
+               "claims more than the code")
+
+
+def _rfg_plan(fullgate, head, preamble=None, build=None):
+    """A plan whose `meta.fullGate` is `fullGate` and whose one phase merged
+    at `head` - the fixture every reader below is asked about."""
+    meta = {"version": 3,
+            "buildCommands": build or {"ok": "true",
+                                       "claimsMatchCode": _RFG_REVIEW},
+            "fullGate": list(fullgate)}
+    if preamble is not None:
+        meta["nodePreamble"] = preamble
+    return {"meta": meta,
+            "phases": [{"id": "P1", "title": "one", "status": "done",
+                        "mergedAt": "2026-09-01T00:00:00Z",
+                        "mergedHead": head, "tasks": []}]}
+
+
+def _rfg_project(name, fullgate):
+    """`(root, manifest_path, manifest, head)` - a git repository with one
+    commit, the phase merged at it, and the plan at the default path the
+    release guard reads."""
+    root = _harness.fixture_root("evidence-io-rfg-%s-" % (name,))
+    _project(root, {"manifestPath": "docs/audit/audit-plan.json"})
+    os.makedirs(os.path.join(root, "docs", "audit"))
+    git = ["git", "-C", root]
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(git + ["-c", "user.email=fixture@example.com",
+                          "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                          "commit", "-q", "--allow-empty", "-m", "fixture"],
+                   check=True, stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL)
+    head = subprocess.run(git + ["rev-parse", "HEAD"], capture_output=True,
+                          text=True, check=True).stdout.strip()
+    manifest = _rfg_plan(fullgate, head)
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh)
+    return root, mpath, manifest, head
+
+
+def _rfg_green_row(root, head, commands):
+    """One measured, clean, green scope-`full` row carrying `commands` as its
+    steps - the shape `run-test-gate.py --full` records for the commands it
+    actually ran."""
+    row = {"v": M.ROW_VERSION, "runId": "R-rfg", "ts": "2026-09-02T00:00:00Z",
+           "scope": M.FULL_SCOPE, "status": M.RUN_PASSED,
+           "steps": [{"name": "ok", "command": c, "exit": 0, "durationMs": 5}
+                     for c in commands],
+           "testedState": {"head": head},
+           "observations": {"ranTotal": 1, "countsBasis": "1 check",
+                            "dirtyOutside": []}}
+    M.append_row(root, row)
+    return row
+
+
+def _rfg_gate(manifest):
+    """`full_gate(manifest)`, or - on a tree that has no such function - the
+    reading every reader made before it existed: the unfiltered resolution
+    of `meta.fullGate`, with nothing named as removed. Asserting against
+    that fallback is what makes the cases below fail by assertion there."""
+    fg = getattr(M, "full_gate", None)
+    if fg is not None:
+        return fg(manifest)
+    meta = manifest.get("meta") or {}
+    return {"commands": M.resolved_commands(manifest, meta.get("fullGate")),
+            "reviewOnly": []}
+
+
+def _runnable_full_gate_cases(check):
+    """A review-only entry in `meta.fullGate` is never a command, so no reader
+    may count it: a green run of the runnable entries is a whole run, and a
+    fullGate holding only review-only entries reads as no runnable full gate -
+    the answer a plan naming no fullGate gets - on every surface."""
+    whole = _manifest_vocab.FULL_STATUS_WHOLE
+    status_mod = _loader.load_script("audit-status.py", "rfg_audit_status")
+    report_mod = _loader.load_script("render-report.py", "rfg_render_report")
+    gate_mod = _loader.load_script("full-gate.py", "rfg_full_gate")
+    guard = _loader.load(os.path.join(_output.REPO_ROOT, ".claude", "hooks",
+                                      "guard-release.py"), "rfg_guard_release")
+
+    # --- the one function --------------------------------------------------
+    mixed_plan = _rfg_plan(["ok", "claimsMatchCode"], "a" * 40)
+    check("rfg1 RED-FIRST: full_gate over [ok, claimsMatchCode] keeps the "
+          "runnable entry and names the removed one: %r"
+          % (_rfg_gate(mixed_plan),),
+          _rfg_gate(mixed_plan) == {"commands": [("ok", "true")],
+                                    "reviewOnly": ["claimsMatchCode"]})
+    pre_plan = _rfg_plan(["ok", "claimsMatchCode"], "a" * 40, preamble="cd .")
+    check("rfg2 RED-FIRST: the review-only rule is judged on the raw "
+          "buildCommands value BEFORE the preamble, which still leads the "
+          "runnable entry: %r" % (_rfg_gate(pre_plan),),
+          _rfg_gate(pre_plan) == {"commands": [("ok", "cd . && true")],
+                                  "reviewOnly": ["claimsMatchCode"]})
+    key_plan = _rfg_plan(["ok", "claimsMatchCode", "review-only: read it"],
+                         "a" * 40, build={"ok": "true",
+                                          "claimsMatchCode": "echo prose"})
+    check("rfg3 RED-FIRST: a catalog review-only key is review-only whatever "
+          "its value says, and a literal `review-only:` entry is too: %r"
+          % (_rfg_gate(key_plan),),
+          _rfg_gate(key_plan) == {
+              "commands": [("ok", "true")],
+              "reviewOnly": ["claimsMatchCode", "review-only: read it"]})
+    only_plan = _rfg_plan(["claimsMatchCode"], "a" * 40)
+    none_plan = {"meta": {"buildCommands": {"ok": "true"}}, "phases": []}
+    check("rfg4 RED-FIRST: a fullGate of only review-only entries has no "
+          "runnable command, and no fullGate has none either: %r"
+          % ((_rfg_gate(only_plan), _rfg_gate(none_plan)),),
+          _rfg_gate(only_plan) == {"commands": [],
+                                   "reviewOnly": ["claimsMatchCode"]}
+          and _rfg_gate(none_plan) == {"commands": [], "reviewOnly": []})
+
+    # --- a green run of the runnable entries is a whole run ------------------
+    root, mpath, mixed, head = _rfg_project("mixed", ["ok", "claimsMatchCode"])
+    root_o, mpath_o, only, _head_o = _rfg_project("only", ["claimsMatchCode"])
+    try:
+        # ALLOW first: with NO run recorded the mixed plan really is held,
+        # so the cases after it cannot pass on a guard that holds nothing.
+        held_none, problem_none = guard.read_held_phases(root)
+        check("rfg5 ALLOW: the mixed plan with no full run recorded is held "
+              "provisional by the release guard and by audit-status: %r"
+              % ((held_none, problem_none),),
+              problem_none is None and [h[0] for h in held_none] == ["P1"]
+              and status_mod.full_run_block(mixed, mpath, root)["P1"]["answer"]
+              == _manifest_vocab.FULL_STATUS_PROVISIONAL)
+        row = _rfg_green_row(root, head, ["true"])
+        declared = [c for _n, c in _rfg_gate(mixed)["commands"]]
+        rows = M.read_rows(root)["rows"]
+        check("rfg6 RED-FIRST: the green [true] run is a whole run for "
+              "_full_disqualification and full_status against the runnable "
+              "gate: %r" % ((M._full_disqualification(row, declared),
+                             M.full_status(rows, mixed["phases"][0], root,
+                                           declared)),),
+              M._full_disqualification(row, declared) is None
+              and M.full_status(rows, mixed["phases"][0], root,
+                                declared)["answer"] == whole)
+        block = status_mod.full_run_block(mixed, mpath, root)
+        check("rfg7 RED-FIRST: audit-status reads the merged phase WHOLE: %r"
+              % (block,), (block.get("P1") or {}).get("answer") == whole)
+        rblock = report_mod._full_run_block(mixed, mpath, root)
+        check("rfg8 RED-FIRST: the report reads the merged phase WHOLE: %r"
+              % (rblock,), (rblock.get("P1") or {}).get("answer") == whole)
+        rep = _doctor_report.Report()
+        _doctor_trail.check_full_run(rep, root, "docs/audit/audit-plan.json",
+                                     mixed, root)
+        said = [(r["level"], r["detail"]) for r in rep.rows
+                if r["check"] == "full run"]
+        check("rfg9 RED-FIRST: the doctor's full-run check is one OK row "
+              "reading the phase whole: %r" % (said,),
+              [lv for lv, _d in said] == ["OK"]
+              and "read whole" in said[0][1])
+        held, problem = guard.read_held_phases(root)
+        check("rfg10 RED-FIRST: the release guard holds nothing over a "
+              "whole run of the runnable entries: %r" % ((held, problem),),
+              held == [] and problem is None)
+        check("rfg11 RED-FIRST: the panel's third-place reading is the "
+              "runnable command alone: %r"
+              % (_panel_composition.full_gate_commands(mixed),),
+              _panel_composition.full_gate_commands(mixed) == ["true"])
+
+        # --- only review-only entries: no runnable full gate, never a red ----
+        check("rfg12 RED-FIRST: a fullGate of only review-only entries is no "
+              "runnable gate to audit-status, the report and the panel - the "
+              "answer no fullGate gets: %r"
+              % ((status_mod.full_run_block(only, mpath_o, root_o),
+                  report_mod._full_run_block(only, mpath_o, root_o),
+                  _panel_composition.full_gate_commands(only)),),
+              status_mod.full_run_block(only, mpath_o, root_o) == {}
+              and report_mod._full_run_block(only, mpath_o, root_o) == {}
+              and _panel_composition.full_gate_commands(only) == [])
+        rep_o = _doctor_report.Report()
+        _doctor_trail.check_full_run(rep_o, root_o,
+                                     "docs/audit/audit-plan.json", only, root_o)
+        said_o = [(r["level"], r["detail"]) for r in rep_o.rows
+                  if r["check"] == "full run"]
+        check("rfg13 RED-FIRST: the doctor says no third place is declared "
+              "for it: %r" % (said_o,),
+              [lv for lv, _d in said_o] == ["OK"]
+              and "no third place declared" in said_o[0][1])
+        held_o, problem_o = guard.read_held_phases(root_o)
+        check("rfg14 RED-FIRST: the release guard holds nothing over it: %r"
+              % ((held_o, problem_o),), held_o == [] and problem_o is None)
+        called = []
+        real = gate_mod._stream_subprocess
+        gate_mod._stream_subprocess = lambda cmd, out: called.append(cmd) or 0
+        try:
+            lines = []
+            code = gate_mod.main([mpath_o], out=lines.append)
+        finally:
+            gate_mod._stream_subprocess = real
+        check("rfg15 RED-FIRST: full-gate.py declares no runnable full gate "
+              "for it and exits 0 without invoking the runner, naming the "
+              "review-only entry it left out: %r" % ((code, called, lines),),
+              code == gate_mod.E_OK and called == []
+              and not gate_mod.declares_full_gate(only)
+              and gate_mod.declares_full_gate(mixed)
+              and any("claimsMatchCode" in ln for ln in lines))
+    finally:
+        _harness.remove_tree(root)
+        _harness.remove_tree(root_o)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _banner_cases(check)
         _project_config_cases(check)
         _moment_reader_cases(check)
+        _harness.stage(check, "rfg-block", _runnable_full_gate_cases)
     return _harness.run(body)
 
 

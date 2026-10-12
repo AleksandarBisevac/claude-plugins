@@ -283,6 +283,52 @@ LEDGER_READ_FAILED = "the evidence ledger could not be read: %s"
 LEDGER_LOCATION_FAILED = "where the evidence ledger lives could not be resolved: %s"
 
 
+# --- review-only: a gate entry that is a read, never a command --------------------
+# Held at the floor because two layer-mates need it: `_manifest_phases` keeps such
+# an entry out of a new phase's gate, and `_evidence_io` keeps it out of the full
+# gate every reader counts a recorded run against. `_manifest_phases` re-exports
+# these names, so there is one rule and not two that agree until one learns a key.
+REVIEW_ONLY_PREFIX = "review-only:"
+# The `buildCommands` keys `_gate_feed.OFFERED_GATES` marks `runs: False` - a read
+# of the diff's prose with no command form. `_gate_feed` sits above this module
+# and may not be imported from here, so the fact is written twice and
+# `test__gate_feed` pins the two equal. NOT named `*_KEYS` here: on this module
+# that suffix means a subset of the schema's own keys, which `SUBSET_ANCHORS`
+# checks, and these are `buildCommands` names a plan chooses, with no schema
+# level to anchor to. `_manifest_phases` re-exports it as `REVIEW_ONLY_KEYS`.
+REVIEW_ONLY_GATES = ("claimsMatchCode",)
+
+
+def is_review_only(value):
+    """Whether a `buildCommands` value declares itself a read, not a command:
+    it BEGINS with `review-only:` (any case, leading blanks allowed). A command
+    that merely mentions the word is a command."""
+    return (isinstance(value, str)
+            and value.strip().lower().startswith(REVIEW_ONLY_PREFIX))
+
+
+def review_only_keys(build):
+    """The `buildCommands` keys that are never gate commands: the catalog's
+    read-only keys, and any key whose value declares itself `review-only:`,
+    in `buildCommands` order."""
+    if not isinstance(build, dict):
+        return []
+    return [k for k, v in build.items()
+            if isinstance(k, str) and (k in REVIEW_ONLY_GATES or is_review_only(v))]
+
+
+def review_only_entry(entry, build):
+    """Whether gate `entry` is a read rather than a command, judged on the
+    entry and its RAW `buildCommands` value - before any `nodePreamble` is
+    put in front, which would hide the prefix from a reader of the resolved
+    command. A catalog read-only key is one whatever its value says; an
+    entry naming no key is judged as the literal it is."""
+    if not (isinstance(entry, str) and entry.strip()):
+        return False
+    build = build if isinstance(build, dict) else {}
+    return entry in REVIEW_ONLY_GATES or is_review_only(build.get(entry, entry))
+
+
 # --- a mute's expiry: one reading of `meta.muted[].until` -------------------------
 # The validator warns on an expired mute and the test-gate runner refuses to honour
 # one; if the two parsed the date or read the clock differently, a mute could read

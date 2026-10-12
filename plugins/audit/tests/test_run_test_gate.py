@@ -8619,10 +8619,12 @@ def _full_review_only_cases(check):
         said = [ln for ln in lines if "not a command" in ln]
         check("fo1 RED-FIRST: a meta.fullGate holding only a `review-only:` "
               "entry runs no step, prints the not-a-command line naming it, "
-              "exits with the ask code and records no full run at all: %r"
-              % ((code, said, len(rows)),),
-              code == M.E_ASK and len(said) == 1
-              and "claimsMatchCode" in said[0] and rows == [])
+              "says no runnable full gate is declared, exits 0 - nothing to "
+              "run is not a red - and records no full run at all: %r"
+              % ((code, said, len(rows), lines),),
+              code == M.E_OK and len(said) == 1
+              and "claimsMatchCode" in said[0] and rows == []
+              and any("no runnable" in ln for ln in lines))
     finally:
         _harness.remove_tree(root)
 
@@ -8646,6 +8648,59 @@ def _full_review_only_cases(check):
               and len(said) == 1 and "claimsMatchCode" in said[0])
     finally:
         _harness.remove_tree(root_m)
+
+    # --- the row such a run records is whole-bearing for every reader --------
+    # Its own fixture: fo2's `true` counts nothing, and a row that counted
+    # nothing is disqualified for that before the entry count is ever read.
+    counted = dict(review, ok="echo 1 passed")
+    root_c, mpath_c, _head_c = _full_repo("review-only-counted",
+                                          fullgate=("ok", "claimsMatchCode"),
+                                          buildcommands=counted)
+    try:
+        code = M.main([mpath_c, "--full", "--project-dir", root_c, "--record"],
+                      out=(lambda _l: None))
+        full_rows = [r for r in _ev_io.read_rows(root_c)["rows"]
+                     if r.get("scope") == "full"]
+        with open(mpath_c) as fh:
+            plan_c = json.load(fh)
+        full_gate = getattr(_ev_io, "full_gate", None)
+        declared = ([c for _n, c in full_gate(plan_c)["commands"]]
+                    if full_gate is not None else
+                    [c for _n, c in _ev_io.resolved_commands(
+                        plan_c, plan_c["meta"]["fullGate"])])
+        why = (_ev_io._full_disqualification(full_rows[0], declared)
+               if len(full_rows) == 1 else "no single full row")
+        check("fo3 RED-FIRST: the green row a mixed fullGate records is "
+              "whole-bearing against the runnable full gate every reader "
+              "counts - one step against one runnable entry, never '1 OF 2 "
+              "DECLARED ENTRIES': %r" % ((code, why),),
+              code == M.E_OK and why is None)
+    finally:
+        _harness.remove_tree(root_c)
+
+    # --- the review-only rule is read BEFORE the preamble, on the phase path -
+    pre = dict(review, ok="true")
+    root_p, mpath_p, _head_p = _full_repo("review-only-preamble",
+                                          fullgate=("ok",), buildcommands=pre,
+                                          preamble="cd .")
+    try:
+        with open(mpath_p) as fh:
+            plan_p = json.load(fh)
+        plan_p["phases"][0]["testGate"] = ["ok", "claimsMatchCode"]
+        with open(mpath_p, "w") as fh:
+            json.dump(plan_p, fh)
+        lines = []
+        code = M.main([mpath_p, "P1", "--project-dir", root_p, "--no-reuse"],
+                      out=lines.append)
+        said = [ln for ln in lines if "not a command" in ln]
+        check("fo4 RED-FIRST: with a nodePreamble in front, a review-only "
+              "phase-gate entry is still said and never run - the rule reads "
+              "the raw buildCommands value, not the preamble-led command a "
+              "shell would choke on: %r" % ((code, said),),
+              code == M.E_OK and len(said) == 1
+              and "claimsMatchCode" in said[0])
+    finally:
+        _harness.remove_tree(root_p)
 
 
 def _hand_run_project_cases(check):

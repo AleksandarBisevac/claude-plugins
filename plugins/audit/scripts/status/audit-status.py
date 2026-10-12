@@ -382,9 +382,10 @@ def full_run_block(manifest, manifest_path, project):
     `stale-full-run` refuse the same way `no-test-evidence` refuses a plan that
     never adopted the recorder).
 
-    ONE RESOLUTION OF THE GATE (`_evidence_io.resolved_commands`, `full_commands`
-    is EXACTLY its bare-command half, never a second reading of
-    `meta.buildCommands`) and ONE READ OF THE LEDGER
+    ONE RESOLUTION OF THE GATE (`_evidence_io.full_gate_commands`: the runnable
+    `meta.fullGate`, review-only entries left out, never a second reading of
+    `meta.buildCommands` - a fullGate holding only review-only entries is
+    no third place, and answers `{}` like an absent one) and ONE READ OF THE LEDGER
     (`project_config_for` + `read_rows`, the SAME pair `boundary_for` uses) — so
     a plan whose config points its evidence somewhere unusual is read from the
     one place its report and its gate already agree on.
@@ -414,9 +415,7 @@ def full_run_block(manifest, manifest_path, project):
     gate on an unreadable ledger; `unknown_full_runs` counts exactly these rows,
     and its gate line carries the basis written here.
     """
-    meta = (manifest.get("meta") if isinstance(manifest, dict) else None) or {}
-    full_commands = [c for _n, c in _evidence_io.resolved_commands(
-        manifest, meta.get("fullGate"))]
+    full_commands = _evidence_io.full_gate_commands(manifest)
     if not full_commands:
         return {}
     try:

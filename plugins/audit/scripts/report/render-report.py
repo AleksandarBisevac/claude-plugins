@@ -202,9 +202,9 @@ def _full_run_block(manifest, manifest_path, project):
     a key of - `_full_run_unknown` below, and `audit-status.py`'s own
     `full_run_block` docstring for why.
     """
-    meta = (manifest.get("meta") if isinstance(manifest, dict) else None) or {}
-    full_commands = [c for _name, c in _evidence_io.resolved_commands(
-        manifest, meta.get("fullGate"))]
+    # The runnable full gate: review-only entries are never run, so a run is
+    # never counted against them, and a fullGate of only those is no third place.
+    full_commands = _evidence_io.full_gate_commands(manifest)
     if not full_commands:
         return {}
     try:

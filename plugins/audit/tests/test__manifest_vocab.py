@@ -1089,6 +1089,34 @@ def _cases(check):
           _mu_fb[0] == [] and [_output.finding_code(x) for x in _mu_fb[1]]
           == ["rules.muted.expired"])
 
+    # --- the review-only rule lives here, at the floor, ONCE -----------------
+    # `_evidence_io` reads it to strip review-only entries from the full gate
+    # and is a layer-mate of `_manifest_phases`, so the rule has to sit below
+    # both - and `_manifest_phases` keeps its names as the SAME objects, never
+    # as a second copy that could learn a different key.
+    # (name here, name in `_manifest_phases`) - the catalog tuple is not a
+    # `*_KEYS` here, since that suffix on this module means a schema subset.
+    names = (("REVIEW_ONLY_PREFIX", "REVIEW_ONLY_PREFIX"),
+             ("REVIEW_ONLY_GATES", "REVIEW_ONLY_KEYS"),
+             ("is_review_only", "is_review_only"),
+             ("review_only_keys", "review_only_keys"),
+             ("review_only_entry", "review_only_entry"))
+    here = [n for n, _p in names if hasattr(M, n)]
+    same = [n for n, p in names
+            if hasattr(M, n) and getattr(_phases, p, None) is getattr(M, n)]
+    check("mv63 RED-FIRST: the review-only rule is defined here and "
+          "_manifest_phases re-exports the same objects: here=%r same=%r"
+          % (here, same),
+          here == [n for n, _p in names] and same == [n for n, _p in names])
+    ro_keys = getattr(M, "review_only_keys", lambda b: "missing")
+    check("mv64 `review_only_keys` names the catalog key whatever its value "
+          "and any key whose value declares itself review-only, in "
+          "buildCommands order: %r"
+          % (ro_keys({"a": "true", "claimsMatchCode": "echo x",
+                      "b": " Review-Only: read"}),),
+          ro_keys({"a": "true", "claimsMatchCode": "echo x",
+                   "b": " Review-Only: read"}) == ["claimsMatchCode", "b"])
+
 
 def _selftest():
     return _harness.run(_cases)

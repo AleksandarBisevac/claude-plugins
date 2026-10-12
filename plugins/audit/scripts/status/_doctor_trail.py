@@ -1550,9 +1550,9 @@ def check_full_run(rep, project, manifest_rel, manifest, git_root, config=None):
     about the exit code; the release guard is the one place a PROVISIONAL
     phase actually blocks anything."""
     manifest = manifest if isinstance(manifest, dict) else {}
-    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
-    full_commands = [c for _name, c in
-                     _evidence_io.resolved_commands(manifest, meta.get("fullGate"))]
+    # The runnable full gate: a fullGate of only review-only entries is no
+    # third place, as an absent one is.
+    full_commands = _evidence_io.full_gate_commands(manifest)
     if not full_commands:
         rep.ok(FULL_RUN_CHECK, "no third place declared (meta.fullGate)")
         return
@@ -1864,11 +1864,10 @@ def _check_coupling_ageing(rep, project, manifest_rel, manifest, meta, entries):
     """Which couplings have gone `UNCOUPLE_AFTER_FULL_RUNS` green measured
     full runs without catching anything - named as CANDIDATES, never
     dropped."""
-    full_commands = [c for _name, c in
-                     _evidence_io.resolved_commands(manifest, meta.get("fullGate"))]
+    full_commands = _evidence_io.full_gate_commands(manifest)
     if not full_commands:
         rep.ok(COUPLING_CHECK,
-               "no meta.fullGate declared, so no run measured it and no "
+               "no runnable meta.fullGate declared, so no run measured it and no "
                "coupling can be aged against one")
         return
     _eproject, _econfig, rows, failure, unreadable = _read_gate_rows(

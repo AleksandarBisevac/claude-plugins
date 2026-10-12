@@ -110,8 +110,9 @@ def resolved_commands(manifest, entries):
     THE ONE HOME. `run-test-gate.py` used to be the only place that knew how
     to turn a `meta.buildCommands` KEY into a shell command, which made it the
     only caller that could ask `full_status` the question it needs asked:
-    `full_status`'s `full_commands` argument is exactly this function's answer
-    for `meta.fullGate`, and it is the SAME resolution a recorded run's
+    `full_status`'s `full_commands` argument is this function's answer for
+    the RUNNABLE entries of `meta.fullGate` (`full_gate` below), and it is the
+    SAME resolution a recorded run's
     `published` list comes from -- so a plan judged whole is judged against
     the identical list its own row was measured against, never a second
     reading of `meta.buildCommands` that could drift from it. `doctor.py`, the
@@ -142,6 +143,42 @@ def resolved_commands(manifest, entries):
         resolved.append(
             (entry, ("%s && %s" % (lead, command)) if lead else command))
     return resolved
+
+
+def full_gate(manifest):
+    """`{"commands": [(name, command)], "reviewOnly": [name]}` - the RUNNABLE
+    `meta.fullGate`, resolved, and the entries left out of it because they
+    are reads rather than commands, in declaration order.
+
+    THE ONE LIST A FULL RUN IS COUNTED AGAINST. The runner records the
+    commands it ran, and every reader - the release guard, the status, the
+    report, the panel, the doctor, the pre-push step - compares a recorded
+    row against what the plan declares. A review-only entry is never run, so
+    a reader counting it would hold every green run one entry short and keep
+    every merged phase provisional. Empty `commands` means NO RUNNABLE FULL
+    GATE, which every reader answers exactly as it answers a plan naming no
+    `meta.fullGate`; `reviewOnly` is carried so a surface can say what it
+    left out rather than leave the reader to wonder.
+
+    JUDGED BEFORE THE PREAMBLE (`_manifest_vocab.review_only_entry`), because
+    a `nodePreamble` in front of the resolved command hides the prefix.
+    """
+    manifest = manifest if isinstance(manifest, dict) else {}
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    build = meta.get("buildCommands")
+    entries = meta.get("fullGate")
+    entries = [e for e in (entries if isinstance(entries, list) else [])
+               if isinstance(e, str) and e.strip()]
+    left = [e for e in entries if _manifest_vocab.review_only_entry(e, build)]
+    keep = [e for e in entries if e not in left]
+    return {"commands": resolved_commands(manifest, keep), "reviewOnly": left}
+
+
+def full_gate_commands(manifest):
+    """The bare command half of `full_gate(manifest)["commands"]` - the
+    `full_commands` argument `full_status` takes, and `[]` when there is no
+    runnable full gate."""
+    return [command for _name, command in full_gate(manifest)["commands"]]
 
 
 # --- where it lives -----------------------------------------------------------
@@ -2848,17 +2885,18 @@ def full_status(rows, phase, git_root, full_commands, run=None):
     nothing, ran on a dirty tree or ran other commands is not "a full run
     happened", and its moment must not be read as one.
 
-    `full_commands` IS THE BARE COMMAND HALF OF `resolved_commands(manifest,
-    meta.fullGate)` -- `[c for _name, c in resolved_commands(manifest,
-    meta.fullGate)]`, EXACTLY. That is the same list a recorded run's
-    `published` argument carries (`run-test-gate._record_full_run` builds it
-    the identical way), which is what a row's `steps[].command` stores
-    verbatim - so a run measured through that resolution is judged against
-    the identical commands it was measured against, and never a second
-    reading of `meta.buildCommands` that could drift from it.
+    `full_commands` IS `full_gate_commands(manifest)`, EXACTLY - the runnable
+    `meta.fullGate`, review-only entries left out. That is the same list a
+    recorded run's `published` argument carries (`run-test-gate._run_full`
+    runs and records exactly `full_gate(manifest)["commands"]`), which is what
+    a row's `steps[].command` stores verbatim - so a run measured through that
+    resolution is judged against the identical commands it was measured
+    against, and never a second reading of `meta.buildCommands` that could
+    drift from it.
 
-    NOT_DECLARED when `full_commands` (the resolved `meta.fullGate`) is empty --
-    a plan naming no third place has nothing to ask. UNKNOWN when the phase
+    NOT_DECLARED when `full_commands` is empty -- a plan naming no runnable
+    full-gate entry has nothing to ask, whether it names no `meta.fullGate`
+    or one holding only review-only entries. UNKNOWN when the phase
     carries no `mergedHead` -- ancestry needs two ends and this one has only
     one, so it is never PROVISIONAL, which would claim a specific gap this
     plan has no way to measure.
@@ -2897,8 +2935,8 @@ def _full_answer(full_rows, phase, git_root, declared, run):
     rows it already sorted newest first - the walk its docstring describes."""
     if not declared:
         return {"answer": _manifest_vocab.FULL_STATUS_NOT_DECLARED,
-                "basis": "this plan names no meta.fullGate, so there is no "
-                         "third place to ask",
+                "basis": "this plan names no runnable meta.fullGate entry, "
+                         "so there is no third place to ask",
                 "runId": None}
     merged_head = phase.get("mergedHead")
     if not merged_head:
