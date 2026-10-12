@@ -359,7 +359,7 @@
     {
       "id": "P126.6",
       "title": "A home path holding a space is scrubbed whole on Windows",
-      "status": "in_progress",
+      "status": "done",
       "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest, tools/check-committed-pii.py: FAIL q2s a home path holding a space is found, and the writer's scrub of it leaves no fragment of the user's path and no finding: found ['posix-home'], scrubbed 'sandbox read <outside-repo> One/My Projects/proj/notes.md', left ['One', 'My', 'Projects', 'proj', 'notes']. The scrub left the tail of a home path that holds a space ('One/My Projects/proj/notes.md') after replacing its head - P123's 'a machine path containing a space is scrubbed whole' holds on macOS but not where the home is a Windows path or the fixture builds one with backslashes. Find the scrub (the shared machine-path writer the PII tool calls) and make the space-holding home path match whole for both separators. It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
       "files": [
         "tools/check-committed-pii.py",
@@ -391,14 +391,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4df3c529a116",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_machine_paths._spellings now also adds the path as given (backslashes to /, trailing / stripped) before the abspath/realpath spellings. Assumption: on Windows os.path.abspath('<outside-repo> One') returns '<outside-repo> One' (ntpath.abspath prefixes the current drive to a drive-less rooted path; Python os.path docs), so the known root became '<outside-repo> One', and the drive-root pattern needs a drive in the text; the CI fixture text '<outside-repo> One/My Projects/...' has none, leaving the root unmatched and the token grammar to stop at the space (CI line: left One My Projects proj notes). Adding the as-given spelling matches the drive-less text; a drive-letter home still matches via the existing [/\\\\] alternative. Added mp14 in tests/test__machine_paths.py, run on every OS: backslash <outside-repo> One home and drive-less posix home, both scrubbed whole via _known_roots(None, environ=...). Ran test__machine_paths.py --selftest (15/15), check-committed-pii.py --selftest (0 FAIL), ruff clean. Not run: full sweep, Windows. tools/check-committed-pii.py unchanged. Caveat: mp14 backslash case should be red before the fix on posix (abspath mangles it), drive-less case only guards Windows; not proven red here.",
+        "descriptive": "A space-holding home path, however spelled, is scrubbed whole on Windows (to be confirmed by the next windows CI run)."
       },
       "startedAt": "2026-10-12T22:37:00Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T22:46:53Z",
+      "verifiedBy": [
+        "test__machine_paths.py: mp14"
+      ],
       "reviewPerTask": "phase",
       "notes": [
         {
@@ -410,12 +412,23 @@
         "runId": "2026-10-12T22:46:52Z.07c9ec",
         "status": "passed",
         "at": "2026-10-12T22:46:52Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "4df3c529a116",
+        "at": "2026-10-12T22:46:53Z"
+      },
+      "redFirst": {
+        "at": "2026-10-12T22:38:07Z",
+        "basis": "`python3 plugins/audit/tests/test__machine_paths.py --selftest` in a throwaway tree at HEAD: inline suite tools/check-committed-pii.py (its test file is its implementation file): none of its 0 changed hunk(s) lies inside a test definition (a def named test*/selftest*/*cases, or a Test* class), so no copy holding the new cases without the fix can be laid over HEAD; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P126.7",
       "title": "The manifest-revalidated invariant counts preserved bytes on Windows",
-      "status": "pending",
+      "status": "in_progress",
       "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest, test__invariants.py: FAIL iv39 ...and a row whose bytes a commit DID preserve is not counted against coverage: one of the two is recoverable, so the gap says so. This is the case that fails if the state hashed is the INDEX rather than the phase's own file - a mistake iv19 cannot see, because there every row is unrecoverable either way: [\"2 of the 2 journal-recorded writes to this phase's manifest file left bytes no commit preserved; the validator cannot be re-run on those states\"]. iv39 expects one of two journal-recorded writes to be recoverable (its bytes are in a commit) and Windows reports both unrecoverable - so the stateHash the journal records and the hash of the committed bytes disagree there: most likely CRLF (git's autocrlf checkout, or a write with a platform newline) or a path spelling in `git show`. Find which by reading how the invariant hashes `git show` output vs how the journal hashed the written bytes, and make the comparison newline- and path-exact on Windows. It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
       "files": [
         "plugins/audit/scripts/governance/_invariants.py",
@@ -444,16 +457,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T22:46:54Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T22:57:09Z.026c6f",
+        "status": "passed",
+        "at": "2026-10-12T22:57:09Z"
+      }
     },
     {
       "id": "P126.8",

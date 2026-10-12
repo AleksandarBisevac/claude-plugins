@@ -28,6 +28,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import ast
 import copy
+import hashlib
 import json
 import os
 import shutil
@@ -112,6 +113,18 @@ def _write_json(path, obj):
 
 def _write(path, text):
     with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
+def _write_exact(path, text):
+    """`text` as its own bytes, with no newline translation.
+
+    Text mode turns every "\\n" into "\\r\\n" on Windows, and a probe file that
+    is hashed to stand for bytes git printed must be those bytes - the journal's
+    stateHash is taken over the bytes the validator's materialiser writes with
+    newline="\\n", so a CRLF probe hashes to a state no commit holds.
+    """
+    with open(path, "w", encoding="utf-8", newline="") as fh:
         fh.write(text)
 
 
@@ -511,7 +524,8 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
             # same whether the module hashes the shard or the index - which is
             # exactly the bug this fixture exists to keep caught.
             probe = os.path.join(root, "state-probe.json")
-            _write(probe, _git(root, "show", "%s:docs/audit/phases/P1.json" % sha1))
+            _write_exact(probe, _git(root, "show",
+                                     "%s:docs/audit/phases/P1.json" % sha1))
             rows.append(json.dumps({
                 "v": 1, "ts": "2026-08-01T10:00:00Z", "action": "manifest.edit",
                 "target": "docs/audit/phases/P1.json",
@@ -1036,6 +1050,23 @@ def _cases(check):
               "because there every row is unrecoverable either way: %r"
               % (valid["gaps"],),
               len(gap) == 1 and "1 of the 2" in gap[0])
+
+        # The Windows shape, built on every OS: a probe whose bytes are CRLF must
+        # reach the hash as CRLF, and the same text with LF must hash differently,
+        # so a probe writer that translated newlines could not pass this anywhere
+        # it ran.
+        _crlf = os.path.join(mixed["root"], "crlf-probe.json")
+        _write_exact(_crlf, '{"a": 1}\r\n')
+        _h_crlf = _journal_io.file_hash(_crlf)
+        _write_exact(_crlf, '{"a": 1}\n')
+        _h_lf = _journal_io.file_hash(_crlf)
+        os.remove(_crlf)
+        check("iv39a a probe written for hashing keeps its bytes: CRLF text hashes "
+              "as the CRLF bytes and LF text as the LF bytes, on every OS - %r vs %r"
+              % (_h_crlf, _h_lf),
+              _h_crlf == "sha256:" + hashlib.sha256(b'{"a": 1}\r\n').hexdigest()
+              and _h_lf == "sha256:" + hashlib.sha256(b'{"a": 1}\n').hexdigest()
+              and _h_crlf != _h_lf)
 
         valid = _check(_phase_answer(clean), "manifest-revalidated")
         check("iv20 ...and with no journal row at all it says THAT, rather than "

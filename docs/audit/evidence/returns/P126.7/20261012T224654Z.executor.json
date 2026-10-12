@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "own-test: python3 plugins/audit/tests/test__invariants.py --selftest": "pass",
+    "ruff check test__invariants.py": "pass",
+    "vermin": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression-mode task (expectRedFirst false); the failure reproduces only on windows-latest, so no red can be watched on macOS",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Root cause is in the test fixture, not _invariants.py: the iv39 builder wrote its hash probe (the bytes of `git show <sha>:phases/P1.json`) with _write(), a text-mode open() that on Windows turns every \\n into \\r\\n, so file_hash(probe) hashed CRLF bytes while manifest_revalidated hashes the file _materialize writes with newline='\\n' (git's exact bytes, decoded/encoded losslessly by _commit_trail._git) - no match, both rows unrecoverable ('2 of the 2'). Fix: added _write_exact (newline='') and used it for the probe; production code unchanged (already newline-exact: _materialize opens newline='\\n', file_hash reads 'rb'). Added iv39a, runs on every OS: writes CRLF and LF text via _write_exact and asserts file_hash equals sha256 of the exact bytes and the two differ, so a newline-translating probe writer fails it wherever it runs (only on Windows would the old _write fail it). Selftest: 121/121 cases passed on macOS. Assumed Windows behaviour: Python open(path,'w') default newline=None translates '\\n' to os.linesep (docs.python.org io.open newline parameter); source for the diagnosis is the CI line for iv39 ('2 of the 2' unrecoverable) plus that docs behaviour. Whether git autocrlf stored CRLF or LF in the fixture commit does not matter: git show output, probe and materialised file are all the same bytes either way. Unverified on Windows until the next CI run.",
+    "descriptive": "iv39's hash probe is written byte-exact, so the recoverable-state coverage check no longer miscounts on Windows; plus an every-OS pin of the CRLF/LF hash."
+  },
+  "testsAdded": [
+    "iv39a"
+  ],
+  "claims": "claims: the Windows cause is inferred from the CI output and Python's documented newline translation, not observed on Windows; the fix is verified only as 121/121 green on macOS.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:33f18c46ef5bb2fc80045cd530e0b7018ef465c16065f36e749d4b67f4f81dda\",\"dirtyDigest\":\"sha256:7b0143a959ed50af4cc3a58c8988f16d91316fdbfefc35e794fba2357f4f313c\",\"dirtyPaths\":{\"plugins/audit/tests/test__invariants.py\":\"d52cf511202812e0\"},\"head\":\"4df3c529\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_invariants.py\",\"plugins/audit/tests/test__invariants.py\"],\"scopeDigest\":\"sha256:11438a2bcc8bb324050f253799f4770d2e12b7186ef43072340dd27ace9290cf\",\"v\":2}"
+}
