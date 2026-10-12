@@ -1561,8 +1561,8 @@ def _rescope_refusal(tid, task, blockers):
 
 
 # --- project resolution --------------------------------------------------------
-# An ALIAS, not a copy. The body lives in `_output.project_of_manifest`, the
-# lowest layer, so the evidence ledger, the gate's raw log, the report and the
+# An ALIAS, not a copy. The body lives in `_output.project_of_manifest`, a
+# module every one of those readers can import, so the evidence ledger, the gate's raw log, the report and the
 # status read resolve the same root this command writes the journal under: a
 # second walk answering "which project owns this manifest" is a second answer,
 # and two of them did drift - one sited a `.claude/` beside the manifest and the

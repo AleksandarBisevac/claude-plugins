@@ -614,6 +614,37 @@ def _cases(check):
               "scan that passes silently over a file it could not read is "
               "claiming a clean answer about it: %r" % (torn_hits,),
               len(torn_hits) == 1 and "could not be read" in torn_hits[0][1])
+        # An ABSOLUTE ordinal position is the table's row said in words. It is
+        # refused only where the phrase ends its clause; a restricting complement
+        # makes it relational and it stays.
+        lm_ordinal = (
+            '"""WHY THE BOTTOM LAYER. It has no peers."""\n',
+            '"""Sits at the top layer, so nothing reads it."""\n',
+            '"""HERE, AT THE BOTTOM LAYER, BECAUSE EVERY READER NEEDS IT."""\n',
+            "# `_x` is the lowest layer,\n# so the ledger reads it\nX = 1\n",
+            '"""It is in the first layer and nothing else."""\n',
+            '"""A module in the second layer; not a peer."""\n',
+            '"""It stays in the highest layer"""\n',
+            '"""Kept in the bottom layer because it is read by all."""\n',
+        )
+        lm_ord_missed = [b for b in lm_ordinal if len(_lm(b)) != 1]
+        check("lmd9 an absolute ordinal layer position - the phrase ends its clause "
+              "- is refused, in any case and across a wrapped comment: %r"
+              % (lm_ord_missed,), lm_ord_missed == [])
+        lm_relational = (
+            '"""The lowest layer both can reach."""\n',
+            '"""It is the first layer that holds the name."""\n',
+            '"""Place it in the first layer strictly above the reader."""\n',
+            '"""The highest layer the three can import from."""\n',
+            '"""The lowest layer it can occupy."""\n',
+            "# the lowest layer\n# any of them sat in\nX = 1\n",
+            '"""The highest layer `_manifest_io` can reach."""\n',
+            '"""A layer below, or its layer-mate."""\n',
+        )
+        lm_rel_over = [(b, _lm(b)) for b in lm_relational if _lm(b)]
+        check("lmd10 an ordinal layer phrase followed by a restricting complement, "
+              "or a layer below / a layer-mate, is relational and is left alone: %r"
+              % (lm_rel_over,), lm_rel_over == [])
     finally:
         shutil.rmtree(lm_tmp, ignore_errors=True)
 

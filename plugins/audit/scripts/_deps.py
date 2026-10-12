@@ -2436,6 +2436,14 @@ def hooks_rule_drift(guide_path=None):
 # lifts the one or two tokens after the word for it to judge.
 _LAYER_WORD_NUMERAL = re.compile(
     r"\blayers?[\s-]+(\d+|[A-Za-z]+)(?:[\s-]+([A-Za-z]+))?", re.IGNORECASE)
+# An absolute ordinal position is the same copy of the table in other words, and
+# goes stale the same way. It is absolute where the phrase ends its clause: a
+# punctuation mark, the end of the block, or "because"/"and" comes next. A phrase
+# followed by a restricting complement names no row and stays, as does a layer
+# below or a layer-mate.
+_LAYER_ORDINAL = re.compile(
+    r"\b(?:bottom|top|first|second|lowest|highest)[\s-]+layers?"
+    r"(?=\s*(?:[,.;:)]|$)|\s+(?:because|and)\b)", re.IGNORECASE)
 # The `L<N>` spelling is also a cache level, a spec level, a line anchor in a URL
 # and a directory name. Glued to a `#`, a `/` or a word it is never a layer, and
 # otherwise it is one where the prose is talking about layers: the block names a
@@ -2474,6 +2482,7 @@ def _layer_numerals(text, names):
                   or any(name in names for name in _BACKTICK_NAME.findall(text)))
     found += [(m.start(), m.group(0)) for m in _LAYER_L_NUMERAL.finditer(text)
               if in_context or _LAYER_L_LEAD.search(text[:m.start()])]
+    found += [(m.start(), m.group(0)) for m in _LAYER_ORDINAL.finditer(text)]
     return [numeral for _pos, numeral in sorted(found)]
 
 

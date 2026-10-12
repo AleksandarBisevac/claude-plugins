@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "sweep-selftests": "pass",
+    "ruff": "pass",
+    "vermin": "pass",
+    "layer_mention_drift": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-12T12:15:20Z",
+    "basis": "`python3 plugins/audit/tests/test__deps.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 311 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - lmd9 (house FAIL): SELFTEST FAILED: 310/311 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "_deps.py: added _LAYER_ORDINAL (bottom|top|first|second|lowest|highest layer, any case) refused only when it ends its clause (punctuation [,.;:)], end of text, or because/and next), wired into _layer_numerals. Rewrote the six absolute claims relationally: _priority.py, _ado_parent.py, _ado_tracked.py, _manifest_io.py, manifest/audit-task.py, panel/_panel_write.py. layer_mention_drift()==[] (checked). Tests lmd9 (8 refusal shapes incl. wrapped comment) and lmd10 (8 relational allow shapes incl. qualifier on next comment line) in test__deps.py: 311/311. prove-gates rows: red row planting 'the bottom layer' (RED lmd1,lmd9 observed) and allow row weakening the end-of-clause lookahead (lmd10); the prove-gates run could not exercise _deps.py-mutating rows because redfirst refuses a DIRTY _deps.py before commit (REFUSED (DIRTY)); I instead checked the allow anchor matches once and that the weakened pattern yields 18 findings on the shipped tree. ruff pass, vermin pass, sweep 331/331 files ok exit 0.",
+    "descriptive": "The layer lint now refuses absolute ordinal layer-position claims in prose; six such claims reworded relationally."
+  },
+  "testsAdded": [
+    "lmd9",
+    "lmd10"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:5c2b1521131f08f77c0702621a7547b266b8bc27c45d6720f3ef5f1f5307d6cc\",\"dirtyDigest\":\"sha256:f968d54e033a007c9bc93cf9faacb498c10fe6378b03de0e98e3ad5a78635669\",\"dirtyPaths\":{\"plugins/audit/scripts/_deps.py\":\"00e2d011ac0ef55c\",\"plugins/audit/scripts/manifest/_ado_parent.py\":\"72b9edf0a5fcd61c\",\"plugins/audit/scripts/manifest/_ado_tracked.py\":\"d364711b1c31253b\",\"plugins/audit/scripts/manifest/_manifest_io.py\":\"bf9fcf931f94018b\",\"plugins/audit/scripts/manifest/_priority.py\":\"0a0ea0abaa73cf7b\",\"plugins/audit/scripts/manifest/audit-task.py\":\"c03b33356494a7c1\",\"plugins/audit/scripts/panel/_panel_write.py\":\"b51bb205811f3ea6\",\"plugins/audit/tests/test__deps.py\":\"01fa698e0a7e914f\",\"tools/prove-gates.py\":\"4f1a0bfad6624ecd\"},\"head\":\"a8e43e8d\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/_deps.py\",\"plugins/audit/scripts/manifest/_ado_parent.py\",\"plugins/audit/scripts/manifest/_ado_tracked.py\",\"plugins/audit/scripts/manifest/_manifest_io.py\",\"plugins/audit/scripts/manifest/_priority.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/scripts/panel/_panel_write.py\",\"plugins/audit/tests/test__deps.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:5a36a3f1fb317a9ab6d1600c77e247f23c8f5c4368c67267edb5a5aa7c0c5898\",\"v\":2}"
+}

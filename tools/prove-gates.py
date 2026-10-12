@@ -625,6 +625,11 @@ TABLE = (
  ("layer_mention_drift", S + "_deps.py", "replace",
   "if in_context or _LAYER_L_LEAD.search(text[:m.start()])]",
   "if in_context]", DEP, "lmd3"),
+ # An absolute ordinal position planted into a shipped docstring: the clause ends
+ # on the phrase, which the lint must refuse.
+ ("layer_mention_drift", S + "status/_doctor_ado.py", "replace",
+  "`_doctor_report` for the collector",
+  "`_doctor_report`, the bottom layer, for the collector", DEP, "lmd9"),
  # The defect is a PAIR - a function nothing names, and a docstring saying
  # something depends on it - so the mutation has to plant both halves at once. A
  # probe function planted in a shipped module is exactly that: nothing calls it,
@@ -1588,6 +1593,11 @@ ALLOW = (
  ("layer_mention_drift", S + "_deps.py", "replace",
   "    in_context = (bool(_LAYER_CONTEXT.search(text))",
   "    in_context = True or (bool(_LAYER_CONTEXT.search(text))", DEP, "lmd7"),
+ # The ends-the-clause condition dropped: every ordinal phrase is convicted, the
+ # relational ones with it.
+ ("layer_mention_drift", S + "_deps.py", "replace",
+  '    r"(?=\\s*(?:[,.;:)]|$)|\\s+(?:because|and)\\b)", re.IGNORECASE)',
+  '    r"", re.IGNORECASE)', DEP, "lmd10"),
  ("uncalled_helper_claims", S + "_deps.py", "replace",
   "            if counts.get(node.name, 0) > 1:\n                continue\n",
   "            if counts.get(node.name, 0) > 10 ** 6:\n                continue\n",

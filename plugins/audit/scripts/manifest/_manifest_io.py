@@ -671,7 +671,7 @@ def gate_entries(phase, task=None):
     and fall back, so the three cannot come to disagree about one question. Only
     non-blank string entries are returned, which is what a gate may run.
 
-    HERE, AT THE BOTTOM LAYER, BECAUSE EVERY READER OF "WHICH GATE MEASURES
+    HERE, IN A MODULE EVERY ONE OF THEM CAN IMPORT, BECAUSE EVERY READER OF "WHICH GATE MEASURES
     THIS" MUST GIVE ONE ANSWER: `run-test-gate` (which resolves the entries into
     the commands it runs), `commit-task-work` (which binds a commit to that
     gate's verdict), the panel's gate badge, the report's gate-configured read

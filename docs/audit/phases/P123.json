@@ -210,27 +210,33 @@
         "severity": "low",
         "file": "plugins/audit/README.md:1530 (other side: plugins/audit/scripts/governance/_evidence_io.py:148-174 full_gate; full_status NOT_DECLARED)",
         "issue": "P123.62 changed what not_declared means: a fullGate holding only review-only entries now answers NOT_DECLARED everywhere. The user-facing README still says 'not_declared means the plan names no meta.fullGate'. The executor disclosed this and left it as out of scope.",
-        "resolution": "Reword README.md:1530 to 'names no runnable meta.fullGate entry (none, or only review-only ones)', matching full_status's basis.",
-        "fixTask": "P123.74-64p"
+        "resolution": "fixed in P123.74-64p (a8e43e8d6888): Reword README.md:1530 to 'names no runnable meta.fullGate entry (none, or only review-only ones)', matching full_status's basis.",
+        "fixTask": "P123.74-64p",
+        "commit": "a8e43e8d6888",
+        "status": "fixed"
       },
       {
         "id": "P123-R20",
         "severity": "low",
         "file": "plugins/audit/scripts/demo/gen-demo-manifest.py:2223-2228",
         "issue": "The demo's full-run row says it is 'Resolved the way the runner resolves it, so its steps publish the exact commands full_status compares them with'. It reads meta.fullGate directly and resolves it with build.get(e, e). It applies neither _evidence_io.full_gate's review-only split nor the nodePreamble, so it is a second reading of the runnable full gate, which R8's redesign was meant to remove. The demo's fullGate holds no review-only entry today, so nothing renders wrong yet.",
-        "resolution": "Build `full` from _evidence_io.full_gate(manifest)['commands'].",
-        "fixTask": "P123.74-64p"
+        "resolution": "fixed in P123.74-64p (a8e43e8d6888): Build `full` from _evidence_io.full_gate(manifest)['commands'].",
+        "fixTask": "P123.74-64p",
+        "commit": "a8e43e8d6888",
+        "status": "fixed"
       },
       {
         "id": "P123-R21",
         "severity": "low",
         "file": "docs/audit/phases/P123.json review.findings P123-R9, P123-R13, P123-R14",
         "issue": "The three findings still name the cancelled fix tasks P123.63-64p and P123.66-64p as fixTask, with no status or commit. The replacement tasks P123.68-64p and P123.69-64p carry no `fixes`, so the record does not say that R9 (med) and R13 are closed in code (R9 at run-test-gate.py:2192-2211, _evidence_io.py:148-174 with fo4/fo5; R13 by fb4).",
-        "resolution": "Link P123.68-64p to P123-R9 and P123.69-64p to P123-R13/P123-R14 through the verb (or record status fixed with commit ecd8e502 / 66382171 for R9 and R13). Leave R14 open until finding 2 lands.",
-        "fixTask": "P123.74-64p"
+        "resolution": "fixed in P123.74-64p (a8e43e8d6888): Link P123.68-64p to P123-R9 and P123.69-64p to P123-R13/P123-R14 through the verb (or record status fixed with commit ecd8e502 / 66382171 for R9 and R13). Leave R14 open until finding 2 lands.",
+        "fixTask": "P123.74-64p",
+        "commit": "a8e43e8d6888",
+        "status": "fixed"
       }
     ],
-    "outcome": "[findings: 21 - 0 high, 10 med, 11 low; 18 with a recorded fix commit]"
+    "outcome": "[findings: 21 - 0 high, 10 med, 11 low; 21 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -5868,7 +5874,7 @@
     {
       "id": "P123.74-64p",
       "title": "The README's full-run status and the demo's full-run row say what full_gate decides, and the review record names the tasks that fixed each finding",
-      "status": "in_progress",
+      "status": "done",
       "description": "(P123-R19, low) P123.62 changed what not_declared means: a fullGate holding only review-only entries now answers NOT_DECLARED everywhere. The user-facing README still says 'not_declared means the plan names no meta.fullGate'. The executor disclosed this and left it as out of scope.\nResolution: Reword README.md:1530 to 'names no runnable meta.fullGate entry (none, or only review-only ones)', matching full_status's basis.\n\n(P123-R20, low) The demo's full-run row says it is 'Resolved the way the runner resolves it, so its steps publish the exact commands full_status compares them with'. It reads meta.fullGate directly and resolves it with build.get(e, e). It applies neither _evidence_io.full_gate's review-only split nor the nodePreamble, so it is a second reading of the runnable full gate, which R8's redesign was meant to remove. The demo's fullGate holds no review-only entry today, so nothing renders wrong yet.\nResolution: Build `full` from _evidence_io.full_gate(manifest)['commands'].\n\n(P123-R21, low) The three findings still name the cancelled fix tasks P123.63-64p and P123.66-64p as fixTask, with no status or commit. The replacement tasks P123.68-64p and P123.69-64p carry no `fixes`, so the record does not say that R9 (med) and R13 are closed in code (R9 at run-test-gate.py:2192-2211, _evidence_io.py:148-174 with fo4/fo5; R13 by fb4).\nResolution: Link P123.68-64p to P123-R9 and P123.69-64p to P123-R13/P123-R14 through the verb (or record status fixed with commit ecd8e502 / 66382171 for R9 and R13). Leave R14 open until finding 2 lands.\n\n(R19) README's `not_declared` row reads as full_status now says it (no runnable meta.fullGate entry). (R20) gen-demo-manifest resolves the demo's fullGate through _evidence_io.full_gate, as its own comment claims. (R21) The record half is already repaired by the orchestrator through `resolve-finding`: R9 -> P123.68-64p, R13 and R14 -> P123.69-64p; confirm it in the plan and say so. Faults: P123-R19, P123-R20, P123-R21.",
       "files": [
         "plugins/audit/README.md",
@@ -5904,14 +5910,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a8e43e8d6888",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "README.md:1530 now reads 'names no runnable meta.fullGate entry (none, or only review-only ones)'. gen-demo-manifest.py _evidence_specs builds `full` from _evidence_io.full_gate(manifest)['commands'] instead of build.get(e,e) over meta.fullGate. Added _full_row_cases (fr1: row steps equal full_gate commands; fr2: a review-only entry claimsMatchCode appended to fullGate is left out) to tests/test_gen_demo_manifest.py. Selftest exit 0, 135/135 passed. R21 confirmed in docs/audit/phases/P123.json: the findings now carry fixTask P123.68-64p (line 114) and P123.69-64p (lines 154, 164), i.e. R9 -> P123.68, R13/R14 -> P123.69 as the orchestrator's resolve-finding left them; no edit made by me. _evidence_io.py and P123.json were not edited. Faults: P123-R19, P123-R20, P123-R21.",
+        "descriptive": "README and the demo's full-run row now agree with full_status on what the runnable full gate is; the review record links R9/R13/R14 to their live fix tasks."
       },
       "startedAt": "2026-10-12T11:41:56Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T11:51:24Z",
+      "verifiedBy": [
+        "fr1 the demo's full-run row publishes the commands full_gate resolves",
+        "fr2 a review-only entry in the demo's fullGate is left out of the row"
+      ],
       "notes": [
         {
           "at": "2026-10-12T10:24:57Z",
@@ -5932,12 +5941,23 @@
         "runId": "2026-10-12T11:51:23Z.439622",
         "status": "passed",
         "at": "2026-10-12T11:51:23Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "a8e43e8d6888",
+        "at": "2026-10-12T11:51:24Z",
+        "basis": "a fix task for P123-R19, P123-R20, P123-R21: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression mode, expectRedFirst false: fix first, then tests fr1/fr2 locking it",
+        "at": "n/a"
       }
     },
     {
       "id": "P123.75-64p",
       "title": "No prose claims a module's layer position by ordinal: the bottom-layer claims are gone and the layer lint refuses them",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The second half of review finding P123-R15: four docstrings claim their module is at the BOTTOM LAYER (_priority.py near :28, _ado_parent.py near :33, _ado_tracked.py near :53, _manifest_io.py near :674) while _deps.LAYERS holds all four one layer above the bottom - the same stale-position class the numeral lint closed, spelled as an ordinal. The invariant again, not four edits: the layer lint (_deps.layer_mention_drift) also refuses an ordinal layer position in prose - bottom/top/first/second/lowest/highest layer, any case - since the module map prints every position; relational wording (a layer below, layer-mate, the floor of what it imports) stays allowed. Rewrite the four claims relationally and keep their reasoning; `layer_mention_drift()` returns []; add a prove-gates row planting an ordinal claim. If the lint flags a file outside the declared files, stop and name it. Faults: P123-R15.",
       "files": [
         "plugins/audit/scripts/_deps.py",
@@ -5946,7 +5966,9 @@
         "plugins/audit/scripts/manifest/_priority.py",
         "plugins/audit/scripts/manifest/_ado_parent.py",
         "plugins/audit/scripts/manifest/_ado_tracked.py",
-        "plugins/audit/scripts/manifest/_manifest_io.py"
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/scripts/manifest/audit-task.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -5971,16 +5993,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T11:51:24Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T12:24:01Z.6e6645",
+        "status": "passed",
+        "at": "2026-10-12T12:24:01Z"
+      }
     }
   ],
   "reviewPerTask": "phase",

@@ -228,8 +228,8 @@ def journal_redactions(path, pointers):
 # adds only its next step.
 
 
-# AN ALIAS, NOT A COPY: the walk lives in `_output.project_of_manifest`, the
-# lowest layer, so the evidence ledger, the raw gate log, the report and the
+# AN ALIAS, NOT A COPY: the walk lives in `_output.project_of_manifest`, a
+# module every one of those readers can import, so the evidence ledger, the raw gate log, the report and the
 # status read take the same answer the manifest-writing commands do. Two walks
 # answering "which project owns this manifest" disagreed once already - one
 # fell back to the manifest's own directory, left a `.claude/` there, and the
