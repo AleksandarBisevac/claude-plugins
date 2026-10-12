@@ -930,6 +930,22 @@ def _rewrite_cases(check, tmp):
           % (flagged,),
           all(_invariants._rewrite_action(m) for m in flagged))
 
+    # -S takes an attached key id; -4/-6 are argument-less digit flags
+    rewrites = (
+        "pull -S0xABCD -r (finish): refs/heads/x onto abc",
+        "pull -4r (finish): refs/heads/x onto abc",
+        "pull -6r (finish): refs/heads/x onto abc",
+        "pull -4qr (finish): refs/heads/x onto abc",
+    )
+    check("rw11 `pull -S<keyid> -r`, `-4r` and `-6r` are rewrites: %r"
+          % (rewrites,),
+          all(_invariants._rewrite_action(m) for m in rewrites))
+    keyid = ("pull -Sr origin main: Fast-forward",
+             "pull -4Sr origin main: Fast-forward")
+    check("rw12 `pull -Sr` (r is the key id, not the rebase flag) is not a "
+          "rewrite: %r" % (keyid,),
+          not any(_invariants._rewrite_action(m) for m in keyid))
+
 
 def _selftest():
     return _harness.run(_cases)

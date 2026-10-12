@@ -397,8 +397,10 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:2670-2697",
         "issue": "lock_to_give_back now calls dispatch_out -> load_phase -> _mio.load_manifest, which sits OUTSIDE drive()'s try/except. dispatch_out catches only ValueError; load_manifest raises OSError for a plan or shard that vanished or became unreadable between drive_locked's own read and this one. The exception then surfaces as a traceback with the phase lock still taken and recorded in state, the stranded-lock shape the desired outcome rules out. The window is small, but this predicate is the only place on the lock-release path that reads the plan a second time.",
-        "resolution": "In dispatch_out catch (ValueError, OSError) and return False (release), or move the lock_to_give_back call inside the same try that already releases on BaseException. Add a dl case with the plan removed between the refusal and the predicate.",
-        "fixTask": "P123.91-64p"
+        "resolution": "fixed in P123.91-64p (1f1bd496b824): In dispatch_out catch (ValueError, OSError) and return False (release), or move the lock_to_give_back call inside the same try that already releases on BaseException. Add a dl case with the plan removed between the refusal and the predicate.",
+        "fixTask": "P123.91-64p",
+        "commit": "1f1bd496b824",
+        "status": "fixed"
       },
       {
         "id": "P123-R39",
@@ -409,7 +411,7 @@
         "fixTask": "P123.92-64p"
       }
     ],
-    "outcome": "[findings: 39 - 0 high, 14 med, 25 low; 36 with a recorded fix commit]"
+    "outcome": "[findings: 39 - 0 high, 14 med, 25 low; 37 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -7329,7 +7331,7 @@
     {
       "id": "P123.91-64p",
       "title": "fix P123-R38: lock_to_give_back now calls dispatch_out -> load_phase -> _mio....",
-      "status": "in_progress",
+      "status": "done",
       "description": "lock_to_give_back now calls dispatch_out -> load_phase -> _mio.load_manifest, which sits OUTSIDE drive()'s try/except. dispatch_out catches only ValueError; load_manifest raises OSError for a plan or shard that vanished or became unreadable between drive_locked's own read and this one. The exception then surfaces as a traceback with the phase lock still taken and recorded in state, the stranded-lock shape the desired outcome rules out. The window is small, but this predicate is the only place on the lock-release path that reads the plan a second time.\n\nResolution asked: In dispatch_out catch (ValueError, OSError) and return False (release), or move the lock_to_give_back call inside the same try that already releases on BaseException. Add a dl case with the plan removed between the refusal and the predicate.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -7360,14 +7362,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1f1bd496b824",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "dispatch_out now returns (out, why) and catches (ValueError, OSError): ValueError -> (False, None); OSError -> (False, 'OSError: msg'). lock_to_give_back returns (give_back, note); on a read failure it KEEPS the lock and drive appends one line '[drive-phase] P: phase lock kept - the plan could not be read ... (err); a later next releases it' to the output. Added case dl11 in test_drive_phase.py (plan load raises OSError after drive_locked, on a --answer usage refusal with a dispatch out): asserts exit 2, no crash, lock still taken in state and held, and the line names the error. Ran: python3 plugins/audit/tests/test_drive_phase.py --selftest --stage dl-block -> 11/11 passed, exit 0. Full sweep not run (own-tests only).",
+        "descriptive": "A drive whose dispatch check cannot read the plan keeps the phase lock and says so, instead of crashing."
       },
       "startedAt": "2026-10-12T18:12:35Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T18:23:05Z",
+      "verifiedBy": [
+        "dl11"
+      ],
       "notes": [
         {
           "at": "2026-10-12T17:53:34Z",
@@ -7382,12 +7386,23 @@
         "runId": "2026-10-12T18:23:04Z.937eff",
         "status": "passed",
         "at": "2026-10-12T18:23:04Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "1f1bd496b824",
+        "at": "2026-10-12T18:23:05Z",
+        "basis": "a fix task for P123-R38: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-12T18:14:20Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage dl-block` in a throwaway tree at HEAD exited 1 with 1 of 11 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dl11 (house FAIL): SELFTEST FAILED: 10/11 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.92-64p",
       "title": "fix P123-R39: _PULL_ARG_SHORTS = \"sXoj\" omits -S (git pull --gpg-sign[=<keyid...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "_PULL_ARG_SHORTS = \"sXoj\" omits -S (git pull --gpg-sign[=<keyid>] takes an attached key id), so in a cluster such as -Sr the r is the key id but is read as the rebase flag, a false history-rewrite breach of the same class P123.85 closed. The cluster test also needs t[1:].isalpha(), so a cluster that contains -4/-6 (e.g. -4r) is not seen at all. Both are rare and the resolution text allowed the cluster to be a documented non-goal.\n\nResolution asked: Add S to _PULL_ARG_SHORTS (and a clean rw9 row such as -Sr), or state in the docstring that digits and -S are unread.",
       "files": [
         "plugins/audit/scripts/governance/_invariants.py",
@@ -7416,14 +7431,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T18:23:06Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -7434,7 +7449,58 @@
       ],
       "fixes": [
         "P123-R39"
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T18:33:59Z.0f6c9e",
+        "status": "passed",
+        "at": "2026-10-12T18:33:59Z"
+      }
+    },
+    {
+      "id": "P123.93-64p",
+      "title": "Every prove-gates row goes red again: the four rows a full run left unproven are re-targeted or their lints made to assert",
+      "status": "pending",
+      "description": "A full `python3 tools/prove-gates.py` on 60448996 (run by the testbed monitor, log rc-prove.log) left four rows unproven, which blocks the release. RED direction: `ui_navigability_violations` STAYED GREEN (\"the gate asserts nothing about this\"), `exemption_reason_drift` STAYED GREEN, `sh_self_dir_violations` LABEL GONE (\"the case named sd1 is not in test__output.py any more\"). QUIET direction: `hook_tree_violations` LABEL GONE (\"ht3 is not in test__deps.py any more\").\n\nOrchestrator's first reading. (1) The ui_navigability row drops one `// ---` marker from ui/panel/composition.js, which is 1531 lines carrying 5 markers; one per 400 lines needs 4, so dropping one leaves it compliant. The row is stale the way n1 was, and `_nav_min_target()` is the precedent: ask which ui file sits exactly at the floor instead of naming one. (2) exemption_reason_drift's anchor 'check-rendered-artifacts.py, which is stronger because it compares bytes' is in tools/gate-parity.py once, so the mutation lands and the lint does not convict the changed sentence: diagnose whether the lint still reads that sentence, and either make it assert or re-anchor the row on a sentence it does read. (3)/(4) sd1 (test__output.py:935) and ht3 (test__deps.py:2385) both still exist as check labels, so LABEL GONE most likely means the mutated suite raised or stopped before printing them, or prove-gates' label reader no longer finds them: read prove-gates' own LABEL GONE logic and reproduce with `python3 tools/prove-gates.py --only <lint>`.\n\nFix each at its cause. Done when `python3 tools/prove-gates.py --only <lint>` exits 0 for each of the four lints on a tree where the mutated files are committed. prove-gates refuses a dirty mutated file, so run it for any row whose mutated file you did not edit, and for rows whose file you edited say so in the return; the orchestrator re-proves all four after the commit. If a row's lint truly asserts nothing, fixing the lint is in scope; name it.",
+      "files": [
+        "tools/prove-gates.py",
+        "plugins/audit/scripts/_deps.py",
+        "tools/gate-parity.py",
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/tests/test__deps.py",
+        "plugins/audit/tests/test_gate_parity.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "reviewPerTask": "phase",
