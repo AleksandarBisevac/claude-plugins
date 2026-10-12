@@ -367,8 +367,10 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_invariants.py:1169-1175",
         "issue": "_pull_rebases excludes only the literal `--rebase=false`; git also reads `--rebase=no`, `=off` and `=0` as 'do not rebase' (boolean spellings), and a short-flag cluster such as `-qr` is not seen. rw9/rw10 pin only `=false`, `=merges` and `-r`. An explicit `pull --rebase=no` would raise a false history-rewrite breach, the class this task closed for branch names.",
-        "resolution": "Treat the value after `--rebase=` as a rewrite only when it is not one of false/no/off/0 (or only when it is true/merges/interactive/yes/on/1), and add the `=no` spelling to rw9's clean list. The cluster case may be left as a documented non-goal.",
-        "fixTask": "P123.85-64p"
+        "resolution": "fixed in P123.85-64p (60448996234a): Treat the value after `--rebase=` as a rewrite only when it is not one of false/no/off/0 (or only when it is true/merges/interactive/yes/on/1), and add the `=no` spelling to rw9's clean list. The cluster case may be left as a documented non-goal.",
+        "fixTask": "P123.85-64p",
+        "commit": "60448996234a",
+        "status": "fixed"
       },
       {
         "id": "P123-R36",
@@ -379,7 +381,7 @@
         "fixTask": "P123.86-64p"
       }
     ],
-    "outcome": "[findings: 36 - 0 high, 14 med, 22 low; 33 with a recorded fix commit]"
+    "outcome": "[findings: 36 - 0 high, 14 med, 22 low; 34 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -6841,7 +6843,7 @@
     {
       "id": "P123.85-64p",
       "title": "fix P123-R35: _pull_rebases excludes only the literal `--rebase=false`; git a...",
-      "status": "in_progress",
+      "status": "done",
       "description": "_pull_rebases excludes only the literal `--rebase=false`; git also reads `--rebase=no`, `=off` and `=0` as 'do not rebase' (boolean spellings), and a short-flag cluster such as `-qr` is not seen. rw9/rw10 pin only `=false`, `=merges` and `-r`. An explicit `pull --rebase=no` would raise a false history-rewrite breach, the class this task closed for branch names.\n\nResolution asked: Treat the value after `--rebase=` as a rewrite only when it is not one of false/no/off/0 (or only when it is true/merges/interactive/yes/on/1), and add the `=no` spelling to rw9's clean list. The cluster case may be left as a documented non-goal.",
       "files": [
         "plugins/audit/scripts/governance/_invariants.py",
@@ -6872,14 +6874,17 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "60448996234a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_pull_rebases in _invariants.py now reads --rebase=<value> as git does: false/no/off/0/empty (case-insensitive) are not a rebase, any other value is; single-dash letter clusters (-r, -qr) request rebase iff r precedes any of s/X/o/j. rw9 gained =no, =OFF, =0, -q -s ours, -sr as clean; rw10 gained =true, =interactive, =yes, -qr as rewrites. Selftest 71/71 pass, exit 0; ruff clean; vermin ok.",
+        "descriptive": "An explicit pull --rebase=no no longer raises a false history-rewrite breach; short clusters like -qr are now seen."
       },
       "startedAt": "2026-10-12T16:08:26Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T16:18:46Z",
+      "verifiedBy": [
+        "rw9 (extended)",
+        "rw10 (extended)"
+      ],
       "notes": [
         {
           "at": "2026-10-12T16:08:16Z",
@@ -6894,12 +6899,23 @@
         "runId": "2026-10-12T16:18:45Z.4eebec",
         "status": "passed",
         "at": "2026-10-12T16:18:45Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "60448996234a",
+        "at": "2026-10-12T16:18:46Z",
+        "basis": "a fix task for P123-R35: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-12T16:09:55Z",
+        "basis": "`python3 plugins/audit/tests/test_verify_invariants.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 71 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rw9 (house FAIL), rw10 (house FAIL): SELFTEST FAILED: 69/71 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.86-64p",
       "title": "fix P123-R36: The new docstring says the lock is kept only while a decision i...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The new docstring says the lock is kept only while a decision is pending 'or a dispatch is out', but lock_to_give_back has no dispatch term: an E_USAGE return with state['pending'] None releases the lock even when an executor dispatch is outstanding (a mistyped `--answer` during a dispatch answers 'nothing pending' and gives the phase lock back while the executor runs, so a second session's drive can acquire it). dl7-dl9 pin only the none-pending/idle and pending cases, never a dispatch out. The E_STOPPED arm already behaves this way, so the desired outcome is met; the sentence and the pin are what disagree.\n\nResolution asked: Either narrow the docstring to 'kept for E_OK returns (decision or dispatch) and for a usage refusal while a decision is pending', or have lock_to_give_back also keep the lock when a task is in flight, and add a dl case for a refused --answer sent while a dispatch is out so the chosen rule is pinned.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -6928,14 +6944,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T16:18:47Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -6946,7 +6962,13 @@
       ],
       "fixes": [
         "P123-R36"
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T16:59:39Z.ed0d2c",
+        "status": "passed",
+        "at": "2026-10-12T16:59:39Z"
+      }
     }
   ],
   "reviewPerTask": "phase",

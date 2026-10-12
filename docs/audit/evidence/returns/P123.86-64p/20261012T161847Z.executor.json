@@ -1,0 +1,19 @@
+{
+  "gates": {
+    "own-test": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-12T16:28:55Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 234 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dl10 (house FAIL): SELFTEST FAILED: 233/234 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: lock_to_give_back(code,state,ctx) now keeps the lock on E_USAGE when dispatch_out(ctx,state) is true (an in_progress task of the phase holding a dispatched-executor/reviewer mark for its current start with no filed return of that role, read via _marked and filed); docstring of drive names pending OR dispatch out, and lock_to_give_back names pending and dispatch out. test_drive_phase.py: added dl10 (a plain next dispatches the executor, then a refused --answer exits 2, keeps phase lock taken in lock and state). Ran python3 plugins/audit/tests/test_drive_phase.py --selftest: 234/234 passed, dl7-dl9 still green.",
+    "descriptive": "A refused --answer during an outstanding dispatch no longer gives the phase lock back."
+  },
+  "testsAdded": [
+    "dl10"
+  ],
+  "claims": "claims: the docstring keep rule names pending and dispatch out, exactly the predicate's terms; dispatch out is read from the dispatched-* marks the drive already writes plus the filed-return check, no new field.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:0b7eec9f15ed002d4ee9b6ceda4654c9aed34464b2c80a1af3044de806173694\",\"dirtyDigest\":\"sha256:b5ad397336a35cec29449587ebead65c1acab246c54d92b69fa83bc1e8047b78\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/drive-phase.py\":\"a191155570f327c4\",\"plugins/audit/tests/test_drive_phase.py\":\"47ba5de9602d6b3c\"},\"head\":\"60448996\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:a674741905da5092ae1118f430c896dc54448b42ecada50ceca9f910c64b1829\",\"v\":2}"
+}

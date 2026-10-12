@@ -1033,6 +1033,18 @@ def _lock_stop_cases(check):
           code == 2 and pending_before is not None and held_now
           and after.get("pending") == pending_before)
 
+    # A refused --answer while an executor dispatch is out answers "nothing
+    # pending" but the executor still owes its return: the lock stays taken.
+    root, mpath = _repo("lockdispatch", task_ids=TASKS[:1])
+    code0, text0 = _next(M, root, mpath)
+    code, text = _next(M, root, mpath, "--answer", "fix", "--reason", "x")
+    held_now = "phase-%s" % (PHASE,) in _verb(
+        root, "audit-lock.py", ["status", "--project", root])[1]
+    check("dl10 a refused --answer while an executor dispatch is out exits 2 and "
+          "keeps phase-%s taken: %r" % (PHASE, (code0, code, text, held_now)),
+          code0 == 0 and "dispatch" in text0 and code == 2 and "answers nothing" in text
+          and held_now and _drive_state(root).get("lock") == "taken")
+
     # The project a context carries is the manifest's own when no --project-dir
     # was typed: the session's directory may be another checkout.
     M.run_verb = real

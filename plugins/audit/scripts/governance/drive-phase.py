@@ -2643,7 +2643,8 @@ def drive_task(ctx, state):
 def drive(ctx, answer=None, reason=None, fixes=()):
     """`(code, instruction_or_text)` for one `next`. The lock is kept only while
     a decision is PENDING (handed to the human, the next `--answer` must find
-    it) or a dispatch is out; every other non-zero return after it was taken
+    it) or a dispatch is OUT (a task started whose executor or reviewer return
+    is not filed yet); every other non-zero return after it was taken
     gives it back here, the one exit every arm shares, so no refusal strands it."""
     state = read_state(ctx)
     stop = take_lock(ctx, state)
@@ -2658,7 +2659,7 @@ def drive(ctx, answer=None, reason=None, fixes=()):
         if state.get("lock") == "taken":
             give_back_lock(ctx, state)
         raise
-    if not lock_to_give_back(code, state):
+    if not lock_to_give_back(code, state, ctx):
         return code, said
     refused = give_back_lock(ctx, state)
     if refused is not None:
@@ -2666,13 +2667,34 @@ def drive(ctx, answer=None, reason=None, fixes=()):
     return code, said
 
 
-def lock_to_give_back(code, state):
+def lock_to_give_back(code, state, ctx):
     """Whether a drive that returned `code` still holds a lock nobody will
     answer for: the lock is taken and the return is a stop, or a usage refusal
-    with no decision pending to keep it for."""
+    with no decision pending and no dispatch out to keep it for."""
     if state.get("lock") != "taken":
         return False
-    return code == E_STOPPED or (code == E_USAGE and state.get("pending") is None)
+    if code == E_STOPPED:
+        return True
+    return (code == E_USAGE and state.get("pending") is None
+            and not dispatch_out(ctx, state))
+
+
+def dispatch_out(ctx, state):
+    """Whether a task of the phase was dispatched and its return is not filed:
+    an in-progress task holding a dispatch mark for its current start, with no
+    filed return of that role. A phase that has vanished has none."""
+    try:
+        _manifest, phase = load_phase(ctx)
+    except ValueError:
+        return False
+    for task in _tasks(phase):
+        if task.get("status") != "in_progress":
+            continue
+        for role in ("executor", "reviewer"):
+            if (_marked(state, "dispatched-%s" % (role,), task)
+                    and filed(ctx, task, role) == (None, None)):
+                return True
+    return False
 
 
 def give_back_lock(ctx, state):
