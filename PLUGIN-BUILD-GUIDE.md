@@ -430,7 +430,7 @@ L8:
   merge-manifest -> _claude_home, _id_refs, _id_shape, _locks, _manifest_io, _manifest_merge, _manifest_rules, _merge_install, _output
   migrate-json-encoding -> _claude_home, _manifest_io, _manifest_rules, _output, _panel_write
   migrate-manifest -> _id_shape, _journal_io, _manifest_io, _manifest_rules, _output
-  panel-server -> _claude_home, _live_copy, _manifest_io, _output, _panel_discovery, _panel_page, _panel_runstate, _panel_settings, _panel_state, _panel_write, _ui_theme
+  panel-server -> _claude_home, _live_copy, _locks, _manifest_io, _output, _panel_discovery, _panel_page, _panel_runstate, _panel_settings, _panel_state, _panel_write, _ui_theme
   propose-gates -> _claude_home, _evidence_io, _manifest_vocab, _output
   read-ado-links -> _ado_drift, _ado_tracked, _manifest_io, _output
   record-outside-run -> _claude_home, _evidence_io, _journal_io, _manifest_io, _output

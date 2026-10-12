@@ -417,6 +417,20 @@ def _cases(check):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    # --- an exited process reads dead, on every OS ------------------------------
+    # The child is waited for but its Popen object stays referenced, so on Windows
+    # the exited process's kernel object is still open and OpenProcess alone would
+    # succeed: only the exit code says it ended. The mutation that fails this case
+    # is "a successful open is alive".
+    _child = subprocess.Popen([sys.executable, "-c", "pass"])
+    _child.wait()
+    _after = M.pid_alive(_child.pid)
+    check("pl1 pid_alive answers False for a child that has exited and been "
+          "waited for, handle still held (this OS: %s): %r" % (os.name, _after),
+          _after is False)
+    check("pl2 ...while this very process answers True, so pl1 is not a probe "
+          "that says False to everything", M.pid_alive(os.getpid()) is True)
+
     # --- acquire / release, the half that moved last --------------------------
     proj = tempfile.mkdtemp(prefix="audit-locks-proj-")
     try:

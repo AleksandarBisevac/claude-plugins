@@ -117,24 +117,13 @@ def git_dir_of(repo):
 
 
 def pid_alive(pid):
-    """Whether a process with this pid exists. POSIX asks with signal 0; Windows opens
-    the process, because `os.kill` there TERMINATES a process rather than probing it."""
+    """Whether a process with this pid is running - the plugin's one probe, so a marker
+    and a lock cannot disagree about who is gone. A pid it cannot judge reads as not
+    alive here: the marker is advisory and a stale one is reported aloud."""
     if not isinstance(pid, int) or pid <= 0:
         return False
-    if os.name == "nt":
-        import ctypes
-        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
-        if not handle:
-            return False
-        ctypes.windll.kernel32.CloseHandle(handle)
-        return True
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except OSError:
-        return True    # exists, owned by someone else
-    return True
+    import _locks            # on sys.path through the `_harness` import above
+    return _locks.pid_alive(pid) is True
 
 
 def hold(git_dir, pid=None):

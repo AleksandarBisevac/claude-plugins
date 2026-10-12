@@ -489,7 +489,7 @@
     {
       "id": "P126.8",
       "title": "A wave task's submit block names the phase tree's manifest absolutely on Windows",
-      "status": "in_progress",
+      "status": "done",
       "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest, test_audit_lookup.py: FAIL bf42 a wave task's submit block spells the phase tree's manifest absolutely and says the command runs from the project: \"cks the shape, runs the red-first helper on the command after `--`, takes the stamp and files the return once. Put the return object in place of the middle line and run the block as it stands - the object goes on the command's stdin and nothing is written to disk.\\nThe command after `--` is the gate entry that names your tests.add file; narrow it to your cases if HEAD's own tests are red under it.\\n\". The case asserts the submit block spells the phase tree's manifest as an absolute path and says the command runs from the project; on Windows the assertion fails - likely the absolute-path test (os.path.isabs vs a POSIX-looking path) or the separator in the printed path. Fix the writer of the block or the case's expectation, whichever holds the defect, and say which. It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -520,19 +520,31 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b0d6d8a9f7b1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Cause (reasoned from the CI line plus code, not run on Windows): submit_command built the in-tree manifest with os.path.join(project, 'docs/audit/audit-plan.json'). The plan records the manifest with '/'; on Windows os.path.join keeps it, giving 'C:\\\\p\\\\docs/audit/audit-plan.json' (mixed separators), while the case expected os.path.join of separate parts (all backslashes), so the substring did not match. The writer held the defect (mixed-separator path printed in an agent-run command), not the case. Fix: new absolute_manifest(project, manifest, path=os.path) = path.normpath(path.join(...)) in audit-lookup.py, used by submit_command. Assumption and source: ntpath.join does not rewrite '/' in a later component and ntpath.normpath converts '/' to '\\\\' (Python docs for os.path.normpath: 'On Windows, it converts forward slashes to backward slashes'). Pinned on every OS: new case bf44 calls absolute_manifest with ntpath and posixpath explicitly. Selftest 86/86 on macOS; ruff clean. Orchestrator's next windows CI run verifies bf42.",
+        "descriptive": "A wave task's submit block now prints the phase tree's manifest in one separator style on Windows."
       },
       "startedAt": "2026-10-12T22:57:11Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T23:06:50Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_lookup.py: bf44 (ntpath/posixpath shape of absolute_manifest); bf42 expected to pass on windows-latest"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-12T23:06:48Z.e77f8e",
         "status": "passed",
         "at": "2026-10-12T23:06:48Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "b0d6d8a9f7b1",
+        "at": "2026-10-12T23:06:50Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression mode, expectRedFirst false; the defect reproduces only on windows-latest",
+        "at": "n/a"
       }
     },
     {
@@ -647,7 +659,7 @@
     {
       "id": "P126.11-13q",
       "title": "A sweep marker whose pid is dead reads as stale on Windows too",
-      "status": "pending",
+      "status": "in_progress",
       "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest: FAIL o3 a marker whose pid is dead is reported as stale, never as live (a mutating sweep is live (pid 3024, since 2026-10-12T20:02:18Z) - the tree is mid-mutation, do not read a gate over it) | FAIL mk2 a marker whose pid is DEAD is ignored - the sweep proceeds - and says that it did: '' / 'sweep-selftests: refusing to start - <outside-repo> says a mutating sweep (pid 2496, since 2026-10-12T20:02:29Z) is rewriting the tree; a run now reads mid-mutation files and reports false reds. Wait for it, or stop it.\\n'. Both tools/orchestrator-state.py (o3) and tools/sweep-selftests.py (mk2) read a mutation marker naming a DEAD pid as a LIVE sweep. On Windows `os.kill(pid, 0)` does not probe - signal 0 is not a no-op there (it maps to TerminateProcess / CTRL events) - so a liveness probe written for POSIX is wrong on Windows. Find the one place (or the duplicated places - make them one helper if they are two) that decides pid liveness, and give it a Windows branch using a probe that exists in the stdlib there (e.g. ctypes OpenProcess + GetExitCodeProcess == STILL_ACTIVE), with the POSIX branch unchanged. Grep for every other caller of the same probe in plugins/audit and tools and route it through the helper (fix the class, not the two instances). It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
       "files": [
         "tools/orchestrator-state.py",
@@ -657,7 +669,8 @@
         "plugins/audit/tests/test__locks.py",
         "tools/_suite.py",
         "plugins/audit/scripts/panel/panel-server.py",
-        "plugins/audit/tests/test_audit_task.py"
+        "plugins/audit/tests/test_audit_task.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "regression",
@@ -683,14 +696,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T23:06:50Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -698,7 +711,13 @@
           "at": "2026-10-12T23:01:22Z",
           "text": "Widened after run 38316180338: tk2 (test_audit_task) fails on windows-latest the same way o3 and mk2 do - a lock or marker naming a DEAD pid is judged live: \"(2, {'sessionId': 's-other-session', ...})\". There are three liveness probes: governance/_locks.pid_alive (has a Windows branch, _pid_alive_windows - and tk2 says it still answers alive for a dead pid; check OpenProcess on an exited pid and that GetExitCodeProcess is compared with STILL_ACTIVE, and the handle closed), tools/_suite.pid_alive (os.kill(pid, 0) - POSIX only) and panel/panel-server._pid_alive (os.kill(pid, 0) - POSIX only). Make _locks.pid_alive correct on Windows and route the other two through it (tools reach plugin scripts the way other tools do; panel-server per _deps.LAYERS), so there is one liveness rule. Pin: a test__locks case starting a short-lived child, waiting for it, and asserting pid_alive is False for its pid on every OS."
         }
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T23:31:15Z.1e8cb8",
+        "status": "passed",
+        "at": "2026-10-12T23:31:15Z"
+      }
     },
     {
       "id": "P126.12-13q",

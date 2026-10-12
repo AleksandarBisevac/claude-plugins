@@ -175,19 +175,38 @@ def pid_alive(pid):
 
 
 def _pid_alive_windows(pid):
-    """OpenProcess(SYNCHRONIZE) + WaitForSingleObject: signalled means exited."""
+    """OpenProcess(QUERY_LIMITED) + GetExitCodeProcess: alive only while STILL_ACTIVE.
+
+    A successful OpenProcess is NOT liveness: Windows keeps an exited process's
+    kernel object for as long as any handle to it is open, so a pid whose process
+    has exited (a Popen the caller still holds, a parent not yet done with it)
+    still opens. The exit code is what says it ended. A failed open reads dead
+    unless the error is ACCESS_DENIED -- the process exists and belongs to someone
+    else. A pid that never existed, or one Windows already handed to another
+    process, answers for whoever holds it now; that is the same ambiguity pids
+    carry on POSIX.
+    """
     try:
         import ctypes
+        from ctypes import wintypes
         k32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        SYNCHRONIZE, ERROR_ACCESS_DENIED, WAIT_TIMEOUT = 0x00100000, 5, 0x00000102
-        k32.OpenProcess.restype = ctypes.c_void_p
-        handle = k32.OpenProcess(SYNCHRONIZE, False, pid)
+        QUERY_LIMITED, ERROR_ACCESS_DENIED, STILL_ACTIVE = 0x1000, 5, 259
+        k32.OpenProcess.restype = wintypes.HANDLE
+        k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        k32.GetExitCodeProcess.argtypes = [wintypes.HANDLE,
+                                           ctypes.POINTER(wintypes.DWORD)]
+        k32.GetExitCodeProcess.restype = wintypes.BOOL
+        k32.CloseHandle.argtypes = [wintypes.HANDLE]
+        handle = k32.OpenProcess(QUERY_LIMITED, False, pid)
         if not handle:
             return True if ctypes.get_last_error() == ERROR_ACCESS_DENIED else False
         try:
-            return k32.WaitForSingleObject(ctypes.c_void_p(handle), 0) == WAIT_TIMEOUT
+            code = wintypes.DWORD()
+            if not k32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return None
+            return code.value == STILL_ACTIVE
         finally:
-            k32.CloseHandle(ctypes.c_void_p(handle))
+            k32.CloseHandle(handle)
     except Exception:
         return None
 

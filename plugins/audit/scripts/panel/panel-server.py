@@ -112,6 +112,7 @@ import _panel_runstate        # noqa: E402  (records the server reaching LISTENI
 import _panel_state          # noqa: E402  (the read-side payloads: state/areas/policy/journal/usage)
 import _panel_write          # noqa: E402  (the write path: locks, change rows, journal, writers)
 import _panel_page           # noqa: E402  (the assembled page: UI_HTML + UI_TEMPLATE)
+import _locks                # noqa: E402  (pid_alive: the one liveness probe, per OS)
 import _live_copy            # noqa: E402  (the reader of a phase in flight elsewhere,
 #                                          handed to build_state, which sits below it)
 
@@ -867,15 +868,7 @@ def _tighten_pidfile(project):
 def _pid_alive(pid):
     if not isinstance(pid, int) or pid <= 0:
         return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True          # exists, owned by someone else
-    except OSError:
-        return False          # best-effort (e.g. Windows quirks)
-    return True
+    return _locks.pid_alive(pid) is True
 
 
 def status_lines(project, info, alive, stderr, installed):

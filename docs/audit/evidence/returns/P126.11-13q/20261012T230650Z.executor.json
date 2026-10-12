@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "sweep-selftests --fast": "pass",
+    "test__locks": "pass",
+    "test__deps": "pass",
+    "test_audit_task": "pass",
+    "ruff": "pass",
+    "vermin": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression mode (expectRedFirst false); the defect is Windows-only and the POSIX branch is unchanged, so the pinning case pl1 passes on macOS before and after - it can only go red on windows-latest",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "_locks._pid_alive_windows rewritten: OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION=0x1000) with typed argtypes/HANDLE restype; failed open => dead unless GetLastError==ERROR_ACCESS_DENIED(5) => alive; GetExitCodeProcess == STILL_ACTIVE(259) => alive else dead (call failure => None); CloseHandle in finally. POSIX branch untouched. tools/_suite.pid_alive (used by orchestrator-state o3 and sweep-selftests mk2 via marker_state) now delegates to _locks.pid_alive(pid) is True instead of its own OpenProcess-succeeds==alive probe (root cause of o3/mk2: Popen object still holds a handle, so OpenProcess succeeds on an exited process). panel-server._pid_alive likewise routed through _locks (new import _locks; PLUGIN-BUILD-GUIDE.md module-map line updated so the _deps --render fence matches). Added test__locks pl1 (child started, waited, Popen kept, pid_alive is False) and pl2 (own pid True). Ran: test__locks 126/126... all selftests green; sweep-selftests --fast 331/331 files ok, ruff clean, vermin ok. Assumed Windows behaviour (Win32 docs: an exited process object persists while any handle is open, so OpenProcess succeeds; GetExitCodeProcess returns STILL_ACTIVE only while running; CI lines o3/mk2 show a Popen-waited pid read live). tk2 (pc_gone_pid = waited Popen, judged live in CI: exit 2) goes through _locks.judge -> the old SYNCHRONIZE+WaitForSingleObject probe; I could not determine from CI text alone why that misread, so tk2 is fixed by the same rewrite on reasoning only and needs the next windows CI run to confirm. Unverified on Windows.",
+    "descriptive": "One Windows liveness probe (exit-code based) now serves locks, sweep markers and the panel server."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__locks.py: pl1",
+    "plugins/audit/tests/test__locks.py: pl2"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:c28b422705148aec334374284f5bab0785f5571be0b71d934647f577df7132b5\",\"dirtyDigest\":\"sha256:12df41feee9fb85fb9e32fc30cf57d44b7e2d4925d5cf4a55bc198cb9b4b1f75\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"4a255efcf1328b8d\",\"plugins/audit/scripts/governance/_locks.py\":\"c44c170a3a5f5c19\",\"plugins/audit/scripts/panel/panel-server.py\":\"1d47772e628709b5\",\"plugins/audit/tests/test__locks.py\":\"04bdadebc488154b\",\"tools/_suite.py\":\"159ab58b7e8d8059\"},\"head\":\"b0d6d8a9\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_locks.py\",\"plugins/audit/scripts/panel/panel-server.py\",\"plugins/audit/tests/test__locks.py\",\"plugins/audit/tests/test_audit_task.py\",\"tools/_suite.py\",\"tools/orchestrator-state.py\",\"tools/prove-gates.py\",\"tools/sweep-selftests.py\"],\"scopeDigest\":\"sha256:ad6d011c7876eaefd959b73118ab5734b204aa0ace6d11bb352b6abb4433ce88\",\"v\":2}"
+}
