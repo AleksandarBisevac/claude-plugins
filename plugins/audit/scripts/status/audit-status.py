@@ -87,7 +87,7 @@ _output.install_path()
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _manifest_vocab as _vocab  # noqa: E402  (the words, and the segment fold --view reads)
-import _manifest_rules  # noqa: E402  (the manifest rules, at layer 2 - imported, not loaded)
+import _manifest_rules  # noqa: E402  (the manifest rules - imported, not loaded)
 import _areas  # noqa: E402  (meta.areas registry + the resolution every surface shares)
 import _ui_theme as _theme  # noqa: E402  (the words a person reads for a machine value)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
@@ -1639,7 +1639,7 @@ def _unfinished_lines(summary, pt=None):
 
 
 # `_load_usage_fmt()` used to sit here: a runtime load of audit-usage.py — an ENTRY
-# POINT, a peer at layer 7 — purely to borrow its `bar()`. The share bar now lives in
+# POINT, a peer of this one — purely to borrow its `bar()`. The share bar now lives in
 # _fmt (`fmt_bar`/`bar_cells`), which this file already imports for fmt_tokens/fmt_cost,
 # so the four call sites take the same downward edge as everything else and the loader
 # has nothing left to load. Its entry in _deps.KNOWN_LAYER_DEBT went with it — that
@@ -2132,16 +2132,16 @@ def main(argv):
         summary["discovery"] = discovery_block(project)
 
     if want_gate and "invariant-breach" in conditions:
-        # Computed HERE and injected, not inside the rollup. `_status_facts` is
-        # layer 2 and `_invariants` is layer 4, so the gate cannot reach the
+        # Computed HERE and injected, not inside the rollup. `_status_facts` sits
+        # below `_invariants`, so the gate cannot reach the
         # checks; and this costs several git calls per started phase, which no
         # `/audit:status` that was not asked for it should pay.
         summary["invariants"] = invariants_block(manifest, manifest_path,
                                                  project)
 
     if want_gate and "stranded-skills" in conditions:
-        # Injected for `invariant-breach`'s reason — `_status_facts` is layer 2
-        # and the scan is layer 3 — and computed only when asked, because it walks
+        # Injected for `invariant-breach`'s reason — `_status_facts` sits
+        # below the scan — and computed only when asked, because it walks
         # the repository's `.claude/` tree.
         summary["portability"] = portability_block(manifest, project)
 

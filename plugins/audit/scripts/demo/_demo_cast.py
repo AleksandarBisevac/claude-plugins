@@ -14,7 +14,7 @@ until now the way `gen-demo-manifest` honoured it was
 `_loader.load_script("gen-demo-usage.py").DEFAULT_AUTHORS`: one entry point
 loading another to read one name off it, the last of the seventeen edges
 `_deps.KNOWN_LAYER_DEBT` recorded. A fact two modules share belongs below both of
-them, which is layer 1 and is this file. It is a small module for a small fact,
+them, which is the layer just above the anchor and is this file. It is a small module for a small fact,
 and that is the right size: the alternative was not a bigger module, it was a
 second copy of three email addresses that nothing would ever compare.
 

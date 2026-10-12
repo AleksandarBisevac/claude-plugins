@@ -30,8 +30,8 @@ and it is why a declaration is an object and never a bare integer: two spellings
 of one answer are two answers, and the hierarchy check, the push plan and the
 panel all have to say where a parent came from.
 
-WHY LAYER 1, AND WHY EVERYTHING ARRIVES AS AN ARGUMENT. `_manifest_crossrefs`
-and `_manifest_ado` are both layer 2, so neither can import the other while both
+WHY THE BOTTOM LAYER, AND WHY EVERYTHING ARRIVES AS AN ARGUMENT. `_manifest_crossrefs`
+and `_manifest_ado` are layer-mates, so neither can import the other while both
 need the SAME answer - as do `commands/sync.md` through `resolve-ado-parent.py`,
 and the panel after that. A second expression of "which parent" would BE a second
 parent. So this reaches nothing but `_output`: the connector config, the phase
@@ -41,7 +41,7 @@ takes `TERMINAL` and the unmet map rather than deriving them.
 IT OWNS ITS OWN VOCABULARY AND ITS OWN UNKNOWN-KEY LOOP for that same reason.
 `_manifest_vocab._unknown_keys` is a layer-MATE, so importing it is the sideways
 edge `layer_violations()` refuses; a short loop below is the price of the layer,
-and it is cheaper than pushing this module up to L2 where half its consumers
+and it is cheaper than pushing this module up a layer where half its consumers
 could not reach it. The two loops are held to the same answer by a case rather
 than by a comment claiming they agree.
 
@@ -203,8 +203,8 @@ def unknown_declaration_keys(block, where):
     A near-twin of `_manifest_vocab._unknown_keys`, and the twinning is a
     LAYER decision rather than an oversight: that module is a layer-mate, so
     importing it is the sideways edge `layer_violations()` refuses, and this
-    module's whole value is being reachable from both layer-2 validators and a
-    layer-7 door. The agreement between the two loops is pinned by a case
+    module's whole value is being reachable from both validators and an
+    entry-point door. The agreement between the two loops is pinned by a case
     (`test__ado_parent.py`), because a comment claiming two implementations
     agree is a comment, and this repo's own token formatter is the cautionary
     tale for that.

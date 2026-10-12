@@ -89,17 +89,17 @@ own; a case of the implementing work is what makes each paragraph true, and
 until one exists the paragraph is a plan. Nothing enforces that order; whoever
 builds a part rewrites its paragraph into the present tense in the same change.
 
-(1) ONE READER OF RUNNER OUTPUT, AT LAYER 1 - BUILT.
+(1) ONE READER OF RUNNER OUTPUT, AT THE BOTTOM OF THE GRAPH - BUILT.
 `scripts/governance/_runner_output.py` owns every reading of what a test runner
 printed, imported by both entry points and by nothing below them; it reaches
-nothing but `_output`, which is what puts it at layer 1. Moved there, not
+nothing but `_output`, which is what puts it that low. Moved there, not
 copied, from `run-test-gate.py`: `_SUMMARY_READERS`, `_SUMMARY_PAIR`,
 `_NO_TESTS`, `summary_reader`, `summary_readers`, `summary_count`,
 `_FAILURE_READERS`, `_ANSI`, `_JEST_SUITE_HEADER`, `JEST_EXEC_ERROR`,
 `jest_failures` and `_VITEST_FAIL_LINE`; and from here the tally and case
 readers (`TALLY_READERS`, `CASE_READERS` and their regexes). `failing_suites`
 and its path filters are still `run-test-gate`'s, because they read
-`_evidence_io`'s limits and that module sits above layer 1. The gate's pytest
+`_evidence_io`'s limits and that module sits above it. The gate's pytest
 summary row and `red`'s pytest tally are two patterns, not one (the end of the
 next paragraph says why). `read_tally`, `failing_cases` and `jest_failures`
 strip every terminal escape from the text once, on entry (`plain_text`), so a

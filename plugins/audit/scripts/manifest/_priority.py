@@ -25,7 +25,7 @@ quietly re-sort the rest, and a manifest carrying no `priority` at all must orde
 exactly as it did before this module existed — which is the case that goes red if
 `sort_key` ever becomes unconditional.
 
-WHY LAYER 1. `_branch` is the precedent and `_deps.LAYERS` states the reason in the
+WHY THE BOTTOM LAYER. `_branch` is the precedent and `_deps.LAYERS` states the reason in the
 same words: four surfaces need the SAME answer — `_status_facts` for the ready
 list, `_manifest_crossrefs` for the findings, `_panel_composition` for the
 control, and `set-priority.py` for the write. A second expression of the order would
@@ -157,7 +157,7 @@ def ranks(phases):
     order" row fails the build on that shape anywhere under `scripts/ui/`.
 
     Two callers of this function is not two orders, and it is structural rather
-    than a preference: `_report_html` and `_status_facts` are both layer 2, so
+    than a preference: `_report_html` and `_status_facts` are layer-mates, so
     neither can import the other and each has to reach down to here.
 
     This is the module's only permutation — `order()` reads it rather than

@@ -23,8 +23,8 @@ than of somebody remembering.
 
 The CSS lint helpers live here too, next to the stylesheet they police — and so
 does the read that puts `scripts/ui/` in front of them (`UI_DIR`, `read_asset`,
-`cr_violations`, `unreadable_assets`). `_report_ui` and `_panel_ui` are layer-2
-peers and cannot import each other, so this is the lowest layer both can reach:
+`cr_violations`, `unreadable_assets`). `_report_ui` and `_panel_ui` are layer-mates
+and cannot import each other, so this is the lowest layer both can reach:
 one io.open contract for the assets, instead of two copies kept in step by hand.
 
 This module carries no `--selftest` of its own any more; its cases live in
@@ -861,7 +861,7 @@ def list_themes(project, home=None):
 # --- the ui/ assets on disk ------------------------------------------------------
 # `_report_ui` and `_panel_ui` assemble their pages out of the same directory with
 # the same io.open call, the same CR check and the same exception tuple — typed
-# twice, down to the wording of the docstrings, because they are LAYER-2 PEERS and
+# twice, down to the wording of the docstrings, because they are LAYER-MATES and
 # neither may import the other. This module is the lowest layer both already reach
 # (both selftests call `unterminated_css_decls` below), so it is the only legal
 # home for the read.
@@ -869,7 +869,7 @@ def list_themes(project, home=None):
 # Nothing here knows which surface is asking. The asset NAMES stay with the surface
 # that owns them; what lives here is the contract every read of them obeys.
 # Read from the anchor rather than joined here. The anchor's own walk needs the
-# same directory (`ui_surface_digests()`, at layer 0, for the screenshot rule),
+# same directory (`ui_surface_digests()`, in the anchor, for the screenshot rule),
 # and two joins of one path is how a restructure moves one of them.
 UI_DIR = _output.UI_DIR
 

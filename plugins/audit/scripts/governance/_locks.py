@@ -21,7 +21,7 @@ WHY IT IS ITS OWN MODULE. Those three scripts each reached the verdict by loadin
 pointing at an entry point were three of the seventeen entries in
 `KNOWN_LAYER_DEBT`. A liveness rule four callers share is not an entry point's
 private business; it belongs at the bottom of the graph where all four can import
-it, which is layer 1. Moving the CALL into a new module that then loaded
+it. Moving the CALL into a new module that then loaded
 `audit-lock.py` would have hidden those edges rather than retired them.
 
 THE VERDICT'S BIAS IS THE LOAD-BEARING PART, AND IT IS NOT SYMMETRIC. Every

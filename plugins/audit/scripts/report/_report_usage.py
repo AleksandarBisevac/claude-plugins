@@ -6,13 +6,13 @@ Split out of render-report.py — the largest single block in that file —
 and then cut into five, because at 1,477 lines it was five subjects in one file.
 The cut follows the section's own design rule rather than a tidy grouping:
 
-  `_usage_viz`       L3  how a number is formatted and a bar is drawn - the
-                         primitives every fragment shares
-  `_usage_load`      L3  the ledger read, the only I/O the section does
-  `_usage_overview`  L4  what shows on FIRST PAINT: the metric strip, the one
-                         dominant chart, the three ranked lists, the budget
-  `_usage_detail`    L4  everything folded behind the `Detail` disclosure
-  `_usage_markdown`  L4  the Markdown twin
+  `_usage_viz`       how a number is formatted and a bar is drawn - the
+                     primitives every fragment shares
+  `_usage_load`      the ledger read, the only I/O the section does
+  `_usage_overview`  what shows on FIRST PAINT: the metric strip, the one
+                     dominant chart, the three ranked lists, the budget
+  `_usage_detail`    everything folded behind the `Detail` disclosure
+  `_usage_markdown`  the Markdown twin
 
 What is left here is the ORDER — `_usage_section(u)` — plus `_usage_payload`,
 the one `<script>` blob both halves read. Restraint is the whole shape of that

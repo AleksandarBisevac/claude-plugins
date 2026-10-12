@@ -113,7 +113,7 @@ import _doctor_ado as _ado  # noqa: E402  (the ADO connector's operational half)
 import _doctor_trail as _trail  # noqa: E402  (hook state, ledger, journal chain)
 import _doctor_completions as _completions  # noqa: E402  (the task.complete receipts)
 import _doctor_hygiene as _hygiene  # noqa: E402  (locks, and local artifacts in git)
-import _panel_runstate  # noqa: E402  (has the panel ever been opened, at layer 4)
+import _panel_runstate  # noqa: E402  (has the panel ever been opened)
 
 # --- the re-exported surface ----------------------------------------------------
 # ALIASES, NOT COPIES. Each name below is the SAME object the module beside it

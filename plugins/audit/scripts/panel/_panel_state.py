@@ -6,36 +6,38 @@ Split out of panel-server.py, then split six ways again. What is left here
 is the part that could not go anywhere else: the journal, the help endpoints, the
 report export, and `build_state`, which assembles one payload out of all of them.
 
-WHERE THE REST WENT, and why the split has the shape it has. This module sits at
-layer 5, with `_panel_write` (6) and `panel-server`/`audit-task` (7) above it, so
-every piece cut out of it had to fit at layer 4 or below and everything THOSE
-import at 3 or below:
+WHERE THE REST WENT, and why the split has the shape it has. This module has
+`_panel_write` and `panel-server`/`audit-task` above it, so every piece cut out
+of it had to fit in a layer below it, and everything THOSE import in a layer
+below that (`_deps.py --render` prints where each one landed):
 
-  * `_panel_paths`        (3) the config/manifest paths, and the three modules the
-                              panel reads through -- the floor for all five below
-  * `_panel_viewer`       (4) who is driving the panel, and its identity cache
-  * `_panel_composition`  (4) the plan as the panel shows it: phases, tasks, bugs,
-                              the ADO banner, the areas registry
-  * `_panel_policy`       (4) the capability policy, and what it decides today
-  * `_panel_runstate`     (4) locks, the on-disk change stamp, the Plan gate card
-  * `_panel_usage`        (4) the Usage tab's facts
+  * `_panel_paths`        the config/manifest paths, and the three modules the
+                          panel reads through -- the floor for all five below
+  * `_panel_viewer`       who is driving the panel, and its identity cache
+  * `_panel_composition`  the plan as the panel shows it: phases, tasks, bugs,
+                          the ADO banner, the areas registry
+  * `_panel_policy`       the capability policy, and what it decides today
+  * `_panel_runstate`     locks, the on-disk change stamp, the Plan gate card
+  * `_panel_usage`        the Usage tab's facts
 
 WHAT MADE THE SPLIT POSSIBLE, since it was blocked on this and not on effort. Two
 things had to move, and neither was `_stamp`/`_settled`:
 
   * `_cores()` was a positional 4-tuple bundling `_manifest_rules` with
     three modules that have nothing to do with it. A shared base holding that tuple
-    could only sit at 4 -- leaving no layer for the five modules that read it, and
+    could only sit one layer above `_manifest_rules` -- leaving no layer for the five
+    modules that read it, and
     forcing an eighth layer that would have recorded a grab-bag accessor rather than
     a dependency. `_panel_paths` therefore exposes `hooks_config()` /
     `config_rules()` / `status_facts()` instead, and `_cores()` below still assembles
     the same tuple in the same order for `_panel_write` and `audit-task`, which read
     it positionally.
   * `_help` and `_panel_discovery` were each sitting ONE LAYER ABOVE what their own
-    edges require (measured: `_help` reaches nothing above layer 1, `_panel_discovery`
-    nothing above `_help`). At 3 and 4 they made `discover` unreachable from a layer-4
-    module, which is what `_panel_policy` needs. They now sit at 2 and 3, which is
-    where the graph always put them.
+    edges require (measured: `_help` reaches nothing above the layer just over the
+    anchor, `_panel_discovery` nothing above `_help`). One layer higher, they made
+    `discover` unreachable from `_panel_policy`'s layer, which is where it is
+    needed. They now sit one layer lower each, which is where the graph always put
+    them.
 
 panel-server.py and _panel_write.py keep a thin module-level alias for every name
 that has ever lived here, so their HTTP routes, the write path and every case that
@@ -57,20 +59,20 @@ BOUNDARY DECISIONS -- read-side code that touched names the write path also uses
     mutating `_JOURNAL` in place still reach one shared piece of state.
 
   * `render_report` STAYS HERE rather than moving with the Usage tab, and that is
-    deliberate: it runtime-loads `render-report.py` at layer 7, the edge
-    `_deps.KNOWN_LAYER_DEBT` records against this file. Moving it into a
-    layer-4 module would have made that recorded edge span three layers instead
-    of one while changing nothing about it.
+    deliberate: it runtime-loads the entry point `render-report.py`, the edge
+    `_deps.KNOWN_LAYER_DEBT` records against this file. Moving it into one of
+    the lower pieces would have made that recorded edge span more layers while
+    changing nothing about it.
 
     `report_paths` is NO LONGER part of that edge, and the difference is the
-    lesson. It reached the same layer-7 module for `_report_basename` — a pure
-    naming rule that `_report_html` owns at layer 2 and `render-report.py` merely
+    lesson. It reached the same entry point for `_report_basename` — a pure
+    naming rule that `_report_html` owns low in the graph and `render-report.py` merely
     aliases — so one of the two call sites under that entry was a module being
     used as a LIBRARY through a COMMAND, which is the shape every retired entry
     in that table had. It now imports `_report_html` directly. What is left is
     the half with no downward home: `render_report` wants the WHOLE pipeline
-    ending in files on disk, and that pipeline bottoms out at `_report_page`
-    (layer 7), above this module's layer 6. See the entry itself for why moving
+    ending in files on disk, and that pipeline bottoms out at `_report_page`,
+    above this module's layer. See the entry itself for why moving
     this module up, or inverting the call, both relocate the edge rather than
     retire it.
 
@@ -104,20 +106,20 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
-import _manifest_rules        # noqa: E402  (the manifest rules, at layer 3 - imported, not loaded)
-import _journal_io            # noqa: E402  (read/verify the audit trail, at layer 1)
+import _manifest_rules        # noqa: E402  (the manifest rules - imported, not loaded)
+import _journal_io            # noqa: E402  (read/verify the audit trail)
 import _help                  # noqa: E402  (schema-sourced field help + concept topics)
 import _panel_discovery       # noqa: E402  (skills/agents/MCP registry scan)
-import _panel_paths as _paths          # noqa: E402  (paths + the three cores, at layer 3)
-import _panel_viewer as _viewer_mod    # noqa: E402  (who is driving the panel, at layer 4)
-import _panel_composition as _composition  # noqa: E402  (the plan as shown, at layer 4)
-import _panel_policy as _policy_mod    # noqa: E402  (the capability policy, at layer 4)
-import _panel_runstate as _runstate    # noqa: E402  (locks, stamp, gate, at layer 4)
-import _panel_usage as _usage          # noqa: E402  (the Usage tab's facts, at layer 4)
-import _proposals                      # noqa: E402  (proposals, rule AND read side, at layer 4)
-import _report_html                    # noqa: E402  (the report's naming rule, at layer 2)
+import _panel_paths as _paths          # noqa: E402  (paths + the three cores)
+import _panel_viewer as _viewer_mod    # noqa: E402  (who is driving the panel)
+import _panel_composition as _composition  # noqa: E402  (the plan as shown)
+import _panel_policy as _policy_mod    # noqa: E402  (the capability policy)
+import _panel_runstate as _runstate    # noqa: E402  (locks, stamp, gate)
+import _panel_usage as _usage          # noqa: E402  (the Usage tab's facts)
+import _proposals                      # noqa: E402  (proposals, rule AND read side)
+import _report_html                    # noqa: E402  (the report's naming rule)
 import _evidence_io                    # noqa: E402  (WHEN this plan could first
-#                                        have recorded a run at all, at layer 2)
+#                                        have recorded a run at all)
 
 discover = _panel_discovery.discover
 CONFIG_REL = _paths.CONFIG_REL
@@ -187,9 +189,9 @@ def worktrees_state(project):
 
 # NOT `_composition._proposals_view` any more. The Proposals tab and
 # `/audit:propose list` render the same array, so the derivation belongs to the
-# module that owns proposals rather than to the panel - `_proposals` sits at layer
-# 4 like `_panel_composition`, so this module at 5 is the first place both are
-# reachable. The name stays bound here, so every caller and case that spells
+# module that owns proposals rather than to the panel - `_proposals` is a
+# layer-mate of `_panel_composition`, so this module, one layer up, is the first
+# place both are reachable. The name stays bound here, so every caller and case that spells
 # `_panel_state._proposals_view` still resolves.
 _proposals_view = _proposals.proposal_rows
 
@@ -225,9 +227,9 @@ def _cores():
     A POSITIONAL 4-TUPLE, KEPT: `_panel_write` and `audit-task` read index 0
     out of it, `_panel_write` and the suites read index 1, and the shape is what
     they read it by. What changed when this module was split up is
-    where the pieces come from -- three of them from `_panel_paths` at layer 3,
-    and `_manifest_rules` from the plain import above, which is legal HERE at
-    layer 5 and was the one thing that could not sit in the shared base.
+    where the pieces come from -- three of them from `_panel_paths`,
+    and `_manifest_rules` from the plain import above, which is legal HERE,
+    above the shared base, and was the one thing that could not sit in the shared base.
 
     There is still exactly one memo, and it is `_panel_paths.hooks_config()`.
     Three of these four were only ever plain module references, which is why
@@ -241,7 +243,7 @@ _JOURNAL = {"tried": False, "mod": None}
 
 
 def _journalmod():
-    """`_journal_io` — the audit trail, at layer 1.
+    """`_journal_io` — the audit trail.
 
     THIS IS THE EDGE `_deps` COULD NOT SEE, AND IT IS GONE RATHER THAN HIDDEN.
     It used to spell `script_path("audit-journal.py")` on one line and `load(path)`
@@ -253,7 +255,7 @@ def _journalmod():
 
     A count that a blind spot flatters is not a smaller debt, so the answer was
     never to keep the two-step: it was to make the dependency legal. The trail is
-    `_journal_io.py` at layer 1 now, this module is layer 5, and the edge is an
+    `_journal_io.py` low in the graph now, this module sits well above it, and the edge is an
     ordinary downward import that the lint can read and does not have to forgive.
 
     Still a function returning a module, and callers still handle None: they were

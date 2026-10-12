@@ -87,7 +87,7 @@ import _locks  # noqa: E402  (whose phase lock, and is it live)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; the atomic write)
 import _manifest_vocab  # noqa: E402  (the FULL_STATUS words, one vocabulary)
 import _worktrees  # noqa: E402  (git ancestry: merged_into, the three answers)
-import _usage_core  # noqa: E402  (parse_ts: a full run's ts read as a moment, at layer 1)
+import _usage_core  # noqa: E402  (parse_ts: a full run's ts read as a moment)
 from _journal_io import (command_facts, redacted_paths,  # noqa: E402
                          redacted_text, repo_relative_or_token)
 from _machine_paths import OUTSIDE_TOKEN  # noqa: E402
@@ -3748,7 +3748,7 @@ def project_config_for(manifest_path, project_dir=None):
 def boundary_for(manifest_path, project_dir=None):
     """The boundary for the plan at `manifest_path`, wherever that plan sits.
 
-    The one line a caller above layer 2 writes to hand `rollup` a boundary. It
+    The one line a caller above this module writes to hand `rollup` a boundary. It
     resolves the record the way every other reader of this module does and then
     asks the same `evidence_boundary`, so the gate's boundary and the report's
     ledger cannot come from two different directories.

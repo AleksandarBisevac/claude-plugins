@@ -17,8 +17,8 @@ fabricated counterfactual. `series` folds its tail past `MAX_SERIES` because the
 categorical palette is only validated to eight slots - a correctness bound, not
 a style preference.
 
-Reads `_usage_core` and nothing else in the tree, which is what keeps it at
-layer 2 beside its three sibling passes; `usage_ledger.py` re-exports every
+Reads `_usage_core` and nothing else in the tree, which is what keeps it in
+the layer of its three sibling passes; `usage_ledger.py` re-exports every
 public name defined here, so no call site names this module.
 
 This module carries no `--selftest` of its own; its cases live in

@@ -3,8 +3,8 @@
 The Usage tab's payload: the ledger folded into compact positional facts the
 browser re-aggregates, plus the small slice of plan the analytics need.
 
-Split out of `_panel_state.py` (U3.1). Layer 4: `_panel_paths` at 3, and it
-runtime-loads `usage_ledger` at 3.
+Split out of `_panel_state.py` (U3.1). It sits above `_panel_paths`, and it
+runtime-loads `usage_ledger`, a layer-mate of that one.
 
 Stdlib only, Python 3.8 compatible.
 """
@@ -35,9 +35,9 @@ _output.install_path()
 
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _areas                 # noqa: E402  (meta.areas registry + shared resolution)
-import _evidence_io           # noqa: E402  (the ledger's own gate tally, at layer 2)
+import _evidence_io           # noqa: E402  (the ledger's own gate tally)
 import _manifest_vocab        # noqa: E402  (the ledger-read sentence the evidence tab uses)
-import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
+import _panel_paths as _paths  # noqa: E402  (the shared base)
 
 # Carried by module-level alias so every body below reads exactly as it did in
 # `_panel_state`, where these were siblings rather than imports.

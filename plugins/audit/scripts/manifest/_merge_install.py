@@ -4,8 +4,8 @@ What an install of the manifest merge driver consists of, and how to read one ba
 
 Its own module because two layers ask the same question. `merge-manifest.py` (an
 entry point) writes the install and prints its `status`; `/audit:doctor`'s setup
-check (layer 4) must report the same facts, and a layer-4 module may not reach an
-entry point. A second reading of "is this clone installed" inside the doctor would be
+check must report the same facts, and a module below the entry points may not
+reach one. A second reading of "is this clone installed" inside the doctor would be
 a second answer waiting to disagree with the verb's, so the pieces - which lines,
 which config key, which shim and what it records - are named once, here. The shim's
 text lives here too, beside the one function that parses it back.

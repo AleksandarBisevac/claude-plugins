@@ -334,7 +334,7 @@ class Attributor(object):
         stays a plain string and the ledger's shape is unchanged."""
         self.session_id = session_id
         self.session_ids = _session_ids(session_id, session_aliases)
-        # `{task id: phase id}` is exactly what layer 1 owns, down to the truthy-id
+        # `{task id: phase id}` is exactly what `_manifest_io` owns, down to the truthy-id
         # filter this loop used to spell out — and `task_from_description` reads it
         # as a MEMBERSHIP set, so an id-less task admitted under a falsy key would
         # be a task id this manifest does not know.

@@ -116,13 +116,13 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
-import _manifest_io as _mio  # noqa: E402  (layer 1: the loader, the id indexes)
-import _manifest_vocab as _vocab  # noqa: E402  (layer 1: `_strip_line_suffix`, the one
+import _manifest_io as _mio  # noqa: E402  (the loader, the id indexes)
+import _manifest_vocab as _vocab  # noqa: E402  (`_strip_line_suffix`, the one
 #                                             reading of a `files` entry's range suffix)
 import _manifest_phases as _phases  # noqa: E402  (own_gate_entries: the entries
 #                                               `run-test-gate --own` runs)
-import _journal_io  # noqa: E402  (layer 1: the trail this cross-checks against)
-import _evidence_io as _evio  # noqa: E402  (layer 2: project/config resolution)
+import _journal_io  # noqa: E402  (the trail this cross-checks against)
+import _evidence_io as _evio  # noqa: E402  (project/config resolution)
 import _excerpt  # noqa: E402  (a red step's output is quoted both ends, never head-cut)
 import _loader  # noqa: E402  (the one way scripts/ loads hooks/_config as a library)
 import _areas  # noqa: E402  (resolve_skills: area skills first, then the task's)

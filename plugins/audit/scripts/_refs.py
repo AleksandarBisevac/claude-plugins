@@ -2684,7 +2684,7 @@ SWEEP_SHAPES = ((SWEEP_RUNNER, "sweep runner"),) + RETIRED_SWEEPS
 
 # DIRECTORIES THIS REPO DOES NOT KEEP, and the walk over what is left. Both moved to
 # `_output` when the prose-number scan needed the same answer: that scan is in the
-# anchor at layer 0, this module is at layer 1, and a copy at layer 0 would be the
+# anchor, this module sits above it, and a copy in the anchor would be the
 # two-prune-lists defect one layer down. The reasoning - why `.gitignore` and not a
 # hand list, why only the unambiguous half of its format, why not `git ls-files` -
 # went with the code and is not restated here.

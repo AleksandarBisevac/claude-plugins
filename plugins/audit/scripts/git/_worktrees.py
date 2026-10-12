@@ -258,7 +258,7 @@ def _git(git_root, args, timeout=60):
     stdout. Discarding either stream loses a refusal a human has to act on.
 
     It cannot borrow `_commit_trail._git` for a second reason: that module is a
-    LAYER-MATE at L1, and a sideways edge is the one `_deps.layer_violations()`
+    LAYER-MATE, and a sideways edge is the one `_deps.layer_violations()`
     refuses.
     """
     if not shutil.which("git"):
@@ -1180,7 +1180,7 @@ def observe_for_sweep(git_root, trees, wanted_branches, parent_of,
     button is -- so the disagreement would be discovered by whoever pressed it.
 
     The panel cannot reach `manage-worktrees.py` to borrow the loop: that is an
-    entry point at layer 7 and the panel sits below it, which is the edge
+    entry point and the panel sits below it, which is the edge
     `_deps.layer_violations()` refuses. The shared answer therefore lives HERE, at
     the floor, where both can reach down to it.
     """

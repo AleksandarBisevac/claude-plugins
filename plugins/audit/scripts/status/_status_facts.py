@@ -15,9 +15,9 @@ needs `evaluate_gate` for the verdict at the top of the report. All three reache
 them the only way a hyphenated entry point can be reached —
 `_loader.load_script("audit-status.py")` — and `_deps.layer_violations()` counts
 those calls, so three of the seventeen entries in `KNOWN_LAYER_DEBT` were this one
-file being used as a library. Layer 2 is where all three can import it, and it is
-low enough because everything here reaches only `_manifest_io` and `_areas` at
-layer 1.
+file being used as a library. One layer above the floor is where all three can import
+it, and it is low enough because everything here reaches only `_manifest_io` and
+`_areas`, both at the floor.
 
 THE REPORT'S GATE VERDICT IS THE CASE WORTH KNOWING ABOUT. `render-report.py`
 computes the verdict and INJECTS it into `_report_page`,
@@ -66,7 +66,7 @@ import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR i
 import _manifest_vocab  # noqa: E402  (the FULL_STATUS words - the third place's answers)
 import _areas  # noqa: E402  (meta.areas registry + the resolution every surface shares)
 import _priority  # noqa: E402  (the ONE expression of execution order, and the skip note)
-import _usage_core  # noqa: E402  (parse_ts — the tree's one ISO reader, at layer 1)
+import _usage_core  # noqa: E402  (parse_ts — the tree's one ISO reader)
 import _filed_returns as _fr  # noqa: E402  (INTENT_DEFERRED: the word a close writes for an answer still owed)
 
 # --- vocabulary -----------------------------------------------------------------
@@ -214,7 +214,7 @@ def submodule_conflicts(manifest, submodule_paths, git_root=""):
 # `{phase id or task id: status}` — what a `blockedBy`/`dependsOn` ref resolves
 # through. `ready_tasks` and `unmet_refs` each built this by hand, identically; it
 # moved DOWN to `_manifest_io` when a third caller appeared that this module cannot
-# serve — `_manifest_crossrefs` sits at layer 2 beside this one and needs the same
+# serve — `_manifest_crossrefs` is this module's layer-mate and needs the same
 # map to say whether a PINNED phase is waiting on unfinished work. The name stays
 # here because ~600 lines of rendering in `audit-status.py` spell it unqualified,
 # and the tie-break reasoning went with the body. An alias, never a second walk.
@@ -796,8 +796,8 @@ def _intent_word(task):
 # THE BOUNDARY IS PASSED IN, NEVER READ HERE, and that is a layer fact rather
 # than a preference: `_evidence_io` computes it and sits on THIS module's layer,
 # where a layer-mate may not be imported. `rollup` therefore takes it the way it
-# already takes `usage` -- computed by a caller above layer 2 (`audit-status.py`
-# and `render-report.py` at 7, `_panel_state` at 5) and handed down, so this file
+# already takes `usage` -- computed by a caller above this module (`audit-status.py`,
+# `render-report.py`, `_panel_state`) and handed down, so this file
 # stays a pure dict -> dict transform and there is exactly one implementation of
 # where the boundary comes from.
 #
@@ -1621,7 +1621,7 @@ def invariant_breaches(summary):
 
     THREE STATES, AND A BOOLEAN WOULD HAVE TWO. The block arrives INJECTED by
     `audit-status.py`, which is where the git and ledger reads live (this module
-    is layer 2 and `_invariants` is layer 4); the gate itself only reads what it
+    sits below `_invariants`); the gate itself only reads what it
     was handed. So the interesting question is not "were there breaches" but
     "was anything read at all" — and a summary with no block is a summary nobody
     asked, which must not pass as a clean one. `None` is "no breaches, and the

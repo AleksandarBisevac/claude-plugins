@@ -596,27 +596,26 @@ TABLE = (
  ("map_drift", S + "_deps.py", "replace", '    ("_output",),\n',
   '    ("_output", "_probe_layer_name"),\n', DEP, "r3"),
  ("hooks_rule_drift", "PLUGIN-BUILD-GUIDE.md", "replace", None, None, DEP, "g0"),
- # Restored where it actually shipped: the docstring line that opened on a
- # layer the table had already moved this module off. The mutation is the real
- # sentence rather than an invented one, because what made the defect survive was
- # that it read as a perfectly ordinary claim.
- ("layer_doc_drift", S + "status/_doctor_policy.py", "replace",
-  "`check_policy` is what sets this module's floor:",
-  "Layer 5, and `check_policy` is what sets this module's floor:", DEP, "lyd1"),
- # A wrong number planted beside a real module name in a shipped docstring: the
- # shape the prose carried when a module gained a layer of its own.
+ # A layer numeral planted into a shipped docstring, in the two spellings the
+ # class kept arriving in. The rule refuses the numeral, not a wrong one, so the
+ # plant does not need to disagree with LAYERS to be convicted.
  ("layer_mention_drift", S + "status/_doctor_ado.py", "replace",
   "`_doctor_report` for the collector",
   "`_doctor_report` (layer 9) for the collector", DEP, "lmd1"),
- # The module-qualified shape: a wrong number planted beside `module.member` in a
- # shipped docstring, and the regex narrowed back to the bare-name spelling, which
- # is the reading that left every such mention unchecked.
  ("layer_mention_drift", S + "status/_doctor_ado.py", "replace",
   "`_doctor_report` for the collector",
-  "`_doctor_report.collect` (layer 9) for the collector", DEP, "lmd1"),
+  "`_doctor_report`, at L2, for the collector", DEP, "lmd1"),
+ # One spelling dropped from the rule: the word spelling never matches, which is
+ # a lint that reads one of the shapes the class shipped in and not the other.
  ("layer_mention_drift", S + "_deps.py", "replace",
-  '    r"`([A-Za-z_][A-Za-z_0-9-]*)(?:\\.[A-Za-z_0-9.]*)?(?:\\(\\))?`"\n',
-  '    r"`([A-Za-z_][A-Za-z_0-9-]*)`"\n', DEP, "lmd8"),
+  '_LAYER_WORD_NUMERAL = re.compile(r"\\blayers?[\\s-]+\\d+", re.IGNORECASE)',
+  '_LAYER_WORD_NUMERAL = re.compile(r"(?!x)x")', DEP, "lmd3"),
+ # The `L<N>` spelling read only where the block names a layer or a module -
+ # the import-comment shape "(the shared base, L1)" carries neither, and it is
+ # the one a context-only reading leaves standing.
+ ("layer_mention_drift", S + "_deps.py", "replace",
+  "if in_context or _LAYER_L_LEAD.search(text[:m.start()])]",
+  "if in_context]", DEP, "lmd3"),
  # The defect is a PAIR - a function nothing names, and a docstring saying
  # something depends on it - so the mutation has to plant both halves at once. A
  # probe function planted in a shipped module is exactly that: nothing calls it,
@@ -1564,24 +1563,22 @@ ALLOW = (
  ("hooks_rule_drift", S + "_deps.py", "replace",
   "    hit = _GUIDE_HOOKS_EXCUSE.search(text)",
   '    hit = re.search("hooks", text)', DEP, "g0"),
- # The pattern anchors at the start of a line so it reads a module's claim about
- # ITSELF. Drop the anchor and it judges every `layer N` in running prose, which
- # is how one module correctly cites another's layer - dozens of true sentences,
- # convicted for being accurate.
- ("layer_doc_drift", S + "_deps.py", "replace",
-  '_SELF_LAYER_CLAIM = re.compile(r"^Layer (\\d+)\\b", re.MULTILINE)',
-  '_SELF_LAYER_CLAIM = re.compile(r"[Ll]ayer (\\d+)\\b")', DEP, "lyd4"),
  # THE PRECONDITION IS THE WHOLE NARROWING, and the phrase list is not. Only a
  # function nothing under scripts/, hooks/ or tools/ names is read at all; the
  # same phrases over the rest of the tree open docstrings of functions that
  # really do have the caller they describe. Raise the threshold so nothing is
  # ever skipped and the rule convicts every one of them - the honest-docstring
  # direction, measured on this tree rather than imagined.
- # The comparison is the whole rule: make it unconditional and every mention is
- # convicted, correct ones included - the allow case (a right number is silent).
+ # `L<N>` is a cache level, a spec level, a URL line anchor and a directory name
+ # as often as it is a layer. Drop the glued-to-`#`-or-`/` exclusion and a line
+ # anchor in a block that names a module is convicted; read every block as being
+ # about layers and "an L1 cache" is.
  ("layer_mention_drift", S + "_deps.py", "replace",
-  "                if claimed != actual:\n",
-  "                if True:\n", DEP, "lmd3"),
+  '_LAYER_L_NUMERAL = re.compile(r"(?<![#/\\w])L\\d+\\b")',
+  '_LAYER_L_NUMERAL = re.compile(r"(?<![\\w])L\\d+\\b")', DEP, "lmd7"),
+ ("layer_mention_drift", S + "_deps.py", "replace",
+  "    in_context = (bool(_LAYER_CONTEXT.search(text))",
+  "    in_context = True or (bool(_LAYER_CONTEXT.search(text))", DEP, "lmd7"),
  ("uncalled_helper_claims", S + "_deps.py", "replace",
   "            if counts.get(node.name, 0) > 1:\n                continue\n",
   "            if counts.get(node.name, 0) > 10 ** 6:\n                continue\n",

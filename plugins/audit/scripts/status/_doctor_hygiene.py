@@ -20,8 +20,8 @@ check once called anything older than 60 minutes stale, which told the human a
 healthy 90-minute phase run had crashed - a diagnostic manufacturing the very
 takeover that loses work.
 
-Layer 4: `_locks` is at layer 1, `_doctor_report` at layer 2, and this module
-loads nothing at runtime at all.
+It sits above `_locks` and `_doctor_report`, and this module loads nothing at
+runtime at all.
 
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__doctor_hygiene.py` - see
@@ -57,9 +57,9 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
-import _locks  # noqa: E402  (lock paths + the liveness verdict, at layer 1)
-import _branch  # noqa: E402  (where a phase's branch lands, at layer 1)
-import _worktrees  # noqa: E402  (git's worktree list + the containment answer, L1)
+import _locks  # noqa: E402  (lock paths + the liveness verdict)
+import _branch  # noqa: E402  (where a phase's branch lands)
+import _worktrees  # noqa: E402  (git's worktree list + the containment answer)
 
 
 # The panel's per-project files: basename, the label a row uses, WHY that row
@@ -82,10 +82,10 @@ import _worktrees  # noqa: E402  (git's worktree list + the containment answer, 
 # rather than trusting either.
 #
 # The layer table is the reason usually given, and it is the weaker half of the
-# argument: this module sits at layer 3, `panel-server` at 7, and `_panel_paths` --
-# the panel module that would obviously own a filename -- is this module's own PEER
-# at 3, which it may not import. A shared home would therefore have to be a NEW
-# module at layer 2 or below.
+# argument: `panel-server` is an entry point, and `_panel_paths` -- the panel
+# module that would obviously own a filename -- is this module's own PEER, which
+# it may not import. A shared home would therefore have to be a NEW module a layer
+# below both.
 #
 # The reason that survives a layer-table change is what the tables hold. They
 # answer different questions and merely share a key set: over there a rule git must

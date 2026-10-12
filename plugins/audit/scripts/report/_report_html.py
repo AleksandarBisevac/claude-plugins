@@ -21,10 +21,10 @@ selftest's many direct references keep working unchanged.
 
 This module must never import render-report or _report_usage: nothing that
 imports THIS module (render-report does) can form a cycle through it. It may
-use layer 1 — `_ui_theme` for status/label vocabulary (same as the panel),
+use the floor below it — `_ui_theme` for status/label vocabulary (same as the panel),
 `_areas` for tag derivation, and `_manifest_io` for reading a manifest's
 shape, which is where the id -> task index and the derived bug status live so
-this file and the layer-7 commands cannot drift apart.
+this file and the entry-point commands cannot drift apart.
 
 This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__report_html.py`, byte-identical labels and all - see
@@ -214,10 +214,10 @@ def _area_tag_span(tag, owners):
 
 # --- segments (D1, v0.36) -----------------------------------------------------
 # THE FOLD MOVED DOWN A LAYER AND THESE ARE BINDINGS, not copies. It was defined
-# here, at layer 2 — and `/audit:status`'s facts module is layer 2 as well, so it
+# here — and `/audit:status`'s facts module is this module's layer-mate, so it
 # could not import this (same layer is not downward) and would have had to paste a
 # second copy to render `--view`. It now lives beside the `STATUS` tuple it folds,
-# in `_manifest_vocab` at layer 1, where every surface can reach one answer.
+# in `_manifest_vocab` at the floor, where every surface can reach one answer.
 #
 # The local names stay because this module's emitter and both of its suites read
 # them, and because `SEG_ORDER` says something here that `SEGMENTS` does not: it is
@@ -239,9 +239,10 @@ def _bug_view(b, task_by_id):
     The rule itself is not decided here any more: `_manifest_io.effective_bug_status`
     owns it, and this is the wrapper that adds the `fixedIn` cell. That split is the
     point — the derivation had three homes (audit-status, the panel, this file, whose
-    docstring said it "mirrored" audit-status) and layer 2 cannot import layer 7, so
-    the copy was structural. The em dash stays HERE, deliberately: a placeholder is
-    what a table draws when a cell is empty, and layer 1 has no table.
+    docstring said it "mirrored" audit-status) and a module this low cannot import an entry
+    point, so the copy was structural. The em dash stays HERE, deliberately: a
+    placeholder is what a table draws when a cell is empty, and the floor below has
+    no table.
 
     Adopting the shared rule also picks up its falsy-`taskId` guard, which this file
     did not have: given an index built WITHOUT the truthy-id filter (audit-status's

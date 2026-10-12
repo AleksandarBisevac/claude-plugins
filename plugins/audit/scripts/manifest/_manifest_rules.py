@@ -13,8 +13,8 @@ whole point: FOUR modules needed these rules and only one of them is a command.
 `_panel_state`, `audit-doctor`, `audit-status` and `migrate-manifest` each
 reached the validator the only way a hyphenated entry point can be reached —
 `_loader.load_script("validate-manifest.py")` — and `_deps.layer_violations()`
-reads those calls as real edges, so four of them stood in `KNOWN_LAYER_DEBT`: an
-L5 helper and three L7 commands all pointing at an L7 peer. Extracting the CALL
+reads those calls as real edges, so four of them stood in `KNOWN_LAYER_DEBT`: a
+helper and three commands all pointing at an entry-point peer. Extracting the CALL
 would have laundered them behind a new module that shells out; extracting the
 RULES retires them, because each of those four now spells a plain
 `import _manifest_rules` and there is no upward edge left to record.
@@ -24,13 +24,13 @@ and the size was the symptom rather than the fault — five unrelated subjects
 shared one file because `validate()` calls all five. They are five modules now,
 cut where the file's own section markers already cut it:
 
-  `_manifest_vocab`      L1  the words, and the shape checks every level shares
-  `_manifest_phases`     L2  the one walk over phases and tasks, and what a
-                             phase carries (claim, area tag, budget, sign-off)
-  `_manifest_ado`        L2  `meta.ado`, the connector config — ONE front door,
-                             shared with the panel's PUT /api/ado
-  `_manifest_typos`      L2  the did-you-mean detectors (model ids, skill names)
-  `_manifest_crossrefs`  L2  every question about how one part REFERS to another
+  `_manifest_vocab`      the words, and the shape checks every level shares
+  `_manifest_phases`     the one walk over phases and tasks, and what a
+                         phase carries (claim, area tag, budget, sign-off)
+  `_manifest_ado`        `meta.ado`, the connector config — ONE front door,
+                         shared with the panel's PUT /api/ado
+  `_manifest_typos`      the did-you-mean detectors (model ids, skill names)
+  `_manifest_crossrefs`  every question about how one part REFERS to another
 
 What is left here is the one thing that could not go into a piece: `validate()`
 decides the ORDER, and the order is not arbitrary — `_walk_phases` builds the
@@ -45,10 +45,10 @@ consumers and two suites import. `render-report.py` keeps a dozen aliases for
 the same reason; the alternative was making every caller learn which of five
 files a rule now sits in, for a rule that has not changed.
 
-This module moved from layer 2 to layer 3, and that is the whole structural cost
-of the split: the four pieces at layer 2 sit above `_manifest_vocab` at layer 1,
-so their only consumer has to sit above them. Nothing at layer 3 imports this
-and this imports nothing at layer 3, so the move is free.
+This module moved up one layer, and that is the whole structural cost of the
+split: the four pieces sit one layer above `_manifest_vocab`, so their only
+consumer has to sit above them. Nothing in its new layer imports this and this
+imports nothing there, so the move is free.
 
 Pure by construction, with two inputs beyond the manifest: `validate()` takes
 parsed JSON and returns `(findings, warnings)`, never raises on arbitrary input,
@@ -141,8 +141,8 @@ _check_ado = _vocab._check_ado
 _unknown_keys = _vocab._unknown_keys
 
 # `TERMINAL` is `_manifest_io`'s and is re-exported from here rather than from
-# `_manifest_vocab`: holding it there would give that module an import and put it
-# at layer 2, which is the one layer its four consumers need to occupy.
+# `_manifest_vocab`: holding it there would give that module an import and push it
+# up into the one layer its four consumers need to occupy.
 TERMINAL = _mio.TERMINAL
 
 _check_claim = _phases._check_claim

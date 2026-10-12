@@ -832,7 +832,7 @@ def _add_parent(obj, where, findings, warnings):
     A three-line adapter rather than a call at each of the two sites, because
     the walk writes into lists and `_ado_parent` returns a pair - and the day
     that mismatch is spelled out twice is the day one of the two forgets the
-    warnings half. `_ado_parent` is at layer 1 beside `_manifest_vocab`, so
+    warnings half. `_ado_parent` is a layer-mate of `_manifest_vocab`, so
     this module reaches it downward like any other word it borrows.
     """
     pf, pw = _parent.declaration_findings(obj, where)
@@ -869,8 +869,8 @@ def _add_tracked(obj, where, findings, warnings):
 # `_manifest_rules` with a walk of its own, which was a THIRD pass over the
 # tasks and a second expression of `mode == "tdd" and status not in TERMINAL` -- and
 # the two had already drifted apart on `expectRedFirst` before anybody read them
-# together. `_manifest_rules` re-exports both names, so every caller and the L7 ->
-# L3 edge from `audit-task.py` are unchanged.
+# together. `_manifest_rules` re-exports both names, so every caller and the
+# downward edge from `audit-task.py` are unchanged.
 _TESTS_ADD_LEAD = re.compile(r"\A\s*([^\s:]+)\s*(?::|\Z)")
 # A FILENAME, not merely something with a separator in it. `_PATHISH_EXT` wants a
 # dot followed by a letter-initial extension, and `_DOTFILE` covers the other real

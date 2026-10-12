@@ -3,9 +3,9 @@
 Who is driving the panel: the identity `usage_ledger.resolve_author` resolves,
 and the cache that keeps a `git config` shell-out off every `/api/state`.
 
-Split out of `_panel_state.py` (U3.1). Layer 4: `_panel_paths` and
-`_panel_discovery` at 3 are its deepest static reach, and it runtime-loads
-`usage_ledger` at 3.
+Split out of `_panel_state.py` (U3.1). `_panel_paths` and
+`_panel_discovery`, one layer down, are its deepest static reach, and it
+runtime-loads `usage_ledger`, their layer-mate.
 
 THE `--name-only` SLICE LIVES HERE NOW. `tests/test__panel_viewer.py` slices this
 file between the two git-config helpers below and fails unless the origin listing
@@ -51,7 +51,7 @@ _output.install_path()
 
 import _loader                # noqa: E402  (the one path-importlib loader for scripts/)
 import _panel_discovery       # noqa: E402  (skills/agents/MCP registry scan)
-import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
+import _panel_paths as _paths  # noqa: E402  (the shared base)
 
 # Carried by module-level alias so every body below reads exactly as it did in
 # `_panel_state`, where these four were siblings rather than imports.

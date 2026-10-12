@@ -29,8 +29,8 @@ This module also owns READING that shape once it is assembled — `iter_tasks`,
 `tasks_by_id`, `phase_of_task` and `effective_bug_status`. It is not a second
 responsibility: those answers were being re-derived by hand in twenty files, and a
 re-derivation of a shape is a second opinion about that shape. Owning the layout and
-owning the traversal of it is one job, and layer 1 is the only place both the layer-2
-report fragments and the layer-7 commands can reach.
+owning the traversal of it is one job, and the bottom of the graph is the only place both
+the report fragments and the entry-point commands can reach.
 
 I/O contract: `load_manifest` raises (like open()/json.load) on a missing or invalid
 index/shard, so existing callers' `try/except -> exit 2` keeps working. Hooks that must

@@ -4,19 +4,19 @@ Where this project's files are, and the three modules the panel reads them
 through -- the floor the rest of the panel's read side stands on.
 
 Split out of `_panel_state.py` (U3.1), and the layer is the whole reason it
-is a file. `_panel_state` sits at layer 5 with `_panel_write` (6) and
-`panel-server`/`audit-task` (7) above it, so anything cut out of it has to
-fit at 4 or below and anything THOSE import at 3 or below. This module is
-layer 3: `_config_rules` and `_status_facts` at 2 are its deepest reach.
+is a file. `_panel_state` has `_panel_write` and `panel-server`/`audit-task`
+above it, so anything cut out of it has to fit in a layer below it, and
+anything THOSE import in a layer below that. This module is that lower layer:
+`_config_rules` and `_status_facts`, one layer down, are its deepest reach.
 
 WHAT `_cores()` USED TO BE, AND WHY IT IS NOT HERE. It returned a positional
 4-tuple of `(_manifest_rules, _config_rules, _status_facts, hooks/_config)`,
-and `_manifest_rules` is itself at layer 3 -- so a base module holding that
-tuple could only sit at 4, which leaves no layer at all for the five modules
-that read it. Measured across the tree: of the 19 reads of that tuple, 8 want
-the hooks config, 4 want `_manifest_rules`, and all four of THOSE sit at layer
-5 or above, where a plain `import _manifest_rules` is an ordinary downward
-edge. So the grab-bag is unbundled here into three named accessors, and
+and `_manifest_rules` is itself this module's layer-mate -- so a base module
+holding that tuple could only sit one layer up, which leaves no layer at all
+for the five modules that read it. Measured across the tree: of the 19 reads of
+that tuple, 8 want the hooks config, 4 want `_manifest_rules`, and all four of
+THOSE sit at `_panel_state`'s layer or above, where a plain
+`import _manifest_rules` is an ordinary downward edge. So the grab-bag is unbundled here into three named accessors, and
 `_panel_state._cores()` still assembles the same 4-tuple in the same order for
 `_panel_write` and `audit-task`, which read it positionally.
 
@@ -57,8 +57,8 @@ _output.install_path()
 CONFIG_REL = ".claude/audit.config.json"
 
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
-import _status_facts          # noqa: E402  (rollup/readiness/gate facts, at layer 2)
-import _config_rules          # noqa: E402  (the audit.config.json rules, at layer 2)
+import _status_facts          # noqa: E402  (rollup/readiness/gate facts)
+import _config_rules          # noqa: E402  (the audit.config.json rules)
 import _loader                # noqa: E402  (the one path-importlib loader for scripts/)
 
 
@@ -96,12 +96,12 @@ def hooks_config():
 
 
 def config_rules():
-    """`_config_rules` -- `validate-config.py` without its `main()`, layer 2."""
+    """`_config_rules` -- `validate-config.py` without its `main()`."""
     return _config_rules
 
 
 def status_facts():
-    """`_status_facts` -- `audit-status.py`'s machine-readable half, layer 2."""
+    """`_status_facts` -- `audit-status.py`'s machine-readable half."""
     return _status_facts
 
 

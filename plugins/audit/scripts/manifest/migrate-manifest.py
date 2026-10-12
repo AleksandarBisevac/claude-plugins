@@ -93,7 +93,7 @@ _output.install_path()
 import _id_shape  # noqa: E402  (number(): the numeric part of an id, suffix or not)
 import _manifest_io as _mio  # noqa: E402
 import _journal_io  # noqa: E402  (the append a redacting save's row goes through)
-import _manifest_rules  # noqa: E402  (the manifest rules, at layer 2 - imported, not loaded)
+import _manifest_rules  # noqa: E402  (the manifest rules - imported, not loaded)
 
 
 # A budget of its own, because `_output.EVIDENCE_BUDGET` is sized for a line a

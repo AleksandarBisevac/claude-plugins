@@ -118,8 +118,10 @@
         "severity": "med",
         "file": "plugins/audit/hooks/guard-bash-writes.py:702 (other side: plugins/audit/hooks/guard-secrets-read.py:1966-1970); plugins/audit/hooks/_config.py:2273-2275; plugins/audit/tests/test_guard_secrets_read.py:1031-1044",
         "issue": "P123-R7 is partly open. There is now one reader, but the two hooks still call it with different seams. guard-secrets-read passes the disk `is_dir` and `files_of`. guard-bash-writes calls `_config.copy_destinations(words)` with neither. So `cp a.py src` (src an existing directory) is graded as src/a.py by the plan gate and attributed as `src` by guard-bash-writes, and `cp -r dir dest` / `mv dir dest` are listed per file by one and named as one word by the other. That is exactly the 'no is_dir reading' disagreement R7 named. In guard-bash-writes the mismatch moves a path from `named` to `unproven`, so with another session active (clauses) the deny tier only gives a notice where it would block. The new docstring's 'so one command gets one answer' (_config.py:2275) is false at runtime. ww7c compares `M._copy_destinations(w)` (now `_config.copy_destinations(w) or []`) against `_config.copy_destinations(w) or []`: the same function, with no seam on either side and only spellings that do not need the disk. It cannot see this disagreement.",
-        "resolution": "Have guard-bash-writes pass the same seams: an is_dir and files_of resolved at the command's cwd, ideally built by one helper in _config that both hooks call. Rewrite ww7c to drive both hooks' own call paths over a fixture holding an existing slashless directory and a recursive copy, and assert they agree.",
-        "fixTask": "P123.64-64p"
+        "resolution": "fixed in P123.64-64p (221460c86409): Have guard-bash-writes pass the same seams: an is_dir and files_of resolved at the command's cwd, ideally built by one helper in _config that both hooks call. Rewrite ww7c to drive both hooks' own call paths over a fixture holding an existing slashless directory and a recursive copy, and assert they agree.",
+        "fixTask": "P123.64-64p",
+        "commit": "221460c86409",
+        "status": "fixed"
       },
       {
         "id": "P123-R11",
@@ -154,7 +156,7 @@
         "fixTask": "P123.66-64p"
       }
     ],
-    "outcome": "[findings: 14 - 0 high, 8 med, 6 low; 8 with a recorded fix commit]"
+    "outcome": "[findings: 14 - 0 high, 8 med, 6 low; 9 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -5010,7 +5012,7 @@
     {
       "id": "P123.64-64p",
       "title": "Both shell-write hooks ask the one copy reader with the same inputs, pinned through each hook's own entry (orchestrator-written guard reading code)",
-      "status": "in_progress",
+      "status": "done",
       "description": "(P123-R10, med) P123-R7 is partly open. There is now one reader, but the two hooks still call it with different seams. guard-secrets-read passes the disk `is_dir` and `files_of`. guard-bash-writes calls `_config.copy_destinations(words)` with neither. So `cp a.py src` (src an existing directory) is graded as src/a.py by the plan gate and attributed as `src` by guard-bash-writes, and `cp -r dir dest` / `mv dir dest` are listed per file by one and named as one word by the other. That is exactly the 'no is_dir reading' disagreement R7 named. In guard-bash-writes the mismatch moves a path from `named` to `unproven`, so with another session active (clauses) the deny tier only gives a notice where it would block. The new docstring's 'so one command gets one answer' (_config.py:2275) is false at runtime. ww7c compares `M._copy_destinations(w)` (now `_config.copy_destinations(w) or []`) against `_config.copy_destinations(w) or []`: the same function, with no seam on either side and only spellings that do not need the disk. It cannot see this disagreement.\nResolution: Have guard-bash-writes pass the same seams: an is_dir and files_of resolved at the command's cwd, ideally built by one helper in _config that both hooks call. Rewrite ww7c to drive both hooks' own call paths over a fixture holding an existing slashless directory and a recursive copy, and assert they agree.\n\n guard-bash-writes passes the same is_dir and files_of seams (at the command's own directory) that the plan gate passes, so `cp a.py src` with src an existing directory and a recursive copy get one answer from both hooks; the agreement case drives each hook's real entry (guard-bash-writes' attribution and guard-secrets-read's decide) over the same commands on a real fixture tree, never the shared function against itself. GUARD COMMAND-READING CODE: written by the orchestrator. Faults: P123-R10.",
       "files": [
         "plugins/audit/hooks/guard-bash-writes.py",
@@ -5048,14 +5050,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "221460c86409",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Written by the orchestrator (guard command-reading code). The finding asked for the same is_dir/files_of inputs in both hooks; that is not the structurally right answer, because guard-bash-writes runs AFTER the command (PostToolUse only) and the disk it could ask no longer says what it said before: `cp -r src/ lib/` that CREATED lib landed as lib/k.py, and a post-command disk reads the slash as inside an existing lib (lib/src). So the agreement is on the OUTCOME. guard-bash-writes._statement_targets now takes both landings the words allow - the shared reader's own reading and the one where no operand pre-existed (is_dir always False) - which costs nothing because it only names the statement that wrote a file already found changed, never a finding. New (ca) cases in test_guard_bash_writes run real copies in a scratch repo (cp a.py src, cp -r src/ lib/, mv a.py b.py out, cp a.py c.py) and require every landed file to be graded by guard-secrets-read._copy_targets beforehand AND named by writing_statement afterwards. ca2 was red before the change (named=[]) and passes after; 235/235. _config.copy_destinations' docstring no longer claims one command gets one answer - it says the two hooks read at two moments and the outcome is what agrees, held by (ca); the ww7c comment in test_guard_secrets_read is corrected the same way.",
+        "descriptive": "The two shell-write hooks agree on what a real copy lands: every file it wrote is one the plan gate graded before the command and one the bash-write guard attributes to it after."
       },
       "startedAt": "2026-10-12T07:37:19Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T07:58:49Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_guard_bash_writes.py: ca1-ca4 (real copies, outcome agreement across both hooks)"
+      ],
       "notes": [
         {
           "at": "2026-10-11T20:14:08Z",
@@ -5070,12 +5074,23 @@
         "runId": "2026-10-12T07:58:47Z.86ec38",
         "status": "passed",
         "at": "2026-10-12T07:58:47Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "221460c86409",
+        "at": "2026-10-12T07:58:49Z",
+        "basis": "a fix task for P123-R10: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-12T07:47:27Z",
+        "basis": "`python3 plugins/audit/tests/test_guard_bash_writes.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 235 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ca2 (house FAIL): SELFTEST FAILED: 234/235 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.65-64p",
       "title": "No layer number is written in prose: the module map prints the layers, and a lint refuses a numeral beside a layer word anywhere",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(P123-R11, med) The layer-number class P123.33 promised to close ('Every layer number written in prose is checked against _deps.LAYERS or not written') is still open one wording over. R2 widened the regex to the shapes the finding listed. But present-tense mentions in the 'at LN' / 'is at layer N' / '(now LN' / 'sits at layer N' wordings are not read, and many are the same off-by-one. Examples: '`_refs` is at layer 1' (LAYERS index 2), '`_manifest_ado` at L2 grades the config' (3), '`_help` (now L2)' (3, while _deps.py:214 says L3 and passes), '`_panel_state` sits at layer 5' (6). A read-only probe that widened `_NAMED_LAYER_MENTION` to those connectives over `_real_source_files`/`_prose_blocks` matched dozens of disagreements with LAYERS. A few are history ('sat at', 'came down to'); most are present tense. This is a second round on one class, so enumerating more wordings will not close it.\nResolution: Grade by invariant, not by wording: for every prose block, any `L<n>` / `layer <n>` within the same sentence as a backticked LAYERS name is checked, with an explicit history exemption ('sat at', 'moved', 'came down', 'used to'). Or delete the numbers where the layer is not the argument, as the R2 resolution asked. Add an lmd case and a prove-gates row for the 'at LN' shape.\n\n(P123-R12, low) layer_mention_drift's docstring still says it 'reads the three shapes it can read reliably' after P123.54 widened `_NAMED_LAYER_MENTION` to the qualified, comma and unclosed forms. The comment above the regex was updated and the function's docstring was not.\nResolution: Drop the count ('reads the shapes `_NAMED_LAYER_MENTION` and `_OWN_LAYER_MENTION` name').\n\n RECURRING CLASS (second round), so the INVARIANT, not more wordings: `_deps.py --render` prints every module's layer, and CLAUDE.md's rule is not to write a number something already prints. Replace layer_mention_drift's shape-list with a lint that refuses ANY layer numeral in comments and docstrings - `layer N`, `L<N>` beside a layer word or a module name, `at LN`, `(now LN`, `sits at layer N` - across scripts/ and hooks/, with LAYERS itself and the render as the only places numbers live; delete every existing numeral (keep the module names and the reasoning, drop the number). Also (R12) its docstring no longer claims a fixed set of shapes. prove-gates rows red both ways. Faults: P123-R11, P123-R12.",
       "files": [
         "plugins/audit/scripts/_deps.py",
@@ -5141,7 +5156,13 @@
         "plugins/audit/scripts/usage/usage_ledger.py",
         "plugins/audit/scripts/_deps.py",
         "plugins/audit/scripts/_output.py",
-        "plugins/audit/scripts/panel/_panel_paths.py"
+        "plugins/audit/scripts/panel/_panel_paths.py",
+        "plugins/audit/scripts/manifest/ado-connect.py",
+        "plugins/audit/scripts/panel/_panel_ui.py",
+        "plugins/audit/scripts/report/_report_ui.py",
+        "plugins/audit/scripts/report/_report_usage.py",
+        "tools/gate-parity.py",
+        "docs/screenshots"
       ],
       "tests": {
         "mode": "tdd",
@@ -5166,14 +5187,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T07:58:49Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -5185,7 +5206,13 @@
       "fixes": [
         "P123-R11",
         "P123-R12"
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T08:58:57Z.9fbce2",
+        "status": "passed",
+        "at": "2026-10-12T08:58:57Z"
+      }
     },
     {
       "id": "P123.66-64p",

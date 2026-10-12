@@ -22,7 +22,7 @@ WHY THE GATE VERDICT IS AN ARGUMENT AND NOT A CALL. The verdict at the top of th
 report is the CI gate's own word. This reason used to be a layer one — the gate
 was reached through `_loader` as an entry point, so calling it from here would
 have been a helper reaching UP — and that has not been true since the gate's
-conditions came down to `_status_facts` at layer 2, which this module already
+conditions came down to `_status_facts`, which this module already
 imports for one predicate. What is left is the reason that was always the
 stronger half: a renderer that computed the verdict out of the same facts would
 be a SECOND opinion beside the command's, free to disagree with the word a reader
@@ -76,7 +76,7 @@ import _report_ui    # noqa: E402  (CSS/SCRIPT, off disk as real files under ui/
 import _report_html  # noqa: E402  (HTML fragment builders: escaping, chips, cells, filter panel)
 import _report_usage  # noqa: E402  (the Usage section: ledger load, charts, markdown twin)
 import _report_md    # noqa: E402  (the Markdown twin this page embeds base64)
-import _status_facts  # noqa: E402  (layer 2: what `parked` means, decided once)
+import _status_facts  # noqa: E402  (what `parked` means, decided once)
 
 
 # --- module aliases (CSS/SCRIPT, fragment + usage re-exports) -------------------

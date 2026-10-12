@@ -37,7 +37,7 @@ The result is cached in a module global — the assets are read once per process
 the same "read once, keep serving from memory" contract UI_HTML always had.
 
 The read itself is not ours. `ui/` sits in front of this module and of
-`_report_ui.py` alike, and the two are layer-2 peers that may not import each
+`_report_ui.py` alike, and the two are layer-mates that may not import each
 other, so the directory, the `newline=""` open, the CR check and the
 "exists and decodes" probe all live one layer down in `_ui_theme` — see
 `read_asset` there for why the newline flag is load-bearing. What stays here

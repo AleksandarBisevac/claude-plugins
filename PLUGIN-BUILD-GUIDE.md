@@ -1536,19 +1536,17 @@ out from under the code it documents. The hooks rule has **no allow-list** — i
 this module's first run found it (`hooks/_config.py` reached `_manifest_io` by putting `scripts/`
 at the front of `sys.path`), and it was fixed rather than kept, so `hooks_rule_drift()` now fails
 the build on any document that states the rule and then carves an exception out of it.
-`layer_doc_drift()` closes the third leak in that seam: a module may open its docstring
-with a layer, and now it has to be the layer `LAYERS` gives it. Two documents said `Layer 5` for
-a module the table had already moved off, both were true when written, and nothing compared
-either to the table — a stale ARGUMENT costs the next reader more than no argument does. Only a
-module's claim about ITSELF is judged, anchored at the start of a docstring line, so that
-check leaves running prose alone; the allow row in `tools/prove-gates.py` is what holds that
-line, because a pattern widened to catch the prose convicts accurate sentences.
-`layer_mention_drift()` is the other half: running prose is where a number rotted when one
-module gained a layer of its own and everything above it moved up, so a layer written beside a
-module name (`` `name` (layer N) ``, `` `name` (LN) ``, or `this file (LN)`) in a docstring or comment
-is graded against `LAYERS`. The invariant is that a layer number in prose is checked or not
-written, and the repair is to delete the number unless the layer is the sentence's argument.
-Other wordings are not read, so those stay author-enforced.
+`layer_mention_drift()` closes the third leak in that seam: a layer NUMBER lives in `LAYERS`
+and in what `python3 plugins/audit/scripts/_deps.py --render` prints, and nowhere else. Prose
+is where the copies rotted — one module given a layer of its own moved everything above it up
+by one, and every sentence that had written a number went stale at once. Grading those copies
+against the table was tried, one wording at a time, and lost to the next wording each round;
+so the rule now refuses the numeral itself, right or wrong, in every docstring and comment under
+`scripts/` and `hooks/`: the word spelling anywhere, the `L<N>` spelling where the prose is
+talking about layers, and a number alone in parentheses after a module `LAYERS` holds. A line
+anchor in a URL, a path, a cache or spec level stays legal, and both directions are rows in
+`tools/prove-gates.py`. The repair keeps the module's name and the reasoning and drops the
+number — "one layer above `_x`" says what the number said and stays true when the table moves.
 `doc_prose_numbers()` runs `_output`'s prose-number rule over every `.md` this repo keeps — the
 derived set described under `_output.py` above, product documents included — and it **delegates**
 to `_output._prose_number_claim` rather than restating the shapes, because a second copy of the

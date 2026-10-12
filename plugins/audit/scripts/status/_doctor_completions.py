@@ -15,7 +15,7 @@ at most, and the era boundary is decided by the WATERMARK with no config knob:
 the first receipt's ts. Zero receipts means an older plugin wrote this history,
 and that is one ok line rather than a nag.
 
-Layer 5, for the same reason `_doctor_trail` is: it runtime-loads `usage_ledger`
+It shares `_doctor_trail`'s layer, for the same reason: it runtime-loads `usage_ledger`
 for the coverage arm. `_journal_io` is imported, not loaded.
 
 This module carries no `--selftest` of its own; its cases live in
@@ -51,8 +51,8 @@ _output.install_path()
 
 import _doctor_report as _base  # noqa: E402  (Report, the loader, the constants)
 import _evidence_io  # noqa: E402  (the ledger this correlates the plan against)
-import _manifest_vocab  # noqa: E402  (the one sentence for a failed ledger read, at layer 1)
-import _journal_io  # noqa: E402  (read/verify the audit trail, at layer 1)
+import _manifest_vocab  # noqa: E402  (the one sentence for a failed ledger read)
+import _journal_io  # noqa: E402  (read/verify the audit trail)
 import _commit_trail  # noqa: E402  (is a recorded SHA still reachable?)
 
 # A thin module-level alias, not a copy: the bodies below were moved out of
@@ -291,7 +291,7 @@ def check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
     # common configuration is not a check.
     _check_commit_trail(rep, manifest, git_root)
     try:
-        jr = _journal_io  # layer 1: imported, not loaded (KNOWN_LAYER_DEBT)
+        jr = _journal_io  # imported, not loaded (KNOWN_LAYER_DEBT)
         rows = jr.read_all(project)
     except Exception as exc:
         rep.warn("completions", "could not check: %s" % exc)

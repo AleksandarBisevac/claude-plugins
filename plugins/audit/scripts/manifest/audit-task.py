@@ -359,28 +359,28 @@ import _claude_home  # noqa: E402  (a usage error names this copy and a newer in
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _manifest_vocab as _vocab  # noqa: E402  (_strip_line_suffix: one reading of a
 #                                            `files` entry's `:line-range` suffix -- a
-#                                            downward edge, L7 -> L1, the same reading
+#                                            downward edge, the same reading
 #                                            `commit-task-work.py` already takes before
 #                                            joining a declared entry onto a filesystem
 #                                            path)
 import _areas                 # noqa: E402  (areas_of: the one area resolution every surface shares)
 import _manifest_rules as _rules  # noqa: E402  (tests_add_path: the ONE answer to
 #                                            "does this `tests.add` entry name a file".
-#                                            A downward edge, L7 -> L3, and the parse
+#                                            A downward edge, and the parse
 #                                            lives there because the rule that REQUIRES
 #                                            the shape grades the same field this verb
 #                                            writes - two parses would be two opinions
 #                                            about what `commit_scope` then judges)
 import _manifest_phases as _phases  # noqa: E402  (gate_entry_paths: the same filename
 #                                            bound asked of a gate entry instead of a
-#                                            `tests.add` one. A downward edge, L7 -> L2,
+#                                            `tests.add` one. A downward edge,
 #                                            kept separate from the `_rules` edge above
 #                                            because `run-test-gate.py`'s `--own` reads
 #                                            the identical function and a second copy
 #                                            here is exactly what an entry point cannot
 #                                            import out of the other)
 import _commit_trail          # noqa: E402  (is a SHA still in this clone? A downward
-#                                            edge, L7 -> L1, and the ONE answer the
+#                                            edge, and the ONE answer the
 #                                            doctor and `repair-commits.py` already
 #                                            share -- `done` grades the SHA it is
 #                                            handed before writing it, and a third
@@ -393,7 +393,7 @@ import _journal_io            # noqa: E402  (read_all: the phase.add rows a side
 import _machine_paths         # noqa: E402  (executed_value_refusal: the gate flags' door)
 import _locks                 # noqa: E402  (lock_dir, judge, held_by_us: whether a phase
                               # claim's holder still holds a live run, read the way
-                              # `audit-lock.py status` reads it - a downward edge, L7 -> L1)
+                              # `audit-lock.py status` reads it - a downward edge)
 import _id_shape              # noqa: E402  (the one answer to which id comes next, and the
                               # branch suffix that keeps two branches from minting it twice)
 import _evidence_io           # noqa: E402  (read_rows: the runs a move leaves keyed
@@ -423,7 +423,7 @@ import _proposals             # noqa: E402  (the TAKEN SET `/audit:propose mater
 #                                            would be a second answer about which ids are
 #                                            taken; the rules differ on purpose)
 import _status_facts          # noqa: E402  (unmet_refs: the ONE answer to "what is this
-#                                            waiting on". A downward edge, L7 -> L2, with
+#                                            waiting on". A downward edge, with
 #                                            precedent at audit-status.py, _invariants.py
 #                                            and _report_page.py -- see `_waiting_on` for
 #                                            what the second copy here got wrong)
@@ -443,7 +443,7 @@ import _scoped_commit         # noqa: E402  (status_paths, the start snapshot an
 #                                            attribution a task commit is held to, so
 #                                            `start` records and `done` reads the same)
 import _worktrees             # noqa: E402  (which worktree the caller is standing in,
-#                                            and its branch -- a downward edge, L7 -> L1,
+#                                            and its branch -- a downward edge,
 #                                            the same list `close-phase.py` and
 #                                            `manage-worktrees.py` already read rather than
 #                                            a second `git worktree list` walk of this

@@ -4,7 +4,7 @@ What the plan SAYS: the phase/task composition rows, the bug rows, the ADO
 honesty banner and the areas registry -- everything `/api/state` and
 `/api/areas` render out of the manifest itself.
 
-Split out of `_panel_state.py` (U3.1). Layer 4, above `_panel_paths` (3).
+Split out of `_panel_state.py` (U3.1). It sits one layer above `_panel_paths`.
 
 Stdlib only, Python 3.8 compatible.
 """
@@ -37,15 +37,15 @@ _output.install_path()
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _areas                 # noqa: E402  (meta.areas registry + shared resolution)
 import _branch                # noqa: E402  (the naming convention, one expansion path)
-import _worktrees             # noqa: E402  (git's worktree list + the containment answer, at layer 1)
+import _worktrees             # noqa: E402  (git's worktree list + the containment answer)
 import _priority              # noqa: E402  (what a valid tier is, and who holds tier 1)
 import _ado_parent            # noqa: E402  (where ONE item hangs, and the marker for 'no declaration')
 import _ado_tracked           # noqa: E402  (whether ONE item belongs on the board at all - three-valued)
-import _ado_drift as _drift   # noqa: E402  (link_inventory: the ONE walk over ado links, at layer 2)
-import _evidence_io as _ev    # noqa: E402  (the pointer's key and the ONE ledger read, at layer 2)
-import _manifest_vocab         # noqa: E402  (the FULL_STATUS words, at layer 1)
-import _status_facts as _facts  # noqa: E402  (evidence_gap: whether an absence is EXCUSED, at layer 2)
-import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
+import _ado_drift as _drift   # noqa: E402  (link_inventory: the ONE walk over ado links)
+import _evidence_io as _ev    # noqa: E402  (the pointer's key and the ONE ledger read)
+import _manifest_vocab         # noqa: E402  (the FULL_STATUS words)
+import _status_facts as _facts  # noqa: E402  (evidence_gap: whether an absence is EXCUSED)
+import _panel_paths as _paths  # noqa: E402  (the shared base)
 
 # Carried by module-level alias so every body below reads exactly as it did in
 # `_panel_state`, where these were siblings rather than imports.
@@ -1014,8 +1014,8 @@ def _composition_view(manifest, boundary=None, full_run_rows=None,
     """The plan as the Composition and Overview tabs read it.
 
     `boundary` is `_evidence_io`'s block, or None when nobody computed one. It
-    ARRIVES AS AN ARGUMENT for `_panel_state`'s reason: this module sits at layer
-    4 and `_evidence_io` at 2, so reading it here would be affordable but wrong -
+    ARRIVES AS AN ARGUMENT for `_panel_state`'s reason: this module sits above
+    `_evidence_io`, so reading it here would be affordable but wrong -
     the state builder computes ONE block and hands the same object to the rollup
     and to this walk, so the panel's badges and its gate verdict cannot rest on
     two reads of a ledger a parallel run may have grown between.

@@ -4,8 +4,8 @@ A timer over the analytics passes, and the fixture it times them on.
 
 This is the sixth piece of `_usage_analytics.py` (U3.2) and the only one that is
 not a `rows -> dict` pass, which is why it does not carry the name: it CALLS the
-four modules the analytics were cut into, so it sits one layer above them, at
-layer 3 beside `usage_ledger`. Nothing imports it - `render-report.py` reaches
+four modules the analytics were cut into, so it sits one layer above them,
+beside `usage_ledger`. Nothing imports it - `render-report.py` reaches
 `_time_best` through `_loader` so that the two benches in this tree share one
 definition of best-of-N, and `--bench` is run by a human.
 

@@ -31,7 +31,7 @@ graded a WARNING and never a FINDING, because a fresh install that has asked for
 nothing must not fail a build for having no history yet - and one occurrence is
 never printed as a pattern.
 
-Layer 5, and the ledger is what sets the floor: `check_ledger` runtime-loads
+The ledger is what sets this module's floor: `check_ledger` runtime-loads
 `usage_ledger`, so this cannot sit below it. `_journal_io` and
 `_evidence_io` are imported rather than loaded - the trail's library
 half came out from under `audit-journal.py` for exactly that reason, and the
@@ -88,12 +88,12 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _doctor_report as _base  # noqa: E402  (Report, the loader, the constants)
-import _journal_io  # noqa: E402  (read/verify the audit trail, at layer 1)
-import _evidence_io  # noqa: E402  (the ledger tally, at layer 2)
-import _fmt  # noqa: E402  (human_duration, at layer 1)
-import _manifest_io  # noqa: E402  (signoff_recorded, declared_gate_entries, layer 1)
+import _journal_io  # noqa: E402  (read/verify the audit trail)
+import _evidence_io  # noqa: E402  (the ledger tally)
+import _fmt  # noqa: E402  (human_duration)
+import _manifest_io  # noqa: E402  (signoff_recorded, declared_gate_entries)
 import _manifest_vocab  # noqa: E402  (the FULL_STATUS words, one vocabulary)
-import _worktrees  # noqa: E402  (_git, the one git runner at layer 1)
+import _worktrees  # noqa: E402  (_git, the one git runner)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `audit-doctor.py` unchanged, and an alias keeps them reading the same names
@@ -944,7 +944,7 @@ def check_journal(rep, project, cfg, cfg_mod, git_root):
         # journal is not this run's business.
         has_rows = False
         try:
-            jr = _journal_io  # layer 1: imported, not loaded (KNOWN_LAYER_DEBT)
+            jr = _journal_io  # imported, not loaded (KNOWN_LAYER_DEBT)
             res = jr.verify(project)
             has_rows = bool(res.get("exists") and res.get("rows"))
         except Exception:
@@ -960,7 +960,7 @@ def check_journal(rep, project, cfg, cfg_mod, git_root):
                    "audit trail disabled in config (journal.enabled false)")
         return
     try:
-        jr = _journal_io  # layer 1: imported, not loaded (KNOWN_LAYER_DEBT)
+        jr = _journal_io  # imported, not loaded (KNOWN_LAYER_DEBT)
         res = jr.verify(project)
     except Exception as exc:
         rep.warn("journal", "could not read the journal: %s" % exc,

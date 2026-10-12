@@ -7,7 +7,7 @@ Split out of `audit-doctor.py` (1,456 lines) along with its six check modules.
 This is the piece all six sit on, and it is deliberately the only one that
 holds no check at all: `Report` knows nothing about what is being diagnosed
 and `_load` knows nothing about what is being loaded, which is why they can sit
-at layer 2 under checks that reach as high as layer 5.
+low, under checks that reach several layers higher.
 
 `Report` is a class, and that is one of the handful in this tree with a reason
 you can say out loud: it is an accumulator with an invariant (every row carries

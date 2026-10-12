@@ -89,24 +89,24 @@ def _panel_cfg(project):
     except Exception:
         return {}
 import _loader                # noqa: E402  (the one way scripts/ loads a sibling script as a library)
-import _status_facts          # noqa: E402  (the gate's conditions + verdict, at layer 2)
+import _status_facts          # noqa: E402  (the gate's conditions + verdict)
 # The manifest rules, imported straight. Both call sites below used to spell
 # `_load_status_lib()._load_validator()` — reaching the validator THROUGH the
 # status command, because that was the only module that already knew how to load
-# a hyphenated entry point. Both of those are plain layer-2 modules now, so the
+# a hyphenated entry point. Both of those are plain low modules now, so the
 # hop is gone along with the two `KNOWN_LAYER_DEBT` edges that paid for it.
-import _manifest_rules        # noqa: E402  (the manifest rules, at layer 2)
+import _manifest_rules        # noqa: E402  (the manifest rules)
 import _report_ui             # noqa: E402  (CSS/SCRIPT, off disk as real files under ui/)
 import _report_html           # noqa: E402  (HTML fragment builders: escaping, chips, cells, filter panel)
 import _report_usage          # noqa: E402  (the Usage section: ledger load, charts, markdown twin)
 import _evidence_view         # noqa: E402  (the test-execution record: the only read of it)
-import _evidence_io           # noqa: E402  (WHEN this plan could first have recorded, at layer 2)
+import _evidence_io           # noqa: E402  (WHEN this plan could first have recorded)
 import _invariants            # noqa: E402  (git_root_for: where the third place asks ancestry)
-import _manifest_vocab        # noqa: E402  (FULL_STATUS_UNKNOWN and the one ledger-read sentence, at layer 1)
+import _manifest_vocab        # noqa: E402  (FULL_STATUS_UNKNOWN and the one ledger-read sentence)
 import _report_md             # noqa: E402  (the Markdown twin)
 import _report_page           # noqa: E402  (the whole document: vocab, table, render_html)
 import _areas                 # noqa: E402  (plan_skill_refs: which names this plan uses)
-import _live_copy             # noqa: E402  (which copy holds a phase in flight live, at layer 6)
+import _live_copy             # noqa: E402  (which copy holds a phase in flight live)
 
 
 # --- module aliases (CSS/SCRIPT, page + fragment + usage re-exports) ------------
@@ -569,7 +569,7 @@ def _bench_fixture(out_dir, phases, tasks):
     that nothing else validates. They are run as COMMANDS, the same way ci.yml and
     tools/capture-screenshots.mjs build the demo, for two reasons:
 
-      * both are entry points at layer 7, the same layer as this file, so loading
+      * both are entry points, the same layer as this file, so loading
         one through `_loader` would add a peer edge to `_deps.KNOWN_LAYER_DEBT` —
         a list whose whole contract is that it may only ever SHRINK. A change that
         adds measurement must not enlarge the module graph;
@@ -672,7 +672,7 @@ def _bench(scales=None, repeats=None):
     # rather than by `import` for a reason worth stating: a static import would
     # change `_deps.render()`'s module map, which is byte-pinned to a fence in
     # PLUGIN-BUILD-GUIDE.md, and a measurement-only change must not rewrite the
-    # architecture guide. The runtime edge is L7 -> L3, strictly downward, so the
+    # architecture guide. The runtime edge is strictly downward, so the
     # layer rule is satisfied either way.
     analytics = _loader.load_script("_usage_bench.py",
                                     modname="usage_analytics_bench")

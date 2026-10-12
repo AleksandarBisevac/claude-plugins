@@ -184,7 +184,7 @@ def _phase_full_row(raw, own_view):
 
     `raw` is the caller's own per-phase answer (`answer`/`basis`/`runId`, plus
     `head`/`mergedHead`/`phaseId`/`testGateBasis` - render-report.py computes it
-    at layer 7, the same way it computes `boundary`, and this module never reads
+    above this module, the same way it computes `boundary`, and this module never reads
     git or a second copy of the ledger to get there).
 
     THE SUITE COUNTS AND THE SIGN-OFF STAMP COME FROM `own_view`'S OWN ROW,

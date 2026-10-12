@@ -90,8 +90,8 @@ _output.install_path()
 import _areas                                    # noqa: E402  (the areas rule)
 import _policy                                   # noqa: E402  (the policy verdicts)
 import _loader                                   # noqa: E402  (the one path-importlib loader)
-import _journal_io                               # noqa: E402  (the journal row shape, at layer 1)
-import _manifest_vocab                           # noqa: E402  (the KNOWN_* sets schema_vocab_drift checks, at layer 1)
+import _journal_io                               # noqa: E402  (the journal row shape)
+import _manifest_vocab                           # noqa: E402  (the KNOWN_* sets schema_vocab_drift checks)
 
 # The schemas ARE the field documentation; these are the only two there are.
 SCHEMAS = {
@@ -335,10 +335,9 @@ def _config_mod():
 def _journal_mod():
     """`_journal_io` — the row shape this topic shows the reader.
 
-    A plain import at layer 1 now, not a `_loader.load_script("audit-journal.py")`:
-    this module is layer 3 and that was a layer 7 entry point, one of the edges
-    `_deps.KNOWN_LAYER_DEBT` recorded — a help topic reaching four layers UP to
-    normalise one example row."""
+    A plain downward import now, not a `_loader.load_script("audit-journal.py")`:
+    that was an entry point, one of the edges `_deps.KNOWN_LAYER_DEBT` recorded —
+    a help topic reaching several layers UP to normalise one example row."""
     return _journal_io
 
 
@@ -913,9 +912,9 @@ def schema_vocab_drift(root=None):
     and print the figures, because "reuse the other walk" is the obvious suggestion
     and acting on it drops a whole level in silence.
 
-    AND WHY IT LIVES HERE AND NOT BESIDE THE SETS. The vocabulary is at layer 1;
-    `fields()` is in this module at layer 2 and `gen-demo-manifest` is an entry point
-    above it. Importing upward is what `_deps.layer_violations()` fails, and writing
+    AND WHY IT LIVES HERE AND NOT BESIDE THE SETS. The vocabulary sits a layer
+    below `fields()`, which is in this module, and `gen-demo-manifest` is an entry
+    point above it. Importing upward is what `_deps.layer_violations()` fails, and writing
     another walk down there would move the duplication rather than remove it.
     `_manifest_vocab` keeps the two claims it is the right owner of — `SCHEMA_ANCHORS`
     (where each set lives in the document) and `OFF_SCHEMA` (which keys are wider
@@ -1015,7 +1014,7 @@ def schema_subset_drift(root=None):
     has stopped being a subset of the schema level it is drawn from.
 
     Here rather than beside the sets for the reason `schema_vocab_drift()` is: the
-    vocabulary is at layer 1 and `fields()` is at layer 2. `_manifest_vocab` keeps
+    vocabulary sits a layer below `fields()`. `_manifest_vocab` keeps
     the claim it owns — `SUBSET_ANCHORS`, which level each subset is drawn from —
     and this is the comparison.
 
@@ -1199,7 +1198,7 @@ def schema_inline_drift(root=None):
     `schema/audit-plan.schema.json`.
 
     Here rather than beside the anchors for the reason `schema_vocab_drift()` is: the
-    vocabulary is at layer 1 and `fields()` is at layer 2. `_manifest_vocab` keeps the
+    vocabulary sits a layer below `fields()`. `_manifest_vocab` keeps the
     claim it owns — `INLINE_ANCHORS`, which levels are checked this way — and this is
     the comparison.
 
@@ -1266,7 +1265,7 @@ def schema_inline_drift(root=None):
 # without starting a process.
 #
 # AND WHY IT LIVES HERE RATHER THAN BESIDE `command_flag_drift` IN `_refs`. That
-# module is layer 1, and so is `_loader` — the one thing that can load a script as
+# module is a layer-mate of `_loader` — the one thing that can load a script as
 # a library — so `_refs` may not import it. `schema_vocab_drift` above is at this
 # layer for exactly the same reason: the walk that can SEE the thing does, a layer
 # up from the thing itself.

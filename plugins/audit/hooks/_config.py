@@ -5,7 +5,7 @@ Shared config loader for the audit plugin's hooks.
 Every hook reads an OPTIONAL per-repo config file from the *consuming* repo at
 `${CLAUDE_PROJECT_DIR}/.claude/audit.config.json`. When the file is absent or
 malformed, safe generic defaults apply — so the plugin works out-of-the-box and
-each project scales it up by dropping in that one file (Layer 1 of the plugin's
+each project scales it up by dropping in that one file (the first tier of the plugin's
 extensibility model; see the plugin README "Extending" section).
 
 Design contract (matches the hooks): NOTHING here ever raises. On any error we
@@ -1561,7 +1561,7 @@ def _load_journal_lib():
     if not _JOURNAL_LIB["tried"]:
         _JOURNAL_LIB["tried"] = True
         # `_journal_io.py`, not `audit-journal.py`: the one function this hook
-        # asks for (`journal_dir`) moved down to layer 1 when two modules that
+        # asks for (`journal_dir`) moved down the graph when two modules that
         # are not commands needed the trail. This runs on every tool call, so
         # the argument parser and four subcommand bodies were cost with no
         # caller here — the same move `_load_lock_lib` makes above.
@@ -3141,7 +3141,7 @@ def _load_lock_lib():
     that as "no verdict" and allows.
 
     `_locks.py`, not `audit-lock.py`: the three functions this hook asks for
-    (`lock_dir`, `read_lock`, `judge`) moved down to layer 1 when three scripts
+    (`lock_dir`, `read_lock`, `judge`) moved down the graph when three scripts
     that are not commands needed them, and this hook wants the module that OWNS
     them rather than the command built on top. It runs on every tool call, so the
     argparse-and-subcommands half of `audit-lock.py` was cost with no caller

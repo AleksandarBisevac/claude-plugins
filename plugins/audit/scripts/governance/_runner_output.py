@@ -9,10 +9,10 @@ the same questions about a run in a throwaway tree, and an entry point may not
 import another, so the readers moved here, where both can reach them, rather than
 being written a second time - two spellings of one runner's summary drift the
 first time either learns a new reporter. It reaches nothing but `_output`, which
-is what puts it at layer 1.
+is what puts it at the bottom of the graph.
 
 WHAT STAYED BEHIND. `failing_suites` and its path filters read `_evidence_io`'s
-limits, and that module sits above layer 1, so they are still the gate's.
+limits, and that module sits above this one, so they are still the gate's.
 
 AND WHAT `red` READS. `red` asks a narrower question than the gate - did a NAMED
 case fail an ASSERTION - so its tally and case readers (`TALLY_READERS`,

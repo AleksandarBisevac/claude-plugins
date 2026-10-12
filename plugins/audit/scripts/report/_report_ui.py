@@ -28,7 +28,7 @@ that wrap a block live in the Python that assembles it, never in the asset):
 once, keep serving from memory" contract `_CSS`/`_SCRIPT` always had.
 
 The read itself is not ours. `ui/` sits in front of this module and of
-`_panel_ui.py` alike, and the two are layer-2 peers that may not import each
+`_panel_ui.py` alike, and the two are layer-mates that may not import each
 other, so the directory, the `newline=""` open, the CR check and the
 "exists and decodes" probe all live one layer down in `_ui_theme` — see
 `read_asset` there for why the newline flag is load-bearing. What stays here

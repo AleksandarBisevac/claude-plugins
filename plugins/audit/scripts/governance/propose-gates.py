@@ -65,8 +65,8 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
-import _evidence_io as _evio  # noqa: E402  (layer 2: the ledger, and the tally)
-import _manifest_vocab  # noqa: E402  (layer 1: the sentences for a ledger that could not be found or read)
+import _evidence_io as _evio  # noqa: E402  (the ledger, and the tally)
+import _manifest_vocab  # noqa: E402  (the sentences for a ledger that could not be found or read)
 
 E_OK = 0
 E_USAGE = 2

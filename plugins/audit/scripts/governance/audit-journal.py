@@ -43,7 +43,7 @@ hook that writes most rows is handed a different id from the one the session
 reads from Bash -- so the mapping goes in the rows and this prints it.
 
 The trail itself -- the row shape, the hash chain, where a journal lives, and what
-`verify` actually checks -- is `_journal_io.py` at layer 1, imported below. It used
+`verify` actually checks -- is `_journal_io.py`, imported below. It used
 to be this file's body, and moving it was not tidying: `_help` and
 `audit-doctor` both needed it and both reached this entry point through
 `_loader`, two of the seventeen edges `_deps.KNOWN_LAYER_DEBT` recorded, and

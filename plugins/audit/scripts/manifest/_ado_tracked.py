@@ -50,17 +50,17 @@ is also the feature: the whole point is telling apart two states that used to
 print the same, and a bare `false` on a status line is the state we started
 from one sentence later.
 
-WHY LAYER 1, AND WHY EVERYTHING ARRIVES AS AN ARGUMENT. `_ado_parent` is this
+WHY THE BOTTOM LAYER, AND WHY EVERYTHING ARRIVES AS AN ARGUMENT. `_ado_parent` is this
 module's template throughout and the argument is its argument: the push plan,
 the status lens, the validator's neighbours and `resolve-ado-tracked.py` all
-need the SAME answer, and two of those are layer-2 mates that cannot import
+need the SAME answer, and two of those are layer-mates that cannot import
 each other. A second expression of "does this belong on the board" would BE a
 second policy. So this reaches nothing but `_output`.
 
 THAT IS ALSO WHY IT DOES NOT OPEN THE MANIFEST, and the alternative was weighed
 rather than waved off: loading the file here means importing `_manifest_io`,
 which is a LAYER-MATE - the sideways edge `layer_violations()` refuses - and
-would push this module to layer 2, where half its consumers could not reach it.
+would push this module up a layer, where half its consumers could not reach it.
 `resolve-ado-tracked.py` calls `_manifest_io.load_manifest()` and hands the
 assembled dict down.
 

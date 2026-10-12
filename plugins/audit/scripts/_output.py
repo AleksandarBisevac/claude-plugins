@@ -110,8 +110,8 @@ def posix_rel(path, start):
     against a manifest do, because the manifest holds this spelling.
 
     IT LIVES IN THE ANCHOR BECAUSE THE CALLERS ARE IN EVERY LAYER. It began in
-    `_manifest_io`, which is layer 1 - and `_ui_theme`, which publishes a theme
-    path, is layer 1 too, so it could not reach it without a sideways import. A
+    `_manifest_io` - and `_ui_theme`, which publishes a theme path, is that
+    module's layer-mate, so it could not reach it without a sideways import. A
     helper the layering forbids half its callers from using is a helper half the
     tree will hand-roll instead, which is the duplication this exists to end.
 
@@ -574,8 +574,8 @@ def lint_py_files(directory):
 # a rule that is precisely about a document publishing a fetch.
 #
 # IT LIVES HERE, AT THE ANCHOR, and that is the only thing about it that is new.
-# `_refs` is at layer 1; the prose-number scan below is in this module at layer 0
-# and needs the same answer, so a copy at layer 0 would be exactly the
+# `_refs` sits above the anchor; the prose-number scan below is in this module
+# and needs the same answer, so a copy here would be exactly the
 # two-prune-lists defect one layer down. `_refs` keeps the names and delegates.
 #
 # `.claude/worktrees/` is the entry that makes the pruning necessary rather than
@@ -724,7 +724,7 @@ def kept_files(root, patterns, exts, drop=None):
 # project path) is not.
 #
 # IT LIVES HERE, AT THE ANCHOR, for the same reason the kept-files walk above does:
-# two readers at two layers. `_refs` at layer 1 holds the rule, and the capture asks
+# two readers at two layers. `_refs`, above the anchor, holds the rule, and the capture asks
 # for the same answer over a pipe. A copy in either would be the second
 # implementation of "which files" that this shared walk exists to remove.
 #

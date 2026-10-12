@@ -4,8 +4,8 @@ The capability policy as the switchboard shows it: the block, what it RESOLVES
 TO for what is installed, which rules are inert, which areas are live, and
 whether anything is enforcing any of it.
 
-Split out of `_panel_state.py` (U3.1). Layer 4: `_panel_paths` and
-`_panel_discovery` at 3.
+Split out of `_panel_state.py` (U3.1). It sits one layer above
+`_panel_paths` and `_panel_discovery`.
 
 Stdlib only, Python 3.8 compatible.
 """
@@ -39,7 +39,7 @@ import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR 
 import _areas                 # noqa: E402  (meta.areas registry + shared resolution)
 import _policy                # noqa: E402  (the capability policy + its resolution)
 import _panel_discovery       # noqa: E402  (skills/agents/MCP registry scan)
-import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
+import _panel_paths as _paths  # noqa: E402  (the shared base)
 import _config_rules          # noqa: E402  (portability_mode: the tier, resolved once)
 
 # Carried by module-level alias so every body below reads exactly as it did in

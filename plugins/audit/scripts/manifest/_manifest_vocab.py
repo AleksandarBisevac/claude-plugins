@@ -13,11 +13,11 @@ because the list was wrong in both halves when somebody finally ran the graph:
     python3 -c "import sys;sys.path.insert(0,'plugins/audit/scripts');import _deps;\
     e,_=_deps.import_graph();print(sorted(a for a,b in e if b=='_manifest_vocab'))"
 
-LAYER 1, AND THAT IS WHY `TERMINAL` IS NOT HERE. This module reaches no sibling
+THE FLOOR, AND THAT IS WHY `TERMINAL` IS NOT HERE. This module reaches no sibling
 but `_output`, and nothing else beyond the standard library, so it can sit at
 the floor where every consumer can import it. `TERMINAL` is
-`_manifest_io`'s (layer 1 as well), so holding it here would put this module at
-layer 2 and push `_manifest_rules` past the layer its own consumers leave free.
+`_manifest_io`'s (a layer-mate), so holding it here would push this module up a
+layer and push `_manifest_rules` past the layer its own consumers leave free.
 It stays re-exported from `_manifest_rules`, where the phase walk reads it.
 
 Unknown keys are WARNINGS, never findings: `additionalProperties` stays
@@ -128,8 +128,8 @@ ADO_ORIGIN = (ADO_ORIGIN_CREATED, ADO_ORIGIN_IMPORTED)
 # phase table, the panel's Overview select, and `/audit:status --view`.
 #
 # IT LIVES HERE, BESIDE THE TUPLE IT FOLDS, and that is a layer fact rather than a
-# taste one. It was `_report_html`'s, which is layer 2 — and `_status_facts` is layer
-# 2 as well, so a status renderer could not have imported it (same layer is not
+# taste one. It was `_report_html`'s — and `_status_facts` is that module's
+# layer-mate, so a status renderer could not have imported it (same layer is not
 # downward) and would have had to keep a second copy. A vocabulary copied is as many
 # vocabularies as there are copies, all of which agree until one of them learns a
 # word. `overview.js`'s `segOf` is the JavaScript twin and is pinned by name in
@@ -753,8 +753,8 @@ KNOWN_PROPOSAL = {"id", "name", "status", "origin", "scope", "benefit",
 #
 #      grep -rln '[$]defs' plugins/audit/scripts/    # both walks, and this comment
 #
-#    LAYER, WHICH SETTLES WHERE THE COMPARISON GOES. `_help` is at layer 2 and
-#    `gen-demo-manifest` is an entry point above it. This module is at layer 1
+#    LAYER, WHICH SETTLES WHERE THE COMPARISON GOES. `_help` sits above this module and
+#    `gen-demo-manifest` is an entry point above it. This module is at the floor
 #    because its importers ALL sit above it - the graph command in the docstring
 #    prints them, and `_deps._layer_of` their layers - so reaching either is an
 #    upward edge
@@ -789,9 +789,9 @@ KNOWN_PROPOSAL = {"id", "name", "status", "origin", "scope", "benefit",
 #    THAT PREMISE IS ASSERTED, NOT STATED. `hooks/` may not import `scripts/` at all,
 #    so the exposure is what they RUNTIME-load by basename through
 #    `_config.find_script()` — `_manifest_io.py` among them — and what those in turn
-#    import. All but one of those roots sits at layer 1 beside this module, where
+#    import. All but one of those roots is a layer-mate of this module, where
 #    `_deps.layer_violations()` refuses the edge as not strictly downward; the
-#    exception is `usage_ledger.py` at layer 3, which `meter-usage.py` loads on every
+#    exception is `usage_ledger.py`, higher up, which `meter-usage.py` loads on every
 #    tool call, so an `import _manifest_vocab` there would be legal, downward and
 #    silent. `mv37` in `plugins/audit/tests/test__manifest_vocab.py` walks the real
 #    import graph out of those roots and goes red the day one of them reaches here.

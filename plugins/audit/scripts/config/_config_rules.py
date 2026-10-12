@@ -13,13 +13,13 @@ accepts; `_panel_state` and `audit-doctor` each want `validate_config`. All thre
 reached it with `_loader.load_script("validate-config.py")`, and
 `_deps.layer_violations()` counts those calls, so three of the seventeen entries
 in `KNOWN_LAYER_DEBT` were this one file being loaded as a library — one of them
-from LAYER 2, the deepest inversion in the table.
+from the lowest layer any of them sat in, the deepest inversion in the table.
 
-That deepest one is also why `_panel_settings` moved from layer 2 to layer 3 in
-the same change. These rules import `_policy` (layer 2) and therefore cannot sit
-below layer 3; a consumer AT layer 3 would still be a same-layer edge, which the
-lint counts as not-strictly-downward and is right to. Moving one module up was
-the whole cost — `_panel_settings` reaches nothing at L3 and nothing at L3
+That deepest one is also why `_panel_settings` moved up one layer in the same
+change. These rules import `_policy` and therefore sit one layer above it; a
+consumer in that same layer would still be a same-layer edge, which the lint
+counts as not-strictly-downward and is right to. Moving one module up was the
+whole cost — `_panel_settings` reaches nothing in its new layer and nothing there
 reaches it — where inserting a layer would have renumbered the table for an edge
 that did not change.
 
@@ -656,13 +656,13 @@ def _check_rule(i, rule, findings, warnings):
 # exactly the block with the most consequence.
 #
 # WHY HERE, WHEN `_help.schema_vocab_drift()` ALREADY DOES THIS FOR THE MANIFEST.
-# That comparison had to leave `_manifest_vocab` because the vocabulary sits at
-# layer 1 while the tree's only `$ref`-resolving schema walk sits at layer 2, so the
-# alternative was a second walk. Neither half applies here: this module IS the
-# config vocabulary, `_help` is its PEER at layer 2 (so neither may import the
-# other), and the config's root level is `schema["properties"]` - a dict access, not
-# a walk. Mirroring the manifest's shape would mean moving this vocabulary down into
-# a layer-1 module - renaming what the panel's Settings form, the doctor and several
+# That comparison had to leave `_manifest_vocab` because the vocabulary sits a
+# layer below the tree's only `$ref`-resolving schema walk, so the alternative was
+# a second walk. Neither half applies here: this module IS the config vocabulary,
+# `_help` is its PEER in the same layer (so neither may import the other), and the
+# config's root level is `schema["properties"]` - a dict access, not a walk.
+# Mirroring the manifest's shape would mean moving this vocabulary down into a
+# lower module - renaming what the panel's Settings form, the doctor and several
 # suites read - to save that dict access.
 _SCHEMA_REL = os.path.join("schema", "audit-config.schema.json")
 _README_REL = "README.md"

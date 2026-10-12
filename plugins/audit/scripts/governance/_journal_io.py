@@ -7,13 +7,14 @@ An append-only record of every change to the plan and the config -- dependency-f
 an adapter onto a function here.
 
 WHY THIS IS NOT `audit-journal.py` ANY MORE. Two modules that are not commands
-needed the trail: `_help` (layer 3) normalises one row to show the reader what a
+needed the trail: `_help` normalises one row to show the reader what a
 journal row looks like, and `audit-doctor` reads, verifies and lists the files.
 Both reached it through `_loader`, which `_deps.layer_violations()` counts as a
 real edge, so two of the seventeen entries in `KNOWN_LAYER_DEBT` were this file
-being loaded as a library -- one of them by a layer-3 helper reaching up four
+being loaded as a library -- one of them by a helper reaching up several
 layers. `hooks/_config.py` loaded it too, on every tool call, to ask one question:
-where does the journal live. Layer 1 is where all three can have it, and it is low
+where does the journal live. The layer just above the anchor is where all three
+can have it, and it is low
 enough because nothing here reaches past `_output`.
 
 `journal_dir` is the reason the hook cares, and the reason the module is worth

@@ -15,7 +15,7 @@ check would be blocked on the machines that most need it.
 command whose default answers about nothing is a command people forget to scope.
 
 IT LOADS THE MANIFEST THROUGH `_manifest_io`, AND THAT IS THE HALF THE RULES
-CANNOT DO. `_ado_tracked` sits at layer 1 so every consumer can reach it, which
+CANNOT DO. `_ado_tracked` sits at the bottom of the graph so every consumer can reach it, which
 puts `_manifest_io` out of its reach as a layer-mate - so the assembly happens
 here. It is not a formality: in the sharded layout the file at `manifestPath`
 is an INDEX whose phases are stubs, and `adoTracked` lives in the shard body

@@ -24,7 +24,7 @@ Four things live here, and the reason each is HERE rather than beside its caller
                  cost, and the plan's tasks by id. They arrived with the U3.2
                  split and the LAYER is why they are here rather than in a base
                  module of their own - the four analytics passes that read them
-                 all sit at layer 2, and a layer-2 module may not import a peer.
+                 are layer-mates, and a module may not import a layer-mate.
                  See the section at the foot of this file.
 
 `usage_ledger.py` re-exports every public name defined here, so no call site names
@@ -554,11 +554,11 @@ def heatmap(rows):
 # The three readers every analytics pass starts from: one row's tokens, one row's
 # cost, and the plan's tasks by id. They arrived here with the U3.2 split of
 # `_usage_analytics.py`, and the layer is the reason. The four passes that file
-# was cut into all sit at layer 2 so that `usage_ledger` can import
-# them, and a module at layer 2 may not import a peer - so anything more than one
-# of them needs has to live at layer 1 or below, which is where this module
-# already was. `_tokens` also needs `TOKEN_KEYS`, defined above, so a new layer-1
-# module could not have held it without importing this one, which is the same
+# was cut into are layer-mates below `usage_ledger` so that it can import
+# them, and a module may not import a layer-mate - so anything more than one
+# of them needs has to live a layer below them, which is where this module
+# already was. `_tokens` also needs `TOKEN_KEYS`, defined above, so a new module
+# in this layer could not have held it without importing this one, which is the same
 # peer edge one layer down.
 def task_index(manifest):
     """{taskId: task dict} across every phase."""

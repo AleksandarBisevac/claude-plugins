@@ -65,7 +65,7 @@ _output.install_path()
 
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
-import _locks  # noqa: E402  (take/give back the backfill lock, at layer 1)
+import _locks  # noqa: E402  (take/give back the backfill lock)
 import _fmt  # noqa: E402  (the one token/cost formatter)
 import _areas  # noqa: E402  (phase_tags: the read-time area join the ledger receives)
 import _cli_fmt  # noqa: E402  (the one place CLI color lives - mode resolution + paint)
@@ -766,7 +766,7 @@ NO_SCHEME = ("this project has no lock scheme, so nothing here stopped a second 
 
 
 def _lockmod():
-    """`_locks`, at layer 1 -- where this lock is taken, judged and given back.
+    """`_locks` -- where this lock is taken, judged and given back.
 
     A plain import rather than a `_loader.load_script("audit-lock.py")`: that was
     this file loading another entry point, one of the edges `_deps.KNOWN_LAYER_DEBT`

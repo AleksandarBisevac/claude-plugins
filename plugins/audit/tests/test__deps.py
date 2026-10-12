@@ -519,74 +519,15 @@ def _cases(check):
     finally:
         shutil.rmtree(rule_tmp, ignore_errors=True)
 
-    # ------------------------------------------- layer_doc_drift: docstrings vs LAYERS
-    # Two documents once opened "Layer 5" for a module the table had already moved
-    # to 4, and both were true when written — `_panel_discovery` came down, this one
-    # followed it, `_deps.py`'s own comment was rewritten, and nothing compared the
-    # two docstrings to the table. The fixtures below are the real tree, because a
-    # hand-written module could not have told me the rule fires on what actually
-    # shipped.
-    check("lyd1 the shipped tree carries no docstring claiming a layer LAYERS "
-          "disagrees with: %r" % (M.layer_doc_drift(),), not M.layer_doc_drift())
-
-    ld_tmp = tempfile.mkdtemp(prefix="audit-deps-layerdoc-")
-    try:
-        def _ld(doc, module="_probe_layer_doc", layer=1):
-            """Judge one docstring against a LAYERS that places its module."""
-            path = os.path.join(ld_tmp, module + ".py")
-            with open(path, "w", encoding="utf-8") as fh:
-                fh.write('"""%s"""\n' % doc)
-            layers = tuple(("_output",) if i == 0 else
-                           ((module,) if i == layer else ())
-                           for i in range(max(2, layer + 1)))
-            return M.layer_doc_drift(ld_tmp, hooks_dir=os.path.join(ld_tmp, "none"),
-                                     layers=layers)
-
-        wrong = _ld("Layer 5, and the floor is set elsewhere.", layer=4)
-        check("lyd2 a docstring opening on a layer the table contradicts is named, "
-              "with BOTH numbers - the repair is to delete one or fix it, and a "
-              "message carrying neither cannot say which: %r" % (wrong,),
-              len(wrong) == 1 and "Layer 5" in wrong[0][1]
-              and "layer 4" in wrong[0][1])
-        # THE SECOND DIRECTION, and the case that looks vacuous: the identical
-        # sentence over a table that agrees draws nothing. A rule that fired on
-        # every self-claim would pass ld2 and fail here.
-        check("lyd3 ...and the same sentence over a table that AGREES is silent",
-              _ld("Layer 4, and the floor is set elsewhere.", layer=4) == [])
-        # THE OTHER SECOND DIRECTION, and the one the over-firing mutation dies on.
-        # A module talking about ANOTHER module's layer is the commonest sentence
-        # in this tree's docstrings; convicting it would make the rule fire on
-        # dozens of correct cross-references.
-        check("lyd4 a reference to some OTHER module's layer in running prose is "
-              "not a self-claim and is left alone - `_invariants` really is at "
-              "layer 4, and saying so is not this rule's business",
-              _ld("Reads `_manifest_rules`, which is layer 3, and `_invariants` "
-                  "(layer 4).", layer=1) == [])
-        check("lyd5 a module with no LAYERS entry is NOT reported here - that is "
-              "layer_violations' finding, and naming it twice would make one "
-              "defect look like two",
-              M.layer_doc_drift(ld_tmp, hooks_dir=os.path.join(ld_tmp, "none"),
-                                layers=(("_output",), ())) == [])
-        torn = os.path.join(ld_tmp, "_probe_torn_doc.py")
-        with open(torn, "w", encoding="utf-8") as fh:
-            fh.write("def (:\n")
-        torn_hits = M.layer_doc_drift(
-            ld_tmp, hooks_dir=os.path.join(ld_tmp, "none"),
-            layers=(("_output",), ("_probe_torn_doc",)))
-        check("lyd6 a file that will not parse is NAMED rather than skipped - a "
-              "scan that passes silently over a file it could not read is "
-              "claiming a clean answer about it: %r" % (torn_hits,),
-              len(torn_hits) == 1 and "could not be read" in torn_hits[0][1])
-    finally:
-        shutil.rmtree(ld_tmp, ignore_errors=True)
-
-    # --------------------------- layer_mention_drift: running prose vs LAYERS
-    # `layer_doc_drift` grades only a module's opening claim about itself, and
-    # leaves a sentence naming ANOTHER module's layer alone on purpose - which is
-    # where the numbers rotted when a module was given a layer of its own and
-    # everything above it moved up by one.
-    check("lmd1 the shipped tree carries no layer number in a docstring or comment "
-          "that LAYERS disagrees with: %r" % (M.layer_mention_drift()[:3],),
+    # --------------------------- layer_mention_drift: no layer numeral in prose
+    # `_deps.py --render` prints every module's layer, so a number written beside
+    # one in a docstring or comment is a second copy of the table, and the copies
+    # went stale each time a module gained a layer of its own and everything above
+    # it moved up by one. Grading each copy against LAYERS was tried, one wording
+    # at a time, and lost to the next wording each round; refusing the numeral
+    # outright is the invariant, so a RIGHT number is refused as well as a wrong one.
+    check("lmd1 the shipped tree carries no layer numeral in a docstring or "
+          "comment: %r" % (M.layer_mention_drift()[:3],),
           M.layer_mention_drift() == [])
 
     lm_tmp = tempfile.mkdtemp(prefix="audit-deps-layermention-")
@@ -594,39 +535,80 @@ def _cases(check):
         lm_layers = (("_output",), ("_manifest_io", "_probe_mention"), ("_other",))
 
         def _lm(body):
-            """Judge one module body against a small LAYERS naming `_manifest_io` at 1."""
+            """Judge one module body against a small LAYERS naming two modules."""
             with open(os.path.join(lm_tmp, "_probe_mention.py"), "w",
                       encoding="utf-8") as fh:
                 fh.write(body)
             return M.layer_mention_drift(lm_tmp, hooks_dir=os.path.join(lm_tmp, "none"),
                                          layers=lm_layers)
 
-        wrong = _lm('"""Reads `_manifest_io` (layer 3) for the plan."""\n')
-        check("lmd2 a docstring giving another module the wrong layer is named, "
-              "with BOTH numbers: %r" % (wrong,),
-              len(wrong) == 1 and "layer 3" in wrong[0][1] and "layer 1" in wrong[0][1])
-        check("lmd3 ...and the same sentence with the right number is silent",
-              _lm('"""Reads `_manifest_io` (layer 1) for the plan."""\n') == [])
-        check("lmd4 the (LN) spelling in a comment is read too, and wrong is named",
-              len(_lm("# reaches `_other` (L1) for the names\nX = 1\n")) == 1
-              and _lm("# reaches `_other` (L2) for the names\nX = 1\n") == [])
-        check("lmd5 'this file (LN)' is graded against the module's own layer",
-              len(_lm("# this file (L2) is a leaf\nX = 1\n")) == 1
-              and _lm("# this file (L1) is a leaf\nX = 1\n") == [])
-        check("lmd6 a sentence wrapped across two comment lines is still read",
+        right = _lm('"""Reads `_manifest_io` (layer 1) for the plan."""\n')
+        check("lmd2 a layer numeral LAYERS AGREES with is refused all the same - a "
+              "right number is the one the next move makes wrong - and the "
+              "message quotes the numeral it found: %r" % (right,),
+              len(right) == 1 and "'layer 1'" in right[0][1])
+        # Every wording the class has shipped in, each one a round that the
+        # shape-by-shape reading missed: the connectives are not enumerated by the
+        # rule, so a wording missing from this list is still refused.
+        lm_shapes = (
+            ('"""`_manifest_io` is at layer 1."""\n', "layer 1"),
+            ("# `_other` at L2 grades the config\nX = 1\n", "L2"),
+            ("# `_other` (now L2) and the rest\nX = 1\n", "L2"),
+            ('"""`_other` sits at layer 2 beside it."""\n', "layer 2"),
+            ("# reaches `_other` (L2) for the names\nX = 1\n", "L2"),
+            ("# see `_other`, L2) for it\nX = 1\n", "L2"),
+            ("# `_manifest_io.iter_tasks` (L1) reads it\nX = 1\n", "L1"),
+            ("# this file (L1) is a leaf\nX = 1\n", "L1"),
+            ('"""The two are layer-2 peers."""\n', "layer-2"),
+            ('"""A LAYER 2 module cannot import it."""\n', "LAYER 2"),
+            ("# with `_other` (2) above it\nX = 1\n", "(2)"),
+            ("import os  # noqa: E402 (the shared base, L1)\n", "L1"),
+            ("# Nothing else reads `_other`.\n# Both consumers are L7.\nX = 1\n", "L7"),
+            ("# an edge from audit-task.py, L7 -> L1\nX = 1\n", "L7"),
+        )
+        lm_missed = [(body, want, hits) for body, want, hits in
+                     ((b, w, _lm(b)) for b, w in lm_shapes)
+                     if not [h for h in hits if repr(want) in h[1]]]
+        check("lmd3 every wording a layer numeral has shipped in is refused, and "
+              "each finding quotes the numeral - missed: %r" % (lm_missed,),
+              lm_missed == [])
+        check("lmd4 one finding per numeral, not one per block: a block carrying "
+              "three is three repairs",
+              len(_lm('"""`_other` is L2, `_manifest_io` is layer 1, and both sit '
+                      'below layer 3."""\n')) == 3)
+        check("lmd5 a sentence wrapped across two comment lines is still read",
               len(_lm("# reaches `_other`\n# (L1) for the names\nX = 1\n")) == 1)
-        check("lmd7 a layer number in a string that is neither docstring nor "
+        check("lmd6 a layer numeral in a string that is neither docstring nor "
               "comment is not prose and is left alone",
               _lm('X = "`_other` (L1)"\n') == [])
-        check("lmd8 a module-qualified mention is graded by its module part: wrong "
-              "is named, right is silent",
-              len(_lm("# `_manifest_io.iter_tasks` (L3) reads it\nX = 1\n")) == 1
-              and _lm("# `_manifest_io.iter_tasks` (L1) reads it\nX = 1\n") == [])
-        check("lmd9 the comma form and the unclosed form are read too",
-              len(_lm("# see `_other`, L1) for it\nX = 1\n")) == 1
-              and len(_lm("# see `_manifest_io` (layer 3 and up\nX = 1\n")) == 1
-              and _lm("# see `_other`, L2) and `_manifest_io` (layer 1 and up\n"
-                      "X = 1\n") == [])
+        # THE ALLOW DIRECTION. `L<N>` is a layer only where the prose is talking
+        # about layers; a line anchor, a path, a cache level or a spec level is
+        # not one, and convicting them would get the rule routed around. The
+        # anchor case names a LAYERS module on purpose, so it passes because the
+        # `#` is read and not merely because the block lacks layer context.
+        lm_allowed = (
+            "# `_other` cites https://github.com/o/r/blob/main/x.py#L120 for it\n"
+            "X = 1\n",
+            "# the fixture sits under data/L3/ for it\nX = 1\n",
+            "# an L1 cache miss costs more than the read\nX = 1\n",
+            '"""Uses CSS Selectors L4 for the :has() pseudo-class."""\n',
+            '"""Counts `_output` (2 of them) on each side."""\n',
+            '"""A layer above it, never the same layer."""\n',
+        )
+        lm_overfired = [(b, _lm(b)) for b in lm_allowed if _lm(b)]
+        check("lmd7 a numeral that is not a layer - a URL line anchor, a path, a "
+              "cache or spec level, a count in parentheses - is left alone: %r"
+              % (lm_overfired,),
+              lm_overfired == [])
+        torn = os.path.join(lm_tmp, "_probe_mention.py")
+        with open(torn, "w", encoding="utf-8") as fh:
+            fh.write("def (:\n")
+        torn_hits = M.layer_mention_drift(lm_tmp, hooks_dir=os.path.join(lm_tmp, "none"),
+                                          layers=lm_layers)
+        check("lmd8 a file that will not parse is NAMED rather than skipped - a "
+              "scan that passes silently over a file it could not read is "
+              "claiming a clean answer about it: %r" % (torn_hits,),
+              len(torn_hits) == 1 and "could not be read" in torn_hits[0][1])
     finally:
         shutil.rmtree(lm_tmp, ignore_errors=True)
 

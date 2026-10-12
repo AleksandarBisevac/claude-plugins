@@ -97,17 +97,17 @@ import _panel_state           # noqa: E402  (the read side this write path reads
 # here worked and was still wrong: this file sits below the entry points, so the
 # edge pointed upward and `_deps.layer_violations()` said so by name.
 import _proposals             # noqa: E402  (the proposal lifecycle + its lock)
-import _locks                 # noqa: E402  (take and give back the index lock, at layer 1)
+import _locks                 # noqa: E402  (take and give back the index lock)
 import _ado_parent            # noqa: E402  (where ONE item hangs; the no-declaration marker)
 import _ado_tracked           # noqa: E402  (whether ONE item belongs on the board at all)
 import _warning_groups as _wg  # noqa: E402  (the shape a repeated warning prints in)
 import _priority              # noqa: E402  (what a valid tier is, and who holds tier 1 -
 #                                            the SAME function set-priority.py asks)
-import _gate_feed             # noqa: E402  (the plan-gate feed's prune rule, at layer 2 -
+import _gate_feed             # noqa: E402  (the plan-gate feed's prune rule -
 #                                            the SAME rule /audit:logs prune runs)
-import _journal_io            # noqa: E402  (repo_relative_or_token: the redactor, at layer 1)
+import _journal_io            # noqa: E402  (repo_relative_or_token: the redactor)
 import _machine_paths         # noqa: E402  (executed_value_refusal: a command's own door)
-import _branch                # noqa: E402  (where a phase's branch lands, at layer 1)
+import _branch                # noqa: E402  (where a phase's branch lands)
 import _worktrees             # noqa: E402  (the worktree list, the sweep plan, the runner)
 import _panel_discovery       # noqa: E402  (the inventory AND the portability verdict on it)
 import _config_rules          # noqa: E402  (PORTABILITY_MODES: the enum this reads a tier from)

@@ -12,8 +12,8 @@ recorded is a count and how long ago - no identity, no address, no page - the
 same fact hook state files already record for a guard having run, applied
 here to the one surface that had no record at all.
 
-Split out of `_panel_state.py` (U3.1). Layer 4, above `_panel_paths` (3) and
-`_doctor_report` (2); `_locks` at 1 is its only other static reach.
+Split out of `_panel_state.py` (U3.1). It sits above `_panel_paths` and
+`_doctor_report`; `_locks` is its only other static reach.
 
 Stdlib only, Python 3.8 compatible.
 """
@@ -47,11 +47,11 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
-import _journal_io            # noqa: E402  (repo_relative_or_token: the redactor, at layer 1)
-import _locks                 # noqa: E402  (lock paths + the liveness verdict, at layer 1)
-import _evidence_io as _ev    # noqa: E402  (where the test-run ledger lives, at layer 2)
-import _doctor_report as _dr  # noqa: E402  (RECENT_DAYS: the one recency threshold, at layer 2)
-import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
+import _journal_io            # noqa: E402  (repo_relative_or_token: the redactor)
+import _locks                 # noqa: E402  (lock paths + the liveness verdict)
+import _evidence_io as _ev    # noqa: E402  (where the test-run ledger lives)
+import _doctor_report as _dr  # noqa: E402  (RECENT_DAYS: the one recency threshold)
+import _panel_paths as _paths  # noqa: E402  (the shared base)
 
 # Carried by module-level alias so every body below reads exactly as it did in
 # `_panel_state`, where these were siblings rather than imports.
@@ -106,8 +106,8 @@ def _audit_lock_held(project, config):
 def _lockmod():
     """`_locks`, the lock's read side — where one lives and whether it is live.
 
-    A plain import at layer 1 now, not a `_loader.load_script("audit-lock.py")`:
-    this module is layer 5 and that was an entry point, one of the edges
+    A plain import of a low module now, not a `_loader.load_script("audit-lock.py")`:
+    this module sits below the entry points and that was one, one of the edges
     `_deps.KNOWN_LAYER_DEBT` recorded. Kept as a function returning a module,
     with the None contract intact, because `_lock_info` below reads `None` as
     "show the lock without a liveness verdict rather than show nothing" — and an

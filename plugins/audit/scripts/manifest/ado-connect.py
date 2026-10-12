@@ -87,7 +87,7 @@ def iso_now():
     `now(timezone.utc)` rather than `utcnow()`: that spelling is deprecated and
     warns on every call, while `datetime.UTC` needs 3.11 and this tree holds a
     3.8 floor. Same body as `_proposals.iso_now()` and deliberately not shared:
-    that module is L4 and this is the door, so importing it to reach two lines
+    that module is a library and this is the door, so importing it to reach two lines
     would be an upward edge the layer lint refuses.
     """
     import datetime

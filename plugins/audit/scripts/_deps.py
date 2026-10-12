@@ -121,7 +121,8 @@ _output.install_path()
 
 import _output  # noqa: E402  (py_files: the ONE recursive `.py` walk, shared not copied)
 
-# The module structure, position-indexed: LAYERS[0] is layer 0, the floor. Built from the
+# The module structure, position-indexed: a module's layer is its index here, and the
+# first entry is the anchor every module may import. Built from the
 # REAL import graph (see the module docstring), not aspiration - `import_graph()` and the
 # selftest's real-tree cases are what keep this honest as the tree grows.
 # --- layer table --------------------------------------------------------------
@@ -131,9 +132,11 @@ LAYERS = (
     # take it out. It reaches nothing but `_output` and gets a layer of its own
     # because BOTH committed writers need it - `_manifest_io` for the plan and
     # `_journal_io` for the trail - and those two are layer-mates that may not
-    # import each other. Every layer number below this line is therefore one
-    # higher than a comment elsewhere that says "L1" or "L2" may still read;
-    # the table, `--render` and the guide's fence are the numbering to trust.
+    # import each other. That insertion moved every module above it up by one,
+    # and every comment that had written a layer number went stale at once -
+    # which is why no comment writes one any more: the table, `--render` and the
+    # guide's fence are the only numbering, and `layer_mention_drift()` refuses
+    # a numeral anywhere else.
     # `_excerpt` shares the layer: how a failing tool's output is quoted in a
     # sentence (both ends, the failure lines of the middle, a count of what went).
     # It reaches nothing but `_output`, and it is down here because `_journal_io`,
@@ -148,13 +151,13 @@ LAYERS = (
      "_deps", "_refs",
      # `_branch` answers where a phase's branch forks from and what it is called.
      # It reaches nothing but `_output` - it is arithmetic over the manifest dict
-     # plus a git-ref regex - and it sits at L1 because the validator (L2), the
-     # doctor (L5) and the naming guard all need the SAME answer. A second
+     # plus a git-ref regex - and it sits in this layer because the validator, the
+     # doctor and the naming guard all need the SAME answer. A second
      # expansion of the template would be a second set of branch names.
      "_branch",
      # `_priority` answers which READY task the orchestrator reaches for first.
      # Same shape and same reason as `_branch`: it is arithmetic over the manifest
-     # dict, it reaches nothing but `_output`, and it sits at L1 because four
+     # dict, it reaches nothing but `_output`, and it sits in this layer because four
      # surfaces need the SAME answer - `_status_facts` for the ready list,
      # `_manifest_crossrefs` for the findings, `_panel_composition` for
      # the control and `set-priority` for the write. A second expression of the
@@ -163,55 +166,55 @@ LAYERS = (
      # module is a layer-mate, and readiness must never have a second opinion.
      "_priority",
      # `_commit_trail` answers "is this recorded task.commit still reachable?".
-     # L1 because BOTH the doctor (L5) and `repair-commits` (an entry point) ask
+     # In this layer because BOTH the doctor and `repair-commits` (an entry point) ask
      # it, and a second walk over the same tasks putting the same question to git
      # is a second answer waiting to disagree with the first. It reaches nothing
      # but `_output` and git.
      "_commit_trail",
      # `_claude_home` reads Claude Code's own install records - which commit a
      # copy was installed from, and where the marketplace clone that holds it
-     # lives. L1 because `audit-version` (an entry point) and `_doctor_setup` (L5)
-     # both need the SAME reading of two undocumented files, and a second reader
+     # lives. In this layer because `audit-version` (an entry point) and
+     # `_doctor_setup` both need the SAME reading of two undocumented files, and a second reader
      # would be a second answer about what is installed. It reaches nothing but
      # `_output`.
      "_claude_home",
      # `_proc_group` runs one child tree so it can be stopped WHOLE, and turns a
-     # stop signal into an exception so a caller's `finally` runs. L1 because two
+     # stop signal into an exception so a caller's `finally` runs. Here because two
      # entry points - `run-test-gate` and `stamp-verification` - need the same
      # teardown, and a second copy is a second answer to "is it stopped". It
      # reaches nothing but `_output`.
      "_proc_group",
      # `_runner_output` reads what a test runner printed - its summary line and
-     # the lines naming a failing check. L1 for `_proc_group`'s reason: two entry
+     # the lines naming a failing check. Here for `_proc_group`'s reason: two entry
      # points, `run-test-gate` and `stamp-verification`, ask the same output the
      # same questions, and an entry point may not import another. It reaches
      # nothing but `_output`.
      "_runner_output",
      # `_runner_collects` answers "does the test runner collect this path" from
-     # the runner's own listing or its config text. L1 because the task-start
+     # the runner's own listing or its config text. Here because the task-start
      # preflight and the scope companions ask the same question and an entry
      # point may not import another. It reaches nothing but `_output`.
      "_runner_collects",
      # `_worktrees` answers "which worktrees exist, whose phase is each, and what
-     # may be reaped". At L1 for `_commit_trail`'s reason word for word: more
+     # may be reaped". Here for `_commit_trail`'s reason word for word: more
      # than one layer needs the SAME answer - `_doctor_hygiene` and `_doctor_policy`
-     # (both L4, and layer-mates that cannot import each other), plus `close-phase`
-     # and `manage-worktrees` at L7 - and a second enumeration of git's worktree list
+     # (layer-mates that cannot import each other), plus the entry points
+     # `close-phase` and `manage-worktrees` - and a second enumeration of git's worktree list
      # would BE a second answer. It reaches nothing but `_output` and git: the
      # branch names, the parent names and the cwd all arrive as ARGUMENTS, which is
      # what keeps it here rather than one layer up beside `_branch`'s readers.
      "_worktrees",
      # `_locks` is `audit-lock.py`'s read side: where a lock lives, what it may be
      # called, and whether its holder is alive. It reaches nothing but `_output`,
-     # and it had to land at L1 rather than beside its command because
+     # and it had to land here rather than beside its command because
      # `hooks/_config.py` loads it too - a hook may not import scripts/, so the
      # SMALLER the module it resolves by path on every tool call, the better.
      "_locks",
      # `_journal_io` is `audit-journal.py`'s trail: the row shape, the chain, where
      # a journal lives, and what `verify` checks. Same reasoning as `_locks`, and
      # the same hook argument - `hooks/_config.py` asks it for `journal_dir` on
-     # every tool call. It reaches nothing but `_output`, and it had to be at L1
-     # because `_help` (L3) needs it too.
+     # every tool call. It reaches nothing but `_output`, and it had to be this low
+     # because `_help` needs it too.
      "_journal_io",
      # `_demo_cast` is three fictional identities the two demo generators must
      # agree on - the smallest module here, and the right size for the fact: the
@@ -220,17 +223,17 @@ LAYERS = (
      # `_manifest_vocab` is the manifest's words - the status/risk/tests enums, the
      # known-key sets per level, and the four shape checks every level shares. It
      # holds no rule and reaches nothing but `_output`, which is exactly why it can
-     # sit at the floor: FOUR modules at L2 read it, and a vocabulary copied into
-     # four files is four vocabularies that disagree the first time one learns a
-     # word. `TERMINAL` is deliberately NOT here - it is `_manifest_io`'s, and
-     # holding it would put this module at L2 and its consumers at L3.
+     # sit at the floor: FOUR modules in the layer above read it, and a vocabulary
+     # copied into four files is four vocabularies that disagree the first time one
+     # learns a word. `TERMINAL` is deliberately NOT here - it is `_manifest_io`'s,
+     # and holding it would push this module and its consumers up a layer each.
      "_manifest_vocab",
      # `_json_schema` reads the plan's published JSON Schema the way `ajv` does,
      # with the stdlib alone. It reaches nothing but `_output`, and both the bug
      # checks and the whole-plan check one layer up ask it, so it sits here.
      "_json_schema",
      # `_task_outputs` is what a task's `outputs` pattern may be and what an
-     # honoured one reaches. It is at L1 for `_locks`' reason word for word:
+     # honoured one reaches. It is here for `_locks`' reason word for word:
      # `hooks/_config.py` resolves it by path on the per-tool-call plan-gate
      # path, so the smaller the module it loads there the better. It began
      # inside `_manifest_vocab` and was moved out for the same argument from
@@ -240,7 +243,7 @@ LAYERS = (
      "_task_outputs",
      # `_filed_returns` is where an agent's filed return lives, the shape each
      # role owes and the write-once create. Its three readers - `audit-task`,
-     # `audit-lookup` and `commit-task-work` - are entry points at L7 that may
+     # `audit-lookup` and `commit-task-work` - are entry points that may
      # not import each other, so the path they must agree on lives below all
      # three. The evidence directory is handed in rather than resolved, which
      # keeps it at the floor: it reaches nothing but `_output`.
@@ -248,13 +251,13 @@ LAYERS = (
      # `_ado_conventions` is what a work item must look like to BELONG on a
      # board - required fields, description skeleton, tag vocabulary, parent. It
      # reaches nothing but `_output`, and it is at the floor for the same reason
-     # `_manifest_vocab` is: `_manifest_ado` at L2 grades the config through it,
+     # `_manifest_vocab` is: `_manifest_ado` grades the config through it,
      # and the writing side will grade the ITEM through it, so a copy in either
      # place would be a second answer to "does this belong here".
      "_ado_conventions",
      # `_ado_fields` is the OTHER half of that: what this project supplies to
      # those fields, per work item type. Same floor and the same argument -
-     # `_manifest_ado` at L2 grades the block and `check-ado-item` (an entry
+     # `_manifest_ado` grades the block and `check-ado-item` (an entry
      # point) merges the template into the payload it then grades, so the two
      # sides must share one opinion about which field names are legal. It sits
      # beside `_ado_conventions` rather than inside it because the two answer
@@ -265,8 +268,8 @@ LAYERS = (
      # `_ado_parent` is WHERE one audit item hangs on the board and whether that
      # place can be true. At the floor for `_priority`'s reason exactly, and it
      # is a layer fact rather than a preference: `_manifest_crossrefs` and
-     # `_manifest_ado` are both L2, so neither can import the other while both
-     # need the SAME answer - as do `resolve-ado-parent` at L7 and the panel
+     # `_manifest_ado` are layer-mates, so neither can import the other while both
+     # need the SAME answer - as do the entry point `resolve-ado-parent` and the panel
      # after it. A second expression of "which parent" would BE a second parent.
      # `meta.ado`, the phase list and ADO's backlog payload all arrive as
      # ARGUMENTS, which is also why it owns its own unknown-key loop:
@@ -276,14 +279,14 @@ LAYERS = (
      # `_ado_tracked` is the question one step before that one: does this item
      # belong on the board AT ALL. It is at the floor for `_ado_parent`'s reason
      # and not by analogy with it - the push plan, `/audit:sync status`' drift
-     # lens, the validator's neighbours at L2 and `resolve-ado-tracked` at L7 all
+     # lens, the validator's neighbours and the entry point `resolve-ado-tracked` all
      # need the SAME answer, and two of those are layer-mates that cannot import
      # each other. A second expression of "does this belong here" would BE a
      # second policy, which is the false positive this key exists to end.
      # THE MANIFEST ARRIVES ASSEMBLED, AS AN ARGUMENT, and that is what keeps it
      # here: reading the file would mean importing `_manifest_io`, a layer-MATE,
      # which is the sideways edge this lint refuses - and would push the module
-     # to L2 where half its consumers could not reach it. It detects an
+     # up a layer where half its consumers could not reach it. It detects an
      # un-assembled sharded stub instead of trusting its caller, because
      # `adoTracked` lives in the shard body and a raw read reports a whole plan
      # tracked by default.
@@ -306,8 +309,8 @@ LAYERS = (
      # `_merge_install` is what an install of that driver consists of, read back:
      # the `.gitattributes` lines, the config value, the shim and the root it
      # records. At the floor for `_commit_trail`'s reason - `merge-manifest`
-     # prints it as `status` and `_doctor_setup` reports it, and a layer-4
-     # module may not reach an entry point. It reaches nothing but `_output` and git.
+     # prints it as `status` and `_doctor_setup` reports it, and a module below
+     # the entry points may not reach one. It reaches nothing but `_output` and git.
      "_merge_install",
      # `_id_refs` is an id renamed everywhere the plan points at it - the fields
      # that hold another record's id, listed once. It takes a manifest and returns
@@ -316,18 +319,18 @@ LAYERS = (
      "_id_refs"),
     ("_panel_ui", "_report_html", "_report_ui",
      # `_scope_companions` derives the files a change cannot avoid (manifest and
-     # lockfile, locale files, the runner config). It reads `_runner_collects` at
-     # L1 for whether the runner collects a path, so L2 is the first layer that
-     # holds its edges strictly downward; the task writer above it calls it.
+     # lockfile, locale files, the runner config). It reads `_runner_collects`, at
+     # the floor, for whether the runner collects a path, so this is the first
+     # layer that holds its edges strictly downward; the task writer above it calls it.
      "_scope_companions",
      # The four passes `_usage_analytics` was cut into. Each answers ONE of the
-     # questions that file held, each reads `_usage_core` at L1, and none reads
+     # questions that file held, each reads `_usage_core` below, and none reads
      # another - which is what lets all four share a layer, and what they had to
-     # be cut to do: `usage_ledger` at L3 imports all four for its re-export, so
-     # L2 is the only layer available to them and a peer edge between two of
-     # them would have had nowhere to go. The three readers they all start from
-     # (`task_index`, `_tokens`, `_cost`) went DOWN into `_usage_core` for
-     # exactly that reason rather than into a shared L2 base.
+     # be cut to do: `usage_ledger`, one layer up, imports all four for its
+     # re-export, so this is the only layer available to them and a peer edge
+     # between two of them would have had nowhere to go. The three readers they
+     # all start from (`task_index`, `_tokens`, `_cost`) went DOWN into
+     # `_usage_core` for exactly that reason rather than into a shared base here.
      #   `_usage_spend`      spend through time: series, window compare, cache
      #   `_usage_economics`  what the work cost: unit economics, bands, budgets,
      #                       retried vs blocked spend
@@ -335,16 +338,16 @@ LAYERS = (
      #   `_usage_coverage`   the ledger seen whole: attribution coverage, months
      "_usage_spend", "_usage_economics", "_usage_routing", "_usage_coverage",
      # `_config_rules` is `validate-config.py` without its `main()`. It imports
-     # `_policy`, so L2 is the lowest layer it can occupy - and its deepest
-     # consumer, `_panel_settings`, therefore had to move UP one, from here to L3.
+     # `_policy`, so this is the lowest layer it can occupy - and its deepest
+     # consumer, `_panel_settings`, therefore had to move UP one, from here.
      # Moving ONE module was the whole cost of making that edge downward; inserting
      # a layer would have renumbered every entry in KNOWN_LAYER_DEBT below without
      # a single edge changing.
      "_config_rules",
      # The four pieces `_manifest_rules` was cut into. Each answers ONE of the
-     # subjects that file held, each reads `_manifest_vocab` at L1, and none reads
+     # subjects that file held, each reads `_manifest_vocab` below, and none reads
      # another - which is what lets all four share a layer. `_manifest_phases` also
-     # reads `_manifest_io` (TERMINAL) and `_areas`, both L1.
+     # reads `_manifest_io` (TERMINAL) and `_areas`, both at the floor.
      #   `_manifest_phases`     the one walk over phases and tasks, and what a
      #                          phase carries (claim, area tag, budget, sign-off)
      #   `_manifest_ado`        `meta.ado`, the connector config - ONE front door,
@@ -358,19 +361,19 @@ LAYERS = (
      # than above them because it never reads a rule; it reads the LINES, plus
      # `_manifest_io.iter_tasks` for the only sound task -> phase map and
      # `_fmt.plural` so a noun agrees with its count in one place. The layer
-     # above both is therefore its floor, and free: every consumer is L4 or higher (the doctor's
-     # setup check, the panel's write, and the four commands that print a
-     # revalidation), and nothing at L2 reaches it.
+     # above both is therefore its floor, and free: every consumer sits higher (the
+     # doctor's setup check, the panel's write, and the four commands that print a
+     # revalidation), and nothing in this layer reaches it.
      "_warning_groups",
      # `_ado_drift` answers who wrote a linked work item last, and whether pushing
-     # would overwrite them. It is L2 rather than L1 for one concrete reason: it
+     # would overwrite them. It is here rather than at the floor for one concrete reason: it
      # reuses `_usage_core.parse_ts` instead of writing the tree's FOURTH ISO
      # parser, and a same-layer edge is not a downward edge. Its consumers are the
      # `explain-ado-drift` door and `_doctor_ado`, both above it.
      "_ado_drift",
      # `_tree_stamp` answers "which tree was this, and is it still that one" -
      # HEAD, a digest of the declared work, a digest of which paths were dirty,
-     # and the three-word comparison over them. It is L2 rather than L1 for
+     # and the three-word comparison over them. It is here rather than at the floor for
      # `_ado_drift`'s reason word for word: it reuses `_journal_io.canonical` and
      # `_journal_io.file_hash` instead of becoming the tree's second hashing
      # subsystem, and a same-layer edge is not a downward edge. It sits here
@@ -378,36 +381,36 @@ LAYERS = (
      # which still records it - because `stamp-verification` needs the SAME
      # fingerprint for a claim the orchestrator carries in prose, and an entry
      # point reaching another entry point is the KNOWN_LAYER_DEBT shape this
-     # table exists to keep rare. Both consumers are L7.
+     # table exists to keep rare. Both consumers are entry points.
      "_tree_stamp",
      # `_wave` answers "which ready tasks may run together, and what is an
      # overlap between two" - pure functions over task dicts. It sits
-     # above `_task_outputs` (L2) only because it reads `_task_outputs.covers`, the one rule
+     # above `_task_outputs` only because it reads `_task_outputs.covers`, the one rule
      # for a declared path, instead of spelling a second one; a same-layer edge
      # is not a downward edge. Its consumers are the driver and the integration
-     # step, both at L7.
+     # step, both entry points.
      "_wave",
      # `_status_facts` is `audit-status.py`'s machine-readable half: the rollup,
      # readiness, the submodule preflight and the gate. Same reasoning and the same
-     # floor - `_manifest_io`/`_areas` at L1 below it, `_panel_state` at L5 above it.
+     # floor - `_manifest_io`/`_areas` below it, `_panel_state` above it.
      # `_id_shape` is what an id looks like and which one to mint next - the branch
-     # suffix, the numeric part, the max+1. L2 because it reads `_branch` for
+     # suffix, the numeric part, the max+1. Here because it reads `_branch` for
      # which branch is the trunk and `_manifest_vocab` for the suffix's one
-     # spelling; every consumer is an allocator at L4 or above.
+     # spelling; every consumer is an allocator higher up.
      "_id_shape",
      "_status_facts",
-     # `_help` sat at L3 for its whole life and its edges never asked for it: it
-     # reaches `_areas`, `_policy`, `_loader` and `_journal_io`, all L1, and
-     # `load_hooks_config` is not a sibling load. It came down to L2 at U3.1
-     # because a module parked ABOVE its own edges is not free - it lifts
+     # `_help` sat one layer higher for its whole life and its edges never asked
+     # for it: it reaches `_areas`, `_policy`, `_loader` and `_journal_io`, all at
+     # the floor, and `load_hooks_config` is not a sibling load. It came down here
+     # at U3.1 because a module parked ABOVE its own edges is not free - it lifts
      # `_panel_discovery` with it, and that was what put `discover` out of reach
-     # of the layer-4 module that needs it. `_panel_settings` deliberately does
-     # NOT import it, so nothing at L2 reaches it and the move cost nothing.
+     # of `_panel_policy`, which needs it. `_panel_settings` deliberately does
+     # NOT import it, so nothing in this layer reaches it and the move cost nothing.
      "_help",
      # `_doctor_report` is the piece all six of `audit-doctor`'s check modules sit
      # on: the `Report` collector, the `_load` wrapper and the two constants. It
      # holds no check, which is exactly why it can sit here while its consumers
-     # reach as high as L5 - it imports `_loader` and nothing else. The
+     # reach several layers higher - it imports `_loader` and nothing else. The
      # wrapper being SHARED is what `_borrowed_wrapper_names` was written for:
      # without it the twelve runtime loads spelled in those six files would be a
      # dozen edges nothing could see.
@@ -415,15 +418,15 @@ LAYERS = (
      # `_gate_feed` is the plan-gate events feed's prune rule: which rows no
      # longer belong, and the one file that may be rewritten. It reaches
      # `_loader` (for `hooks/_config`, which a script may not import) and
-     # `_usage_core` (for `parse_ts`), both L1, and nothing else. It sits at the
-     # floor for the reason `_priority` and `_branch` do: BOTH doors need the
-     # same answer - `audit-logs.py` at L7 and `_panel_write` at L6 - and a
+     # `_usage_core` (for `parse_ts`), both below it, and nothing else. It sits
+     # this low for the reason `_priority` and `_branch` do: BOTH doors need the
+     # same answer - the entry point `audit-logs.py` and `_panel_write` - and a
      # second expression of "which rows no longer belong" would be a second
      # opinion about what the panel's Plan gate card is showing.
      "_gate_feed",
      # `_evidence_io` is where a test-execution record lives and what it may say.
      # It reaches `_journal_io` for config loading, the writer id and the
-     # month, and its other imports sit at L1 or below too; `_deps.py --render`
+     # month, and its other imports sit at the floor or below too; `_deps.py --render`
      # prints the edges. That is the reason it sits one layer up rather than
      # beside them: a layer-mate may not be imported, and re-deriving "where
      # does this manifest keep its committed record" would put the trail and the
@@ -438,62 +441,62 @@ LAYERS = (
     # is `_report_usage`, which sat here beside `_help` and now sits one layer up: moving
     # ONE module was the whole cost of making room, where inserting a layer would have
     # renumbered every entry in KNOWN_LAYER_DEBT below without a single edge changing.
-    # `_report_usage` reaches nothing at layer 4 or above, and only render-report (L7)
-    # reaches it, so the move is free.
-    # `_usage_bench` sits HERE rather than at L2 with the passes it times, and that is
+    # `_report_usage` reaches nothing in its own layer or above, and only the entry
+    # point render-report reaches it, so the move is free.
+    # `_usage_bench` sits HERE rather than with the passes it times, and that is
     # the whole structural cost of cutting `_usage_analytics` into five: it calls all
-    # four of them, so it has to be above them. It reaches nothing at L3 and nothing at
-    # L3 reaches it - `render-report` loads it for `_time_best` and is the only
+    # four of them, so it has to be above them. It reaches nothing in this layer and
+    # nothing here reaches it - `render-report` loads it for `_time_best` and is the only
     # thing that names it - so sharing this layer with `usage_ledger` costs nothing,
     # where a new layer would have renumbered every entry in KNOWN_LAYER_DEBT below
     # without a single edge changing.
-    # `_panel_settings` sits here rather than at L2, and the move was forced by
-    # `_config_rules`: it reads the four enum tuples off the module that ENFORCES
+    # `_panel_settings` sits here rather than one layer down, and the move was forced
+    # by `_config_rules`: it reads the four enum tuples off the module that ENFORCES
     # them, and a consumer at the same layer is still not strictly downward. It
-    # reaches nothing at L3 and nothing at L3 reaches it, so the move was free -
-    # `_panel_page`, `_panel_write` and `panel-server` are all
+    # reaches nothing in this layer and nothing here reaches it, so the move was
+    # free - `_panel_page`, `_panel_write` and `panel-server` are all
     # still strictly above it.
-    # `_manifest_rules` sat at L2 and moved up one, which is the whole structural
-    # cost of cutting it into five: the four pieces it now orchestrates each sit at
-    # L2 above `_manifest_vocab`, and a consumer AT L2 is still not strictly
-    # downward. It reaches nothing at L3 and nothing at L3 reaches it, so the move
-    # is free - `_panel_state` and the four L7 commands that import it are all
-    # still strictly above it, and the alternative (inserting a layer) would have
+    # `_manifest_rules` sat one layer down and moved up one, which is the whole
+    # structural cost of cutting it into five: the four pieces it now orchestrates
+    # each sit in that lower layer above `_manifest_vocab`, and a consumer beside
+    # them is still not strictly downward. It reaches nothing in this layer and
+    # nothing here reaches it, so the move is free - `_panel_state` and the four
+    # entry-point commands that import it are all still strictly above it, and the alternative (inserting a layer) would have
     # renumbered every entry in KNOWN_LAYER_DEBT below without one edge changing.
     # `_usage_viz` - how the Usage section formats a number and draws a bar -
-    # lands here because it reaches `_report_html` at L2 and nothing deeper, and
+    # lands here because it reaches `_report_html`, one layer down, and nothing deeper, and
     # it has to be BELOW the three renderers that all read it. Its sibling
     # `_usage_load` did NOT land beside it: it runtime-loads `usage_ledger`,
     # which is at this layer, and a load at the same layer is not strictly
     # downward. The lint said so the first time this table was written, and the
     # answer was to put the reader above what it reads rather than to widen the
     # rule.
-    # The two doctor checks that reach no further than L2 land here, at the first
+    # The two doctor checks that reach no further than the layer below land here, at the first
     # layer that holds their edges strictly downward, rather than beside the other
     # four: `_doctor_ado` runtime-loads `_manifest_io` for the task walk, and
     # `_doctor_hygiene` imports `_locks` and loads nothing at all. Putting the
     # seven doctor modules in one layer would have been a nicer picture and a false
-    # one - four of them genuinely sit higher, so the layer would have had to be L5
-    # and three modules would carry a position nothing about them requires.
+    # one - four of them genuinely sit higher, so the layer would have had to be
+    # theirs and three modules would carry a position nothing about them requires.
     # `_evidence_view` is the report's only read of the test-execution ledger,
     # and it lands here the way `_usage_load` lands one layer up: at the FIRST
     # layer that holds every one of its edges strictly downward. It imports
     # `_evidence_io` (where a run's record lives) and `_report_html` (the badge
-    # vocabulary and the view derivation), both L2, plus `_journal_io` at L1 for
-    # the project config - so L2 is not available to it and L3 is. It reaches
-    # nothing at L3 and nothing at L3 reaches it; its only consumer is
-    # `render-report` at L7, which reads the disk and hands the answer down.
+    # vocabulary and the view derivation), both one layer down, plus `_journal_io`
+    # at the floor for the project config - so that lower layer is not available to
+    # it and this one is. It reaches nothing in this layer and nothing here reaches
+    # it; its only consumer is the entry point `render-report`, which reads the disk and hands the answer down.
     ("usage_ledger", "_panel_settings", "_manifest_rules", "_evidence_view",
      # `_verdict_binding` is the one rule for whether a recorded gate verdict
      # binds the declared work now. It reads `_evidence_io` (the ledger) and
-     # `_tree_stamp` (the digest), peers at L2, so L3 is the first layer that
-     # holds both; `commit-task-work`, `audit-task` (sign-off and `done`) and
-     # `close-phase` at L7 call it.
+     # `_tree_stamp` (the digest), peers one layer down, so this is the first layer
+     # that holds both; the entry points `commit-task-work`, `audit-task` (sign-off
+     # and `done`) and `close-phase` call it.
      "_verdict_binding",
      # `_gate_derive` is the gate helpers' one home (`is_shared_key`,
      # `path_scoped_sibling`, `repointed` -- moved out of `audit-task.py`) plus
      # the phase-level `derive()`. It reaches `_manifest_phases` and
-     # `_evidence_io`, both here at L2, so this is the first layer strictly
+     # `_evidence_io`, both one layer down, so this is the first layer strictly
      # above both; `_manifest_rules` is NOT one of its edges -- its
      # `tests_add_path` only re-exports `_manifest_phases`' own, and this
      # module calls that directly rather than moving up a layer for a
@@ -501,49 +504,49 @@ LAYERS = (
      # aliases, and `derive-phase-gate`, which reaches its arm helpers
      # directly to REPORT the breakdown `derive()` itself does not expose.
      "_gate_derive",
-     # `_usage_bench` drives all four analytics passes (each L2), so L3 is the
-     # lowest layer that can reach them; `render-report` loads it for `_time_best`.
+     # `_usage_bench` drives all four analytics passes (each one layer down), so
+     # this is the lowest layer that can reach them; `render-report` loads it for `_time_best`.
      "_usage_bench",
      "_usage_viz", "_doctor_ado", "_doctor_hygiene",
      # `_ado_fetch` reads the linked side of a board in ONE query per chunk, with a
-     # bound on each. It lands at L3 for one edge: it reuses `_ado_drift`'s
-     # `link_inventory` (L2) to decide WHICH ids to ask for, rather than writing a
-     # second walk that would be a second opinion about what "linked" means. Its
-     # only consumer is the `fetch-ado-items` door at L7.
+     # bound on each. It lands here for one edge: it reuses `_ado_drift`'s
+     # `link_inventory`, one layer down, to decide WHICH ids to ask for, rather than
+     # writing a second walk that would be a second opinion about what "linked"
+     # means. Its only consumer is the `fetch-ado-items` door.
      "_ado_fetch",
-     # `_panel_discovery` came down from L4 with `_help`, for the same reason and
-     # by the same measurement: `_help` (now L2) and `_manifest_io` are its
-     # only edges, so L3 is where the graph always put it. The move is what makes
-     # `discover` reachable from `_panel_policy` at L4 - at L4 itself it was a
-     # layer-mate, and a layer-mate is not strictly downward.
+     # `_panel_discovery` came down a layer with `_help`, for the same reason and
+     # by the same measurement: `_help` and `_manifest_io` are its only edges, so
+     # one layer above `_help` is where the graph always put it. The move is what
+     # makes `discover` reachable from `_panel_policy` - in that module's layer it
+     # was a layer-mate, and a layer-mate is not strictly downward.
      "_panel_discovery",
      # `_panel_paths` is the floor the panel's read side stands on: the config and
      # manifest paths, and the three modules the panel reads through. It lands here
-     # and not at L4 because of what it deliberately does NOT hold - see the note
-     # on `_panel_state`'s own layer below, which is where `_manifest_rules` had to
-     # stay for the split to fit under L5 at all.
+     # and not one layer up because of what it deliberately does NOT hold - see the
+     # note on `_panel_state`'s own layer below, which is where `_manifest_rules` had
+     # to stay for the split to fit under `_panel_state` at all.
      "_panel_paths"),
     # `_panel_page` (the panel's assembled page: the substitution chain and the
     # ~1,450 lines of cases that read the result) lands here rather than beside
     # `_panel_state`, and that placement is the whole cost of the split. Its
-    # deepest reach is `usage_ledger` at L3 - `_panel_ui`/`_panel_settings` are
-    # L2, `_ui_theme`/`_loader` L1, `_help` L3 - so L4 is the first layer that
-    # holds every one of its edges strictly downward. Sitting beside
+    # deepest reach is `usage_ledger`, one layer down - `_panel_ui`, `_panel_settings`,
+    # `_ui_theme`, `_loader` and `_help` all sit at or below it - so this is the first
+    # layer that holds every one of its edges strictly downward. Sitting beside
     # `_panel_discovery` and the Usage renderers costs nothing: it reaches none of
     # them, and none of them reaches it. The alternative was a new layer, which
     # renumbers every entry in KNOWN_LAYER_DEBT below without a single edge
     # changing.
     # The three renderers the Usage section was cut into land here for one reason:
-    # each reads `_usage_viz` at L3, so L4 is the first layer strictly above it.
-    # None of the three reaches another, which is what lets `_report_usage` fold
-    # all three into one order at L5.
+    # each reads `_usage_viz`, one layer down, so this is the first layer strictly
+    # above it. None of the three reaches another, which is what lets
+    # `_report_usage`, one layer up, fold all three into one order.
     #   `_usage_overview`  what shows on FIRST PAINT (strip, trend, ranked lists)
     #   `_usage_detail`    everything folded behind the `Detail` disclosure
     #   `_usage_markdown`  the Markdown twin - and `_report_md` reads it
     #                      DIRECTLY rather than through `_report_usage`, which is
     #                      now its own layer-mate and so not strictly below it
     # `_usage_load` (the section's only I/O) is here for a different reason: it
-    # runtime-loads `usage_ledger` at L3, so this is the first layer that holds
+    # runtime-loads `usage_ledger`, one layer down, so this is the first layer that holds
     # that edge strictly downward. It reaches none of the three renderers.
     # Three of `audit-doctor`'s check modules land here, each at the first layer
     # above what it actually reaches: `_doctor_setup` imports `_manifest_rules`,
@@ -552,21 +555,21 @@ LAYERS = (
     # the ledger it reads. None of the three reaches another, which is what lets
     # `audit-doctor` fold all of them into one order.
     # The five pieces `_panel_state` was cut into at U3.1. Each reads
-    # `_panel_paths` at L3 and none reads another, which is what lets all five
-    # share a layer and lets `_panel_state` fold them into one order at L5 -
-    # exactly the shape the `_manifest_rules` split took at L2.
+    # `_panel_paths`, one layer down, and none reads another, which is what lets
+    # all five share a layer and lets `_panel_state`, one layer up, fold them into
+    # one order - exactly the shape the `_manifest_rules` split took.
     #   `_panel_viewer`       who is driving the panel, and its identity cache
     #   `_panel_composition`  the plan as shown: phases, tasks, bugs, ADO, areas
     #   `_panel_policy`       the capability policy and what it decides today
     #                         (the one that also reaches `_panel_discovery`)
     #   `_panel_runstate`     locks, the on-disk change stamp, the Plan gate card
-    #   `_panel_usage`        the Usage tab's facts (runtime-loads usage_ledger, L3)
+    #   `_panel_usage`        the Usage tab's facts (runtime-loads usage_ledger)
     # `_invariants` is the post-hoc reader of `reference/orchestrator.md`'s rules:
     # what a task commit staged, what the phase branch's reflog records, whether
     # each committed manifest state still validates, which model answered a
     # high-risk task, and where the phase forked from. It lands here because of
     # what it reads rather than what reads it - `_manifest_rules` and
-    # `usage_ledger` are both L3, so L4 is the first layer that holds every one of
+    # `usage_ledger` are both one layer down, so this is the first layer that holds every one of
     # its edges strictly downward. That is also why it is not beside
     # `verify-invariants.py`: `audit-status.py` needs the answer for `--gate`, and
     # an entry point asking another entry point is the KNOWN_LAYER_DEBT shape this
@@ -580,23 +583,24 @@ LAYERS = (
     # document) are the report's answer to the same question `_panel_page`
     # answered above, and they land the same way: at the FIRST layer that holds
     # every one of their edges strictly downward, beside whatever already lives
-    # there. `_report_md` reaches `_usage_markdown` and `_report_html`,
-    # so L5; `_report_page` reaches `_report_md`, so L6. Neither touches
+    # there. `_report_md` reaches `_usage_markdown` and `_report_html`, so it
+    # sits one layer above the first; `_report_page` reaches `_report_md`, so one
+    # above that. Neither touches
     # `_panel_state`/`_panel_write` and neither is touched by them, so sharing
     # their layers costs nothing - where a new layer for the pair would renumber
     # every entry in KNOWN_LAYER_DEBT below without a single edge changing.
     #
-    # `_report_usage` moved L4 -> L5 and joins them, and that is the whole
+    # `_report_usage` moved up one layer and joins them, and that is the whole
     # structural cost of cutting the Usage section into five: the three renderers
-    # it folds into one order sit at L4, so their only consumer has to sit above
-    # them. It reaches nothing at L5 and nothing at L5 reaches it - `_report_md`
-    # goes to `_usage_markdown` directly for exactly that reason - so the move is
-    # free, and `_report_page` is still strictly above.
+    # it folds into one order sit one layer down, so their only consumer has to
+    # sit above them. It reaches nothing in this layer and nothing here reaches it
+    # - `_report_md` goes to `_usage_markdown` directly for exactly that reason -
+    # so the move is free, and `_report_page` is still strictly above.
     #
-    # NOT above L6, and the reason is its own edges rather than the gate. The
-    # gate verdict at the top of the report arrives as an INJECTED callable that
-    # render-report.py supplies, and that injection is no longer anything this
-    # table forces: the gate's conditions are `_status_facts` at L2, which
+    # NOT above `_report_page`'s layer, and the reason is its own edges rather than
+    # the gate. The gate verdict at the top of the report arrives as an INJECTED
+    # callable that render-report.py supplies, and that injection is no longer
+    # anything this table forces: the gate's conditions are `_status_facts`, which
     # `_report_page` already imports, so a direct call would be downward. What
     # keeps the injection is that the verdict is the COMMAND's word and a second
     # computation of it here could disagree with the one a reader was given.
@@ -608,11 +612,11 @@ LAYERS = (
     # spelled `_load("_panel_discovery", "_panel_discovery.py")` through a wrapper
     # defined two modules away.
     #
-    # It sat HERE, at L5, while that reasoning ended "and this is the whole reason
+    # It sat HERE while that reasoning ended "and this is the whole reason
     # the doctor's checks occupy four layers instead of one". At U3.1
-    # `_panel_discovery` came down to L3, and the sentence stopped being true - the
-    # edge is now strictly downward from L4, so `_doctor_policy` joins the other
-    # three check modules there and the doctor's checks occupy three layers. The
+    # `_panel_discovery` came down a layer, and the sentence stopped being true -
+    # the edge is now strictly downward from the layer below, so `_doctor_policy`
+    # joins the other three check modules there and the doctor's checks occupy three layers. The
     # comment is rewritten rather than left standing over a table that no longer
     # matches it: a stale ARGUMENT is worse than no argument, because the next
     # reader spends their time working out why it is wrong.
@@ -620,7 +624,7 @@ LAYERS = (
      # `_scoped_commit` is everything two commit-a-narrow-allow-list commands
      # share: the stderr-keeping git runner, the working-tree read that decides
      # before staging, the index read that refuses after it, and the one answer
-     # shape and renderer both print. At L5 because it reads `_invariants`
+     # shape and renderer both print. Here because it reads `_invariants`
      # for `_under` - the one answer to "is this path inside that entry", which
      # both the writer and the after-the-fact checker have to agree on. It is
      # here rather than beside either command because `commit-audit-state` and
@@ -630,11 +634,11 @@ LAYERS = (
      "_scoped_commit"),
     ("_panel_write", "_report_page",
      # `_live_copy` is the one reader of a phase in flight elsewhere - which copy
-     # holds it live, read from a linked worktree's file or a branch tip. At L6
+     # holds it live, read from a linked worktree's file or a branch tip. Here
      # because it asks git through `_scoped_commit`, whose stderr is the
      # reason in every sentence it writes. That is the highest layer the three
      # surfaces showing such a phase can all import from: `audit-status`,
-     # `render-report` and `panel-server` at L7. `_panel_state` is below
+     # `render-report` and `panel-server`, all entry points. `_panel_state` is below
      # it, so `build_state` takes the reader as an argument the server hands
      # it rather than importing it.
      "_live_copy"),
@@ -665,7 +669,7 @@ LAYERS = (
      # ORCHESTRATOR PROSE, which reaches Python only through Bash - and a
      # `python3 -c` one-liner naming a source path is the shape
      # `guard-secrets-read` refuses, so the check would be blocked
-     # exactly where it matters. It reads `_ado_conventions` at L1 and nothing else.
+     # exactly where it matters. It reads `_ado_conventions` and nothing else.
      "check-ado-item",
      "ado-connect",
      # `explain-ado-drift` is the same shape one question over: it carries
@@ -784,7 +788,7 @@ LAYERS = (
      # `manage-worktrees` is the other half of the same domain: the account of what
      # `/audit:worktree` created, which until now was a path composed in prose and
      # recorded nowhere. An entry point for the layer's usual reason, and it reaches
-     # the same L1 pair - `_branch` for the plan's own branch names, `_worktrees`
+     # the same pair at the floor - `_branch` for the plan's own branch names, `_worktrees`
      # for git's list and the sweep plan.
      "manage-worktrees",
      # `integrate-task` is the next step of the same domain: a wave's task tree is
@@ -884,7 +888,7 @@ LAYERS = (
      # work. An entry point for this layer's usual reason, and DECLARED rather
      # than sniffed: guessing an outside suite from the spelling of a command is
      # the class this product keeps being repaired for. It reaches `_evidence_io`
-     # (L3) for the row and the ledger and `_manifest_io` for the loader.
+     # for the row and the ledger and `_manifest_io` for the loader.
      "record-outside-run",
      # `import-evidence` is the same question one machine LATER: a CI runner
      # made its own gate run and recorded its own ledger file, and until now the
@@ -2421,78 +2425,40 @@ def hooks_rule_drift(guide_path=None):
     return out
 
 
-# A docstring sentence claiming a layer for the module it opens: "Layer 4," or
-# "Layer 4:" or "Layer 4." — the shape the doctor's six pieces all use. NOT
-# `layer 4` in running prose, which is how a module talks about a module OTHER
-# than itself ("`_invariants` is layer 4"), and convicting that would make the
-# rule fire on every correct cross-reference in the tree.
-_SELF_LAYER_CLAIM = re.compile(r"^Layer (\d+)\b", re.MULTILINE)
+# A layer numeral in prose has three spellings, and the rule reads the numeral
+# rather than the sentence around it, because every round that enumerated the
+# sentences ("is at", "sits at", "(now") lost to the next wording.
+#
+# The word spelling is a layer whatever surrounds it - "layer", any case, then a
+# space or a hyphen, then digits.
+_LAYER_WORD_NUMERAL = re.compile(r"\blayers?[\s-]+\d+", re.IGNORECASE)
+# The `L<N>` spelling is also a cache level, a spec level, a line anchor in a URL
+# and a directory name. Glued to a `#`, a `/` or a word it is never a layer, and
+# otherwise it is one where the prose is talking about layers: the block names a
+# layer, a `.py` file, an import edge (`->`) or a module LAYERS holds, or the word
+# just before it is one that only a layer follows here ("at", "now", an opening
+# parenthesis, a comma).
+_LAYER_L_NUMERAL = re.compile(r"(?<![#/\w])L\d+\b")
+_LAYER_L_LEAD = re.compile(r"(?:\bat|\bnow|[(,]|->)\s*$")
+_LAYER_CONTEXT = re.compile(r"layer|\.py\b|->", re.IGNORECASE)
+_BACKTICK_NAME = re.compile(r"`([A-Za-z_][A-Za-z_0-9-]*)")
+# The bare spelling is a number alone in parentheses after a module LAYERS holds,
+# which is a layer because nothing else is written there; a count in the same
+# place ("`_output` (two of them)") goes on past the digits and is not read.
+_LAYER_PAREN_NUMERAL = re.compile(
+    r"`([A-Za-z_][A-Za-z_0-9-]*)(?:\.[A-Za-z_0-9.]*)?(?:\(\))?`\s*(\(\d+\))")
 
 
-def layer_doc_drift(script_dir=None, hooks_dir=None, layers=None):
-    """[(relname, problem), ...] — a docstring claiming a layer LAYERS disagrees with.
-
-    This is a recurring class of defect, not a one-off: `_doctor_policy`'s docstring
-    opened "Layer 5" and `audit-doctor`'s module table carried a matching column,
-    both written when they were true. `_panel_discovery` then came down a layer,
-    `_doctor_policy` followed it, `_deps.py`'s own comment was rewritten to record
-    the move — and the two documents that restated the number were not, because
-    nothing compared them to the table. A stale ARGUMENT is worse than no argument:
-    the next reader spends their time working out why it is wrong.
-
-    So a module may still say which layer it is on, and now it has to be right.
-    Only a claim a module makes about ITSELF is judged, and only in the module
-    docstring: `Layer 4` opening a sentence there. A reference to another module's
-    layer in running prose (`_invariants` is layer 4) is left alone — the same
-    words, a different claim, and one this function has no business grading.
-
-    A file with no LAYERS entry is NOT reported here. That is `layer_violations`'
-    finding and reporting it twice would make one defect look like two; this
-    function's subject is a claim that DISAGREES, not a module nobody placed.
-    """
-    layers = layers if layers is not None else LAYERS
-    where = {}
-    for i, members in enumerate(layers):
-        for name in members:
-            where[name] = i
-    out = []
-    for rel, _kind, path in _real_source_files(script_dir, hooks_dir):
-        module = os.path.basename(rel)[:-3]
-        actual = where.get(module)
-        if actual is None:
-            continue                     # layer_violations' finding, not this one
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                tree = ast.parse(fh.read(), filename=path)
-        except (OSError, UnicodeDecodeError, SyntaxError) as exc:
-            # Named rather than skipped, the rule `navigability_violations` follows:
-            # a file this could not read is not a file it found nothing wrong with.
-            out.append((rel, "could not be read to check its layer claim: %s" % exc))
-            continue
-        doc = ast.get_docstring(tree) or ""
-        for hit in _SELF_LAYER_CLAIM.finditer(doc):
-            claimed = int(hit.group(1))
-            if claimed != actual:
-                out.append((rel, "its docstring opens \"Layer %d\" and _deps.LAYERS "
-                                 "puts it at layer %d - delete the number or fix "
-                                 "it; a stale layer is an argument the next reader "
-                                 "has to disprove" % (claimed, actual)))
-    return out
-
-
-# A layer number written beside a module name in running prose: "`name` (layer N)"
-# and "`name` (LN)", the same with a member after the module ("`name.attr` (LN)"),
-# the comma form ("`name`, LN)") and a parenthesis left open ("`name` (layer N ..."),
-# plus "this file (LN)" for the file's own. These are the shapes
-# that can be read without guessing which module a sentence means; a number in any
-# other wording stays author-enforced, and a green run here says only that none of
-# these shapes matched wrongly. A name LAYERS does not hold is not graded - it may
-# be a script, a hook or a word - and `layer_violations` already names a module
-# nobody placed.
-_NAMED_LAYER_MENTION = re.compile(
-    r"`([A-Za-z_][A-Za-z_0-9-]*)(?:\.[A-Za-z_0-9.]*)?(?:\(\))?`"
-    r"(?:\s*\(|,\s*)(?:[Ll]ayer |L)(\d+)\b")
-_OWN_LAYER_MENTION = re.compile(r"\bthis file \((?:[Ll]ayer |L)(\d+)\)")
+def _layer_numerals(text, names):
+    """Every layer numeral in one prose block, in reading order, as written."""
+    found = [(m.start(), m.group(0)) for m in _LAYER_WORD_NUMERAL.finditer(text)]
+    found += [(m.start(2), m.group(2)) for m in _LAYER_PAREN_NUMERAL.finditer(text)
+              if m.group(1) in names]
+    in_context = (bool(_LAYER_CONTEXT.search(text))
+                  or any(name in names for name in _BACKTICK_NAME.findall(text)))
+    found += [(m.start(), m.group(0)) for m in _LAYER_L_NUMERAL.finditer(text)
+              if in_context or _LAYER_L_LEAD.search(text[:m.start()])]
+    return [numeral for _pos, numeral in sorted(found)]
 
 
 def _prose_blocks(source):
@@ -2532,26 +2498,27 @@ def _prose_blocks(source):
 
 
 def layer_mention_drift(script_dir=None, hooks_dir=None, layers=None):
-    """[(relname:line, problem), ...] - a layer number in prose that LAYERS disagrees with.
+    """[(relname:line, problem), ...] - every layer numeral in a docstring or comment.
 
-    `layer_doc_drift` grades a module's opening claim about itself and leaves
-    running prose alone, so a number written beside ANOTHER module's name outlived
-    the move that made it wrong: giving one module a layer of its own shifted every
-    module above it by one, and the sentences saying where those sat did not move.
-    The invariant is that a layer number in prose is checked or not written, so
-    this reads the three shapes it can read reliably (see `_NAMED_LAYER_MENTION`
-    and `_OWN_LAYER_MENTION`) in every docstring and comment under scripts/ and
-    hooks/. Where the layer is not the sentence's argument, the repair is to delete
-    the number and keep the module's name.
+    A module's layer is its index in LAYERS, and `_deps.py --render` prints it;
+    those two are the only places the number lives. Every copy written into prose
+    went stale the same way - one module given a layer of its own shifts every
+    module above it by one, and the sentences saying where those sat did not move -
+    and grading the copies against the table was tried one wording at a time and
+    lost to the next wording each round. So this refuses the numeral itself, right
+    or wrong, in every docstring and comment under scripts/ and hooks/: the word
+    spelling anywhere, the `L<N>` spelling where the prose is talking about
+    layers, and a number alone in parentheses after a module LAYERS holds
+    (`_layer_numerals` says which is which). The repair keeps the module's name
+    and the reasoning and drops the number; "a layer above `_x`" says what the
+    number said, and stays true when the table moves.
+
+    `layers` only names the modules a backticked name is read against.
     """
     layers = layers if layers is not None else LAYERS
-    where = {}
-    for i, members in enumerate(layers):
-        for name in members:
-            where[name] = i
+    names = set(name for members in layers for name in members)
     out = []
     for rel, _kind, path in _real_source_files(script_dir, hooks_dir):
-        own = where.get(os.path.basename(rel)[:-3])
         try:
             with open(path, "r", encoding="utf-8") as fh:
                 blocks = _prose_blocks(fh.read())
@@ -2559,18 +2526,12 @@ def layer_mention_drift(script_dir=None, hooks_dir=None, layers=None):
             out.append((rel, "could not be read to check its layer mentions: %s" % exc))
             continue
         for lineno, text in blocks:
-            claims = [(m.group(1), int(m.group(2))) for m in _NAMED_LAYER_MENTION.finditer(text)
-                      if m.group(1) in where]
-            if own is not None:
-                claims += [("this file", int(m.group(1)))
-                           for m in _OWN_LAYER_MENTION.finditer(text)]
-            for name, claimed in claims:
-                actual = own if name == "this file" else where[name]
-                if claimed != actual:
-                    out.append(("%s:%d" % (rel, lineno),
-                                "writes layer %d for %s and _deps.LAYERS puts it at "
-                                "layer %d - delete the number, or fix it where the "
-                                "layer is the argument" % (claimed, name, actual)))
+            for numeral in _layer_numerals(text, names):
+                out.append(("%s:%d" % (rel, lineno),
+                            "writes the layer numeral %r - LAYERS holds every "
+                            "module's layer and `_deps.py --render` prints it, so "
+                            "delete the number and keep the module's name and the "
+                            "reasoning" % numeral))
     return out
 
 
@@ -2596,8 +2557,7 @@ def layer_mention_drift(script_dir=None, hooks_dir=None, layers=None):
 # A SUITE IS NOT A CONSUMER, which is why `tests/` is left out of the corpus. A
 # case calling a function proves it RUNS; the claim being graded is that something
 # DEPENDS on it, and every lint in this file would otherwise read as depended-upon
-# because its own suite calls it. That is the same distinction `layer_doc_drift`
-# draws between a module's claim about itself and one about a neighbour.
+# because its own suite calls it.
 #
 # WHAT IT CANNOT SEE, stated rather than left for the next reader to discover: a
 # consumer claim written in words outside the list, and a function reached only
@@ -6109,7 +6069,7 @@ def dict_key_violations(script_dir=None, hooks_dir=None):
 # `_runtime_loaded_sibling_names` reads only a literal inside the call, and the
 # comment there said so out loud. `rt4` still pins that blindness as a decision -
 # the scan is narrow on purpose - but the edge itself is gone, not hidden: the
-# journal is `_journal_io` at L1 now and `_panel_state` imports it like anything
+# journal is `_journal_io`, at the floor, now and `_panel_state` imports it like anything
 # else. A count that a blind spot flatters is not a smaller debt, so the fix had
 # to be the dependency becoming legal rather than the spelling staying unreadable.
 #
@@ -6127,8 +6087,8 @@ KNOWN_LAYER_DEBT = (
     # THIS ENTRY USED TO SAY "there is no logic here to extract downward", AND
     # THAT WAS FALSE FOR HALF OF IT. The edge had TWO call sites, and they were
     # not the same kind of thing. `_panel_state.report_paths()` reached the same
-    # L7 module for `_report_basename` - a pure naming rule that `_report_html`
-    # owns at L2 and `render-report.py` merely aliases. That is the exact shape
+    # entry point for `_report_basename` - a pure naming rule that `_report_html`
+    # owns low in the graph and `render-report.py` merely aliases. That is the exact shape
     # every retired entry above had, a module used as a LIBRARY through a
     # COMMAND, and the downward home for it was already built; the panel simply
     # was not asking there. It asks `_report_html` directly now. The entry did
@@ -6162,8 +6122,8 @@ KNOWN_LAYER_DEBT = (
     #
     #   * SPLIT A WRITER OUT OF `render-report.main()`. Real, and it does not
     #     reach this module: the extracted writer still has to call
-    #     `_report_page`, so it lands at L6, and `_panel_state` at L5 is still
-    #     below it. It shrinks the edge from "an entry point" to "a writer" and
+    #     `_report_page`, so it lands in that module's layer, and `_panel_state`
+    #     is still below it. It shrinks the edge from "an entry point" to "a writer" and
     #     leaves it pointing the same way, so it has to be paired with the move
     #     above to retire anything.
     #
@@ -6171,7 +6131,7 @@ KNOWN_LAYER_DEBT = (
     # THIS FILE ALREADY HOLDS THE PRECEDENT THAT MAKES IT LOOK LIKE ONE.
     # `render-report` takes the gate verdict as an INJECTED callable instead of
     # reaching up to `audit-status`. That worked because the injected thing's
-    # implementation moved DOWN - `_status_facts` at L2 - so the supplier's own
+    # implementation moved DOWN - into `_status_facts` - so the supplier's own
     # edge became downward. Here the implementation cannot go below `_report_page`,
     # so injection only asks who supplies the callable, and every candidate is
     # `_panel_write` or `panel-server`, at or above the entry point layer.

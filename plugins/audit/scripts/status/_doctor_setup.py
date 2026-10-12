@@ -18,8 +18,8 @@ that came out from under `validate-config.py`, `validate-manifest.py` and
 `audit-status.py`, and reaching the commands instead is what put four entries in
 `_deps.KNOWN_LAYER_DEBT` before those splits.
 
-Layer 5, and the manifest rules are what set the floor: `_manifest_rules` sits
-at layer 3 since it was cut into five, so its consumers cannot sit below 4.
+The manifest rules are what set this module's floor: `_manifest_rules` moved up
+a layer when it was cut into five, so its consumers had to sit above it.
 
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__doctor_setup.py` - see
@@ -58,13 +58,13 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _doctor_report as _base  # noqa: E402  (Report, the loader, the constants)
-import _manifest_rules  # noqa: E402  (the manifest rules, at layer 3 - imported, not loaded)
-import _status_facts  # noqa: E402  (rollup/readiness/gate facts, at layer 2)
-import _manifest_vocab  # noqa: E402  (PROPOSAL_STATUS: the manifest's own words, layer 1)
-import _config_rules  # noqa: E402  (the audit.config.json rules, at layer 2)
+import _manifest_rules  # noqa: E402  (the manifest rules - imported, not loaded)
+import _status_facts  # noqa: E402  (rollup/readiness/gate facts)
+import _manifest_vocab  # noqa: E402  (PROPOSAL_STATUS: the manifest's own words)
+import _config_rules  # noqa: E402  (the audit.config.json rules)
 import _warning_groups as _wg  # noqa: E402  (the shape a repeated warning prints in)
-import _merge_install  # noqa: E402  (what a merge-driver install is, read back; layer 1)
-import _claude_home  # noqa: E402  (Claude Code's own install records, fail-open; layer 1)
+import _merge_install  # noqa: E402  (what a merge-driver install is, read back)
+import _claude_home  # noqa: E402  (Claude Code's own install records, fail-open)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `audit-doctor.py` unchanged, and an alias keeps them reading the same names
@@ -799,7 +799,7 @@ def check_manifest(rep, project, cfg):
     # consumer can import the one implementation from.
     findings, warnings = _manifest_rules.validate(manifest)
     n_phases = len(manifest.get("phases") or [])
-    # Counted through layer 1 rather than by hand, and the difference is not
+    # Counted through `_manifest_io` rather than by hand, and the difference is not
     # cosmetic: the hand-rolled `sum(len(p.get("tasks")...))` had no isinstance
     # guard, so a manifest carrying a non-dict PHASE raised AttributeError here -
     # a doctor crashing on exactly the broken input the finding two lines below is

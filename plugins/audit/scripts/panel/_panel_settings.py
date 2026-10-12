@@ -652,10 +652,10 @@ def _validate_config():
     """`_config_rules` — the module that decides what this form may offer.
 
     A plain import now, and the memo it used to need is gone with it. This was
-    `_loader.load_script("validate-config.py")`, which made a LAYER 2 module
-    depend on a layer 7 entry point: the deepest of the seventeen inversions
-    `_deps.KNOWN_LAYER_DEBT` recorded. The rules moved to layer 2 and this module
-    moved up to layer 3, so the edge points down and the lint can see that it
+    `_loader.load_script("validate-config.py")`, which made a low module
+    depend on an entry point: the deepest of the seventeen inversions
+    `_deps.KNOWN_LAYER_DEBT` recorded. The rules moved down to this module's old
+    layer and this module moved up one, so the edge points down and the lint can see that it
     does. Still a function, because `_cfg_enums` reads it as "the module that
     enforces these" and the indirection is where that sentence lives."""
     return _config_rules
