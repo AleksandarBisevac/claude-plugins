@@ -1200,7 +1200,7 @@ def _brief_cases(check):
     git(projm, "init", "-q")
     git(projm, "add", "-A")
     git(projm, "commit", "-qm", "fixture")
-    sv =_loader.load_script("stamp-verification.py",
+    sv = _loader.load_script("stamp-verification.py",
                              modname="stamp_verification_for_bf")
     helper = sv.red_verdict(
         {"cmd": ["python3", "tests/t1.py"], "code": 1, "text": "Error\n",

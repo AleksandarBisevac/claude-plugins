@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "ruff check plugins/audit tools": "pass",
+    "vermin": "pass",
+    "tools/sweep-selftests.py": "pass",
+    "tools/sweep-selftests.py --spaced": "pass",
+    "tools/gate-parity.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task. With E225 enabled and before the fixes, ruff check plugins/audit tools exited 1 with exactly six E225 findings and no other rule. In a scratch copy (pyproject.toml plus a file holding 'lines =[1]'), ruff check exited 1 with missing-whitespace-around-operator.",
+    "at": "2026-10-12"
+  },
+  "outcome": {
+    "technical": "pyproject.toml [tool.ruff.lint] gained preview = true, explicit-preview-rules = true and E225 in select. The baseline ruff run before the change was green, and after enabling the rule the only new findings were the six E225 sites, so no other selected rule changed. Fixed those six sites by Edit, one 'X =Y' to 'X = Y' each: audit-lookup.py:766, test__evidence_io.py:1105, test_audit_lookup.py:1203, test_drive_phase.py:2866 and :4254, test_stamp_verification.py:899. CONTRIBUTING.md's lint comment now says E225 is on, as the one preview rule enabled by name. tools/gate-parity.py and tools/verify.sh only run 'ruff check plugins/audit tools' and do not compare the config, so neither needed a follower. Exit codes: ruff 0, vermin 0, gate-parity 0, sweep-selftests 0, sweep-selftests --spaced 0.",
+    "descriptive": "Ruff now fails on a stray 'X =Y' assignment anywhere in plugins/audit or tools, and the six existing ones are repaired."
+  },
+  "testsAdded": [
+    "pyproject.toml: E225 selected as an explicit preview rule; ruff check plugins/audit tools exits 0"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:4cee6661876c64ac27e0d2f3a597cab9cdef81ef0e450409bef2a3ad1777a39f\",\"dirtyDigest\":\"sha256:de5d15897550fc21911ed245c0f1d4088b4fff55e730d40a8c3d557964c5d66d\",\"dirtyPaths\":{\"CONTRIBUTING.md\":\"5b78582e45383e6d\",\"plugins/audit/scripts/status/audit-lookup.py\":\"c3ebb518086b4c1e\",\"plugins/audit/tests/test__evidence_io.py\":\"cd35dff9dfe83fa4\",\"plugins/audit/tests/test_audit_lookup.py\":\"6af4acfa24866fa6\",\"plugins/audit/tests/test_drive_phase.py\":\"e023982ad1e38278\",\"plugins/audit/tests/test_stamp_verification.py\":\"bdc7dbaf37ef0d90\",\"pyproject.toml\":\"143cf7bd58251619\"},\"head\":\"78215f4f\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CONTRIBUTING.md\",\"plugins/audit/scripts/status/audit-lookup.py\",\"plugins/audit/tests/test__evidence_io.py\",\"plugins/audit/tests/test_audit_lookup.py\",\"plugins/audit/tests/test_drive_phase.py\",\"plugins/audit/tests/test_stamp_verification.py\",\"pyproject.toml\"],\"scopeDigest\":\"sha256:222f073015fd47a2334007d08bbf9b5fbd1ab2771ae711036d75829041c65045\",\"v\":2}"
+}

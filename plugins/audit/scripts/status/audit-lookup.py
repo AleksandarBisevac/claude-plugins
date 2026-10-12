@@ -763,7 +763,7 @@ def _diff_lines(ctx, files, tree=None, base=None):
         return ["`%s` exited %d here (%s); run it yourself."
                 % (command, done.returncode,
                    _excerpt.excerpt(done.stderr.decode("utf-8", "replace")))]
-    lines =["`%s`:" % (command,), "```diff",
+    lines = ["`%s`:" % (command,), "```diff",
              done.stdout.decode("utf-8", "replace").rstrip("\n") or "(empty)",
              "```"]
     new = untracked.stdout.decode("utf-8", "replace").split()

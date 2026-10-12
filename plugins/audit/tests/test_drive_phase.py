@@ -2863,7 +2863,7 @@ def _stale_reaccept_cases(check):
     """The accept answers the run whose banners it was shown, not the HEAD: a
     gate retargeted at the same head is another run, with banners of its own."""
     to_coverage, words = _to_coverage, STALE_WORDS
-    other ="echo tests/elsewhere_spec.py 3 passed"
+    other = "echo tests/elsewhere_spec.py 3 passed"
     M, seen, root, mpath, run = to_coverage("stale-reaccept")
     before = seen["runs"]
     with _Env(root):
@@ -4251,7 +4251,7 @@ def _brief_scope_cases(check):
           % (third,), instruction(third)[1] == "no-executor-return")
 
 
-_TALLY ="%s: %d/%d cases " + "passed"
+_TALLY = "%s: %d/%d cases " + "passed"
 
 
 def _house_suite(cases):

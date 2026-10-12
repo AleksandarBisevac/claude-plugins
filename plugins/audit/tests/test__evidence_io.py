@@ -1102,7 +1102,7 @@ def _cases(check):
               "line's: %r (byte at %d)" % (bad_said, bad_offset),
               "0xff" in bad_said
               and ("in position %d:" % bad_offset) in bad_said)
-        uni_proj =_project(os.path.join(tmp, "utf8-non-ascii"), {})
+        uni_proj = _project(os.path.join(tmp, "utf8-non-ascii"), {})
         uni_dir = M.evidence_dir(uni_proj)
         os.makedirs(uni_dir, exist_ok=True)
         with open(os.path.join(uni_dir, "2026-01.uni.jsonl"), "w",

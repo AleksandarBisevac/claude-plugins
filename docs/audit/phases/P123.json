@@ -170,8 +170,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/status/_status_facts.py:1646, plugins/audit/scripts/status/_status_facts.py:1744 (lint: plugins/audit/scripts/_deps.py:2434 _LAYER_WORD_NUMERAL)",
         "issue": "P123-R11 is not closed: present-tense layer numerals spelled as words survive. Both docstrings say 'this module (layer two)' about _status_facts, which _deps.LAYERS holds at index 3, so these are the same off-by-one class P123.33/P123.54/P123.65 were opened for. layer_mention_drift() returns [] only because _LAYER_WORD_NUMERAL is r'\\blayers?[\\s-]+\\d+' and reads digits alone, while CLAUDE.md states that a number in prose may be spelled as a word and _output._numeral_span() already reads both spellings. P123.65's task text asks the lint to refuse ANY layer numeral and to delete every existing one. No lmd case plants a word-spelled numeral, so lmd1 is green over a tree that still carries a wrong one.",
-        "resolution": "Read the numeral through the shared word-or-digit reader (_output._numeral_span or its table) in _LAYER_WORD_NUMERAL, delete the two 'layer two' mentions (keep the reasoning), and add an lmd3 shape ('this module (layer two)') plus a prove-gates RED row for the word spelling. While there, decide on the ordinal 'BOTTOM LAYER' claims (_priority.py:28, _ado_parent.py:33, _ado_tracked.py:53, _manifest_io.py:674): all four modules sit at LAYERS index 2, not the bottom.",
-        "fixTask": "P123.70-64p"
+        "resolution": "fixed in P123.70-64p (78215f4fd148): Read the numeral through the shared word-or-digit reader (_output._numeral_span or its table) in _LAYER_WORD_NUMERAL, delete the two 'layer two' mentions (keep the reasoning), and add an lmd3 shape ('this module (layer two)') plus a prove-gates RED row for the word spelling. While there, decide on the ordinal 'BOTTOM LAYER' claims (_priority.py:28, _ado_parent.py:33, _ado_tracked.py:53, _manifest_io.py:674): all four modules sit at LAYERS index 2, not the bottom.",
+        "fixTask": "P123.70-64p",
+        "commit": "78215f4fd148",
+        "status": "fixed"
       },
       {
         "id": "P123-R16",
@@ -222,7 +224,7 @@
         "fixTask": "P123.74-64p"
       }
     ],
-    "outcome": "[findings: 21 - 0 high, 10 med, 11 low; 14 with a recorded fix commit]"
+    "outcome": "[findings: 21 - 0 high, 10 med, 11 low; 15 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -5547,7 +5549,7 @@
     {
       "id": "P123.70-64p",
       "title": "The layer lint reads a layer number spelled as a word too, through the one numeral reader",
-      "status": "in_progress",
+      "status": "done",
       "description": "(P123-R15, med) P123-R11 is not closed: present-tense layer numerals spelled as words survive. Both docstrings say 'this module (layer two)' about _status_facts, which _deps.LAYERS holds at index 3, so these are the same off-by-one class P123.33/P123.54/P123.65 were opened for. layer_mention_drift() returns [] only because _LAYER_WORD_NUMERAL is r'\\blayers?[\\s-]+\\d+' and reads digits alone, while CLAUDE.md states that a number in prose may be spelled as a word and _output._numeral_span() already reads both spellings. P123.65's task text asks the lint to refuse ANY layer numeral and to delete every existing one. No lmd case plants a word-spelled numeral, so lmd1 is green over a tree that still carries a wrong one.\nResolution: Read the numeral through the shared word-or-digit reader (_output._numeral_span or its table) in _LAYER_WORD_NUMERAL, delete the two 'layer two' mentions (keep the reasoning), and add an lmd3 shape ('this module (layer two)') plus a prove-gates RED row for the word spelling. While there, decide on the ordinal 'BOTTOM LAYER' claims (_priority.py:28, _ado_parent.py:33, _ado_tracked.py:53, _manifest_io.py:674): all four modules sit at LAYERS index 2, not the bottom.\n\nTHIRD ROUND on this class: read the number through `_output._numeral_span` (the reader the prose-number lint already uses for both spellings) rather than a digit-only regex, so every numeral spelling the repo knows is covered by construction; fix the two `this module (layer two)` sites in _status_facts.py; prove-gates row: a planted word-spelled layer number fails. Faults: P123-R15.",
       "files": [
         "plugins/audit/scripts/_deps.py",
@@ -5585,14 +5587,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "78215f4fd148",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_deps.py: _LAYER_WORD_NUMERAL lifts up to two tokens after 'layer' and the new _layer_word_numerals() judges them through _output._numeral_span(small=True) (_deps already imports _output; no new edge). Deleted 'layer two' at both _status_facts.py sites and 'a layer one' in report/_report_page.py's docstring. test__deps: four word-spelled lmd3 shapes (layer two, Layer Three, layer-four, layer twenty-one) and one lmd7 allow case. prove-gates.py: re-anchored the lmd3 row and added two rows (planted 'layer two' in _doctor_ado.py -> lmd1; reader degraded to digits -> lmd3). layer_mention_drift() returned [] (observed). Earlier 308/309 failure was lmd1 (inferred, now 309/309 after the _report_page edit). Exit codes all 0: sweep-selftests, --spaced (331/331 files ok), gate-parity, ruff, vermin. test__refs stayed green in the sweep (no sc1/sc2 red). The new prove-gates rows were NOT run; they run on the committed tree at phase end. BOTTOM LAYER ordinal claims in the description were not touched.",
+        "descriptive": "The layer lint now refuses a layer number spelled as a word through the shared numeral reader, and the three shipped word-spelled mentions are gone."
       },
       "startedAt": "2026-10-12T10:25:21Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T10:52:08Z",
+      "verifiedBy": [
+        "test__deps lmd3 (layer two / Layer Three / layer-four / layer twenty-one shapes)",
+        "test__deps lmd7 (allow: 'Each layer owns its names...')"
+      ],
       "notes": [
         {
           "at": "2026-10-12T10:24:55Z",
@@ -5607,12 +5612,23 @@
         "runId": "2026-10-12T10:52:06Z.886aba",
         "status": "passed",
         "at": "2026-10-12T10:52:06Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "78215f4fd148",
+        "at": "2026-10-12T10:52:08Z",
+        "basis": "a fix task for P123-R15: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-12T10:43:04Z",
+        "basis": "`python3 plugins/audit/tests/test__deps.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 309 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - lmd3 (house FAIL): SELFTEST FAILED: 308/309 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.71-64p",
       "title": "No assignment loses its spaces again: ruff's whitespace-around-operator rule is on, and every site is fixed",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(P123-R16, med) P123-R14 is not closed. Its resolution had two halves: restore the lines, and find what rewrote them before it touches non-test code. P123.69 restored the three named lines. The same artefact (an existing 'X = Y' rewritten to 'X =Y') is still in the phase diff three more times, and one of them is in product code: audit-lookup.py:766 'lines =[...' (rewritten in P123.41 0082528b from 'lines = ['), test_drive_phase.py:4254 '_TALLY =...' (P123.45 a3ec357c), and test_stamp_verification.py:899 'leftover =os.path.join' (P123.51 d24b3047). Each git show shows the original spaced line removed and the unspaced one added. Ruff's selected rules do not catch E225, so the gate stays green.\nResolution: Restore 'X = Y' on the three lines. Add a check that fails on the shape (enable ruff E225 for plugins/audit and tools, or add a small AST/token lint in _output), so the rewriter is caught wherever it strikes next.\n\nRECURRING CLASS (the stray `X =Y` rewrite reached four task commits from four different executors, product code included), so a LINT, not another revert: enable ruff's E225 (missing-whitespace-around-operator) explicitly in pyproject.toml (`preview = true` with `explicit-preview-rules = true` so no other preview rule turns on), fix all six sites ruff reports (audit-lookup.py:766, test__evidence_io.py:1105, test_audit_lookup.py:1203, test_drive_phase.py:2866 and :4254, test_stamp_verification.py:899), and say in CONTRIBUTING's lint line that the rule is on. Show the rule can fail: with one site un-fixed in a scratch copy, ruff exits 1. Faults: P123-R16.",
       "files": [
         "pyproject.toml",
@@ -5649,14 +5665,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T10:52:08Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -5667,7 +5683,13 @@
       ],
       "fixes": [
         "P123-R16"
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T11:09:02Z.66c7f2",
+        "status": "passed",
+        "at": "2026-10-12T11:09:02Z"
+      }
     },
     {
       "id": "P123.72-64p",

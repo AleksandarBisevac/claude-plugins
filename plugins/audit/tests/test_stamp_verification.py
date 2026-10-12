@@ -896,7 +896,7 @@ def _process_cases(check):
           and not os.path.exists(late)
           and (got_t.get("throwaway") or {}).get("removed") is True)
 
-    leftover =os.path.join(_harness.fixture_root("stamp-red-left-"),
+    leftover = os.path.join(_harness.fixture_root("stamp-red-left-"),
                             M.THROWAWAY_PREFIX + "stale", "tree")
     _git(root, "worktree", "add", "--detach", "--quiet", leftover, "HEAD")
     code_l, got_l = _red(root, man, [py, "tests/test_mine.py"])

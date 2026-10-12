@@ -343,7 +343,8 @@ claude plugin validate .
 claude plugin validate plugins/audit
 
 # the dialect and the 3.8 floor. `ruff` selects the rules in pyproject.toml (syntax
-# errors, pyflakes, invalid escapes); the AST lint in
+# errors, pyflakes, invalid escapes, and E225 — whitespace around an operator, the one
+# preview rule, enabled by name so no other preview rule turns on); the AST lint in
 # `_output.house_style_violations()` is what enforces the bans vermin cannot see —
 # annotations, walrus, `typing`, `dataclasses`, `from __future__`.
 ruff check plugins/audit tools
