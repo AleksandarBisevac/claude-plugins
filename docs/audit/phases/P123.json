@@ -5299,7 +5299,7 @@
     {
       "id": "P123.67-64p",
       "title": "close-phase reads the returns at the verdict's own commit, so one merged in after the verdict is still unseen",
-      "status": "in_progress",
+      "status": "done",
       "description": "(F569) close-phase's landing check (`unseen_returns`) treats every return committed at the branch tip as seen by a tip verdict, so a `diverges` phase return filed and committed on the target branch AFTER the verdict, then merged into the phase branch, sits at the tip and lands with no human asked - while the same return read from the target ref directly is refused (vr17). The docstring names the case as 'not told apart'. Read the returns at the verdict's OWN commit (the head the reviewer's verdict names) rather than at the tip: a return the verdict commit already contained is seen; one that arrived later is unseen and refused, naming it. Regression: the merge-after-verdict case is refused; its twin (contained at the verdict commit) lands. Faults: F569.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -5332,25 +5332,38 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "430207f445a7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "close-phase.py: under a tip verdict recording no read set, landed_answers_refusal now calls verdict_returns(), which finds the commit that wrote the verdict (verdict_commit: walk git log --first-parent over the plan's directory from the tip, the oldest of the run whose plan copy records the verdict), lists the merges on the branch's first-parent line after it (rev-list --first-parent --merges --parents), and marks late every tip return whose signature a merged side holds and the verdict commit does not. unseen_returns reports late returns as their own group first and stops crediting them through the tip or through the signing checkout's on-disk evidence (where the merge also put a copy). When the verdict commit or a merged side cannot be read, every tip return is late and the refusal names why. A return the branch's own line committed after the verdict is NOT late (filed before the verdict in the signing checkout and committed later; existing hl2 pins this - a first version that read the verdict commit alone turned hl2 red, which is why the rule is scoped to merges). Factored _plan_rel/_phase_at out of phase_as_landed. _filed_returns.ref_phase_returns gains commit=: reads a commit instead of the branch tip, labelling returns by the branch either way so one return read at both is one signature. Docstrings of landed_answers_refusal and unseen_returns updated (the 'brought to the tip by a merge' gap removed from the cannot-see list). Tests: vr24 (refused) and vr24b (twin, lands) in sc-block. Red before fix: sc-block 5/6, vr24 FAIL exit 0 landed. After: sc-block 6/6; whole test_close_phase.py 264/264 exit 0; sweep-selftests exit 0 (331/331 files); --spaced exit 0; ruff exit 0; vermin exit 0. test__filed_returns.py not touched; the could-not-establish path is unpinned.",
+        "descriptive": "A diverges return merged into a phase branch after its verdict no longer lands unasked; one the verdict commit already held still lands."
       },
       "startedAt": "2026-10-12T09:18:02Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T09:43:59Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_close_phase.py::vr24",
+        "plugins/audit/tests/test_close_phase.py::vr24b"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-12T09:43:58Z.7363c6",
         "status": "passed",
         "at": "2026-10-12T09:43:58Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "430207f445a7",
+        "at": "2026-10-12T09:43:59Z"
+      },
+      "redFirst": {
+        "at": "2026-10-12T09:35:17Z",
+        "basis": "`python3 plugins/audit/tests/test_close_phase.py --selftest --stage sc-block` in a throwaway tree at HEAD exited 1 with 1 of 6 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - vr24 (house FAIL): SELFTEST FAILED: 5/6 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.68-64p",
       "title": "The full gate's review-only split is pinned with a node preamble set (fo5)",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Closes the last pin of review finding P123-R9 (the review-only split runs before a node preamble on every gate path), whose fix landed in P123.62 (b89a1b10): fo4 pins the task/phase path; the full path had no case with a preamble set. Case fo5 in test_run_test_gate.py (already written in the tree by the cancelled P123.63's executor) sets nodePreamble \"cd .\" with fullGate [ok, claimsMatchCode] and asserts one step without the review-only text, FULL GATE GREEN and one not-a-command line. Its red was shown outside the repo: with full_gate's split put back to classifying the preamble-led command, fo5 failed (523/524). Regression mode: the fix is at HEAD.",
       "files": [
         "plugins/audit/tests/test_run_test_gate.py"
@@ -5378,16 +5391,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T09:44:00Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T10:00:52Z.531b10",
+        "status": "passed",
+        "at": "2026-10-12T10:00:52Z"
+      }
     },
     {
       "id": "P123.69-64p",

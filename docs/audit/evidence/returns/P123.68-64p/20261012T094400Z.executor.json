@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "own-selftest test_run_test_gate.py --selftest": "pass",
+    "sweep-selftests": "pass",
+    "sweep-selftests --spaced": "pass",
+    "ruff": "pass",
+    "vermin": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "Regression task, fix at HEAD (b89a1b10). The earlier cancelled task showed the red in a scratch copy outside the repo: with full_gate's split put back to classifying the preamble-led command, fo5 failed (523/524). I re-ran no red.",
+    "at": "earlier cancelled P123.63 run, not re-run here"
+  },
+  "outcome": {
+    "technical": "Read git diff of test_run_test_gate.py: fo5 sets nodePreamble 'cd .' with fullGate [ok, claimsMatchCode], runs main --full --record, and asserts exit E_OK, exactly one recorded step whose command lacks claimsMatchCode, FULL GATE GREEN in output, and exactly one 'not a command' line naming claimsMatchCode. Matches the task text; nothing changed. Exit codes: test_run_test_gate.py --selftest 0 (524/524); tools/sweep-selftests.py 0 (331/331 files, 15729 cases); --spaced 0 (same tally); ruff check plugins/audit tools 0; vermin 0 (min 3.7).",
+    "descriptive": "Pins the full gate's review-only split behind a node preamble with case fo5."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_run_test_gate.py: fo5"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:c18f987d0e1a797473af3d37ed4df5fbc7ffbefa5a6c63901a299d6098eb11c7\",\"dirtyDigest\":\"sha256:a841540125af75ad8d6279053b3f20c7d762fe3a5913dc4f7c88146f77d617d5\",\"dirtyPaths\":{\"plugins/audit/tests/test_audit_task.py\":\"e7e784d7332a4df2\",\"plugins/audit/tests/test_commit_task_work.py\":\"995b47dfa892e697\",\"plugins/audit/tests/test_drive_phase.py\":\"4128bfc8b10b92db\",\"plugins/audit/tests/test_run_test_gate.py\":\"5e0587f1eca56952\"},\"head\":\"430207f4\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:1cf0dba699f640c1d5f5e0143e381e9e9fd1e038c329d6080333fdf9762ebe2f\",\"v\":2}"
+}

@@ -8702,6 +8702,29 @@ def _full_review_only_cases(check):
     finally:
         _harness.remove_tree(root_p)
 
+    # --- the same rule on the FULL path, with a preamble in front ------------
+    root_f, mpath_f, _head_f = _full_repo("review-only-full-preamble",
+                                          fullgate=("ok", "claimsMatchCode"),
+                                          buildcommands=pre, preamble="cd .")
+    try:
+        lines = []
+        code = M.main([mpath_f, "--full", "--project-dir", root_f, "--record"],
+                      out=lines.append)
+        full_rows = [r for r in _ev_io.read_rows(root_f)["rows"]
+                     if r.get("scope") == "full"]
+        said = [ln for ln in lines if "not a command" in ln]
+        steps = full_rows[0]["steps"] if len(full_rows) == 1 else []
+        check("fo5 RED-FIRST: with a nodePreamble in front, a review-only "
+              "meta.fullGate entry is said once and never run - one step, the "
+              "real command, a green run: %r"
+              % ((code, [s.get("command") for s in steps], said),),
+              code == M.E_OK and len(steps) == 1
+              and "claimsMatchCode" not in steps[0].get("command", "")
+              and "FULL GATE GREEN" in "\n".join(lines)
+              and len(said) == 1 and "claimsMatchCode" in said[0])
+    finally:
+        _harness.remove_tree(root_f)
+
 
 def _hand_run_project_cases(check):
     """A FRESH repository - `.git` and nothing else, no `.claude/` - gated by
