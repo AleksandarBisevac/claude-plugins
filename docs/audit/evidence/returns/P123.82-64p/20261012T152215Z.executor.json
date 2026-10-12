@@ -1,0 +1,19 @@
+{
+  "gates": {
+    "own-tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-12T15:23:11Z",
+    "basis": "`python3 plugins/audit/tests/test_verify_invariants.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 69 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rw7 (house FAIL): SELFTEST FAILED: 67/69 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "_invariants.py: _REWRITE_ACTIONS is a compiled regex r'\\b(?:rebase|reset|filter-branch)\\b' searched over the action (text before first ': ') in _rewrite_action; 'branch: Reset to' kept. test_verify_invariants.py: added rw7 (the four measured pull -q --rebase start/pick/finish actions are rewrites) and rw8 (pull: Fast-forward, pull: Merge made by the 'ort' strategy., a commit subject naming pull --rebase, prebase, resets are not). Suite run: python3 plugins/audit/tests/test_verify_invariants.py --selftest; ruff check on _invariants.py exit 0.",
+    "descriptive": "A rebase run through pull --rebase is now named as a rewrite by the branch-history invariant, with rw7/rw8 locking it."
+  },
+  "testsAdded": [
+    "rw7",
+    "rw8"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:3588533fbac25507fd8460bc4a29d950191776ae7d175515c3bece982bbd9a10\",\"dirtyDigest\":\"sha256:91e49980ce596d30bd50939d47de533c86caa6d1a3a6381e69e54f18cbfb277e\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_invariants.py\":\"5f68af97cf13cc37\",\"plugins/audit/tests/test_verify_invariants.py\":\"619a69391c0d6819\"},\"head\":\"3f8b9a36\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_invariants.py\",\"plugins/audit/tests/test_verify_invariants.py\"],\"scopeDigest\":\"sha256:450c068b62622b4c3ca442eefd2d8d30b2975a443b4892cd4711d713dbd48934\",\"v\":2}"
+}

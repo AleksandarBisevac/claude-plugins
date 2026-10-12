@@ -882,6 +882,25 @@ def _rewrite_cases(check, tmp):
           and _invariants._rewrite_action("reset: moving to HEAD~1")
           and _invariants._rewrite_action("filter-branch: rewrite")
           and _invariants._rewrite_action("branch: Reset to abc"))
+    # actions `git pull --rebase` writes, measured against real git
+    pulled = (
+        "pull -q --rebase (finish): refs/heads/main onto 78e5bcb8",
+        "pull -q --rebase (start): checkout 78e5bcb8",
+        "pull -q --rebase (pick): c",
+        "pull -q --rebase (finish): returning to refs/heads/main",
+    )
+    check("rw7 a rebase run through `pull --rebase` is a rewrite in every entry "
+          "it writes: %r" % (pulled,),
+          all(_invariants._rewrite_action(m) for m in pulled))
+    check("rw8 `pull: Fast-forward`, `pull: Merge made by the 'ort' strategy.` "
+          "and a commit whose subject names a rebase are not rewrites, and "
+          "`prebase` / `resets` are not the verbs as words",
+          not _invariants._rewrite_action("pull: Fast-forward")
+          and not _invariants._rewrite_action(
+              "pull: Merge made by the 'ort' strategy.")
+          and not _invariants._rewrite_action("commit: pull --rebase it")
+          and not _invariants._rewrite_action("prebase (x): y")
+          and not _invariants._rewrite_action("resets: y"))
 
 
 def _selftest():

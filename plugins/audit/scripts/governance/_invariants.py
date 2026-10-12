@@ -1164,18 +1164,20 @@ _PUSH_MESSAGE = "update by push"
 # Reflog ACTIONS that name a rewrite by verb. The non-fast-forward test below
 # catches the ones that MOVED the tip; these catch the ones that were run and
 # happened to land somewhere reachable, which the ancestry test cannot see.
-_REWRITE_ACTIONS = ("rebase", "reset", "filter-branch")
+# Matched as whole words ANYWHERE in the action: a rebase run through another
+# command carries the caller's GIT_REFLOG_ACTION (`pull -q --rebase (finish)`).
+_REWRITE_ACTIONS = re.compile(r"\b(?:rebase|reset|filter-branch)\b")
 _REWRITE_BRANCH_MESSAGE = "branch: Reset to"
 
 
 def _rewrite_action(message):
     """True when the reflog message's ACTION - the text before its first ': ' -
-    is a rewrite verb. A commit's message is `commit: <subject>`, so the subject
+    names a rewrite verb as a word. A commit's message is `commit: <subject>`, so the subject
     is the author's prose and never evidence of what git did."""
     if message.startswith(_REWRITE_BRANCH_MESSAGE):
         return True
     action = message.split(": ", 1)[0]
-    return action.startswith(_REWRITE_ACTIONS)
+    return _REWRITE_ACTIONS.search(action) is not None
 
 
 def _reflog(git_root, ref, fmt):

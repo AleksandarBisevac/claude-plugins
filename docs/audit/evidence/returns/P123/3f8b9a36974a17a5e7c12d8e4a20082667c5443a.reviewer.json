@@ -1,0 +1,28 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/scripts/governance/_invariants.py:1164-1178",
+   "issue": "_rewrite_action classifies only actions that START with rebase, reset or filter-branch. The old substring test also caught a rebase run through another command, whose reflog action is the caller's GIT_REFLOG_ACTION, such as `pull --rebase (finish): ...` (from my knowledge of git, not observed here). Under the new test that entry is not a rewrite verb. The ancestry test still catches a rebase that moves the tip off its old line. A rebase that lands on a descendant of the old tip, the case the verb match exists for, is no longer named when it came through `pull --rebase`. rw1-rw6 cover no such entry.",
+   "resolution": "Match the verb inside the action as well as at its start, for example a word-boundary test for `rebase` over `action` (the text before the first ': '), and add an rw case with the message `pull --rebase (finish): returning to refs/heads/x`. A commit subject stays out of reach because only the action is searched."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "cannot-tell",
+  "note": "Desired outcome clause 1 ('a first phase is planned in one verb call with no placeholder'): I read the final shape of audit-task.py at HEAD (_under_lock create=True, _plan_or_seed, _create_then at 7970-8062). It builds the seed in memory, hands the body the real mpath, and the body's first write already holds the phase. That fits the clause and matches P123.78/79/80's outcomes. The other four clauses (run never runs less or more than named, a stopped drive leaves no lock, gate evidence in the project's own directory, a single-checkout landing leaves the user on the landed branch) I took only from the executors' filed outcomes in the brief. No diff for them was read. The brief handed no configured review skill, and the phase spans about 80 tasks, so I did not review the whole diff.",
+  "missing": ["a configured phase review skill (none named in the brief)", "a read of the phase diff for the clauses other than the first-plan flow"],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "mode phase: the phase's diff carries no single red-first claim of its own. The one task owed an answer (P123.81-64p) is graded in its tasks entry.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "The phase-level gate named in the brief is not a bounded selection. Its tests.gate entries are `python3 tools/sweep-selftests.py` (the whole project), the validators and the browser checks."
+ },
+ "verdict": "findings",
+ "tasks": [
+  {"id": "P123.81-64p", "commit": "3f8b9a36974a",
+   "answer": "matches",
+   "note": "The description asked that the branch-history invariant read a rewrite from the reflog entry's action and not from a commit subject. The diff replaces the _REWRITE_WORDS substring test over the whole %gs message with _rewrite_action(): the 'branch: Reset to' message, or an action (text before the first ': ') starting rebase, reset or filter-branch. The ancestry test is untouched. The filed outcome describes this accurately. The test__invariants.py edit that the brief's diff command lists does not exist in the commit, and the outcome says it needed none. rw1 shows a linear branch whose subject names rebase, reset: and filter-branch is clean. rw2-rw5 show real rebase, rebase -i, reset --hard and branch -f entries are still breaches. rw6 pins the classifier. One residual gap, finding 1: an action such as `pull --rebase (finish)` is no longer matched. Source grep found no remaining _REWRITE_WORDS reference.",
+   "missing": [],
+   "redFirst": "proved",
+   "redFirstBasis": "Executor basis: `python3 plugins/audit/tests/test_verify_invariants.py --selftest` in a throwaway tree at HEAD exited 1 with rw1 failing an assertion, HEAD's own tests green on HEAD's code, and the case passing with the working tree's implementation. It names a command, a non-zero exit, a collected test and the task's own assertion failing, which holds. The basis reads '1 of 67 failing' beside '65/67 passed'. I read the second failure as rw6 failing on the missing _rewrite_action symbol, which this task introduces. The stamp verb computed the status.",
+   "inheritedTests": "not-asked",
+   "inheritedTestsBasis": "tests.gate runs `python3 tools/sweep-selftests.py` over the whole project. The other entries are validate-manifest, plugin validate, audit-status --gate, render-report, ruff and vermin, and the two node browser checks. None selects a bounded set of tests, so the question has no bound."}
+ ]
+}

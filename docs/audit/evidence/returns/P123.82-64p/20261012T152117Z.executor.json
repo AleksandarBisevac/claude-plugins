@@ -1,0 +1,16 @@
+{
+  "gates": {
+    "own-tests": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "mode gate-only, expectRedFirst false; the brief adds no test",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "_invariants.py: _REWRITE_ACTIONS is now a compiled regex r'\\b(?:rebase|reset|filter-branch)\\b' searched over the action (text before first ': ') in _rewrite_action; 'branch: Reset to' kept. Probed by direct call: all four measured pull --rebase messages -> True; 'pull: Fast-forward', \"pull: Merge made by the 'ort' strategy.\", 'commit: rebase the thing' -> False. ruff check on the file exit 0; test_verify_invariants.py --selftest 67/67 pass. NOT DONE: the rw cases in test_verify_invariants.py were not added because that file is not in the task's files and the orchestrator said to stop and say so; the orchestrator must add rw cases (breach: the four measured pull -q --rebase messages; clean: pull Fast-forward, pull Merge made by the 'ort' strategy., commit with subject naming a rebase).",
+    "descriptive": "A rebase run through pull --rebase is now named as a rewrite by the branch-history invariant; the rw test cases remain owed outside this task's files."
+  },
+  "testsAdded": [],
+  "stamp": "audit-stamp: {\"content\":\"sha256:5eac47ea2cd28eee3a8ca58dea798463d2333e05b1b25685f97a85f575e3cb18\",\"dirtyDigest\":\"sha256:197f7b37c6e2f5c46b8fdbff4b21cb91eb9c39ebe33612b1475cc58c647a58bc\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_invariants.py\":\"5f68af97cf13cc37\"},\"head\":\"3f8b9a36\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_invariants.py\"],\"scopeDigest\":\"sha256:48d250a47bacef2d7b99427e27246be5cfd4393d22067a68d6753f2f22fbffe7\",\"v\":2}"
+}

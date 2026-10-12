@@ -331,9 +331,17 @@
         "fixTask": "P123.77-64p",
         "commit": "c6ac4d8e2975",
         "status": "fixed"
+      },
+      {
+        "id": "P123-R32",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_invariants.py:1164-1178",
+        "issue": "_rewrite_action classifies only actions that START with rebase, reset or filter-branch. The old substring test also caught a rebase run through another command, whose reflog action is the caller's GIT_REFLOG_ACTION, such as `pull --rebase (finish): ...` (from my knowledge of git, not observed here). Under the new test that entry is not a rewrite verb. The ancestry test still catches a rebase that moves the tip off its old line. A rebase that lands on a descendant of the old tip, the case the verb match exists for, is no longer named when it came through `pull --rebase`. rw1-rw6 cover no such entry.",
+        "resolution": "Match the verb inside the action as well as at its start, for example a word-boundary test for `rebase` over `action` (the text before the first ': '), and add an rw case with the message `pull --rebase (finish): returning to refs/heads/x`. A commit subject stays out of reach because only the action is searched.",
+        "fixTask": "P123.82-64p"
       }
     ],
-    "outcome": "[findings: 31 - 0 high, 13 med, 18 low; 30 with a recorded fix commit]"
+    "outcome": "[findings: 32 - 0 high, 13 med, 19 low; 30 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -6510,7 +6518,7 @@
     {
       "id": "P123.81-64p",
       "title": "The branch-history invariant reads a rewrite from the reflog entry's action, never from a commit subject that names one",
-      "status": "in_progress",
+      "status": "done",
       "description": "Found at P123's own sign-off: verify-invariants' branch-history rule reported a BREACH on a strictly linear branch (every consecutive reflog pair passes merge-base --is-ancestor; de67d314's parent is b1850cdd). `_invariants.branch_history` tests `any(word in message for word in _REWRITE_WORDS)` against the whole reflog message `%gs`, and for a commit that message is `commit: <subject>` - so P123.73's subject \"... its docstring names a rebase after the verdict\" matched `rebase`. Any project whose commit subject mentions rebase, reset: or filter-branch gets a false history-rewrite breach that only a human can sign off over. The reflog's action is the text before the first ': ' (`commit`, `commit (amend)`, `reset`, `rebase (finish)`, `rebase -i (pick)`, `filter-branch`, `branch`); classify the ACTION, never the subject: an action starting `rebase`, `reset`, `filter-branch`, or `branch` with a message `Reset to` is a rewrite verb; `commit`, `commit (initial)`, `commit (merge)`, `merge`, `cherry-pick`, `pull` are not. Keep the ancestry test as the exact rule and the action match only for rewrites that landed somewhere reachable, as the docstring says. Red-first: a fixture branch with a linear commit whose subject names a rebase goes from breach to clean; a real reset/rebase entry stays a breach.",
       "files": [
         "plugins/audit/scripts/governance/_invariants.py",
@@ -6542,19 +6550,94 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3f8b9a36974a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_invariants.py: replaced _REWRITE_WORDS substring match over the whole reflog message with _rewrite_action(), which classifies the action before the first ': ' (rebase*, reset*, filter-branch*) plus the 'branch: Reset to' message. test_verify_invariants.py: new rw-block rw1-rw6 (linear branch with rebase/reset:/filter-branch subject is clean; real rebase, rebase -i, reset --hard, branch -f entries stay breaches; action classifier unit cases). test_verify_invariants 67/67, test__invariants 120/120 pass. test__invariants.py needed no edit.",
+        "descriptive": "A commit subject that mentions a rebase no longer raises a false history-rewrite breach; real rewrites still do."
       },
       "startedAt": "2026-10-12T15:07:10Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T15:19:38Z",
+      "verifiedBy": [
+        "rw1",
+        "rw2",
+        "rw3",
+        "rw4",
+        "rw5",
+        "rw6 in plugins/audit/tests/test_verify_invariants.py"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-12T15:19:37Z.ac0aa6",
         "status": "passed",
         "at": "2026-10-12T15:19:37Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "3f8b9a36974a",
+        "at": "2026-10-12T15:19:38Z"
+      },
+      "redFirst": {
+        "at": "2026-10-12T15:10:50Z",
+        "basis": "`python3 plugins/audit/tests/test_verify_invariants.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 67 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rw1 (house FAIL): SELFTEST FAILED: 65/67 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
+      }
+    },
+    {
+      "id": "P123.82-64p",
+      "title": "fix P123-R32: _rewrite_action classifies only actions that START with rebase,...",
+      "status": "in_progress",
+      "description": "_rewrite_action classifies only actions that START with rebase, reset or filter-branch. The old substring test also caught a rebase run through another command, whose reflog action is the caller's GIT_REFLOG_ACTION, such as `pull --rebase (finish): ...` (from my knowledge of git, not observed here). Under the new test that entry is not a rewrite verb. The ancestry test still catches a rebase that moves the tip off its old line. A rebase that lands on a descendant of the old tip, the case the verb match exists for, is no longer named when it came through `pull --rebase`. rw1-rw6 cover no such entry.\n\nResolution asked: Match the verb inside the action as well as at its start, for example a word-boundary test for `rebase` over `action` (the text before the first ': '), and add an rw case with the message `pull --rebase (finish): returning to refs/heads/x`. A commit subject stays out of reach because only the action is searched.",
+      "files": [
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/tests/test_verify_invariants.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [
+          "plugins/audit/tests/test_verify_invariants.py: the measured pull -q --rebase (start|pick|finish) reflog actions are a rewrite breach; pull: Fast-forward, pull: Merge made by the 'ort' strategy. and a commit whose subject names a rebase are clean"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 2,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-12T15:22:15Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-12T15:21:17Z",
+          "text": "scope: plugins/audit/scripts/governance/_invariants.py, every path the finding(s) P123-R32 name"
+        }
+      ],
+      "fixes": [
+        "P123-R32"
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T15:32:06Z.dec005",
+        "status": "passed",
+        "at": "2026-10-12T15:32:06Z"
       }
     }
   ],
