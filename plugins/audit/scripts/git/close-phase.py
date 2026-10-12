@@ -2393,7 +2393,10 @@ def landed_answers_refusal(project, manifest_path, phase, landed, branch,
     What the per-place reading cannot see, and the read set does: a return
     filed in a checkout it does not name, or in the signing checkout after a
     switch away and back. A verdict needs a sign-off by this version for
-    those.
+    those. Nor can it see a rebase of the phase branch onto the target after
+    the verdict: the rebase rewrites the verdict's commit, so the commit
+    `verdict_returns` names holds the target's later return, and that return
+    then reads as seen.
 
     Unreachable, and why: a tip verdict with the tip itself unreadable -
     refused above as unestablished before any return is asked. Not told

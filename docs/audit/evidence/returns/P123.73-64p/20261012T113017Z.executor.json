@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "test_close_phase --selftest (full file)": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task, expectRedFirst false; cases pin existing fail-closed branches and were seen green; no scratch-tree mutation run",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Added _fail_closed_verdict_cases (stage fc-block) to plugins/audit/tests/test_close_phase.py: fc1 verdict uncommitted -> verdict_commit names no commit, all tip returns late with 'no commit on' reason, also surfaced via _late_words; fc1b twin with committed verdict names commit and nothing late; fc2 git log failing; fc3 rev-list failing; fc4 ref_phase_returns unreadable. Branches driven by real git state or by wrapping M._git_text/_fr.ref_phase_returns, restored in finally. Docstring of landed_answers_refusal now lists a rebase of the phase branch onto the target after the verdict as unseen. Full test_close_phase.py --selftest: 269/269 pass exit 0; ruff clean on both files. The 'prove each can fail by mutating a scratch copy' was not run.",
+    "descriptive": "The could-not-establish branches of verdict_returns are pinned, and the cannot-see list names a post-verdict rebase."
+  },
+  "testsAdded": [
+    "fc1",
+    "fc1b",
+    "fc2",
+    "fc3",
+    "fc4"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:89c1c1a895f1e3afc7a70615b810d747ef63a148946d274ceaabb2b4197e60b5\",\"dirtyDigest\":\"sha256:4d8c9803b805482d6003be857779b79f418ad6ef0509e1ac1e29f247ecdcfa81\",\"dirtyPaths\":{\"plugins/audit/scripts/git/close-phase.py\":\"09710222f0275a8a\",\"plugins/audit/tests/test_close_phase.py\":\"5097b2ce43918028\"},\"head\":\"b1850cdd\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/git/close-phase.py\",\"plugins/audit/tests/test_close_phase.py\"],\"scopeDigest\":\"sha256:db4cefcc9f025ae27fa04237a85dc926099e8d3cad2d4c55cd41dd93fa791860\",\"v\":2}"
+}

@@ -190,8 +190,10 @@
         "severity": "low",
         "file": "plugins/audit/hooks/guard-bash-writes.py:701-713 (consumer: :2131-2148); plugins/audit/tests/test_guard_bash_writes.py:2605-2645",
         "issue": "Outcome agreement is the right invariant for R10, because guard-bash-writes runs PostToolUse only and the pre-command disk cannot be reread. _config.copy_destinations' docstring now says what holds. The new comment in _statement_targets, though, says taking both landings 'costs nothing ... never makes a finding of its own'. That is false under the deny tier: a path in `named` goes to `authored` and is BLOCKED even while a peer session is active (`clauses`), and the union adds a directory destination the shared reader alone did not give. For `cp -r src/ lib/` with lib pre-existing, the is_dir=False reading adds `lib`, and writing_statement's directory rule (:776-779) then names every changed path under lib/. A peer's concurrent write to lib/other.py is attributed to this command and blocked instead of noticed. The (ca) cases compute `named` only over files the copy landed, so they cannot see over-attribution.",
-        "resolution": "Either restrict the extra is_dir=False landing to destinations that did not exist as directories before (or to the specific <dest>/<source-basename> subtree), or correct the comment to state the deny-tier cost. Add a (ca) negative: a file under the destination directory that the copy did not write is not named.",
-        "fixTask": "P123.72-64p"
+        "resolution": "fixed in P123.72-64p (b1850cdd93c1): Either restrict the extra is_dir=False landing to destinations that did not exist as directories before (or to the specific <dest>/<source-basename> subtree), or correct the comment to state the deny-tier cost. Add a (ca) negative: a file under the destination directory that the copy did not write is not named.",
+        "fixTask": "P123.72-64p",
+        "commit": "b1850cdd93c1",
+        "status": "fixed"
       },
       {
         "id": "P123-R18",
@@ -226,7 +228,7 @@
         "fixTask": "P123.74-64p"
       }
     ],
-    "outcome": "[findings: 21 - 0 high, 10 med, 11 low; 16 with a recorded fix commit]"
+    "outcome": "[findings: 21 - 0 high, 10 med, 11 low; 17 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -5709,7 +5711,7 @@
     {
       "id": "P123.72-64p",
       "title": "The bash-write guard names a copy's second landing only for files that copy created, and a peer's file under it stays unnamed (orchestrator-written guard reading code)",
-      "status": "in_progress",
+      "status": "done",
       "description": "(P123-R17, low) Outcome agreement is the right invariant for R10, because guard-bash-writes runs PostToolUse only and the pre-command disk cannot be reread. _config.copy_destinations' docstring now says what holds. The new comment in _statement_targets, though, says taking both landings 'costs nothing ... never makes a finding of its own'. That is false under the deny tier: a path in `named` goes to `authored` and is BLOCKED even while a peer session is active (`clauses`), and the union adds a directory destination the shared reader alone did not give. For `cp -r src/ lib/` with lib pre-existing, the is_dir=False reading adds `lib`, and writing_statement's directory rule (:776-779) then names every changed path under lib/. A peer's concurrent write to lib/other.py is attributed to this command and blocked instead of noticed. The (ca) cases compute `named` only over files the copy landed, so they cannot see over-attribution.\nResolution: Either restrict the extra is_dir=False landing to destinations that did not exist as directories before (or to the specific <dest>/<source-basename> subtree), or correct the comment to state the deny-tier cost. Add a (ca) negative: a file under the destination directory that the copy did not write is not named.\n\nThe union of landings costs something under the deny tier, where a named path is blocked: take the alternative landing (no operand pre-existed) only for a file that did not exist before - a path git reports untracked-new inside a directory that is itself untracked - so a pre-existing directory's other contents are never pulled in. GUARD COMMAND-READING CODE: written by the orchestrator. Faults: P123-R17.",
       "files": [
         "plugins/audit/hooks/guard-bash-writes.py",
@@ -5746,14 +5748,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b1850cdd93c1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Written by the orchestrator (guard command-reading code). Driving the finding's case on this macOS host exposed a second defect under it: BSD cp copies a trailing-slash source's CONTENTS into an existing directory (`cp -r src/ lib/` writes lib/k.py) where GNU cp writes lib/src/k.py, and the one copy reader read GNU only - so the plan gate graded lib/src/k.py while the copy wrote lib/k.py. hooks/_config: CP_SLASH_COPIES_CONTENTS (true on darwin and the BSDs) and _copies_contents() make copy_destinations land a whole cp of a slash-ended source as its contents when that holds. guard-bash-writes: each copy landing is paired with its created-as-named alternative and `_landing` takes the alternative only when the first is not on the disk; `_copy_source_holds` names a copy as the writer of a file under its destination directory only when a source directory still holds the same relative path or a source file has that name (sources gone, as after mv, are not second-guessed) - so a peer's lib/peer.py beside the copy's files stays unnamed. Cases: test_guard_bash_writes ca5 (`cp -r src lib/`) and ca6 (`cp -r src/ lib/`) run real copies onto an existing lib, require graded == landed == named and the peer file unnamed - ca6 was red before (graded lib/src/k.py, peer named) and both pass; test__config dd5 pins both cp semantics through the flag; test_guard_secrets_read's slash-copy group now states it reads GNU cp, with sc5 the BSD twin. SECURITY.md says the reader follows the host's cp and the attribution needs the source to hold the file.",
+        "descriptive": "A copy is graded by the cp the host runs, and the bash-write guard names a copy as the writer only of files its own source holds, so a peer's file beside it is never blamed or blocked."
       },
       "startedAt": "2026-10-12T11:09:04Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T11:30:16Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_guard_bash_writes.py: ca5, ca6",
+        "plugins/audit/tests/test__config.py: dd5",
+        "plugins/audit/tests/test_guard_secrets_read.py: sc5"
+      ],
       "notes": [
         {
           "at": "2026-10-12T10:24:56Z",
@@ -5768,12 +5774,23 @@
         "runId": "2026-10-12T11:30:14Z.1dc4cb",
         "status": "passed",
         "at": "2026-10-12T11:30:14Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "b1850cdd93c1",
+        "at": "2026-10-12T11:30:16Z",
+        "basis": "a fix task for P123-R17: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-12T11:20:31Z",
+        "basis": "`python3 plugins/audit/tests/test_guard_bash_writes.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 237 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ca5 (house FAIL), ca6 (house FAIL): SELFTEST FAILED: 235/237 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.73-64p",
       "title": "close-phase's fail-closed branches for the verdict's returns are pinned, and its docstring names a rebase after the verdict",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(P123-R18, low) The fail-closed branches of verdict_returns are unpinned: verdict_commit naming no commit, a merged side whose returns git will not list, and rev-list failing. The executor states this ('the could-not-establish path is unpinned'). A regression that turned any of them fail-open would land an unseen diverges return with no case going red. The cannot-see list in landed_answers_refusal's docstring also no longer names any post-verdict history change. A rebase of the phase branch onto the target after the verdict rewrites the verdict commit so that it holds the target's later return, and that return then reads as seen.\nResolution: Add a vr24c case that makes the verdict commit unnameable (e.g. a tip whose plan-dir history holds no verdict-recording run) and asserts the refusal names why. Add the rebase-after-verdict shape to the cannot-see sentence.\n\nAdd the cases that reach close-phase.py:823-842's could-not-establish branches (prove each can fail by making the branch pass in a scratch copy), and add a rebase after the verdict to the docstring's list of what it cannot see. Faults: P123-R18.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -5803,14 +5820,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T11:30:17Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -5821,7 +5838,13 @@
       ],
       "fixes": [
         "P123-R18"
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T11:41:54Z.b59332",
+        "status": "passed",
+        "at": "2026-10-12T11:41:54Z"
+      }
     },
     {
       "id": "P123.74-64p",

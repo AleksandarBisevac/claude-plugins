@@ -1855,6 +1855,92 @@ def _same_root(name):
     return root, git, mpath, git("rev-parse", "HEAD").stdout.decode().strip()
 
 
+def _fail_closed_verdict_cases(check):
+    """`verdict_returns` answers "late" for every return the tip commits when it
+    cannot establish what the verdict's commit held - the verdict naming no
+    commit, git refusing the merge listing, a merged side git will not list -
+    and names the reason. Each is driven by one real or faked git answer, and
+    the twin where all of it is readable names the commit and counts nothing
+    late, so a branch that always answered "late" would stop here."""
+    import _filed_returns as _fr
+    root, git, mpath, sha = _same_root("fail-closed")
+    try:
+        rel = _reach_put(root, sha)
+        entry = (rel, json.loads(json.dumps(_REACH_BODY)), "")
+        places = {"tip": [entry], "branch": "audit/p1-demo",
+                  "returnsRel": posixpath_dir(rel)}
+        real_text, real_ref = M._git_text, _fr.ref_phase_returns
+
+        def refuse(verb):
+            def text(git_root, args):
+                if args and args[0] == verb:
+                    return 128, ""
+                return real_text(git_root, args)
+            return text
+
+        def ask():
+            return M.verdict_returns(root, mpath, places, "P1")
+
+        got = ask()
+        check("fc1 A VERDICT THE TIP HOLDS ON NO COMMIT: with the verdict never "
+              "committed on the branch, no commit can be named, every return "
+              "the tip commits is late and the reason says so: %r"
+              % (got.get("signedWhy"),),
+              got["late"] == [entry] and got["signedAt"] is None
+              and "no commit on audit/p1-demo" in got["signedWhy"]
+              and got["signedWhy"] in M._late_words(got))
+        _reach_sign(mpath, git, commit=True)
+        got = ask()
+        check("fc1b THE TWIN: the verdict committed names its commit and no "
+              "return is late: %r" % (got,),
+              got["late"] == [] and got["signedAt"] == git(
+                  "rev-parse", "HEAD").stdout.decode().strip()
+              and got["signedWhy"] == "")
+        try:
+            M._git_text = refuse("log")
+            got = ask()
+        finally:
+            M._git_text = real_text
+        check("fc2 GIT WILL NOT LIST THE COMMITS THAT TOUCHED THE PLAN: late, "
+              "naming the listing: %r" % (got.get("signedWhy"),),
+              got["late"] == [entry] and got["signedAt"] is None
+              and "would not list the commits on audit/p1-demo"
+              in got["signedWhy"])
+        try:
+            M._git_text = refuse("rev-list")
+            got = ask()
+        finally:
+            M._git_text = real_text
+        check("fc3 REV-LIST FAILING: late, naming the merges git would not "
+              "list: %r" % (got.get("signedWhy"),),
+              got["late"] == [entry] and got["signedAt"] is None
+              and "would not list the merges into audit/p1-demo"
+              in got["signedWhy"])
+        name = "%s:%s" % (places["branch"], places["returnsRel"])
+
+        def unread(git_root, ref, rel_, phase_id, commit=None):
+            return [(name, None, "git would not list %s at %s"
+                     % (rel_, commit[:12]))]
+        try:
+            _fr.ref_phase_returns = unread
+            got = ask()
+        finally:
+            _fr.ref_phase_returns = real_ref
+        check("fc4 A COMMIT WHOSE RETURNS GIT WILL NOT LIST: late, with git's "
+              "own sentence as the reason: %r" % (got.get("signedWhy"),),
+              got["late"] == [entry] and got["signedAt"] is None
+              and "git would not list" in got["signedWhy"]
+              and "merges" not in got["signedWhy"])
+    finally:
+        M._git_text = real_text
+        _fr.ref_phase_returns = real_ref
+        _harness.remove_tree(root)
+
+
+def posixpath_dir(rel):
+    return rel.rsplit("/", 1)[0]
+
+
 def _same_checkout_reach_cases(check):
     """THE LANDING RUN FROM THE BRANCH'S OWN CHECKOUT. There the project's
     evidence is the branch's, so a return filed where the target branch is
@@ -5082,6 +5168,7 @@ STAGES = (("tk-block", "_takeover_cases"), ("lk-block", "_lock_cases"),
           ("hl-block", "_human_answer_landing_cases"),
           ("vr-block", "_verdict_reach_cases"),
           ("sc-block", "_same_checkout_reach_cases"),
+          ("fc-block", "_fail_closed_verdict_cases"),
           ("rs-block", "_read_set_reach_cases"), ("ov-block", "_override_cases"),
           ("la-block", "_landing_cases"), ("co-block", "_checked_out_cases"),
           ("sy-block", "_symlink_cases"), ("cm-block", "_composed_cases"),
