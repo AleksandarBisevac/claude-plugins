@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "own-tests (python3 plugins/audit/tests/test_gen_demo_manifest.py --selftest)": "pass",
+    "ruff check on the two changed .py files": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression mode, expectRedFirst false: fix first, then tests fr1/fr2 locking it",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "README.md:1530 now reads 'names no runnable meta.fullGate entry (none, or only review-only ones)'. gen-demo-manifest.py _evidence_specs builds `full` from _evidence_io.full_gate(manifest)['commands'] instead of build.get(e,e) over meta.fullGate. Added _full_row_cases (fr1: row steps equal full_gate commands; fr2: a review-only entry claimsMatchCode appended to fullGate is left out) to tests/test_gen_demo_manifest.py. Selftest exit 0, 135/135 passed. R21 confirmed in docs/audit/phases/P123.json: the findings now carry fixTask P123.68-64p (line 114) and P123.69-64p (lines 154, 164), i.e. R9 -> P123.68, R13/R14 -> P123.69 as the orchestrator's resolve-finding left them; no edit made by me. _evidence_io.py and P123.json were not edited. Faults: P123-R19, P123-R20, P123-R21.",
+    "descriptive": "README and the demo's full-run row now agree with full_status on what the runnable full gate is; the review record links R9/R13/R14 to their live fix tasks."
+  },
+  "testsAdded": [
+    "fr1 the demo's full-run row publishes the commands full_gate resolves",
+    "fr2 a review-only entry in the demo's fullGate is left out of the row"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:edb5da4024f41bbb7ee98aac91e162005a148b130a098e1dffdb6b924491dc10\",\"dirtyDigest\":\"sha256:9c38dc2adefb486434e175f91317d85a54cd55b26ee9bcad5220aad862eb5121\",\"dirtyPaths\":{\"plugins/audit/README.md\":\"ec9f7c5f9efb3a8c\",\"plugins/audit/scripts/demo/gen-demo-manifest.py\":\"5649665c59b4e4c5\",\"plugins/audit/tests/test_gen_demo_manifest.py\":\"b1fe424c5d3facc5\"},\"head\":\"de67d314\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"docs/audit/phases/P123.json\",\"plugins/audit/README.md\",\"plugins/audit/scripts/demo/gen-demo-manifest.py\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/tests/test_gen_demo_manifest.py\"],\"scopeDigest\":\"sha256:c295e0b0123a9bd2c9273f387e108ac12e91c7ee0a472fe8bfc842e32eaa447a\",\"v\":2}"
+}

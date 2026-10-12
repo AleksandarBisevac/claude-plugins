@@ -2224,8 +2224,7 @@ def _evidence_specs(manifest):
     # commit. Resolved the way the runner resolves it, so its steps publish the
     # exact commands `full_status` compares them with.
     run = demo_history(manifest.get("phases") or [])["run"]
-    full = [(e, build.get(e, e)) for e in
-            ((manifest.get("meta") or {}).get("fullGate") or [])]
+    full = _evidence_io.full_gate(manifest)["commands"]
     if run is not None and full:
         out.append((_evidence_io.FULL_SCOPE, {},
                     _at(run["at"], RUN_RECORDED_HOURS), None,

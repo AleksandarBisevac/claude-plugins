@@ -1527,7 +1527,7 @@ does not hold — the newest full run is stale, dirty, unmeasured or does not de
 `mergedHead` — and `unknown` is a phase that records no `mergedHead`, or one git itself cannot
 answer about, most often a shallow clone with no ancestry to ask: `fetchDepth: 0` in CI is what
 keeps that second answer available at all.
-`not_declared` means the plan names no `meta.fullGate`, so there is no third place to ask and
+`not_declared` means the plan names no runnable `meta.fullGate` entry (none, or only review-only ones), so there is no third place to ask and
 nothing about the phase is provisional. This repository's own release guard refuses a release
 over a `provisional` phase.
 

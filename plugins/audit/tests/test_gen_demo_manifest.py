@@ -1484,7 +1484,34 @@ def _newline_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _full_row_cases(check):
+    """The demo's full-run row is the runnable full gate and nothing else."""
+    m = M.generate(n_phases=12, n_tasks=6, seed=11)
+    ev = M._evidence_io
+
+    def full_steps(manifest):
+        return [[s for s in res.get("steps")] for scope, _i, _t, _a, res
+                in M._evidence_specs(manifest) if scope == ev.FULL_SCOPE]
+
+    base = full_steps(m)
+    plain = [c for _n, c in ev.full_gate(m)["commands"]]
+    check("fr1 the demo's full-run row publishes the commands full_gate "
+          "resolves: %r" % (plain,),
+          len(base) == 1 and bool(plain)
+          and [s["command"] for s in base[0]] == plain)
+    withread = json.loads(json.dumps(m))
+    withread["meta"]["fullGate"] = (list(withread["meta"]["fullGate"])
+                                    + ["claimsMatchCode"])
+    with_steps = full_steps(withread)
+    check("fr2 a review-only entry in the demo's fullGate is left out of the "
+          "row, as the runner leaves it out",
+          ev.full_gate(withread)["reviewOnly"] == ["claimsMatchCode"]
+          and len(with_steps) == 1
+          and [s["command"] for s in with_steps[0]] == plain)
+
+
 def _all_cases(check):
+    _full_row_cases(check)
     _newline_cases(check)
     _cases(check)
     _history_cases(check)
