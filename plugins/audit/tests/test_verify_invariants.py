@@ -294,6 +294,8 @@ def _cases(check):
         _baseline_cases(check, tmp)
         _harness.stage(check, "sl-block",
                        lambda c: _success_line_cases(c, tmp))
+        _harness.stage(check, "rw-block",
+                       lambda c: _rewrite_cases(c, tmp))
         _harness.stage(check, "lc-block",
                        lambda c: _landing_committed_cases(c, tmp))
     finally:
@@ -796,6 +798,90 @@ def _success_line_cases(check, tmp):
           "twin of sl1: %r" % (breach[1][-160:],),
           breach[0] != 0 and "BREACH: " in breach[1]
           and breach == _cli([rogue, "P1", "--project", rroot, "--verbose"]))
+
+
+def _worded(root):
+    """The breaches of the branch-history check that come from a reflog ACTION."""
+    hist = _invariants.branch_history({"branch": BRANCH}, root)
+    return [b for b in hist["breaches"]
+            if b.startswith("the branch reflog records")], hist
+
+
+def _rewrite_cases(check, tmp):
+    """A rewrite verb is read from the reflog entry's ACTION, never from a commit
+    subject that happens to name one."""
+    subject = "fix: its docstring names a rebase, a reset: and a filter-branch"
+    root = os.path.join(tmp, "rw-linear")
+    os.makedirs(root)
+    repo(root)
+    _git(root, "commit", "-q", "-a", "-m", "fixture: settle the manifest")
+    with open(os.path.join(root, "src", "b.py"), "w", encoding="utf-8") as fh:
+        fh.write("b = 1\n")
+    _git(root, "add", "src/b.py")
+    _git(root, "commit", "-q", "-m", subject)
+    worded, hist = _worded(root)
+    check("rw1 a linear branch whose commit SUBJECT names a rebase, a reset: and "
+          "a filter-branch is clean - the reflog message of a commit is "
+          "`commit: <subject>`, and only the action before the first colon says "
+          "what was done: %r" % (hist["breaches"],),
+          hist["breaches"] == [] and hist["examined"] == 3
+          and subject in _git(root, "reflog", "show", "--format=%gs", BRANCH))
+
+    def _fresh(name):
+        path = os.path.join(tmp, name)
+        os.makedirs(path)
+        repo(path)
+        _git(path, "commit", "-q", "-a", "-m", "fixture: settle the manifest")
+        return path
+
+    env = dict(os.environ, GIT_SEQUENCE_EDITOR="true")
+    cases = (
+        ("rw2 a real `rebase (finish)` entry", "rebase (finish)",
+         ("rebase", "--force-rebase", "main")),
+        ("rw3 a real `rebase -i (finish)` entry", "rebase (finish)",
+         ("rebase", "-i", "--force-rebase", "main")),
+        ("rw4 a real `reset: moving to` entry", "reset: moving to",
+         ("reset", "-q", "--hard", "HEAD~1")),
+    )
+    for label, needle, argv in cases:
+        path = _fresh("rw-" + needle.split()[0].replace(":", "") + str(len(label)))
+        if argv[0] == "rebase":
+            # main moves on, so the replay really changes the tip's SHA - a rebase
+            # that changes nothing writes no entry on the branch
+            _git(path, "checkout", "-q", "main")
+            _git(path, "commit", "-q", "--allow-empty", "-m", "main moves on")
+            _git(path, "checkout", "-q", BRANCH)
+        tip = _git(path, "rev-parse", "HEAD").strip()
+        done = subprocess.run(["git"] + list(argv), cwd=path, env=env,
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        if argv[0] == "reset":
+            # back to where it was: the second move lands on a descendant, the
+            # shape ancestry alone cannot see
+            _git(path, "reset", "-q", "--hard", tip)
+        worded, hist = _worded(path)
+        check("%s on the phase branch is still a breach, named by its action: "
+              "git exit %d, %r" % (label, done.returncode, hist["breaches"]),
+              done.returncode == 0 and len(worded) >= 1
+              and any(needle in b for b in worded))
+    path = _fresh("rw-branch-f")
+    tip = _git(path, "rev-parse", "HEAD").strip()
+    _git(path, "checkout", "-q", "main")
+    _git(path, "branch", "-f", BRANCH, tip + "~1")
+    _git(path, "branch", "-f", BRANCH, tip)
+    worded, hist = _worded(path)
+    check("rw5 a real `branch: Reset to` entry (`git branch -f`) is still a "
+          "breach: %r" % (hist["breaches"],),
+          len(worded) >= 1 and "branch: Reset to" in worded[0])
+    check("rw6 the action is the text before the first `: ` - a bare `commit` "
+          "is not a rewrite, and neither is `commit (amend)`; `rebase (pick)`, "
+          "`reset`, `filter-branch` and `branch: Reset to` are",
+          not _invariants._rewrite_action("commit: rebase it")
+          and not _invariants._rewrite_action("commit (amend): reset: x")
+          and not _invariants._rewrite_action("merge main: Fast-forward")
+          and _invariants._rewrite_action("rebase -i (pick): x")
+          and _invariants._rewrite_action("reset: moving to HEAD~1")
+          and _invariants._rewrite_action("filter-branch: rewrite")
+          and _invariants._rewrite_action("branch: Reset to abc"))
 
 
 def _selftest():

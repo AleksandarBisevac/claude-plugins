@@ -1,0 +1,26 @@
+{
+  "gates": {
+    "own-test test_verify_invariants.py --selftest": "pass",
+    "test__invariants.py --selftest": "pass",
+    "ruff check (two touched files)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-12T15:10:50Z",
+    "basis": "`python3 plugins/audit/tests/test_verify_invariants.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 67 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rw1 (house FAIL): SELFTEST FAILED: 65/67 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "_invariants.py: replaced _REWRITE_WORDS substring match over the whole reflog message with _rewrite_action(), which classifies the action before the first ': ' (rebase*, reset*, filter-branch*) plus the 'branch: Reset to' message. test_verify_invariants.py: new rw-block rw1-rw6 (linear branch with rebase/reset:/filter-branch subject is clean; real rebase, rebase -i, reset --hard, branch -f entries stay breaches; action classifier unit cases). test_verify_invariants 67/67, test__invariants 120/120 pass. test__invariants.py needed no edit.",
+    "descriptive": "A commit subject that mentions a rebase no longer raises a false history-rewrite breach; real rewrites still do."
+  },
+  "testsAdded": [
+    "rw1",
+    "rw2",
+    "rw3",
+    "rw4",
+    "rw5",
+    "rw6 in plugins/audit/tests/test_verify_invariants.py"
+  ],
+  "claims": "claims:\n- the action, not the subject, is classified: rw1 red before fix, green after (python3 plugins/audit/tests/test_verify_invariants.py --selftest, exit 0, 67/67)\n- not verified: filter-branch real reflog entry (only the classifier unit case rw6 covers it)",
+  "stamp": "audit-stamp: {\"content\":\"sha256:629dfaf7411c7cd802fcb36245082dc3bb86cf0609b055ba69029a8df8e32891\",\"dirtyDigest\":\"sha256:91e49980ce596d30bd50939d47de533c86caa6d1a3a6381e69e54f18cbfb277e\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_invariants.py\":\"8c2f2992131b5a6c\",\"plugins/audit/tests/test_verify_invariants.py\":\"0f6235334f884d67\"},\"head\":\"fe0e0440\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_invariants.py\",\"plugins/audit/tests/test__invariants.py\",\"plugins/audit/tests/test_verify_invariants.py\"],\"scopeDigest\":\"sha256:192e1636a005103a57a147d5a0401f54dc97f34d903b3625b6d94e24ffbc20e1\",\"v\":2}"
+}

@@ -1161,10 +1161,21 @@ BRANCH_HISTORY_BASIS = ("the remote-tracking refs for the phase branch, that "
 # writes "fetch <remote>" instead, which is why the two can be told apart at all.
 _PUSH_MESSAGE = "update by push"
 
-# Reflog messages that name a rewrite by verb. The non-fast-forward test below
+# Reflog ACTIONS that name a rewrite by verb. The non-fast-forward test below
 # catches the ones that MOVED the tip; these catch the ones that were run and
 # happened to land somewhere reachable, which the ancestry test cannot see.
-_REWRITE_WORDS = ("reset:", "rebase", "filter-branch", "branch: Reset to")
+_REWRITE_ACTIONS = ("rebase", "reset", "filter-branch")
+_REWRITE_BRANCH_MESSAGE = "branch: Reset to"
+
+
+def _rewrite_action(message):
+    """True when the reflog message's ACTION - the text before its first ': ' -
+    is a rewrite verb. A commit's message is `commit: <subject>`, so the subject
+    is the author's prose and never evidence of what git did."""
+    if message.startswith(_REWRITE_BRANCH_MESSAGE):
+        return True
+    action = message.split(": ", 1)[0]
+    return action.startswith(_REWRITE_ACTIONS)
 
 
 def _reflog(git_root, ref, fmt):
@@ -1243,7 +1254,7 @@ def branch_history(phase, git_root):
                     % (older[:12], newer[:12], message),
                     "forced update from %s" % (older,), newer, local=True))
         for row_sha, message in rows:
-            if any(word in message for word in _REWRITE_WORDS):
+            if _rewrite_action(message):
                 breaches.append(found(
                     "the branch reflog records %r, a history rewrite the "
                     "orchestrator may not run without explicit human "

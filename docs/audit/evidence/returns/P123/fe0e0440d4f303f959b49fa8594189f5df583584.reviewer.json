@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "tools/prove-gates.py:628-633",
+   "issue": "P123.77 (fix P123-R25) asked to RUN prove-gates for the lmd9/lmd10 rows from a committed tree and record the outcome. The diff instead retargets the layer_mention_drift plant row's expected case from lmd9 to lmd1, and the executor's own outcome says 'prove-gates not run'. By reading, the retarget is right: the anchor '`_doctor_report` for the collector' occurs once in plugins/audit/scripts/status/_doctor_ado.py:24, and the planted 'the bottom layer holds ...' is an absolute ordinal claim followed by an ordinary word, which lmd11/lmd1 refuse. But no recorded run shows the row going red (and the allow row lmd10 green), so the row is still a table entry that has only been read.",
+   "resolution": "Run `python3 tools/prove-gates.py --only layer_mention` from the committed tree and record the red result for the plant row and the green result for the allow row. If the plan carries no place for it, file the output as the task's basis."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Read against desiredOutcome. First plan in one call, no placeholder: _under_lock(create=True) in audit-task.py hands add-phase and add --from-file a seed; the body's own first write of the real path holds the requested phase, and a refusal or failure after the write removes it again (pre-write snapshot records the path as absent, pinned by fp1-fp13). _create_then is now a pass-through, so the .creating staging is gone from code and docs (grep clean) and every journal row names the real plan path (fp11, fp12). Task verbs still refuse a missing plan (fp5). /audit:run: drive-phase.py next --task raises phase_form_refusal for a phase id, naming /audit:phase. Stopped drive: drive() gives the lock back on every E_STOPPED and on any BaseException through give_back_lock; an E_USAGE answer refusal and a decision keep the lock on purpose, as the same run. Evidence directory: run-test-gate and the other readers go through _output.project_of_manifest. Landing: _worktrees.landing_switch / close-phase switch the main worktree to the parent only for a clean, ref-only fast-forward run in that tree, and say why otherwise. No F/P/BUG ids were added to code comments and no debug code was added in scripts/hooks/tools. Depth of reading: P123.1 and P123.78-80 in full, P123.2-5 on the code paths named above; the remaining tasks I did not re-read, since each was reviewed in a round of its own. Not answerable from the brief: where a task chose something the request left open, because phase.request and phase.openChoices are absent.",
+  "missing": ["phase.request", "phase.openChoices", "a review skill for the phase", "phase.testGateDerived basis"],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "mode: phase; the phase's intent.redFirst is not-attempted. Per-task bases seen: P123.78 proved (fp7 failing at HEAD, passing with the working tree's implementation); P123.1 and P123.79 could-not-prove (HEAD's own suite was red or no test reached an assertion); P123.77 and P123.80 not-attempted (gate-only and regression modes). fp13 (P123.80) was seen only passing, and it is a regression pin.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "The tests.gate entries read in the brief (selftests = python3 tools/sweep-selftests.py, validate, plugin-validate, gate, report, lint, shots, interactive) run whole projects; the selftests entry sweeps every suite in the tree. The question does not narrow to a bounded set of selected tests, so it is not asked."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

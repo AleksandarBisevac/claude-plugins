@@ -280,7 +280,10 @@
         "severity": "med",
         "file": "tools/prove-gates.py:626-634,1596-1601",
         "issue": "P123.77 (fix P123-R25) was asked to RUN prove-gates for the lmd9 red row and the lmd10 allow row from a committed tree and record the outcome. Its filed outcome says 'prove-gates not run, per the order', and the diff only changes the planted row's expected case from lmd9 to lmd1 plus a comment. Nothing in the diff or the filed return shows either row going red or green. The lmd1 retarget is a reading, not an observation: the planted text 'the bottom layer holds `_doctor_report` for the collector' is an absolute ordinal followed by an ordinary word, which test__deps.py:652-662 (lmd11) covers on synthetic input, while whether the shipped-tree case lmd1 turns red on that plant is unmeasured. The lmd10 allow row (prove-gates.py:1596-1601, dropping the complement lookahead) is likewise unmeasured. A prove-gates row never seen red is the class this repo's CLAUDE.md warns about.",
-        "resolution": "From a committed clean tree run `python3 tools/prove-gates.py --only layer_mention_drift` (or the `--only` spelling the tool takes) and record the exit code and per-row verdicts for the plant row (expect lmd1 red) and the lmd10 allow row (expect lmd10 red). If the plant row does not go red under lmd1, retarget it to the case that does."
+        "resolution": "fixed in P123.77-64p (c6ac4d8e2975): From a committed clean tree run `python3 tools/prove-gates.py --only layer_mention_drift` (or the `--only` spelling the tool takes) and record the exit code and per-row verdicts for the plant row (expect lmd1 red) and the lmd10 allow row (expect lmd10 red). If the plant row does not go red under lmd1, retarget it to the case that does.",
+        "fixTask": "P123.77-64p",
+        "commit": "c6ac4d8e2975",
+        "status": "fixed"
       },
       {
         "id": "P123-R27",
@@ -314,11 +317,23 @@
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py:8087-8090",
         "issue": "On success `_create_then` journals redactions with `planned_redactions(mpath, plan)` where `plan` is the empty seed plan, so it can only ever report values in `meta`. The values the body wrote (first phase title, desiredOutcome, batch tasks) were scrubbed on the staged file's saves and are never reported, which is the news P123.7 says every redacting plan write owes. The ex6 AST case only checks that the function calls `report_redactions`, so it passes over this.",
-        "resolution": "Compute the pointers from the plan the body actually produced (load the staged file before the copy and call `planned_redactions` on it, as the seed path at line 12598 does on its assembled plan), and add a case with a machine path in the first phase's title asserting a `plan.redact` row.",
-        "fixTask": "P123.80-64p"
+        "resolution": "fixed in P123.80-64p (fe0e0440d4f3): Compute the pointers from the plan the body actually produced (load the staged file before the copy and call `planned_redactions` on it, as the seed path at line 12598 does on its assembled plan), and add a case with a machine path in the first phase's title asserting a `plan.redact` row.",
+        "fixTask": "P123.80-64p",
+        "commit": "fe0e0440d4f3",
+        "status": "fixed"
+      },
+      {
+        "id": "P123-R31",
+        "severity": "low",
+        "file": "tools/prove-gates.py:628-633",
+        "issue": "P123.77 (fix P123-R25) asked to RUN prove-gates for the lmd9/lmd10 rows from a committed tree and record the outcome. The diff instead retargets the layer_mention_drift plant row's expected case from lmd9 to lmd1, and the executor's own outcome says 'prove-gates not run'. By reading, the retarget is right: the anchor '`_doctor_report` for the collector' occurs once in plugins/audit/scripts/status/_doctor_ado.py:24, and the planted 'the bottom layer holds ...' is an absolute ordinal claim followed by an ordinary word, which lmd11/lmd1 refuse. But no recorded run shows the row going red (and the allow row lmd10 green), so the row is still a table entry that has only been read.",
+        "resolution": "fixed in P123.77-64p (c6ac4d8e2975): Run `python3 tools/prove-gates.py --only layer_mention` from the committed tree and record the red result for the plant row and the green result for the allow row. If the plan carries no place for it, file the output as the task's basis.",
+        "fixTask": "P123.77-64p",
+        "commit": "c6ac4d8e2975",
+        "status": "fixed"
       }
     ],
-    "outcome": "[findings: 30 - 0 high, 13 med, 17 low; 27 with a recorded fix commit]"
+    "outcome": "[findings: 31 - 0 high, 13 med, 18 low; 30 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -6424,7 +6439,7 @@
     {
       "id": "P123.80-64p",
       "title": "fix P123-R30: On success `_create_then` journals redactions with `planned_red...",
-      "status": "in_progress",
+      "status": "done",
       "description": "On success `_create_then` journals redactions with `planned_redactions(mpath, plan)` where `plan` is the empty seed plan, so it can only ever report values in `meta`. The values the body wrote (first phase title, desiredOutcome, batch tasks) were scrubbed on the staged file's saves and are never reported, which is the news P123.7 says every redacting plan write owes. The ex6 AST case only checks that the function calls `report_redactions`, so it passes over this.\n\nResolution asked: Compute the pointers from the plan the body actually produced (load the staged file before the copy and call `planned_redactions` on it, as the seed path at line 12598 does on its assembled plan), and add a case with a machine path in the first phase's title asserting a `plan.redact` row.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -6455,14 +6470,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fe0e0440d4f3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added case fp13 to _first_plan_cases in plugins/audit/tests/test_audit_task.py: a first `add --from-file` (project with no plan, .git dir present so the checkout root is known) whose phase title carries <outside-repo> exits 0, journals exactly one plan.redact row, and the written plan no longer holds the path. Note the first add-phase verb refuses a machine path in --title outright (exit 2), so the batch route is the one that reaches the scrub; the fixture needs a .git dir or the scrub still rewrites but no journal row can be written (checkout_of is None). audit-task.py untouched. Ran python3 plugins/audit/tests/test_audit_task.py --selftest: exit ALL PASS 1018/1018. Only the own test file was run, not the full sweep.",
+        "descriptive": "Regression pin: a first plan write that redacts a machine path in the first phase's title is reported by a plan.redact journal row."
       },
       "startedAt": "2026-10-12T14:31:58Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T14:49:43Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py: fp13 a first add whose phase title carries a machine path journals a plan.redact row for it"
+      ],
       "notes": [
         {
           "at": "2026-10-12T14:13:29Z",
@@ -6477,6 +6494,67 @@
         "runId": "2026-10-12T14:49:42Z.1f0b36",
         "status": "passed",
         "at": "2026-10-12T14:49:42Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "fe0e0440d4f3",
+        "at": "2026-10-12T14:49:43Z",
+        "basis": "a fix task for P123-R30: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "mode regression, expectRedFirst false; the case passes on current code because a0a4710 removed the staged .creating file and the seed-only planned_redactions call in _create_then (now a plain body(config, mpath, seed)); the code path that reported seed-only redactions no longer exists, so no red could be shown without re-creating it.",
+        "at": "n/a"
+      }
+    },
+    {
+      "id": "P123.81-64p",
+      "title": "The branch-history invariant reads a rewrite from the reflog entry's action, never from a commit subject that names one",
+      "status": "in_progress",
+      "description": "Found at P123's own sign-off: verify-invariants' branch-history rule reported a BREACH on a strictly linear branch (every consecutive reflog pair passes merge-base --is-ancestor; de67d314's parent is b1850cdd). `_invariants.branch_history` tests `any(word in message for word in _REWRITE_WORDS)` against the whole reflog message `%gs`, and for a commit that message is `commit: <subject>` - so P123.73's subject \"... its docstring names a rebase after the verdict\" matched `rebase`. Any project whose commit subject mentions rebase, reset: or filter-branch gets a false history-rewrite breach that only a human can sign off over. The reflog's action is the text before the first ': ' (`commit`, `commit (amend)`, `reset`, `rebase (finish)`, `rebase -i (pick)`, `filter-branch`, `branch`); classify the ACTION, never the subject: an action starting `rebase`, `reset`, `filter-branch`, or `branch` with a message `Reset to` is a rewrite verb; `commit`, `commit (initial)`, `commit (merge)`, `merge`, `cherry-pick`, `pull` are not. Keep the ancestry test as the exact rule and the action match only for rewrites that landed somewhere reachable, as the docstring says. Red-first: a fixture branch with a linear commit whose subject names a rebase goes from breach to clean; a real reset/rebase entry stays a breach.",
+      "files": [
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/tests/test_verify_invariants.py",
+        "plugins/audit/tests/test__invariants.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_verify_invariants.py: a linear branch whose commit subject contains 'rebase', 'reset:' or 'filter-branch' is clean; a real 'rebase (finish)', 'rebase -i (finish)', 'reset: moving to' and 'branch: Reset to' reflog entry that lands somewhere reachable is still a breach"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-12T15:07:10Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T15:19:37Z.ac0aa6",
+        "status": "passed",
+        "at": "2026-10-12T15:19:37Z"
       }
     }
   ],
@@ -6486,5 +6564,10 @@
     "branch": "audit/p123-a-first-time-user-s-plan-run-a",
     "at": "2026-10-10T08:12:45Z"
   },
-  "startedAt": "2026-10-10T08:12:45Z"
+  "startedAt": "2026-10-10T08:12:45Z",
+  "testEvidence": {
+    "runId": "2026-10-12T15:01:37Z.62af67",
+    "status": "passed",
+    "at": "2026-10-12T15:01:37Z"
+  }
 }
