@@ -1169,11 +1169,35 @@ _REWRITE_BRANCH_MESSAGE = "branch: Reset to"
 _PHASE_MARKER = re.compile(r"\s*\([a-z-]+\)$")
 
 
+# git reads the value after `--rebase=` as a boolean-or-mode: these spellings
+# (any case) and the empty string mean "do not rebase"; every other value
+# (true, yes, on, 1, merges, interactive, i, m) means rebase.
+_REBASE_OFF = ("false", "no", "off", "0", "")
+# Short options of `git pull` that take an argument: in a cluster such as
+# `-qr`, a letter after one of these is that option's value, not a flag.
+_PULL_ARG_SHORTS = "sXoj"
+
+
 def _pull_rebases(tokens):
-    """True when a `pull` command line carries the rebase flag as a token."""
-    return any(t == "--rebase" or t == "-r"
-               or (t.startswith("--rebase=") and t != "--rebase=false")
-               for t in tokens)
+    """True when a `pull` command line asks for a rebase.
+
+    `--rebase` and `--rebase=<value>` (a value in _REBASE_OFF is not a rebase)
+    are read as git reads them; a single-dash token of letters is a short-flag
+    cluster that requests a rebase when `r` appears before any letter of
+    _PULL_ARG_SHORTS (the options that swallow the rest of the token)."""
+    for t in tokens:
+        if t == "--rebase":
+            return True
+        if t.startswith("--rebase="):
+            if t[len("--rebase="):].lower() not in _REBASE_OFF:
+                return True
+        elif t.startswith("-") and not t.startswith("--") and t[1:].isalpha():
+            for letter in t[1:]:
+                if letter == "r":
+                    return True
+                if letter in _PULL_ARG_SHORTS:
+                    break
+    return False
 
 
 def _rewrite_action(message):
@@ -1184,7 +1208,7 @@ def _rewrite_action(message):
     It is parsed as tokens, never searched: the marker is dropped, the first
     token is the COMMAND, and the rest is arguments. It is a rewrite when the
     command is rebase, reset or filter-branch, or is `pull` carrying `--rebase`,
-    `--rebase=<mode>` (not `=false`) or `-r`; the message `branch: Reset to`
+    `--rebase=<mode>` (not an off spelling) or a short cluster with `r`; the message `branch: Reset to`
     is the one rewrite whose command is not a verb. Branch names, remotes and
     commit subjects are caller text that the action can contain
     (`merge fix/reset-flow`, `pull origin rebase-docs`), so matching any word

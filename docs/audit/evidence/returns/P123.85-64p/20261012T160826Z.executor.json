@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "own-selftest python3 plugins/audit/tests/test_verify_invariants.py --selftest": "pass",
+    "ruff check (two files)": "pass",
+    "vermin": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-12T16:09:55Z",
+    "basis": "`python3 plugins/audit/tests/test_verify_invariants.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 71 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rw9 (house FAIL), rw10 (house FAIL): SELFTEST FAILED: 69/71 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "_pull_rebases in _invariants.py now reads --rebase=<value> as git does: false/no/off/0/empty (case-insensitive) are not a rebase, any other value is; single-dash letter clusters (-r, -qr) request rebase iff r precedes any of s/X/o/j. rw9 gained =no, =OFF, =0, -q -s ours, -sr as clean; rw10 gained =true, =interactive, =yes, -qr as rewrites. Selftest 71/71 pass, exit 0; ruff clean; vermin ok.",
+    "descriptive": "An explicit pull --rebase=no no longer raises a false history-rewrite breach; short clusters like -qr are now seen."
+  },
+  "testsAdded": [
+    "rw9 (extended)",
+    "rw10 (extended)"
+  ],
+  "claims": "claims: _pull_rebases matches git's boolean-or-mode reading for the listed spellings, evidenced by rw9/rw10 passing in test_verify_invariants.py --selftest (71/71, exit 0).",
+  "stamp": "audit-stamp: {\"content\":\"sha256:285548b07a6c52095401c7957efab3de0cb438a726362f0a85f505e76bd7f7f0\",\"dirtyDigest\":\"sha256:91e49980ce596d30bd50939d47de533c86caa6d1a3a6381e69e54f18cbfb277e\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_invariants.py\":\"b54daf925f8f68b2\",\"plugins/audit/tests/test_verify_invariants.py\":\"2a9f89e59d314668\"},\"head\":\"165c49f8\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_invariants.py\",\"plugins/audit/tests/test_verify_invariants.py\"],\"scopeDigest\":\"sha256:e13f95628946e7826bb5c17ad29fa2b6c1b99a3681716aa77107e2b1e8924cbc\",\"v\":2}"
+}

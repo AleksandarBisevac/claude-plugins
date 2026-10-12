@@ -1,0 +1,22 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/scripts/governance/_invariants.py:1169-1175",
+   "issue": "_pull_rebases excludes only the literal `--rebase=false`; git also reads `--rebase=no`, `=off` and `=0` as 'do not rebase' (boolean spellings), and a short-flag cluster such as `-qr` is not seen. rw9/rw10 pin only `=false`, `=merges` and `-r`. An explicit `pull --rebase=no` would raise a false history-rewrite breach, the class this task closed for branch names.",
+   "resolution": "Treat the value after `--rebase=` as a rewrite only when it is not one of false/no/off/0 (or only when it is true/merges/interactive/yes/on/1), and add the `=no` spelling to rw9's clean list. The cluster case may be left as a documented non-goal."},
+  {"id": 2, "severity": "low", "file": "plugins/audit/scripts/governance/drive-phase.py:2644-2648,2669-2675",
+   "issue": "The new docstring says the lock is kept only while a decision is pending 'or a dispatch is out', but lock_to_give_back has no dispatch term: an E_USAGE return with state['pending'] None releases the lock even when an executor dispatch is outstanding (a mistyped `--answer` during a dispatch answers 'nothing pending' and gives the phase lock back while the executor runs, so a second session's drive can acquire it). dl7-dl9 pin only the none-pending/idle and pending cases, never a dispatch out. The E_STOPPED arm already behaves this way, so the desired outcome is met; the sentence and the pin are what disagree.",
+   "resolution": "Either narrow the docstring to 'kept for E_OK returns (decision or dispatch) and for a usage refusal while a decision is pending', or have lock_to_give_back also keep the lock when a task is in flight, and add a dl case for a refused --answer sent while a dispatch is out so the chosen rule is pinned."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Re-confirmed at HEAD 165c49f8 against desiredOutcome. Clause 1 (first phase in one verb, no placeholder): audit-task.py _create_then (8047) seeds meta with phases [] and hands the REAL mpath to the body, cmd_phase_add passes create=True. Clause 2 (a stopped drive leaves no lock): drive-phase.py drive() now releases through one predicate, lock_to_give_back, on E_STOPPED and on E_USAGE with no pending decision, and on any unexpected exception; dl7/dl8 pin the usage releases and dl9 the pending-kept case; the only remaining non-released non-zero return is a pending decision, which is a deliberate hold. Clause 3 (/audit:run never runs more or less than named): context() raises phase_form_refusal naming `/audit:phase <id>` when task_only is set with a phase id. Clause 4 (gate evidence in the project's own directory): _output.project_of_manifest walks up from the manifest, ignores a .claude/ inside the record directory. Clause 5 (single-checkout landing leaves the user on the landed branch): _worktrees.landing_switch switches the main worktree to the parent only for a ref-only fast-forward when clean and the parent is free. P123.83-64p: _rewrite_action now parses the reflog action as tokens (phase marker dropped, first token is the command; pull counts only with a --rebase/-r token), and the old regex constant has no remaining reader; the executor outcome describes the diff. P123.84-64p: the diff matches the description (release on E_USAGE when no decision is pending) and the outcome. I ran test_verify_invariants.py --selftest once: exit 0, 71/71 cases passed.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Phase mode: intent.redFirst is not-attempted per the contract. For the owed fix tasks, both filed proved reds with a command and its non-zero exit: P123.83-64p rw9 failing at HEAD (69/71) and P123.84-64p dl7 failing at HEAD (231/233), each passing with the working tree implementation.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "No task is owed its three answers by this review (the brief lists none: P123.83-64p and P123.84-64p are fix tasks closed with their own basis), so there is no per-task tests.gate to bound the question; the gate entries handed run whole projects (sweep-selftests over the tree)."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

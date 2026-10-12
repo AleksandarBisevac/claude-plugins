@@ -908,6 +908,11 @@ def _rewrite_cases(check, tmp):
         "merge rebase-x: Fast-forward",
         "pull origin reset: Fast-forward",
         "pull --rebase=false origin main: Fast-forward",
+        "pull --rebase=no origin main: Fast-forward",
+        "pull --rebase=OFF origin main: Fast-forward",
+        "pull --rebase=0 origin main: Fast-forward",
+        "pull -q -s ours: Fast-forward",
+        "pull -sr origin main: Fast-forward",
     )
     check("rw9 a merge or pull that merely NAMES a branch containing a rewrite "
           "word is not a rewrite: %r" % (named,),
@@ -916,6 +921,10 @@ def _rewrite_cases(check, tmp):
         "pull --rebase=merges (finish): refs/heads/x onto abc",
         "pull -r (finish): refs/heads/x onto abc",
         "pull --rebase (pick): c",
+        "pull --rebase=true (finish): refs/heads/x onto abc",
+        "pull --rebase=interactive (finish): refs/heads/x onto abc",
+        "pull --rebase=yes (finish): refs/heads/x onto abc",
+        "pull -qr (finish): refs/heads/x onto abc",
     )
     check("rw10 `pull` with --rebase, --rebase=<mode> or -r is a rewrite: %r"
           % (flagged,),
