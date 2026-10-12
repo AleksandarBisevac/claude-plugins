@@ -1000,6 +1000,39 @@ def _lock_stop_cases(check):
           raised is not None and "blew up" in str(raised) and not held_now
           and not os.path.exists(state_file))
 
+    # A usage refusal with no decision pending leaves nothing for a later next to
+    # answer, so the lock goes back; with one pending it is still this run's.
+    M.run_verb = real
+    root, mpath = _repo("lockusage", task_ids=TASKS[:1])
+    code, text = _next(M, root, mpath, "--answer", "fix", "--reason", "x")
+    held_now = "phase-%s" % (PHASE,) in _verb(
+        root, "audit-lock.py", ["status", "--project", root])[1]
+    check("dl7 a refused --answer with no decision pending exits 2 and releases "
+          "phase-%s, leaving no taken lock in its state: %r"
+          % (PHASE, (code, text, held_now)),
+          code == 2 and "answers nothing" in text and not held_now
+          and _drive_state(root).get("lock") != "taken")
+    root, mpath, _t = _at_phase_review(M, "lockreason")
+    code, text = _next(M, root, mpath, "--answer", "sign-off")
+    held_now = "phase-%s" % (PHASE,) in _verb(
+        root, "audit-lock.py", ["status", "--project", root])[1]
+    check("dl8 a --answer sign-off sent without --reason exits 2 and releases "
+          "phase-%s: %r" % (PHASE, (code, text, held_now)),
+          code == 2 and "needs --reason" in text and not held_now
+          and _drive_state(root).get("lock") != "taken")
+    root, mpath = _repo("lockpending", task_ids=TASKS[:1], per_task="phase")
+    drive(M, root, mpath, findings=FINDINGS, answer=None)
+    pending_before = _drive_state(root).get("pending")
+    code, text = _next(M, root, mpath, "--answer", "no-such-option", "--reason", "x")
+    held_now = "phase-%s" % (PHASE,) in _verb(
+        root, "audit-lock.py", ["status", "--project", root])[1]
+    after = _drive_state(root)
+    check("dl9 a refused --answer while a decision IS pending exits 2, keeps "
+          "phase-%s and leaves the decision answerable: %r"
+          % (PHASE, (code, pending_before is not None, held_now)),
+          code == 2 and pending_before is not None and held_now
+          and after.get("pending") == pending_before)
+
     # The project a context carries is the manifest's own when no --project-dir
     # was typed: the session's directory may be another checkout.
     M.run_verb = real

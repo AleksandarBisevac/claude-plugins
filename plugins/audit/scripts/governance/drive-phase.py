@@ -2641,9 +2641,10 @@ def drive_task(ctx, state):
 
 
 def drive(ctx, answer=None, reason=None, fixes=()):
-    """`(code, instruction_or_text)` for one `next`. A stop after the lock was
-    taken gives it back here, the one exit every arm shares, so no refusal
-    strands it; a decision or a dispatch keeps it, as that is still this run."""
+    """`(code, instruction_or_text)` for one `next`. The lock is kept only while
+    a decision is PENDING (handed to the human, the next `--answer` must find
+    it) or a dispatch is out; every other non-zero return after it was taken
+    gives it back here, the one exit every arm shares, so no refusal strands it."""
     state = read_state(ctx)
     stop = take_lock(ctx, state)
     if stop is not None:
@@ -2657,12 +2658,21 @@ def drive(ctx, answer=None, reason=None, fixes=()):
         if state.get("lock") == "taken":
             give_back_lock(ctx, state)
         raise
-    if code != E_STOPPED or state.get("lock") != "taken":
+    if not lock_to_give_back(code, state):
         return code, said
     refused = give_back_lock(ctx, state)
     if refused is not None:
         return code, "%s\n%s" % (said, refused[1])
     return code, said
+
+
+def lock_to_give_back(code, state):
+    """Whether a drive that returned `code` still holds a lock nobody will
+    answer for: the lock is taken and the return is a stop, or a usage refusal
+    with no decision pending to keep it for."""
+    if state.get("lock") != "taken":
+        return False
+    return code == E_STOPPED or (code == E_USAGE and state.get("pending") is None)
 
 
 def give_back_lock(ctx, state):

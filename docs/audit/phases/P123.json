@@ -347,8 +347,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/_invariants.py:1167-1180",
         "issue": "P123.82-64p widened _rewrite_action to a word-boundary search over the whole action, but the action is not git's alone: `git merge <branch>` writes `merge <branch>: ...` and `git pull origin <branch>` writes `pull origin <branch>: ...`, so the branch name is caller text in the action, as the commit subject was in P123.81. Measured in a scratch repo: after `git merge fix/reset-flow` the phase branch's reflog holds `merge fix/reset-flow: Merge made by the 'ort' strategy.`, and _rewrite_action returns True for it (and for `pull origin rebase-docs: Fast-forward`). branch_history then raises a history-rewrite BREACH on a linear branch, the false-breach class P123.81 closed, now reachable through branch names. rw8 pins only `prebase`/`resets` and a commit subject, never a merge or pull naming a branch.",
-        "resolution": "Match the verb as the action's command, not as any word in it: a rewrite verb at the start (`^(?:rebase|reset|filter-branch)\\b`) or the `--rebase` flag token (`(?:^|\\s)--rebase(?:=\\S+)?(?:\\s|$)`, which a branch name cannot spell), so `pull -q --rebase (finish)` stays a rewrite while `merge fix/reset-flow` and `pull origin rebase-docs` do not. Add rw cases for those two messages (and a merge of `rebase-x`) beside rw7/rw8.",
-        "fixTask": "P123.83-64p"
+        "resolution": "fixed in P123.83-64p (4db2f049c8c5): Match the verb as the action's command, not as any word in it: a rewrite verb at the start (`^(?:rebase|reset|filter-branch)\\b`) or the `--rebase` flag token (`(?:^|\\s)--rebase(?:=\\S+)?(?:\\s|$)`, which a branch name cannot spell), so `pull -q --rebase (finish)` stays a rewrite while `merge fix/reset-flow` and `pull origin rebase-docs` do not. Add rw cases for those two messages (and a merge of `rebase-x`) beside rw7/rw8.",
+        "fixTask": "P123.83-64p",
+        "commit": "4db2f049c8c5",
+        "status": "fixed"
       },
       {
         "id": "P123-R34",
@@ -359,7 +361,7 @@
         "fixTask": "P123.84-64p"
       }
     ],
-    "outcome": "[findings: 34 - 0 high, 14 med, 20 low; 31 with a recorded fix commit]"
+    "outcome": "[findings: 34 - 0 high, 14 med, 20 low; 32 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -6675,7 +6677,7 @@
     {
       "id": "P123.83-64p",
       "title": "fix P123-R33: P123.82-64p widened _rewrite_action to a word-boundary search o...",
-      "status": "in_progress",
+      "status": "done",
       "description": "P123.82-64p widened _rewrite_action to a word-boundary search over the whole action, but the action is not git's alone: `git merge <branch>` writes `merge <branch>: ...` and `git pull origin <branch>` writes `pull origin <branch>: ...`, so the branch name is caller text in the action, as the commit subject was in P123.81. Measured in a scratch repo: after `git merge fix/reset-flow` the phase branch's reflog holds `merge fix/reset-flow: Merge made by the 'ort' strategy.`, and _rewrite_action returns True for it (and for `pull origin rebase-docs: Fast-forward`). branch_history then raises a history-rewrite BREACH on a linear branch, the false-breach class P123.81 closed, now reachable through branch names. rw8 pins only `prebase`/`resets` and a commit subject, never a merge or pull naming a branch.\n\nResolution asked: Match the verb as the action's command, not as any word in it: a rewrite verb at the start (`^(?:rebase|reset|filter-branch)\\b`) or the `--rebase` flag token (`(?:^|\\s)--rebase(?:=\\S+)?(?:\\s|$)`, which a branch name cannot spell), so `pull -q --rebase (finish)` stays a rewrite while `merge fix/reset-flow` and `pull origin rebase-docs` do not. Add rw cases for those two messages (and a merge of `rebase-x`) beside rw7/rw8.",
       "files": [
         "plugins/audit/scripts/governance/_invariants.py",
@@ -6706,14 +6708,17 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4db2f049c8c5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Replaced the _REWRITE_ACTIONS regex word search in _invariants.py with a token grammar in _rewrite_action: strip a trailing (phase) marker, whitespace-split, first token is the command; rewrite iff command in rebase/reset/filter-branch, or command is pull with a token --rebase, --rebase=<mode> (not =false) or -r, or message starts with 'branch: Reset to'. Added _pull_rebases helper; docstring states the grammar and why free-text matching was dropped. Tests: rw8 kept, added rw9 (merge fix/reset-flow, pull origin rebase-docs, merge rebase-x, pull origin reset, pull --rebase=false origin main are clean) and rw10 (--rebase=merges, -r, --rebase pull entries are rewrites). Ran python3 plugins/audit/tests/test_verify_invariants.py --selftest: 71/71 passed, exit 0; ruff check on both files clean.",
+        "descriptive": "Reflog rewrite detection reads the action's command and flag tokens, so branch names like fix/reset-flow no longer raise false history-rewrite breaches."
       },
       "startedAt": "2026-10-12T15:37:17Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T15:47:22Z",
+      "verifiedBy": [
+        "rw9",
+        "rw10"
+      ],
       "notes": [
         {
           "at": "2026-10-12T15:37:06Z",
@@ -6728,12 +6733,23 @@
         "runId": "2026-10-12T15:47:21Z.3b1474",
         "status": "passed",
         "at": "2026-10-12T15:47:21Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "4db2f049c8c5",
+        "at": "2026-10-12T15:47:22Z",
+        "basis": "a fix task for P123-R33: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-12T15:38:42Z",
+        "basis": "`python3 plugins/audit/tests/test_verify_invariants.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 71 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rw9 (house FAIL): SELFTEST FAILED: 69/71 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
     },
     {
       "id": "P123.84-64p",
       "title": "fix P123-R34: drive() gives the phase lock back only when the code is E_STOPP...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "drive() gives the phase lock back only when the code is E_STOPPED. The two E_USAGE returns in drive_locked (`--answer ... needs --reason`, and answer_refusal) come after take_lock and keep it, recorded as lock=taken in the state. A later next re-enters and releases it, so it is not lost, but a user who walks away after a mistyped --answer leaves phase-<id> held, which the desired outcome (a stopped drive leaves no lock behind) reads as stranded. dl2/dl3 pin only the verb-refusal stop. Reading only; not run.\n\nResolution asked: Decide and pin it: either release on E_USAGE when no decision is pending (state.get('pending') is None), or add a case saying the lock is deliberately kept across a refused answer because the pending decision is still this run.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -6762,14 +6778,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T15:47:22Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -6780,7 +6796,13 @@
       ],
       "fixes": [
         "P123-R34"
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T16:05:56Z.919d6b",
+        "status": "passed",
+        "at": "2026-10-12T16:05:56Z"
+      }
     }
   ],
   "reviewPerTask": "phase",

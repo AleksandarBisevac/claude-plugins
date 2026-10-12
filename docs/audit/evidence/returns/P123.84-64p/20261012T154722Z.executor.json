@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "test_drive_phase --selftest": "pass",
+    "ruff": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-12T15:57:06Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 233 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dl7 (house FAIL): SELFTEST FAILED: 231/233 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive() now gives the lock back via one predicate lock_to_give_back(code, state): lock taken and (E_STOPPED, or E_USAGE with no pending decision). Docstring states the rule once. Added dl7 (refused answer, none pending), dl8 (missing --reason), dl9 (refused answer while a triage is pending keeps lock and pending). Before the fix dl7/dl8 failed (231/233); after, 233/233; ruff clean.",
+    "descriptive": "A mistyped --answer no longer leaves phase-<id> held unless a decision is pending."
+  },
+  "testsAdded": [
+    "dl7",
+    "dl8",
+    "dl9"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:aed92c13e340f7ae43368c7f9a2f88e699a32d65ae28cd009aad0ad69343c8a4\",\"dirtyDigest\":\"sha256:b5ad397336a35cec29449587ebead65c1acab246c54d92b69fa83bc1e8047b78\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/drive-phase.py\":\"7bd54bfcb3cb5d39\",\"plugins/audit/tests/test_drive_phase.py\":\"b28c94b9739ffd66\"},\"head\":\"4db2f049\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:dee8eb6befaf08ac5556d037952f02de575d0d8f5bb2a5a43811dc4949fd552b\",\"v\":2}"
+}
