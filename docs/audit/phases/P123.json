@@ -287,8 +287,10 @@
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py:7555-7575 (_create_then)",
         "issue": "P123.1: the empty plan (phases: []) is written to disk first and removed again only when the body returns non-zero or raises in-process. The index lock guards writers, not readers, so for the body's duration a hook or status read can see a plan with no phases (which moves the plan gate's tier from 'no manifest' to 'manifest, nothing running'). A kill -9 or power loss between the write and the body's own write leaves that empty plan behind, and the next add-phase then takes the existing-plan path silently. The window is short and the leftover is valid, so this is not a correctness failure.",
-        "resolution": "Build the first phase into the in-memory plan and write the file once (the body already assembles the plan under the lock), or write the empty plan to a sibling temp name and rename it only after the body returns 0.",
-        "fixTask": "P123.78-64p"
+        "resolution": "fixed in P123.78-64p (12d4a15cd3dc): Build the first phase into the in-memory plan and write the file once (the body already assembles the plan under the lock), or write the empty plan to a sibling temp name and rename it only after the body returns 0.",
+        "fixTask": "P123.78-64p",
+        "commit": "12d4a15cd3dc",
+        "status": "fixed"
       },
       {
         "id": "P123-R28",
@@ -296,9 +298,25 @@
         "file": "docs/audit/phases/P123.json (task P123.3 outcome.technical)",
         "issue": "The filed outcome of P123.3 ends 'Not done: the task note on whether script or model picked P1.2 ... was not established (no transcript read)'. The plan now carries a note (2026-10-11T16:32:32Z) saying it WAS established from the testbed transcript. The filed outcome therefore describes a state the record no longer has.",
         "resolution": "Leave the outcome as history but make the note's provenance explicit (who read the transcript, which file), so the two statements are not left contradicting each other."
+      },
+      {
+        "id": "P123-R29",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:8042-8095 (with 2341-2358, 2198-2210)",
+        "issue": "P123.1/P123.78 stage the first plan at '<plan>.creating' and hand the body that staged path as its `mpath`. `_create_then`'s `emit` rewrites the staged name to the real one only in LINES THE BODY PRINTS. The journal rows the body appends do not pass through emit: `_locked_phase_add` calls `_journal_phase_add(project, config, mpath, ...)` and `_journal_row` writes `\"target\": _output.posix_rel(mpath, project)`, so the first `phase.add` row (and the `task.add` rows of an `add --from-file` batch) on a fresh repo name `docs/audit/audit-plan.json.creating`, a file that never exists after the call. That is the very flow the phase's desired outcome is about (a first phase planned in one verb call), and the append-only trail is what the journal-based checks and reports join on. fp1-fp9 never read the journal, so nothing pins it. Read from the code; I did not run the verb.",
+        "resolution": "Keep one name for the body: pass the body the real `mpath` for everything it reports (journal target, side-branch lookup, notes) and give only its read/write calls the staged path, or have `_journal_row` take the target from a single `real_path` the door carries. Add a case beside fp1 that reads the journal after a first add-phase and asserts every row's `target` is the real plan path and none ends in `.creating`.",
+        "fixTask": "P123.79-64p"
+      },
+      {
+        "id": "P123-R30",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:8087-8090",
+        "issue": "On success `_create_then` journals redactions with `planned_redactions(mpath, plan)` where `plan` is the empty seed plan, so it can only ever report values in `meta`. The values the body wrote (first phase title, desiredOutcome, batch tasks) were scrubbed on the staged file's saves and are never reported, which is the news P123.7 says every redacting plan write owes. The ex6 AST case only checks that the function calls `report_redactions`, so it passes over this.",
+        "resolution": "Compute the pointers from the plan the body actually produced (load the staged file before the copy and call `planned_redactions` on it, as the seed path at line 12598 does on its assembled plan), and add a case with a machine path in the first phase's title asserting a `plan.redact` row.",
+        "fixTask": "P123.80-64p"
       }
     ],
-    "outcome": "[findings: 28 - 0 high, 12 med, 16 low; 25 with a recorded fix commit]"
+    "outcome": "[findings: 30 - 0 high, 13 med, 17 low; 26 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -6254,7 +6272,7 @@
     {
       "id": "P123.78-64p",
       "title": "fix P123-R27: P123.1: the empty plan (phases: []) is written to disk first an...",
-      "status": "in_progress",
+      "status": "done",
       "description": "P123.1: the empty plan (phases: []) is written to disk first and removed again only when the body returns non-zero or raises in-process. The index lock guards writers, not readers, so for the body's duration a hook or status read can see a plan with no phases (which moves the plan gate's tier from 'no manifest' to 'manifest, nothing running'). A kill -9 or power loss between the write and the body's own write leaves that empty plan behind, and the next add-phase then takes the existing-plan path silently. The window is short and the leftover is valid, so this is not a correctness failure.\n\nResolution asked: Build the first phase into the in-memory plan and write the file once (the body already assembles the plan under the lock), or write the empty plan to a sibling temp name and rename it only after the body returns 0.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -6285,14 +6303,18 @@
       "dependsOn": [],
       "attempts": 3,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "12d4a15cd3dc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py _create_then: on body exit 0 the staged .creating text is read and written to the real manifest with _manifest_io.atomic_write_text (replacing the direct os.replace that test__deps sw1 refused; no STATE_WRITERS row added); the staged file is then removed by the finally. Staging at a sibling name is unchanged. fp7-fp9 in test_audit_task.py still pass. test__deps.py --selftest: 314/314 passed; test_audit_task.py --selftest: 1014/1014 passed.",
+        "descriptive": "The first-plan staging commits through the sanctioned atomic writer, so no empty plan is ever visible at the real path and the state-writer lint is satisfied."
       },
       "startedAt": "2026-10-12T13:54:33Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T14:08:13Z",
+      "verifiedBy": [
+        "test_audit_task.py fp7",
+        "test_audit_task.py fp8",
+        "test_audit_task.py fp9"
+      ],
       "notes": [
         {
           "at": "2026-10-12T13:36:06Z",
@@ -6307,7 +6329,132 @@
         "runId": "2026-10-12T14:08:12Z.0194ef",
         "status": "passed",
         "at": "2026-10-12T14:08:12Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "12d4a15cd3dc",
+        "at": "2026-10-12T14:08:13Z",
+        "basis": "a fix task for P123-R27: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-12T13:58:49Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 1014 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fp7 (house FAIL): SELFTEST FAILED: 1011/1014 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved"
       }
+    },
+    {
+      "id": "P123.79-64p",
+      "title": "fix P123-R29: P123.1/P123.78 stage the first plan at '<plan>.creating' and ha...",
+      "status": "in_progress",
+      "description": "P123.1/P123.78 stage the first plan at '<plan>.creating' and hand the body that staged path as its `mpath`. `_create_then`'s `emit` rewrites the staged name to the real one only in LINES THE BODY PRINTS. The journal rows the body appends do not pass through emit: `_locked_phase_add` calls `_journal_phase_add(project, config, mpath, ...)` and `_journal_row` writes `\"target\": _output.posix_rel(mpath, project)`, so the first `phase.add` row (and the `task.add` rows of an `add --from-file` batch) on a fresh repo name `docs/audit/audit-plan.json.creating`, a file that never exists after the call. That is the very flow the phase's desired outcome is about (a first phase planned in one verb call), and the append-only trail is what the journal-based checks and reports join on. fp1-fp9 never read the journal, so nothing pins it. Read from the code; I did not run the verb.\n\nResolution asked: Keep one name for the body: pass the body the real `mpath` for everything it reports (journal target, side-branch lookup, notes) and give only its read/write calls the staged path, or have `_journal_row` take the target from a single `real_path` the door carries. Add a case beside fp1 that reads the journal after a first add-phase and asserts every row's `target` is the real plan path and none ends in `.creating`.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: after a first add-phase (and a first add --from-file batch) on a fresh repo every journal row's target is the real plan path and none ends in .creating; no .creating file exists at any point"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 2,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-12T14:13:50Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-12T14:13:28Z",
+          "text": "scope: plugins/audit/scripts/manifest/audit-task.py, every path the finding(s) P123-R29 name"
+        },
+        {
+          "at": "2026-10-12T14:22:00Z",
+          "text": "Orchestrator red-first (the helper filed could-not-prove because fp7-fp9 call _create_then directly and HEAD's signature differs, so the whole block raised before fp11/fp12 ran): HEAD 12d4a15's audit-task.py, extracted by git archive and run as `add-phase First --outcome \"it works\"` on a fresh git repo, exits 0 and journals one row with \"target\":\"docs/audit/audit-plan.json.creating\" - exactly what fp11 refuses. With the fix, fp11 and fp12 pass (test_audit_task 1017/1017)."
+        }
+      ],
+      "fixes": [
+        "P123-R29"
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T14:31:56Z.dd2bab",
+        "status": "passed",
+        "at": "2026-10-12T14:31:56Z"
+      }
+    },
+    {
+      "id": "P123.80-64p",
+      "title": "fix P123-R30: On success `_create_then` journals redactions with `planned_red...",
+      "status": "pending",
+      "description": "On success `_create_then` journals redactions with `planned_redactions(mpath, plan)` where `plan` is the empty seed plan, so it can only ever report values in `meta`. The values the body wrote (first phase title, desiredOutcome, batch tasks) were scrubbed on the staged file's saves and are never reported, which is the news P123.7 says every redacting plan write owes. The ex6 AST case only checks that the function calls `report_redactions`, so it passes over this.\n\nResolution asked: Compute the pointers from the plan the body actually produced (load the staged file before the copy and call `planned_redactions` on it, as the seed path at line 12598 does on its assembled plan), and add a case with a machine path in the first phase's title asserting a `plan.redact` row.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a first add-phase whose title carries a machine path journals a plan.redact row for it"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-12T14:13:29Z",
+          "text": "scope: plugins/audit/scripts/manifest/audit-task.py, every path the finding(s) P123-R30 name"
+        }
+      ],
+      "fixes": [
+        "P123-R30"
+      ]
     }
   ],
   "reviewPerTask": "phase",

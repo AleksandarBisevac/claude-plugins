@@ -16182,18 +16182,17 @@ def _first_plan_cases(check):
           and findings == [])
 
     # The body is handed to `_create_then` directly so the test can look at the
-    # real path from INSIDE it; `emit=None` lets the same body run against an
-    # older two-argument call.
+    # real path from INSIDE it.
     def run_create(name, behave):
         proj, mpath = project(name)
         seen = []
 
-        def body(config, path, emit=None):
-            seen.append(os.path.exists(mpath))
-            return behave(path)
+        def body(config, path, seed=None):
+            seen.append((path == mpath, os.path.exists(mpath), seed is not None))
+            return behave(path, seed)
 
         try:
-            code = M._create_then(proj, mpath, body, None, lambda line: None)
+            code = M._create_then(proj, mpath, body, None)
         except RuntimeError:
             code = "raised"
         left = sorted(n for n in os.listdir(os.path.dirname(mpath))
@@ -16201,30 +16200,71 @@ def _first_plan_cases(check):
             if os.path.isdir(os.path.dirname(mpath)) else []
         return code, seen, left
 
-    def keep(path):
-        _panel_write._atomic_write_json(path, _mio.read_json(path))
+    def keep(path, seed):
+        _panel_write._atomic_write_json(path, seed)
         return 0
 
-    def boom(path):
+    def boom(path, seed):
         raise RuntimeError("body died")
 
     code, seen, left = run_create("inside", keep)
-    check("fp7 a first add-phase whose body looks at the manifest path while "
-          "it runs finds NO file there (never a phases-[] plan), and the plan "
-          "is at the real name afterwards with no .creating beside it: %r"
+    check("fp7 a first add-phase's body gets the REAL manifest path and a seed, "
+          "finds NO file there while it runs, and its own write is the first "
+          "write of that name with nothing else beside it: %r"
           % ((code, seen, left),),
-          code == 0 and seen == [False] and left == ["audit-plan.json"])
+          code == 0 and seen == [(True, False, True)]
+          and left == ["audit-plan.json"])
 
     code, seen, left = run_create("raises", boom)
-    check("fp8 SECOND DIRECTION: a body that raises leaves neither the "
-          "manifest nor the .creating sibling: %r" % ((code, seen, left),),
-          code == "raised" and seen == [False] and left == [])
+    check("fp8 SECOND DIRECTION: a body that raises before its write leaves "
+          "nothing at all: %r" % ((code, seen, left),),
+          code == "raised" and seen == [(True, False, True)] and left == [])
 
-    code, seen, left = run_create("refuses", lambda path: M.E_INVALID)
-    check("fp9 SECOND DIRECTION: a body that refuses (non-zero) leaves "
-          "neither the manifest nor the .creating sibling: %r"
-          % ((code, seen, left),),
-          code == M.E_INVALID and seen == [False] and left == [])
+    code, seen, left = run_create("refuses", lambda path, seed: M.E_INVALID)
+    check("fp9 SECOND DIRECTION: a body that refuses (non-zero) before its "
+          "write leaves nothing at all: %r" % ((code, seen, left),),
+          code == M.E_INVALID and seen == [(True, False, True)] and left == [])
+
+    proj, mpath = project("rollback")
+    snap = M._snapshot([mpath])
+    _panel_write._atomic_write_json(mpath, {"phases": []})
+    M._restore(snap)
+    check("fp10 a refusal AFTER the first write removes the file: the snapshot "
+          "taken before it records an absent plan as absent, and the restore "
+          "deletes what the write made: %r" % (os.path.exists(mpath),),
+          not os.path.exists(mpath))
+
+    def journal_targets(proj):
+        return [(r.get("action"), r.get("target"))
+                for r in _journal_io.read_all(proj)
+                if r.get("action") in ("phase.add", "task.add")]
+
+    want = "docs/audit/audit-plan.json"
+    proj, mpath = project("journal-phase")
+    code, _txt = _cli(["add-phase", "First", "--outcome", "it works",
+                       "--project-dir", proj], proj)
+    rows = journal_targets(proj)
+    check("fp11 the journal row a first add-phase appends names the real plan "
+          "path and nothing ends in .creating: %r" % ((code, rows),),
+          code == 0 and [a for a, _t in rows] == ["phase.add"]
+          and all(t == want for _a, t in rows))
+
+    proj, mpath = project("journal-batch")
+    path = os.path.join(proj, "plan-batch.json")
+    doc = _batch_doc()
+    for t in doc["tasks"]:
+        t.pop("dependsOn", None)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(doc))
+    code, _txt = _cli(["add", "--from-file", path, "--project-dir", proj], proj)
+    rows = journal_targets(proj)
+    check("fp12 every row a first add --from-file appends (the phase.add and "
+          "each task.add) names the real plan path, none ends in .creating, "
+          "and no .creating file exists: %r" % ((code, rows),),
+          code == 0 and [a for a, _t in rows][:1] == ["phase.add"]
+          and len(rows) == 1 + len(doc["tasks"])
+          and all(t == want for _a, t in rows)
+          and not os.path.exists(mpath + ".creating"))
 
 
 def _batch_fix_cases(check):

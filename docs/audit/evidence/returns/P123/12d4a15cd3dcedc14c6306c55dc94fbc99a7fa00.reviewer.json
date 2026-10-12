@@ -1,0 +1,35 @@
+{
+  "findings": [
+    {
+      "id": 1,
+      "severity": "med",
+      "file": "plugins/audit/scripts/manifest/audit-task.py:8042-8095 (with 2341-2358, 2198-2210)",
+      "issue": "P123.1/P123.78 stage the first plan at '<plan>.creating' and hand the body that staged path as its `mpath`. `_create_then`'s `emit` rewrites the staged name to the real one only in LINES THE BODY PRINTS. The journal rows the body appends do not pass through emit: `_locked_phase_add` calls `_journal_phase_add(project, config, mpath, ...)` and `_journal_row` writes `\"target\": _output.posix_rel(mpath, project)`, so the first `phase.add` row (and the `task.add` rows of an `add --from-file` batch) on a fresh repo name `docs/audit/audit-plan.json.creating`, a file that never exists after the call. That is the very flow the phase's desired outcome is about (a first phase planned in one verb call), and the append-only trail is what the journal-based checks and reports join on. fp1-fp9 never read the journal, so nothing pins it. Read from the code; I did not run the verb.",
+      "resolution": "Keep one name for the body: pass the body the real `mpath` for everything it reports (journal target, side-branch lookup, notes) and give only its read/write calls the staged path, or have `_journal_row` take the target from a single `real_path` the door carries. Add a case beside fp1 that reads the journal after a first add-phase and asserts every row's `target` is the real plan path and none ends in `.creating`."
+    },
+    {
+      "id": 2,
+      "severity": "low",
+      "file": "plugins/audit/scripts/manifest/audit-task.py:8087-8090",
+      "issue": "On success `_create_then` journals redactions with `planned_redactions(mpath, plan)` where `plan` is the empty seed plan, so it can only ever report values in `meta`. The values the body wrote (first phase title, desiredOutcome, batch tasks) were scrubbed on the staged file's saves and are never reported, which is the news P123.7 says every redacting plan write owes. The ex6 AST case only checks that the function calls `report_redactions`, so it passes over this.",
+      "resolution": "Compute the pointers from the plan the body actually produced (load the staged file before the copy and call `planned_redactions` on it, as the seed path at line 12598 does on its assembled plan), and add a case with a machine path in the first phase's title asserting a `plan.redact` row."
+    }
+  ],
+  "preExisting": [],
+  "intent": {
+    "answer": "matches",
+    "note": "Against desiredOutcome: a first phase on a fresh repo is created by one add-phase / add --from-file call with seed's meta, the requested phase as P1 and no placeholder task (audit-task.py _under_lock create=True / _create_then; fp1-fp9), seed gained --no-task; the drive-phase lock release, /audit:run phase-id refusal, project resolver and main-worktree landing switch (_worktrees.landing_switch, close-phase) are present and read as described. I read the first-plan staging path in full and the landing switch rules; with a diff of this size (334 files) I could not read every task, and the other 70-odd tasks are covered only by their filed returns and prior review rounds. Finding 1 is a defect in the delivered first-phase flow (journal rows name a nonexistent file), not a divergence from the outcome. The phase has no saved request and no recorded open choices, so the question 'where does a task choose something the request left open' cannot be answered from the record.",
+    "missing": [
+      "phase.request (no request saved)",
+      "phase.openChoices (none recorded)",
+      "a named review skill (none handed)",
+      "phase.testGateDerived basis (not in the brief)"
+    ],
+    "redFirst": "not-attempted",
+    "redFirstBasis": "mode: phase; the redFirst question is asked per task and no task is owed an answer here ('Review answers owed per task: None').",
+    "inheritedTests": "not-asked",
+    "inheritedTestsBasis": "The tasks' tests.gate entries include `python3 tools/sweep-selftests.py`, which runs every suite in the project, so the question has no bound; the brief owes no per-task answers."
+  },
+  "verdict": "findings",
+  "tasks": []
+}

@@ -7196,17 +7196,18 @@ def _build_phase(pid, title, fields, gate):
     return phase
 
 
-def _locked_phase_add(args, project, config, mpath, title, out):
+def _locked_phase_add(args, project, config, mpath, title, out, seed=None):
     """Everything between acquire and release for `add-phase`: read, allocate,
     append, write, validate-from-disk, roll back on findings, journal, report.
 
     `_locked_add`'s shape deliberately, down to which refusal comes before which
     write -- the two verbs differ in WHAT they append and in nothing else, and a
     second discipline for the second writer is how one of them ends up leaving an
-    invalid manifest behind."""
+    invalid manifest behind.
+
+    `seed` is the plan a project with none starts from (see `_plan_or_seed`)."""
     try:
-        raw_index = _mio.read_json(mpath)
-        assembled = _mio.load_manifest(mpath)
+        raw_index, assembled = _plan_or_seed(mpath, seed)
     except Exception as exc:
         out("[audit-task] cannot read/assemble manifest: %s" % exc)
         return E_USAGE
@@ -7584,8 +7585,8 @@ def _cmd_batch_add(args, out):
             out("  - " + line)
         return E_USAGE
     return _under_lock(args, project, out,
-                       lambda config, mpath, emit=out: _locked_batch_add(
-                           args, project, config, mpath, doc, emit),
+                       lambda config, mpath, seed=None: _locked_batch_add(
+                           args, project, config, mpath, doc, out, seed),
                        create=True)
 
 
@@ -7638,14 +7639,14 @@ def _batch_task_args(task, keys):
         failing_from=None)
 
 
-def _locked_batch_add(args, project, config, mpath, doc, out):
+def _locked_batch_add(args, project, config, mpath, doc, out, seed=None):
     """Everything between acquire and release for `add --from-file`: read,
     allocate the phase - or find the one a `{"id": ...}` phase names - and
     every task, refuse before the first write, write once, validate once from
-    disk, roll back on findings, journal, report."""
+    disk, roll back on findings, journal, report. `seed` is the plan a project
+    with none starts from (see `_plan_or_seed`)."""
     try:
-        raw_index = _mio.read_json(mpath)
-        assembled = _mio.load_manifest(mpath)
+        raw_index, assembled = _plan_or_seed(mpath, seed)
     except Exception as exc:
         out("[audit-task] cannot read/assemble manifest: %s" % exc)
         return E_USAGE
@@ -7995,10 +7996,10 @@ def _under_lock(args, project, out, body, must_exist=True, create=False):
     --from-file`): on a project with no plan they write the plan first, from
     `_seed_meta` and with no phase, and the body then adds the requested phase
     as the first one -- so a first phase is one verb call and no placeholder
-    task has to be written and cancelled. The plan is staged at a sibling name
-    and written into place only when the body returns 0 (see `_create_then`),
-    so no reader sees a plan with no phase and a refusal or crash leaves no
-    plan at the real path. The verbs that need an existing phase keep
+    task has to be written and cancelled. The body starts from the seed in
+    memory and its first write of the real path already holds the phase (see
+    `_create_then`), so no reader sees a plan with no phase and a refusal
+    leaves no plan at the real path. The verbs that need an existing phase keep
     `must_exist`.
     """
     args.project_basis = _panel_write.standing_elsewhere(resolve_basis(args))
@@ -8023,7 +8024,7 @@ def _under_lock(args, project, out, body, must_exist=True, create=False):
         return lock
     try:
         if creating:
-            return _create_then(project, mpath, body, config, out)
+            return _create_then(project, mpath, body, config)
         return body(config, mpath)
     finally:
         # A RELEASE THE LOCK DECLINES IS THE ONLY NOTICE THIS RUN GETS THAT
@@ -8034,61 +8035,28 @@ def _under_lock(args, project, out, body, must_exist=True, create=False):
                                  else out))
 
 
-# The sibling a first plan is staged at while the verb that plans its first
-# phase runs; renamed over the real path only on success.
-_CREATE_SUFFIX = ".creating"
+def _plan_or_seed(mpath, seed):
+    """`(raw_index, assembled)` of the plan at `mpath` -- or, when there is none
+    and a `seed` was handed down, two independent copies of the seed. The caller
+    mutates `assembled`, so the two must not share structure."""
+    if seed is not None and not os.path.exists(mpath):
+        return json.loads(json.dumps(seed)), json.loads(json.dumps(seed))
+    return _mio.read_json(mpath), _mio.load_manifest(mpath)
 
 
-def _create_then(project, mpath, body, config, out):
-    """Run `body` against a plan written at a SIBLING name, and give it the
-    real name only when `body` returned 0 (copied through the
-    sanctioned atomic writer).
+def _create_then(project, mpath, body, config):
+    """Run `body` for a project with no plan, handing it the REAL `mpath` and
+    the plan to start from.
 
-    The real path never holds a plan with no phase: a hook or status read
-    during the body sees no manifest, and a kill between the first write and
-    the body's own leaves a stray sibling file rather than a valid empty plan
-    that the next add-phase would take for an existing one. The body reads and
-    writes the sibling as its manifest; the journal sits beside it either way
-    (it is located by directory), and the sibling's name is replaced by the
-    real one in every line the body prints, so `written` names the plan."""
-    plan = {"meta": _seed_meta(project), "phases": [], "fileIndex": {},
+    Nothing is staged: the body's own write is the first write of the real
+    path and already holds the requested phase, so no reader ever sees a plan
+    with no phase, there is one name for the plan in every journal row, note
+    and redaction report, and a body that refuses or fails after that write
+    removes the file again (its pre-write snapshot records the path as
+    absent)."""
+    seed = {"meta": _seed_meta(project), "phases": [], "fileIndex": {},
             "bugs": []}
-    staged = mpath + _CREATE_SUFFIX
-    names = [(staged, mpath),
-             (_output.posix_rel(staged, project),
-              _output.posix_rel(mpath, project))]
-
-    def emit(line):
-        for was, now in names:
-            line = line.replace(was, now)
-        out(line)
-
-    try:
-        _mio.save_single_file(staged, plan)
-    except Exception as exc:
-        out("[audit-task] write failed: %s" % exc)
-        return E_INVALID
-    code = E_INVALID
-    try:
-        code = body(config, staged, emit)
-        if code == 0:
-            with open(staged, "r", encoding="utf-8", newline="") as fh:
-                text = fh.read()
-            _mio.atomic_write_text(mpath, text)
-    except OSError as exc:
-        out("[audit-task] write failed: %s" % exc)
-        code = E_INVALID
-    finally:
-        if code != 0 or os.path.exists(staged):
-            try:
-                os.remove(staged)
-            except OSError:
-                pass
-    if code == 0:
-        # Only a plan that is KEPT has news: a refused body leaves nothing.
-        _mio.report_redactions(mpath, _mio.planned_redactions(mpath, plan),
-                               _journal_io.append_from_cli_why, project=project)
-    return code
+    return body(config, mpath, seed)
 
 
 def cmd_phase_add(args, out):
@@ -8110,8 +8078,8 @@ def cmd_phase_add(args, out):
             "sign-off must address it (conventions -> New phase template)")
         return E_USAGE
     return _under_lock(args, project, out,
-                       lambda config, mpath, emit=out: _locked_phase_add(
-                           args, project, config, mpath, title, emit),
+                       lambda config, mpath, seed=None: _locked_phase_add(
+                           args, project, config, mpath, title, out, seed),
                        create=True)
 
 
