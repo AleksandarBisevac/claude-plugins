@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_audit_task.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__deps.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-12T13:58:49Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 1014 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fp7 (house FAIL): SELFTEST FAILED: 1011/1014 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "audit-task.py _create_then: on body exit 0 the staged .creating text is read and written to the real manifest with _manifest_io.atomic_write_text (replacing the direct os.replace that test__deps sw1 refused; no STATE_WRITERS row added); the staged file is then removed by the finally. Staging at a sibling name is unchanged. fp7-fp9 in test_audit_task.py still pass. test__deps.py --selftest: 314/314 passed; test_audit_task.py --selftest: 1014/1014 passed.",
+    "descriptive": "The first-plan staging commits through the sanctioned atomic writer, so no empty plan is ever visible at the real path and the state-writer lint is satisfied."
+  },
+  "testsAdded": [
+    "test_audit_task.py fp7",
+    "test_audit_task.py fp8",
+    "test_audit_task.py fp9"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:cfb45b5c750d5cca3783e952755f0570f88f260bd98ba9cdba7726ed22ab3d7a\",\"dirtyDigest\":\"sha256:2cbf3d54d3186e62fc6b3acb37fd46c8c846e1924873e4a2f97f2fe6767ee4a7\",\"dirtyPaths\":{\"plugins/audit/scripts/manifest/audit-task.py\":\"ee39f2091c92434d\",\"plugins/audit/tests/test_audit_task.py\":\"ca56f3b2f7ea1a43\"},\"head\":\"c6ac4d8e\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:2075c4641b3d75000fe01ff4bd501a8df056f27b01a15042e98ba737ac5d1747\",\"v\":2}"
+}

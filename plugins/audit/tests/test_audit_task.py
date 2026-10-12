@@ -16181,6 +16181,51 @@ def _first_plan_cases(check):
           code == 0 and len(phases) == 1 and phases[0].get("tasks") == []
           and findings == [])
 
+    # The body is handed to `_create_then` directly so the test can look at the
+    # real path from INSIDE it; `emit=None` lets the same body run against an
+    # older two-argument call.
+    def run_create(name, behave):
+        proj, mpath = project(name)
+        seen = []
+
+        def body(config, path, emit=None):
+            seen.append(os.path.exists(mpath))
+            return behave(path)
+
+        try:
+            code = M._create_then(proj, mpath, body, None, lambda line: None)
+        except RuntimeError:
+            code = "raised"
+        left = sorted(n for n in os.listdir(os.path.dirname(mpath))
+                      if n.startswith("audit-plan.json")) \
+            if os.path.isdir(os.path.dirname(mpath)) else []
+        return code, seen, left
+
+    def keep(path):
+        _panel_write._atomic_write_json(path, _mio.read_json(path))
+        return 0
+
+    def boom(path):
+        raise RuntimeError("body died")
+
+    code, seen, left = run_create("inside", keep)
+    check("fp7 a first add-phase whose body looks at the manifest path while "
+          "it runs finds NO file there (never a phases-[] plan), and the plan "
+          "is at the real name afterwards with no .creating beside it: %r"
+          % ((code, seen, left),),
+          code == 0 and seen == [False] and left == ["audit-plan.json"])
+
+    code, seen, left = run_create("raises", boom)
+    check("fp8 SECOND DIRECTION: a body that raises leaves neither the "
+          "manifest nor the .creating sibling: %r" % ((code, seen, left),),
+          code == "raised" and seen == [False] and left == [])
+
+    code, seen, left = run_create("refuses", lambda path: M.E_INVALID)
+    check("fp9 SECOND DIRECTION: a body that refuses (non-zero) leaves "
+          "neither the manifest nor the .creating sibling: %r"
+          % ((code, seen, left),),
+          code == M.E_INVALID and seen == [False] and left == [])
+
 
 def _batch_fix_cases(check):
     """`add --from-file -` adding fix tasks to a phase that exists: a batch

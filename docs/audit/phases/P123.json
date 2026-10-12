@@ -270,11 +270,35 @@
         "severity": "low",
         "file": "tools/prove-gates.py:628-632,1596-1600",
         "issue": "The two new prove-gates rows (lmd9 red row, lmd10 allow row) were never run. The executor reports REFUSED (DIRTY) for any row that mutates _deps.py, and substituted an anchor-count check. I confirmed that both anchors match exactly once, and that the planted red text '..., the bottom layer, for the collector' ends its clause with a comma. That does not show either row goes red or green in the way its table entry says.",
-        "resolution": "Run `python3 tools/prove-gates.py` for these two rows from a committed tree (now that the commit exists) and record the outcome. The quick check is that the lmd9 row reports the lint firing and the lmd10 row reports lmd10 failing.",
-        "fixTask": "P123.77-64p"
+        "resolution": "fixed in P123.77-64p (c6ac4d8e2975): Run `python3 tools/prove-gates.py` for these two rows from a committed tree (now that the commit exists) and record the outcome. The quick check is that the lmd9 row reports the lint firing and the lmd10 row reports lmd10 failing.",
+        "fixTask": "P123.77-64p",
+        "commit": "c6ac4d8e2975",
+        "status": "fixed"
+      },
+      {
+        "id": "P123-R26",
+        "severity": "med",
+        "file": "tools/prove-gates.py:626-634,1596-1601",
+        "issue": "P123.77 (fix P123-R25) was asked to RUN prove-gates for the lmd9 red row and the lmd10 allow row from a committed tree and record the outcome. Its filed outcome says 'prove-gates not run, per the order', and the diff only changes the planted row's expected case from lmd9 to lmd1 plus a comment. Nothing in the diff or the filed return shows either row going red or green. The lmd1 retarget is a reading, not an observation: the planted text 'the bottom layer holds `_doctor_report` for the collector' is an absolute ordinal followed by an ordinary word, which test__deps.py:652-662 (lmd11) covers on synthetic input, while whether the shipped-tree case lmd1 turns red on that plant is unmeasured. The lmd10 allow row (prove-gates.py:1596-1601, dropping the complement lookahead) is likewise unmeasured. A prove-gates row never seen red is the class this repo's CLAUDE.md warns about.",
+        "resolution": "From a committed clean tree run `python3 tools/prove-gates.py --only layer_mention_drift` (or the `--only` spelling the tool takes) and record the exit code and per-row verdicts for the plant row (expect lmd1 red) and the lmd10 allow row (expect lmd10 red). If the plant row does not go red under lmd1, retarget it to the case that does."
+      },
+      {
+        "id": "P123-R27",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:7555-7575 (_create_then)",
+        "issue": "P123.1: the empty plan (phases: []) is written to disk first and removed again only when the body returns non-zero or raises in-process. The index lock guards writers, not readers, so for the body's duration a hook or status read can see a plan with no phases (which moves the plan gate's tier from 'no manifest' to 'manifest, nothing running'). A kill -9 or power loss between the write and the body's own write leaves that empty plan behind, and the next add-phase then takes the existing-plan path silently. The window is short and the leftover is valid, so this is not a correctness failure.",
+        "resolution": "Build the first phase into the in-memory plan and write the file once (the body already assembles the plan under the lock), or write the empty plan to a sibling temp name and rename it only after the body returns 0.",
+        "fixTask": "P123.78-64p"
+      },
+      {
+        "id": "P123-R28",
+        "severity": "low",
+        "file": "docs/audit/phases/P123.json (task P123.3 outcome.technical)",
+        "issue": "The filed outcome of P123.3 ends 'Not done: the task note on whether script or model picked P1.2 ... was not established (no transcript read)'. The plan now carries a note (2026-10-11T16:32:32Z) saying it WAS established from the testbed transcript. The filed outcome therefore describes a state the record no longer has.",
+        "resolution": "Leave the outcome as history but make the note's provenance explicit (who read the transcript, which file), so the two statements are not left contradicting each other."
       }
     ],
-    "outcome": "[findings: 25 - 0 high, 11 med, 14 low; 24 with a recorded fix commit]"
+    "outcome": "[findings: 28 - 0 high, 12 med, 16 low; 25 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -484,6 +508,10 @@
         {
           "at": "2026-10-11T16:32:32Z",
           "text": "Established from the testbed session transcript (2026-10-09 18:55Z, the session that typed `/audit:run P1`): the SCRIPT picked P1.2, not the model. The orchestrator's first tool call was `drive-phase.py next P1` (3.2.0), before it read anything; the driver resolved the phase-shaped id to the phase's in-progress task left by an interrupted session and printed `decide no-executor-return P1.2 ... answer: next P1 --answer retry|block`; the model only chose `retry`, which started and dispatched P1.2 alone. So the one-task form this task added (a phase-shaped id refused, naming /audit:phase and the tasks it would run, never a picked task) closes the exact path observed."
+        },
+        {
+          "at": "2026-10-12T13:36:01Z",
+          "text": "Provenance of the 2026-10-11T16:32:32Z note: written by the orchestrator session (0a7c2fcc) after it read the danuvia-software testbed's own Claude Code transcript of the 2026-10-09 session that typed /audit:run P1. That note supersedes the outcome's closing 'Not done ... not established' sentence; the filed outcome is left unchanged as the record of what the executor knew when it filed."
         }
       ]
     },
@@ -6156,7 +6184,7 @@
     {
       "id": "P123.77-64p",
       "title": "fix P123-R25: The two new prove-gates rows (lmd9 red row, lmd10 allow row) we...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The two new prove-gates rows (lmd9 red row, lmd10 allow row) were never run. The executor reports REFUSED (DIRTY) for any row that mutates _deps.py, and substituted an anchor-count check. I confirmed that both anchors match exactly once, and that the planted red text '..., the bottom layer, for the collector' ends its clause with a comma. That does not show either row goes red or green in the way its table entry says.\n\nResolution asked: Run `python3 tools/prove-gates.py` for these two rows from a committed tree (now that the commit exists) and record the outcome. The quick check is that the lmd9 row reports the lint firing and the lmd10 row reports lmd10 failing.",
       "files": [
         "tools/prove-gates.py"
@@ -6184,18 +6212,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c6ac4d8e2975",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/prove-gates.py: the row planting 'the bottom layer holds `_doctor_report` for the collector' into status/_doctor_ado.py now expects case lmd1 (the shipped-tree case, as its sibling rows do) instead of lmd9; comment reworded. File parses (ast.parse exit 0). prove-gates not run, per the order.",
+        "descriptive": "The bottom-layer plant row names the case a planted docstring actually turns red, lmd1."
       },
       "startedAt": "2026-10-12T13:08:53Z",
-      "completedAt": null,
+      "completedAt": "2026-10-12T13:18:22Z",
       "verifiedBy": [],
       "notes": [
         {
           "at": "2026-10-12T13:08:53Z",
           "text": "scope: tools/prove-gates.py, every path the finding(s) P123-R25 name"
+        },
+        {
+          "at": "2026-10-12T13:36:01Z",
+          "text": "Measured by the orchestrator after the commit, as the order said: python3 tools/prove-gates.py --only layer_mention on committed c6ac4d8 (clean plugins/ and tools/) exited 0. Red half: 7 of 7 gates proven red - the planted row 'the bottom layer holds `_doctor_report` for the collector' reports RED lmd1 (on fd4beaf, before this task, the same row reported 'RED, WRONG CASE expected the case named lmd9, got lmd1'). Allow half: 3 of 3 guards proven quiet - the lmd10 row (complement lookahead dropped) reports RED lmd1, lmd10, lmd12."
         }
       ],
       "fixes": [
@@ -6206,6 +6238,75 @@
         "runId": "2026-10-12T13:18:21Z.be6213",
         "status": "passed",
         "at": "2026-10-12T13:18:21Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "c6ac4d8e2975",
+        "at": "2026-10-12T13:18:22Z",
+        "basis": "a fix task for P123-R25: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task; the orchestrator reruns prove-gates --only layer_mention after the commit (the helper refuses a dirty tree)",
+        "at": "n/a"
+      }
+    },
+    {
+      "id": "P123.78-64p",
+      "title": "fix P123-R27: P123.1: the empty plan (phases: []) is written to disk first an...",
+      "status": "in_progress",
+      "description": "P123.1: the empty plan (phases: []) is written to disk first and removed again only when the body returns non-zero or raises in-process. The index lock guards writers, not readers, so for the body's duration a hook or status read can see a plan with no phases (which moves the plan gate's tier from 'no manifest' to 'manifest, nothing running'). A kill -9 or power loss between the write and the body's own write leaves that empty plan behind, and the next add-phase then takes the existing-plan path silently. The window is short and the leftover is valid, so this is not a correctness failure.\n\nResolution asked: Build the first phase into the in-memory plan and write the file once (the body already assembles the plan under the lock), or write the empty plan to a sibling temp name and rename it only after the body returns 0.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a first add-phase whose body inspects the manifest path while it runs sees no file there (never a phases-[] plan), and a body that raises or refuses leaves neither the manifest nor the .creating sibling behind"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 3,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-12T13:54:33Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-12T13:36:06Z",
+          "text": "scope: plugins/audit/scripts/manifest/audit-task.py, every path the finding(s) P123-R27 name"
+        }
+      ],
+      "fixes": [
+        "P123-R27"
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T14:08:12Z.0194ef",
+        "status": "passed",
+        "at": "2026-10-12T14:08:12Z"
       }
     }
   ],

@@ -1,0 +1,14 @@
+{
+  "gates": {},
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only task, expectRedFirst false, tests.add none",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "audit-task.py: _create_then now stages the first plan at a sibling name (<manifest>.creating), runs the body against it, and os.replace()s it onto the real path only when the body returns 0; the staged file is removed on any non-zero/raise. Chose the sibling-temp route (not build-once-in-memory) because both creating bodies (_locked_phase_add, _locked_batch_add) read/validate/rollback through the on-disk manifest path, so a one-write restructure would rewrite both; journal location is derived from dirname only so it is unaffected. The two create=True callers' lambdas take an emit param (default out) and _create_then passes an emit that rewrites the staged name to the real one, so 'written:' and --json name the real plan. Evidence: live run in a fresh git repo, `add-phase T --outcome o` ok, only docs/audit/audit-plan.json present afterward, no .creating file; `python3 plugins/audit/tests/test_audit_task.py --selftest` -> 1011/1011 cases passed, exit 0. No new test added (task tests.add is none and tests/ is outside files); the requested pin (body inspects path while running; body raising) is NOT yet written - owed as a follow-up task on test_audit_task.py. Gates not run (own-tests, nothing of its own).",
+    "descriptive": "A first add-phase never exposes or leaves behind an empty phases:[] plan at the real manifest path."
+  },
+  "testsAdded": [],
+  "stamp": "audit-stamp: {\"content\":\"sha256:bee0e5ae52867233a61f316b7e65129be27244349fd9bc98af5ac4655b902a2f\",\"dirtyDigest\":\"sha256:1b07b9e686df8a1a8f2bab5fcdf251c1591b49a1859b67c2992491ef408c1b06\",\"dirtyPaths\":{\"plugins/audit/scripts/manifest/audit-task.py\":\"ee86b4c0fc554972\"},\"head\":\"c6ac4d8e\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/manifest/audit-task.py\"],\"scopeDigest\":\"sha256:afbd61ce2e4850fde2b1ee24a56ea0738412a875478fbc0ecd97a55e362011a7\",\"v\":2}"
+}

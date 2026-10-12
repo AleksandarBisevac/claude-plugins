@@ -7584,8 +7584,8 @@ def _cmd_batch_add(args, out):
             out("  - " + line)
         return E_USAGE
     return _under_lock(args, project, out,
-                       lambda config, mpath: _locked_batch_add(
-                           args, project, config, mpath, doc, out),
+                       lambda config, mpath, emit=out: _locked_batch_add(
+                           args, project, config, mpath, doc, emit),
                        create=True)
 
 
@@ -7995,9 +7995,10 @@ def _under_lock(args, project, out, body, must_exist=True, create=False):
     --from-file`): on a project with no plan they write the plan first, from
     `_seed_meta` and with no phase, and the body then adds the requested phase
     as the first one -- so a first phase is one verb call and no placeholder
-    task has to be written and cancelled. The plan is REMOVED again when the
-    body returns anything but 0 or raises, so a refusal on a project with no
-    plan leaves no plan behind. The verbs that need an existing phase keep
+    task has to be written and cancelled. The plan is staged at a sibling name
+    and written into place only when the body returns 0 (see `_create_then`),
+    so no reader sees a plan with no phase and a refusal or crash leaves no
+    plan at the real path. The verbs that need an existing phase keep
     `must_exist`.
     """
     args.project_basis = _panel_write.standing_elsewhere(resolve_basis(args))
@@ -8033,27 +8034,58 @@ def _under_lock(args, project, out, body, must_exist=True, create=False):
                                  else out))
 
 
+# The sibling a first plan is staged at while the verb that plans its first
+# phase runs; renamed over the real path only on success.
+_CREATE_SUFFIX = ".creating"
+
+
 def _create_then(project, mpath, body, config, out):
-    """Write the empty plan `_seed_meta` describes at `mpath`, run `body`
-    against it, and take the file away again unless `body` returned 0."""
+    """Run `body` against a plan written at a SIBLING name, and give it the
+    real name only when `body` returned 0 (copied through the
+    sanctioned atomic writer).
+
+    The real path never holds a plan with no phase: a hook or status read
+    during the body sees no manifest, and a kill between the first write and
+    the body's own leaves a stray sibling file rather than a valid empty plan
+    that the next add-phase would take for an existing one. The body reads and
+    writes the sibling as its manifest; the journal sits beside it either way
+    (it is located by directory), and the sibling's name is replaced by the
+    real one in every line the body prints, so `written` names the plan."""
     plan = {"meta": _seed_meta(project), "phases": [], "fileIndex": {},
             "bugs": []}
+    staged = mpath + _CREATE_SUFFIX
+    names = [(staged, mpath),
+             (_output.posix_rel(staged, project),
+              _output.posix_rel(mpath, project))]
+
+    def emit(line):
+        for was, now in names:
+            line = line.replace(was, now)
+        out(line)
+
     try:
-        _mio.save_single_file(mpath, plan)
+        _mio.save_single_file(staged, plan)
     except Exception as exc:
         out("[audit-task] write failed: %s" % exc)
         return E_INVALID
     code = E_INVALID
     try:
-        code = body(config, mpath)
+        code = body(config, staged, emit)
+        if code == 0:
+            with open(staged, "r", encoding="utf-8", newline="") as fh:
+                text = fh.read()
+            _mio.atomic_write_text(mpath, text)
+    except OSError as exc:
+        out("[audit-task] write failed: %s" % exc)
+        code = E_INVALID
     finally:
-        if code != 0:
+        if code != 0 or os.path.exists(staged):
             try:
-                os.remove(mpath)
+                os.remove(staged)
             except OSError:
                 pass
     if code == 0:
-        # Only a plan that is KEPT has news: a refused body takes the file away.
+        # Only a plan that is KEPT has news: a refused body leaves nothing.
         _mio.report_redactions(mpath, _mio.planned_redactions(mpath, plan),
                                _journal_io.append_from_cli_why, project=project)
     return code
@@ -8078,8 +8110,8 @@ def cmd_phase_add(args, out):
             "sign-off must address it (conventions -> New phase template)")
         return E_USAGE
     return _under_lock(args, project, out,
-                       lambda config, mpath: _locked_phase_add(
-                           args, project, config, mpath, title, out),
+                       lambda config, mpath, emit=out: _locked_phase_add(
+                           args, project, config, mpath, title, emit),
                        create=True)
 
 

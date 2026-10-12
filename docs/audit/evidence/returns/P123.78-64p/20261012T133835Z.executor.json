@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "own-test python3 plugins/audit/tests/test_audit_task.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-12T13:41:57Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 1014 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fp7 (house FAIL): SELFTEST FAILED: 1011/1014 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "outcome": {
+    "technical": "audit-task.py: _create_then stages the first plan at <manifest>.creating, runs the body against it and os.replace()s it onto the real path only when the body returns 0; removed on non-zero or raise; an emit wrapper rewrites the staged name in the body's output so 'written:' names the real plan. Sibling-temp chosen over write-once because both creating bodies read/validate/roll back through the on-disk path. Added cases fp7 (body inspecting the real path while it runs sees no file; plan lands at real name with no .creating), fp8 (raising body leaves neither), fp9 (refusing body leaves neither) in test_audit_task.py _first_plan_cases. Selftest: 1014/1014 cases passed, exit 0.",
+    "descriptive": "A first add-phase never exposes or leaves behind an empty phases:[] plan at the real manifest path, pinned by three cases."
+  },
+  "testsAdded": [
+    "test_audit_task.py fp7",
+    "test_audit_task.py fp8",
+    "test_audit_task.py fp9"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:430c6ca5ee17c8f3b1559a092d2422213c09b1c9be02aa37364b840115d0e8c9\",\"dirtyDigest\":\"sha256:2cbf3d54d3186e62fc6b3acb37fd46c8c846e1924873e4a2f97f2fe6767ee4a7\",\"dirtyPaths\":{\"plugins/audit/scripts/manifest/audit-task.py\":\"ee86b4c0fc554972\",\"plugins/audit/tests/test_audit_task.py\":\"ca56f3b2f7ea1a43\"},\"head\":\"c6ac4d8e\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:328e559eb1030cadeed8ca341da85afc15de8af1f5c43455b95ee31bace44ad2\",\"v\":2}"
+}
