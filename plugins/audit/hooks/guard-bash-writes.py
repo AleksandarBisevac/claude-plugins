@@ -685,7 +685,7 @@ def _statement_targets(toks):
         if tok in _WRITE_REDIRECTS and i + 1 < len(toks):
             target = toks[i + 1]
             if target and not target.isdigit():
-                out.append((tok, target))
+                out.append((tok, target, None, None))
             i += 2
             continue
         i += 1
@@ -702,25 +702,72 @@ def _statement_targets(toks):
             # The plan gate read this command against the disk as it stood; a
             # whole copy onto `lib/` that CREATED `lib` landed as `lib`, while
             # the disk now holds `lib` and the slash alone reads as inside it.
-            # Both landings the reader cannot tell apart from here are taken,
-            # which costs nothing: this names the statement that wrote a file
-            # already found changed, and never makes a finding of its own.
-            landings = []
-            for dests in (_config.copy_destinations(words),
-                          _config.copy_destinations(
-                              words, is_dir=lambda _word: False)):
-                landings.extend(d for d in (dests or []) if d not in landings)
-            out.extend((how, dest) for dest in landings)
+            # Each landing the words give is paired with the one where no
+            # operand pre-existed; `writing_statement` takes the second only
+            # when the first is not on the disk, so a copy into a directory
+            # that was already there never claims a peer's file beside it.
+            primary = _config.copy_destinations(words) or []
+            created = _config.copy_destinations(
+                words, is_dir=lambda _word: False) or []
+            paired = len(primary) == len(created)
+            for at, dest in enumerate(primary):
+                alt = created[at] if paired and created[at] != dest else None
+                out.append((how, dest, alt, rest))
         if words[0] == "tee":
-            out.extend(("tee", w) for w in words[1:] if not w.startswith("-"))
+            out.extend(("tee", w, None, None) for w in words[1:]
+                       if not w.startswith("-"))
         elif words[0] == "sed" and any(_write_flag(w) for w in words[1:]):
             # The script is an argument too, so the LAST non-option word is the
             # file: `sed -i 's/a/b/' src/x.ts`. Taking every one of them would
             # report the expression as a path.
             files = [w for w in words[1:] if not w.startswith("-")]
             if len(files) > 1:
-                out.append(("sed -i", files[-1]))
+                out.append(("sed -i", files[-1], None, None))
     return out
+
+
+def _copy_source_holds(words, cwd, sub):
+    """Could the copy spelled by `words` have written `sub` under its
+    destination directory? A source directory still on the disk holds the same
+    relative path, or a source file has that name; a command with no copy words
+    (a redirect, a tee) or whose sources are gone (`mv`) is not second-guessed.
+    A file a peer wrote beside the copy's own in a directory that already
+    existed is therefore never named as this copy's."""
+    if not words:
+        return True
+    operands = [w for w in words[1:] if not w.startswith("-")][:-1]
+    seen = False
+    for source in operands:
+        try:
+            placed = os.path.join(str(cwd or "."), source.rstrip("/\\") or source)
+            if os.path.isdir(placed):
+                seen = True
+                if os.path.exists(os.path.join(placed, sub)):
+                    return True
+            elif os.path.isfile(placed):
+                seen = True
+                if os.path.basename(placed) == sub:
+                    return True
+        except Exception:
+            return True
+    return not seen
+
+
+def _landing(target, alt, cwd):
+    """The word a copy's file really landed under: `target` as the words read
+    it, or - when that path is not on the disk and the landing where no operand
+    pre-existed is - that one, which is the copy having created its own
+    destination. Any other statement has no `alt` and keeps its word."""
+    if not alt:
+        return target
+    try:
+        here = os.path.join(str(cwd or "."), target)
+        there = os.path.join(str(cwd or "."), alt)
+        if not os.path.exists(here) and os.path.exists(there):
+            return alt
+    except Exception:
+        pass
+    return target
 
 
 def writing_statement(command, cwd, watching, rel):
@@ -763,7 +810,9 @@ def writing_statement(command, cwd, watching, rel):
         base = os.path.realpath(str(watching))
     except Exception:
         return None
-    for how, target in _statement_targets(_drop_harmless_redirects(toks)):
+    for how, target, alt, words in _statement_targets(
+            _drop_harmless_redirects(toks)):
+        target = _landing(target, alt, cwd)
         if not _config.resolvable_destination(target):
             continue
         try:
@@ -776,7 +825,9 @@ def writing_statement(command, cwd, watching, rel):
         # A copy INTO a directory lands at `<dir>/<name>`, so a destination
         # that is a directory names every path under it.
         if dest_rel != rel and not (os.path.isdir(dest)
-                                    and rel.startswith(dest_rel + "/")):
+                                    and rel.startswith(dest_rel + "/")
+                                    and _copy_source_holds(
+                                        words, cwd, rel[len(dest_rel) + 1:])):
             continue
         return "the command's own `%s %s`" % (how, target)
     return None

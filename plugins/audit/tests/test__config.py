@@ -2522,6 +2522,32 @@ def _cases(check):
                                    is_dir=lambda word: word == "src")
     check("dd4 a slashless operand the disk says is a directory takes the "
           "source's name inside it: %r" % (_dd_disk,), _dd_disk == ["src/a.py"])
+    # A whole copy of a source SPELLED WITH A TRAILING SLASH into a directory
+    # that exists: BSD cp (macOS) copies the source's contents into it, GNU cp
+    # copies the source itself under it. The reader follows the cp this machine
+    # runs, and both readings are pinned whatever the host.
+    _dd_listing = (lambda source, dest: ["k.py"])
+    _dd_prev = M.CP_SLASH_COPIES_CONTENTS
+    try:
+        M.CP_SLASH_COPIES_CONTENTS = True
+        _dd_bsd = M.copy_destinations(["cp", "-r", "src/", "lib"],
+                                      is_dir=lambda w: w == "lib",
+                                      files_of=_dd_listing)
+        _dd_bsd_bare = M.copy_destinations(["cp", "-r", "src", "lib"],
+                                           is_dir=lambda w: w == "lib",
+                                           files_of=_dd_listing)
+        M.CP_SLASH_COPIES_CONTENTS = False
+        _dd_gnu = M.copy_destinations(["cp", "-r", "src/", "lib"],
+                                      is_dir=lambda w: w == "lib",
+                                      files_of=_dd_listing)
+    finally:
+        M.CP_SLASH_COPIES_CONTENTS = _dd_prev
+    check("dd5 a trailing-slash source copied whole into an existing "
+          "directory lands as its contents under BSD cp and under its own name "
+          "under GNU cp; a bare source lands under its name either way: "
+          "%r" % ((_dd_bsd, _dd_bsd_bare, _dd_gnu),),
+          _dd_bsd == ["lib/k.py"] and _dd_bsd_bare == ["lib/src/k.py"]
+          and _dd_gnu == ["lib/src/k.py"])
 
     # (cw) the command's own window: a start noted at Pre, a path judged by it.
     import tempfile

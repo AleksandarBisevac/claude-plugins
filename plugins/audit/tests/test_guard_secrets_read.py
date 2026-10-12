@@ -876,6 +876,9 @@ def _slash_copy_cases(check):
                  ("cp -a", "cp -a src/ lib/"), ("mv", "mv src/ lib/"),
                  ("cp -r, slashless", "cp -r src lib"),
                  ("mv, slashless", "mv src lib"))
+    # These cases read GNU cp, whatever the host runs; sc5 reads BSD cp.
+    held_cp = _config.CP_SLASH_COPIES_CONTENTS
+    _config.CP_SLASH_COPIES_CONTENTS = False
     try:
         dests = M._copy_destinations(["cp", "-r", "src/", "lib/"],
                                      lambda word: False)
@@ -905,7 +908,16 @@ def _slash_copy_cases(check):
             check("sc4 `%s` with the destination present lands inside it, "
                   "refused naming the file it lands as" % cmd,
                   got[0] == "block" and "lib/src/app.ts" in got[1], got)
+        # BSD cp copies a trailing-slash source's CONTENTS into a directory
+        # that exists, so the same spelling writes the declared lib/app.ts.
+        _config.CP_SLASH_COPIES_CONTENTS = True
+        got = at_deny("present bsd cp -r", "cp -r src/ lib/")
+        check("sc5 under BSD cp, `cp -r src/ lib/` with the destination present "
+              "lands the source's contents - the declared lib/app.ts - and is "
+              "allowed: %r" % (got[:1],), got[0] == "allow")
+        _config.CP_SLASH_COPIES_CONTENTS = False
     finally:
+        _config.CP_SLASH_COPIES_CONTENTS = held_cp
         if held is None:
             os.environ.pop("CLAUDE_PROJECT_DIR", None)
         else:

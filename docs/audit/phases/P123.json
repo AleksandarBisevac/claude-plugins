@@ -180,8 +180,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/status/audit-lookup.py:766; plugins/audit/tests/test_drive_phase.py:4254; plugins/audit/tests/test_stamp_verification.py:899",
         "issue": "P123-R14 is not closed. Its resolution had two halves: restore the lines, and find what rewrote them before it touches non-test code. P123.69 restored the three named lines. The same artefact (an existing 'X = Y' rewritten to 'X =Y') is still in the phase diff three more times, and one of them is in product code: audit-lookup.py:766 'lines =[...' (rewritten in P123.41 0082528b from 'lines = ['), test_drive_phase.py:4254 '_TALLY =...' (P123.45 a3ec357c), and test_stamp_verification.py:899 'leftover =os.path.join' (P123.51 d24b3047). Each git show shows the original spaced line removed and the unspaced one added. Ruff's selected rules do not catch E225, so the gate stays green.",
-        "resolution": "Restore 'X = Y' on the three lines. Add a check that fails on the shape (enable ruff E225 for plugins/audit and tools, or add a small AST/token lint in _output), so the rewriter is caught wherever it strikes next.",
-        "fixTask": "P123.71-64p"
+        "resolution": "fixed in P123.71-64p (6fd9b35c1f11): Restore 'X = Y' on the three lines. Add a check that fails on the shape (enable ruff E225 for plugins/audit and tools, or add a small AST/token lint in _output), so the rewriter is caught wherever it strikes next.",
+        "fixTask": "P123.71-64p",
+        "commit": "6fd9b35c1f11",
+        "status": "fixed"
       },
       {
         "id": "P123-R17",
@@ -224,7 +226,7 @@
         "fixTask": "P123.74-64p"
       }
     ],
-    "outcome": "[findings: 21 - 0 high, 10 med, 11 low; 15 with a recorded fix commit]"
+    "outcome": "[findings: 21 - 0 high, 10 med, 11 low; 16 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -5628,7 +5630,7 @@
     {
       "id": "P123.71-64p",
       "title": "No assignment loses its spaces again: ruff's whitespace-around-operator rule is on, and every site is fixed",
-      "status": "in_progress",
+      "status": "done",
       "description": "(P123-R16, med) P123-R14 is not closed. Its resolution had two halves: restore the lines, and find what rewrote them before it touches non-test code. P123.69 restored the three named lines. The same artefact (an existing 'X = Y' rewritten to 'X =Y') is still in the phase diff three more times, and one of them is in product code: audit-lookup.py:766 'lines =[...' (rewritten in P123.41 0082528b from 'lines = ['), test_drive_phase.py:4254 '_TALLY =...' (P123.45 a3ec357c), and test_stamp_verification.py:899 'leftover =os.path.join' (P123.51 d24b3047). Each git show shows the original spaced line removed and the unspaced one added. Ruff's selected rules do not catch E225, so the gate stays green.\nResolution: Restore 'X = Y' on the three lines. Add a check that fails on the shape (enable ruff E225 for plugins/audit and tools, or add a small AST/token lint in _output), so the rewriter is caught wherever it strikes next.\n\nRECURRING CLASS (the stray `X =Y` rewrite reached four task commits from four different executors, product code included), so a LINT, not another revert: enable ruff's E225 (missing-whitespace-around-operator) explicitly in pyproject.toml (`preview = true` with `explicit-preview-rules = true` so no other preview rule turns on), fix all six sites ruff reports (audit-lookup.py:766, test__evidence_io.py:1105, test_audit_lookup.py:1203, test_drive_phase.py:2866 and :4254, test_stamp_verification.py:899), and say in CONTRIBUTING's lint line that the rule is on. Show the rule can fail: with one site un-fixed in a scratch copy, ruff exits 1. Faults: P123-R16.",
       "files": [
         "pyproject.toml",
@@ -5667,14 +5669,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6fd9b35c1f11",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "pyproject.toml [tool.ruff.lint] gained preview = true, explicit-preview-rules = true and E225 in select. The baseline ruff run before the change was green, and after enabling the rule the only new findings were the six E225 sites, so no other selected rule changed. Fixed those six sites by Edit, one 'X =Y' to 'X = Y' each: audit-lookup.py:766, test__evidence_io.py:1105, test_audit_lookup.py:1203, test_drive_phase.py:2866 and :4254, test_stamp_verification.py:899. CONTRIBUTING.md's lint comment now says E225 is on, as the one preview rule enabled by name. tools/gate-parity.py and tools/verify.sh only run 'ruff check plugins/audit tools' and do not compare the config, so neither needed a follower. Exit codes: ruff 0, vermin 0, gate-parity 0, sweep-selftests 0, sweep-selftests --spaced 0.",
+        "descriptive": "Ruff now fails on a stray 'X =Y' assignment anywhere in plugins/audit or tools, and the six existing ones are repaired."
       },
       "startedAt": "2026-10-12T10:52:08Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T11:09:04Z",
+      "verifiedBy": [
+        "pyproject.toml: E225 selected as an explicit preview rule; ruff check plugins/audit tools exits 0"
+      ],
       "notes": [
         {
           "at": "2026-10-12T10:24:55Z",
@@ -5689,18 +5693,33 @@
         "runId": "2026-10-12T11:09:02Z.66c7f2",
         "status": "passed",
         "at": "2026-10-12T11:09:02Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "6fd9b35c1f11",
+        "at": "2026-10-12T11:09:04Z",
+        "basis": "a fix task for P123-R16: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task. With E225 enabled and before the fixes, ruff check plugins/audit tools exited 1 with exactly six E225 findings and no other rule. In a scratch copy (pyproject.toml plus a file holding 'lines =[1]'), ruff check exited 1 with missing-whitespace-around-operator.",
+        "at": "2026-10-12"
       }
     },
     {
       "id": "P123.72-64p",
       "title": "The bash-write guard names a copy's second landing only for files that copy created, and a peer's file under it stays unnamed (orchestrator-written guard reading code)",
-      "status": "pending",
+      "status": "in_progress",
       "description": "(P123-R17, low) Outcome agreement is the right invariant for R10, because guard-bash-writes runs PostToolUse only and the pre-command disk cannot be reread. _config.copy_destinations' docstring now says what holds. The new comment in _statement_targets, though, says taking both landings 'costs nothing ... never makes a finding of its own'. That is false under the deny tier: a path in `named` goes to `authored` and is BLOCKED even while a peer session is active (`clauses`), and the union adds a directory destination the shared reader alone did not give. For `cp -r src/ lib/` with lib pre-existing, the is_dir=False reading adds `lib`, and writing_statement's directory rule (:776-779) then names every changed path under lib/. A peer's concurrent write to lib/other.py is attributed to this command and blocked instead of noticed. The (ca) cases compute `named` only over files the copy landed, so they cannot see over-attribution.\nResolution: Either restrict the extra is_dir=False landing to destinations that did not exist as directories before (or to the specific <dest>/<source-basename> subtree), or correct the comment to state the deny-tier cost. Add a (ca) negative: a file under the destination directory that the copy did not write is not named.\n\nThe union of landings costs something under the deny tier, where a named path is blocked: take the alternative landing (no operand pre-existed) only for a file that did not exist before - a path git reports untracked-new inside a directory that is itself untracked - so a pre-existing directory's other contents are never pulled in. GUARD COMMAND-READING CODE: written by the orchestrator. Faults: P123-R17.",
       "files": [
         "plugins/audit/hooks/guard-bash-writes.py",
         "plugins/audit/tests/test_guard_bash_writes.py",
         "plugins/audit/hooks/guard-bash-writes.py",
-        "plugins/audit/tests/test_guard_bash_writes.py"
+        "plugins/audit/tests/test_guard_bash_writes.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py",
+        "SECURITY.md",
+        "plugins/audit/tests/test_guard_secrets_read.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -5725,14 +5744,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T11:09:04Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -5743,7 +5762,13 @@
       ],
       "fixes": [
         "P123-R17"
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T11:30:14Z.1dc4cb",
+        "status": "passed",
+        "at": "2026-10-12T11:30:14Z"
+      }
     },
     {
       "id": "P123.73-64p",

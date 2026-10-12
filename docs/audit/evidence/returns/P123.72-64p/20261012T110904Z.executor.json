@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/sweep-selftests.py --spaced": "pass",
+    "python3 tools/bench-hooks.py --gate": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests": "pass"
+  },
+  "outcome": {
+    "descriptive": "A copy is graded by the cp the host runs, and the bash-write guard names a copy as the writer only of files its own source holds, so a peer's file beside it is never blamed or blocked.",
+    "technical": "Written by the orchestrator (guard command-reading code). Driving the finding's case on this macOS host exposed a second defect under it: BSD cp copies a trailing-slash source's CONTENTS into an existing directory (`cp -r src/ lib/` writes lib/k.py) where GNU cp writes lib/src/k.py, and the one copy reader read GNU only - so the plan gate graded lib/src/k.py while the copy wrote lib/k.py. hooks/_config: CP_SLASH_COPIES_CONTENTS (true on darwin and the BSDs) and _copies_contents() make copy_destinations land a whole cp of a slash-ended source as its contents when that holds. guard-bash-writes: each copy landing is paired with its created-as-named alternative and `_landing` takes the alternative only when the first is not on the disk; `_copy_source_holds` names a copy as the writer of a file under its destination directory only when a source directory still holds the same relative path or a source file has that name (sources gone, as after mv, are not second-guessed) - so a peer's lib/peer.py beside the copy's files stays unnamed. Cases: test_guard_bash_writes ca5 (`cp -r src lib/`) and ca6 (`cp -r src/ lib/`) run real copies onto an existing lib, require graded == landed == named and the peer file unnamed - ca6 was red before (graded lib/src/k.py, peer named) and both pass; test__config dd5 pins both cp semantics through the flag; test_guard_secrets_read's slash-copy group now states it reads GNU cp, with sc5 the BSD twin. SECURITY.md says the reader follows the host's cp and the attribution needs the source to hold the file."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_guard_bash_writes.py: ca5, ca6",
+    "plugins/audit/tests/test__config.py: dd5",
+    "plugins/audit/tests/test_guard_secrets_read.py: sc5"
+  ],
+  "redFirst": {
+    "at": "2026-10-12T11:20:31Z",
+    "basis": "`python3 plugins/audit/tests/test_guard_bash_writes.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 237 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ca5 (house FAIL), ca6 (house FAIL): SELFTEST FAILED: 235/237 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved"
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:6ba201f328cc3a451a7a18ec15a8f11f642735d5fda699969ceb6d64daa6838f\",\"dirtyDigest\":\"sha256:7b643d06c265411a77f5f65b662c87a5525624aac2eb9ec3570a0451f873f51a\",\"dirtyPaths\":{\"SECURITY.md\":\"45af096796f61e8d\",\"plugins/audit/hooks/_config.py\":\"a571b268eb2de1c6\",\"plugins/audit/hooks/guard-bash-writes.py\":\"04319d2b0ec7059c\",\"plugins/audit/tests/test__config.py\":\"770c6586d2eec3e2\",\"plugins/audit/tests/test_guard_bash_writes.py\":\"245c83692198a67a\",\"plugins/audit/tests/test_guard_secrets_read.py\":\"0690004418aa74cc\"},\"head\":\"6fd9b35c\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"SECURITY.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/guard-bash-writes.py\",\"plugins/audit/tests/test__config.py\",\"plugins/audit/tests/test_guard_bash_writes.py\",\"plugins/audit/tests/test_guard_secrets_read.py\"],\"scopeDigest\":\"sha256:3e668ee4be82ac590fe12d7b4a3bdc53c9aa102ae174766e1b15331489209779\",\"v\":2}"
+}

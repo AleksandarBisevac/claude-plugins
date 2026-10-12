@@ -547,7 +547,12 @@ a brace) or a home reference names a place only the shell knows. A bracket is NO
 marks: `app/[locale]/page.tsx` is how a route directory is spelled, a bracket matching no file
 is the literal name, and treating it as unresolvable would stop grading those writes at all, so
 it is read literally. A target is the whole shell word the redirect is handed, quotes and
-escapes removed, so `> 'src/a b.py'` is graded as `src/a b.py`. A `cd` whose word the shell
+escapes removed, so `> 'src/a b.py'` is graded as `src/a b.py`. A copy is read by the `cp` the
+host runs: BSD `cp` (macOS) copies a trailing-slash source's contents into an existing
+directory, GNU `cp` copies the source under it, and the one copy reader in `hooks/_config`
+follows the host. After the command, the bash-write guard names a copy as the writer of a file
+under its destination only when the copy's own source holds that file, so a peer's file beside
+it is not blamed on the copy. A `cd` whose word the shell
 would split differently from this reading - a doubled backslash before a blank, an escaped
 leading dash - has no target and ends the walk. Resolving a marked spelling against the repository
 root put `$HOME/notes.py` inside the tree and refused it for plan coverage under a name no

@@ -2265,6 +2265,13 @@ _COPY_VALUE_OPTIONS = {
 # What makes `cp` copy a directory whole rather than refuse it.
 _COPY_RECURSIVE_LONG = ("--recursive", "--archive")
 _COPY_RECURSIVE_SHORT = "rRa"
+# BSD cp - the one macOS and the BSDs ship - copies a source SPELLED WITH A
+# TRAILING SLASH as its contents: `cp -r src/ lib` into an existing `lib`
+# writes `lib/k.py`, where GNU cp writes `lib/src/k.py`. The guard runs on the
+# machine that runs the command, so it reads the cp that machine has; a test
+# may set this to read the other one.
+CP_SLASH_COPIES_CONTENTS = sys.platform.startswith(
+    ("darwin", "freebsd", "openbsd", "netbsd", "dragonfly"))
 
 
 def copy_destinations(words, is_dir=None, files_of=None):
@@ -2359,7 +2366,8 @@ def copy_destinations(words, is_dir=None, files_of=None):
         landed = [(operands[1].rstrip("/\\") or operands[1], operands[0])]
     else:
         base = directory.rstrip("/\\")
-        landed = [("%s/%s" % (base, s.replace("\\", "/").rstrip("/")
+        landed = [(base if _copies_contents(program, whole, s) else
+                   "%s/%s" % (base, s.replace("\\", "/").rstrip("/")
                               .rsplit("/", 1)[-1]), s) for s in sources]
     out = []
     for dest, source in landed:
@@ -2368,6 +2376,14 @@ def copy_destinations(words, is_dir=None, files_of=None):
         out.extend([dest] if inside is None else
                    ["%s/%s" % (dest.rstrip("/\\"), rel) for rel in inside])
     return out
+
+
+def _copies_contents(program, whole, source):
+    """True when a whole `cp` of `source` into a directory lands the source's
+    CONTENTS there rather than the source under its own name: BSD cp does that
+    for a source spelled with a trailing slash (`CP_SLASH_COPIES_CONTENTS`)."""
+    return (program == "cp" and whole and CP_SLASH_COPIES_CONTENTS
+            and source.endswith(("/", "\\")) and source.rstrip("/\\") != "")
 
 
 def _lands_as_named(last, whole, is_dir):

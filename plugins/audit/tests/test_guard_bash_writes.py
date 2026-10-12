@@ -2645,6 +2645,39 @@ def _copy_outcome_cases(check):
                   and named == landed)
         finally:
             _harness.remove_tree(root)
+    # A copy INTO a directory that already existed lands under it; a file a
+    # peer wrote beside it in the same window is not this copy's, and naming it
+    # would block a write this command never made. Run for real, so where the
+    # copy lands is this machine's cp's answer, graded and attributed alike.
+    for cid, cmd in (("ca5", "cp -r src lib/"), ("ca6", "cp -r src/ lib/")):
+        root = _harness.fixture_root("bash-writes-%s-" % cid)
+        try:
+            subprocess.run(["git", "init", "-q", root], check=True,
+                           capture_output=True, timeout=30)
+            for name in ("src", "lib"):
+                os.makedirs(os.path.join(root, name))
+            with open(os.path.join(root, "src", "k.py"), "w",
+                      encoding="utf-8", newline="\n") as fh:
+                fh.write("x = 1\n")
+            before = set(_tree_files(root))
+            graded = sorted(secrets._copy_targets(cmd, cwd=root))
+            subprocess.run(cmd, shell=True, cwd=root, check=True,
+                           capture_output=True, timeout=30)
+            landed = sorted(set(_tree_files(root)) - before)
+            with open(os.path.join(root, "lib", "peer.py"), "w",
+                      encoding="utf-8", newline="\n") as fh:
+                fh.write("y = 2\n")
+            named = [rel for rel in landed
+                     if M.writing_statement(cmd, root, root, rel)]
+            peer = M.writing_statement(cmd, root, root, "lib/peer.py")
+            check("%s `%s` onto an existing lib: what it landed was graded "
+                  "beforehand and is named here, and a peer's lib/peer.py is "
+                  "not: landed=%r graded=%r named=%r peer=%r"
+                  % (cid, cmd, landed, graded, named, peer),
+                  bool(landed) and set(landed) <= set(graded)
+                  and named == landed and peer is None)
+        finally:
+            _harness.remove_tree(root)
 
 
 def _tree_files(root):
