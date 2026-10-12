@@ -774,7 +774,7 @@
     {
       "id": "P123",
       "title": "A first-time user's plan, run and landing do what they said",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P123.json"
     },
     {
