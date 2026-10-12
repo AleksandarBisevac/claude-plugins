@@ -29,7 +29,7 @@
     {
       "id": "P126.1",
       "title": "The report's tables never widen the page on hostile content, and phase titles do not split mid-letter",
-      "status": "in_progress",
+      "status": "done",
       "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), job 'manifest validation', step 'The report is interactive': FAIL hostile content (planted per table: phases [prose in 1 cell(s), token in 0 bare + 0 full-width + 1 evidence-mark cell(s)] + data [prose in 1 cell(s), token in 1 bare + 0 full-width + 0 evidence-mark cell(s)] + data bugs [prose in 1 cell(s), token in 1 bare + 0 full-width + 0 evidence-mark cell(s)] + data [prose in 1 cell(s), token in 1 bare + 0 full-width + 0 evidence-mark cell(s)]) widens the document at no width: got 833px (818 -> 849), want none. This is a regression from P123.90 (d434414), which added `.content :where(table){overflow-wrap:break-word}` after `.content{overflow-wrap:anywhere}` split phase titles mid-letter at 833px. `break-word` does not lower a cell's min-content width, so a planted unbroken token in a table cell widens the document again - the check `tools/check-report-interactive.mjs` (hostile content leg) exists for exactly that. Find a rule that satisfies BOTH: no table cell token widens the document at any width (the hostile leg), and ordinary phase titles in a wide table do not break mid-word when there is room (the reason P123.90 added the exception) - e.g. `anywhere` on the cells that carry free text with the title column given a min-width, or table-layout fixed on the tables whose columns are known; read the refactoring-the-assembled-ui skill and budget pins (`python3 tools/count-ui-pins.py`). Verify with `node tools/check-report-interactive.mjs` on the committed example AND the live plan render AND the hostile leg the CI step runs (read .github/workflows/ci.yml for its exact invocation). Re-render committed artifacts (examples/report.sh; docs/demo-large.html per check-rendered-artifacts.py) and do NOT recapture screenshots - the orchestrator does.",
       "files": [
         "plugins/audit/scripts/ui/report-css/shell.css",
@@ -95,25 +95,37 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "97c7e9d55edf",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Clip rule removed. Reproduced the CI FAIL exactly (got 833px (818 -> 849)) in mcr.microsoft.com/playwright:v1.56.0-jammy after apt-get install fonts-dejavu-core (the stock image's fonts do not reproduce it), on docs/demo-large.html - NOT the live plan: the failing report in the CI log is the third file of the loop, the 40-phase demo, with four planted tables. A probe (planting per table, prose-only/token-only/both) named the cell: the bare title cell of table.data.bugs, +31px from the token (prose alone adds 0). Cause: the bugs table (8 columns) is already at 783px min width in a 770px column at 833px with a wide font; the test-gate cell's pills are .chip{white-space:nowrap} so that column's narrowest width was 170px; the title's 16-char <wbr> chunk then pushed the document over. Fix (tables.css): `table.bugs td.tevcell,table.bugs td.tevcell *{white-space:normal}` so the pills wrap at their spaces; break-word on tables untouched, so no word splits mid-letter. Probe measured: this variant 0 px widening (a chip-only variant still 16px; td overflow-wrap:anywhere also 0 but splits title words). In-container after the fix: hostile and 10a legs pass on demo-large and the acme example. Also on macOS: demo-large, docs/index.html, example and live plan all pass. Container live-plan run crashes in page.pdf (Printing failed) before and after the change - an environment limit, not reported as a pass. Re-rendered examples/acme-store/acme-store-audit.html, docs/index.html (examples/report.sh) and docs/demo-large.html; check-rendered-artifacts OK; acme-store-audit.md only had a timestamp change and was reverted. test_render_report.py: u14kt now pins the tevcell rule and the absence of the clip rule; selftest all pass. Screenshots not recaptured; the bugs table's test-gate pills may now wrap at tight widths, which the orchestrator's shots would show.",
+        "descriptive": "The bugs table no longer widens the page at 833px with a wide font: its test-gate pills wrap; CI failure reproduced in a Playwright container and fixed at the named cell."
       },
       "startedAt": "2026-10-12T20:30:45Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T21:10:41Z",
+      "verifiedBy": [
+        "u14kt"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-12T21:10:39Z.aaf6ef",
         "status": "passed",
         "at": "2026-10-12T21:10:39Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "97c7e9d55edf",
+        "at": "2026-10-12T21:10:41Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression mode, expectRedFirst false. The failure was reproduced before the fix (below) but the new case u14kt is a CSS-text pin, not run red in a throwaway tree.",
+        "at": "n/a"
       }
     },
     {
       "id": "P126.2",
       "title": "py-launch.sh parses under Git's sh on Windows for every spelling of $0",
-      "status": "pending",
+      "status": "in_progress",
       "description": "CI run 38299118105 (release commit c298ac59, same tree as main e22f5011 plus the version bump; ci/p123 run 38298210727 at e22f5011 failed the same jobs), windows-latest, test_py_launch.py: FAIL pl20 a `$0` spelled with backslashes and NO slash (what Git's sh on Windows is handed) still names the launcher's directory - read as 'run from the cwd' it looked for the hook beside the cwd, found none and prompted on a healthy install: {'out': '', 'err': \"hooks\\\\py-launch.sh: -c: line 114: syntax error: unexpected end of file from `case' command on line 65\\n\", 'code': 2} | FAIL pl21 ...and an ABSOLUTE all-backslash `$0` (a drive letter on Windows) resolves from another working directory too: {'out': '', 'err': \"<outside-repo> -c: line 114: syntax error: unexpected end of file from `case' command on line 65\\n\", 'code': 2} | FAIL pl22 ...and a `$0` mixing the two separators resolves the same: {'out': '', 'err': \"hooks\\\\.\\\\py-launch.sh: -c: line 114: syntax error: unexpected end of file from `case' command on line 65\\n\", 'code': 2}. All three fail with the same shell syntax error ('-c: line 114: syntax error: unexpected end of file from `case' command on line 65'), so the launcher text the test hands to Git's sh does not parse there - most likely a line ending (a CR left in the script as written or as read), a backslash inside a case pattern that Git's sh reads differently, or a quoting difference under `sh -c`. Find which by reading py-launch.sh's case at line 65 and how test_py_launch builds and invokes the script for pl20-pl22 (P123.24 162c8f03 added them). If the product file itself would fail on a Windows user's machine, that is the fix (py-launch.sh stays POSIX-sh builtins only); if only the test's way of invoking it is wrong, fix the test and say so. It reproduces only on windows-latest; the executor cannot run Windows here, so the fix is reasoned from the CI lines quoted below and the code, kept green on macOS, and verified by the orchestrator's next CI run. State in the return exactly which Windows behaviour the fix assumes, with its source (Python/Git-for-Windows docs or the CI output).",
       "files": [
         "plugins/audit/hooks/py-launch.sh",
@@ -142,16 +154,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-12T21:10:41Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-12T21:23:04Z.8d58d7",
+        "status": "passed",
+        "at": "2026-10-12T21:23:04Z"
+      }
     },
     {
       "id": "P126.3",

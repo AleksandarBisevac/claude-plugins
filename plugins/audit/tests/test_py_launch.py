@@ -169,19 +169,24 @@ def _drive(sh, launcher, script, mode, path_entry, stdin=PAYLOAD):
 
 
 def _drive_as(sh, launcher_path, dollar0, script, mode, path_entry, cwd):
-    """Run the launcher's TEXT with `dollar0` as its `$0`, however it is spelled.
+    """Run the launcher with `dollar0` as its `$0`, however it is spelled.
 
     A backslash-only `$0` cannot be reached by naming a file to `sh` on a machine
-    whose separator is a slash - there is no such file - so the launcher's body
-    goes in as the `-c` command and the name goes in as `$0`, which is exactly
-    the value Git's sh on Windows hands it.
+    whose separator is a slash - there is no such file - so the name goes in as
+    `$0` of a short `-c` command that SOURCES the launcher from disk. The
+    launcher reads `$0`, `$1` and `$2` only, and a sourced file sees the
+    command's own positionals, so the value under test is exactly what Git's sh
+    on Windows hands it. The launcher's text is deliberately NOT passed as the
+    `-c` argument: a multi-line body full of quotes and backslashes crosses a
+    Windows command line (Python quotes it by MSVCRT rules, the MSYS runtime
+    re-splits it by its own) and reached Git's sh as text that does not parse,
+    which is a fault of the plumbing and not of the file a hook install runs.
     """
-    with io.open(launcher_path, encoding="utf-8") as fh:
-        body = fh.read()
     env = dict(os.environ)
     env["PATH"] = path_entry
     argv = sh if isinstance(sh, list) else [sh]
-    proc = subprocess.Popen(argv + ["-c", body, dollar0, script, mode],
+    proc = subprocess.Popen(argv + ["-c", '. "$3"', dollar0, script, mode,
+                                    launcher_path.replace("\\", "/")],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, env=env, cwd=cwd)
     out, err = proc.communicate(PAYLOAD.encode("utf-8"))

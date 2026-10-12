@@ -1,0 +1,18 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_py_launch.py --selftest": "pass",
+    "ruff check test_py_launch.py": "pass",
+    "vermin on test_py_launch.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task, expectRedFirst false; the failure only reproduces on windows-latest, which cannot be run here",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Product file is not at fault: plugins/audit/hooks/py-launch.sh has 0 CR bytes (grep -c $'\\r' = 0), .gitattributes pins '* text=auto eol=lf' and '*.sh text eol=lf', and 'bash --posix -n' (homebrew 5.3 and /bin/bash) and 'dash -n' all exit 0 on it. hooks.json runs it as sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py-launch.sh\" ..., i.e. from a file on disk, never as -c text. The failing path is the test's _drive_as(), which passed the whole 113-line launcher body as the sh -c argv element; on Windows that multi-line text with quotes/backslashes crosses Python's MSVCRT quoting and the MSYS runtime's own re-split, and reached Git's sh as text with an unterminated case (REASONED from the CI error 'line 114: unexpected end of file from case on line 65'; not run on Windows). Fix (test only): _drive_as now runs sh -c '. \"$3\"' <dollar0> <script> <mode> <launcher path> so the launcher is sourced from disk and sees $0/$1/$2 as under test; $0 stays exactly the backslash/mixed spelling. Local: test_py_launch.py --selftest 22/22 pass (pl20-pl22 included); sweep-selftests full run started in background, not awaited. Assumptions about Windows: (1) Git's sh passes $0 of a -c command through verbatim (CI output shows the $0 values echoed intact, e.g. 'hooks\\\\.\\\\py-launch.sh: -c'); (2) the '.' builtin sources a forward-slash drive path (C:/...) in MSYS sh, and a sourced file sees the -c positionals (POSIX). Neither verified on Windows; the orchestrator's next CI run settles it. py-launch.sh unchanged, still POSIX builtins only.",
+    "descriptive": "Windows pl20-pl22 failure traced to the test handing the launcher text to sh -c; the test now sources the launcher from disk, the shipped hook is unchanged."
+  },
+  "testsAdded": [],
+  "stamp": "audit-stamp: {\"content\":\"sha256:d6a009ac99ef3c3982ad2eedf37a342886c9bee71828543c9156f187607492a4\",\"dirtyDigest\":\"sha256:9e39451647eb52957118b1534aacc1a3e60a266c8c962287d93e7678219811d9\",\"dirtyPaths\":{\"plugins/audit/tests/test_py_launch.py\":\"92c2e8e7315cb89e\"},\"head\":\"97c7e9d5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/hooks/py-launch.sh\",\"plugins/audit/tests/test_py_launch.py\"],\"scopeDigest\":\"sha256:45e0270d1e631d101a8bc4ce58c4669751c70b814da3b20dc5c997d4d7ca49f7\",\"v\":2}"
+}
