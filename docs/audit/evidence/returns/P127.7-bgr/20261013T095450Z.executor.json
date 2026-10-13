@@ -1,0 +1,17 @@
+{
+  "gates": {
+    "gate-parity": "pass"
+  },
+  "redFirst": {
+    "status": "could-not-prove",
+    "at": "2026-10-13T10:06:46Z",
+    "basis": "P127.7-bgr declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P127.7-bgr declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Edited .github/workflows/ci.yml header: replaced the stale 'longest selftests: 24m59s' reasoning with figures from run 38379717433 (ci/p127 @ 544576f, whole run 10m20s; windows selftest cells 6m48s-9m18s, cp1252 longest; ubuntu cells 0m28s-4m09s; manifests 10m16s; lint 35s; plugin validate 14s), stated as history with the run id and re-derive command, 24m59s kept only as the retired shape's history. longest lines now: selftests 9m18s, manifests 10m16s, lint 0m35s, plugin-validate 0m14s. timeout-minutes: selftests 60->25, manifests 30->25, lint 10->5, plugin-validate 10->5. Ran python3 tools/gate-parity.py: exit 0, all bounds >= 2x. Required checks: branch-protection required checks are repository settings outside the tree, so unverifiable here. The cell check names are 'selftests (<os>, <leg> <shard>)' for os in ubuntu-latest/windows-latest, leg in plain/cp1252/spaced, shard 1-3 (spaced excluded on windows), plus 'manifest validation', 'lint (ruff + vermin 3.8 floor)', 'claude plugin validate'; any required-check entry for the old 'selftests (os)' names would never report, so the remote list needs updating by the owner or a single aggregate job added.",
+    "descriptive": "A hung CI cell now fails in at most 25 minutes (5 for lint and plugin validate) instead of an hour, with bounds backed by the measured run 38379717433."
+  },
+  "testsAdded": [],
+  "stamp": "audit-stamp: {\"content\":\"sha256:7e1e7fe24057740dc9f12f31a71fd3ee04d0554e272a5b13bc7df502284c4974\",\"dirtyDigest\":\"sha256:5691efe67c7575f9912252a889faa4cfd7a39f74f103927b159d26896069ccbb\",\"dirtyPaths\":{\".github/workflows/ci.yml\":\"373336d03eff2a8c\"},\"head\":\"544576f4\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".github/workflows/ci.yml\"],\"scopeDigest\":\"sha256:827f3a6e9704b73cd75ba7a9f5af5a9326123f4677201888c622a7e2cbc37415\",\"v\":2}"
+}

@@ -28,8 +28,10 @@
         "severity": "med",
         "file": "plugins/audit/tests/_harness.py:688-706 (stage_workers) with tools/sweep-selftests.py default_jobs CI branch",
         "issue": "The stage pool was sized for a premise the phase itself contradicts, and it does not consult the sweep pool it now shares cores with. P127.1 sizes for a 'two-core windows-latest runner' (stage_workers docstring; description), but run 38324787932 printed 'sweep: 331 files, 2 workers', which default_jobs() only prints for 4 cpus (cpus-2), and P127.2's own ci.yml comment says the same ('16.7 minutes of suites on two workers'). On a 4-vCPU runner stage_workers(4) == 2, so test_drive_phase's wall time has a floor of (serial stage sum)/2: the task's own numbers are 438-459s serial on macOS, i.e. ~220s on an idle mac pair before any Windows process-start penalty, against the 280s STAGE_TIMEOUT and 300s file cap. Before the phase it had up to 6 children. P127.2 then gives the sweep every core under CI=true (4 workers) and costliest-first submission, so in the shard holding test_drive_phase (shard 2 in the committed table, with test__invariants 118, run_test_gate 60, full_gate 57 started beside it) about 5 processes contend for 4 cores while the heavy staged suite is capped at 2 of them. The same cap now also applies to test_audit_task and test_close_phase (both staged_main users, both in shard 1), which the task did not mention or measure. Worst case the two pools multiply (4 sweep workers x 2 stage workers = 8 runnable on 4 cores); the typical case is the opposite, a heavy suite starved of the cores its siblings have already freed. Nothing handed shows the margin: the only evidence is macOS with 14 cores.",
-        "resolution": "Read the per-file seconds from CI run 38370435884 (jobs 'selftests (windows-latest, plain 2/3)' and shard 1) before accepting this. If test_drive_phase is above ~150s there, size the pool from the machine the sweep leaves free rather than a fixed half: e.g. have run_one export the sweep's worker count in the child env and let stage_workers use max(2, min(STAGE_WORKERS, cpus - sweep_jobs + 1)), or under CI=true give a staged suite min(STAGE_WORKERS, cpus). Correct the 'two-core runner' wording in the stage_workers docstring, the P127.1 description and sr12's label, and extend sr12 to pin the CI case.",
-        "fixTask": "P127.6-bgr"
+        "resolution": "fixed in P127.6-bgr (544576f40027): Read the per-file seconds from CI run 38370435884 (jobs 'selftests (windows-latest, plain 2/3)' and shard 1) before accepting this. If test_drive_phase is above ~150s there, size the pool from the machine the sweep leaves free rather than a fixed half: e.g. have run_one export the sweep's worker count in the child env and let stage_workers use max(2, min(STAGE_WORKERS, cpus - sweep_jobs + 1)), or under CI=true give a staged suite min(STAGE_WORKERS, cpus). Correct the 'two-core runner' wording in the stage_workers docstring, the P127.1 description and sr12's label, and extend sr12 to pin the CI case.",
+        "fixTask": "P127.6-bgr",
+        "commit": "544576f40027",
+        "status": "fixed"
       },
       {
         "id": "P127-R2",
@@ -68,7 +70,7 @@
         "fixTask": "P127.7-bgr"
       }
     ],
-    "outcome": "[findings: 5 - 0 high, 2 med, 3 low; 2 with a recorded fix commit]"
+    "outcome": "[findings: 5 - 0 high, 2 med, 3 low; 3 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -425,7 +427,7 @@
     {
       "id": "P127.6-bgr",
       "title": "fix P127-R1: The stage pool was sized for a premise the phase itself contradi...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The stage pool was sized for a premise the phase itself contradicts, and it does not consult the sweep pool it now shares cores with. P127.1 sizes for a 'two-core windows-latest runner' (stage_workers docstring; description), but run 38324787932 printed 'sweep: 331 files, 2 workers', which default_jobs() only prints for 4 cpus (cpus-2), and P127.2's own ci.yml comment says the same ('16.7 minutes of suites on two workers'). On a 4-vCPU runner stage_workers(4) == 2, so test_drive_phase's wall time has a floor of (serial stage sum)/2: the task's own numbers are 438-459s serial on macOS, i.e. ~220s on an idle mac pair before any Windows process-start penalty, against the 280s STAGE_TIMEOUT and 300s file cap. Before the phase it had up to 6 children. P127.2 then gives the sweep every core under CI=true (4 workers) and costliest-first submission, so in the shard holding test_drive_phase (shard 2 in the committed table, with test__invariants 118, run_test_gate 60, full_gate 57 started beside it) about 5 processes contend for 4 cores while the heavy staged suite is capped at 2 of them. The same cap now also applies to test_audit_task and test_close_phase (both staged_main users, both in shard 1), which the task did not mention or measure. Worst case the two pools multiply (4 sweep workers x 2 stage workers = 8 runnable on 4 cores); the typical case is the opposite, a heavy suite starved of the cores its siblings have already freed. Nothing handed shows the margin: the only evidence is macOS with 14 cores.\n\nResolution asked: Read the per-file seconds from CI run 38370435884 (jobs 'selftests (windows-latest, plain 2/3)' and shard 1) before accepting this. If test_drive_phase is above ~150s there, size the pool from the machine the sweep leaves free rather than a fixed half: e.g. have run_one export the sweep's worker count in the child env and let stage_workers use max(2, min(STAGE_WORKERS, cpus - sweep_jobs + 1)), or under CI=true give a staged suite min(STAGE_WORKERS, cpus). Correct the 'two-core runner' wording in the stage_workers docstring, the P127.1 description and sr12's label, and extend sr12 to pin the CI case.",
       "files": [
         "plugins/audit/tests/_harness.py",
@@ -463,14 +465,29 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "544576f40027",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "ONE CONCURRENCY BUDGET. tools/sweep-selftests.py: the sweep's jobs are now slots admitted through slot_gate(jobs) in costliest-first ticket order (strict FIFO, so a cheap file cannot take the slots a waiting staged suite needs); a file that calls _harness.staged_main (is_staged, read off the AST; staged_paths) holds stage_grant(jobs) = max(1, min(jobs, 6, max(2, jobs-1))) slots, i.e. 3 of 4 on a CI runner, 6 of 12 locally, 1 of 1 under --jobs 1. run_one(grant=) sets SWEEP_STAGE_GRANT and SWEEP_FILE_TIMEOUT in the child env over anything inherited. _harness.py: stage_workers(cpus, environ) returns the grant capped at STAGE_WORKERS when a sweep set one, else max(2, min(STAGE_WORKERS, cpus)) (no sweep = no one else in the budget); stage_timeout() = handed file timeout - STAGE_TIMEOUT_MARGIN(20), else STAGE_TIMEOUT 280; run_stages(timeout=None) uses both and prints 'stage pool: W of N blocks at once, <basis>; each block allowed Ts'. Docstring 'two-core runner' wording replaced; sr12 relabelled and extended (granted 1/3/64 -> 1/3/6; alone {1:2,2:2,4:4,8:6,12:6,64:6}; unreadable grant -> no grant); sr12b pins the stage timeout; sr13 (P127-R3) runs the REAL sweep() over a five-block fixture suite on a 4-slot budget and asserts the printed pool is '3 of 5 ... granted' - neither the block count nor this machine's cores can produce 3. CALIBRATED PER-FILE TIMEOUT (hang detector, not the cap raised alone): file_timeout(path, costs, floor, slots) = max(floor, ceil(TIMEOUT_PER_COST(8) x slot-seconds / slots held)); basis in the comment: test__deps was killed at 300s on windows in run 38370435884 vs 67-70s in both darwin recordings (>=4.3x), stamp_verification ~116s here passed under 300 there. COSTS ARE SLOT-SECONDS: costs_from_rows multiplies wall by the grant held, so the split weighs a staged suite by what it takes out of a cell. RECORDABLE CI TIMINGS: every loud per-file line now ends '[12.3s]' or '[143.0s, 3 slots]'; costs_from_render() reads those back (CI timestamp prefixes, backslash paths, FAILED lines) and --costs-from-log LOG --platform NAME [--workers N] --record-costs PATH records them (refuses without --platform). A 'budget:' line prints slots, which suites hold several and the longest timeout given. New cases bg0 (var names + cap equal _harness's), bg1, bg2/bg2b (AST detection; live tree finds test_drive_phase, not _harness), bg3, bg4 (gate peak <= budget, admission in ticket order), bg5 (child env), bg6/bg6b (sweep grants 3 + calibrated timeout end to end), bg7 (timing lines round-trip), rc0 extended to slot-seconds. TABLE: .github/sweep-costs.json re-recorded with --costs-from-log from a local full run (darwin, 12 workers, 331 files, 1964.3 slot-seconds); two full runs ~1.5 min apart agreed within 4% per heavy file (drive 91.8/89.2, deps 70.4/67.2, stamp 118.1/115.7); no CI per-file data existed before this change, so windows timings were not recordable. MUTATIONS in a throwaway git-archive tree, all KILLED: slot_gate ignoring ticket order -> bg4 red; weight forced to 1 -> bg6+sr13 red; grant not exported -> bg5,bg6,sr13 red; run_stages pool reverted to cpus//2 -> sr13 red; file_timeout returning floor -> bg3,bg6,bg6b red. Stage timings measured serially, each --stage alone (mac 14 cores): test_drive_phase sum 390.7s max 17.9s; test_audit_task 165.7/28.0; test_close_phase 111.8/16.3; test_commit_task_work 51.9/7.8. CI CELLS (windows-latest, 4 vCPU, budget 4 slots, staged grant 3; F = windows core-seconds per darwin slot-second ~2.0-2.5 from run 38324787932 whose whole windows plain leg was 16.7 min on 2 workers of 4 cores, i.e. <= ~4000 core-s vs the table's 1964): shard 1/3 = 136 files, 654.7 slot-s, staged test_drive_phase (535.2, timeout 1428s) with only light files beside it (next heaviest 17.2) -> 654.7 x 2.0-2.5 / 4 = 330-410s of sweep; drive's own wall = 391 serial x 2.2-3 / 3 slots ~ 290-390s inside it (simulated locally with --shard 1/3 --jobs 4: drive 143.0s at 3 slots, whole cell 144s). Shard 2/3 = 97 files, 654.8 slot-s, staged test_audit_task (264.0, timeout 704s) + test_stamp_verification (115.7 unstaged, timeout 926s) -> 330-410s; audit_task wall ~166 x 2.5-4.3 / 3 = 140-240s. Shard 3/3 = 98 files, 654.8 slot-s, staged test_close_phase (150.0, 400s) then test_commit_task_work (136.8, 365s) in FIFO, test__deps on the free lane (67.2, timeout 538s vs windows >=300s) -> 330-410s, floor deps ~300-375s. Each cell plus ~1 min checkout/setup = ~6.5-8 min; the run's critical path stays the manifest-validation job (10m40s in run 38370435884). Ubuntu cells: same split, F ~1 -> ~165-200s each. Matrix unchanged (3 shards x plain/cp1252 [+spaced on ubuntu] + e2e), every step keeps !cancelled(), shard_matrix_drift green. Docs: ci.yml matrix comment rewritten to the budget model with the arithmetic and the re-record commands; CLAUDE.md, CONTRIBUTING.md and tools/verify.sh describe the one budget, SWEEP_STAGE_GRANT / SWEEP_FILE_TIMEOUT, calibrated timeouts and --costs-from-log. No new lint (no gate-parity/prove-gates rows owed; prove-gates --selftest green). NOT DONE, outside my files: the P127.1 manifest description/title still say 'two-core runner' (R1 asked for it; the manifest is not in this task's files). Fixed along the way: my fixture names and one wrapped comment tripped test__refs tb1 (tool_basename_drift); fixtures now spelled without the extension. Commands and exits: full sweep exit 0 '331/331 files ok, 152 migrated to tests/, 15832 cases'; --shard 1/3 exit 0 136/136; 2/3 exit 0 97/97; 3/3 exit 0 98/98 (after the refs fix; an earlier run was red on tb1, my own fixture names); shard file sets disjoint and union == the full run's 331 paths (parsed from the logs); sweep --selftest 87/87; _harness --selftest 83/83; gate-parity exit 0; gate-parity --selftest 131/131; prove-gates --selftest 37/37; ruff 'All checks passed!'; vermin exit 0.",
+        "descriptive": "The sweep and a staged suite now share one slot budget, so test_drive_phase gets three of a four-core runner's cores to itself, each heavy file gets a timeout calibrated from its recorded cost, and CI logs now print per-file seconds that can be recorded."
       },
       "startedAt": "2026-10-13T09:05:36Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-13T09:54:49Z",
+      "verifiedBy": [
+        "sr12 (_harness.py: grant-aware stage_workers table, extended)",
+        "sr12b (_harness.py: stage timeout under the handed file timeout)",
+        "sr13 (_harness.py: run_stages sizes its pool from the sweep's grant, end to end through sweep())",
+        "bg0",
+        "bg1",
+        "bg2",
+        "bg2b",
+        "bg3",
+        "bg4",
+        "bg5",
+        "bg6",
+        "bg6b",
+        "bg7 (tools/sweep-selftests.py)",
+        "rc0 (extended to slot-seconds)"
+      ],
       "notes": [
         {
           "at": "2026-10-13T08:40:54Z",
@@ -493,12 +510,24 @@
         "runId": "2026-10-13T09:54:47Z.8aedf9",
         "status": "passed",
         "at": "2026-10-13T09:54:48Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "544576f40027",
+        "at": "2026-10-13T09:54:49Z",
+        "basis": "a fix task for P127-R1: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-13T09:45:28Z",
+        "basis": "`python3 plugins/audit/tests/_harness.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 83 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sr13 (house FAIL): SELFTEST FAILED: 82/83 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P127.7-bgr",
       "title": "fix P127-R5: The header's 'longest selftests: 24m59s' bound reasoning and `ti...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The header's 'longest selftests: 24m59s' bound reasoning and `timeout-minutes: 60` were sized for one job per OS; every cell now targets 4-7 minutes, so a hung cell holds a runner for an hour and the comment's own rule (a bound under twice the figure is refused, and the figure is re-measured when a job changes) has not been applied to the new shape. Job check names also changed from 'selftests (os)' to 'selftests (os, leg shard)' (17 cells), so any branch-protection required-check entry for the old names (not in the repo, unverifiable here) would never report.\n\nResolution asked: After run 38370435884, rewrite the 'longest selftests' line to the longest cell and set timeout-minutes to at least twice it; confirm the required-checks list on the remote names the new cells or a single aggregate job.",
       "files": [
         ".github/workflows/ci.yml"
@@ -524,14 +553,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-13T09:54:50Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -542,7 +571,13 @@
       ],
       "fixes": [
         "P127-R5"
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-13T10:15:42Z.78e666",
+        "status": "passed",
+        "at": "2026-10-13T10:15:42Z"
+      }
     }
   ],
   "request": "Make the two suites that time out on windows-latest finish with margin, by structure.",
