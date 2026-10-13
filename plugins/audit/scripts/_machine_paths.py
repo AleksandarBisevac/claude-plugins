@@ -19,7 +19,9 @@ Exit codes (as a command): 0 selftest pointer printed - 2 usage error.
 """
 
 import json
+import ntpath
 import os
+import posixpath
 import re
 import sys
 import tempfile
@@ -328,8 +330,13 @@ def _spellings(path):
         return out
     # As written first: on Windows `abspath` prefixes the current drive to a
     # drive-less `/Users/x`, so the text spelling would match no root.
-    given = str(path).replace("\\", "/").rstrip("/")
-    if given and "/" in given:
+    # Only a rooted spelling (either flavour): a relative one would become a
+    # known root and scrub that substring from ordinary text.
+    text = str(path)
+    given = text.replace("\\", "/").rstrip("/")
+    rooted = (posixpath.isabs(text) or text[:1] in ("/", "\\")
+              or (ntpath.isabs(text) and bool(ntpath.splitdrive(text)[0])))
+    if given and "/" in given and rooted:
         out.add(given)
     for way in (os.path.abspath, os.path.realpath):
         try:

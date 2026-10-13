@@ -45,8 +45,10 @@
         "severity": "low",
         "file": ".github/workflows/ci.yml:845 and tools/gate-parity.py:2857-2861 (P126.10-13q, a07bf893)",
         "issue": "'The report is interactive' is exempted whole because its one-status leg reads /tmp/dl from the Scale demo step. The other legs (example, docs/index.html, docs/demo-large.html loop) depend on nothing earlier, yet this is the step whose result was hidden behind earlier failures in the run that motivated the task: any failing step above it (screenshots, GIF, vitest) still skips it.",
-        "resolution": "Give the step if: ${{ !cancelled() }} and make its /tmp/dl leg regenerate or skip with a printed reason when the tree is absent, or split the leg into its own step that carries the exemption.",
-        "fixTask": "P126.15-13q"
+        "resolution": "fixed in P126.15-13q (b582f5506f0f): Give the step if: ${{ !cancelled() }} and make its /tmp/dl leg regenerate or skip with a printed reason when the tree is absent, or split the leg into its own step that carries the exemption.",
+        "fixTask": "P126.15-13q",
+        "commit": "b582f5506f0f",
+        "status": "fixed"
       },
       {
         "id": "P126-R4",
@@ -65,7 +67,7 @@
         "fixTask": "P126.17-13q"
       }
     ],
-    "outcome": "[findings: 5 - 0 high, 2 med, 3 low; 1 with a recorded fix commit]"
+    "outcome": "[findings: 5 - 0 high, 2 med, 3 low; 2 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -980,7 +982,7 @@
     {
       "id": "P126.15-13q",
       "title": "fix P126-R3: 'The report is interactive' is exempted whole because its one-st...",
-      "status": "in_progress",
+      "status": "done",
       "description": "'The report is interactive' is exempted whole because its one-status leg reads /tmp/dl from the Scale demo step. The other legs (example, docs/index.html, docs/demo-large.html loop) depend on nothing earlier, yet this is the step whose result was hidden behind earlier failures in the run that motivated the task: any failing step above it (screenshots, GIF, vitest) still skips it.\n\nResolution asked: Give the step if: ${{ !cancelled() }} and make its /tmp/dl leg regenerate or skip with a printed reason when the tree is absent, or split the leg into its own step that carries the exemption.",
       "files": [
         ".github/workflows/ci.yml",
@@ -1011,13 +1013,13 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b582f5506f0f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Kept the ci.yml split and gate-parity change. prove-gates.py: added a TABLE row (red, after the sg0 row; case sg6) and an ALLOW row (case sg5) for step_exemption_breadth_drift; c1/a4 now pass (prove-gates --selftest all pass). check-committed-pii.py: BASELINE row for docs/audit/evidence/returns/P126/0aca587b...reviewer.json line 28 posix-home with a reason (prose 'pass home/cwd/project directories'); `check-committed-pii.py` exits 0 and its selftest passes. gate-parity --selftest passes; ruff clean.",
+        "descriptive": "The new breadth lint is covered by prove-gates rows and the reviewer return's prose is baselined, so the sweep's two red files go green."
       },
       "startedAt": "2026-10-13T00:41:54Z",
-      "completedAt": null,
+      "completedAt": "2026-10-13T00:54:23Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -1033,16 +1035,29 @@
         "runId": "2026-10-13T00:54:22Z.1b0744",
         "status": "passed",
         "at": "2026-10-13T00:54:22Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "b582f5506f0f",
+        "at": "2026-10-13T00:54:23Z",
+        "basis": "a fix task for P126-R3: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "could-not-prove",
+        "at": "2026-10-13T00:45:41Z",
+        "basis": "P126.15-13q declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P126.15-13q declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P126.16-13q",
       "title": "fix P126-R4: The as-given spelling is added for any path containing a slash, ...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The as-given spelling is added for any path containing a slash, relative ones included. A relative root such as proj/sub becomes a known root and scrubs that substring from free text, where abspath used to anchor it. Callers pass home/cwd/project directories, so this is unlikely, but nothing bounds it.\n\nResolution asked: Add the given spelling only when it is rooted (starts with / or has a drive prefix), which is the drive-less case the Windows fix targets.",
       "files": [
         "plugins/audit/scripts/_machine_paths.py",
-        "plugins/audit/tests/test__machine_paths.py"
+        "plugins/audit/tests/test__machine_paths.py",
+        "tools/check-committed-pii.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1067,14 +1082,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-13T00:54:24Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1085,7 +1100,13 @@
       ],
       "fixes": [
         "P126-R4"
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-13T01:14:07Z.82c847",
+        "status": "passed",
+        "at": "2026-10-13T01:14:07Z"
+      }
     },
     {
       "id": "P126.17-13q",

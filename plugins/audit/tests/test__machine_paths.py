@@ -282,6 +282,17 @@ def _spaced_root_cases(check, proj):
               "replaced whole: %r" % (label, got),
               got == "read %s ok" % (M.OUTSIDE_TOKEN,))
 
+    # A relative spelling is no machine root: it would otherwise scrub that
+    # substring out of ordinary repository text.
+    ordinary = "see proj/sub/notes.md and rel dir/x.md"
+    for rel in ("proj/sub", "rel dir", "proj\\sub"):
+        known = M._known_roots(None, environ={"HOME": rel})
+        kept = M.redacted_free_text(None, ordinary, known=known)
+        check("mp15 a RELATIVE home spelling (%r) adds no known root and "
+              "leaves ordinary text alone: %r" % (rel, kept),
+              kept == ordinary
+              and not [r for r in known if r[0] in ("proj/sub", "rel dir")])
+
 
 def _selftest():
     return _harness.run(_cases)

@@ -789,6 +789,14 @@ BASELINE = (
      "directories' - words joined by slashes, not a directory of any machine. "
      "Returns are keyed by line number, as the rows above are; the same prose "
      "is baselined in the plan, shard and journal."),
+    ("docs/audit/evidence/returns/P126.15-13q/20261013T004154Z.executor.json", 17,
+     "posix-home",
+     "the executor return of the task that baselined the row above: its outcome "
+     "names the same quoted phrase while saying what it baselined. Prose, not a "
+     "directory of any machine."),
+    ("docs/audit/phases/P126.json", "line-sha256:3ae5029906af441a",
+     "posix-home",
+     "the plan's copy of that same outcome text, for the same reason."),
 )
 
 _MIN_REASON = 60          # a reason short enough to be a label is not a reason
