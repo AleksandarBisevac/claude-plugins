@@ -448,7 +448,7 @@
     {
       "id": "P125.6",
       "title": "Sign-off converges: re-review only for med+ or red fixes, lows carried, rounds capped",
-      "status": "in_progress",
+      "status": "done",
       "description": "F605. In drive-phase's triage: (1) a re-review is owed only for a fix task whose finding was med or high, or whose gate went red; a fixed low closes on its own green gate and fixes_after()/owed_tasks() stop listing it. (2) The triage's recommended answer for a low finding is carry (status `carried`, carriedTo a parked task - see openChoices for the target), and render_triage prints that as the default; fix stays available. (3) A re-review reads only the fix tasks' diffs (phase-diff-in-brief) and its brief says a new low in a fix is carried, not looped. (4) A round cap per phase, config review.maxRounds (default 2): reaching it prints the findings still open, the rounds' cost so far read from the usage ledger by phase (with its pricing basis, or 'unpriced' where it is), and asks once (carry all / one more round / sign-off with accept-open). The cap and the counts live in the driver's state, so a lost state file re-derives the round count from the filed phase returns rather than resetting to zero. Add the config key to hooks/_config.py DEFAULTS, _config_rules, the schema and the README config table. Red first: a review returning one med and two lows dispatches one fix task and one re-review over that fix's diff, the two lows end carried, and no third review is dispatched. Also measured in P123's review rounds: a fix task made from a finding defaults to tdd even when the finding is a missing test or a pin over a fix that already landed (P123.63, P123.66), so the red-first helper rightly refuses it and the task must be cancelled and re-added as regression - choose the fix task's mode from the finding: a finding whose resolution only adds a case over code already at HEAD is regression, with the red shown by restoring the old code in a scratch copy.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -501,14 +501,22 @@
       ],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8fec034d4dda",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Attempt 1's driver half kept unchanged (drive-phase.py: re-review owed only for a med/high finding's fix or a fix whose gate went red, triage recommends `--answer carry --to <task or bug id>` for lows, review.maxRounds counted from filed phase returns with the round-cap decision printing open findings and ledger spend with rate basis or unpriced, test-file-only findings -> regression fix tasks; _config.py DEFAULTS review.maxRounds 2, _config_rules.review_max_rounds + _check_review, schema, README table, phase-signoff.md). Attempt 2 fixed the three red suites and finished parts (3) and the panel: (a) test__config.py rk1 now pins DEFAULTS['review'] == {perTask: phase, maxRounds: 2} and that the key reference names review.maxRounds. (b) help payload p5: measured 200158 bytes in attempt 1 vs 199936 at HEAD (git archive HEAD export, same payload()); took bytes out of audit-config.schema.json rather than raising the bound - new maxRounds description shortened, review.perTask description condensed (906 -> 801 chars, same claims, dropped the 'behaviour before this key existed' history), executor.maxHours and executor descriptions tightened (dropped restatement of when the orchestrator resolves them). Payload now 199878 bytes, below HEAD's. (c) _panel_settings.py: review group renamed 'Review' (README's Settings group list updated to match), blurb extended, new 'int' control review.maxRounds min 1 and its FIELD_HELP text; test__panel_settings.py ps2 (control kind/min/group, validator accepts 1 and refuses 0) and ps3 (help text says asks once, carry/one more round/accepting them open, 0 is refused). (3) audit-lookup.py 'Re-review scope' section now says a new `low` in these fixes is carried (`--answer carry --to <task or bug id>`), not looped, and only `med` or `high` owes a fix; test_audit_lookup.py bf52b reads it within the section - seen FAIL first (90/91) then green 91/91. commands/phase.md step 3 names `[--to <id>]`, with bytes taken out of steps 2-3 wording: measure-context --gate prints 3985 / 4000 for the run form (was 4000 / 4000). Runs in <outside-repo> `python3 tools/sweep-selftests.py` exit 0, '332/332 files ok, 152 migrated to tests/, 15971 cases'; `python3 plugins/audit/tests/test_drive_phase.py --selftest` exit 0, 253/253; `ruff check plugins/audit tools` exit 0; test__config 336/336, test__help 104/104, test__panel_settings 61/61, test_audit_lookup 91/91.",
+        "descriptive": "Sign-off converges: re-reviews only for med+ or red fixes, lows carried, rounds capped by review.maxRounds with a Settings control, and the three suites the new key reddened are green with the help payload back under its bound by trimming text."
       },
       "startedAt": "2026-10-13T19:17:34Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-13T21:15:53Z",
+      "verifiedBy": [
+        "test_drive_phase.py cv1 cv2 cv3 cv4 (one med two lows: one fix, one re-review, lows carried, test-file-only finding -> regression)",
+        "test_drive_phase.py lf1 lf2 (fixed low green closes without re-review; red gate owes one)",
+        "test_drive_phase.py rc1 rc2 rc3 rc3m (round cap stops with open findings, ledger cost, one question; deleted state re-derives count)",
+        "test__config_rules.py rx1 rx2 rx3 rx4 rx5 (review.maxRounds positive int, default 2, 0 refused by name, schema typed)",
+        "test__panel_settings.py ps2 ps3 (review.maxRounds control and help)",
+        "test_audit_lookup.py bf52b (re-review scope: new low carried, not looped)",
+        "test__config.py rk1 (updated: review block pinned with maxRounds 2)"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-13T19:55:00Z.75017a",
@@ -520,7 +528,18 @@
           "at": "2026-10-13T19:42:02Z",
           "text": "Red-first proved by the orchestrator (the helper's green run timed out at 170 s on the whole suite): in the task tree the six changed implementation files set to HEAD's bytes -> test_drive_phase.py --selftest --stage cv-block --stage lf-block --stage rc-block: 3/10, FAIL cv2 cv3 cv4 lf1 rc1 rc2 rc3; restored (cmp equal for all six) -> 10/10."
         }
-      ]
+      ],
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "8fec034d4dda",
+        "at": "2026-10-13T21:15:53Z"
+      },
+      "redFirst": {
+        "at": "2026-10-13T19:37:49Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases cv2 (house FAIL), cv3 (house FAIL), cv4 (house FAIL), lf1 (house FAIL), rc1 (house FAIL), rc2 (house FAIL), rc3 (house FAIL), but the fix run could not be made: the run timed out after 170 s and its process group was torn down - SELFTEST FAILED: 246/253 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
+      }
     },
     {
       "id": "P125.7",
@@ -1669,14 +1688,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-13T17:57:54Z",
+      "startedAt": "2026-10-13T21:16:53Z",
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "phase",
