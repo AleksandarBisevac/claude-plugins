@@ -230,8 +230,16 @@ when `CI=true`, since nobody is typing on a runner. **CI does not run a leg as o
 leg is a matrix cell split by `--shard I/N`, the parts balanced by the per-file costs in
 `.github/sweep-costs.json` (re-record them with `--record-costs`) and their union pinned to the
 whole tree by the runner's own cases, while `gate-parity.py`'s `shard_matrix_drift()` holds the
-matrix to running every part. Locally a leg still runs whole. Re-derive the wall clock rather
-than trusting a figure written here; `--jobs 1` gives the old serial shape for a bisect.
+matrix to running every part. Locally a leg still runs whole. **The workers are one budget of
+slots, and a staged suite holds several of them:** a file whose `__main__` is
+`_harness.staged_main` is admitted with `stage_grant(jobs)` slots, in costliest-first order, and
+is told the number in `SWEEP_STAGE_GRANT`, which sizes its block pool — so the sweep's workers and
+a suite's blocks never add up past the machine. Each file's timeout is a hang detector calibrated
+from the same table — the floor, or a multiple of the file's recorded seconds when that is longer
+— and reaches the child as `SWEEP_FILE_TIMEOUT`, under which its blocks time out. The loud form
+prints every file's seconds, so a CI log can be recorded with `--costs-from-log`. Re-derive the
+wall clock rather than trusting a figure written here; `--jobs 1` gives the old serial shape for
+a bisect.
 
 **And every child runs in scratch directories it is expected to leave unchanged.** Four
 things are pointed away from your machine per child: its cwd and `TMPDIR` at one scratch

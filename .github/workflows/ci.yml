@@ -53,18 +53,29 @@ jobs:
   # the per-file costs in `.github/sweep-costs.json` and whose union is the whole
   # tree (the runner's sh0 case; gate-parity's `shard_matrix_drift()` holds this
   # matrix to running every part). Inside a cell the sweep uses every core, because
-  # it reads `CI=true`. The cheap end-to-end steps run in their own `e2e` cell,
+  # it reads `CI=true`, as ONE budget of slots: a staged suite (`_harness.staged_main`)
+  # is admitted holding all but one of them and sizes its block pool from that grant,
+  # so the sweep's workers and a suite's blocks never add up past the runner, and the
+  # costs are slot-seconds, so the split puts the heaviest staged suite in a cell with
+  # only light files beside it. The cheap end-to-end steps run in their own `e2e` cell,
   # the shortest job, rather than once per shard.
   #
-  # WHY THREE PARTS, as arithmetic over that run's figures: a windows leg is 16.7
-  # minutes of suites on two workers, so a third of it is 5.6 minutes even if four
-  # workers bought nothing and 2.8 if they bought double; the longest single suite
-  # is held under the sweep's per-file cap (`DEFAULT_TIMEOUT`) by its own staging,
-  # and the split gives it a part with the least else in it. With about a
-  # minute of checkout and setup, a windows cell lands near 4-7 minutes and an
-  # ubuntu one (7.5 / 3 = 2.5 at worst) near 2-4. Re-derive these from the next
-  # run's job times rather than trusting them:
+  # WHY THREE PARTS, as arithmetic. Run 38370435884 ran each windows cell's sweep in
+  # 304-383s on four workers but killed three files at the then-fixed 300s per-file
+  # cap, with `test_drive_phase.py`'s blocks squeezed onto two cores. Now each part
+  # holds about a third of the table's slot-seconds (the split prints its basis), and
+  # windows costs about two to two and a half core-seconds per darwin slot-second
+  # (run 38324787932: a whole windows leg, 16.7 minutes on two workers of a four-core
+  # runner, is at most about 4000 core-seconds against the table's total), so a
+  # windows cell is a third of that over four cores: 330-410s of sweep, the staged
+  # suite's own wall (its serial block sum over three slots) inside it, plus about a
+  # minute of checkout and setup. Each file's timeout is calibrated from its cost
+  # (`file_timeout`), so the heaviest are allowed several times what they need while
+  # a hang is still killed. Re-derive these from the next run's job times and from
+  # the per-file seconds its log now prints, rather than trusting them:
   #   gh run view <id> --json jobs --jq '.jobs[] | [.name, .startedAt, .completedAt]'
+  #   python tools/sweep-selftests.py --costs-from-log <saved log> --platform win32 \
+  #       --record-costs .github/sweep-costs.json
   selftests:
     name: selftests (${{ matrix.os }}, ${{ matrix.leg }} ${{ matrix.shard }})
     timeout-minutes: 60

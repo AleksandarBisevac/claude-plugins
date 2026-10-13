@@ -6,6 +6,8 @@ sweeps that used to exist.
     tools/sweep-selftests.py                     # the sweep, all cores but two (every core under CI=true)
     tools/sweep-selftests.py --shard 2/3         # the second of three cost-balanced parts
     tools/sweep-selftests.py --record-costs .github/sweep-costs.json   # write per-file timings
+    tools/sweep-selftests.py --costs-from-log LOG --platform win32 --record-costs .github/sweep-costs.json
+                                                 # ...or read them off a saved CI log
     tools/sweep-selftests.py --jobs 1            # serial, for a bisect
     tools/sweep-selftests.py --encoding cp1252   # the "can it print" pass
     tools/sweep-selftests.py --quiet             # failures and totals; no per-file lines
@@ -80,6 +82,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from concurrent import futures
 
@@ -132,6 +135,36 @@ CONTRACT = re.compile(r"(\d+)/(\d+) cases passed")
 # on forever. Neither old copy had one, so a hung selftest was indistinguishable
 # from a slow machine and the sweep simply never returned.
 DEFAULT_TIMEOUT = 300
+
+# --- one concurrency budget ---------------------------------------------------
+# The sweep runs files side by side, and a STAGED suite (one whose `__main__` is
+# `_harness.staged_main`) runs its own blocks side by side as well. Two pools
+# sized apart from each other were sized for two different machines: the sweep's
+# for every core, the suite's for a share of the cores as if nothing else ran.
+# On a four-core CI runner that let a staged suite be squeezed onto two cores
+# while three sweep workers held the rest, and run 38370435884 killed
+# `test_drive_phase.py` at the per-file cap on windows that way. So there is ONE
+# budget - the sweep's `jobs` slots - and a staged suite holds several of them
+# at once: `stage_grant(jobs)` of them, admitted in submission order, so while it
+# runs nothing else can take its cores, and the number goes to the child in
+# `STAGE_GRANT_VAR`, which `_harness.stage_workers()` reads. The name and the
+# cap are `_harness.py`'s too; case bg0 fails when the two copies part.
+STAGE_GRANT_VAR = "SWEEP_STAGE_GRANT"
+FILE_TIMEOUT_VAR = "SWEEP_FILE_TIMEOUT"
+STAGE_GRANT_MAX = 6
+# THE PER-FILE TIMEOUT IS A HANG DETECTOR, calibrated per file from the cost
+# table rather than one cap for every file: `DEFAULT_TIMEOUT` (or `--timeout`)
+# is the floor, and a file the table records as heavy gets this many times its
+# recorded slot-seconds over the slots it holds now (`file_timeout`). The
+# committed table is a darwin run, and windows is the platform that binds: in
+# run 38370435884 `test__deps.py` was killed at 300s there, against 67-70s for
+# the same file in the two darwin runs the table was recorded from - so windows
+# is at least four times this table for that file, while
+# `test_stamp_verification.py`, at about 116 here, passed under 300 there. The factor
+# covers the worst ratio seen with room to spare; re-derive it once the table
+# is re-recorded from a windows log (`--costs-from-log`), whose seconds already
+# carry the platform's slowness.
+TIMEOUT_PER_COST = 8
 
 # THE SPACED LEG. A user's temp directory, home or virtualenv can sit under a path
 # holding a space, and a path reached through a link is spelled two ways by
@@ -492,7 +525,7 @@ def spaced_layout(holder):
 
 
 def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
-            pycache=None, environ=None, spaced=False):
+            pycache=None, environ=None, spaced=False, grant=1):
     """Run one file's `--selftest` in a scratch directory and report what happened.
 
     Split from `grade` on purpose: everything below this line is a decision about
@@ -539,11 +572,18 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     `replace`: under `--encoding cp1252` the child deliberately writes a legacy code
     page, and a runner that died decoding its output would be a runner that cannot
     run the pass it exists to run.
+
+    AND THE CHILD IS TOLD WHAT IT HOLDS: `grant` slots of the sweep's budget in
+    `STAGE_GRANT_VAR` and its `timeout` in `FILE_TIMEOUT_VAR`, set over whatever
+    the caller's environment carried, so a staged suite sizes its block pool and
+    its block timeouts from this run rather than from a sweep around this one.
     """
     repo = repo or REPO
     env = ambient_env(os.environ if environ is None else environ)
     if encoding:
         env["PYTHONIOENCODING"] = encoding
+    env[STAGE_GRANT_VAR] = str(grant)
+    env[FILE_TIMEOUT_VAR] = str(timeout)
     # A SHORT PREFIX, deliberately. This directory becomes the root of every fixture
     # path the child builds, and windows still refuses a path past its own limit -
     # the deepest fixture in this tree is a git object under a linked worktree.
@@ -599,7 +639,7 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     for root in owned:
         remove_tree(root)
     return {"path": rel_path, "code": code, "output": output, "debris": debris,
-            "seconds": seconds}
+            "seconds": seconds, "grant": grant, "timeout": timeout}
 
 
 def cases_in(output):
@@ -689,6 +729,90 @@ def default_jobs(cpus=None, environ=None):
     return max(1, cpus - 2)
 
 
+def stage_grant(jobs):
+    """The slots a staged suite holds out of a sweep's `jobs`: all but one, so
+    the cheap files keep one lane while it runs, at least two and never more
+    than `STAGE_GRANT_MAX` - and never more than the budget, so a one-worker
+    bisect still runs it, its blocks one at a time."""
+    return max(1, min(jobs, STAGE_GRANT_MAX, max(2, jobs - 1)))
+
+
+def is_staged(source):
+    """True when `source` hands its run to `staged_main` - a call to it, by
+    name or as an attribute, read off the AST, so a docstring or a fixture
+    string naming it does not count and a file that cannot parse is not one."""
+    if "staged_main" not in source:
+        return False
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "")
+        if name == "staged_main":
+            return True
+    return False
+
+
+def staged_paths(paths, repo=None):
+    """The subset of `paths` (repo-relative) that `is_staged`; a file that
+    cannot be read is not one, and the sweep then runs it on one slot."""
+    repo = repo or REPO
+    found = set()
+    for path in paths:
+        try:
+            with io.open(os.path.join(repo, path), encoding="utf-8",
+                         errors="replace") as fh:
+                source = fh.read()
+        except (IOError, OSError):
+            continue
+        if is_staged(source):
+            found.add(path)
+    return found
+
+
+def file_timeout(path, costs, floor=DEFAULT_TIMEOUT, slots=1):
+    """Seconds `path` may run when it holds `slots`: `TIMEOUT_PER_COST` times its
+    recorded slot-seconds spread over those slots, and never under `floor` - a
+    file never timed gets the floor."""
+    cost = (costs or {}).get(path)
+    if cost is None:
+        return floor
+    return max(floor, int(-(-TIMEOUT_PER_COST * cost // max(1, slots))))
+
+
+def slot_gate(slots):
+    """`(wait, done)` over a budget of `slots`. `wait(ticket, weight)` returns
+    once every lower ticket has been admitted and `weight` slots are free, and
+    takes them; `done(weight)` gives them back.
+
+    IN TICKET ORDER, never out of it. A cheap file allowed past a staged suite
+    waiting for its slots would take the slot that suite was waiting on, and
+    with enough cheap files behind it the suite would start last - the exact
+    shape a costliest-first order exists to prevent. A weight above `slots`
+    would wait forever, so it is read as `slots`."""
+    cond = threading.Condition()
+    state = {"free": slots, "turn": 0}
+
+    def wait(ticket, weight):
+        weight = min(weight, slots)
+        with cond:
+            while state["turn"] != ticket or state["free"] < weight:
+                cond.wait()
+            state["free"] -= weight
+            state["turn"] += 1
+            cond.notify_all()
+
+    def done(weight):
+        with cond:
+            state["free"] += min(weight, slots)
+            cond.notify_all()
+    return wait, done
+
+
 # --- shards: one leg split across several CI jobs -----------------------------
 # A leg run as ONE job is as slow as the whole tree on one runner. `--shard I/N`
 # runs the I-th of N parts, and the parts are built so that running all N runs
@@ -706,7 +830,9 @@ def default_jobs(cpus=None, environ=None):
 # within the single costliest file (`sh3`).
 #
 # THE COSTS ARE RECORDED, NOT TYPED: `--record-costs .github/sweep-costs.json` writes
-# what a run measured, per file. They are one machine's seconds; the split reads
+# what a run measured, per file, as SLOT-SECONDS - wall seconds times the slots of
+# the budget the file held - so a staged suite weighs what it took out of a cell
+# and not only how long it ran. They are one machine's seconds; the split reads
 # only how files compare to each other, which holds across machines far better
 # than any one figure does.
 # KEPT UNDER `.github/`, not beside this file: it is CI's input, and a table of
@@ -813,24 +939,31 @@ def parse_shard(text):
 
 
 def costs_from_rows(rows):
-    """{path: seconds, rounded} for every row a run timed; an exempt row has none."""
-    return dict((r["path"], round(r["seconds"], 1)) for r in rows
-                if r.get("seconds") is not None)
+    """{path: slot-seconds, rounded} for every row a run timed - its wall seconds
+    times the slots it held, so a staged suite's cost is what it took out of
+    the budget and not only how long it ran; an exempt row has none."""
+    return dict((r["path"], round(r["seconds"] * (r.get("grant") or 1), 1))
+                for r in rows if r.get("seconds") is not None)
 
 
-def record_costs(path, rows, swept, jobs):
+def record_costs(path, rows, swept, jobs, platform=None):
     """Write the cost table: this run's timings over the table already at `path`,
     keeping only files the sweep still reaches, so one shard's run refreshes its
-    own files and a deleted file leaves the table."""
+    own files and a deleted file leaves the table. `platform` is where the
+    timings were taken - this machine's unless they were read off another's
+    log."""
     old, _problem = load_costs(path)
     merged = dict((k, v) for k, v in old.items() if k in swept)
     merged.update(costs_from_rows(rows))
-    data = {"about": "Per-file wall seconds of each `--selftest`, written by "
+    data = {"about": "Per-file slot-seconds of each `--selftest` - wall "
+                     "seconds times the slots of the sweep's budget the file "
+                     "held - written by "
                      "`python3 tools/sweep-selftests.py --record-costs "
                      ".github/sweep-costs.json`. `--shard` reads only how files "
                      "compare, to balance the parts; re-record when the split "
                      "it prints looks lopsided.",
-            "platform": sys.platform, "workers": jobs, "costs": merged}
+            "platform": platform or sys.platform, "workers": jobs,
+            "costs": merged}
     with io.open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(json.dumps(data, indent=1, sort_keys=True) + "\n")
 
@@ -845,8 +978,9 @@ def sweep(paths, covered, jobs=None, repo=None, encoding=None,
           timeout=DEFAULT_TIMEOUT, spaced=False, exempt=None, costs=None):
     """Run every path and return one graded row per file, sorted by path.
 
-    `costs` orders the submissions (`run_order`) and nothing else; each row
-    carries the `seconds` its child took, which `--record-costs` writes down.
+    `costs` orders the submissions (`run_order`) and sets each file's timeout
+    (`file_timeout`); each row carries the `seconds` its child took, which
+    `--record-costs` writes down, and the slots it held (`grant`).
 
     `exempt` is the spaced leg's table, `SPACED_EXEMPT` unless a caller hands
     one in; it is read on the spaced leg only.
@@ -870,18 +1004,34 @@ def sweep(paths, covered, jobs=None, repo=None, encoding=None,
         exempt = SPACED_EXEMPT
     rows.extend(exempt_row(p, exempt[p]) for p in paths if p in exempt)
     paths = [p for p in paths if p not in exempt]
+    order = run_order(paths, costs or {})
+    staged = staged_paths(order, repo)
+    grant = stage_grant(jobs)
+    wait, done = slot_gate(jobs)
+
+    def admitted(ticket, path):
+        weight = grant if path in staged else 1
+        wait(ticket, weight)
+        try:
+            return run_one(path, repo, encoding,
+                           file_timeout(path, costs, timeout, weight), pycache,
+                           None,
+                           spaced, weight)
+        finally:
+            done(weight)
     pycache = tempfile.mkdtemp(prefix="sp-run-")
     try:
         with futures.ThreadPoolExecutor(max_workers=jobs) as pool:
-            # COSTLIEST FIRST, so the slowest suite is never the last one started.
-            pending = [pool.submit(run_one, p, repo, encoding, timeout, pycache,
-                                   None, spaced)
-                       for p in run_order(paths, costs or {})]
+            # COSTLIEST FIRST, so the slowest suite is never the last one
+            # started, and admitted through ONE budget in that order.
+            pending = [pool.submit(admitted, i, p) for i, p in enumerate(order)]
             for fut in futures.as_completed(pending):
                 ran = fut.result()
                 graded = grade(ran["path"], ran["code"], ran["output"], covered,
                                encoding_pass=bool(encoding), debris=ran["debris"])
-                rows.append(dict(graded, seconds=ran.get("seconds")))
+                rows.append(dict(graded, seconds=ran.get("seconds"),
+                                 grant=ran.get("grant"),
+                                 timeout=ran.get("timeout")))
     finally:
         shutil.rmtree(pycache, ignore_errors=True)
     return sorted(rows, key=lambda r: r["path"])
@@ -941,12 +1091,51 @@ def render(rows, jobs, encoding=None, stream=None, spaced=False):
         if row.get("exempt"):
             out.write("  exempt  %-58s not run on this leg\n" % (row["path"],))
         elif row["skipped"]:
-            out.write("  ok      %-58s cases live in tests/\n" % (row["path"],))
+            out.write("  ok      %-58s cases live in tests/%s\n"
+                      % (row["path"], timing(row)))
         elif row["ok"]:
-            out.write("  ok      %-58s %d cases\n" % (row["path"], row["cases"]))
+            out.write("  ok      %-58s %d cases%s\n"
+                      % (row["path"], row["cases"], timing(row)))
         else:
-            out.write("  FAILED  %-58s %s\n" % (row["path"], row["why"]))
+            out.write("  FAILED  %-58s %s%s\n"
+                      % (row["path"], row["why"], timing(row)))
     return _render_tail(rows, bad, skipped, total_cases, out)
+
+
+# The suffix `timing()` writes, as a pattern `costs_from_render()` reads back.
+TIMING = re.compile(r"^  (?:ok|FAILED)  +(\S+) .*  \[([0-9.]+)s(?:, (\d+) slots)?\]$")
+
+
+def timing(row):
+    """`  [12.3s]` for a row a child ran - `  [12.3s, 3 slots]` when it held
+    more than one - and nothing for a row with no measurement. Printed on the
+    loud form so a CI log carries every file's seconds and can be recorded
+    (`--costs-from-log`) without a second run."""
+    if row.get("seconds") is None:
+        return ""
+    grant = row.get("grant") or 1
+    return "  [%.1fs%s]" % (row["seconds"],
+                            ", %d slots" % (grant,) if grant > 1 else "")
+
+
+def costs_from_render(text):
+    """{path: slot-seconds} read off the loud form's lines - the seconds times
+    the slots printed beside them - for a log saved from a run elsewhere, a CI
+    cell's. A FAILED line counts too: a timeout's seconds say how long the file
+    was allowed, which is a floor for its cost."""
+    found = {}
+    for line in text.splitlines():
+        # A CI log prefixes every line with a timestamp; the row starts after it.
+        at = line.find("  ok  ")
+        if at < 0:
+            at = line.find("  FAILED  ")
+        if at < 0:
+            continue
+        match = TIMING.match(line[at:].rstrip())
+        if match:
+            found[match.group(1).replace("\\", "/")] = round(
+                float(match.group(2)) * int(match.group(3) or 1), 1)
+    return found
 
 
 def render_quiet(rows, jobs, encoding=None, stream=None, spaced=False):
@@ -1007,6 +1196,58 @@ def marker_gate(git_dir, out, err):
     return None
 
 
+def _positive(text):
+    """`text` as a count of at least one, or None."""
+    try:
+        value = int(text)
+    except (TypeError, ValueError):
+        return None
+    return value if value >= 1 else None
+
+
+def budget_line(paths, jobs, costs, floor, repo=None):
+    """The one line saying how this run shares its budget, with the basis of
+    each number: which files hold several slots, and the longest timeout the
+    cost table gave any file over the floor."""
+    found = staged_paths(paths, repo)
+    staged = sorted(found)
+    grant = stage_grant(jobs)
+    longest = max([file_timeout(p, costs, floor, grant if p in found else 1)
+                   for p in paths] or [floor])
+    return ("budget: %d slots; %d staged suites hold %d each (%s); per-file "
+            "timeout %ds, up to %ds for a file the cost table times as heavy\n"
+            % (jobs, len(staged), stage_grant(jobs),
+               ", ".join(os.path.basename(p) for p in staged) or "none",
+               floor, longest))
+
+
+def record_from_log(log, record, platform, workers):
+    """Exit code of `--costs-from-log LOG`: the per-file seconds a saved loud
+    log printed, merged into the table at `--record-costs` - which, with
+    `--platform`, both being named, is required: a table whose timings came off
+    another machine's log must say which one."""
+    if not record or not platform:
+        sys.stderr.write("sweep-selftests: --costs-from-log needs --record-costs "
+                         "PATH and --platform NAME (the machine the log came "
+                         "from)\n")
+        return 2
+    try:
+        with io.open(log, encoding="utf-8", errors="replace") as fh:
+            found = costs_from_render(fh.read())
+    except (IOError, OSError) as exc:
+        sys.stderr.write("sweep-selftests: cannot read %s: %s\n" % (log, exc))
+        return 2
+    if not found:
+        sys.stderr.write("sweep-selftests: %s carries no timed row - nothing "
+                         "recorded\n" % (log,))
+        return 2
+    rows = [{"path": p, "seconds": v} for p, v in sorted(found.items())]
+    record_costs(record, rows, set(sweep_files()), workers, platform=platform)
+    sys.stdout.write("recorded %d files' seconds from %s into %s (%s)\n"
+                     % (len(rows), log, record, platform))
+    return 0
+
+
 def main(argv):
     if "-h" in argv or "--help" in argv:
         sys.stdout.write(__doc__.strip() + "\n")
@@ -1026,6 +1267,11 @@ def main(argv):
                          "got %r\n" % (shard_text,))
         return 2
     record = _flag_value(argv, "--record-costs", None)
+    from_log = _flag_value(argv, "--costs-from-log", None)
+    if from_log is not None:
+        return record_from_log(from_log, record,
+                               _flag_value(argv, "--platform", None),
+                               _positive(_flag_value(argv, "--workers", None)))
     # THE INVENTORY, MADE OPTIONAL. One line per file whether or not it has
     # anything to say is most of what this run puts into an agent's context;
     # `--quiet` keeps the failures and the totals and drops the rest. A human
@@ -1071,6 +1317,7 @@ def main(argv):
                              "refusing to report a green part over nothing\n"
                              % (index, count))
             return 2
+    sys.stdout.write(budget_line(paths, jobs, costs, timeout))
     rows = sweep(paths, covered, jobs=jobs, encoding=encoding, timeout=timeout,
                  spaced=spaced, costs=costs)
     if record:
@@ -1911,12 +2158,152 @@ def _cases(check):
           and default_jobs(1, {"CI": "true"}) == 1)
 
     rc_rows = [{"path": "a", "seconds": 1.234}, {"path": "b", "seconds": 7.0},
-               {"path": "c", "exempt": "x"}]
+               {"path": "c", "exempt": "x"},
+               {"path": "d", "seconds": 10.0, "grant": 3}]
     rc_got = costs_from_rows(rc_rows)
-    check("rc0 a recorded run's costs are the per-file seconds it measured, "
-          "rounded, and a file the leg did not run is not given a cost: %r"
-          % (rc_got,),
-          rc_got == {"a": 1.2, "b": 7.0})
+    check("rc0 a recorded run's costs are the per-file slot-seconds it measured - "
+          "seconds times the slots held - rounded, and a file the leg did not "
+          "run is not given a cost: %r" % (rc_got,),
+          rc_got == {"a": 1.2, "b": 7.0, "d": 30.0})
+
+    # --- one concurrency budget: staged suites hold several slots ------------
+    import importlib.util
+    bg_spec = importlib.util.spec_from_file_location(
+        "sweep_harness_bg", os.path.join(REPO, "plugins", "audit", "tests",
+                                         "_harness.py"))
+    bg_h = importlib.util.module_from_spec(bg_spec)
+    bg_spec.loader.exec_module(bg_h)
+    check("bg0 the grant's variable names and cap are the ones `_harness.py` "
+          "reads - two copies, held together here: %r"
+          % ([bg_h.STAGE_GRANT_VAR, bg_h.FILE_TIMEOUT_VAR, bg_h.STAGE_WORKERS],),
+          bg_h.STAGE_GRANT_VAR == STAGE_GRANT_VAR
+          and bg_h.FILE_TIMEOUT_VAR == FILE_TIMEOUT_VAR
+          and bg_h.STAGE_WORKERS == STAGE_GRANT_MAX)
+    bg_grants = dict((j, stage_grant(j)) for j in (1, 2, 3, 4, 5, 8, 12, 64))
+    check("bg1 a staged suite holds all but one of the budget's slots, at least "
+          "two, at most the cap, never more than the budget: %r" % (bg_grants,),
+          bg_grants == {1: 1, 2: 2, 3: 2, 4: 3, 5: 4, 8: STAGE_GRANT_MAX,
+                        12: STAGE_GRANT_MAX, 64: STAGE_GRANT_MAX})
+    bg_src = {
+        "attr": "import _harness\nraise SystemExit(_harness.staged_main([], (), {}, 'p'))\n",
+        "name": "from _harness import staged_main\nstaged_main([], (), {}, 'p')\n",
+        "string": "X = 'staged_main(argv)'\n",
+        "define": "def staged_main(argv):\n    return 0\n",
+        "broken": "staged_main(\n",
+    }
+    bg_seen = dict((k, is_staged(v)) for k, v in bg_src.items())
+    check("bg2 a staged suite is one that CALLS `staged_main`, read off the AST - "
+          "a string or a definition naming it is not, and neither is a file "
+          "that does not parse: %r" % (bg_seen,),
+          bg_seen == {"attr": True, "name": True, "string": False,
+                      "define": False, "broken": False})
+    bg_live = staged_paths(sweep_files())
+    check("bg2b ...and over the live tree the staged suites are found and the "
+          "harness that defines the runner is not: %r" % (sorted(bg_live),),
+          "plugins/audit/tests/test_drive_phase.py" in bg_live
+          and "plugins/audit/tests/_harness.py" not in bg_live)
+    bg_costs = {"heavy": 150.0, "light": 10.0}
+    bg_to = [file_timeout("heavy", bg_costs), file_timeout("light", bg_costs),
+             file_timeout("never", bg_costs),
+             file_timeout("heavy", bg_costs, 9000),
+             file_timeout("heavy", {"heavy": 75.1}),
+             file_timeout("heavy", bg_costs, slots=3)]
+    check("bg3 a file's timeout is the floor, or `TIMEOUT_PER_COST` times its "
+          "recorded slot-seconds over the slots it holds when that is longer - "
+          "rounded up, never under the floor, the floor for a file never "
+          "timed: %r" % (bg_to,),
+          bg_to == [150 * TIMEOUT_PER_COST, DEFAULT_TIMEOUT, DEFAULT_TIMEOUT,
+                    9000, int(-(-75.1 * TIMEOUT_PER_COST // 1)),
+                    150 * TIMEOUT_PER_COST // 3]
+          and min(bg_to[0], bg_to[4], bg_to[5]) > DEFAULT_TIMEOUT)
+
+    bg_wait, bg_done = slot_gate(4)
+    bg_lock = threading.Lock()
+    bg_state = {"held": 0, "peak": 0, "order": []}
+    bg_weights = [3, 1, 1, 3, 1, 1, 2]
+
+    def bg_task(ticket):
+        weight = bg_weights[ticket]
+        bg_wait(ticket, weight)
+        with bg_lock:
+            bg_state["held"] += weight
+            bg_state["peak"] = max(bg_state["peak"], bg_state["held"])
+            bg_state["order"].append(ticket)
+        time.sleep(0.05)
+        with bg_lock:
+            bg_state["held"] -= weight
+        bg_done(weight)
+    with futures.ThreadPoolExecutor(max_workers=4) as bg_pool:
+        list(bg_pool.map(bg_task, range(len(bg_weights))))
+    check("bg4 the slot gate never lets more than the budget be held at once and "
+          "admits in ticket order - a cheap file cannot slip past a staged suite "
+          "waiting for its slots: %r" % (bg_state,),
+          bg_state["peak"] <= 4 and bg_state["peak"] >= 3
+          and bg_state["order"] == list(range(len(bg_weights))))
+
+    bg_box = tempfile.mkdtemp(prefix="sweep-budget-")
+    try:
+        bg_body = ("import os\n"
+                   "print('grant=' + str(os.environ.get(%r)) + ' timeout=' + "
+                   "str(os.environ.get(%r)))\n"
+                   "print('1/1 cases passed')\n"
+                   % (STAGE_GRANT_VAR, FILE_TIMEOUT_VAR))
+        with io.open(os.path.join(bg_box, "plain-suite"), "w", encoding="utf-8") as fh:
+            fh.write(bg_body)
+        with io.open(os.path.join(bg_box, "staged-suite"), "w", encoding="utf-8") as fh:
+            fh.write(bg_body + "if False:\n    staged_main()\n")
+        bg_one = run_one("plain-suite", repo=bg_box, timeout=77, grant=3,
+                         environ=dict(os.environ, **{STAGE_GRANT_VAR: "9"}))
+        check("bg5 a child is told the slots it holds and its timeout, over any "
+              "grant the caller's environment carried: %r" % (bg_one["output"],),
+              "grant=3 timeout=77" in bg_one["output"])
+        bg_rows = dict((r["path"], r) for r in sweep(
+            ["plain-suite", "staged-suite"], set(), jobs=4, repo=bg_box,
+            costs={"staged-suite": 300.0}))
+        check("bg6 the sweep holds `stage_grant(jobs)` slots for a staged suite "
+              "and one for any other file, gives the timed-heavy one its "
+              "calibrated timeout, and tells each child so: %r"
+              % (dict((k, (v.get("grant"), v.get("timeout"), v.get("output")))
+                      for k, v in bg_rows.items()),),
+              bg_rows["staged-suite"]["grant"] == 3
+              and "grant=3 timeout=%d" % (100 * TIMEOUT_PER_COST,)
+              in bg_rows["staged-suite"]["output"]
+              and bg_rows["plain-suite"]["grant"] == 1
+              and "grant=1 timeout=%d" % (DEFAULT_TIMEOUT,)
+              in bg_rows["plain-suite"]["output"]
+              and all(r["ok"] for r in bg_rows.values()))
+        bg_line = budget_line(["plain-suite", "staged-suite"], 4, {"staged-suite": 300.0},
+                              DEFAULT_TIMEOUT, repo=bg_box)
+    finally:
+        remove_tree(bg_box)
+    check("bg6b the budget line says what each number came from - the slots, "
+          "which suites hold several and how many, the floor and the longest "
+          "calibrated timeout: %r" % (bg_line,),
+          bg_line.startswith("budget: 4 slots; 1 staged suites hold 3 each "
+                             "(staged-suite); per-file timeout %ds"
+                             % (DEFAULT_TIMEOUT,))
+          and "up to %ds" % (100 * TIMEOUT_PER_COST,) in bg_line)
+
+    bg_buf = io.StringIO()
+    render([dict(grade("a/heavy-suite", 0, "2/2 cases passed\n", set()),
+                 seconds=123.45, grant=3),
+            dict(grade("a/light-suite", 0, "1/1 cases passed\n", set()),
+                 seconds=0.5, grant=1),
+            dict(grade("a/hung-suite", None, "did not finish within 300s", set()),
+                 seconds=300.04, grant=1),
+            grade("a/untimed-suite", 0, "1/1 cases passed\n", set())],
+           4, stream=bg_buf)
+    bg_text = bg_buf.getvalue()
+    bg_ci = "\n".join("2026-10-13T08:43:25.2Z " + line.replace("a/", "a\\")
+                      for line in bg_text.splitlines())
+    bg_read = [costs_from_render(bg_text), costs_from_render(bg_ci)]
+    check("bg7 the loud form prints each file's seconds - and the slots it held "
+          "when more than one - and those lines read back as slot-seconds, from a CI "
+          "log's timestamped, back-slashed lines too, a timeout's included and "
+          "an untimed row left out: %r / %r" % (bg_text, bg_read),
+          "[123.5s, 3 slots]" in bg_text and "[0.5s]" in bg_text
+          and bg_read[0] == bg_read[1]
+          == {"a/heavy-suite": 370.5, "a/light-suite": 0.5, "a/hung-suite": 300.0})
 
     # --- a mutating gate sweep holds a marker; this sweep refuses to read the tree ---
     import _suite

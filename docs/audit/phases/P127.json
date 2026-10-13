@@ -54,8 +54,10 @@
         "severity": "low",
         "file": "tools/sweep-selftests.py:1840-1845 (sh7) vs the comments at :690-700",
         "issue": "The comments and CONTRIBUTING.md say a stale cost table 'costs balance, never coverage', but sh7 asserts set(sh_costs) <= set(sh_full), so deleting or renaming any swept file turns the sweep's own selftest red (in the e2e cell and in whichever shard holds that file) until someone re-records .github/sweep-costs.json. Either the guard or the sentence is wrong. The table is also one macOS 12-worker run (platform darwin, workers 12); test_commit_task_work is recorded at 57s although P127.1 brought it to ~15s, so the balance is already stale on its first day.",
-        "resolution": "Pick one: drop the subset requirement from sh7 and keep only 'loads, and times most files', or keep it and say in the comments that a rename must re-record the table. Re-record the table from the CI run after P127.1/P127.2 land.",
-        "fixTask": "P127.4-bgr"
+        "resolution": "fixed in P127.4-bgr (2944d2608064): Pick one: drop the subset requirement from sh7 and keep only 'loads, and times most files', or keep it and say in the comments that a rename must re-record the table. Re-record the table from the CI run after P127.1/P127.2 land.",
+        "fixTask": "P127.4-bgr",
+        "commit": "2944d2608064",
+        "status": "fixed"
       },
       {
         "id": "P127-R5",
@@ -66,7 +68,7 @@
         "fixTask": "P127.7-bgr"
       }
     ],
-    "outcome": "[findings: 5 - 0 high, 2 med, 3 low; 1 with a recorded fix commit]"
+    "outcome": "[findings: 5 - 0 high, 2 med, 3 low; 2 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -293,7 +295,7 @@
     {
       "id": "P127.4-bgr",
       "title": "fix P127-R4: The comments and CONTRIBUTING.md say a stale cost table 'costs b...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The comments and CONTRIBUTING.md say a stale cost table 'costs balance, never coverage', but sh7 asserts set(sh_costs) <= set(sh_full), so deleting or renaming any swept file turns the sweep's own selftest red (in the e2e cell and in whichever shard holds that file) until someone re-records .github/sweep-costs.json. Either the guard or the sentence is wrong. The table is also one macOS 12-worker run (platform darwin, workers 12); test_commit_task_work is recorded at 57s although P127.1 brought it to ~15s, so the balance is already stale on its first day.\n\nResolution asked: Pick one: drop the subset requirement from sh7 and keep only 'loads, and times most files', or keep it and say in the comments that a rename must re-record the table. Re-record the table from the CI run after P127.1/P127.2 land.",
       "files": [
         "tools/sweep-selftests.py",
@@ -323,14 +325,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2944d2608064",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/sweep-selftests.py: sh7 now only requires the cost table to load; new sh9 (ghost entry ignored, swept list still partitioned once, split unchanged by ghost) and sh10 (table_notes reports ghosts and thin coverage as notes, [] when it fits); table_notes() added, printed as 'note:' lines at sweep start and in the selftest; shard_paths/run_order restrict the table to swept paths so a ghost cannot move the median. Comments updated; CONTRIBUTING.md sentence now states ghost ignored/missing estimated/notes. Table NOT re-recorded (P127.6). Ran: sweep-selftests.py --selftest -> 77/77; gate-parity.py ok; ruff check tools ok.",
+        "descriptive": "A stale or partial sweep cost table can only cost balance and prints a note; it no longer turns the sweep red."
       },
       "startedAt": "2026-10-13T08:54:29Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-13T09:05:19Z",
+      "verifiedBy": [
+        "sh9",
+        "sh10"
+      ],
       "notes": [
         {
           "at": "2026-10-13T08:40:54Z",
@@ -345,12 +350,24 @@
         "runId": "2026-10-13T09:05:17Z.569d82",
         "status": "passed",
         "at": "2026-10-13T09:05:17Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "2944d2608064",
+        "at": "2026-10-13T09:05:19Z",
+        "basis": "a fix task for P127-R4: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "could-not-prove",
+        "at": "2026-10-13T08:56:35Z",
+        "basis": "P127.4-bgr declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P127.4-bgr declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P127.5-bgr",
       "title": "fix P127-R3: sr12 pins the stage_workers() table and that the default is with...",
-      "status": "pending",
+      "status": "cancelled",
       "description": "sr12 pins the stage_workers() table and that the default is within 2..STAGE_WORKERS, but not that run_stages() uses it. Reverting the one-line wiring (`if workers is None: workers = stage_workers()` back to `workers=STAGE_WORKERS`) leaves sr12 and every sr case green, so the behaviour the task names (the pool respects the machine) is pinned only as a pure function. The executor's redFirst is not-attempted, so no run shows otherwise.\n\nResolution asked: Add a case that runs run_stages over a fixture of labels with a recording stub (or patches stage_workers to return 1) and asserts the concurrency actually used, so the wiring is the thing that fails.",
       "files": [
         "plugins/audit/tests/_harness.py"
@@ -376,15 +393,15 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: folded into P127.6-bgr: R3 asks a case to pin that run_stages uses stage_workers(), and P127.6 rewrites that sizing and its wiring to one CI budget, so the pin belongs to the rewritten code"
       },
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-10-13T09:05:19Z",
+      "completedAt": "2026-10-13T09:05:35Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -402,12 +419,13 @@
       ],
       "fixes": [
         "P127-R3"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P127.6-bgr",
       "title": "fix P127-R1: The stage pool was sized for a premise the phase itself contradi...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The stage pool was sized for a premise the phase itself contradicts, and it does not consult the sweep pool it now shares cores with. P127.1 sizes for a 'two-core windows-latest runner' (stage_workers docstring; description), but run 38324787932 printed 'sweep: 331 files, 2 workers', which default_jobs() only prints for 4 cpus (cpus-2), and P127.2's own ci.yml comment says the same ('16.7 minutes of suites on two workers'). On a 4-vCPU runner stage_workers(4) == 2, so test_drive_phase's wall time has a floor of (serial stage sum)/2: the task's own numbers are 438-459s serial on macOS, i.e. ~220s on an idle mac pair before any Windows process-start penalty, against the 280s STAGE_TIMEOUT and 300s file cap. Before the phase it had up to 6 children. P127.2 then gives the sweep every core under CI=true (4 workers) and costliest-first submission, so in the shard holding test_drive_phase (shard 2 in the committed table, with test__invariants 118, run_test_gate 60, full_gate 57 started beside it) about 5 processes contend for 4 cores while the heavy staged suite is capped at 2 of them. The same cap now also applies to test_audit_task and test_close_phase (both staged_main users, both in shard 1), which the task did not mention or measure. Worst case the two pools multiply (4 sweep workers x 2 stage workers = 8 runnable on 4 cores); the typical case is the opposite, a heavy suite starved of the cores its siblings have already freed. Nothing handed shows the margin: the only evidence is macOS with 14 cores.\n\nResolution asked: Read the per-file seconds from CI run 38370435884 (jobs 'selftests (windows-latest, plain 2/3)' and shard 1) before accepting this. If test_drive_phase is above ~150s there, size the pool from the machine the sweep leaves free rather than a fixed half: e.g. have run_one export the sweep's worker count in the child env and let stage_workers use max(2, min(STAGE_WORKERS, cpus - sweep_jobs + 1)), or under CI=true give a staged suite min(STAGE_WORKERS, cpus). Correct the 'two-core runner' wording in the stage_workers docstring, the P127.1 description and sr12's label, and extend sr12 to pin the CI case.",
       "files": [
         "plugins/audit/tests/_harness.py",
@@ -423,7 +441,7 @@
       "tests": {
         "mode": "tdd",
         "add": [
-          "tools/sweep-selftests.py: with a cost table, the heaviest files land in cells whose concurrency budget (sweep workers x stage workers) fits the runner's cores, and no shard cell exceeds it"
+          "plugins/audit/tests/_harness.py: run_stages sizes its pool through the one budget rule, pinned by a case that fails if the wiring is reverted (P127-R3)"
         ],
         "expectRedFirst": true,
         "gate": [
@@ -443,14 +461,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-13T09:05:36Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -469,7 +487,13 @@
       ],
       "fixes": [
         "P127-R1"
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-13T09:54:47Z.8aedf9",
+        "status": "passed",
+        "at": "2026-10-13T09:54:48Z"
+      }
     },
     {
       "id": "P127.7-bgr",

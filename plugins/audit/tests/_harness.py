@@ -685,28 +685,87 @@ def run(body):
 # still runs the named blocks in this process, for a red-first proof in a
 # throwaway tree.
 #
-# How many blocks run at once, at most. The sweep around a suite already runs
-# other suites on the remaining cores, so `stage_workers()` takes a share of the
-# machine's count and never more than this.
+# How many blocks run at once, at most: past this a suite's blocks contend with
+# each other for the same process starts rather than finishing sooner.
 STAGE_WORKERS = 6
+# THE SWEEP'S GRANT. `tools/sweep-selftests.py` runs files side by side out of
+# one budget of slots, and a staged suite holds several of them at once; the
+# sweep names how many in this variable, and the file timeout it applies in the
+# next, in the environment of the child it starts. Both names are the sweep's
+# too, and its own cases fail when the two copies part.
+STAGE_GRANT_VAR = "SWEEP_STAGE_GRANT"
+FILE_TIMEOUT_VAR = "SWEEP_FILE_TIMEOUT"
+# A block's timeout with no file timeout handed down: under the sweep's default
+# per-file cap, so a block that hangs is reported by its own label rather than
+# as the whole file timing out.
+STAGE_TIMEOUT = 280
+# How far under a handed-down file timeout a block's own timeout sits.
+STAGE_TIMEOUT_MARGIN = 20
 
 
-def stage_workers(cpus=None):
-    """Blocks to run at once on a machine with `cpus` cores (this machine's when
-    omitted): half the cores, at least two, at most `STAGE_WORKERS`.
+def _positive_int(text):
+    """`text` as a count of at least one, or None when it is not one."""
+    try:
+        value = int(text)
+    except (TypeError, ValueError):
+        return None
+    return value if value >= 1 else None
 
-    WHY NOT THE FIXED SIX. A two-core runner given six children shares its cores
-    six ways while the sweep runs other suites beside it, so every block's wall
-    time stretches toward `STAGE_TIMEOUT` and the file toward the sweep's cap
-    with no work added. The floor of two is there because a block spends much
-    of its time waiting on a child it started, so one core carries more than
-    one of them; below that a block that hangs would hold the whole run."""
+
+def stage_grant(environ=None):
+    """The slots a sweep granted this suite (`STAGE_GRANT_VAR`), or None when no
+    sweep ran it or the grant is not a positive count."""
+    environ = os.environ if environ is None else environ
+    return _positive_int(environ.get(STAGE_GRANT_VAR))
+
+
+def stage_workers(cpus=None, environ=None):
+    """Blocks to run at once: the slots the sweep granted, capped at
+    `STAGE_WORKERS`; with no grant, the machine's cores (`cpus`, this machine's
+    when omitted), at least two and at most `STAGE_WORKERS`.
+
+    ONE BUDGET, OWNED BY THE SWEEP. A pool sized from the core count alone was
+    sized for a machine with nothing else on it, while the sweep was running
+    other suites on the same cores: on a four-core runner that is a share the
+    two pools never agreed on, oversubscribed when both were busy and a heavy
+    suite starved of cores its siblings had already freed when they were not.
+    So the sweep holds a staged suite's slots out of its own count and passes
+    the number down, and this reads it. Without a grant nothing else is running
+    from the same budget, and the machine is the suite's. The floor of two is
+    there because a block spends much of its time waiting on a child it
+    started, so one core carries more than one of them."""
+    grant = stage_grant(environ)
+    if grant is not None:
+        return min(STAGE_WORKERS, grant)
     if cpus is None:
         cpus = os.cpu_count() or 1
-    return max(2, min(STAGE_WORKERS, cpus // 2))
-# Below the sweep's per-file cap, so a block that hangs is reported by its own
-# label rather than as the whole file timing out.
-STAGE_TIMEOUT = 280
+    return max(2, min(STAGE_WORKERS, cpus))
+
+
+def stage_timeout(environ=None):
+    """A block's timeout: `STAGE_TIMEOUT_MARGIN` under the file timeout the
+    sweep handed down (`FILE_TIMEOUT_VAR`), else `STAGE_TIMEOUT`. A sweep that
+    gives a heavy file longer than its default cap gives its blocks longer too,
+    and each block still times out before the file does."""
+    environ = os.environ if environ is None else environ
+    handed = _positive_int(environ.get(FILE_TIMEOUT_VAR))
+    if handed is None:
+        return STAGE_TIMEOUT
+    return max(1, handed - STAGE_TIMEOUT_MARGIN)
+
+
+def stage_pool_line(workers, blocks, timeout, environ=None, cpus=None):
+    """The line a full run prints before it starts its blocks: how many run at
+    once, of how many, and what set that number - the grant, or the cores."""
+    grant = stage_grant(environ)
+    if grant is not None:
+        basis = "the %d slots the sweep granted (capped at %d)" % (
+            grant, STAGE_WORKERS)
+    else:
+        basis = "no sweep grant, so this machine's %d cores (2 to %d)" % (
+            cpus or os.cpu_count() or 1, STAGE_WORKERS)
+    return "stage pool: %d of %d blocks at once, %s; each block allowed %ds\n" % (
+        workers, blocks, basis, timeout)
 
 
 def flag_values(args, flag):
@@ -840,18 +899,25 @@ def run_stage(script, label, out_dir, timeout=STAGE_TIMEOUT):
     return res
 
 
-def run_stages(check, script, labels, prefix, workers=None,
-               timeout=STAGE_TIMEOUT):
+def run_stages(check, script, labels, prefix, workers=None, timeout=None):
     """Run each of `labels` as a child of `script`, then replay what each
     reported in `labels` order. A block that wrote no cases is ONE NAMED failing
     case, the way `stage()` reports a block that raised; a case id claimed from
     two call sites in different blocks is still a duplicate, read off the sites
-    the children recorded."""
+    the children recorded.
+
+    The pool is `stage_workers()` and each block's timeout `stage_timeout()`
+    unless a caller names them, and the line `stage_pool_line()` prints says
+    which numbers ran and what set them."""
     from concurrent.futures import ThreadPoolExecutor
     out_dir = fixture_root(prefix)
     if workers is None:
         workers = stage_workers()
-    with ThreadPoolExecutor(max_workers=max(1, min(workers, len(labels)))) as pool:
+    if timeout is None:
+        timeout = stage_timeout()
+    width = max(1, min(workers, len(labels)))
+    sys.stdout.write(stage_pool_line(width, len(labels), timeout))
+    with ThreadPoolExecutor(max_workers=width) as pool:
         results = list(pool.map(
             lambda lab: run_stage(script, lab, out_dir, timeout), labels))
     sites = {}
@@ -1559,6 +1625,36 @@ def _c_cases(check):
             '("s-block", "_slow_cases")',
 }
 
+# Five blocks, each one case: wider than the pool a four-slot sweep grants.
+_STAGED_WIDE = {
+    "more": '''
+
+def _p_cases(check):
+    check("p1 only of p", True)
+
+
+def _q_cases(check):
+    check("q1 only of q", True)
+
+
+def _r_cases(check):
+    check("r1 only of r", True)
+''',
+    "rows": ', ("p-block", "_p_cases"), ("q-block", "_q_cases"), '
+            '("r-block", "_r_cases")',
+}
+
+
+def _load_sweep():
+    """`tools/sweep-selftests.py` as a module: the runner that grants a staged
+    suite its slots, loaded by path because its name is not an identifier."""
+    import importlib.util
+    path = os.path.join(_output.REPO_ROOT, "tools", "sweep-selftests.py")
+    spec = importlib.util.spec_from_file_location("harness_sweep_selftests", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
 
 def _stage_runner_cases(check):
     """The runner a staged suite hands its `__main__` to, driven over a fixture
@@ -1659,12 +1755,47 @@ def _stage_runner_cases(check):
           and seen[0][0].startswith("s-block DID NOT REPORT")
           and "did not finish within 1s" in seen[0][2])
 
-    got = dict((c, stage_workers(c)) for c in (1, 2, 4, 8, 12, 64))
-    check("sr12 the block pool is half the machine's cores, at least two and at "
-          "most `STAGE_WORKERS` - a two-core runner is not handed the pool a "
-          "workstation gets: %r" % (got,),
-          got == {1: 2, 2: 2, 4: 2, 8: 4, 12: STAGE_WORKERS, 64: STAGE_WORKERS}
-          and 2 <= stage_workers() <= STAGE_WORKERS)
+    alone = dict((c, stage_workers(c, {})) for c in (1, 2, 4, 8, 12, 64))
+    granted = dict((g, stage_workers(64, {STAGE_GRANT_VAR: g}))
+                   for g in ("1", "3", "64"))
+    unread = [stage_workers(4, {STAGE_GRANT_VAR: g}) for g in ("0", "x", "")]
+    check("sr12 the block pool is what the sweep GRANTED when a sweep runs the "
+          "suite - its slots, capped at `STAGE_WORKERS`, whatever the machine "
+          "holds - and with no grant the machine's cores, at least two and at "
+          "most `STAGE_WORKERS`; a grant that is not a positive count is no "
+          "grant: %r %r %r" % (granted, alone, unread),
+          granted == {"1": 1, "3": 3, "64": STAGE_WORKERS}
+          and alone == {1: 2, 2: 2, 4: 4, 8: STAGE_WORKERS, 12: STAGE_WORKERS,
+                        64: STAGE_WORKERS}
+          and unread == [4, 4, 4])
+    timeouts = [stage_timeout({}), stage_timeout({FILE_TIMEOUT_VAR: "600"}),
+                stage_timeout({FILE_TIMEOUT_VAR: "nope"})]
+    check("sr12b a block's timeout sits under the file timeout the sweep "
+          "handed the suite, so a block that hangs is still named before the "
+          "whole file is killed; with none handed it is `STAGE_TIMEOUT`: %r"
+          % (timeouts,),
+          timeouts == [STAGE_TIMEOUT, 600 - STAGE_TIMEOUT_MARGIN, STAGE_TIMEOUT])
+
+    # THE WIRING, THROUGH THE RUNNER THAT GRANTS. A suite with five blocks is
+    # run by the sweep itself on a four-slot budget: the sweep holds three of
+    # them for a staged suite and says so in the child's environment, and the
+    # pool `run_stages` builds is read back off the line it prints. Five blocks,
+    # so neither the block count nor this machine's cores (alone, two to
+    # `STAGE_WORKERS`) can produce the width the grant does.
+    wide = os.path.join(work, "wide_suite.py")
+    with open(wide, "w", encoding="utf-8") as fh:
+        fh.write(_STAGED_SUITE % dict(_STAGED_WIDE, tests=TESTS_DIR))
+    sweeper = _load_sweep()
+    rows = sweeper.sweep(["wide_suite.py"], set(), jobs=4, repo=work, costs={})
+    out = rows[0].get("output") or ""
+    pools = re.findall(r"^stage pool: (\d+) of (\d+) blocks at once, (.+)$",
+                       out, re.M)
+    check("sr13 a staged suite run BY THE SWEEP sizes its block pool from the "
+          "slots the sweep granted it, not from this machine's cores - one "
+          "budget for both pools, read off the line `run_stages` prints: "
+          "ok %r, %r" % (rows[0].get("ok"), pools),
+          rows[0].get("ok") is True and len(pools) == 1
+          and pools[0][:2] == ("3", "5") and "granted" in pools[0][2])
 
 
 def _selftest():

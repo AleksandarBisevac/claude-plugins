@@ -254,6 +254,16 @@ the script is only a caller:
 # because the union of the parts is the whole tree (the runner's
 # own sh0 case) and `gate-parity.py`'s `shard_matrix_drift()` fails a matrix that skips a
 # part. Here a leg runs whole, which is the same leg.
+#
+# THE WORKERS ARE ONE BUDGET OF SLOTS, here and in CI. A staged suite (its `__main__` is
+# `_harness.staged_main`) is admitted holding `stage_grant(jobs)` slots, in costliest-first
+# order, and reads the number from `SWEEP_STAGE_GRANT` to size its block pool, so the sweep's
+# workers and the suite's blocks never add up past the machine. Each file's timeout is the
+# floor (`--timeout`) or a multiple of its recorded seconds, whichever is longer - a hang
+# detector calibrated per file, handed down as `SWEEP_FILE_TIMEOUT` so a block still times out
+# before its file. The run prints a `budget:` line saying which suites held several slots and
+# the longest timeout given, and every per-file line carries its seconds: a saved CI log
+# re-records the table with `--costs-from-log LOG --platform NAME --record-costs PATH`.
 python3 tools/sweep-selftests.py
 
 # ...and the runner's OWN cases, read directly rather than through itself: a `grade()`
