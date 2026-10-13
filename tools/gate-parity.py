@@ -3222,11 +3222,14 @@ def step_guard_findings(text):
             for job, step, why in step_guard_drift(text) + breadth]
 
 
-# --- ...and every bound is twice the longest run it was measured against ------
+# --- ...and every bound is two to three times the longest run it was measured against
 # A bound set by feel is either too tight - a slow runner fails a green job - or
 # so loose it is the six hours again under another number. So the workflow
 # carries, as comment lines, the longest finished run of each job over the runs
-# its comment names, and each bound must be at least twice that. The figures are
+# its comment names, and each bound must be at least twice that and at most
+# three times it. A job whose three times is under `BOUND_FLOOR_MINUTES` may
+# sit at that floor: a sub-minute measurement samples none of the runner
+# provisioning and package-install variance a bound still has to cover. The figures are
 # written by whoever measured them (`gh run view` prints them; nothing here can
 # ask GitHub, and a selftest that did would fail offline); what this holds is
 # that the bound and the measurement written beside it agree, which is the claim
@@ -3234,13 +3237,17 @@ def step_guard_findings(text):
 _LONGEST_LINE = re.compile(
     r"^\s*#\s+longest\s+([A-Za-z0-9_-]+):\s+([0-9]+)m([0-9]{2})s\b", re.M)
 BOUND_FACTOR = 2
+BOUND_CEILING_FACTOR = 3
+BOUND_FLOOR_MINUTES = 5
 
 
 def job_bound_evidence(text):
     """[(job, why)] for every job whose bound is not backed by a `longest` line.
 
     A job with a readable bound needs exactly one `# longest <job>: <m>m<ss>s`
-    line, and `timeout-minutes` must be at least BOUND_FACTOR times it. A line
+    line, and `timeout-minutes` must be at least BOUND_FACTOR times it and at
+    most BOUND_CEILING_FACTOR times it, or `BOUND_FLOOR_MINUTES` when that is
+    more. A line
     naming a job the workflow does not have is reported too: it is a
     measurement of nothing, and it would let a renamed job keep a figure that
     no longer describes it. Jobs with no readable bound are `untimed_jobs`'
@@ -3274,6 +3281,18 @@ def job_bound_evidence(text):
                                   % (_JOB_TIMEOUT_KEY, minutes, BOUND_FACTOR,
                                      longest[job] // 60, longest[job] % 60,
                                      need // 60, need % 60)))
+        allowed = max(BOUND_CEILING_FACTOR * longest[job],
+                      BOUND_FLOOR_MINUTES * 60)
+        if minutes * 60 > allowed:
+            findings.append((job, "%s is %d, over %d times its longest recorded "
+                                  "run of %dm%02ds and over the %d-minute floor "
+                                  "(%dm%02ds allowed) - a hung job holds its "
+                                  "runner until the bound"
+                                  % (_JOB_TIMEOUT_KEY, minutes,
+                                     BOUND_CEILING_FACTOR,
+                                     longest[job] // 60, longest[job] % 60,
+                                     BOUND_FLOOR_MINUTES,
+                                     allowed // 60, allowed % 60)))
     return findings
 
 
@@ -3434,8 +3453,9 @@ def render(result, stream=None):
                   "is still real, SECURITY.md's fail modes are the ones "
                   "hooks.json registers, both runners hand the report "
                   "checker the same documents, both run the same legs of "
-                  "the sweep, and every CI job carries a time bound at least "
-                  "twice its longest recorded run\n")
+                  "the sweep, and every CI job carries a time bound two to "
+                  "three times its longest recorded run, or the floor for a "
+                  "sub-minute job\n")
     return 1 if bad else 0
 
 
@@ -4998,8 +5018,9 @@ def _cases(check):
     _jb_live = job_bound_evidence(_jb_live_text)
     _jb_lines = _LONGEST_LINE.findall(_jb_live_text)
     check("jb0 THE LIVE CLAIM: every bounded job in ci.yml carries one `longest` "
-          "line and a bound at least %d times it, over %d such line(s) read: %r"
-          % (BOUND_FACTOR, len(_jb_lines), _jb_live),
+          "line and a bound at least %d and at most %d times it (or the floor), "
+          "over %d such line(s) read: %r"
+          % (BOUND_FACTOR, BOUND_CEILING_FACTOR, len(_jb_lines), _jb_live),
           _jb_live == [] and len(_jb_lines) == _jt_live["jobs"])
 
     # A fixture whose bound is just under, at, and just over twice its figure:
@@ -5007,7 +5028,7 @@ def _cases(check):
     # 1, or a comparison against minutes instead of seconds, moves the line.
     _jb_wf = ("name: ci\njobs:\n"
               "  one:\n    timeout-minutes: %s\n    runs-on: x\n"
-              "  two:\n    timeout-minutes: 10\n    runs-on: x\n")
+              "  two:\n    timeout-minutes: 5\n    runs-on: x\n")
     _jb_rows = "# measured\n#   longest one: 24m59s (run 1)\n#   longest two: 1m12s (run 1)\n"
     _jb_under = job_bound_evidence(_jb_rows + _jb_wf % "49")
     _jb_over = job_bound_evidence(_jb_rows + _jb_wf % "50")
@@ -5021,7 +5042,7 @@ def _cases(check):
     _jb_bare = job_bound_evidence(_jb_wf % "50")
     _jb_ghost = job_bound_evidence(_jb_rows + "#   longest gone: 1m00s (run 1)\n"
                                    + _jb_wf % "50")
-    _jb_twice = job_bound_evidence(_jb_rows + "#   longest one: 1m00s (run 2)\n"
+    _jb_twice = job_bound_evidence(_jb_rows + "#   longest one: 24m59s (run 2)\n"
                                    + _jb_wf % "50")
     check("jb2 a bound with no `longest` line is reported (a figure set by feel "
           "is the defect), as is a line for a job the workflow does not have and "
@@ -5042,6 +5063,21 @@ def _cases(check):
           "under-twice bound fails the command and not only this function: %r"
           % (_jb_verdict,),
           [job for job, _w in _jb_verdict] == ["one"])
+
+    # The other direction: 74m57s is three times 24m59s, so 74 is clean and 75
+    # is over; a sub-minute job may sit at the five-minute floor and not past it.
+    _jb_cap = [job_bound_evidence(_jb_rows + (_jb_wf % m).replace(
+        "timeout-minutes: 5\n", "timeout-minutes: %s\n" % (t,)))
+        for m, t in (("74", "5"), ("75", "5"), ("74", "6"))]
+    check("jb4 a bound MORE than three times its longest run - or, for a job "
+          "whose three times is under five minutes, past five minutes - is "
+          "reported too, since a hung job holds its runner until the bound: "
+          "%r" % (_jb_cap,),
+          _jb_cap[0] == []
+          and [job for job, _w in _jb_cap[1]] == ["one"]
+          and "74m57s allowed" in _jb_cap[1][0][1]
+          and [job for job, _w in _jb_cap[2]] == ["two"]
+          and "5m00s allowed" in _jb_cap[2][0][1])
 
     _jt_none = untimed_jobs("name: ci\non:\n  push:\n")
     _jt_absent = job_timeout_verdict(os.path.join(REPO, "no-such-repo-dir"))

@@ -155,16 +155,41 @@ STAGE_GRANT_MAX = 6
 # THE PER-FILE TIMEOUT IS A HANG DETECTOR, calibrated per file from the cost
 # table rather than one cap for every file: `DEFAULT_TIMEOUT` (or `--timeout`)
 # is the floor, and a file the table records as heavy gets this many times its
-# recorded slot-seconds over the slots it holds now (`file_timeout`). The
-# committed table is a darwin run, and windows is the platform that binds: in
-# run 38370435884 `test__deps.py` was killed at 300s there, against 67-70s for
-# the same file in the two darwin runs the table was recorded from - so windows
-# is at least four times this table for that file, while
-# `test_stamp_verification.py`, at about 116 here, passed under 300 there. The factor
-# covers the worst ratio seen with room to spare; re-derive it once the table
-# is re-recorded from a windows log (`--costs-from-log`), whose seconds already
-# carry the platform's slowness.
-TIMEOUT_PER_COST = 8
+# recorded slot-seconds over the slots it holds now (`file_timeout`). So the
+# table decides two things, the shard split and these timeouts, and a stale
+# one can cost both: balance, and a timeout too tight for a file that grew past
+# this factor of its entry. It cannot cost coverage, and staleness by OMISSION
+# cannot tighten anything - a staged suite the table does not time is given the
+# largest timeout any entry would get at the same slots, an ordinary file the
+# floor. The table is recorded from windows logs (`--costs-from-log`), the
+# platform that binds, and keeps the longer timing when a log carries a file
+# twice, so its seconds already carry that platform's slowness and the factor
+# covers only how one windows run differs from another. Across runs
+# 38379717433 and 38382182020, plain and cp1252 cells both, no file timed at
+# 20s or more varied by more than 1.51x between its four timings, and a
+# factor of three over the longest of them is about twice that spread.
+# Re-derive it from the same comparison when the table is re-recorded.
+TIMEOUT_PER_COST = 3
+# ...AND THE SWEEP NAMES A HUNG FILE BEFORE THE CI RUNNER KILLS THE JOB. A
+# runner that reaches the job's `timeout-minutes` cancels it and names no
+# step, let alone a file, so on a CI runner (`sweep_deadline`) every file's
+# timeout is cut to what is left of `SWEEP_DEADLINE` seconds from the sweep's
+# start: a file that starts late, behind a staged suite that held the slots,
+# is given only the remainder. The arithmetic, against the `selftests` job's
+# `timeout-minutes: 26` in ci.yml = 1560s: `CI_SETUP_ALLOWANCE` for what the
+# cell does besides the sweep - checkout of the whole history, setup-python,
+# the post steps, and this runner's own discovery and render (the windows
+# cells of runs 38379717433 and 38382182020 spent 12-18s before the sweep
+# step and under 5s after it) - leaves 1440s, and the deadline sits 60s under
+# that, so the render that names the hung file has a minute to print it. The
+# deadline in turn sits above the heaviest calibrated timeout the table gives
+# (tt5 prints it), so it cuts a hang and never a heavy file's margin; when
+# this table was recorded that file was `test_drive_phase.py` at 1347s, which
+# is what moved the job from 25 minutes to 26 and no further. Case tt5 reads
+# the job's figure out of ci.yml and the table off disk, and fails when any of
+# the three stops fitting.
+SWEEP_DEADLINE = 1380
+CI_SETUP_ALLOWANCE = 120
 
 # THE SPACED LEG. A user's temp directory, home or virtualenv can sit under a path
 # holding a space, and a path reached through a link is spelled two ways by
@@ -723,10 +748,21 @@ def default_jobs(cpus=None, environ=None):
     cores idle is what made the windows leg print `2 workers` and take twice as long.
     """
     cpus = cpus if cpus is not None else (os.cpu_count() or 1)
-    environ = os.environ if environ is None else environ
-    if environ.get("CI", "").strip().lower() == "true":
+    if on_ci(environ):
         return max(1, cpus)
     return max(1, cpus - 2)
+
+
+def on_ci(environ=None):
+    """True on a CI runner - `CI=true`, which GitHub Actions sets on every job."""
+    environ = os.environ if environ is None else environ
+    return environ.get("CI", "").strip().lower() == "true"
+
+
+def sweep_deadline(environ=None):
+    """`SWEEP_DEADLINE` on a CI runner, else None: the deadline exists to beat
+    a job limit, and a workstation run has no runner to be killed by."""
+    return SWEEP_DEADLINE if on_ci(environ) else None
 
 
 def stage_grant(jobs):
@@ -774,14 +810,29 @@ def staged_paths(paths, repo=None):
     return found
 
 
-def file_timeout(path, costs, floor=DEFAULT_TIMEOUT, slots=1):
+def file_timeout(path, costs, floor=DEFAULT_TIMEOUT, slots=1, staged=False,
+                 cap=None):
     """Seconds `path` may run when it holds `slots`: `TIMEOUT_PER_COST` times its
-    recorded slot-seconds spread over those slots, and never under `floor` - a
-    file never timed gets the floor."""
-    cost = (costs or {}).get(path)
-    if cost is None:
-        return floor
-    return max(floor, int(-(-TIMEOUT_PER_COST * cost // max(1, slots))))
+    recorded slot-seconds spread over those slots, never under `floor`, and
+    never over `cap` when one is given.
+
+    A file the table does not time is the stale-table case, and it must never
+    be given LESS than a recorded file would: a staged suite (`staged`) with no
+    entry gets the largest timeout any entry - a ghost's included, which is
+    what a rename leaves behind - would get at the same slots, and an ordinary
+    file the floor, which is what every untimed light file needs."""
+    costs = costs or {}
+
+    def calibrated(cost):
+        return int(-(-TIMEOUT_PER_COST * cost // max(1, slots)))
+    if path in costs:
+        seconds = calibrated(costs[path])
+    elif staged and costs:
+        seconds = max(calibrated(c) for c in costs.values())
+    else:
+        seconds = floor
+    seconds = max(floor, seconds)
+    return seconds if cap is None else min(cap, seconds)
 
 
 def slot_gate(slots):
@@ -817,10 +868,13 @@ def slot_gate(slots):
 # A leg run as ONE job is as slow as the whole tree on one runner. `--shard I/N`
 # runs the I-th of N parts, and the parts are built so that running all N runs
 # every file exactly once (`sh0`) - whatever the cost table says, because the table
-# only decides WHERE a file goes, never WHETHER. A stale table costs balance, not
-# coverage. An entry naming a file no longer swept is ignored, a swept file with
-# no entry is estimated, and `table_notes()` reports either as a note - a rename
-# never turns the sweep red.
+# only decides WHERE a file goes, never WHETHER. It also sets each file's timeout
+# (`file_timeout`, above), so a stale table can cost balance and a timeout too
+# tight for a file that grew past `TIMEOUT_PER_COST` times its entry, and never
+# coverage. Staleness by omission costs neither a timeout nor a red sweep: an
+# entry naming a file no longer swept is ignored by the split, a swept file with
+# no entry is estimated for it and given a timeout no tighter than a recorded
+# file of its kind (tt0), and `table_notes()` reports either as a note.
 #
 # BALANCED BY RECORDED COST, not by count. The staged suites take minutes while
 # most files take a second, so an even count can put two of them in one part and
@@ -832,9 +886,11 @@ def slot_gate(slots):
 # THE COSTS ARE RECORDED, NOT TYPED: `--record-costs .github/sweep-costs.json` writes
 # what a run measured, per file, as SLOT-SECONDS - wall seconds times the slots of
 # the budget the file held - so a staged suite weighs what it took out of a cell
-# and not only how long it ran. They are one machine's seconds; the split reads
-# only how files compare to each other, which holds across machines far better
-# than any one figure does.
+# and not only how long it ran. They are one platform's seconds, the table's
+# `platform` field says which, and it is recorded from windows because that
+# platform binds: the split reads only how files compare to each other, which
+# holds across machines far better than any one figure does, but a timeout
+# reads the figure itself, and a darwin figure under-states a windows file.
 # KEPT UNDER `.github/`, not beside this file: it is CI's input, and a table of
 # repo paths under `tools/` would be read as basename references by `_refs`'
 # tool-name lint, which resolves names against the plugin's trees alone.
@@ -867,9 +923,11 @@ def _median(costs):
 def table_notes(costs, paths):
     """Advisory lines about a cost table against the swept `paths` - [] when it fits.
 
-    A table can only cost balance, so what is wrong with one is a note to print,
-    never a failure: entries naming a file no longer swept (ignored by the
-    split), and a table timing too few of the swept files to balance by."""
+    What is wrong with a table here is a note to print, never a failure:
+    entries naming a file no longer swept (ignored by the split), and a table
+    timing too few of the swept files to balance by. Neither tightens a
+    timeout - `file_timeout` gives an untimed file no less than a recorded one
+    of its kind - so neither is a reason to turn a sweep red."""
     swept = set(paths)
     ghosts = sorted(set(costs) - swept)
     notes = []
@@ -959,9 +1017,11 @@ def record_costs(path, rows, swept, jobs, platform=None):
                      "seconds times the slots of the sweep's budget the file "
                      "held - written by "
                      "`python3 tools/sweep-selftests.py --record-costs "
-                     ".github/sweep-costs.json`. `--shard` reads only how files "
-                     "compare, to balance the parts; re-record when the split "
-                     "it prints looks lopsided.",
+                     ".github/sweep-costs.json`, or from a saved windows CI "
+                     "log with `--costs-from-log`. `--shard` reads how files "
+                     "compare, to balance the parts, and each file's timeout "
+                     "is a multiple of its own figure; re-record when the "
+                     "split it prints looks lopsided or a file has grown.",
             "platform": platform or sys.platform, "workers": jobs,
             "costs": merged}
     with io.open(path, "w", encoding="utf-8", newline="\n") as fh:
@@ -975,12 +1035,16 @@ def exempt_row(rel_path, reason):
 
 
 def sweep(paths, covered, jobs=None, repo=None, encoding=None,
-          timeout=DEFAULT_TIMEOUT, spaced=False, exempt=None, costs=None):
+          timeout=DEFAULT_TIMEOUT, spaced=False, exempt=None, costs=None,
+          deadline=None):
     """Run every path and return one graded row per file, sorted by path.
 
     `costs` orders the submissions (`run_order`) and sets each file's timeout
     (`file_timeout`); each row carries the `seconds` its child took, which
-    `--record-costs` writes down, and the slots it held (`grant`).
+    `--record-costs` writes down, and the slots it held (`grant`). `deadline`,
+    seconds from this call, cuts each file's timeout to what is left of it when
+    the file is admitted, so a file that hangs is named by then however late it
+    started (`sweep_deadline`).
 
     `exempt` is the spaced leg's table, `SPACED_EXEMPT` unless a caller hands
     one in; it is read on the spaced leg only.
@@ -1008,15 +1072,18 @@ def sweep(paths, covered, jobs=None, repo=None, encoding=None,
     staged = staged_paths(order, repo)
     grant = stage_grant(jobs)
     wait, done = slot_gate(jobs)
+    started = time.time()
 
     def admitted(ticket, path):
         weight = grant if path in staged else 1
         wait(ticket, weight)
+        left = (None if deadline is None
+                else max(1, int(deadline - (time.time() - started))))
         try:
             return run_one(path, repo, encoding,
-                           file_timeout(path, costs, timeout, weight), pycache,
-                           None,
-                           spaced, weight)
+                           file_timeout(path, costs, timeout, weight,
+                                        staged=path in staged, cap=left),
+                           pycache, None, spaced, weight)
         finally:
             done(weight)
     pycache = tempfile.mkdtemp(prefix="sp-run-")
@@ -1122,7 +1189,9 @@ def costs_from_render(text):
     """{path: slot-seconds} read off the loud form's lines - the seconds times
     the slots printed beside them - for a log saved from a run elsewhere, a CI
     cell's. A FAILED line counts too: a timeout's seconds say how long the file
-    was allowed, which is a floor for its cost."""
+    was allowed, which is a floor for its cost. A file printed more than once -
+    logs of two legs or two runs, read as one text - keeps its LONGEST timing,
+    since the table sets timeouts and the slower run is the one they must fit."""
     found = {}
     for line in text.splitlines():
         # A CI log prefixes every line with a timestamp; the row starts after it.
@@ -1133,8 +1202,9 @@ def costs_from_render(text):
             continue
         match = TIMING.match(line[at:].rstrip())
         if match:
-            found[match.group(1).replace("\\", "/")] = round(
-                float(match.group(2)) * int(match.group(3) or 1), 1)
+            path = match.group(1).replace("\\", "/")
+            seconds = round(float(match.group(2)) * int(match.group(3) or 1), 1)
+            found[path] = max(seconds, found.get(path, seconds))
     return found
 
 
@@ -1205,20 +1275,23 @@ def _positive(text):
     return value if value >= 1 else None
 
 
-def budget_line(paths, jobs, costs, floor, repo=None):
+def budget_line(paths, jobs, costs, floor, repo=None, deadline=None):
     """The one line saying how this run shares its budget, with the basis of
-    each number: which files hold several slots, and the longest timeout the
-    cost table gave any file over the floor."""
+    each number: which files hold several slots, the longest timeout the cost
+    table gave any file over the floor, and the deadline when one applies."""
     found = staged_paths(paths, repo)
     staged = sorted(found)
     grant = stage_grant(jobs)
-    longest = max([file_timeout(p, costs, floor, grant if p in found else 1)
+    longest = max([file_timeout(p, costs, floor, grant if p in found else 1,
+                                staged=p in found, cap=deadline)
                    for p in paths] or [floor])
     return ("budget: %d slots; %d staged suites hold %d each (%s); per-file "
-            "timeout %ds, up to %ds for a file the cost table times as heavy\n"
+            "timeout %ds, up to %ds for a file the cost table times as heavy%s\n"
             % (jobs, len(staged), stage_grant(jobs),
                ", ".join(os.path.basename(p) for p in staged) or "none",
-               floor, longest))
+               floor, longest,
+               "" if deadline is None else
+               "; every file named by %ds, the CI deadline" % (deadline,)))
 
 
 def record_from_log(log, record, platform, workers):
@@ -1317,9 +1390,10 @@ def main(argv):
                              "refusing to report a green part over nothing\n"
                              % (index, count))
             return 2
-    sys.stdout.write(budget_line(paths, jobs, costs, timeout))
+    deadline = sweep_deadline()
+    sys.stdout.write(budget_line(paths, jobs, costs, timeout, deadline=deadline))
     rows = sweep(paths, covered, jobs=jobs, encoding=encoding, timeout=timeout,
-                 spaced=spaced, costs=costs)
+                 spaced=spaced, costs=costs, deadline=deadline)
     if record:
         record_costs(record, rows, swept, jobs)
     return (render_quiet if quiet else render)(rows, jobs, encoding=encoding,
@@ -2202,19 +2276,19 @@ def _cases(check):
           "harness that defines the runner is not: %r" % (sorted(bg_live),),
           "plugins/audit/tests/test_drive_phase.py" in bg_live
           and "plugins/audit/tests/_harness.py" not in bg_live)
-    bg_costs = {"heavy": 150.0, "light": 10.0}
+    bg_costs = {"heavy": 450.0, "light": 10.0}
     bg_to = [file_timeout("heavy", bg_costs), file_timeout("light", bg_costs),
              file_timeout("never", bg_costs),
              file_timeout("heavy", bg_costs, 9000),
-             file_timeout("heavy", {"heavy": 75.1}),
+             file_timeout("heavy", {"heavy": 225.1}),
              file_timeout("heavy", bg_costs, slots=3)]
     check("bg3 a file's timeout is the floor, or `TIMEOUT_PER_COST` times its "
           "recorded slot-seconds over the slots it holds when that is longer - "
           "rounded up, never under the floor, the floor for a file never "
           "timed: %r" % (bg_to,),
-          bg_to == [150 * TIMEOUT_PER_COST, DEFAULT_TIMEOUT, DEFAULT_TIMEOUT,
-                    9000, int(-(-75.1 * TIMEOUT_PER_COST // 1)),
-                    150 * TIMEOUT_PER_COST // 3]
+          bg_to == [450 * TIMEOUT_PER_COST, DEFAULT_TIMEOUT, DEFAULT_TIMEOUT,
+                    9000, int(-(-225.1 * TIMEOUT_PER_COST // 1)),
+                    450 * TIMEOUT_PER_COST // 3]
           and min(bg_to[0], bg_to[4], bg_to[5]) > DEFAULT_TIMEOUT)
 
     bg_wait, bg_done = slot_gate(4)
@@ -2259,21 +2333,23 @@ def _cases(check):
               "grant=3 timeout=77" in bg_one["output"])
         bg_rows = dict((r["path"], r) for r in sweep(
             ["plain-suite", "staged-suite"], set(), jobs=4, repo=bg_box,
-            costs={"staged-suite": 300.0}))
+            costs={"staged-suite": 900.0}))
         check("bg6 the sweep holds `stage_grant(jobs)` slots for a staged suite "
               "and one for any other file, gives the timed-heavy one its "
               "calibrated timeout, and tells each child so: %r"
               % (dict((k, (v.get("grant"), v.get("timeout"), v.get("output")))
                       for k, v in bg_rows.items()),),
               bg_rows["staged-suite"]["grant"] == 3
-              and "grant=3 timeout=%d" % (100 * TIMEOUT_PER_COST,)
+              and "grant=3 timeout=%d" % (300 * TIMEOUT_PER_COST,)
               in bg_rows["staged-suite"]["output"]
               and bg_rows["plain-suite"]["grant"] == 1
               and "grant=1 timeout=%d" % (DEFAULT_TIMEOUT,)
               in bg_rows["plain-suite"]["output"]
               and all(r["ok"] for r in bg_rows.values()))
-        bg_line = budget_line(["plain-suite", "staged-suite"], 4, {"staged-suite": 300.0},
+        bg_line = budget_line(["plain-suite", "staged-suite"], 4, {"staged-suite": 900.0},
                               DEFAULT_TIMEOUT, repo=bg_box)
+        bg_cut = budget_line(["plain-suite", "staged-suite"], 4, {"staged-suite": 900.0},
+                             DEFAULT_TIMEOUT, repo=bg_box, deadline=500)
     finally:
         remove_tree(bg_box)
     check("bg6b the budget line says what each number came from - the slots, "
@@ -2282,7 +2358,9 @@ def _cases(check):
           bg_line.startswith("budget: 4 slots; 1 staged suites hold 3 each "
                              "(staged-suite); per-file timeout %ds"
                              % (DEFAULT_TIMEOUT,))
-          and "up to %ds" % (100 * TIMEOUT_PER_COST,) in bg_line)
+          and "up to %ds" % (300 * TIMEOUT_PER_COST,) in bg_line
+          and "deadline" not in bg_line
+          and "up to 500s" in bg_cut and "named by 500s" in bg_cut)
 
     bg_buf = io.StringIO()
     render([dict(grade("a/heavy-suite", 0, "2/2 cases passed\n", set()),
@@ -2304,6 +2382,117 @@ def _cases(check):
           "[123.5s, 3 slots]" in bg_text and "[0.5s]" in bg_text
           and bg_read[0] == bg_read[1]
           == {"a/heavy-suite": 370.5, "a/light-suite": 0.5, "a/hung-suite": 300.0})
+    bg_twice = costs_from_render(bg_text + "\n" + bg_text.replace(
+        "[123.5s, 3 slots]", "[23.5s, 3 slots]").replace("[0.5s]", "[9.0s]"))
+    check("bg7b a log carrying one file twice - two legs, two runs - records the "
+          "LONGER of its timings, whichever came first, because the table is "
+          "what sets a timeout and the slower run is the one it must fit: %r"
+          % (bg_twice,),
+          bg_twice.get("a/heavy-suite") == 370.5
+          and bg_twice.get("a/light-suite") == 9.0)
+
+    # --- a stale table never tightens a timeout; a deadline names a hang ------
+    tt_box = tempfile.mkdtemp(prefix="sweep-deadline-")
+    try:
+        tt_ok = "print('1/1 cases passed')\n"
+        tt_files = {
+            "plain-suite": tt_ok,
+            "staged-suite": tt_ok + "if False:\n    staged_main()\n",
+            "a-slow": "import time\ntime.sleep(1.5)\n" + tt_ok,
+            "b-quick": tt_ok,
+            "hung": "import time\ntime.sleep(60)\n" + tt_ok,
+        }
+        for tt_name, tt_body in tt_files.items():
+            with io.open(os.path.join(tt_box, tt_name), "w",
+                         encoding="utf-8") as fh:
+                fh.write(tt_body)
+        # The table times neither suite: its one entry names a file that is
+        # gone (a ghost - the shape a rename leaves). 1000 slot-seconds over
+        # the three slots the staged suite holds is well above the floor at
+        # any factor of one or more, so the floor and the calibrated figure
+        # cannot coincide.
+        tt_rows = dict((r["path"], r) for r in sweep(
+            ["plain-suite", "staged-suite"], set(), jobs=4, repo=tt_box,
+            costs={"renamed-away": 1000.0}))
+        tt_want = int(-(-TIMEOUT_PER_COST * 1000.0 // 3))
+        check("tt0 a STAGED suite the cost table does not time gets the largest "
+              "timeout any entry in it would be given at the same slots - a "
+              "ghost's included - never the floor, while an untimed ordinary "
+              "file gets the floor: %r"
+              % (dict((k, v.get("timeout")) for k, v in tt_rows.items()),),
+              tt_rows["staged-suite"].get("timeout") == tt_want
+              and tt_want > DEFAULT_TIMEOUT
+              and tt_rows["plain-suite"].get("timeout") == DEFAULT_TIMEOUT
+              and all(r["ok"] for r in tt_rows.values()))
+        tt_heavy = {"heavy": 1500.0, "light": 10.0}
+        tt_to = [file_timeout("new", tt_heavy, slots=3, staged=True),
+                 file_timeout("new", tt_heavy, slots=3, staged=False),
+                 file_timeout("heavy", tt_heavy, slots=3, staged=True),
+                 file_timeout("new", {}, slots=3, staged=True),
+                 file_timeout("new", tt_heavy, slots=3, staged=True, cap=400)]
+        check("tt1 ...and directly: a staged file with no entry is never given "
+              "less than the heaviest recorded staged file holding the same "
+              "slots, an ordinary one gets the floor, an empty table gives the "
+              "floor, and a cap bounds every answer: %r" % (tt_to,),
+              tt_to == [int(-(-TIMEOUT_PER_COST * 1500.0 // 3)), DEFAULT_TIMEOUT,
+                        int(-(-TIMEOUT_PER_COST * 1500.0 // 3)), DEFAULT_TIMEOUT,
+                        400]
+              and tt_to[0] > DEFAULT_TIMEOUT)
+
+        tt_late = dict((r["path"], r) for r in sweep(
+            ["a-slow", "b-quick"], set(), jobs=1, repo=tt_box,
+            costs={"a-slow": 100.0}, deadline=60))
+        check("tt2 under a deadline a file started late is given only what is "
+              "left of it - one worker, so `b-quick` starts after `a-slow`'s "
+              "1.5s and gets under the 60s the first file got: %r"
+              % (dict((k, v.get("timeout")) for k, v in tt_late.items()),),
+              tt_late["a-slow"].get("timeout") <= 60
+              and tt_late["b-quick"].get("timeout") < 60
+              and all(r["ok"] for r in tt_late.values()))
+        tt_t0 = time.time()
+        tt_hung = sweep(["hung"], set(), jobs=1, repo=tt_box, deadline=3)[0]
+        tt_took = time.time() - tt_t0
+        check("tt3 a file that hangs past the deadline is NAMED as a timeout "
+              "when the deadline falls, not waited on until its own calibrated "
+              "timeout - which is what lets the sweep say which file hung "
+              "before the CI job's own limit kills it: %r after %.1fs"
+              % (tt_hung.get("why"), tt_took),
+              tt_hung["ok"] is False
+              and "did not finish within" in (tt_hung.get("why") or "")
+              and tt_took < 30)
+    finally:
+        remove_tree(tt_box)
+
+    tt_env = [sweep_deadline({"CI": "true"}), sweep_deadline({"CI": "false"}),
+              sweep_deadline({})]
+    check("tt4 the deadline applies on a CI runner, where a job limit exists to "
+          "beat, and nowhere else - a workstation run has no runner to be "
+          "killed by: %r" % (tt_env,),
+          tt_env == [SWEEP_DEADLINE, None, None])
+    tt_ci_path = os.path.join(REPO, ".github", "workflows", "ci.yml")
+    with io.open(tt_ci_path, encoding="utf-8") as fh:
+        tt_ci = fh.read()
+    tt_job = re.search(r"^  selftests:\n(?:    .*\n)*?    timeout-minutes: (\d+)",
+                       tt_ci, re.M)
+    tt_minutes = int(tt_job.group(1)) if tt_job else None
+    tt_costs, _tt_problem = load_costs(COSTS_PATH)
+    tt_live = sweep_files()
+    tt_staged = staged_paths(tt_live)
+    tt_grant = stage_grant(4)
+    tt_most = max(file_timeout(p, tt_costs, DEFAULT_TIMEOUT,
+                               tt_grant if p in tt_staged else 1,
+                               staged=p in tt_staged)
+                  for p in tt_live)
+    check("tt5 the deadline plus the setup allowance fits inside the `selftests` "
+          "job's own timeout-minutes in ci.yml, so a hung file is named before "
+          "the runner cancels the job, and no file's CALIBRATED timeout on the "
+          "live table reaches past it - so the deadline cuts only a hang, not the "
+          "margin a heavy file was given: deadline %ds + setup %ds vs %r minutes; longest "
+          "file timeout %ds" % (SWEEP_DEADLINE, CI_SETUP_ALLOWANCE, tt_minutes,
+                                tt_most),
+          tt_minutes is not None
+          and SWEEP_DEADLINE + CI_SETUP_ALLOWANCE < tt_minutes * 60
+          and tt_most <= SWEEP_DEADLINE)
 
     # --- a mutating gate sweep holds a marker; this sweep refuses to read the tree ---
     import _suite

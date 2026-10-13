@@ -29,23 +29,29 @@ on:
 # 2026-10-09 ubuntu run spent all six of them on a screenshot check that had
 # stopped printing, then reported "cancelled" rather than naming a step.
 #
-# Each bound is at least twice the longest FINISHED run of that job - success or
-# failure; a cancelled job measures the cancel, not the job. The jobs were
-# re-measured after the matrix became one cell per leg and shard, over ci.yml run
-# 38379717433 (ci/p127 at 544576f, every job green, whole run 10m20s), re-derived with
+# Each bound is two to three times the longest FINISHED run of that job - success
+# or failure; a cancelled job measures the cancel, not the job - and a job whose
+# three times is under five minutes may sit at five: a sub-minute measurement
+# samples none of the runner provisioning and install variance (`lint`'s pip
+# installs, `plugin-validate`'s npm install of the CLI) its bound still has to
+# cover. The jobs were re-measured after the matrix became one cell per leg and
+# shard, over ci.yml run 38379717433 (ci/p127 at 544576f, every job green, whole
+# run 10m20s), re-derived with
 #   gh run view 38379717433 --json jobs --jq '.jobs[] | [.name, .conclusion, .startedAt, .completedAt]'
-# History, not a claim about today: that run's windows cells took 6m48s to 9m18s
-# (the cp1252 cells longest), its ubuntu cells 0m28s to 4m09s, and the retired
-# one-job-per-OS shape peaked at 24m59s (run 36646625966). gate-parity.py
-# (`job_bound_evidence`) fails the build when a job has no `longest` line or its
-# bound is under twice the figure:
+# and run 38382182020 (at 1730909, every job green) found no job longer. History,
+# not a claim about today: run 38379717433's windows cells took 6m48s to 9m18s (the
+# cp1252 cells longest), its ubuntu cells 0m28s to 4m09s, and the retired
+# one-job-per-OS shape peaked at 24m59s (run 36646625966). `selftests` sits at 26
+# rather than at twice its figure because its sweep has a deadline that must fit
+# inside it (see the job). gate-parity.py (`job_bound_evidence`) fails the build
+# when a job has no `longest` line or its bound is outside that range:
 #   longest selftests: 9m18s (run 38379717433, windows-latest)
 #   longest manifests: 10m16s (run 38379717433)
 #   longest lint: 0m35s (run 38379717433)
 #   longest plugin-validate: 0m14s (run 38379717433)
-# When a job grows, re-measure and rewrite its line; a bound left under twice the
-# figure is what the check refuses. A bound far above twice the figure is as wrong
-# the other way: a hung cell holds a runner until it, so keep it near 2-3x.
+# When a job grows, re-measure and rewrite its line; a bound under twice the figure
+# is refused, and so is one over three times it (or over five minutes for a job
+# that short): a hung cell holds a runner until its bound.
 jobs:
   # ONE JOB PER LEG AND SHARD, all at once. The sweep's three legs used to run one
   # after another in a single job per OS, each over the whole tree on half the
@@ -66,21 +72,27 @@ jobs:
   # 304-383s on four workers but killed three files at the then-fixed 300s per-file
   # cap, with `test_drive_phase.py`'s blocks squeezed onto two cores. Now each part
   # holds about a third of the table's slot-seconds (the split prints its basis), and
-  # windows costs about two to two and a half core-seconds per darwin slot-second
-  # (run 38324787932: a whole windows leg, 16.7 minutes on two workers of a four-core
-  # runner, is at most about 4000 core-seconds against the table's total), so a
-  # windows cell is a third of that over four cores: 330-410s of sweep, the staged
-  # suite's own wall (its serial block sum over three slots) inside it, plus about a
-  # minute of checkout and setup. Each file's timeout is calibrated from its cost
+  # the table is windows slot-seconds now, so a windows cell is a third of its total
+  # over four slots, the staged suite's own wall (its serial block sum over three
+  # slots) inside it, plus checkout and setup. Measured rather than predicted: runs
+  # 38379717433 and 38382182020 put each windows sweep step at about 380-540s, the
+  # cell holding two staged suites longest, since the second waits for the first's
+  # slots. Each file's timeout is calibrated from its cost
   # (`file_timeout`), so the heaviest are allowed several times what they need while
-  # a hang is still killed. Re-derive these from the next run's job times and from
-  # the per-file seconds its log now prints, rather than trusting them:
+  # a hang is still killed, and the sweep cuts every timeout to its CI deadline
+  # (`SWEEP_DEADLINE`), so a hung file is named before this job's `timeout-minutes`
+  # cancels it with nothing named - the arithmetic is beside that constant, and the
+  # runner's case tt5 reads this job's bound back out of this file. The table is
+  # recorded from WINDOWS cells, the platform that binds, keeping a file's longer
+  # timing when the log holds it twice. Re-derive these from the next run's job times
+  # and from the per-file seconds its log prints, rather than trusting them:
   #   gh run view <id> --json jobs --jq '.jobs[] | [.name, .startedAt, .completedAt]'
-  #   python tools/sweep-selftests.py --costs-from-log <saved log> --platform win32 \
-  #       --record-costs .github/sweep-costs.json
+  #   gh run view <id> --job <windows cell> --log > <saved log>   # each windows cell
+  #   python tools/sweep-selftests.py --costs-from-log <saved logs, concatenated> \
+  #       --platform windows-latest --record-costs .github/sweep-costs.json
   selftests:
     name: selftests (${{ matrix.os }}, ${{ matrix.leg }} ${{ matrix.shard }})
-    timeout-minutes: 25
+    timeout-minutes: 26
     strategy:
       fail-fast: false
       matrix:

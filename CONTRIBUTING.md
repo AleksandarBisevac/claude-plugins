@@ -248,12 +248,16 @@ the script is only a caller:
 # CI RUNS EACH LEG BELOW AS SHARDS, not as one job: every leg is a matrix cell per part,
 # `--shard I/N`, on every core of the runner (the sweep reads `CI=true`). The parts are
 # balanced by the per-file costs in `.github/sweep-costs.json`, which
-# `--record-costs .github/sweep-costs.json` rewrites from a real run; a stale table costs
-# balance, never coverage - an entry naming a file no longer swept is ignored and printed as
-# a `note:`, a swept file with no entry is estimated, and neither turns the sweep red -
-# because the union of the parts is the whole tree (the runner's
-# own sh0 case) and `gate-parity.py`'s `shard_matrix_drift()` fails a matrix that skips a
-# part. Here a leg runs whole, which is the same leg.
+# `--record-costs .github/sweep-costs.json` rewrites from a real run. THE TABLE DECIDES TWO
+# THINGS: the split, and each file's timeout (below). A stale table can therefore cost
+# balance, and it can cost a timeout too tight for a file that has grown past several times
+# its entry. It cannot cost coverage, because the union of the parts is the whole tree (the
+# runner's own sh0 case) and `gate-parity.py`'s `shard_matrix_drift()` fails a matrix that
+# skips a part. And staleness by OMISSION tightens nothing: an entry naming a file no longer
+# swept is printed as a `note:` and ignored by the split, a swept file with no entry is
+# estimated for the split, and for its timeout an untimed staged suite gets the largest any
+# entry - that ghost included - would get, an untimed ordinary file the floor (cases tt0,
+# tt1). Here a leg runs whole, which is the same leg.
 #
 # THE WORKERS ARE ONE BUDGET OF SLOTS, here and in CI. A staged suite (its `__main__` is
 # `_harness.staged_main`) is admitted holding `stage_grant(jobs)` slots, in costliest-first
@@ -261,9 +265,15 @@ the script is only a caller:
 # workers and the suite's blocks never add up past the machine. Each file's timeout is the
 # floor (`--timeout`) or a multiple of its recorded seconds, whichever is longer - a hang
 # detector calibrated per file, handed down as `SWEEP_FILE_TIMEOUT` so a block still times out
-# before its file. The run prints a `budget:` line saying which suites held several slots and
-# the longest timeout given, and every per-file line carries its seconds: a saved CI log
-# re-records the table with `--costs-from-log LOG --platform NAME --record-costs PATH`.
+# before its file. On a CI runner every timeout is also cut to what is left of the sweep's
+# deadline (`SWEEP_DEADLINE`), so a hung file is named before the job's own `timeout-minutes`
+# cancels the job with no file named; case tt5 reads that bound out of `ci.yml` and fails when
+# the deadline and the setup allowance stop fitting under it. The run prints a `budget:` line
+# saying which suites held several slots and the longest timeout given, and every per-file
+# line carries its seconds: a saved CI log re-records the table with
+# `--costs-from-log LOG --platform NAME --record-costs PATH`. Record from WINDOWS logs, the
+# platform that binds; a log carrying a file twice (two legs, two runs) keeps its longer
+# timing.
 python3 tools/sweep-selftests.py
 
 # ...and the runner's OWN cases, read directly rather than through itself: a `grade()`
