@@ -1,7 +1,7 @@
 {
   "id": "P126",
   "title": "3.3.0 release: CI green on every OS",
-  "status": "in_progress",
+  "status": "done",
   "description": "The release candidate c298ac59 (main e22f5011 plus the version bump) failed CI run 38299118105: windows-latest selftests (nine files: invariants, audit_lookup, py_launch, stamp_verification, check-committed-pii, orchestrator-state, sweep-selftests, and two suites over the 300s budget) and the ubuntu 'report is interactive' hostile-content leg. 3.2.0 was green on Windows, so these are regressions from P122-P124 work that never ran on Windows CI, and they hold the release.",
   "desiredOutcome": "CI on the 3.3.0 release candidate is green on ubuntu, macOS and windows: every selftest file passes on windows-latest within the sweep's budget, and the report's hostile-content check passes, with no fix weakening what a check asserts.",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "e22f5011046d3287e5d2787b4d5f225f476e1a16",
   "branch": "audit/p126-3-3-0-release-ci-green-on-ever",
-  "mergedAt": null,
+  "mergedAt": "2026-10-13T06:49:10Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -1357,5 +1357,6 @@
     "runId": "2026-10-13T06:48:13Z.0f063c",
     "status": "passed",
     "at": "2026-10-13T06:48:13Z"
-  }
+  },
+  "mergedHead": "db48dd14d512a7f19875dd235e2c1e5cb66d3762"
 }
