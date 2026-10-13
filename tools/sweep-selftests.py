@@ -3,7 +3,9 @@
 Run every `--selftest` in the tree, in parallel, under the STRICTEST of the three
 sweeps that used to exist.
 
-    tools/sweep-selftests.py                     # the sweep, all cores but two
+    tools/sweep-selftests.py                     # the sweep, all cores but two (every core under CI=true)
+    tools/sweep-selftests.py --shard 2/3         # the second of three cost-balanced parts
+    tools/sweep-selftests.py --record-costs .github/sweep-costs.json   # write per-file timings
     tools/sweep-selftests.py --jobs 1            # serial, for a bisect
     tools/sweep-selftests.py --encoding cp1252   # the "can it print" pass
     tools/sweep-selftests.py --quiet             # failures and totals; no per-file lines
@@ -78,6 +80,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from concurrent import futures
 
 # The path bootstrap, adapted: this file lives in tools/, outside scripts/, so the
@@ -569,6 +572,7 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     for root in (scratch, home):
         io.open(os.path.join(root, SENTINEL), "wb").write(SENTINEL_BYTES)
     argv = [interpreter, os.path.join(repo, rel_path), "--selftest"]
+    began = time.monotonic()
     try:
         done = subprocess.run(argv, cwd=scratch, env=env, stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, timeout=timeout)
@@ -578,6 +582,7 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
         code, output = None, "did not finish within %ds" % (timeout,)
     except OSError as exc:
         code, output = None, "could not be started: %s" % (exc,)
+    seconds = time.monotonic() - began
     # MEASURED BEFORE THE REMOVAL, so what the child left is read rather than
     # inferred from a cleanup that may itself have failed.
     debris = child_debris(scratch, home)
@@ -593,7 +598,8 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     # child that built a git fixture left loose objects windows will not unlink.
     for root in owned:
         remove_tree(root)
-    return {"path": rel_path, "code": code, "output": output, "debris": debris}
+    return {"path": rel_path, "code": code, "output": output, "debris": debris,
+            "seconds": seconds}
 
 
 def cases_in(output):
@@ -668,14 +674,134 @@ def grade(rel_path, code, output, covered, encoding_pass=False, debris=()):
 
 
 # --- the sweep ----------------------------------------------------------------
-def default_jobs(cpus=None):
-    """All cores but two, and never below one.
+def default_jobs(cpus=None, environ=None):
+    """All cores but two on a workstation, every core on a CI runner, never below one.
 
     Two are left for the machine that is also running an editor and a browser gate;
-    below one is not a number of workers.
+    below one is not a number of workers. A CI runner (`CI=true`, which GitHub
+    Actions sets on every job) has nobody typing on it, and keeping two of its four
+    cores idle is what made the windows leg print `2 workers` and take twice as long.
     """
     cpus = cpus if cpus is not None else (os.cpu_count() or 1)
+    environ = os.environ if environ is None else environ
+    if environ.get("CI", "").strip().lower() == "true":
+        return max(1, cpus)
     return max(1, cpus - 2)
+
+
+# --- shards: one leg split across several CI jobs -----------------------------
+# A leg run as ONE job is as slow as the whole tree on one runner. `--shard I/N`
+# runs the I-th of N parts, and the parts are built so that running all N runs
+# every file exactly once (`sh0`) - whatever the cost table says, because the table
+# only decides WHERE a file goes, never WHETHER. A stale table costs balance, not
+# coverage.
+#
+# BALANCED BY RECORDED COST, not by count. The staged suites take minutes while
+# most files take a second, so an even count can put two of them in one part and
+# leave that job the critical path of the whole run. The split is greedy
+# least-loaded over the files heaviest first, which keeps the heaviest in different
+# parts while there are parts to spare (`sh2`) and bounds any two parts' loads
+# within the single costliest file (`sh3`).
+#
+# THE COSTS ARE RECORDED, NOT TYPED: `--record-costs .github/sweep-costs.json` writes
+# what a run measured, per file. They are one machine's seconds; the split reads
+# only how files compare to each other, which holds across machines far better
+# than any one figure does.
+# KEPT UNDER `.github/`, not beside this file: it is CI's input, and a table of
+# repo paths under `tools/` would be read as basename references by `_refs`'
+# tool-name lint, which resolves names against the plugin's trees alone.
+COSTS_PATH = os.path.join(REPO, ".github", "sweep-costs.json")
+
+
+def load_costs(path):
+    """`({repo-relative path: seconds}, problem)` - problem is None when read.
+
+    A missing or unreadable table is a problem the caller PRINTS, not a reason to
+    refuse: every file then costs the same estimate and the split degrades to an
+    even count, which still covers every file once."""
+    try:
+        with io.open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (IOError, OSError, ValueError) as exc:
+        return {}, "no cost table read from %s (%s)" % (path, exc)
+    costs = data.get("costs") if isinstance(data, dict) else None
+    if not isinstance(costs, dict) or not all(
+            isinstance(v, (int, float)) for v in costs.values()):
+        return {}, "%s carries no `costs` object of numbers" % (path,)
+    return dict((k, float(v)) for k, v in costs.items()), None
+
+
+def _median(costs):
+    values = sorted(costs.values())
+    return values[(len(values) - 1) // 2] if values else 1.0
+
+
+def cost_of(costs, path, estimate=None):
+    """The recorded cost of `path`, or the table's median for a file never timed.
+
+    The median and not zero: zero would make every new file free, and a split
+    that thinks a file is free piles all of them into whichever part is lightest."""
+    if path in costs:
+        return costs[path]
+    return _median(costs) if estimate is None else estimate
+
+
+def run_order(paths, costs):
+    """`paths` costliest first, ties by path - the order a shard submits them in,
+    so its slowest suite starts at once and the rest fill the workers beside it."""
+    estimate = _median(costs)
+    return sorted(set(paths), key=lambda p: (-cost_of(costs, p, estimate), p))
+
+
+def shard_paths(paths, costs, count):
+    """`count` lists, each sorted, that partition `paths` - part I-1 is shard I/N.
+
+    Greedy least-loaded over `run_order`, a tie going to the part holding fewer
+    files and then to the lower index, so the split is a function of the set of
+    paths and the table alone. The file-count tie-break is what keeps a part from
+    staying empty when costs round to zero."""
+    estimate = _median(costs)
+    loads = [0.0] * count
+    parts = [[] for _ in range(count)]
+    for path in run_order(paths, costs):
+        at = min(range(count), key=lambda k: (loads[k], len(parts[k]), k))
+        parts[at].append(path)
+        loads[at] += cost_of(costs, path, estimate)
+    return [sorted(part) for part in parts]
+
+
+def parse_shard(text):
+    """`(index, count)` for `I/N` with 1 <= I <= N, else None."""
+    match = re.match(r"^([0-9]+)/([0-9]+)$", text or "")
+    if not match:
+        return None
+    index, count = int(match.group(1)), int(match.group(2))
+    if count < 1 or not 1 <= index <= count:
+        return None
+    return index, count
+
+
+def costs_from_rows(rows):
+    """{path: seconds, rounded} for every row a run timed; an exempt row has none."""
+    return dict((r["path"], round(r["seconds"], 1)) for r in rows
+                if r.get("seconds") is not None)
+
+
+def record_costs(path, rows, swept, jobs):
+    """Write the cost table: this run's timings over the table already at `path`,
+    keeping only files the sweep still reaches, so one shard's run refreshes its
+    own files and a deleted file leaves the table."""
+    old, _problem = load_costs(path)
+    merged = dict((k, v) for k, v in old.items() if k in swept)
+    merged.update(costs_from_rows(rows))
+    data = {"about": "Per-file wall seconds of each `--selftest`, written by "
+                     "`python3 tools/sweep-selftests.py --record-costs "
+                     ".github/sweep-costs.json`. `--shard` reads only how files "
+                     "compare, to balance the parts; re-record when the split "
+                     "it prints looks lopsided.",
+            "platform": sys.platform, "workers": jobs, "costs": merged}
+    with io.open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(json.dumps(data, indent=1, sort_keys=True) + "\n")
 
 
 def exempt_row(rel_path, reason):
@@ -685,8 +811,11 @@ def exempt_row(rel_path, reason):
 
 
 def sweep(paths, covered, jobs=None, repo=None, encoding=None,
-          timeout=DEFAULT_TIMEOUT, spaced=False, exempt=None):
+          timeout=DEFAULT_TIMEOUT, spaced=False, exempt=None, costs=None):
     """Run every path and return one graded row per file, sorted by path.
+
+    `costs` orders the submissions (`run_order`) and nothing else; each row
+    carries the `seconds` its child took, which `--record-costs` writes down.
 
     `exempt` is the spaced leg's table, `SPACED_EXEMPT` unless a caller hands
     one in; it is read on the spaced leg only.
@@ -713,14 +842,15 @@ def sweep(paths, covered, jobs=None, repo=None, encoding=None,
     pycache = tempfile.mkdtemp(prefix="sp-run-")
     try:
         with futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+            # COSTLIEST FIRST, so the slowest suite is never the last one started.
             pending = [pool.submit(run_one, p, repo, encoding, timeout, pycache,
                                    None, spaced)
-                       for p in paths]
+                       for p in run_order(paths, costs or {})]
             for fut in futures.as_completed(pending):
                 ran = fut.result()
-                rows.append(grade(ran["path"], ran["code"], ran["output"], covered,
-                                  encoding_pass=bool(encoding),
-                                  debris=ran["debris"]))
+                graded = grade(ran["path"], ran["code"], ran["output"], covered,
+                               encoding_pass=bool(encoding), debris=ran["debris"])
+                rows.append(dict(graded, seconds=ran.get("seconds")))
     finally:
         shutil.rmtree(pycache, ignore_errors=True)
     return sorted(rows, key=lambda r: r["path"])
@@ -858,6 +988,13 @@ def main(argv):
     encoding = _flag_value(argv, "--encoding", None)
     timeout = int(_flag_value(argv, "--timeout", DEFAULT_TIMEOUT))
     jobs = int(_flag_value(argv, "--jobs", default_jobs()))
+    shard_text = _flag_value(argv, "--shard", None)
+    shard = parse_shard(shard_text) if shard_text is not None else None
+    if shard_text is not None and shard is None:
+        sys.stderr.write("sweep-selftests: --shard takes I/N with 1 <= I <= N, "
+                         "got %r\n" % (shard_text,))
+        return 2
+    record = _flag_value(argv, "--record-costs", None)
     # THE INVENTORY, MADE OPTIONAL. One line per file whether or not it has
     # anything to say is most of what this run puts into an agent's context;
     # `--quiet` keeps the failures and the totals and drops the rest. A human
@@ -882,8 +1019,29 @@ def main(argv):
                          "migrated-file rules below would assert nothing. Run "
                          "`_output.py --covered` and find out why.\n")
         return 2
+    costs, cost_problem = load_costs(COSTS_PATH)
+    swept = set(paths)
+    if shard is not None:
+        index, count = shard
+        whole = len(paths)
+        paths = shard_paths(paths, costs, count)[index - 1]
+        timed = len([p for p in paths if p in costs])
+        # THE BASIS OF THE SPLIT, printed with it: which table, and how much of
+        # this part it actually timed rather than estimated.
+        sys.stdout.write("shard %d/%d: %d files of the %d swept, split by %s "
+                         "(%d timed there, %d estimated at its median)\n"
+                         % (index, count, len(paths), whole,
+                            cost_problem or os.path.relpath(COSTS_PATH, REPO),
+                            timed, len(paths) - timed))
+        if not paths:
+            sys.stderr.write("sweep-selftests: shard %d/%d holds no file - "
+                             "refusing to report a green part over nothing\n"
+                             % (index, count))
+            return 2
     rows = sweep(paths, covered, jobs=jobs, encoding=encoding, timeout=timeout,
-                 spaced=spaced)
+                 spaced=spaced, costs=costs)
+    if record:
+        record_costs(record, rows, swept, jobs)
     return (render_quiet if quiet else render)(rows, jobs, encoding=encoding,
                                                spaced=spaced)
 
@@ -977,8 +1135,8 @@ def _cases(check):
 
     check("j0 worker count leaves two cores and never drops below one, so a "
           "single-core runner still runs",
-          default_jobs(14) == 12 and default_jobs(1) == 1
-          and default_jobs(2) == 1)
+          default_jobs(14, {}) == 12 and default_jobs(1, {}) == 1
+          and default_jobs(2, {}) == 1)
 
     v = _flag_value(["--jobs", "4"], "--jobs", 99)
     w = _flag_value(["--jobs=4"], "--jobs", 99)
@@ -1602,6 +1760,106 @@ def _cases(check):
               and all(len(r) > 40 for r in SPACED_EXEMPT.values()))
     finally:
         remove_tree(sp_work)
+
+    # --- --shard I/N: a deterministic, cost-balanced split of the file list ---
+    sh_full = sweep_files()
+    sh_costs, sh_problem = load_costs(COSTS_PATH)
+    sh_bad = []
+    for sh_n in range(1, 5):
+        sh_parts = shard_paths(sh_full, sh_costs, sh_n)
+        sh_seen = [p for part in sh_parts for p in part]
+        if not (len(sh_parts) == sh_n and all(sh_parts)
+                and len(sh_seen) == len(set(sh_seen))
+                and set(sh_seen) == set(sh_full)):
+            sh_bad.append(sh_n)
+    check("sh0 for N in 1..4 the shards of the LIVE file list are N non-empty, "
+          "disjoint parts whose union is exactly the full sweep - so running "
+          "every shard runs every file once: bad N = %r" % (sh_bad,),
+          sh_bad == [] and len(sh_full) > 100)
+
+    sh_rev = list(reversed(sh_full))
+    check("sh1 the split is deterministic and independent of the order the "
+          "list arrives in, so every CI job computes the same shards",
+          all(shard_paths(sh_full, sh_costs, n) == shard_paths(sh_rev, sh_costs, n)
+              for n in range(1, 5)))
+
+    # A table of the case's own: the four heaviest are far above the rest, so a
+    # split that put two of them together is visibly unbalanced.
+    sh_paths = ["t/f%02d" % i for i in range(20)]
+    sh_table = dict((p, 1.0) for p in sh_paths)
+    sh_heavy = sh_paths[3:7]
+    for p in sh_heavy:
+        sh_table[p] = 100.0
+    sh_spread = []
+    for sh_n in range(2, 5):
+        parts = shard_paths(sh_paths, sh_table, sh_n)
+        holding = [len([p for p in part if p in sh_heavy]) for part in parts]
+        if max(holding) - min(holding) > 1:
+            sh_spread.append((sh_n, holding))
+    check("sh2 the costliest files are SPREAD across shards - with four files "
+          "a hundred times heavier than the rest, no shard holds two of them "
+          "while another holds none, for N in 2..4: %r" % (sh_spread,),
+          sh_spread == [])
+
+    # ONE suite as heavy as nine others together: least-loaded keeps it ALONE in
+    # its part, while dealing the files out in turn would hand it four companions.
+    sh_one = dict(("u/f%d" % i, 10.0) for i in range(9))
+    sh_one["u/big"] = 100.0
+    sh_alone = shard_paths(sorted(sh_one), sh_one, 2)
+    check("sh8 the heaviest suite gets its part to itself while the others "
+          "together weigh less than it - the property that gives the slowest "
+          "staged suite its runner's cores: %r" % (sh_alone,),
+          ["u/big"] in sh_alone and len(sh_alone[1 - sh_alone.index(["u/big"])]) == 9)
+
+    sh_loads = []
+    for sh_n in range(2, 5):
+        parts = shard_paths(sh_full, sh_costs, sh_n)
+        loads = [sum(cost_of(sh_costs, p) for p in part) for part in parts]
+        top = max(cost_of(sh_costs, p) for p in sh_full)
+        if max(loads) - min(loads) > top:
+            sh_loads.append((sh_n, loads, top))
+    check("sh3 on the live list and the committed cost table, no two shards' "
+          "recorded loads differ by more than the single costliest file - the "
+          "bound a greedy least-loaded split guarantees: %r" % (sh_loads,),
+          sh_loads == [])
+
+    check("sh4 --shard reads I/N and refuses what names no shard: %r"
+          % ([parse_shard(v) for v in ("1/3", "3/3")],),
+          parse_shard("1/3") == (1, 3) and parse_shard("3/3") == (3, 3)
+          and all(parse_shard(v) is None
+                  for v in ("0/3", "4/3", "3", "x/3", "1/0", "", "-1/3")))
+
+    sh_est = cost_of({"a": 2.0, "b": 4.0, "c": 9.0}, "new")
+    check("sh5 a file the table has never timed is ESTIMATED at the table's "
+          "median, not zero - a zero would pile every new file into one shard "
+          "(got %r)" % (sh_est,),
+          sh_est == 4.0 and cost_of({}, "new") == 1.0)
+
+    sh_order = run_order(sh_paths, sh_table)
+    check("sh6 a shard runs its costliest files FIRST, so the slowest suite "
+          "starts at once and the rest pack around it: %r" % (sh_order[:4],),
+          sorted(sh_order[:4]) == sorted(sh_heavy)
+          and sorted(sh_order) == sorted(sh_paths))
+
+    check("sh7 the committed cost table loads, names only files the sweep "
+          "reaches, and times most of them - a stale table still splits "
+          "correctly but balances by guesses (%s)" % (sh_problem or "read",),
+          sh_problem is None and set(sh_costs) <= set(sh_full)
+          and len(sh_costs) * 2 > len(sh_full))
+
+    check("j1 a CI runner gets EVERY core and a workstation keeps two free: "
+          "%r" % ([default_jobs(4, {"CI": "true"}), default_jobs(4, {})],),
+          default_jobs(4, {"CI": "true"}) == 4 and default_jobs(4, {}) == 2
+          and default_jobs(4, {"CI": "false"}) == 2
+          and default_jobs(1, {"CI": "true"}) == 1)
+
+    rc_rows = [{"path": "a", "seconds": 1.234}, {"path": "b", "seconds": 7.0},
+               {"path": "c", "exempt": "x"}]
+    rc_got = costs_from_rows(rc_rows)
+    check("rc0 a recorded run's costs are the per-file seconds it measured, "
+          "rounded, and a file the leg did not run is not given a cost: %r"
+          % (rc_got,),
+          rc_got == {"a": 1.2, "b": 7.0})
 
     # --- a mutating gate sweep holds a marker; this sweep refuses to read the tree ---
     import _suite

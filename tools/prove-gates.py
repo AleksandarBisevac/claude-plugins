@@ -1097,6 +1097,13 @@ TABLE = (
   '  node tools/check-report-interactive.mjs "$one/one-status.html" || return 1',
   "  true",
   "tools/gate-parity.py", "rt0"),
+ # A SHARDED LEG THAT SKIPS A PART. `--shard` is excused from the leg comparison
+ # only because CI runs every part; the mutation is the matrix that dropped one,
+ # every leg still named on both sides. `shm1` reads the real workflow.
+ ("shard_matrix_drift", ".github/workflows/ci.yml", "replace",
+  "        shard: [1, 2, 3]",
+  "        shard: [1, 2]",
+  "tools/gate-parity.py", "shm1"),
  # ...and the same blind spot for the sweep, whose flags are its legs. CI sweeps a
  # second time under a forced legacy codec; the mutation is the runner that did
  # not, with the sweep still named on both sides so every gate set still agrees.
@@ -1958,6 +1965,13 @@ ALLOW = (
   "        if word in not_legs:",
   "        if word in not_legs and word != \"--jobs\":",
   "tools/gate-parity.py", "sl4"),
+ # THE OVER-FIRE IS CONVICTING A MATRIX THAT RUNS EVERY PART. Drop the comparison
+ # of the listed parts against 1..N and every sharded workflow reads as skipping
+ # one - `shm0`'s clean `[1, 2, 3]` for `/3` is the pair that expects silence.
+ ("shard_matrix_drift", "tools/gate-parity.py", "replace",
+  "            elif [v.strip() for v in lists[0].split(\",\")] != want:",
+  "            elif True:",
+  "tools/gate-parity.py", "shm0"),
  # THE OVER-FIRE THIS RULE IS ONE LINE AWAY FROM. The discriminator is the
  # COMPARISON: four of the five exempted scripts name a committed path in CI and
  # only READ it - `render-report.py docs/audit/audit-plan.json --out-dir /tmp/...`

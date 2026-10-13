@@ -274,6 +274,9 @@ echo "verify: python"
 # `--covered` skip - so a file that exited 0 having asserted nothing was green here
 # and red there. See tools/sweep-selftests.py for the whole story; the point of
 # calling it from both places is that a rule added to it is added to both at once.
+# CI splits each leg into `--shard I/N` jobs whose union is this whole run (the
+# runner's sh0 case, and `gate-parity.py`'s `shard_matrix_drift()` over ci.yml's
+# matrix); here every leg runs whole, which is the same leg.
 run "selftests (hooks + scripts + tests + tools)" python3 tools/sweep-selftests.py
 # THE ONE SUITE THE SWEEP MAY NOT RUN FOR US. The sweep now covers tools/, so every
 # other tool's cases run inside it and no line here repeats them. The runner's own

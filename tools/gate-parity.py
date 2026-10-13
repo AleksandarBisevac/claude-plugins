@@ -1976,6 +1976,13 @@ NOT_LEG_FLAGS = {
     "--quiet": "drops the per-file inventory from the output and keeps the failures "
                "and the totals, so it changes what a reader sees and never which "
                "suites run or how each one is graded",
+    "--shard": "runs one part of a leg's file list on one CI job; the parts' union "
+               "is the full list (the sweep's own sh0 case), and that ci.yml runs "
+               "every part is `shard_matrix_drift()` here, so a sharded side runs "
+               "the same leg as one that runs it whole",
+    "--record-costs": "writes the per-file timings the run measured to a file; it "
+                      "changes what is kept after the run and never which suites "
+                      "run or how each one is graded",
 }
 
 _FLAG_RE = re.compile(r"^--[a-z][a-z0-9-]*$")
@@ -2049,11 +2056,14 @@ def sweep_legs(lines, valued, not_legs=None):
     legs = set()
     unresolved = list(found["unresolved"])
     for env, options, args in found["calls"]:
-        words = list(env) + list(options) + args
-        if any("$" in w for w in words):
-            unresolved.append(" ".join(words + [SWEEP]))
+        # THE LEG FIRST, THEN THE QUESTION WHETHER IT RESOLVED: a flag that is not
+        # a leg is dropped with its value, so a CI matrix expression in `--shard`
+        # does not make the leg unreadable - its value cannot change the leg.
+        leg = _leg_of(args, valued, not_legs)
+        if any("$" in w for w in list(env) + list(options) + list(leg)):
+            unresolved.append(" ".join(list(env) + list(options) + args + [SWEEP]))
             continue
-        legs.add((tuple(sorted(env)), options, _leg_of(args, valued, not_legs)))
+        legs.add((tuple(sorted(env)), options, leg))
     return {"legs": legs, "unresolved": unresolved,
             "calls": len(found["calls"])}
 
@@ -2125,13 +2135,72 @@ def sweep_leg_drift(repo=None, read=None, source=None, not_legs=None):
     return {"findings": findings, "stale": stale, "problem": None}
 
 
+_SHARD_MATRIX_RE = re.compile(r"^\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}/([0-9]+)$")
+
+
+def shard_matrix_drift(text):
+    """[(shard spec, why)] for a `--shard` in the workflow whose parts are not all run.
+
+    `--shard` may differ between the sides only because a sharded leg still runs
+    every file - which holds only if CI runs EVERY part. A spec is either
+    `${{ matrix.<key> }}/N`, whose key must be listed in the workflow as exactly
+    `[1, ..., N]`, or a literal `I/N`, and the literals sharing an N must cover 1..N.
+    A spec in any other form is a finding: what it runs cannot be read here.
+    """
+    found = tool_calls(_yaml_run_lines(text), SWEEP, _is_python)
+    specs = []
+    for _env, _options, args in found["calls"]:
+        for i, word in enumerate(args):
+            if word == "--shard" and i + 1 < len(args):
+                specs.append(args[i + 1])
+            elif word.startswith("--shard="):
+                specs.append(word.split("=", 1)[1])
+    findings = []
+    literal = {}
+    for spec in sorted(set(specs)):
+        got = _SHARD_MATRIX_RE.match(spec)
+        if got:
+            key, count = got.group(1), int(got.group(2))
+            lists = re.findall(r"^\s*%s:\s*\[([^\]]*)\]" % re.escape(key), text,
+                               re.M)
+            want = [str(n) for n in range(1, count + 1)]
+            if len(lists) != 1:
+                findings.append((spec, "the workflow lists `%s:` %d times, so "
+                                       "which parts run cannot be read"
+                                 % (key, len(lists))))
+            elif [v.strip() for v in lists[0].split(",")] != want:
+                findings.append((spec, "the matrix runs parts [%s] of %d, so a "
+                                       "part is never run (or one that is not "
+                                       "there is asked for)"
+                                 % (lists[0].strip(), count)))
+            continue
+        lit = re.match(r"^([0-9]+)/([0-9]+)$", spec)
+        if lit:
+            literal.setdefault(int(lit.group(2)), set()).add(int(lit.group(1)))
+            continue
+        findings.append((spec, "a `--shard` value in a form this reader cannot "
+                               "resolve, so whether every part runs is unknown"))
+    for count, seen in sorted(literal.items()):
+        if seen != set(range(1, count + 1)):
+            findings.append(("%s/%d" % (sorted(seen), count),
+                             "the workflow runs only these parts of %d" % count))
+    return findings
+
+
 def sweep_leg_verdict(repo=None):
     """`sweep_leg_drift()` as findings, with a question nobody could ask AS one."""
     got = sweep_leg_drift(repo)
     if got["problem"] is not None:
         return [(SWEEP, "-", got["problem"])]
-    return got["findings"] + [(flag, "NOT_LEG_FLAGS", why)
-                              for flag, why in got["stale"]]
+    try:
+        with io.open(os.path.join(repo or REPO, CI_REL), encoding="utf-8") as fh:
+            shards = [(spec, "ci.yml / --shard", why)
+                      for spec, why in shard_matrix_drift(fh.read())]
+    except (IOError, OSError, UnicodeDecodeError) as exc:
+        shards = [(SWEEP, "-", "ci.yml could not be read, so whether every "
+                               "shard runs is unknown: %s" % (exc,))]
+    return got["findings"] + shards + [(flag, "NOT_LEG_FLAGS", why)
+                                       for flag, why in got["stale"]]
 
 
 def gates_in(path):
@@ -3808,6 +3877,8 @@ def _cases(check):
                '    enc = _flag_value(argv, "--encoding", None)\n'
                '    jobs = int(_flag_value(argv, "--jobs", 4))\n'
                '    quiet = "--quiet" in argv\n'
+               '    shard = _flag_value(argv, "--shard", None)\n'
+               '    record = _flag_value(argv, "--record-costs", None)\n'
                'if __name__ == "__main__":\n'
                '    if "--selftest" in sys.argv[1:]:\n'
                '        pass\n')
@@ -3888,6 +3959,62 @@ def _cases(check):
           "and `--jobs 4`'s value is consumed with it rather than read as a leg "
           "of its own: %r" % (_sl_knobs,),
           _sl_knobs == {"findings": [], "stale": [], "problem": None})
+
+    # --shard IS NOT A LEG, AND ITS VALUE MAY BE A MATRIX EXPRESSION. Dropping a
+    # not-leg flag BEFORE asking whether the words resolved is what lets CI write
+    # `--shard "${{ matrix.shard }}/3"`; the leg flag beside it is still compared.
+    _sh_wf = ("jobs:\n  j:\n    strategy:\n      matrix:\n"
+              "        shard: [1, 2, 3]\n    steps:\n"
+              "      - name: a\n        run: python tools/sweep-selftests.py "
+              "--shard \"${{ matrix.shard }}/3\"\n"
+              "      - name: b\n        run: python tools/sweep-selftests.py --selftest\n"
+              "      - name: c\n        run: python tools/sweep-selftests.py "
+              "--encoding cp1252 --shard \"${{ matrix.shard }}/3\"\n")
+    _sl_sharded = sweep_leg_drift(read={
+        "verify.sh": _sl_fixed, "ci.yml": _yaml_run_lines(_sh_wf)}, source=_sl_src)
+    check("sl20 a CI side that runs each leg as matrix shards runs the SAME legs as "
+          "a side that runs them whole - the shard's `${{ }}` value is dropped "
+          "with the flag rather than reported unresolved: %r" % (_sl_sharded,),
+          _sl_sharded == {"findings": [], "stale": [], "problem": None})
+    _sl_sh_short = sweep_leg_drift(read={
+        "verify.sh": _sl_fixed,
+        "ci.yml": _yaml_run_lines(_sh_wf.replace(" --encoding cp1252", ""))},
+        source=_sl_src)
+    check("sl21 ...and dropping the shard's value does not drop the LEG beside it: "
+          "the same workflow without its codec flag is missing that leg: %r"
+          % (_sl_sh_short["findings"],),
+          [(leg, side) for leg, side, _n in _sl_sh_short["findings"]]
+          == [(SWEEP + " --encoding cp1252", "ci.yml")])
+
+    _shm_ok = shard_matrix_drift(_sh_wf)
+    _shm_gap = shard_matrix_drift(_sh_wf.replace("[1, 2, 3]", "[1, 2]"))
+    _shm_lit = shard_matrix_drift(
+        "jobs:\n  j:\n    steps:\n"
+        "      - name: a\n        run: python tools/sweep-selftests.py --shard 1/3\n"
+        "      - name: b\n        run: python tools/sweep-selftests.py --shard=2/3\n")
+    _shm_lit_ok = shard_matrix_drift(
+        "jobs:\n  j:\n    steps:\n"
+        "      - name: a\n        run: python tools/sweep-selftests.py --shard 1/2\n"
+        "      - name: b\n        run: python tools/sweep-selftests.py --shard=2/2\n")
+    _shm_odd = shard_matrix_drift(
+        "jobs:\n  j:\n    steps:\n"
+        "      - name: a\n        run: python tools/sweep-selftests.py --shard \"$S\"\n")
+    check("shm0 every part of a sharded leg runs: a matrix listing [1, 2, 3] for "
+          "`/3` and literals covering 1/2 and 2/2 are clean; a matrix of [1, 2] "
+          "for `/3`, literals 1/3 and 2/3 alone, and a value this reader cannot "
+          "resolve are each a finding - the shard flag is excused from the leg "
+          "comparison ONLY because of this: %r"
+          % ([_shm_ok, _shm_gap, _shm_lit, _shm_lit_ok, _shm_odd],),
+          _shm_ok == [] and _shm_lit_ok == [] and len(_shm_gap) == 1
+          and "[1, 2]" in _shm_gap[0][1] and len(_shm_lit) == 1
+          and len(_shm_odd) == 1)
+
+    _shm_live_text = io.open(os.path.join(REPO, CI_REL), encoding="utf-8").read()
+    _shm_live = shard_matrix_drift(_shm_live_text)
+    _shm_specs = _shm_live_text.count("--shard ")
+    check("shm1 THE LIVE CLAIM: ci.yml runs every part of every leg it shards "
+          "(%d `--shard` calls read): %r" % (_shm_specs, _shm_live),
+          _shm_live == [] and _shm_specs > 0)
 
     _sl_none = sweep_leg_drift(read={"verify.sh": [], "ci.yml": _sl_ci},
                                source=_sl_src)

@@ -225,9 +225,13 @@ node tools/capture-screenshots.mjs --check
 written out twice — here and inlined in `ci.yml` — and the two copies checked different
 things: the local one asserted the exit code alone, so a file that exited 0 having asserted
 nothing was green locally and red in CI. `tools/sweep-selftests.py` is the single copy, it
-holds the union of both rules, and it runs the tree across all cores but two. Re-derive the
-wall clock rather than trusting a figure written here; `--jobs 1` gives the old serial shape
-for a bisect.
+holds the union of both rules, and it runs the tree across all cores but two — every core
+when `CI=true`, since nobody is typing on a runner. **CI does not run a leg as one job:** each
+leg is a matrix cell split by `--shard I/N`, the parts balanced by the per-file costs in
+`.github/sweep-costs.json` (re-record them with `--record-costs`) and their union pinned to the
+whole tree by the runner's own cases, while `gate-parity.py`'s `shard_matrix_drift()` holds the
+matrix to running every part. Locally a leg still runs whole. Re-derive the wall clock rather
+than trusting a figure written here; `--jobs 1` gives the old serial shape for a bisect.
 
 **And every child runs in scratch directories it is expected to leave unchanged.** Four
 things are pointed away from your machine per child: its cwd and `TMPDIR` at one scratch

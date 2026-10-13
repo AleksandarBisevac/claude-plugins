@@ -29,7 +29,7 @@
     {
       "id": "P127.1",
       "title": "test_commit_task_work and test_drive_phase run as right-sized staged blocks and finish well under the cap on a two-core runner",
-      "status": "in_progress",
+      "status": "done",
       "description": "CI evidence, two rounds on windows-latest (2 cores): run 38324787932 (ci/p126 @ 0aca587b) both suites passed; run 38333046789 (ci/p126 @ 46462e88, no change to either suite's subject) '--- plugins/audit/tests/test_commit_task_work.py: did not finish within 300s ---' and the same for test_drive_phase.py. So both sit at the sweep's 300s per-file cap on Windows and pass or fail by scheduling noise. Measured on macOS alone (no contention): test_commit_task_work 65s (106 cases, one process), test_drive_phase 103s (237 cases, already STAGES + _harness.staged_main). Windows starts a process several times slower, and both suites are made of git and interpreter starts. Fix by structure, never by raising DEFAULT_TIMEOUT alone: (1) measure each block's wall time (time each `--stage LABEL` run) and record the numbers in the return; (2) give test_commit_task_work a STAGES table and hand its __main__ to staged_main(), as test_drive_phase does, keeping its case ids and order as the replay contract requires; (3) rebalance test_drive_phase so no single stage holds most of its time (split the heaviest block along its existing case functions); (4) make the stage pool size respect the machine: _harness.STAGE_WORKERS is a fixed 6 while a windows-latest runner has 2 cores and the sweep already runs suites on them - use min(STAGE_WORKERS, a share of os.cpu_count()) and say why; (5) reduce per-case process starts where a fixture repo can be built once per block instead of once per case. Target: each suite's slowest stage well under STAGE_TIMEOUT and the whole suite under half the sweep cap on macOS, measured twice with a gap. The orchestrator verifies on windows-latest CI.",
       "files": [
         "plugins/audit/tests/test_commit_task_work.py",
@@ -59,25 +59,37 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "bedee98e63ac",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "test_commit_task_work.py: the single _cases body (inline ordinary run plus chained verdict/scope/branch/empty-gate/retired-red/gate-identity/kept-deletion calls and six nested stage() blocks) is now 17 STAGES rows handed to _harness.staged_main (prefix ctw-stages-); inline part cut at its existing section comments into _ordinary_cases/_declared_cases/_records_cases; every block takes (check) via a new @_own_repos decorator that builds and closes its own Repos; chain calls removed, old nested stage labels (cl/sl/dp/ae/bl/ce) reused as row labels. 106 case ids, labels and order identical to HEAD (diff of PASS/FAIL line prefixes of the HEAD file run vs new run: identical). test_drive_phase.py: two cuts along existing section comments, _drive_cases -> + _drive_mutant_cases (row dpm-block), _signoff_cases -> + _signoff_findings_cases (row sgf-block), placed right after their parents so replay order is unchanged; 237/237. _harness.py: new stage_workers(cpus=None) = max(2, min(STAGE_WORKERS, cpus//2)); run_stages(workers=None) uses it (a 2-core runner no longer gets 6 children sharing 2 cores while the sweep runs beside it; floor 2 because blocks wait on children); selftest case sr12 pins the table. DEFAULT_TIMEOUT untouched. MEASUREMENTS (macOS 14 cores, load avg ~10 largely from my own runs, each twice with 20s gap; per-stage = each stage run alone, serially). test_commit_task_work BEFORE (one process): full wall 58.9s / 60.4s; per-function: index 5.1, verdict+scope+branch+empty-gate chain 26.4 (scope 5.9, branch 7.0, empty-gate chain 8.4), inline ordinary run ~22 (derived), attempt 4.5; no stages existed so slowest unit = whole file. AFTER: full wall 15.4s / 14.7s; serial stage sum 57.5s / 69.1s over 17 stages; slowest br-block 9.1s / 9.9s (sc 5.9/8.5, vd 7.0/8.4). test_drive_phase BEFORE: full wall 84.0s (one run); serial stage sum 372.6s / 409.5s over 51 stages; slowest sg-block 26.6s / 29.5s, then dp-block 20.8/19.6, w1 15.7/16.0, dk 14.5/18.4. AFTER: full wall 88.6s / 86.4s (unchanged within load noise: CPU-bound, 6 workers on this box either way); serial sum 438.1s / 459.1s over 53 stages; slowest dk-block 19.2s / 22.1s, sgf 14.8/19.6, sg 14.3 (was 26.6-29.5), dpm 14.0. Stage cap 280s: both far under; whole-suite wall under half of the 300s cap on macOS (ctw ~15s, dp ~87s). NOT DONE / HONEST LIMIT: item 5 (build a fixture repo once per block) not changed. Profiling sg-block showed nearly all its time is Python CLI script launches (audit-task.py 28 launches 8.3s, drive-phase.py 15 launches 5.9s, run-test-gate 14 launches 3.5s) which the cases exist to exercise; _repo() already costs only 3 git starts and ctw's per-case repos are by design (cases mutate git). So test_drive_phase's total CPU (~370-460s serial) is not reduced by this task; on 2 cores it relies on stage_workers() sizing and finer blocks, and the orchestrator's windows-latest run is the real evidence. test_commit_task_work went from one serial process to parallel blocks (about 4x wall on macOS). Gates: sweep-selftests summary line '331/331 files ok, 15799 cases' seen (exit read through a tail pipe); ruff all checks passed; vermin exit 0; _harness.py --selftest all pass.",
+        "descriptive": "test_commit_task_work now runs as 17 parallel staged blocks (60s -> 15s wall on macOS), test_drive_phase's two heaviest blocks are split (slowest stage ~28s -> ~20s), and the stage pool is half the cores (min 2, max 6) instead of a fixed 6; case ids and order unchanged."
       },
       "startedAt": "2026-10-13T06:53:22Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-13T07:57:20Z",
+      "verifiedBy": [
+        "sr12 (_harness.py: stage_workers table)"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-13T07:57:18Z.f593d2",
         "status": "passed",
         "at": "2026-10-13T07:57:18Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "bedee98e63ac",
+        "at": "2026-10-13T07:57:20Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task, expectRedFirst false: block restructuring, no new behaviour under test beyond harness case sr12",
+        "at": "n/a"
       }
     },
     {
       "id": "P127.2-bgr",
       "title": "CI runs each sweep leg as its own parallel job, sharded, on every core - one plugin's CI finishes in about ten minutes",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Owner, 2026-10-13: CI for one repo and one plugin must not take enterprise-scale time - change it now. Measured on run 38324787932 (green): windows selftests 34 min = full sweep 16.7 min, then the SAME full sweep again under cp1252 16.4 min; ubuntu selftests 23 min = sweep 7.5 + cp1252 7.7 + spaced 7.2 min, one after another in one job; the sweep prints 'sweep: 331 files, 2 workers' on windows-latest because it keeps all cores but two free, which is right on a workstation and wastes half a CI runner. Restructure without weakening any check: (1) every sweep leg (plain, cp1252, spaced) becomes its own job, running in parallel instead of in sequence; (2) tools/sweep-selftests.py gains `--shard I/N` (a stable, deterministic split of the file list, balanced by recorded or estimated per-file cost so the slow suites do not land together; the union of shards is exactly the full set, pinned by a selftest case) and ci.yml runs each leg as a matrix of shards; (3) the sweep uses every core when it runs in CI (an explicit `--jobs` from ci.yml, or the CI environment), keeping the workstation default; (4) the cheap end-to-end launcher steps stay where they are or move to the shortest job. Keep `!cancelled()` on every independent step and gate-parity green - every leg CI runs must still be named in verify.sh, CONTRIBUTING.md and CLAUDE.md's gate list, so update the descriptions that state how CI runs the sweep (CLAUDE.md says the runner uses 'all cores but two'). Target: CI wall time at or under about 10 minutes, measured on the next CI run and stated in the return as before/after per job.",
       "files": [
         ".github/workflows/ci.yml",
@@ -85,7 +97,9 @@
         "tools/gate-parity.py",
         "tools/verify.sh",
         "CONTRIBUTING.md",
-        "CLAUDE.md"
+        "CLAUDE.md",
+        "tools/prove-gates.py",
+        ".github/sweep-costs.json"
       ],
       "tests": {
         "mode": "tdd",
@@ -110,16 +124,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-13T08:22:42Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-13T08:36:36Z.aa30e8",
+        "status": "passed",
+        "at": "2026-10-13T08:36:36Z"
+      }
     }
   ],
   "request": "Make the two suites that time out on windows-latest finish with margin, by structure.",
