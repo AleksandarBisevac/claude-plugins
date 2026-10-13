@@ -628,7 +628,7 @@
     {
       "id": "P125.9",
       "title": "This repo's task gates select suites through tools/affected.py's import graph",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The dogfood half of affected-test-gate. This repo's Python resolves imports by bare basename across label folders (one flat namespace, CLAUDE.md), which a generic import graph cannot follow, and its tree-scanning suites go red on edits to files they never import. tools/affected.py already derives both from _deps's graph and its TREE_SCANNERS list. Give it a listing mode that takes paths and prints one suite path per line and executes nothing (the contract derive-phase-gate's listings hold), and an all-suites mode, then record them as this plan's related/all listing through the verb that writes meta (no hand edit of docs/audit/). Its existing rule 'an unrecognised path selects the full set' carries over unchanged.",
       "files": [
         "tools/affected.py",
@@ -660,16 +660,17 @@
       "dependsOn": [
         "P125.8"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-13T23:36:09Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.11",
@@ -749,7 +750,7 @@
     {
       "id": "P125.12",
       "title": "Doctor reports the git-snapshot setting and the README cost section names it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "N4. A plugin cannot set includeGitInstructions or CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS for its users (its settings carry only agent and subagentStatusLine), so this is a report and a documented recommendation. /audit:doctor reads the effective value (env var, then project .claude/settings.local.json and settings.json, then user settings) and names where it came from; it also reads, from the session's subagent transcripts, each later dispatch's first-request cache read and write so the user sees whether starts are served from cache. The README's cost section names the setting, recommends it at project level (a user-level setting removes Claude's built-in git instructions from every session), and states that the plugin's executors never commit and the driver commits by script. No figure is printed without the reading that produced it.",
       "files": [
         "plugins/audit/scripts/status/_doctor_setup.py",
@@ -787,16 +788,17 @@
       "dependsOn": [
         "P125.4"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-13T23:36:13Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.13",
@@ -909,7 +911,7 @@
     {
       "id": "P125.19",
       "title": "The intent check grades the diff against the task text, and the drive checks tests.add against the filed tests",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F633, measured on the testbed with a plain-session baseline and a blind A/B review: P5.3's text said src is set when the card ENTERS the viewport; the executor shipped `rootMargin: \"200px 0px\"`, said so, and renamed its test to 'once the card is near the viewport'; the phase reviewer's intentCheck answered `matches` on the basis of the executor's restatement. The blind pass also found two med defects the phase review missed. (1) The intent check QUOTES THE TASK TEXT and compares the diff and the tests against it - never against the outcome text or the test titles; a restatement whose scope differs from the task text is itself a finding, quoting both. (2) The reviewer brief puts the task text first and the executor's return last, labelled as the claim under review. (3) The drive diffs `tests.add` against the test names the return files, mechanically, and a declared case with no filed counterpart is a finding before any reviewer runs. Red-first: a fixture where the task says 'enters' and the return says 'near' with a 200px margin must answer `diverges` and quote both; a declared tests.add case missing from the return is named by the drive. (4) Measured on the testbed with the SAME model (plain Sonnet vs the plugin's Sonnet executors, blind A/B): the plugin's version alone shipped a lazy-load test that cannot fail, an e2e that drives the real server action (a key in env sends real mail), and a test-readiness race (asserting enabled state the SSR HTML already has). So the reviewer brief also asks, per declared test: can it fail on the unfixed code (the red-first block, or say it was never seen red), and does any test reach a real external service or side effect (mail, payment, network) rather than a stub - each a finding with its file:line. Faults: F633. (5) A FALSIFIER PER TEST, run by the drive at near-zero model cost (about +0.005 USD per task, research report 2026-10-12-agent-output-quality-research.md): every planned test carries a line 'must fail if <small code change>'; after the executor files, the drive applies that patch in a temporary tree (never the executor's tree) and runs the test, and a test that survives is a finding with file:line. A patch that breaks the build is could-not-run, never a kill. This REPLACES a revert-to-base check, which probe 1 measured as too weak: the plugin's P5.3 test fails on the revert yet survives the 'src set on mount' mutant, the real defect class; the plain Sonnet test kills both mount and margin_200 (artefacts danuvia-baseline/research-p53-plugin/probe-artifacts/probe1/*.log). (6) Parity in interaction states: when a task's design source names `:focus`/`:hover` rules for a form or control (as flux.css `.field input:focus` did), task synthesis writes into tests.add a design-parity case that snapshots that control's own box in its focus state (and hover where defined), not only rest, as a clipped element snapshot of that control or a computed-style assertion - a 1% threshold over a whole section hid a 2px ring (about 0.2% of the section) (2px/4px against the design's 9px, found by a live getComputedStyle probe). (7) Executor brief: scope must never push an executor into an inferior design. P6.3's plugin executor faked a 'Resend mock' by rewriting the browser response because `playwright.config.ts` was outside its scope; the plain session edited the config and ran a real mock. When the right design needs file X outside `files`, the executor files a widening request naming X and why, and does not work around it; P124's companions do not cover test infrastructure. Source: testbed monitor, 2026-10-12, at the owner's request. (8) Probe 2 (24 reviewer runs, Opus/Sonnet/Haiku, real P5.3 brief section): the brief as filed, task text first with the claim labelled, and the claim hidden each found 0/3 `diverges`; ONLY a CLAUSE-QUOTING RULE worked, 3/3 on all three models - the reviewer quotes each task clause, judges the diff against it, and a scope difference is `diverges`. So (1)-(2) are implemented as that rule, and: a contradicted clause carries a MED severity floor (4 of 6 Opus/Sonnet runs rated it low, which review-convergence would park as a carried low); the intent answer splits 'does the diff do what was asked' from 'does the claim describe the diff'; the phase brief carries tests.add, which it lacks today. (9) The tests.add-vs-filed-tests check of (3) cannot be a string diff: as one it flags 72 of 77 danuvia tasks, mostly Serbian plan text against English test titles. It matches a declared case by a verbatim title the executor must reuse, or by a clause mapping the return files; never a fuzzy string compare.",
       "files": [
         "plugins/audit/agents/audit-reviewer.md",
@@ -957,14 +959,14 @@
       "dependsOn": [
         "P125.5"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-13T16:52:14Z",
+      "startedAt": "2026-10-13T23:36:16Z",
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "phase",
@@ -1227,7 +1229,7 @@
     {
       "id": "P125.27",
       "title": "The PII check and the write scrub answer 'is this a home path' with one predicate",
-      "status": "in_progress",
+      "status": "done",
       "description": "Recurring class observed 2026-10-13 in P126: a reviewer's prose phrase made of words joined by slashes was flagged by tools/check-committed-pii.py's posix-home detector in the finding row, the fix task's description, the reviewer return, the next executor's return and the plan's copy of its outcome - each time a new BASELINE row, five in one phase, and four earlier rows in BASELINE for the same shape. The write scrub (_machine_paths) fires posix-home only when a separator stands before the home word; the committed-artifact check fires on `home/` at any token start 'by design'. Two readers disagree on what a home path is, so honest prose costs a baseline row per copy and every copy is a gate going red. Decide the one predicate (with its measurement over this tree's committed artifacts and the detector's purpose: catching a home directory whose leading separator was cut), make both readers call it, retire the BASELINE rows it makes dead, and pin both directions (a cut home path still found; prose with slashes not).",
       "files": [
         "plugins/audit/scripts/_machine_paths.py",
@@ -1260,19 +1262,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "35265c5f1b1a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Unified the posix-home predicate the write scrub (_machine_paths.py) and the committed-artifact check (tools/check-committed-pii.py) each answered differently. Added _machine_paths.shape_fires (renamed from the module-private _shape_fires, now the one function both readers call) and a depth measurement (_segments_after/_TAIL_SEGMENTS/_HOME_PATH_MIN_DEPTH=3): a posix-home match fires when it carries a leading separator (as before), OR, with none, when the home word's own segment plus the further /segment pieces that continue it with no gap reach a depth of 3 - deep enough to be a home directory whose leading separator was cut (e.g. 'Users/<name>/p/x.js') rather than a sentence's words joined by slashes (e.g. 'home/cwd/project', 'home/TMPDIR', 'home/page.tsx', all depth <=2). tools/check-committed-pii.py now imports _machine_paths directly (plan gate refused editing plugins/audit/scripts/governance/_journal_io.py, which is outside this task's files and owned by other in_progress tasks, so the re-export tuple there was left untouched) and scan_text filters every DETECTORS match through _machine_paths.shape_fires(name, m) before appending it as a finding. Measured over this tree's committed artifacts by running the real scan (python3 tools/check-committed-pii.py): 17 posix-home BASELINE rows went dead (the P126 prose-recurrence rows plus the earlier 'home/TMPDIR' and 'home/page.tsx' rows the description points at) and were removed from BASELINE in the same change; the remaining posix-home rows (the CI runner's <outside-repo><r>/<r> example, the file-URL probe text) still carry a leading separator and stay found and baselined for their recorded reasons. A fresh run (`python3 tools/check-committed-pii.py`) now reports 'OK ... 34 finding(s); 34 accounted for by BASELINE' with no dead rows. Added test case q2i to tools/check-committed-pii.py's own selftest (tests.add's target) asserting both directions through the live DETECTORS pattern: a cut-separator home path ('Users/<user>/p/x.js') is found, a slash-joined prose phrase is not, and both outcomes come from _machine_paths.shape_fires. Also added mp16 to plugins/audit/tests/test__machine_paths.py pinning the same depth behaviour directly at the write-scrub's own door (in scope: the file is declared by this task). Ran: python3 plugins/audit/tests/test__machine_paths.py --selftest (19/19 pass), python3 tools/check-committed-pii.py --selftest (45/45 pass), ruff check (clean), vermin -t=3.8- (clean, min 3.3), and the full python3 tools/sweep-selftests.py (332/332 files ok, 15978 cases, exit 0). tools/prove-gates.py was read but not edited: shape_fires is not a *_violations/_drift/_claims-named function and does not walk the tree, so gate_names()/coverage() does not derive it and no TABLE row is owed.",
+        "descriptive": "The PII check and the write scrub now agree on what a home path is, via one shared predicate, retiring 17 dead BASELINE rows the disagreement produced."
       },
       "startedAt": "2026-10-13T21:55:43Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-13T23:36:06Z",
+      "verifiedBy": [
+        "q2i (tools/check-committed-pii.py --selftest): a cut-separator home path is still found, a slash-joined prose phrase is not, both through _machine_paths.shape_fires",
+        "mp16 (plugins/audit/tests/test__machine_paths.py --selftest): shape_fires finds a deep cut home path and leaves a shallow slash-joined prose phrase alone"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-13T23:36:03Z.414d3c",
         "status": "passed",
         "at": "2026-10-13T23:36:03Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "35265c5f1b1a",
+        "at": "2026-10-13T23:36:06Z"
+      },
+      "redFirst": {
+        "at": "2026-10-13T22:21:39Z",
+        "basis": "`python3 tools/check-committed-pii.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 45 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code, the task's run with its inline suite tools/check-committed-pii.py laid over as HEAD's copy plus its 1 test hunk(s), 6 other hunk(s) held at HEAD), each passing with the working tree's implementation - q2i (house FAIL): SELFTEST FAILED: 44/45 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2003,6 +2019,48 @@
         "gateBasis": "phase-no-spelling"
       },
       "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.43-0h5",
+      "title": "The panel's refused-save check waits for the refusal banner instead of reading the page at a fixed moment",
+      "status": "pending",
+      "description": "F653: P125.27's gate went red on shots with 'settings: a refused save drew null - expected a bold title, the findings body and a dismiss button'; the same check passed three times in the task tree (two with a gap) and on the phase tree, and the change under test did not touch the panel. The check reads the DOM before the banner is drawn. Wait on the banner's own element (or the save response) with a bounded timeout, and when it never appears, say what the save request returned. Do not raise a global timeout.",
+      "files": [
+        "tools/capture-screenshots.mjs"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/capture-screenshots.mjs: with the refusal banner's render delayed in the fixture, the refused-save check waits for it and passes; a save that is not refused is still reported, naming what the save returned"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
       "skills": [],
       "risk": "low",
       "blockedBy": [],
