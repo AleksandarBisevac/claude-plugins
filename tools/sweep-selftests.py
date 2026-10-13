@@ -694,7 +694,9 @@ def default_jobs(cpus=None, environ=None):
 # runs the I-th of N parts, and the parts are built so that running all N runs
 # every file exactly once (`sh0`) - whatever the cost table says, because the table
 # only decides WHERE a file goes, never WHETHER. A stale table costs balance, not
-# coverage.
+# coverage. An entry naming a file no longer swept is ignored, a swept file with
+# no entry is estimated, and `table_notes()` reports either as a note - a rename
+# never turns the sweep red.
 #
 # BALANCED BY RECORDED COST, not by count. The staged suites take minutes while
 # most files take a second, so an even count can put two of them in one part and
@@ -736,6 +738,33 @@ def _median(costs):
     return values[(len(values) - 1) // 2] if values else 1.0
 
 
+def table_notes(costs, paths):
+    """Advisory lines about a cost table against the swept `paths` - [] when it fits.
+
+    A table can only cost balance, so what is wrong with one is a note to print,
+    never a failure: entries naming a file no longer swept (ignored by the
+    split), and a table timing too few of the swept files to balance by."""
+    swept = set(paths)
+    ghosts = sorted(set(costs) - swept)
+    notes = []
+    if ghosts:
+        notes.append("%d cost entries name files no longer swept and are "
+                     "ignored: %s" % (len(ghosts), ", ".join(ghosts[:5])
+                                      + (" ..." if len(ghosts) > 5 else "")))
+    timed = len(swept & set(costs))
+    if swept and timed * 2 <= len(swept):
+        notes.append("the cost table times only %d of %d swept files; the "
+                     "rest are estimated at its median - re-record it with "
+                     "--record-costs" % (timed, len(swept)))
+    return notes
+
+
+def _live(costs, paths):
+    """`costs` restricted to `paths`: a ghost entry must not move the median."""
+    swept = set(paths)
+    return dict((k, v) for k, v in costs.items() if k in swept)
+
+
 def cost_of(costs, path, estimate=None):
     """The recorded cost of `path`, or the table's median for a file never timed.
 
@@ -749,6 +778,7 @@ def cost_of(costs, path, estimate=None):
 def run_order(paths, costs):
     """`paths` costliest first, ties by path - the order a shard submits them in,
     so its slowest suite starts at once and the rest fill the workers beside it."""
+    costs = _live(costs, paths)
     estimate = _median(costs)
     return sorted(set(paths), key=lambda p: (-cost_of(costs, p, estimate), p))
 
@@ -760,6 +790,7 @@ def shard_paths(paths, costs, count):
     files and then to the lower index, so the split is a function of the set of
     paths and the table alone. The file-count tie-break is what keeps a part from
     staying empty when costs round to zero."""
+    costs = _live(costs, paths)
     estimate = _median(costs)
     loads = [0.0] * count
     parts = [[] for _ in range(count)]
@@ -1021,6 +1052,8 @@ def main(argv):
         return 2
     costs, cost_problem = load_costs(COSTS_PATH)
     swept = set(paths)
+    for note in table_notes(costs, paths):
+        sys.stdout.write("note: %s\n" % (note,))
     if shard is not None:
         index, count = shard
         whole = len(paths)
@@ -1841,11 +1874,35 @@ def _cases(check):
           sorted(sh_order[:4]) == sorted(sh_heavy)
           and sorted(sh_order) == sorted(sh_paths))
 
-    check("sh7 the committed cost table loads, names only files the sweep "
-          "reaches, and times most of them - a stale table still splits "
-          "correctly but balances by guesses (%s)" % (sh_problem or "read",),
-          sh_problem is None and set(sh_costs) <= set(sh_full)
-          and len(sh_costs) * 2 > len(sh_full))
+    check("sh7 the committed cost table LOADS - a stale one is never a failure "
+          "(sh9 and sh10 hold that), so only an unreadable table is red here "
+          "(%s)" % (sh_problem or "read",),
+          sh_problem is None)
+
+    # A table naming a file that is gone and missing one that is swept: the split
+    # still covers every swept file once, ignores the ghost, and says so.
+    sh_ghost = dict((p, 1.0) for p in sh_paths[:10])
+    sh_ghost["t/renamed-away"] = 500.0
+    sh_ghost_parts = shard_paths(sh_paths, sh_ghost, 3)
+    sh_ghost_seen = sorted(p for part in sh_ghost_parts for p in part)
+    sh_ghost_plain = shard_paths(
+        sh_paths, dict((p, 1.0) for p in sh_paths[:10]), 3)
+    check("sh9 a table naming a file no longer swept and omitting swept ones "
+          "still partitions the swept list exactly once, and the ghost entry "
+          "does not move any file: %r" % (sh_ghost_parts,),
+          sh_ghost_seen == sorted(sh_paths) and "t/renamed-away" not in sh_ghost_seen
+          and sh_ghost_parts == sh_ghost_plain)
+
+    sh_notes = table_notes(sh_ghost, sh_paths)
+    check("sh10 a stale or partial table is REPORTED as notes, never as a "
+          "failure: ghost entries named, and thin coverage said: %r"
+          % (sh_notes,),
+          len(sh_notes) == 2 and "t/renamed-away" in sh_notes[0]
+          and table_notes(dict((p, 1.0) for p in sh_paths), sh_paths) == []
+          and table_notes({}, []) == [])
+    # The live table's notes are advisory: printed, never a case.
+    for sh_note in table_notes(sh_costs, sh_full):
+        sys.stdout.write("note: %s\n" % (sh_note,))
 
     check("j1 a CI runner gets EVERY core and a workstation keeps two free: "
           "%r" % ([default_jobs(4, {"CI": "true"}), default_jobs(4, {})],),

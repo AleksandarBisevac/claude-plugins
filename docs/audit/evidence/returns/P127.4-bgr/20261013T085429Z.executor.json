@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "sweep --selftest": "pass",
+    "gate-parity": "pass",
+    "ruff tools": "pass"
+  },
+  "redFirst": {
+    "status": "could-not-prove",
+    "at": "2026-10-13T08:56:35Z",
+    "basis": "P127.4-bgr declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P127.4-bgr declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/sweep-selftests.py: sh7 now only requires the cost table to load; new sh9 (ghost entry ignored, swept list still partitioned once, split unchanged by ghost) and sh10 (table_notes reports ghosts and thin coverage as notes, [] when it fits); table_notes() added, printed as 'note:' lines at sweep start and in the selftest; shard_paths/run_order restrict the table to swept paths so a ghost cannot move the median. Comments updated; CONTRIBUTING.md sentence now states ghost ignored/missing estimated/notes. Table NOT re-recorded (P127.6). Ran: sweep-selftests.py --selftest -> 77/77; gate-parity.py ok; ruff check tools ok.",
+    "descriptive": "A stale or partial sweep cost table can only cost balance and prints a note; it no longer turns the sweep red."
+  },
+  "testsAdded": [
+    "sh9",
+    "sh10"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:c1e910324c0194f2276939f22fdbb87aaf9776cad66abf5481a6b7883c10d4d1\",\"dirtyDigest\":\"sha256:1bb9921d40308755a0e450c84f98abc4a974129a1861afb6b0c0d2efa7a07bd0\",\"dirtyPaths\":{\"CONTRIBUTING.md\":\"004e449f5853f62e\",\"tools/sweep-selftests.py\":\"2e31292459ae07a7\"},\"head\":\"915565f6\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".github/sweep-costs.json\",\"CONTRIBUTING.md\",\"tools/sweep-selftests.py\"],\"scopeDigest\":\"sha256:e41d31ebc9a445c82b236c4daab845b04a7ab91c26427e3667d8dd937b28b5c4\",\"v\":2}"
+}

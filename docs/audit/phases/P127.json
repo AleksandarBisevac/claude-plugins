@@ -36,8 +36,10 @@
         "severity": "med",
         "file": "tools/gate-parity.py:2138-2190 (shard_matrix_drift), .github/workflows/ci.yml:63-86 and the `if: ... matrix.leg == '...'` lines",
         "issue": "A leg can now be dropped from CI with gate-parity green. Before this diff a leg ran iff its step existed in ci.yml, which sweep_leg_drift compares against verify.sh. Now a step runs only if the matrix contains its leg and its `if:` spells it the same: `leg: [plain, cp1252, spaced]` plus the `include` e2e cells. shard_matrix_drift checks only the `shard: [1, 2, 3]` list. Deleting `cp1252` from the `leg:` list, typing `matrix.leg == 'cp1252 '` or `'cp1251'` in a step, or removing the `include` e2e cells leaves every step present in ci.yml, so the leg comparison passes while that leg (or all launcher steps and the runner's own --selftest) never runs. This is exactly the 'leg silently not run' class the parity gate exists for, and the prove-gates row added (shard: [1,2]) only mutates the shard list.",
-        "resolution": "Extend shard_matrix_drift (or a sibling) to read every `matrix.leg == '<x>'` in an `if:` and require each <x> to be produced by the matrix (in `leg:` or an `include` entry, and not excluded for every os), and each produced leg to have a step; add a prove-gates TABLE row mutating `leg: [plain, cp1252, spaced]` to drop one, and an ALLOW row for the over-fire.",
-        "fixTask": "P127.3-bgr"
+        "resolution": "fixed in P127.3-bgr (915565f66819): Extend shard_matrix_drift (or a sibling) to read every `matrix.leg == '<x>'` in an `if:` and require each <x> to be produced by the matrix (in `leg:` or an `include` entry, and not excluded for every os), and each produced leg to have a step; add a prove-gates TABLE row mutating `leg: [plain, cp1252, spaced]` to drop one, and an ALLOW row for the over-fire.",
+        "fixTask": "P127.3-bgr",
+        "commit": "915565f66819",
+        "status": "fixed"
       },
       {
         "id": "P127-R3",
@@ -64,7 +66,7 @@
         "fixTask": "P127.7-bgr"
       }
     ],
-    "outcome": "[findings: 5 - 0 high, 2 med, 3 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 5 - 0 high, 2 med, 3 low; 1 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -213,7 +215,7 @@
     {
       "id": "P127.3-bgr",
       "title": "fix P127-R2: A leg can now be dropped from CI with gate-parity green. Before ...",
-      "status": "in_progress",
+      "status": "done",
       "description": "A leg can now be dropped from CI with gate-parity green. Before this diff a leg ran iff its step existed in ci.yml, which sweep_leg_drift compares against verify.sh. Now a step runs only if the matrix contains its leg and its `if:` spells it the same: `leg: [plain, cp1252, spaced]` plus the `include` e2e cells. shard_matrix_drift checks only the `shard: [1, 2, 3]` list. Deleting `cp1252` from the `leg:` list, typing `matrix.leg == 'cp1252 '` or `'cp1251'` in a step, or removing the `include` e2e cells leaves every step present in ci.yml, so the leg comparison passes while that leg (or all launcher steps and the runner's own --selftest) never runs. This is exactly the 'leg silently not run' class the parity gate exists for, and the prove-gates row added (shard: [1,2]) only mutates the shard list.\n\nResolution asked: Extend shard_matrix_drift (or a sibling) to read every `matrix.leg == '<x>'` in an `if:` and require each <x> to be produced by the matrix (in `leg:` or an `include` entry, and not excluded for every os), and each produced leg to have a step; add a prove-gates TABLE row mutating `leg: [plain, cp1252, spaced]` to drop one, and an ALLOW row for the over-fire.",
       "files": [
         "tools/gate-parity.py",
@@ -243,14 +245,19 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "915565f66819",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/gate-parity.py: shard_matrix_drift now also returns _matrix_references(text): _matrix_cells() parses the single matrix block (axes crossed, exclude removed, include added), every matrix.leg/os/shard ==/!= '<x>' in an if: must name a produced value, and every produced leg must be named by some if:. Selftest cases shm2 (leg dropped from leg: list), shm3 (cp1252 trailing space and cp1251 typo), shm4 (include e2e cells removed), shm5 (exclude dropped stays clean; unknown os named). tools/prove-gates.py: RED rows shm2 and shm4 mutating ci.yml, ALLOW rows (shm1) for the two over-fires. Ran: gate-parity.py exit 0; gate-parity.py --selftest 131/131; prove-gates.py --selftest 37/37; ruff clean; prove-gates --only shard_matrix: 3 of 3 RED (shm1..shm4); the ALLOW half refused DIRTY (files uncommitted) so allow rows are unproven by run. ci.yml itself not changed. Helper named _matrix_references with underscore because prove-gates derives any *_drift lint and demands rows.",
+        "descriptive": "Dropping a leg from the CI matrix, mistyping an if: leg name, or removing the e2e include cells is now reported by name by gate-parity."
       },
       "startedAt": "2026-10-13T08:41:05Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-13T08:54:29Z",
+      "verifiedBy": [
+        "shm2",
+        "shm3",
+        "shm4",
+        "shm5"
+      ],
       "notes": [
         {
           "at": "2026-10-13T08:40:54Z",
@@ -269,12 +276,24 @@
         "runId": "2026-10-13T08:54:27Z.ffdad7",
         "status": "passed",
         "at": "2026-10-13T08:54:27Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "915565f66819",
+        "at": "2026-10-13T08:54:29Z",
+        "basis": "a fix task for P127-R2: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "could-not-prove",
+        "at": "2026-10-13T08:45:03Z",
+        "basis": "P127.3-bgr declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P127.3-bgr declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P127.4-bgr",
       "title": "fix P127-R4: The comments and CONTRIBUTING.md say a stale cost table 'costs b...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The comments and CONTRIBUTING.md say a stale cost table 'costs balance, never coverage', but sh7 asserts set(sh_costs) <= set(sh_full), so deleting or renaming any swept file turns the sweep's own selftest red (in the e2e cell and in whichever shard holds that file) until someone re-records .github/sweep-costs.json. Either the guard or the sentence is wrong. The table is also one macOS 12-worker run (platform darwin, workers 12); test_commit_task_work is recorded at 57s although P127.1 brought it to ~15s, so the balance is already stale on its first day.\n\nResolution asked: Pick one: drop the subset requirement from sh7 and keep only 'loads, and times most files', or keep it and say in the comments that a rename must re-record the table. Re-record the table from the CI run after P127.1/P127.2 land.",
       "files": [
         "tools/sweep-selftests.py",
@@ -302,14 +321,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-13T08:54:29Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -320,7 +339,13 @@
       ],
       "fixes": [
         "P127-R4"
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-13T09:05:17Z.569d82",
+        "status": "passed",
+        "at": "2026-10-13T09:05:17Z"
+      }
     },
     {
       "id": "P127.5-bgr",

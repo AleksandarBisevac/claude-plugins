@@ -249,7 +249,9 @@ the script is only a caller:
 # `--shard I/N`, on every core of the runner (the sweep reads `CI=true`). The parts are
 # balanced by the per-file costs in `.github/sweep-costs.json`, which
 # `--record-costs .github/sweep-costs.json` rewrites from a real run; a stale table costs
-# balance, never coverage, because the union of the parts is the whole tree (the runner's
+# balance, never coverage - an entry naming a file no longer swept is ignored and printed as
+# a `note:`, a swept file with no entry is estimated, and neither turns the sweep red -
+# because the union of the parts is the whole tree (the runner's
 # own sh0 case) and `gate-parity.py`'s `shard_matrix_drift()` fails a matrix that skips a
 # part. Here a leg runs whole, which is the same leg.
 python3 tools/sweep-selftests.py
