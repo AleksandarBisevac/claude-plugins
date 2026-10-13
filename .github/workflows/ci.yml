@@ -710,6 +710,7 @@ jobs:
           grep -q 'id="usage"' docs/index.html
           echo "OK: the live demo is the committed example, Usage section included"
       - name: Scale demo is renderable and valid (docs/demo-large.html)
+        id: scale_demo
         if: ${{ !cancelled() }}
         shell: bash
         run: |
@@ -917,14 +918,16 @@ jobs:
           grep -q 'no \.sectools' /tmp/aged.log \
             || { echo 'expected the missing element to be named'; exit 1; }
       - name: The report is interactive on plans cut from the scale demo
+        if: ${{ !cancelled() && steps.scale_demo.outcome == 'success' }}
         shell: bash
         run: |
           set -e
           # Split from the step above because THESE legs read /tmp/dl, the tree the
           # `Scale demo` step generates, and nothing else in that step does. This is
-          # the one step exempted from `!cancelled()` (STEP_GUARD_EXEMPT in
-          # tools/gate-parity.py): run after a failed `Scale demo` it would report a
-          # second, spurious failure about a tree that was never built.
+          # the one step exempted from the plain `!cancelled()` (STEP_GUARD_EXEMPT in
+          # tools/gate-parity.py): its `if:` also names the `Scale demo` outcome, so
+          # it is skipped only when that tree was never built, and runs after any
+          # unrelated earlier failure.
           # ...and a plan whose phases ALL share one status, which is the normal
           # END STATE of a plan: everything done. None of the reports above is
           # one, and the checker's one-status path was wrong the first time it met

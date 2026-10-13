@@ -65,11 +65,21 @@
         "severity": "low",
         "file": "plugins/audit/tests/test_stamp_verification.py:2918-2929 (P126.13-13q, 0aca587b)",
         "issue": "sr214 lists the directory root_d was made in and fails on ANY stamp-derive-* sibling. Under the sweep that directory is the private scratch, but run directly with the system TMPDIR a stale directory from an earlier killed run, or a second concurrent run of this suite, turns the case red for a reason that is not this run's.",
-        "resolution": "Assert on this run's own root_d (removed is True and not lexists) and leave the cwd-unchanged guarantee to the sweep's watched-directory check, or snapshot the sibling names before creating root_d and compare after.",
-        "fixTask": "P126.17-13q"
+        "resolution": "fixed in P126.17-13q (46462e889acd): Assert on this run's own root_d (removed is True and not lexists) and leave the cwd-unchanged guarantee to the sweep's watched-directory check, or snapshot the sibling names before creating root_d and compare after.",
+        "fixTask": "P126.17-13q",
+        "commit": "46462e889acd",
+        "status": "fixed"
+      },
+      {
+        "id": "P126-R6",
+        "severity": "low",
+        "file": ".github/workflows/ci.yml:~895 (step 'The report is interactive on plans cut from the scale demo', P126.15-13q, b582f550); tools/gate-parity.py STEP_GUARD_EXEMPT",
+        "issue": "The split step carries no `if:`, so it runs only under the default success(): it is skipped after ANY earlier failed step of the manifests job (screenshots, GIF, vitest, the guarded interactive step), not only after a failed `Scale demo`. The exemption reason and the step's own comment justify it by the one dependency (/tmp/dl), but the behaviour is broader than that dependency, so the one-status, all-parked and no-proposals legs stay hidden behind unrelated failures - the class P126.10-13q set out to remove, now confined to these legs. step_exemption_breadth_drift checks that the step reads the named path and that an earlier step mentions it; it cannot see this, and its own docstring says so.",
+        "resolution": "Give the Scale demo step an `id:` and the split step `if: ${{ !cancelled() && steps.<id>.outcome == 'success' }}`, so it is skipped only when its producer failed. Then the STEP_GUARD_EXEMPT row can say so, or be dropped if step_guard_drift is taught to accept an outcome condition naming an earlier step.",
+        "fixTask": "P126.18-13q"
       }
     ],
-    "outcome": "[findings: 5 - 0 high, 2 med, 3 low; 3 with a recorded fix commit]"
+    "outcome": "[findings: 6 - 0 high, 2 med, 4 low; 4 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1127,7 +1137,7 @@
     {
       "id": "P126.17-13q",
       "title": "fix P126-R5: sr214 lists the directory root_d was made in and fails on ANY st...",
-      "status": "in_progress",
+      "status": "done",
       "description": "sr214 lists the directory root_d was made in and fails on ANY stamp-derive-* sibling. Under the sweep that directory is the private scratch, but run directly with the system TMPDIR a stale directory from an earlier killed run, or a second concurrent run of this suite, turns the case red for a reason that is not this run's.\n\nResolution asked: Assert on this run's own root_d (removed is True and not lexists) and leave the cwd-unchanged guarantee to the sweep's watched-directory check, or snapshot the sibling names before creating root_d and compare after.",
       "files": [
         "plugins/audit/tests/test_stamp_verification.py",
@@ -1156,13 +1166,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "46462e889acd",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "In test_stamp_verification.py, case sr214 no longer lists the parent directory for stamp-derive-* entries; it asserts only that its own root_d was removed (remove_tree returned True) and no longer exists (os.path.lexists false). Ran the file's --selftest: 266/266 cases passed; ruff check on the file passed. The brief names no gate of its own to run, so no other gate was run.",
+        "descriptive": "sr214 can no longer fail on stale or concurrent stamp-derive directories from other runs."
       },
       "startedAt": "2026-10-13T01:14:08Z",
-      "completedAt": null,
+      "completedAt": "2026-10-13T01:34:10Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -1186,6 +1196,73 @@
         "runId": "2026-10-13T01:34:08Z.170b0f",
         "status": "passed",
         "at": "2026-10-13T01:34:08Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "46462e889acd",
+        "at": "2026-10-13T01:34:10Z",
+        "basis": "a fix task for P126-R5: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with expectRedFirst false; no test added, an existing case narrowed",
+        "at": "n/a"
+      }
+    },
+    {
+      "id": "P126.18-13q",
+      "title": "fix P126-R6: The split step carries no `if:`, so it runs only under the defau...",
+      "status": "in_progress",
+      "description": "The split step carries no `if:`, so it runs only under the default success(): it is skipped after ANY earlier failed step of the manifests job (screenshots, GIF, vitest, the guarded interactive step), not only after a failed `Scale demo`. The exemption reason and the step's own comment justify it by the one dependency (/tmp/dl), but the behaviour is broader than that dependency, so the one-status, all-parked and no-proposals legs stay hidden behind unrelated failures - the class P126.10-13q set out to remove, now confined to these legs. step_exemption_breadth_drift checks that the step reads the named path and that an earlier step mentions it; it cannot see this, and its own docstring says so.\n\nResolution asked: Give the Scale demo step an `id:` and the split step `if: ${{ !cancelled() && steps.<id>.outcome == 'success' }}`, so it is skipped only when its producer failed. Then the STEP_GUARD_EXEMPT row can say so, or be dropped if step_guard_drift is taught to accept an outcome condition naming an earlier step.",
+      "files": [
+        "tools/gate-parity.py",
+        ".github/workflows/ci.yml"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-13T01:38:02Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-13T01:38:01Z",
+          "text": "scope: tools/gate-parity.py, every path the finding(s) P126-R6 name"
+        }
+      ],
+      "fixes": [
+        "P126-R6"
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-13T01:56:43Z.e34cd0",
+        "status": "passed",
+        "at": "2026-10-13T01:56:43Z"
       }
     }
   ],

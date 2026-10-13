@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "gate-parity": "pass",
+    "gate-parity-selftest": "pass"
+  },
+  "redFirst": {
+    "status": "could-not-prove",
+    "at": "2026-10-13T01:39:10Z",
+    "basis": "P126.18-13q declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P126.18-13q declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "ci.yml: Scale demo step got id scale_demo; the split step got if: ${{ !cancelled() && steps.scale_demo.outcome == 'success' }}; its comment updated. tools/gate-parity.py: new _exempt_condition_problem; step_guard_drift now tracks step ids per job and requires an exempt step's if to hold !cancelled() inside ${{ }} and the outcome of an earlier step by id. sg2 fixture given id and condition; new case sg7 covers no id, unknown id, no ${{ }}, no !cancelled(). python3 tools/gate-parity.py exit 0; --selftest exit 0, 123/123 passed; ruff clean on the file. prove-gates rows: anchors untouched, none edited.",
+    "descriptive": "The split scale-demo step now skips only when its producer failed, and the guard check enforces that form for exempt steps."
+  },
+  "testsAdded": [
+    "sg7 (tools/gate-parity.py selftest)"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:29c77b8b8020f2c3e1c84bb159c8d82d5d22fea22e2ffe26edd76815709f86dd\",\"dirtyDigest\":\"sha256:83e5553116b87c790eb6b7f37c4c38dbc4f5b0371531f4967b5d40988ad7d3e8\",\"dirtyPaths\":{\".github/workflows/ci.yml\":\"cb153e90e4006cfc\",\"tools/gate-parity.py\":\"c7f138ec6c3dbc52\"},\"head\":\"46462e88\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/gate-parity.py\"],\"scopeDigest\":\"sha256:c49509fee934692e36d205dec00c1a89eead9af8acf1d9754728f9a253649165\",\"v\":2}"
+}

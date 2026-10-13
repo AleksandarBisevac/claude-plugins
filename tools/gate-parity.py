@@ -2987,6 +2987,25 @@ def _is_setup_step(keys):
     return bool(_SETUP_RUN.match(keys.get("run", "")))
 
 
+def _exempt_condition_problem(cond, earlier_ids):
+    """Why an exempt step's `if:` does not bound its skip to its dependency, or "".
+
+    An exemption drops the implicit success(), which would skip the step after
+    ANY earlier failure; what replaces it must name `!cancelled()` inside
+    `${{ }}` and the outcome of an earlier step of the job (by `id`), so the
+    step is skipped only when the step that produces its input did not succeed.
+    """
+    if not (cond.startswith("${{") and "!cancelled()" in cond):
+        return ("exempt from the implicit success() but its `if:` does not "
+                "hold `!cancelled()` inside `${{ }}`")
+    named = re.findall(r"steps\.([A-Za-z0-9_-]+)\.outcome\s*==", cond)
+    if not any(n in earlier_ids for n in named):
+        return ("exempt from the implicit success() but its `if:` names the "
+                "outcome of no earlier step of the job (by `id`), so it would "
+                "run past failures that are not its dependency's")
+    return ""
+
+
 def step_guard_drift(text, exempt=None):
     """[(job, step, why)] for each step that a failed earlier step would skip.
 
@@ -2998,11 +3017,19 @@ def step_guard_drift(text, exempt=None):
     """
     table = STEP_GUARD_EXEMPT if exempt is None else exempt
     findings = []
+    ids = {}
     for job, keys in _job_steps(text):
+        step_id = keys.get("id")
+        earlier = set(ids.get(job, ()))
+        if step_id:
+            ids.setdefault(job, set()).add(step_id)
         if _is_setup_step(keys):
             continue
         name = keys.get("name") or keys.get("run") or keys.get("uses") or "?"
         if table.get((job, name)):
+            why = _exempt_condition_problem(keys.get("if", ""), earlier)
+            if why:
+                findings.append((job, name, why))
             continue
         cond = keys.get("if", "")
         if "!cancelled()" in cond and cond.startswith("${{"):
@@ -4810,7 +4837,14 @@ def _cases(check):
           [(j, n) for j, n, _w in _sg_got]
           == [("one", "First check"), ("one", "Needs the first"),
               ("two", "Windows only")])
-    _sg_ex = step_guard_drift(_sg_wf, exempt={
+    _sg_wf_ex = (_sg_wf
+                 .replace("      - name: First check\n",
+                          "      - name: First check\n        id: first\n")
+                 .replace("      - name: Needs the first\n",
+                          "      - name: Needs the first\n"
+                          "        if: ${{ !cancelled() && "
+                          "steps.first.outcome == 'success' }}\n"))
+    _sg_ex = step_guard_drift(_sg_wf_ex, exempt={
         ("one", "Needs the first"): "reads /tmp/x from First check"})
     check("sg2 setup steps (checkout, setup-*, an install) and an exempted "
           "dependent step are NOT reported, and an `if:` that combines "
@@ -4827,6 +4861,24 @@ def _cases(check):
           "job and step, so it fails the command and not only this function",
           ("one / First check" in
            [s for s, _w in step_guard_findings(_sg_wf)]))
+    _sg_x = {("one", "Needs the first"): "reads /tmp/x from First check"}
+    _sg_none = step_guard_drift(_sg_wf.replace("id: first\n", ""), exempt=_sg_x)
+    _sg_unknown = step_guard_drift(
+        _sg_wf_ex.replace("steps.first.", "steps.other."), exempt=_sg_x)
+    _sg_bare_ex = step_guard_drift(
+        _sg_wf_ex.replace("${{ !cancelled() && steps.first.outcome == "
+                          "'success' }}", "steps.first.outcome == 'success'"),
+        exempt=_sg_x)
+    _sg_nocancel = step_guard_drift(
+        _sg_wf_ex.replace("!cancelled() && ", ""), exempt=_sg_x)
+    _sg_named = lambda got: [n for j, n, _w in got if n == "Needs the first"]
+    check("sg7 an exempt step's `if:` must hold `!cancelled()` inside "
+          "`${{ }}` AND the outcome of an earlier step of the job by `id`: "
+          "none at all, an outcome naming no earlier id, no `${{ }}`, and no "
+          "`!cancelled()` are each reported, while the full form (sg2) is not",
+          len(_sg_named(_sg_none)) == 1 and len(_sg_named(_sg_unknown)) == 1
+          and len(_sg_named(_sg_bare_ex)) == 1
+          and len(_sg_named(_sg_nocancel)) == 1)
     _sg_live_br = step_exemption_breadth_drift(_sg_live_text)
     check("sg5 THE LIVE EXEMPTION IS NARROW: the one exempted step reads the "
           "path its reason names and an earlier step produces it: %r"
