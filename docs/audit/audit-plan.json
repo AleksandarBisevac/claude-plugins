@@ -3550,7 +3550,8 @@
       "P126.3",
       "P126.13-13q",
       "P126.14-13q",
-      "P125.23"
+      "P125.23",
+      "P125.36-0h5"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -6287,7 +6288,8 @@
       "P126.13-13q",
       "P126.17-13q",
       "P126.14-13q",
-      "P125.23"
+      "P125.23",
+      "P125.36-0h5"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
