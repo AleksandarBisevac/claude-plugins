@@ -448,7 +448,7 @@
     {
       "id": "P125.6",
       "title": "Sign-off converges: re-review only for med+ or red fixes, lows carried, rounds capped",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F605. In drive-phase's triage: (1) a re-review is owed only for a fix task whose finding was med or high, or whose gate went red; a fixed low closes on its own green gate and fixes_after()/owed_tasks() stop listing it. (2) The triage's recommended answer for a low finding is carry (status `carried`, carriedTo a parked task - see openChoices for the target), and render_triage prints that as the default; fix stays available. (3) A re-review reads only the fix tasks' diffs (phase-diff-in-brief) and its brief says a new low in a fix is carried, not looped. (4) A round cap per phase, config review.maxRounds (default 2): reaching it prints the findings still open, the rounds' cost so far read from the usage ledger by phase (with its pricing basis, or 'unpriced' where it is), and asks once (carry all / one more round / sign-off with accept-open). The cap and the counts live in the driver's state, so a lost state file re-derives the round count from the filed phase returns rather than resetting to zero. Add the config key to hooks/_config.py DEFAULTS, _config_rules, the schema and the README config table. Red first: a review returning one med and two lows dispatches one fix task and one re-review over that fix's diff, the two lows end carried, and no third review is dispatched. Also measured in P123's review rounds: a fix task made from a finding defaults to tdd even when the finding is a missing test or a pin over a fix that already landed (P123.63, P123.66), so the red-first helper rightly refuses it and the task must be cancelled and re-added as regression - choose the fix task's mode from the finding: a finding whose resolution only adds a case over code already at HEAD is regression, with the red shown by restoring the old code in a scratch copy.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -492,16 +492,17 @@
       "dependsOn": [
         "P125.5"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-13T17:57:48Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.7",
@@ -1169,7 +1170,7 @@
     {
       "id": "P125.19",
       "title": "The intent check grades the diff against the task text, and the drive checks tests.add against the filed tests",
-      "status": "done",
+      "status": "pending",
       "description": "F633, measured on the testbed with a plain-session baseline and a blind A/B review: P5.3's text said src is set when the card ENTERS the viewport; the executor shipped `rootMargin: \"200px 0px\"`, said so, and renamed its test to 'once the card is near the viewport'; the phase reviewer's intentCheck answered `matches` on the basis of the executor's restatement. The blind pass also found two med defects the phase review missed. (1) The intent check QUOTES THE TASK TEXT and compares the diff and the tests against it - never against the outcome text or the test titles; a restatement whose scope differs from the task text is itself a finding, quoting both. (2) The reviewer brief puts the task text first and the executor's return last, labelled as the claim under review. (3) The drive diffs `tests.add` against the test names the return files, mechanically, and a declared case with no filed counterpart is a finding before any reviewer runs. Red-first: a fixture where the task says 'enters' and the return says 'near' with a 200px margin must answer `diverges` and quote both; a declared tests.add case missing from the return is named by the drive. (4) Measured on the testbed with the SAME model (plain Sonnet vs the plugin's Sonnet executors, blind A/B): the plugin's version alone shipped a lazy-load test that cannot fail, an e2e that drives the real server action (a key in env sends real mail), and a test-readiness race (asserting enabled state the SSR HTML already has). So the reviewer brief also asks, per declared test: can it fail on the unfixed code (the red-first block, or say it was never seen red), and does any test reach a real external service or side effect (mail, payment, network) rather than a stub - each a finding with its file:line. Faults: F633. (5) A FALSIFIER PER TEST, run by the drive at near-zero model cost (about +0.005 USD per task, research report 2026-10-12-agent-output-quality-research.md): every planned test carries a line 'must fail if <small code change>'; after the executor files, the drive applies that patch in a temporary tree (never the executor's tree) and runs the test, and a test that survives is a finding with file:line. A patch that breaks the build is could-not-run, never a kill. This REPLACES a revert-to-base check, which probe 1 measured as too weak: the plugin's P5.3 test fails on the revert yet survives the 'src set on mount' mutant, the real defect class; the plain Sonnet test kills both mount and margin_200 (artefacts danuvia-baseline/research-p53-plugin/probe-artifacts/probe1/*.log). (6) Parity in interaction states: when a task's design source names `:focus`/`:hover` rules for a form or control (as flux.css `.field input:focus` did), task synthesis writes into tests.add a design-parity case that snapshots that control's own box in its focus state (and hover where defined), not only rest, as a clipped element snapshot of that control or a computed-style assertion - a 1% threshold over a whole section hid a 2px ring (about 0.2% of the section) (2px/4px against the design's 9px, found by a live getComputedStyle probe). (7) Executor brief: scope must never push an executor into an inferior design. P6.3's plugin executor faked a 'Resend mock' by rewriting the browser response because `playwright.config.ts` was outside its scope; the plain session edited the config and ran a real mock. When the right design needs file X outside `files`, the executor files a widening request naming X and why, and does not work around it; P124's companions do not cover test infrastructure. Source: testbed monitor, 2026-10-12, at the owner's request. (8) Probe 2 (24 reviewer runs, Opus/Sonnet/Haiku, real P5.3 brief section): the brief as filed, task text first with the claim labelled, and the claim hidden each found 0/3 `diverges`; ONLY a CLAUSE-QUOTING RULE worked, 3/3 on all three models - the reviewer quotes each task clause, judges the diff against it, and a scope difference is `diverges`. So (1)-(2) are implemented as that rule, and: a contradicted clause carries a MED severity floor (4 of 6 Opus/Sonnet runs rated it low, which review-convergence would park as a carried low); the intent answer splits 'does the diff do what was asked' from 'does the claim describe the diff'; the phase brief carries tests.add, which it lacks today. (9) The tests.add-vs-filed-tests check of (3) cannot be a string diff: as one it flags 72 of 77 danuvia tasks, mostly Serbian plan text against English test titles. It matches a declared case by a verbatim title the executor must reuse, or by a clause mapping the return files; never a fuzzy string compare.",
       "files": [
         "plugins/audit/agents/audit-reviewer.md",
@@ -1217,25 +1218,16 @@
       "dependsOn": [
         "P125.5"
       ],
-      "attempts": 1,
+      "attempts": 0,
       "maxAttempts": 3,
-      "commit": "19836db16d46",
+      "commit": null,
       "outcome": {
-        "technical": "Implemented the mechanical half of F633's reviewer-convergence fixes, inside this task's declared files only. In _filed_returns.py: unsupported_match_basis(description, note) + _clause_quoted(), and return_problems/_reviewer_problems now take an optional `task` so a reviewer's `matches` answer whose note quotes no 4-word run of the task's own `description` is refused as unsupported before it can file (wired through drive-phase.py's submitted_shape, which now threads `task` for mode:task reviewer submissions only - mode:phase stays task=None, unaffected). In drive-phase.py: claim_section(task, filed_return) builds the task-description-first, return-labelled-as-claim block (pure, not yet wired into audit-lookup.py's brief composer, which is NOT in this task's files); tests_add_gaps(task, filed_titles) names declared tests.add entries with no filed counterpart, matched by verbatim clause or an explicit task-level tests.addMap entry, never fuzzy - wired into submit() so the drive reports gaps as a did-line at filing time, non-blocking; floor_contradicted_clause(findings) raises a low severity to med when the issue text carries the marker 'contradicts task clause' - wired into submit() for reviewer filings before they are written; run_falsifier(cmd, tree, mutation) applies a {file,find,replace} mutation to a tempfile.mkdtemp() copy of tree (never the executor's own tree), runs cmd there, and grades survived/killed/could-not-run (a SyntaxError/ImportError/zero-collected signature, or a `find` absent from the file, is could-not-run, never a kill). Documented the four mechanisms in reference/phase-signoff.md next to where findings are recorded; left agents/audit-reviewer.md untouched since it is already at 6992/7000 bytes and none of these four are reviewer-prompt-facing (they are drive- and shape-validation-side). Fixed a pre-existing test helper (_file_reviewer in test_drive_phase.py) to quote the task's own description in its default note, since the new unsupported-match check would otherwise refuse every per-task reviewer fixture in the suite (`review.perTask: always`) that used a generic 'as asked' note - this was the one behavioural ripple from wiring the check live; after that fix the whole suite is green. NOT DONE, and explicitly out of scope: (a) test_audit_task.py's 'design source names :focus/:hover -> interaction-state parity case in tests.add' - the source file this needs (scripts/manifest/audit-task.py) is not in this task's Files list, has no existing design-source/parity concept to extend, and is a large, unexplored file; I did not touch it rather than guess at a brand-new CSS-parsing feature there. (b) The reviewer BRIEF's actual text (task-first ordering, the clause-quoting rule stated to the model, tests.add carried into the brief) is composed by scripts/status/audit-lookup.py's compose_reviewer_brief/compose_phase_brief, which is also not in this task's Files list; claim_section() is the pure, tested building block for that ordering but is not wired into the brief audit-lookup.py writes. Verified: ran `python3 plugins/audit/tests/test_drive_phase.py --selftest` (243/243 cases passed) and `python3 plugins/audit/tests/test__filed_returns.py --selftest` (68/68 cases passed) directly; ran `python3 tools/sweep-selftests.py` once in the tree per the orchestrator's note - first run surfaced two real regressions from this change (pn0: a 'N of M' ratio claim in a new docstring; nw4: a text-mode write with no `newline=` in run_falsifier) and one register citation (F633 cited in three new docstrings/comments) - all three fixed, then reran: 332/332 files ok, 152 migrated to tests/, 15920 cases, exit 0. Ran `python3 tools/measure-context.py --gate --tree plugins/audit` (reviewer 6992/7000 unchanged, GATE OK), `python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json` (valid, unchanged), `claude plugin validate .` and `claude plugin validate plugins/audit` (both pass), `ruff check` and `vermin -t=3.8-` over the five edited files (clean).",
-        "descriptive": "The drive now floors a contradicted-clause finding to med, names a tests.add case with no filed counterpart, refuses a reviewer's unsupported `matches`, and can run a per-test falsifier in a throwaway copy of the tree; the reviewer-brief ordering and the audit-task.py interaction-state synthesis remain undone, outside this task's file scope."
+        "technical": null,
+        "descriptive": null
       },
       "startedAt": "2026-10-13T16:52:14Z",
-      "completedAt": "2026-10-13T17:49:18Z",
-      "verifiedBy": [
-        "test_drive_phase.py::fv1 (claim_section orders task description before the labelled claim)",
-        "test_drive_phase.py::fv2 (unsupported `matches` refused via return_problems(task=...))",
-        "test_drive_phase.py::fv3 (tests_add_gaps: verbatim clause and addMap matching, no fuzzy compare)",
-        "test_drive_phase.py::fv4 (floor_contradicted_clause raises a marked low to med)",
-        "test_drive_phase.py::fv5 (run_falsifier: killed/survived/could-not-run, tree byte-identical after)",
-        "test__filed_returns.py::um1 (unsupported_match_basis: quoting holds up, restating is named)",
-        "test__filed_returns.py::um2 (no description or no note grades nothing)",
-        "test__filed_returns.py::um3 (return_problems wiring: refuses matches, files quoting matches and diverges)"
-      ],
+      "completedAt": null,
+      "verifiedBy": [],
       "reviewPerTask": "phase",
       "notes": [
         {
@@ -1247,11 +1239,6 @@
         "runId": "2026-10-13T17:49:17Z.1b9976",
         "status": "passed",
         "at": "2026-10-13T17:49:17Z"
-      },
-      "intentCheck": {
-        "answer": "deferred",
-        "commit": "19836db16d46",
-        "at": "2026-10-13T17:49:18Z"
       },
       "redFirst": {
         "at": "2026-10-13T17:31:25Z",
@@ -1375,7 +1362,7 @@
     {
       "id": "P125.22",
       "title": "New behaviour is planned tests.mode tdd, its tests written from the task text before the code",
-      "status": "pending",
+      "status": "in_progress",
       "description": "init.md's mode rules cover only bug -> tdd, refactor -> regression, config -> gate-only, so a feature falls to regression: on the danuvia testbed plan, tdd 18, regression 49, gate-only 67 of 134 tasks. Research report 2026-10-12 probe 3 (0.18 USD): tests written after seeing the code passed the 200px defect 3/3; tests written from the task text caught it 2/3 (one over-strict); an ISSTA 2026 paper on post-hoc tests confirming the code agrees. Rule: a task that adds or changes observable behaviour is tdd; the executor brief for a tdd task orders tests from the task text first, red-first, then code. Zero added model tokens. Source: testbed monitor relay, 2026-10-12.",
       "files": [
         "plugins/audit/commands/init.md",
@@ -1408,21 +1395,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-13T17:57:51Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.23",
       "title": "The red-first helper can prove red on the runners a real project uses",
-      "status": "in_progress",
+      "status": "done",
       "description": "On the danuvia testbed redFirst is proved for 1 of 134 tasks (113 not-attempted, 9 could-not-prove; research report 2026-10-12). Causes measured there: Playwright output is never read, two vitest runs were unparsed, and three import errors of a symbol the task introduces were not taken as `--introduces` evidence. Deterministic code, zero model tokens: parse Playwright's and vitest's result formats (JSON reporter where available, line format otherwise), and read an ImportError/ModuleNotFound/'is not exported' on a symbol the diff introduces as a red. Source: testbed monitor relay, 2026-10-12.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -1453,19 +1441,38 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9bd3f940feee",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stamp-verification.py: added playwright JSON-reporter (--reporter=json) and line/list-reporter reading (_json_blob, playwright_json_cases/_tally, playwright_line_cases/_tally, playwright_cases), vitest's JSON reporter (jest-compatible schema: vitest_json_cases/_tally), wired through new red_read_tally/red_failing_cases wrappers used by classify_run, baseline_problem, fix_problem and red_verdict in place of the raw _runner_output.read_tally/failing_cases calls those three used before (which returned None/[] for both reporters, since _runner_output.py carries no row for either - out of this task's files scope, so the reporters are read locally rather than by widening that module). Added JS_RUNNERS += 'playwright' and widened js_test_cases' scope-opening check so a chained call ending in '.describe' (playwright's own 'test.describe(...)' nesting) opens a describe scope the same way jest's bare 'describe(...)' does, which is what lets a playwright spec's failing case be credited to a declared test file through the existing jest/vitest crediting machinery (case_site, _js_credit_problem) with no new crediting logic. Added a local _PW_LINE_ENTRY regex for playwright's line reporter instead of reusing _runner_output._FAILURE_READERS['playwright'], whose stored pattern lacks re.M and so never matches more than a single-line input (a latent bug in a file outside this task's scope, not touched). Added an 'export' row to MISSING_SPELLINGS reading node's/vite's \"The requested module '<spec>' does not provide an export named '<name>'\" wording, matched in missing_subjects by the export name directly (report_module now requires 'importer' before resolving a module-file report, so an export-only report falls through to None there rather than KeyError-ing on a missing key) - this is the --introduces evidence path the danuvia testbed's three unread import errors needed. tests/test_stamp_verification.py: 7 new cases (se1, se2, sm-export-missing stage; sp1, sp2, sr-playwright stage; sv-json1, sv-json2, sr-vitest-json stage; scs1, sr-could-not-start stage), each written and run red against the pre-fix code (classify_run returned no-tally/collection-error for playwright and vitest-json text, and case-credit failed on the test.describe nesting) before the implementation above turned them green. Full suite: python3 plugins/audit/tests/test_stamp_verification.py --selftest -> ALL PASS: 273/273 cases passed. Full tree sweep: python3 tools/sweep-selftests.py -> 332/332 files ok, 152 migrated to tests/, 15918 cases.",
+        "descriptive": "Red-first proofs now read Playwright's and vitest's JSON and line reporters, and a JS 'export not found' error naming an introduced symbol, closing three of the causes measured on the danuvia testbed (1 of 134 tasks proved)."
       },
       "startedAt": "2026-10-13T16:52:17Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-13T17:57:45Z",
+      "verifiedBy": [
+        "se1",
+        "se2",
+        "sp1",
+        "sp2",
+        "sv-json1",
+        "sv-json2",
+        "scs1"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-13T17:57:43Z.1b5219",
         "status": "passed",
         "at": "2026-10-13T17:57:43Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "9bd3f940feee",
+        "at": "2026-10-13T17:57:45Z"
+      },
+      "redFirst": {
+        "at": "2026-10-13T17:15:04Z",
+        "basis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest --stage sm-export-missing --stage sr-playwright --stage sr-vitest-json --stage sr-could-not-start` in a throwaway tree at HEAD exited 1 with 5 of 7 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `sm-export-missing`, `sr-could-not-start`, `sr-playwright`, `sr-vitest-json`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - se1 (house FAIL), sp1 (house FAIL), sp2 (house FAIL), sv-json1 (house FAIL), sv-json2 (house FAIL): SELFTEST FAILED: 2/7 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1563,7 +1570,7 @@
     {
       "id": "P125.26",
       "title": "No report table can widen the page at any width, by construction rather than by font margin",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Carried from P126-R2 (med, P126 phase review 2026-10-13). P126.1 made the hostile-content leg green on CI by letting the bugs table's test-gate pills wrap (`white-space:normal`), which lowers that column's narrowest width - so the page passes by margin at CI's fonts (reproduced with DejaVu in mcr.microsoft.com/playwright:v1.56.0-jammy: +31px before, 0 after), not by an invariant: any table whose columns' min-content widths sum past the column can still widen the document above the breakpoint where `.tablewrap` starts to scroll. The structural options trade against the sticky header: (a) `.tablewrap{overflow-x:auto}` at every width - a contained scroll that can never widen the document, but `position:sticky` on thead then sticks to the wrapper, not the viewport; (b) keep the viewport-sticky header and give every non-prose column a bounded min-width plus `<wbr>` in every renderer-emitted unbroken run; (c) a JS-measured fallback that switches a table to (a) only when it overflows. Decide with the owner, implement, and add a hostile-leg case that plants a token in EVERY column kind at the narrowest unframed width on a wide-font fixture so the margin cannot be what passes it. Not a 3.2.0 regression: CI's hostile leg is green on 3.3.0.",
       "files": [
         "plugins/audit/scripts/ui/report-css/tables.css",
@@ -1594,16 +1601,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-13T17:57:54Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.27",
