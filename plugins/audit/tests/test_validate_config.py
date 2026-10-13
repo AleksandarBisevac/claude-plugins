@@ -85,6 +85,36 @@ def _cases(check):
           % (_leaked,),
           _leaked == [])
 
+    # --- dated pricing rows: the new shape `rates_for(model, table, at)` reads
+    # beside the flat legacy row (COMPATIBILITY.md) --------------------------
+    _dated_rates = {"in": 2.0, "out": 10.0, "cacheW5m": 2.5, "cacheW1h": 4.0,
+                    "cacheR": 0.1}
+    fd, path = tempfile.mkstemp(suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump({"usage": {"pricing": {"claude-dated-9": [
+                {"effectiveFrom": "2026-01-01", "rates": _dated_rates},
+                {"effectiveFrom": "2026-06-01", "rates": _dated_rates},
+            ]}}}, fh)
+        check("cc5 a usage.pricing row given as a LIST of "
+              "{effectiveFrom, rates} entries validates and exits 0",
+              M.main([path]) == 0)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"usage": {"pricing": {"claude-dated-9": [
+                {"effectiveFrom": "not-a-date", "rates": _dated_rates},
+            ]}}}, fh)
+        check("cc6 ...and a malformed effectiveFrom is refused BY NAME, not by "
+              "a generic shape finding",
+              M.main([path]) == 1)
+        f, _ = _config_rules.validate_config(
+            {"usage": {"pricing": {"claude-dated-9": [
+                {"effectiveFrom": "not-a-date", "rates": _dated_rates}]}}})
+        check("cc6b ...and the finding names the field: %r" % (f,),
+              any("effectiveFrom" in x for x in f))
+    finally:
+        if os.path.exists(path):
+            os.unlink(path)
+
 
 def _selftest():
     return _harness.run(_cases)

@@ -179,6 +179,13 @@ CONFIG_REL = ".claude/audit.config.json"
 # from, and a project that overrides them has its own source to answer to.
 PRICING_SOURCE_URL = "https://platform.claude.com/docs/en/about-claude/pricing"
 
+# A model's entry is either a flat rate row (legacy shape: in effect always) or a
+# list of `{"effectiveFrom": "YYYY-MM-DD", "rates": {...}}` rows, picked by the
+# usage date - `scripts/usage/_usage_core.rates_for()` reads both shapes, and
+# `_config_rules._check_pricing` validates both. The shipped table below is flat
+# rows only; dated rows are for a project whose own negotiated rate changed on a
+# known date.
+
 # --- defaults -----------------------------------------------------------------
 DEFAULTS = {
     "manifestPath": "docs/audit/audit-plan.json",
@@ -245,10 +252,12 @@ DEFAULTS = {
     # purpose: model rates change, and a stale rate should be a one-line fix in the
     # consuming repo rather than a plugin release. Every rate is copied from the
     # page PRICING_SOURCE_URL names, as of `pricingAsOf`, never derived: the cache
-    # read multiplier is not uniform across models. `_usage_core.py`
-    # DEFAULT_PRICING, PRICING_AS_OF and PRICING_SOURCE_URL mirror this table, its
-    # date and its source so that module works standalone; the `pp` and `pv` cases
-    # in `tests/test__usage_core.py` read both copies and name any field that drifts.
+    # read multiplier is not uniform across models. `_usage_core.py`'s
+    # DEFAULT_PRICING, PRICING_AS_OF and PRICING_SOURCE_URL are DERIVED from this
+    # table through `_loader.load_hooks_config()` rather than hand-copied (hooks/
+    # may import nothing from scripts/, so this file stays the one literal); the
+    # `pp` and `pv` cases in `tests/test__usage_core.py` hold that derivation to
+    # account, and the `dp` case asserts an edit here alone moves the copy.
     "usage": {
         "enabled": True,
         "ledgerDir": ".claude/usage",
@@ -257,7 +266,7 @@ DEFAULTS = {
         "backfillOnFirstRun": True,
         "maxScanBytes": 33554432,
         "currency": "USD",
-        "pricingAsOf": "2026-10-06",
+        "pricingAsOf": "2026-10-10",
         # Cost bands. Empty by default on purpose: with no thresholds set the
         # analytics calibrate from the project's own completed tasks (median/p90),
         # which means something on day one and needs no guess. Set both to pin
@@ -266,11 +275,18 @@ DEFAULTS = {
         # classifying anything wrongly. NOT named "risk": tasks already carry a
         # `risk` field meaning risk of the change.
         "bands": {"highUSD": None, "outlierUSD": None},
-        # `_default` is Opus-tier on purpose: an unrecognized model is far more
-        # likely to be a new frontier release than a cheap one, and over-stating
-        # spend is the safer error for a cost display.
+        # No `_default` row: an unrecognized model is UNPRICED rather than priced
+        # at a guess - `rates_for()` answers None for it and every surface that
+        # prints a cost says "unpriced", never a fabricated figure. A project may
+        # still declare its own `usage.pricing._default`, and it is honoured the
+        # same way a named row is - see `_usage_core.rates_for`.
+        #
+        # An entry is a flat rate row (in effect always) or a list of
+        # `{"effectiveFrom", "rates"}` rows for a rate that changed on a known
+        # date - `_usage_core.rates_for(model, table, at)` picks the row in
+        # effect on `at`. Every row below is flat: the shipped table has never
+        # had a model whose OWN rate changed under one id.
         "pricing": {
-            "_default":          {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
             "claude-fable-5":    {"in": 10.0, "out": 50.0, "cacheW5m": 12.50, "cacheW1h": 20.0, "cacheR": 1.0},
             "claude-fable-5-1":  {"in": 10.0, "out": 50.0, "cacheW5m": 12.50, "cacheW1h": 20.0, "cacheR": 0.25},
             "claude-mythos-5":   {"in": 10.0, "out": 50.0, "cacheW5m": 12.50, "cacheW1h": 20.0, "cacheR": 1.0},
@@ -282,8 +298,10 @@ DEFAULTS = {
             "claude-opus-4-6":   {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
             "claude-opus-4-5":   {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
             "claude-sonnet-5":   {"in":  2.0, "out": 10.0, "cacheW5m":  2.50, "cacheW1h":  4.0, "cacheR": 0.2},
+            "claude-sonnet-5-5": {"in":  2.0, "out": 10.0, "cacheW5m":  2.50, "cacheW1h":  4.0, "cacheR": 0.1},
             "claude-sonnet-4-6": {"in":  3.0, "out": 15.0, "cacheW5m":  3.75, "cacheW1h":  6.0, "cacheR": 0.3},
             "claude-sonnet-4-5": {"in":  3.0, "out": 15.0, "cacheW5m":  3.75, "cacheW1h":  6.0, "cacheR": 0.3},
+            "claude-haiku-5-5":  {"in":  0.10, "out": 0.50, "cacheW5m": 0.125, "cacheW1h": 0.20, "cacheR": 0.01},
             "claude-haiku-4-5":  {"in":  1.0, "out":  5.0, "cacheW5m":  1.25, "cacheW1h":  2.0, "cacheR": 0.1},
         },
     },

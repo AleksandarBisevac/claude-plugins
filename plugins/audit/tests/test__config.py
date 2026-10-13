@@ -256,10 +256,10 @@ def _cases(check):
     cfg["exemptGlobs"].append("MUTATED")
     cfg["guardEdits"]["tokenVars"].append("MUTATED")
     cfg["tddReminder"]["sourceGlobs"].append("MUTATED")
-    cfg["usage"]["pricing"]["_default"]["in"] = 999.0
+    cfg["usage"]["pricing"]["claude-opus-5"]["in"] = 999.0
     check("e0 usage_cfg() does not alias DEFAULTS",
-          M.DEFAULTS["usage"]["pricing"]["_default"]["in"] == 5.0
-          and M.usage_cfg({})["pricing"]["_default"]["in"] == 5.0)
+          M.DEFAULTS["usage"]["pricing"]["claude-opus-5"]["in"] == 5.0
+          and M.usage_cfg({})["pricing"]["claude-opus-5"]["in"] == 5.0)
     check("e1 loaded cfg does not alias DEFAULTS",
           "MUTATED" not in M.DEFAULTS["exemptGlobs"]
           and "MUTATED" not in M.DEFAULTS["guardEdits"]["tokenVars"]

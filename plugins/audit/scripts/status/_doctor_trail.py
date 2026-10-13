@@ -259,20 +259,24 @@ def ttl_trade(entries, ul, pricing=None):
 
     Prices through `ul.price`, the one function every usage surface already
     prices a bag of tokens through - never a second rate table. `pricing` is
-    `usage_ledger`'s own table shape (model -> rates); an unknown model falls
-    back to `_default` exactly as every other priced surface here does.
-    `atOneHourUSD`/`atFiveMinUSD` stay None when no pricing table was given or
-    no one-hour write occurred - never a guessed figure standing in for a
-    missing one."""
+    `usage_ledger`'s own table shape (model -> rates); an unpriced model's
+    entries are left out of the sum entirely, never guessed at another row's
+    rate. `atOneHourUSD`/`atFiveMinUSD` stay None when no pricing table was
+    given, no one-hour write occurred, or every entry that wrote one is
+    unpriced - never a guessed figure standing in for a missing one."""
     entries = entries or []
     gaps = [b["ts"] - a["ts"] for a, b in zip(entries, entries[1:])]
     total_w1h = sum(e["cacheW1h"] for e in entries)
     at_1h = at_5m = None
     if pricing is not None and total_w1h > 0:
-        at_1h = sum(ul.price({"cacheW1h": e["cacheW1h"]}, e["model"], pricing)
-                   for e in entries)
-        at_5m = sum(ul.price({"cacheW5m": e["cacheW1h"]}, e["model"], pricing)
-                   for e in entries)
+        priced_1h = [ul.price({"cacheW1h": e["cacheW1h"]}, e["model"], pricing)
+                    for e in entries]
+        priced_5m = [ul.price({"cacheW5m": e["cacheW1h"]}, e["model"], pricing)
+                    for e in entries]
+        if any(v is not None for v in priced_1h):
+            at_1h = sum(v for v in priced_1h if v is not None)
+        if any(v is not None for v in priced_5m):
+            at_5m = sum(v for v in priced_5m if v is not None)
     return {"requestCount": len(entries),
            "longestGapS": max(gaps) if gaps else None,
            "cacheW1hTokens": total_w1h,

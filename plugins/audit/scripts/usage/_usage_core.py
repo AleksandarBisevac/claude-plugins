@@ -35,6 +35,8 @@ This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/_harness.py`.
 """
 import calendar
+import copy
+import importlib.util
 import os
 import re
 import sys
@@ -63,15 +65,25 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 # --- pricing --------------------------------------------------------------------
-# USD per MILLION tokens. Mirrors hooks/_config.py DEFAULTS["usage"]["pricing"] so
-# this module is usable standalone (backfill, selftest) without a config file.
-# The mirror is CHECKED, not asserted in prose: `pricing_divergences()` below and
-# `tests/test__usage_core.py`'s `pp` cases load the hooks' own table and name any
-# field that drifts.
-# They cannot be merged - hooks/ may import nothing from scripts/ - so the copy is
-# deliberate and the case is what keeps it honest. The date and the page the rates
-# were read from are mirrored the same way and held equal by
-# `pricing_provenance_divergences()`.
+# USD per MILLION tokens. DERIVED from hooks/_config.py DEFAULTS["usage"]["pricing"],
+# not a second literal: hooks/ may import nothing from scripts/, so hooks/_config.py
+# stays the one place the shipped table is WRITTEN, and this module reads it back
+# by path. `tests/test__usage_core.py`'s `dp` case holds the derivation to account -
+# an edit to hooks/_config.py ALONE moves this copy.
+#
+# LOADED BY RAW `importlib`, NOT THROUGH `_loader.load_hooks_config()` - this
+# module sits at the FLOOR of scripts/'s import graph (it reaches only `_output`,
+# on purpose: `_journal_io`, one layer up, reads a row's moment through its
+# `parse_ts`), and `_loader` sits one layer above that floor. Reaching for it here
+# would be an upward edge the import-layer lint refuses, for a win (a shared
+# loader's caching policy) this one call site, taken once at import time and
+# never again, has no use for. The THING `_loader` exists to fix - roughly
+# fourteen hand-rolled `importlib` copies, each a fresh chance to get the caching
+# policy or the module name wrong - does not reappear here: this is the SECOND
+# such copy in the whole tree (the first is the hooks' own loader in
+# `hooks/_config.py`, which has the same "may not import scripts/" constraint),
+# not a third ad-hoc one.
+#
 # Every rate is copied from the page, not derived: the cache writes follow the
 # published 1.25x (5-minute TTL) and 2x (1-hour TTL) multipliers off base input,
 # but the read multiplier is not uniform - the page prices some models' cache read
@@ -81,55 +93,96 @@ _output.install_path()
 # its rates differ from its family's: without one, `claude-opus-5-5` resolves to
 # `claude-opus-5` and is priced at another model's rate with no warning.
 #
-# `_default` is Opus-tier on purpose: an unrecognized model is far more likely to be
-# a new frontier release than a cheap one, and over-stating spend is the safer error
-# for a cost display. Anything a project actually runs should get its own row.
-PRICING_AS_OF = "2026-10-06"
-PRICING_SOURCE_URL = "https://platform.claude.com/docs/en/about-claude/pricing"
-DEFAULT_PRICING = {
-    "_default":          {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
-    "claude-fable-5":    {"in": 10.0, "out": 50.0, "cacheW5m": 12.50, "cacheW1h": 20.0, "cacheR": 1.0},
-    "claude-fable-5-1":  {"in": 10.0, "out": 50.0, "cacheW5m": 12.50, "cacheW1h": 20.0, "cacheR": 0.25},
-    "claude-mythos-5":   {"in": 10.0, "out": 50.0, "cacheW5m": 12.50, "cacheW1h": 20.0, "cacheR": 1.0},
-    "claude-mythos-5-1": {"in": 10.0, "out": 50.0, "cacheW5m": 12.50, "cacheW1h": 20.0, "cacheR": 0.25},
-    "claude-opus-5":     {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
-    "claude-opus-5-5":   {"in":  4.0, "out": 20.0, "cacheW5m":  5.00, "cacheW1h":  8.0, "cacheR": 0.2},
-    "claude-opus-4-8":   {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
-    "claude-opus-4-7":   {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
-    "claude-opus-4-6":   {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
-    "claude-opus-4-5":   {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
-    "claude-sonnet-5":   {"in":  2.0, "out": 10.0, "cacheW5m":  2.50, "cacheW1h":  4.0, "cacheR": 0.2},
-    "claude-sonnet-4-6": {"in":  3.0, "out": 15.0, "cacheW5m":  3.75, "cacheW1h":  6.0, "cacheR": 0.3},
-    "claude-sonnet-4-5": {"in":  3.0, "out": 15.0, "cacheW5m":  3.75, "cacheW1h":  6.0, "cacheR": 0.3},
-    "claude-haiku-4-5":  {"in":  1.0, "out":  5.0, "cacheW5m":  1.25, "cacheW1h":  2.0, "cacheR": 0.1},
-}
+# No `_default` row ships: an unrecognized model is UNPRICED, not priced at a
+# guess - `rates_for()` answers None for it, and `price()` follows. A project
+# that declares its own `usage.pricing._default` is still honoured, because the
+# lookup reads whatever `_default` the TABLE carries, never a module constant.
+def _load_hooks_config_module():
+    """`hooks/_config.py`, loaded by path - never cached process-wide (unlike
+    `_loader.load()`), because this runs exactly once, at import time, and the
+    constants below are what every later reader actually uses."""
+    path = os.path.join(_output.HOOKS_DIR, "_config.py")
+    spec = importlib.util.spec_from_file_location(
+        "audit_usage_core_hooks_config", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_hooks_config = _load_hooks_config_module()
+# A deep copy, not the loaded module's own dict: a caller building a drifted
+# table off DEFAULT_PRICING for a test must not corrupt `_hooks_config` itself.
+DEFAULT_PRICING = copy.deepcopy(_hooks_config.DEFAULTS["usage"]["pricing"])
+PRICING_AS_OF = _hooks_config.DEFAULTS["usage"]["pricingAsOf"].strip()
+PRICING_SOURCE_URL = _hooks_config.PRICING_SOURCE_URL
 
 TOKEN_KEYS = ("in", "out", "cacheW5m", "cacheW1h", "cacheR")
 
 
-def rates_for(model, pricing=None):
-    """Resolve the price row for `model`: exact match, then LONGEST matching prefix
-    (so a dated id like `claude-haiku-4-5-20251001` resolves to `claude-haiku-4-5`),
-    then `_default`. Never raises."""
+def _dated_row(entry, at):
+    """One flat/dated `entry` resolved to the rate dict in effect on `at`
+    (`YYYY-MM-DD`, default today). A flat dict means 'in effect always' (the
+    legacy shape, still accepted - COMPATIBILITY.md). A list of
+    `{"effectiveFrom", "rates"}` rows picks the LATEST row whose `effectiveFrom`
+    is on or before `at`, falling back to the earliest row when `at` precedes
+    every one (an `at` set before the first recorded rate still prices
+    SOMETHING, which is less wrong than pricing nothing). None when the entry
+    is neither shape, or a list with no usable row."""
+    if isinstance(entry, dict):
+        return entry
+    if not isinstance(entry, list):
+        return None
+    rows = sorted(
+        (r for r in entry
+         if isinstance(r, dict) and isinstance(r.get("rates"), dict)
+         and isinstance(r.get("effectiveFrom"), str) and r["effectiveFrom"]),
+        key=lambda r: r["effectiveFrom"])
+    if not rows:
+        return None
+    at = at or time.strftime("%Y-%m-%d", time.gmtime())
+    chosen = rows[0]["rates"]
+    for row in rows:
+        if row["effectiveFrom"] <= at:
+            chosen = row["rates"]
+        else:
+            break
+    return chosen
+
+
+def rates_for(model, pricing=None, at=None):
+    """Resolve the price row for `model`, in effect on `at` (`YYYY-MM-DD`,
+    default today): exact match, then LONGEST matching prefix (so a dated id
+    like `claude-haiku-4-5-20251001` resolves to `claude-haiku-4-5`), then the
+    TABLE's own `_default` when it declares one. None when nothing matches -
+    an unknown model is UNPRICED, never priced at a guess. Never raises.
+
+    An entry (exact, prefix or `_default`) may be a flat rate row or a list of
+    dated rows; see `_dated_row`."""
     table = pricing if isinstance(pricing, dict) and pricing else DEFAULT_PRICING
-    fallback = table.get("_default") or DEFAULT_PRICING["_default"]
-    if not isinstance(model, str) or not model:
-        return fallback
-    row = table.get(model)
-    if isinstance(row, dict):
-        return row
-    best, best_len = None, -1
-    for key, row in table.items():
-        if key.startswith("_") or not isinstance(row, dict):
-            continue
-        if model.startswith(key) and len(key) > best_len:
-            best, best_len = row, len(key)
-    return best if best is not None else fallback
+    entry = None
+    if isinstance(model, str) and model:
+        entry = table.get(model)
+        if entry is None:
+            best, best_len = None, -1
+            for key, candidate in table.items():
+                if key.startswith("_"):
+                    continue
+                if model.startswith(key) and len(key) > best_len:
+                    best, best_len = candidate, len(key)
+            entry = best
+    if entry is None:
+        entry = table.get("_default")
+    if entry is None:
+        return None
+    return _dated_row(entry, at)
 
 
-def price(counts, model, pricing=None):
-    """USD for one bag of token counts. `counts` uses the TOKEN_KEYS names."""
-    r = rates_for(model, pricing)
+def price(counts, model, pricing=None, at=None):
+    """USD for one bag of token counts, or None when `model` carries no row at
+    all - never a fallback figure. `counts` uses the TOKEN_KEYS names."""
+    r = rates_for(model, pricing, at)
+    if r is None:
+        return None
     total = 0.0
     for k in TOKEN_KEYS:
         try:
@@ -449,12 +502,23 @@ def priced_at_read(rows, table):
 
     A row that cannot be priced again (`_priceable`) keeps its stored figure,
     and the count of those is returned for the rate phrase to state - never
-    left as a silent mix of two tables."""
+    left as a silent mix of two tables.
+
+    A row whose MODEL carries no row at all in `table` is a third case, not
+    either of the other two: `price()` answers None rather than a fallback
+    figure, so `costUSD` is set to None and `unpriced` is True - a renderer
+    sums these with the same `or 0.0` guard `_cost()` already applies, and
+    prints "unpriced" rather than a fabricated dollar amount."""
     out, kept = [], 0
     for row in rows:
         copy = dict(row)
         if _priceable(row):
-            copy["costUSD"] = round(price(row, row.get("model"), table), 6)
+            usd = price(row, row.get("model"), table)
+            if usd is None:
+                copy["costUSD"] = None
+                copy["unpriced"] = True
+            else:
+                copy["costUSD"] = round(usd, 6)
         else:
             kept += 1
         out.append(copy)

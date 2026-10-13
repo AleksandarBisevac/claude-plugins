@@ -290,10 +290,9 @@
         },
         "pricing": {
           "type": "object",
-          "description": "Model id -> rate row. Lookup is exact match, then longest matching prefix (so a dated id resolves to its family), then the '_default' row.",
+          "description": "Model id -> rate row. Lookup is exact match, then longest prefix, then this table's own '_default' row when declared - the shipped table ships none, so an unmatched model is unpriced rather than guessed at.",
           "additionalProperties": {
-            "type": "object",
-            "description": "USD per MILLION tokens for one model, copied from the published pricing page rather than derived. Cache writes follow the published multipliers off base input (1.25x at the 5-minute TTL, 2x at the 1-hour TTL); the cache-read multiplier is not uniform, and the page prices some models' read below the usual 0.1x.",
+            "description": "A flat rate row (in effect always, USD per MILLION tokens) or a list of dated rows, each carrying the date its rates took effect - `rates_for(model, table, at)` picks the latest `effectiveFrom` on or before `at`. Cache writes follow the published multipliers off base input (1.25x/5m, 2x/1h); cache-read is not uniform.",
             "additionalProperties": true,
             "properties": {
               "in": {
@@ -321,7 +320,31 @@
                 "minimum": 0,
                 "description": "Cache read."
               }
-            }
+            },
+            "oneOf": [
+              {"type": "object"},
+              {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": ["effectiveFrom", "rates"],
+                  "additionalProperties": true,
+                  "properties": {
+                    "effectiveFrom": {
+                      "type": "string",
+                      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                      "description": "YYYY-MM-DD this row's rates took effect."
+                    },
+                    "rates": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "The same per-model rate row shape as the flat form, in effect from `effectiveFrom`."
+                    }
+                  }
+                }
+              }
+            ]
           }
         }
       }

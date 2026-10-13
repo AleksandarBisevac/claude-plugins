@@ -34,6 +34,7 @@ import sys
 import _harness                                    # sets sys.path for scripts/ + hooks/
 import _output                                     # noqa: E402
 from _output import safe_stdio                     # noqa: E402
+import _loader                                     # noqa: E402
 import _usage_core as M                            # noqa: E402
 
 
@@ -58,11 +59,11 @@ def _cases(check):
           and M.rates_for("claude-mythos-5")["out"] == 50.0)
     check("price: a Sonnet 4.x id does not fall through to the Opus default",
           M.rates_for("claude-sonnet-4-5")["out"] == 15.0)
-    check("price: unknown model falls back to _default",
-          M.rates_for("some-future-model")["in"]
-          == M.DEFAULT_PRICING["_default"]["in"])
-    check("price: non-string model falls back",
-          M.rates_for(None)["in"] == M.DEFAULT_PRICING["_default"]["in"])
+    check("price: an unknown model is UNPRICED - None, never a fallback figure",
+          M.rates_for("some-future-model") is None
+          and M.price({"in": 1_000_000}, "some-future-model") is None)
+    check("price: a non-string model is the same unknown-model case",
+          M.rates_for(None) is None)
     one_m = {"in": 1_000_000, "out": 0, "cacheW5m": 0, "cacheW1h": 0, "cacheR": 0}
     check("price: 1M input on opus-5 == $5.00",
           abs(M.price(one_m, "claude-opus-5") - 5.0) < 1e-9)
@@ -156,7 +157,7 @@ def _cases(check):
           M.pricing_divergences(M.DEFAULT_PRICING, _pp_gone, "ledger", "hooks")
           == ["claude-haiku-4-5: absent from hooks"])
     _pp_extra = _deep_pricing_copy(M.DEFAULT_PRICING)
-    _pp_extra["claude-future-9"] = dict(M.DEFAULT_PRICING["_default"])
+    _pp_extra["claude-future-9"] = dict(M.DEFAULT_PRICING["claude-opus-5"])
     check("pp4 ...and so is a model only the OTHER side has, so the check reads "
           "both directions",
           M.pricing_divergences(M.DEFAULT_PRICING, _pp_extra, "ledger", "hooks")
@@ -271,18 +272,113 @@ def _cases(check):
           "source URL, and neither is blank",
           _pv_diff == [], " | ".join(_pv_diff))
 
-    # Sonnet 5.5 has no row of its own: by longest prefix it is priced as
-    # claude-sonnet-5, which is right only while the two carry the same rates.
-    # The expected row is the page's own Sonnet 5.5 line, so a later correction
-    # to claude-sonnet-5 alone goes red HERE and forces the choice between
-    # giving Sonnet 5.5 its own row and confirming the two still agree.
+    # Sonnet 5.5 and Haiku 5.5 carry their OWN rows now (fixtures/
+    # pricing-page-2026-10-10.md is the checked-in excerpt both are transcribed
+    # from) - Sonnet 5.5's cache-read rate is HALF of Sonnet 5's (0.10 vs 0.2),
+    # so a case that let it fall through the longest-prefix match to Sonnet 5's
+    # row would silently overcharge every Sonnet 5.5 cache read.
     _pr_sonnet_5_5 = {"in": 2.0, "out": 10.0, "cacheW5m": 2.5, "cacheW1h": 4.0,
-                      "cacheR": 0.2}
-    check("pr6 claude-sonnet-5-5, priced through the claude-sonnet-5 row, still "
-          "carries the rates the official page lists for Sonnet 5.5",
+                      "cacheR": 0.10}
+    check("pr6 claude-sonnet-5-5 carries its OWN row (cacheR 0.10), not Sonnet "
+          "5's (0.2) through the longest-prefix fallback",
           M.rates_for("claude-sonnet-5-5") == _pr_sonnet_5_5
-          and M.rates_for("claude-sonnet-5-5-20261001") == _pr_sonnet_5_5,
+          and M.rates_for("claude-sonnet-5-5-20261001") == _pr_sonnet_5_5
+          and M.rates_for("claude-sonnet-5-5")["cacheR"]
+          != M.rates_for("claude-sonnet-5")["cacheR"],
           "got %r" % (M.rates_for("claude-sonnet-5-5"),))
+    # The checked-in excerpt pin: both new rows read exactly what the page
+    # fixture quotes, so a later edit to either row that drifts from the page
+    # is caught here rather than by eyeballing the table.
+    _excerpt = os.path.join(_output.TESTS_DIR, "fixtures",
+                            "pricing-page-2026-10-10.md")
+    with open(_excerpt, encoding="utf-8") as _fh:
+        _excerpt_text = _fh.read()
+    check("pr7 claude-sonnet-5-5's cacheR and claude-haiku-5-5's in both equal "
+          "the checked-in page excerpt (fixtures/pricing-page-2026-10-10.md), "
+          "not a hand-retyped number",
+          M.rates_for("claude-sonnet-5-5")["cacheR"] == 0.10
+          and M.rates_for("claude-haiku-5-5")["in"] == 0.10
+          and "$0.10 | $2.50 | $4 | $0.10 | $10" not in _excerpt_text  # sanity: no stray row
+          and "$2 | $2.50 | $4 | $0.10 | $10" in _excerpt_text
+          and "$0.10 | $0.125 | $0.20 | $0.01 | $0.50" in _excerpt_text)
+    check("pr8 claude-haiku-5-5 carries its own row rather than falling to an "
+          "unpriced/`_default` answer",
+          M.rates_for("claude-haiku-5-5")
+          == {"in": 0.10, "out": 0.50, "cacheW5m": 0.125, "cacheW1h": 0.20,
+              "cacheR": 0.01})
+
+    # --- dr: a model's entry may be a list of DATED rate rows ---------------
+    _dr_old = {"in": 1.0, "out": 5.0, "cacheW5m": 1.25, "cacheW1h": 2.0,
+               "cacheR": 0.1}
+    _dr_new = {"in": 2.0, "out": 10.0, "cacheW5m": 2.5, "cacheW1h": 4.0,
+               "cacheR": 0.2}
+    _dr_table = {"claude-dated-9": [
+        {"effectiveFrom": "2026-01-01", "rates": _dr_old},
+        {"effectiveFrom": "2026-06-01", "rates": _dr_new},
+    ], "claude-flat-9": dict(_dr_old)}
+    check("dr1 a date BEFORE the later row's effectiveFrom prices at the "
+          "earlier row",
+          M.rates_for("claude-dated-9", _dr_table, "2026-03-01") == _dr_old)
+    check("dr2 a date ON/AFTER the later row's effectiveFrom prices at it",
+          M.rates_for("claude-dated-9", _dr_table, "2026-06-01") == _dr_new
+          and M.rates_for("claude-dated-9", _dr_table, "2026-12-31") == _dr_new)
+    check("dr3 a date BEFORE every row still prices at the earliest one, "
+          "rather than pricing nothing",
+          M.rates_for("claude-dated-9", _dr_table, "2020-01-01") == _dr_old)
+    check("dr4 a flat legacy row (not a list) prices EVERY date the same",
+          M.rates_for("claude-flat-9", _dr_table, "2020-01-01") == _dr_old
+          and M.rates_for("claude-flat-9", _dr_table, "2099-01-01") == _dr_old)
+    check("dr5 `price()` honours `at` the same way `rates_for()` does",
+          abs(M.price({"in": 1_000_000}, "claude-dated-9", _dr_table,
+                      "2026-03-01") - 1.0) < 1e-9
+          and abs(M.price({"in": 1_000_000}, "claude-dated-9", _dr_table,
+                          "2026-06-01") - 2.0) < 1e-9)
+
+    # --- dp: DEFAULT_PRICING is DERIVED from hooks/_config.py through
+    # `_loader`, never a second literal - pp7/pp8 above hold the two tables'
+    # CONTENTS equal, which a pair of literals kept in sync by hand would also
+    # pass. This proves the MECHANISM: `M._hooks_config` is the loaded module
+    # DEFAULT_PRICING is read off, and loading a hooks/_config.py edited on its
+    # own (simulated on a scratch copy - the real file is never touched) moves
+    # the figure through the exact call `_usage_core.py` makes.
+    import shutil as _dp_shutil
+    import tempfile as _dp_tempfile
+
+    check("dp1 _usage_core keeps the loaded hooks module it derived from",
+          hasattr(M, "_hooks_config")
+          and getattr(M._hooks_config, "__file__", "").replace("\\", "/")
+          .endswith("hooks/_config.py"))
+    check("dp2 DEFAULT_PRICING is read OFF that loaded module, not a second "
+          "literal kept in sync by hand",
+          M.DEFAULT_PRICING == M._hooks_config.DEFAULTS["usage"]["pricing"])
+
+    _dp_tmp = _dp_tempfile.mkdtemp(prefix="usage-core-dp-")
+    try:
+        _dp_copy = os.path.join(_dp_tmp, "_config.py")
+        _dp_shutil.copyfile(os.path.join(_harness.HOOKS_DIR, "_config.py"),
+                            _dp_copy)
+        with open(_dp_copy, encoding="utf-8") as _fh:
+            _dp_src = _fh.read()
+        _dp_target = ('"claude-opus-5":     {"in":  5.0, "out": 25.0, '
+                      '"cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5}')
+        check("dp3 fixture assumption: the shipped row this case edits still "
+              "reads what the case expects - a false pass here would hide a "
+              "dp4 that proves nothing",
+              _dp_src.count(_dp_target) == 1, _dp_src.count(_dp_target))
+        _dp_edited = _dp_src.replace(
+            _dp_target,
+            _dp_target.replace('"in":  5.0', '"in": 4321.5'), 1)
+        with open(_dp_copy, "w", encoding="utf-8") as _fh:
+            _fh.write(_dp_edited)
+        _dp_mod = _loader.load(_dp_copy, modname="audit_usage_core_dp_edited",
+                               cache=False)
+        check("dp4 LOADING a hooks/_config.py edited on its own (nothing in "
+              "_usage_core.py touched) carries the edit through the exact "
+              "mechanism (`_loader.load`) DEFAULT_PRICING is derived with",
+              _dp_mod.DEFAULTS["usage"]["pricing"]["claude-opus-5"]["in"]
+              == 4321.5)
+    finally:
+        _dp_shutil.rmtree(_dp_tmp, ignore_errors=True)
 
     # --- tp: the example config is a third copy of the shipped rates --------
     # It lists only some models, so only the rows it lists are compared; its
@@ -784,7 +880,8 @@ def _resolver_cases(check):
           isinstance(got_s, dict) and isinstance(got_s.get("table"), dict)
           and got_s["table"] == M.DEFAULT_PRICING
           and got_s["table"] is not M.DEFAULT_PRICING
-          and got_s["table"].get("_default") is not M.DEFAULT_PRICING["_default"])
+          and got_s["table"]["claude-sonnet-5"]
+          is not M.DEFAULT_PRICING["claude-sonnet-5"])
 
 
 def _selftest():

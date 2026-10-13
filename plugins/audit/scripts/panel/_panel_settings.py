@@ -269,8 +269,10 @@ FIELD_HELP = {
     "usage.pricing":
         "Rates in this project's currency per MILLION tokens. Lookup is exact match, "
         "then longest matching prefix — so a dated model id resolves to its family — "
-        "then the _default row. Leave a cell empty to keep the shipped rate shown in "
-        "it.",
+        "then this table's own _default row, when one is declared here (the shipped "
+        "table ships none: an unrecognized model with no _default of your own is "
+        "unpriced, never priced at a guess). Leave a cell empty to keep the shipped "
+        "rate shown in it.",
     "executor.runsGate":
         "How much of a task's own gate the executor subagent runs itself before the "
         "orchestrator runs the same gate again and records it — only that recorded "

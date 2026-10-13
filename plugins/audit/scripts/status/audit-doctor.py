@@ -252,7 +252,7 @@ def diagnose(project, deep=False, transcript_path=None):
             ul = _trail._load("usage_ledger", "usage_ledger.py")
             pricing = ul.project_pricing(
                 manifest, manifest_path=os.path.join(project, manifest_rel),
-                project_dir=project)
+                project_dir=project)["table"]
         except Exception:
             pricing = None
     check_ttl_trade(rep, transcript_path, pricing)

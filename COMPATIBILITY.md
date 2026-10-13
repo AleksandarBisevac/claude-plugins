@@ -449,6 +449,14 @@ is still true of a nested key.
   shipped one model by model, so a model it does not name keeps its shipped row. Every
   surface that prints a cost takes that one answer (`usage_ledger.resolve_pricing`); the
   meter and the panel read only the config before this order was written here.
+  **A `usage.pricing[model]` entry's SHAPE is a config key kept the same way.** A flat rate
+  row (`{in, out, cacheW5m, cacheW1h, cacheR}`) keeps meaning what it always meant: in
+  effect for every date. A list of `{"effectiveFrom", "rates"}` rows is additive — the shape
+  `rates_for(model, table, at)` reads when a model's own rate changed on a known date, with
+  the row in effect on `at` picked by the latest `effectiveFrom` on or before it. The shipped
+  table carries no `_default` row (an unrecognized model with no row of its own is unpriced,
+  not priced at a guess); a project's own `_default`, in either shape, is still honoured
+  exactly as any other named row is.
 - **When two keys COMPOSE rather than compete, that is written down too**, because
   a reader who finds only one of them draws the wrong conclusion. There is one such
   pair: `bashWriteCheck.enabled` and the plan gate both have to be permissive before

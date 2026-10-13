@@ -137,22 +137,18 @@ def _cases(check):
           "either", len({r["model"] for r in orch}) > 1,
           sorted({r["model"] for r in orch}))
 
-    # ...and every id it can emit must price at its OWN row. `rates_for` falls
-    # back to `_default`, which is Opus-tier on purpose, so a renamed or retired
-    # model id does not fail either - it silently re-prices the demo UPWARD
-    # (mutating "claude-sonnet-5" to "claude-sonnet-6" took the earlier fixture
-    # from $414.28 to $461.08 with every suite green, because "cost is priced per
-    # row and non-zero" above is satisfied by the fallback). Asked through the real
-    # resolver rather than by looking the key up here, so a dated id like
-    # `claude-haiku-4-5-20251001` still counts as priced; identity against the
-    # `_default` ROW is what separates the two, because its numbers are EQUAL to
-    # Opus's and a value comparison would call the fallback a match.
-    fallback = ul.DEFAULT_PRICING["_default"]
+    # ...and every id it can emit must price at its OWN row. The shipped table
+    # carries no `_default` any more, so a renamed or retired model id does not
+    # silently re-price the demo at a guessed figure - it comes back None, and
+    # that is what this checks for. Asked through the real resolver rather than
+    # by looking the key up here, so a dated id like `claude-haiku-4-5-20251001`
+    # still counts as priced.
     emitted = sorted(set(M.TIER_TO_MODEL.values()) | set([M.DEFAULT_MODEL]))
-    unpriced = [mid for mid in emitted if ul.rates_for(mid) is fallback]
+    unpriced = [mid for mid in emitted if ul.rates_for(mid) is None]
     check("pricing: every model id this generator can emit resolves to its own "
-          "rate row - one that does not lands on the Opus-tier `_default` and "
-          "overstates the demo's spend without failing anything",
+          "rate row - one that does not comes back None (unpriced) rather "
+          "than a guessed figure that would overstate the demo's spend "
+          "without failing anything",
           bool(emitted) and unpriced == [],
           "emitted=%r unpriced=%r" % (emitted, unpriced))
     check("shape: more than one author appears",

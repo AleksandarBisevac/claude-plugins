@@ -29,7 +29,7 @@
     {
       "id": "P125.1",
       "title": "The usage meter counts each message.id at its largest usage, across scans too",
-      "status": "in_progress",
+      "status": "done",
       "description": "F597. usage_ledger._scan_file already keeps a PROVISIONAL figure for an id whose entries all carried stop_reason null, but every other repeat of an id is still dropped at the ring check, so a subagent message whose early entries carry a non-null stop_reason and a partial output_tokens is counted at its first entry (measured on the testbed and on this repo's subagent transcripts: output summed from first lines is under half the sum from final lines). Replace the stop_reason-gated pending map with one invariant: the cursor carries, for every id still in the ring, the per-field counts already added to the ledger; any later entry for that id adds only its field-wise excess (never negative, since the ledger is append-only), whether it arrives in the same scan or a later one, and adds no second message to `msgs`. Keep the ring's bound and drop the counts of an id that leaves it. Correct the module docstring's premise to what was measured (the block repeats, except subagent output_tokens, which grows) and the README's 'One trap' paragraph to match. Red first, with fixtures carrying only counts: one id three times with output_tokens 1, 1, 412 and stop_reason set on every entry must record 412; the same fixture split across two scans at the second line must still record 412; the existing streaming-partial cases stay green; a main-transcript fixture whose repeats are identical records exactly one message.",
       "files": [
         "plugins/audit/scripts/usage/usage_ledger.py",
@@ -63,25 +63,41 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f91cad3ec368",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Reworked usage_ledger._scan_file's pending-id dedup: the cursor's pending map now carries, for every id still in the scan ring, the per-field counts already added to the ledger (in/out/cacheW5m/cacheW1h/cacheR), regardless of stop_reason; a later entry for that id (same scan or a later one, via the cursor) adds only its field-wise excess over those counts, clamped at zero, and never appends a second message to msgs. The old stop_reason==None gate is gone, so a subagent repeat whose entries all carry a non-null stop_reason but growing output_tokens is now summed to its largest figure instead of its first. Updated the module docstring's premise and README's usage-ledger paragraph to state the measured behaviour (repeats are byte-identical in a main session, but a subagent's output_tokens grows across repeats) instead of the old stop_reason-based claim. Added tests sf6 (3 entries, output_tokens 1,1,412, non-null stop_reason throughout -> out=412, msgs=1), sf7 (same fixture split across two scans at the second line -> out=412, msgs=1 in total), and sf8 (a later entry with lower counts than already recorded adds nothing and writes no row). Also removed a code comment at test_usage_ledger.py:323 that cited a fault-register id (F597), replacing it with prose stating the constraint in its own words, per CLAUDE.md's rule that comments never cite F/P/BUG ids - this was flagged by the orchestrator after attempt 1 failed tools/sweep-selftests.py's test__deps.py rc16 case. Verified: python3 plugins/audit/tests/test_usage_ledger.py --selftest -> ALL PASS: 100/100 cases passed; python3 plugins/audit/tests/test__deps.py --selftest -> ALL PASS: 314/314 cases passed (rc16 no longer fires). Confirmed no other added line in the diff cites a fault/phase/task/bug id via `git diff -U0 plugins/ | grep -E '^+.*\\b(F[0-9]{2,4}|P[0-9]+\\.[0-9]+|BUG-[0-9]+)\\b'` (no output).",
+        "descriptive": "Usage ledger now sums a subagent repeat's growing output_tokens to its true largest figure instead of stopping at the first entry, across scans too."
       },
       "startedAt": "2026-10-13T13:16:01Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-13T13:27:17Z",
+      "verifiedBy": [
+        "sf6: an id seen three times with output_tokens 1, 1, 412 and a non-null stop_reason on each records out=412 and msgs=1",
+        "sf7: the same three entries split across two scans at the second line still record out=412 in total and msgs=1",
+        "sf8: a later entry whose counts are lower than the counted ones adds nothing and writes no row",
+        "sf4 (pre-existing, unchanged assertion target): the cursor keeps the counted-so-far tally for an id still in the ring even once a final entry is counted"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-13T13:27:16Z.ddd46d",
         "status": "passed",
         "at": "2026-10-13T13:27:16Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "f91cad3ec368",
+        "at": "2026-10-13T13:27:17Z"
+      },
+      "redFirst": {
+        "at": "2026-10-13T13:18:12Z",
+        "basis": "`python3 plugins/audit/tests/test_usage_ledger.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 100 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sf6 (house FAIL), sf7 (house FAIL): SELFTEST FAILED: 97/100 cases passed; --case sf8 names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P125.2",
       "title": "One price table with dated rows, Sonnet 5.5 and Haiku 5.5 priced, unknown models unpriced",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F577 + N1 + the table half of sketch 3a. (1) One home: hooks/_config.py DEFAULTS usage.pricing stays the table; _usage_core derives DEFAULT_PRICING, PRICING_AS_OF and PRICING_SOURCE_URL from it through _loader.load_hooks_config() instead of a hand copy, and pricing_divergences()/pricing_provenance_divergences() stay only for declared-vs-shipped reporting (see openChoices for the alternative). (2) Rows: add claude-sonnet-5-5 (in 2, cacheW5m 2.50, cacheW1h 4, cacheR 0.10, out 10) and claude-haiku-5-5 with its long-prompt tier (up to 100,000 prompt tokens: 0.10 / 0.125 / 0.20 / 0.01 / 0.50; over: 0.50 / 0.625 / 1 / 0.05 / 2.50), as quoted from the pricing page in openChoices, with a checked-in excerpt of the page rows the selftest pins against. (3) Dated rows: a model's entry may be a list of rate rows each carrying effectiveFrom; rates_for(model, table, at) returns the row in effect on `at`; the flat legacy row stays accepted and means 'in effect always' (COMPATIBILITY.md: a config key the plugin reads keeps being read - add the new shape to it). (4) Unpriced: the shipped table carries no `_default`; rates_for answers None for an unknown model and price() returns None, never a fallback figure; a `_default` a project declares is still honoured and labelled. Update the config schema, _config_rules vocabulary, the panel's price editor wording that says 'then the _default row', tools/stream-cost.py's _rate (an unpriced request prints unpriced rather than 0), COMPATIBILITY.md, and the README usage section. Red first: rates_for('claude-haiku-5-5') returns today's _default row; rates_for('claude-sonnet-5-5') returns the Sonnet 5 row's 0.2 read.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -95,7 +111,22 @@
         "plugins/audit/tests/test_validate_config.py",
         "plugins/audit/tests/fixtures/pricing-page-2026-10-10.md",
         "COMPATIBILITY.md",
-        "plugins/audit/README.md"
+        "plugins/audit/README.md",
+        "plugins/audit/scripts/usage/_usage_routing.py",
+        "plugins/audit/scripts/usage/_usage_spend.py",
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/scripts/demo/gen-demo-usage.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test__usage_bench.py",
+        "plugins/audit/tests/test__usage_load.py",
+        "plugins/audit/tests/test__usage_routing.py",
+        "plugins/audit/tests/test__usage_spend.py",
+        "plugins/audit/tests/test_audit_doctor.py",
+        "plugins/audit/tests/test_audit_usage.py",
+        "plugins/audit/tests/test_gen_demo_usage.py",
+        "plugins/audit/templates/audit.config.example.json",
+        "plugins/audit/scripts/status/audit-doctor.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -126,16 +157,32 @@
       "dependsOn": [
         "P125.1"
       ],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-13T14:19:45Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "notes": [
+        {
+          "at": "2026-10-13T14:10:37Z",
+          "text": "Scope widened by the orchestrator: removing the shipped _default row makes unknown models unpriced (None); the sweep over the attempt-1 tree had seven red suites (test__usage_bench, test__usage_load, test__usage_routing, test__usage_spend, test_audit_doctor, test_audit_usage, test_gen_demo_usage) whose callers read DEFAULT_PRICING['_default'] or add a None cost. Those callers owe the unpriced case."
+        },
+        {
+          "at": "2026-10-13T14:36:52Z",
+          "text": "Outcome of attempt 2 (its filed return carries placeholder outcome text; this note is the record): the shipped price table (hooks/_config.py) has no _default row, carries Sonnet 5.5 and Haiku 5.5 (base tier only; the >100k-prompt tier has no row and is recorded in tests/fixtures/pricing-page-2026-10-10.md), and accepts dated rows {effectiveFrom, rates}; _usage_core derives DEFAULT_PRICING from it and rates_for/price return None for an unknown model. Callers handle unpriced: _usage_routing._has_rates tests for None, _usage_spend.cache_profile skips an unpriced row, _doctor_trail.ttl_trade sums only priced entries, stream-cost prints priced=unpriced; audit-doctor.diagnose now passes project_pricing()['table'] (it passed the whole dict and only worked through the old _default fallback). Tests: test__usage_core pr6-pr8, dr1-dr5, dp1-dp4; test_validate_config cc5/cc6/cc6b; test_gen_demo_usage unpriced assertion. Executor's full sweep: 330/331 with test__refs q1 red from an orchestrator scope entry (fixed by hand)."
+        }
+      ],
+      "testEvidence": {
+        "runId": "2026-10-13T14:46:05Z.6f41b2",
+        "status": "passed",
+        "at": "2026-10-13T14:46:05Z"
+      }
     },
     {
       "id": "P125.3",

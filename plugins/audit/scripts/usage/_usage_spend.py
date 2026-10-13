@@ -165,6 +165,11 @@ def cache_profile(rows, pricing=None):
     actual = fresh = 0.0
     for row in rows:
         r = rates_for(row.get("model"), pricing)
+        if r is None:
+            # Unpriced model: this row contributes no rate comparison at all —
+            # folding it in at a guessed rate would be exactly the fabricated
+            # figure this function's docstring refuses to invent.
+            continue
         vol = (int(row.get("in") or 0) + int(row.get("cacheW5m") or 0)
                + int(row.get("cacheW1h") or 0) + int(row.get("cacheR") or 0))
         actual += (int(row.get("in") or 0) * r["in"]

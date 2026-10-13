@@ -833,17 +833,28 @@ def _split(members, pool):
 
 # --- pricing ---------------------------------------------------------------------
 def _rate(model, key):
-    """USD per token for one of the shipped table's keys."""
-    return _usage_core.price({key: 1000000}, model) / 1000000.0
+    """USD per token for one of the shipped table's keys, or None when `model`
+    carries no row at all - an unpriced model prints "unpriced", never a
+    fabricated 0."""
+    usd = _usage_core.price({key: 1000000}, model)
+    return None if usd is None else usd / 1000000.0
 
 
 def request_cost(req, out_tokens):
-    """{in, cw, cr, out, total} in USD; `out` is None when output is unmeasured."""
+    """{in, cw, cr, out, total, unpriced} in USD; `out` is None when output is
+    unmeasured. `unpriced` is True when `req["model"]` carries no row at all -
+    every figure is then None rather than a fabricated one, so a renderer that
+    sums these treats None the same way it already treats an unmeasured `out`
+    (`or 0.0`) and names the request "unpriced" wherever it prints alone."""
+    if _usage_core.rates_for(req["model"]) is None:
+        return {"in": None, "cw": None, "cr": None, "out": None, "total": None,
+                "unpriced": True}
     cost = {"in": req["in"] * _rate(req["model"], "in"),
             "cw": (req["cw5"] * _rate(req["model"], "cacheW5m")
                    + req["cw1"] * _rate(req["model"], "cacheW1h")),
             "cr": req["cr"] * _rate(req["model"], "cacheR"),
-            "out": None if out_tokens is None else out_tokens * _rate(req["model"], "out")}
+            "out": None if out_tokens is None else out_tokens * _rate(req["model"], "out"),
+            "unpriced": False}
     cost["total"] = cost["in"] + cost["cw"] + cost["cr"] + (cost["out"] or 0.0)
     return cost
 
@@ -1342,7 +1353,7 @@ def span_table(reading, spread):
         row = rows.setdefault(name, {"requests": 0, "numbers": [], "mainUSD": 0.0,
                                      "agentsUSD": 0.0, "read": 0, "written": 0,
                                      "output": 0.0})
-        cost = reading["costs"][req["id"]]["total"]
+        cost = reading["costs"][req["id"]]["total"] or 0.0
         if req["context"] == MAIN and req["id"] in spread["position"]:
             row["mainUSD"] += cost
             row["requests"] += 1
@@ -1385,7 +1396,7 @@ def cycle_reading(reading, spread, top=4):
     members = [r for r in reading["requests"] if r["id"] in cycle or r["context"] in sent]
     for req in members:
         cost, stage = reading["costs"][req["id"]], reading["stages"][req["id"]]
-        usd["run" if stage == "orient" else "task"] += cost["in"]
+        usd["run" if stage == "orient" else "task"] += cost["in"] or 0.0
         for kind, share in _output_class(req, stage).items():
             usd[kind] += (cost["out"] or 0.0) * share
     out = reading["output"] or {}
@@ -1502,7 +1513,8 @@ def dispatches(reading, spread):
                      "background": bool((session["results"].get(aid) or {}).get("launched")),
                      "requests": len(mine), "rebuilt": len(mine) - len(seen),
                      "startRead": first["cr"], "startWritten": first["cw5"] + first["cw1"],
-                     "usd": sum(reading["costs"][r["id"]]["total"] for r in mine)})
+                     "usd": sum(reading["costs"][r["id"]]["total"] or 0.0
+                               for r in mine)})
     return sorted(rows, key=lambda r: (r["at"], r["id"]))
 
 
@@ -1546,9 +1558,9 @@ def stage_table(reading):
         for key in ("in", "cw5", "cw1", "cr"):
             r[key] += req[key]
         r["out"] += 0.0 if out is None else out.get(req["id"], 0.0)
-        r["usdIn"] += cost["in"]
-        r["usdCw"] += cost["cw"]
-        r["usdCr"] += cost["cr"]
+        r["usdIn"] += cost["in"] or 0.0
+        r["usdCw"] += cost["cw"] or 0.0
+        r["usdCr"] += cost["cr"] or 0.0
         r["usdOut"] += cost["out"] or 0.0
     for r in rows.values():
         r["usd"] = r["usdIn"] + r["usdCw"] + r["usdCr"] + r["usdOut"]
@@ -1581,7 +1593,7 @@ def origin_matrix(reading):
         stage = reading["stages"][req["id"]]
         cost = reading["costs"][req["id"]]
         row = rows.setdefault(stage, dict((k, 0.0) for k in CLASSES))
-        row["run" if stage == "orient" else "task"] += cost["in"]
+        row["run" if stage == "orient" else "task"] += cost["in"] or 0.0
         for kind, share in _output_class(req, stage).items():
             row[kind] += (cost["out"] or 0.0) * share
     return rows
@@ -1627,7 +1639,7 @@ def class_table(reading):
     for req in reading["requests"]:
         cost = reading["costs"][req["id"]]
         stage = reading["stages"][req["id"]]
-        rows["run" if stage == "orient" else "task"]["in"] += cost["in"]
+        rows["run" if stage == "orient" else "task"]["in"] += cost["in"] or 0.0
         for kind, share in _output_class(req, stage).items():
             rows[kind]["out"] += (cost["out"] or 0.0) * share
     for r in rows.values():
@@ -1637,13 +1649,21 @@ def class_table(reading):
 
 def cache_economics(reading):
     """What the cache saved and what it could not: the session priced as billed,
-    against the same tokens with every input-side token at the base input rate."""
-    billed = sum(c["total"] for c in reading["costs"].values())
+    against the same tokens with every input-side token at the base input rate.
+
+    A request whose model carries NO row at all (`request_cost` answered
+    `unpriced`) cannot be re-priced at "the base input rate" either - there is
+    none - so it is excluded from `uncached`/`reads`/`writePremium` the same
+    way it is excluded from `billed`, rather than contributing a 0.0 that would
+    read as "free"."""
+    billed = sum(c["total"] or 0.0 for c in reading["costs"].values())
     uncached = 0.0
     reads = premium = 0.0
     for req in reading["requests"]:
-        base = _rate(req["model"], "in")
         cost = reading["costs"][req["id"]]
+        if cost.get("unpriced"):
+            continue
+        base = _rate(req["model"], "in")
         uncached += (req["in"] + req["cw5"] + req["cw1"] + req["cr"]) * base + (cost["out"] or 0.0)
         reads += cost["cr"]
         premium += cost["cw"] - (req["cw5"] + req["cw1"]) * base
@@ -1655,16 +1675,25 @@ def cache_economics(reading):
 
 
 def reconciliation(reading):
-    """Per model: priced by the shipped table against the session's own costUSD."""
+    """Per model: priced by the shipped table against the session's own costUSD.
+
+    `priced[model]` is None, not 0.0, when EVERY request of that model was
+    unpriced (no row at all) - a model with no contribution because it carries
+    no row must read differently from one priced at exactly zero."""
     result = reading["session"]["result"] or {}
     usage = result.get("modelUsage") or {}
     priced = {}
+    unpriced_models = set()
     for req in reading["requests"]:
-        priced[req["model"]] = priced.get(req["model"], 0.0) + reading["costs"][req["id"]]["total"]
+        total = reading["costs"][req["id"]]["total"]
+        if total is None:
+            unpriced_models.add(req["model"])
+            continue
+        priced[req["model"]] = priced.get(req["model"], 0.0) + total
     rows = []
-    for model in sorted(set(list(priced) + list(usage))):
+    for model in sorted(set(list(priced) + list(usage) + list(unpriced_models))):
         told = (usage.get(model) or {}).get("costUSD")
-        rows.append((model, priced.get(model, 0.0), told))
+        rows.append((model, priced.get(model), told))
     return rows, result.get("total_cost_usd")
 
 
@@ -1699,13 +1728,24 @@ def render(reading, top=10):
     rows, total = reconciliation(reading)
     lines.append("pricing: the shipped table (_usage_core, as of %s) against the "
                  "session's own costUSD:" % _usage_core.PRICING_AS_OF)
+    unpriced_n = 0
     for model, priced, told in rows:
+        if priced is None:
+            unpriced_n += 1
+            lines.append("  %-20s priced=unpriced costUSD=%s  %s"
+                         % (model, "-" if told is None else "%.6f" % told,
+                            "not reported" if told is None else
+                            "carries no rate row - cannot be checked against costUSD"))
+            continue
         verdict = ("not reported" if told is None else
                    "agree" if abs(priced - told) < 5e-7 else "DIFFER by %+.6f" % (priced - told))
         lines.append("  %-20s priced=%.6f costUSD=%s  %s"
                      % (model, priced, "-" if told is None else "%.6f" % told, verdict))
-    billed = sum(c["total"] for c in reading["costs"].values())
+    billed = sum((c["total"] or 0.0) for c in reading["costs"].values())
     lines.append("  all models          priced=%.6f total_cost_usd=%s" % (billed, total))
+    if unpriced_n:
+        lines.append("  %d model(s) above carry no rate row and are excluded from "
+                     "the priced totals, never counted as free" % unpriced_n)
     table = stage_table(reading)
     lines.append("")
     lines.append("per stage, as billed [every token in the stage of the request that "
@@ -2244,6 +2284,27 @@ def _close(a, b):
 
 
 def _cases(check):
+    # An unpriced model (no row in the shipped table at all) prices to None
+    # throughout - never the 0 a plain `or 0.0` guard would otherwise let
+    # print as a real, if tiny, dollar figure.
+    _unpriced_req = {"model": "claude-never-shipped-9", "in": 1000, "cw5": 10,
+                     "cw1": 10, "cr": 5}
+    check("sc0 `_rate` answers None for an unpriced model, not a fabricated "
+          "figure",
+          _rate("claude-never-shipped-9", "in") is None)
+    _unpriced_cost = request_cost(_unpriced_req, 50)
+    check("sc0b `request_cost` on an unpriced model is unpriced in every field, "
+          "`total` included - a renderer that summed `or 0.0` across these "
+          "would silently read the session as free",
+          _unpriced_cost == {"in": None, "cw": None, "cr": None, "out": None,
+                             "total": None, "unpriced": True})
+    _priced_cost = request_cost({"model": "claude-sonnet-5", "in": 1000000,
+                                 "cw5": 0, "cw1": 0, "cr": 0}, 0)
+    check("sc0c ...while a KNOWN model stays priced exactly as before (1M "
+          "input on claude-sonnet-5 is $2.00) and carries unpriced=False",
+          abs(_priced_cost["total"] - 2.0) < 1e-9
+          and _priced_cost["unpriced"] is False)
+
     flow = _fx_session()
     reading = analyse(_fx_events(flow))
     got = _fx_stage_totals(reading)

@@ -601,28 +601,69 @@ def _check_bands(bands, findings, warnings):
             % (vals["highUSD"], vals["outlierUSD"]))
 
 
+_EFFECTIVE_FROM_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _check_rate_row(model, row, findings, warnings, where):
+    """One flat rate row's keys and values - `where` names it in a finding/warning
+    (the model alone for a flat entry, `model[i]` for a dated one)."""
+    if not isinstance(row, dict):
+        findings.append("usage.pricing[%r] must be an object" % where)
+        return
+    for k in _real_keys(row):
+        if k not in KNOWN_RATE:
+            warnings.append("unknown usage.pricing[%r] key %r" % (where, k))
+    for k in KNOWN_RATE:
+        if k not in row:
+            continue
+        v = row[k]
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0:
+            findings.append("usage.pricing[%r].%s must be a non-negative number"
+                            % (where, k))
+
+
+def _check_dated_rows(model, rows, findings, warnings):
+    """A model's entry given as a list of `{"effectiveFrom", "rates"}` rows - the
+    shape `_usage_core.rates_for(model, table, at)` reads beside the flat legacy
+    row (COMPATIBILITY.md: a config key the plugin reads keeps being read, and
+    this is the new shape it also reads). Each row is named by index so a
+    malformed one is findable without counting commas."""
+    if not rows:
+        findings.append("usage.pricing[%r] must not be an empty list" % model)
+        return
+    for i, entry in enumerate(rows):
+        where = "%s[%d]" % (model, i)
+        if not isinstance(entry, dict):
+            findings.append("usage.pricing[%r] must be an object" % where)
+            continue
+        ef = entry.get("effectiveFrom")
+        if not isinstance(ef, str) or not _EFFECTIVE_FROM_RE.match(ef):
+            findings.append(
+                "usage.pricing[%r].effectiveFrom must be a YYYY-MM-DD date"
+                % where)
+        extra = set(_real_keys(entry)) - {"effectiveFrom", "rates"}
+        for k in sorted(extra):
+            warnings.append("unknown usage.pricing[%r] key %r" % (where, k))
+        _check_rate_row(model, entry.get("rates"), findings, warnings,
+                        "%s.rates" % where)
+
+
 def _check_pricing(pricing, findings, warnings):
     """Rates are USD per MILLION tokens. A malformed row would silently price spend
-    at zero, so the shape is a finding rather than a warning."""
+    at zero, so the shape is a finding rather than a warning.
+
+    An entry is either a flat rate row (legacy: in effect always) or a list of
+    dated rows - see `_check_dated_rows`."""
     if pricing is None:
         return
     if not isinstance(pricing, dict):
         findings.append("usage.pricing must be an object")
         return
     for model, row in pricing.items():
-        if not isinstance(row, dict):
-            findings.append("usage.pricing[%r] must be an object" % model)
-            continue
-        for k in _real_keys(row):
-            if k not in KNOWN_RATE:
-                warnings.append("unknown usage.pricing[%r] key %r" % (model, k))
-        for k in KNOWN_RATE:
-            if k not in row:
-                continue
-            v = row[k]
-            if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0:
-                findings.append("usage.pricing[%r].%s must be a non-negative number"
-                                % (model, k))
+        if isinstance(row, list):
+            _check_dated_rows(model, row, findings, warnings)
+        else:
+            _check_rate_row(model, row, findings, warnings, model)
 
 
 def _check_rule(i, rule, findings, warnings):

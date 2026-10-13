@@ -54,7 +54,7 @@ _output.install_path()
 
 import _usage_core as _core  # noqa: E402  (the arithmetic under every pass here)
 from _usage_core import (  # noqa: E402  (the rate table, and the plan index)
-    DEFAULT_PRICING, TOKEN_KEYS, price, rates_for, task_index)
+    TOKEN_KEYS, price, rates_for, task_index)
 import _manifest_io as _mio  # noqa: E402  (one reading of a task's `attempts`)
 
 # Thin module-level aliases, not copies: the bodies below moved out of
@@ -152,12 +152,11 @@ MIN_ADVICE_SAVING_PCT = 10.0
 
 
 def _has_rates(model, pricing=None):
-    """True only when the price table names this model. `rates_for` falls back to
-    `_default` for anything unknown, and recommending a move onto a model whose
-    price is a guess would be worse than saying nothing."""
-    table = pricing if isinstance(pricing, dict) and pricing else DEFAULT_PRICING
-    fallback = table.get("_default") or DEFAULT_PRICING["_default"]
-    return rates_for(model, pricing) is not fallback
+    """True only when the price table names this model. `rates_for` answers
+    None for anything unknown — no shipped `_default` to fall back to any more
+    — and recommending a move onto an unpriced model would be worse than
+    saying nothing."""
+    return rates_for(model, pricing) is not None
 
 
 def _routing_advice(by_risk, counts_by, pricing=None):
