@@ -246,7 +246,12 @@ def _file_executor(root, mpath, task_id, over=None):
 
 
 def _file_reviewer(root, mpath, task_id, answer="matches"):
-    body = {"findings": [], "intent": {"answer": answer, "note": "as asked"},
+    # The note quotes the task's own `description` so a `matches` answer is
+    # supported - `_filed_returns.unsupported_match_basis` refuses one that
+    # restates the claim with none of the task's own words.
+    described = (tasks_of(mpath).get(task_id) or {}).get("description") or ""
+    body = {"findings": [],
+            "intent": {"answer": answer, "note": "as asked: %s" % (described,)},
             "verdict": "clean"}
     return _verb(root, DRIVER, ["submit", task_id, "--role", "reviewer", mpath,
                                 "--project-dir", root], stdin=json.dumps(body))
@@ -1523,7 +1528,7 @@ def _submit_mutant_cases(check):
           and _read(path) == first)
 
     mutant, _w = _load("drive_phase_submit_no_shape")
-    mutant.submitted_shape = lambda role, body, fills: []
+    mutant.submitted_shape = lambda role, body, fills, task=None: []
     root_m, mpath_m, _t = _started(mutant, "noshape")
     bad = _executor_body("P1.1")
     del bad["outcome"]
@@ -4410,7 +4415,127 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("pf-block", "_preflight_cases"),
           ("tx-block", "_text_cases"),
           ("ce-block", "_close_evidence_cases"),
-          ("bs-block", "_brief_scope_cases"), ("sb-block", "_stage_cases"))
+          ("bs-block", "_brief_scope_cases"), ("fv-block", "_falsifier_cases"),
+          ("sb-block", "_stage_cases"))
+
+
+def _falsifier_cases(check):
+    """The reviewer-brief ordering rule, the tests.add-vs-filed-return gap
+    check, the contradicted-clause severity floor, and the falsifier-per-test
+    run - the reviewer-brief ordering, the gap check and the severity floor
+    this phase added, as pure functions over `drive-phase.py`."""
+    M, why = _load("fv_mod")
+    check("fv0 the driver loads: %r" % (why,), M is not None)
+    if M is None:
+        return
+
+    task = {"id": "P5.3", "description": "src is set when the card enters the "
+                                         "viewport"}
+    claim = M.claim_section(task, {"outcome": {"technical": "t"}})
+    task_at = claim.find(task["description"])
+    claim_at = claim.find("Claim under review")
+    check("fv1 the task's own description comes before the return, which is "
+          "labelled as the claim under review: %r" % (claim,),
+          task_at != -1 and claim_at != -1 and task_at < claim_at)
+
+    matching_task = dict(task)
+    matched = {"gates": {}, "redFirst": {"status": "proved", "basis": "x", "at": "z"},
+               "outcome": {"technical": "t", "descriptive": "d"},
+               "testsAdded": ["one"], "stamp": "audit-stamp: v2 x",
+               "intent": {"answer": "matches",
+                          "note": "the diff does what the description says - "
+                                  "src is set when the card enters the "
+                                  "viewport, nothing more."},
+               "findings": [], "verdict": "clean"}
+    restated_only = dict(matched, intent={
+        "answer": "matches",
+        "note": "ships a 200px rootMargin so the card loads near the "
+                "viewport before it is visible"})
+    import _filed_returns as fr_mod
+    held = fr_mod.return_problems("reviewer", matched, matching_task)
+    unsupported = fr_mod.return_problems("reviewer", restated_only, matching_task)
+    check("fv2 a `matches` note quoting the task's own clause files; one "
+          "that restates the claim with none of the task's words is refused "
+          "as unsupported: %r" % ((held, unsupported),),
+          held == [] and any("unsupported" in p or "quotes no clause" in p
+                             for p in unsupported))
+
+    add_task = {"tests": {"add": ["tests/test_x.py: once the card enters "
+                                 "the viewport"],
+                         "addMap": {"tests/test_y.py: isto": "test_y_case"}}}
+    add_task["tests"]["add"].append("tests/test_y.py: isto")
+    present = M.tests_add_gaps(
+        add_task, ["once the card enters the viewport", "test_y_case"])
+    mapped_only = M.tests_add_gaps(
+        add_task, ["something unrelated", "test_y_case"])
+    missing = M.tests_add_gaps(add_task, ["something unrelated"])
+    check("fv3 a declared case matched by its own verbatim clause, or (across "
+          "languages) by an explicit addMap entry, names no gap; one matched "
+          "by neither is named by the drive: %r"
+          % ((present, mapped_only, missing),),
+          present == []
+          and mapped_only == ["tests/test_x.py: once the card enters the "
+                             "viewport"]
+          and len(missing) == 2)
+
+    low = [{"id": 1, "severity": "low", "file": "a:1",
+            "issue": "contradicts task clause: scope widened", "resolution": "r"}]
+    other_low = [{"id": 2, "severity": "low", "file": "a:2",
+                 "issue": "an ordinary nitpick", "resolution": "r"}]
+    floored = M.floor_contradicted_clause(low)
+    untouched = M.floor_contradicted_clause(other_low)
+    check("fv4 a low finding naming a contradicted task clause is raised to "
+          "med; an ordinary low finding is untouched: %r"
+          % ((floored, untouched),),
+          floored[0]["severity"] == "med" and untouched[0]["severity"] == "low")
+
+    root = _harness.fixture_root("falsifier-")
+    try:
+        src_dir = os.path.join(root, "src")
+        os.makedirs(src_dir)
+        with open(os.path.join(src_dir, "mine.py"), "w", encoding="utf-8") as fh:
+            fh.write("def enters(margin):\n    return margin == 0\n")
+        _preamble = ("import sys, os\n"
+                    "sys.path.insert(0, os.path.join(os.path.dirname("
+                    "os.path.abspath(__file__)), 'src'))\n"
+                    "import mine\n")
+        with open(os.path.join(root, "t_strict.py"), "w", encoding="utf-8") as fh:
+            # The plan's own test: asserts BOTH the positive and the negative
+            # case, so a mutant that blurs the boundary is caught.
+            fh.write(_preamble + "assert mine.enters(0) is True\n"
+                               "assert mine.enters(200) is False\n")
+        with open(os.path.join(root, "t_weak.py"), "w", encoding="utf-8") as fh:
+            # A test "renamed to near the viewport": asserts only the
+            # positive case, so widening the margin never fails it - this is
+            # a lazy-load test that cannot fail.
+            fh.write(_preamble + "assert mine.enters(0) is True\n")
+        mutation = {"file": "src/mine.py", "find": "margin == 0",
+                   "replace": "True"}
+        before = sorted(os.listdir(root))
+        survived_status, survived_why = M.run_falsifier(
+            [sys.executable, "t_weak.py"], root, mutation)
+        after = sorted(os.listdir(root))
+        killed_status, killed_why = M.run_falsifier(
+            [sys.executable, "t_strict.py"], root, mutation)
+        broken_status, broken_why = M.run_falsifier(
+            [sys.executable, "t_strict.py"], root,
+            {"file": "src/mine.py", "find": "def enters",
+             "replace": "def enters(:::"})
+        absent_status, absent_why = M.run_falsifier(
+            [sys.executable, "t_strict.py"], root,
+            {"file": "src/mine.py", "find": "no such text", "replace": "x"})
+        check("fv5 a mutant the test cannot fail against is `survived`; one "
+              "a real assertion catches is `killed`; a patch that will not "
+              "even parse, or whose `find` names no real mutant, is "
+              "`could-not-run` - never a kill either way; and the tree is "
+              "byte-identical before and after every run: %r"
+              % ((killed_status, survived_status, broken_status, absent_status,
+                 killed_why, survived_why, broken_why, absent_why),),
+              killed_status == "killed" and survived_status == "survived"
+              and broken_status == "could-not-run"
+              and absent_status == "could-not-run" and before == after)
+    finally:
+        _harness.remove_tree(root)
 
 
 def _stage_cases(check):

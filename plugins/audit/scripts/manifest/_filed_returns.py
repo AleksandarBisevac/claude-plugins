@@ -172,7 +172,44 @@ def _executor_problems(body):
     return problems
 
 
-def _reviewer_problems(body):
+def _clause_quoted(description, note, span=4):
+    """Whether `note` quotes a run of `span` consecutive words from
+    `description` verbatim (case/whitespace folded only, no stemming or
+    synonym matching). Probe 2 (24 reviewer runs, Opus/Sonnet/Haiku, the real
+    P5.3 brief section) found that judging `matches` against the executor's
+    restatement alone found 0/3 divergences on every phrasing tried; only
+    requiring the note to quote the task's own clause found the planted
+    divergence on all three models. A description shorter than `span` words
+    is quoted only by containing it whole."""
+    d_words = (description or "").lower().split()
+    note_n = " ".join((note or "").lower().split())
+    if not d_words:
+        return False
+    if len(d_words) < span:
+        return " ".join(d_words) in note_n
+    return any(" ".join(d_words[i:i + span]) in note_n
+              for i in range(len(d_words) - span + 1))
+
+
+def unsupported_match_basis(description, note):
+    """None, or why a `matches` intent is unsupported: `note` quotes no
+    clause of the task's own `description`, so the answer is graded against
+    the executor's restatement alone rather than against what was asked -
+    exactly the gap P5.3 fell through (its text said a card's `src` is set
+    when it ENTERS the viewport; the executor's note said only that a 200px
+    `rootMargin` makes the card load, and a reviewer handed that restatement
+    alone answered `matches`)."""
+    if not isinstance(description, str) or not description.strip():
+        return None
+    if not isinstance(note, str) or not note.strip():
+        return None
+    if _clause_quoted(description, note):
+        return None
+    return ("quotes no clause of the task's own description - note: %r; "
+            "description: %r" % (note.strip(), description.strip()))
+
+
+def _reviewer_problems(body, task=None):
     problems = []
     if not isinstance(body.get("findings"), list):
         problems.append("`findings` is missing or not a list")
@@ -182,25 +219,34 @@ def _reviewer_problems(body):
     elif intent.get("answer") not in REVIEW_ANSWERS:
         problems.append("`intent.answer` is %r, not one of %s"
                         % (intent.get("answer"), ", ".join(REVIEW_ANSWERS)))
+    elif intent.get("answer") == "matches" and isinstance(task, dict):
+        unsupported = unsupported_match_basis(task.get("description"),
+                                              intent.get("note"))
+        if unsupported:
+            problems.append("`intent.answer` is `matches` but `intent.note` %s"
+                            % (unsupported,))
     if body.get("verdict") not in REVIEW_VERDICTS:
         problems.append("`verdict` is %r, not one of %s"
                         % (body.get("verdict"), ", ".join(REVIEW_VERDICTS)))
     return problems
 
 
-def return_problems(role, body):
+def return_problems(role, body, task=None):
     """Every way `body` falls short of the shape `role` files with, as sentences
     naming the field - `agents/audit-executor.md`'s and
     `agents/audit-reviewer.md`'s return blocks, plus the executor's `stamp`,
     which `drive-phase.py submit` takes rather than the agent. Empty is the one
     answer that files; a role this module does not know is a problem too,
-    never a pass."""
+    never a pass. `task` is the reviewed task (when the caller has one, in
+    `mode: task`): a reviewer's `matches` answer whose `intent.note` quotes
+    none of the task's own `description` is refused as unsupported, not
+    merely accepted as a shape match."""
     if role not in RETURN_ROLES:
         return ["the role %r is not one of %s" % (role, ", ".join(RETURN_ROLES))]
     if not isinstance(body, dict):
         return ["the return is a JSON %s, not an object" % type(body).__name__]
     return _executor_problems(body) if role == "executor" \
-        else _reviewer_problems(body)
+        else _reviewer_problems(body, task)
 
 
 # --- the write and the read -------------------------------------------------------

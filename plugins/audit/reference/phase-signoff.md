@@ -86,6 +86,22 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    reaches a done phase. A later typo in the outcome or the
    summary is `audit-task.py correct <phaseId> --review-outcome TEXT --summary TEXT`, which
    rewrites the text with a `review.correct` row and reads no `--verdict`.
+   **A low finding naming a contradicted task clause is floored to med before it is filed** —
+   `drive-phase.py`'s `floor_contradicted_clause` reads for the marker `drive-phase.py`'s own
+   module names, never the model's own severity word: probe 2 measured 4 of 6 Opus/Sonnet runs
+   rating such a finding `low`, which review-convergence would park as a carried low rather than
+   open a fix task over. **A `tests.add` case with no filed counterpart is named by the drive**,
+   mechanically, at the point the executor files - `tests_add_gaps` matches a declared case by its
+   own verbatim clause or an explicit `tests.addMap` entry, never a fuzzy compare (scored as one
+   string diff, that flagged most of the danuvia tasks on language alone). **A reviewer's `matches`
+   answer whose note quotes none of the task's own `description`** is refused as unsupported before
+   it can file - `unsupported_match_basis` in `_filed_returns.py` - so a renamed scope cannot read
+   back as matching on the strength of the executor's own restatement. **Each planned test carries a
+   falsifier** - a small code change the plan says it must fail against - which the drive applies in
+   a throwaway copy of the tree, never the executor's own, and runs: a test that survives its own
+   mutant is a finding with file:line, and a patch that breaks the build is `could-not-run`, never a
+   kill.
+
    **Nothing refuses a hand edit of the shard** — the validator's shape warning is the only
    backstop, and a hand-written finding carries no journal row and no tally. Then, for each
    actionable finding, **create and start its task** (the two commands below) and spawn an

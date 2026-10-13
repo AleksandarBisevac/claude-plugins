@@ -204,6 +204,50 @@ def _phase(tasks, key=None, findings=None):
     return phase
 
 
+def _um_cases(check):
+    """`unsupported_match_basis` and its wiring into `return_problems`: a
+    reviewer's `matches` note restating the executor's claim with none of the
+    task's own words."""
+    description = "src is set when the card enters the viewport"
+    task = {"id": "P5.3", "description": description}
+    quoting_note = ("the diff does what the description says - src is set "
+                    "when the card enters the viewport, and nothing more")
+    restating_note = ("ships a 200px rootMargin so the card loads near the "
+                      "viewport before it is visible")
+    check("um1 a `matches` note quoting the task's own clause holds up; one "
+          "restating the claim with none of the task's words is named, "
+          "quoting both: %r"
+          % ((M.unsupported_match_basis(description, quoting_note),
+             M.unsupported_match_basis(description, restating_note)),),
+          M.unsupported_match_basis(description, quoting_note) is None
+          and M.unsupported_match_basis(description, restating_note) is not None
+          and description in M.unsupported_match_basis(description, restating_note)
+          and restating_note in M.unsupported_match_basis(description,
+                                                           restating_note))
+    check("um2 no description, or no note, is nothing to grade - never a false "
+          "unsupported: %r"
+          % ((M.unsupported_match_basis("", restating_note),
+             M.unsupported_match_basis(description, "")),),
+          M.unsupported_match_basis("", restating_note) is None
+          and M.unsupported_match_basis(description, "") is None)
+
+    unsupported = M.return_problems("reviewer", {
+        "findings": [], "verdict": "clean",
+        "intent": {"answer": "matches", "note": restating_note}}, task)
+    held = M.return_problems("reviewer", {
+        "findings": [], "verdict": "clean",
+        "intent": {"answer": "matches", "note": quoting_note}}, task)
+    diverges = M.return_problems("reviewer", {
+        "findings": [], "verdict": "findings",
+        "intent": {"answer": "diverges", "note": restating_note}}, task)
+    check("um3 `return_problems` refuses an unsupported `matches` when it is "
+          "handed the task, files a quoting one, and never flags `diverges` "
+          "or `cannot-tell` on this basis: %r"
+          % ((unsupported, held, diverges),),
+          any("unsupported" in p or "quotes no clause" in p for p in unsupported)
+          and held == [] and diverges == [])
+
+
 def _held_cases(check):
     """The per-task review's key, read once per phase and kept by the task, and
     the one property a landing asks of the plan's record under `phase`."""
@@ -604,6 +648,7 @@ def _mechanical_cases(check):
 def _selftest():
     def body(check):
         _harness.stage(check, "fr-block", _cases)
+        _harness.stage(check, "um-block", _um_cases)
         _harness.stage(check, "ma-block", _mechanical_cases)
         _harness.stage(check, "pk-block", _held_cases)
         _harness.stage(check, "hn-block", _human_cases)

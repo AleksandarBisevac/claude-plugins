@@ -285,7 +285,7 @@
     {
       "id": "P125.4",
       "title": "The CLI's own costUSD is recorded beside the plugin's reading; doctor flags unpriced models",
-      "status": "in_progress",
+      "status": "done",
       "description": "Sketch 3a and N1's risk item. Main-session transcripts carry a `cost-state` entry with totalCostUSD, modelUsage.<model>.costUSD and hasUnknownModelCost (seen on the testbed's transcripts; none in subagent transcripts). The meter records the CLI's per-model figure per session beside the plugin's own reading of the same session, and audit-usage, the report and the panel print both wherever they differ by more than rounding, each with its basis ('the CLI's estimate' vs 'the plugin's table, <source> as of <date>'); neither is called the bill. Before writing the reader, establish with a probe on a recorded session whether modelUsage includes subagent spend (compare it to the ledger's per-model sum for that session) and state the answer in the docstring, not a guess. /audit:doctor gains a check over the ledger: every model id with tokens and no price row is named, with the token count it leaves unpriced and the remedy (a usage.pricing row in config). The CLI's hasUnknownModelCost=true is reported beside it.",
       "files": [
         "plugins/audit/scripts/usage/usage_ledger.py",
@@ -331,19 +331,48 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "eba3791e5ac5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added usage_ledger.py: strip_cli_tier()/_base_model() (normalise the CLI's `[1m]`-style tier suffix against the plugin's own `:long-prompt` one), read_cost_state(transcript_path) (last `cost-state` entry -> {totalCostUSD, perModel, hasUnknownModelCost}), cli_cost_compare()/cli_cost_divergences() (CLI vs plugin per-model cost for one session, with an `agrees` flag and a CLI_COST_TOLERANCE_USD=0.01 rounding guard). Probed on this repo's own transcripts (session 0a7c2fcc-df20-4990-96d6-d56b52648faf, 420 subagent transcripts) whether modelUsage folds in subagent spend: the main transcript alone carries zero sonnet messages while the cost-state entry reports real claude-sonnet-5-5 tokens and cost, so that spend can only have come from a subagent transcript - the answer is written into read_cost_state's docstring rather than assumed, with the caveat that absolute magnitudes differ widely too (consistent with conversation compaction trimming the retained .jsonl). audit-usage.py: added cli_cost_lines() and a `cli_cost` param on render() - a new 'CLI vs plugin cost' section that prints one figure when the two agree and both figures with their own basis ('the CLI's estimate' / the plugin's rate-basis phrase) when they differ or only one side has a reading; main() now builds {sessionId: cost_state} best-effort from find_transcripts()+read_cost_state() for sessions in view. _doctor_trail.py: added unpriced_model_tokens() and check_unpriced_models() - every model the ledger has tokens for but the price table has no row for is named with its token count and the config remedy (usage.pricing), folding in the CLI's hasUnknownModelCost=true (when a --transcript was given) beside the finding rather than instead of it. audit-doctor.py: pricing is now resolved unconditionally (was only under `if transcript_path`), cost_state is resolved from --transcript when given, and check_unpriced_models is wired into diagnose() right after check_ledger, with a re-exported alias. Tests added (17 new cases, tdd - written against the new functions, which did not exist on HEAD): test_usage_ledger.py cc1-cc7 (cost-state parsing, tier normalisation, cli_cost_compare/divergences, the None case); test_audit_usage.py cc-cli1-5 (agree prints one figure, disagree prints both with bases, 'bill' never appears, silent with no cli_cost and with a None cost_state); test__doctor_trail.py dt-up1-5 (fully priced ledger -> OK, unpriced model named with token count and remedy, hasUnknownModelCost folded in beside both a finding and an all-clear). Verified: `python3 plugins/audit/tests/test_usage_ledger.py --selftest` -> ALL PASS: 112/112; `python3 plugins/audit/tests/test_audit_usage.py --selftest` -> ALL PASS: 175/175; `python3 plugins/audit/tests/test__doctor_trail.py --selftest` -> ALL PASS: 145/145; `python3 plugins/audit/tests/test_audit_doctor.py --selftest` -> ALL PASS: 169/169 (no regression from the diagnose() re-wire). Ran `python3 tools/sweep-selftests.py` once over the whole tree per the orchestrator's note: '332/332 files ok, 152 migrated to tests/, 15928 cases', exit 0. Ran `ruff check` and `vermin -t=3.8- --no-tips --violations` over every touched file: both clean. Checked `_output.prose_number_claims('.')` for the touched files: no violations. plugins/audit/README.md and plugins/audit/commands/doctor.md were in this task's declared `files` (last touched by other pending tasks, P125.18/P125.12) but were not edited - doctor.md's frontmatter already describes 'the usage ledger' generically and names no individual check by name, so the new check needed no doc update under this task's own description; usage_ledger.py and test_usage_ledger.py's OTHER declared-by lines (P125.18, pending) were not otherwise touched beyond the additions above.",
+        "descriptive": "audit-usage and /audit:doctor now record the CLI's own per-session cost-state reading beside the plugin's own, print both when they disagree, and flag every model the ledger has tokens for but no price row covers."
       },
       "startedAt": "2026-10-13T16:52:11Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-13T17:40:52Z",
+      "verifiedBy": [
+        "cc1",
+        "cc2",
+        "cc3",
+        "cc4",
+        "cc5",
+        "cc6",
+        "cc7",
+        "cc-cli1",
+        "cc-cli2",
+        "cc-cli3",
+        "cc-cli4",
+        "cc-cli5",
+        "dt-up1",
+        "dt-up2",
+        "dt-up3",
+        "dt-up4",
+        "dt-up5"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-13T17:40:50Z.f34040",
         "status": "passed",
         "at": "2026-10-13T17:40:50Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "eba3791e5ac5",
+        "at": "2026-10-13T17:40:52Z"
+      },
+      "redFirst": {
+        "at": "2026-10-13T17:22:58Z",
+        "basis": "`python3 plugins/audit/tests/test_usage_ledger.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module 'usage_ledger' has no attribute 'read_cost_state'\" (read as python), and the task introduces 'read_cost_state': absent from HEAD's plugins/audit/scripts/usage/usage_ledger.py, plugins/audit/scripts/usage/audit-usage.py, plugins/audit/scripts/usage/_usage_spend.py, plugins/audit/scripts/report/_report_usage.py, plugins/audit/scripts/panel/_panel_usage.py, plugins/audit/scripts/status/_doctor_trail.py, plugins/audit/scripts/status/audit-doctor.py, plugins/audit/commands/doctor.md, plugins/audit/README.md and present in the working tree's plugins/audit/scripts/usage/usage_ledger.py, plugins/audit/scripts/usage/audit-usage.py, plugins/audit/scripts/status/_doctor_trail.py, plugins/audit/scripts/status/audit-doctor.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1204,7 +1233,12 @@
           "at": "2026-10-13T17:32:19Z",
           "text": "Orchestrator: attempt 1 delivered items 3 and 9, item 5's falsifier runner and item 8's severity floor, but not the brief half (2, 4, the clause-quoting rule and tests.add in the brief: audit-lookup composes it) nor 6 (task synthesis: audit-task.py) nor 7 (executor brief), and claim_section() is unwired. Scope widened to audit-lookup.py, test_audit_lookup.py and audit-task.py so the description can be delivered as written."
         }
-      ]
+      ],
+      "testEvidence": {
+        "runId": "2026-10-13T17:49:17Z.1b9976",
+        "status": "passed",
+        "at": "2026-10-13T17:49:17Z"
+      }
     },
     {
       "id": "P125.20",

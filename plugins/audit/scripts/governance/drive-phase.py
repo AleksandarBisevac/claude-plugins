@@ -164,8 +164,10 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -898,6 +900,124 @@ def review_items(reviewer):
     if intent.get("redFirst") == "not-proved":
         items.append("red-first not-proved")
     return ", ".join(items)
+
+
+def claim_section(task, filed_return):
+    """The reviewer-facing block for one task: the task's own `description`
+    FIRST, then the executor's filed return LAST and labelled as the claim
+    under review - never the reverse. A brief that put the executor's
+    restatement ahead of (or in place of) the task's own words let a reviewer
+    grade a renamed scope against itself: P5.3's text said a card's `src` is
+    set when it ENTERS the viewport, the executor shipped a 200px
+    `rootMargin` and renamed its test to "once the card is near the
+    viewport", and a reviewer handed only that restatement answered
+    `matches`. Putting the task text first and labelling the return as the
+    claim is what a reader - human or model - needs to judge one against the
+    other instead of reading the second as a paraphrase of the first."""
+    return "\n".join([
+        "## Task", (task.get("description") or "").strip(), "",
+        "## Claim under review (the executor's filed return)",
+        json.dumps(filed_return, indent=2, sort_keys=True)])
+
+
+_CONTRADICTED_CLAUSE_MARKER = "contradicts task clause"
+
+
+def floor_contradicted_clause(findings):
+    """`findings` with a `low` severity raised to `med` wherever its `issue`
+    names a contradicted task clause (`_CONTRADICTED_CLAUSE_MARKER`). Probe 2
+    measured 4 of 6 Opus/Sonnet runs rating a contradicted clause `low`,
+    which review-convergence would park as a carried low rather than a
+    finding a fix task is owed for - so the floor is mechanical, not left to
+    the model that wrote the finding."""
+    out = []
+    for finding in findings or []:
+        if (isinstance(finding, dict) and finding.get("severity") == "low"
+                and _CONTRADICTED_CLAUSE_MARKER in (finding.get("issue") or "")):
+            finding = dict(finding, severity="med")
+        out.append(finding)
+    return out
+
+
+def tests_add_gaps(task, filed_titles):
+    """Declared `tests.add` entries with no filed counterpart in
+    `filed_titles` (a return's `testsAdded`). A case is matched by its
+    VERBATIM title - the executor reuses the clause the plan declares - or by
+    an explicit `tests.addMap` entry the task itself carries (declared path ->
+    filed title), never by a fuzzy compare: scored as one string diff, this
+    flagged most of the danuvia tasks, mostly Serbian plan text against
+    English test titles."""
+    tests = (task or {}).get("tests") or {}
+    declared = [str(e) for e in tests.get("add") or []]
+    titles = set(str(t).strip() for t in filed_titles or [])
+    add_map = tests.get("addMap") if isinstance(tests.get("addMap"), dict) else {}
+    gaps = []
+    for entry in declared:
+        clause = entry.split(":", 1)[1].strip() if ":" in entry else entry.strip()
+        mapped = add_map.get(entry) or add_map.get(clause)
+        if entry.strip() in titles or clause in titles:
+            continue
+        if mapped and str(mapped).strip() in titles:
+            continue
+        gaps.append(entry)
+    return gaps
+
+
+def run_falsifier(cmd, tree, mutation):
+    """Run `cmd` (a list) against a COPY of `tree` with `mutation` applied -
+    `{"file": <relative path>, "find": <text>, "replace": <text>}` - and grade
+    the planned test: `"survived"` when the command still exits 0 against the
+    broken code (the test could not kill its own mutant), `"killed"` when the
+    command fails as it should, `"could-not-run"` when the mutation's `find`
+    is not in the file (so no mutant was ever applied) or the command cannot
+    even be collected (a non-zero exit with no test run, read from `cmd`'s own
+    output being empty is not inferred here - the caller reads the exit code
+    alone, which is the bound a build-breaking patch is asked to fail under).
+    Runs in a TEMPORARY COPY, never `tree` itself, so the caller's own tree is
+    byte-identical before and after."""
+    work = tempfile.mkdtemp(prefix="audit-falsifier-")
+    try:
+        copied = os.path.join(work, "tree")
+        shutil.copytree(tree, copied, symlinks=True,
+                        ignore=shutil.ignore_patterns(".git"))
+        target = os.path.join(copied, mutation["file"])
+        try:
+            with open(target, "r", encoding="utf-8") as fh:
+                original = fh.read()
+        except OSError as exc:
+            return "could-not-run", "could not read %s: %s" % (mutation["file"], exc)
+        if mutation["find"] not in original:
+            return "could-not-run", ("the mutation's `find` text is not in %s - "
+                                     "no mutant was applied" % (mutation["file"],))
+        with open(target, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(original.replace(mutation["find"], mutation["replace"], 1))
+        try:
+            done = subprocess.run(cmd, cwd=copied, capture_output=True,
+                                  text=True, timeout=120)
+        except (OSError, subprocess.SubprocessError) as exc:
+            return "could-not-run", "the command could not run: %s" % (exc,)
+        if done.returncode == 0:
+            return "survived", "the command still exited 0 against the mutant"
+        combined = done.stdout + done.stderr
+        if _BUILD_BROKEN.search(combined):
+            return "could-not-run", ("the mutation broke the build rather than "
+                                     "failing the test - %s"
+                                     % (_excerpt_build_line(combined),))
+        return "killed", "the command exited %d against the mutant" % (done.returncode,)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+_BUILD_BROKEN = re.compile(
+    r"SyntaxError|IndentationError|ModuleNotFoundError|ImportError"
+    r"|collected 0 items|no tests ran", re.IGNORECASE)
+
+
+def _excerpt_build_line(text):
+    for line in text.splitlines():
+        if _BUILD_BROKEN.search(line):
+            return line.strip()
+    return "no matching line"
 
 
 def close_task(ctx, state, phase, task, intent_basis=None):
@@ -2857,14 +2977,16 @@ def submit_target(manifest, target):
     return None, None
 
 
-def submitted_shape(role, body, fills):
+def submitted_shape(role, body, fills, task=None):
     """The ways `body` falls short of `role`'s shape, judged with each field in
-    `fills` set aside: those are `submit`'s to supply, not the agent's."""
+    `fills` set aside: those are `submit`'s to supply, not the agent's. `task`
+    is passed through for a reviewer in `mode: task`, so an unsupported
+    `matches` is refused rather than filed."""
     if not isinstance(body, dict):
-        return _fr.return_problems(role, body)
+        return _fr.return_problems(role, body, task)
     held = dict(body)
     held.update((name, _FILLED_LATER[name]) for name in fills)
-    return _fr.return_problems(role, held)
+    return _fr.return_problems(role, held, task)
 
 
 def already_filed(ctx, task):
@@ -3032,12 +3154,19 @@ def submit(ctx, manifest, args, cmd, text):
                         "helper's: name the test command after `--`. Nothing "
                         "filed." % (task["id"],))
     fills = (["stamp"] + (["redFirst"] if cmd else [])) if executor else []
-    problems = submitted_shape(args.role, body, fills) if task is not None else []
+    problems = (submitted_shape(args.role, body, fills, task)
+               if task is not None else [])
     if problems:
         return _stopped(ctx, "the %s return for %s does not have the shape its "
                         "role declares. Nothing filed:\n%s" % (
                             args.role, args.id,
                             "\n".join("  " + p for p in problems)))
+    if args.role == "reviewer" and isinstance(body.get("findings"), list):
+        floored = floor_contradicted_clause(body["findings"])
+        if floored != body["findings"]:
+            body["findings"] = floored
+            text = json.dumps(body, indent=2) + "\n"
+            ctx["did"].append("a contradicted-clause finding was raised to med")
     if executor:
         held = already_filed(ctx, task)
         if held:
@@ -3062,6 +3191,11 @@ def submit(ctx, manifest, args, cmd, text):
             return stop
         body["stamp"] = line
         ctx["did"].append("stamp taken")
+        gaps = tests_add_gaps(task, body.get("testsAdded"))
+        if gaps:
+            ctx["did"].append(
+                "tests.add names %d case(s) with no filed counterpart: %s"
+                % (len(gaps), "; ".join(gaps)))
         text = json.dumps(body, indent=2) + "\n"
     head = args.head
     if task is None and args.role == "reviewer":
