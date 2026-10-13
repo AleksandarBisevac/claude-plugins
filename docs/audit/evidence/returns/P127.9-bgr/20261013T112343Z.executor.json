@@ -1,0 +1,27 @@
+{
+  "gates": {
+    "test_run_test_gate --selftest": "pass (526/526)",
+    "test__proc_group --selftest": "pass (21/21)",
+    "test__deps --selftest": "pass (314/314)",
+    "test_derive_phase_gate --selftest": "pass (31/31)",
+    "test_stamp_verification --selftest": "pass (266/266)",
+    "test__output --selftest": "pass (259/259)",
+    "ruff on touched files": "pass",
+    "vermin on touched files": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-13T11:30:57Z",
+    "basis": "`python3 plugins/audit/tests/test_run_test_gate.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_proc_group' has no attribute '_kill'\" (read as python), and the task introduces '_kill': absent from HEAD's plugins/audit/scripts/governance/run-test-gate.py, plugins/audit/scripts/governance/_proc_group.py, plugins/audit/scripts/_deps.py, PLUGIN-BUILD-GUIDE.md and present in the working tree's plugins/audit/scripts/governance/_proc_group.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "_proc_group.py: split tear_down into _kill (seam; kill command success only: killpg+wait on POSIX, taskkill exit 0 on Windows) and _gone (proc.poll() reaps, then _locks.pid_alive(pid) is False; alive or unaskable = not gone). tear_down returns bool(killed) or _gone(proc), so a failed kill (taskkill not found, killpg on ended group) is confirmed when the root is gone and unconfirmed when alive. The shares-our-group narrow-kill arm is unchanged (still False) but skipped when the child is already gone. _proc_group now imports _locks, so _deps.LAYERS moves _proc_group from the _locks layer into the layer above (the _panel_ui tuple) with comment updated; PLUGIN-BUILD-GUIDE.md module-map line now reads '_proc_group -> _locks, _output' (from _deps.py --render). Tests added in test_run_test_gate.py after lc10b: lc10c (kill stubbed to fail, child already exited -> True) and lc10d (kill stubbed to fail, child alive -> False and still running). Callers derive-phase-gate and stamp-verification needed no change; their suites pass. run-test-gate.py and test__proc_group.py unchanged.",
+    "descriptive": "A timed-out step's teardown is confirmed by the root process being gone, not by the kill command's exit code, closing the timing-dependent lc10b failure on Windows."
+  },
+  "testsAdded": [
+    "lc10c",
+    "lc10d"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:280d4a4c593e5d5810608b226c6081ef7672f4ddab5f57cad83151fed5cc6784\",\"dirtyDigest\":\"sha256:3f9a918d452ae5b3a729a3f7c070b478014da7749e8e46b5453c253ae79d4ac8\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"7f947e3735f7d362\",\"plugins/audit/scripts/_deps.py\":\"f7fbe6be200d1020\",\"plugins/audit/scripts/governance/_proc_group.py\":\"ee0e6cdcac83b9f5\",\"plugins/audit/tests/test_run_test_gate.py\":\"68bb140547b1315e\"},\"head\":\"06408e58\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/_deps.py\",\"plugins/audit/scripts/governance/_proc_group.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/tests/test__proc_group.py\",\"plugins/audit/tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:5891078222b26a11c53e8932a47b7f2a704378fcfea2c902d9f73c60ebcd96c1\",\"v\":2}"
+}

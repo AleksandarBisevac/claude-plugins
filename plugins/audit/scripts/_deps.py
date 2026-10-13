@@ -178,12 +178,6 @@ LAYERS = (
      # would be a second answer about what is installed. It reaches nothing but
      # `_output`.
      "_claude_home",
-     # `_proc_group` runs one child tree so it can be stopped WHOLE, and turns a
-     # stop signal into an exception so a caller's `finally` runs. Here because two
-     # entry points - `run-test-gate` and `stamp-verification` - need the same
-     # teardown, and a second copy is a second answer to "is it stopped". It
-     # reaches nothing but `_output`.
-     "_proc_group",
      # `_runner_output` reads what a test runner printed - its summary line and
      # the lines naming a failing check. Here for `_proc_group`'s reason: two entry
      # points, `run-test-gate` and `stamp-verification`, ask the same output the
@@ -318,6 +312,13 @@ LAYERS = (
      # merge driver's resolve verb both reach the same list from above.
      "_id_refs"),
     ("_panel_ui", "_report_html", "_report_ui",
+     # `_proc_group` runs one child tree so it can be stopped WHOLE, and turns a
+     # stop signal into an exception so a caller's `finally` runs. Here because
+     # three entry points - `run-test-gate`, `stamp-verification` and
+     # `derive-phase-gate` - need the same teardown, and a second copy is a second
+     # answer to "is it stopped". It reaches `_locks` for the one rule on whether
+     # a process still runs, which is why it sits above that module.
+     "_proc_group",
      # `_scope_companions` derives the files a change cannot avoid (manifest and
      # lockfile, locale files, the runner config). It reads `_runner_collects`, at
      # the floor, for whether the runner collects a path, so this is the first

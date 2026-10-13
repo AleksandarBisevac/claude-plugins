@@ -50,6 +50,8 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _locks  # noqa: E402  (pid_alive: the one rule for whether a process still runs)
+
 # How long a torn-down group is given to die politely before SIGKILL. Small on
 # purpose: this runs after a child has already overrun its whole budget.
 GRACE_SECONDS = 5
@@ -98,6 +100,43 @@ def shares_our_group(pid):
         return True
 
 
+def _kill(proc):
+    """Send the kill to the process tree; True when the kill command succeeded.
+
+    ONLY the command's own success: whether the process is gone is `_gone`'s
+    question, and the two are kept apart because a kill command can fail for a
+    tree that has already ended (`taskkill` exits non-zero, "not found") and can
+    succeed on one that is still winding down. A seam: a case swaps this name to
+    make the kill fail on a platform whose real one would not."""
+    if hasattr(os, "killpg"):
+        gid = os.getpgid(proc.pid)
+        os.killpg(gid, signal.SIGTERM)
+        try:
+            proc.wait(timeout=GRACE_SECONDS)
+        except Exception:
+            os.killpg(gid, signal.SIGKILL)
+            proc.wait(timeout=GRACE_SECONDS)
+        return True
+    completed = subprocess.run(
+        ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return completed.returncode == 0
+
+
+def _gone(proc):
+    """Whether the root process has ended. False when it is still alive OR cannot
+    be asked - an unanswerable question is not a clean stop.
+
+    `poll()` first: it reaps an exited child, which a bare `kill(pid, 0)` would
+    still see as present (a zombie). The one liveness rule is `_locks.pid_alive`."""
+    try:
+        if proc.poll() is not None:
+            return True
+        return _locks.pid_alive(proc.pid) is False
+    except Exception:
+        return False
+
+
 def tear_down(proc):
     """Kill the process GROUP. True when that could be confirmed, False when not.
 
@@ -112,39 +151,33 @@ def tear_down(proc):
     going to be reasoned with. The return value is what the caller records: a
     teardown that could not be confirmed is a fact about the run, and reporting it
     as a clean stop would be a claim with nothing behind it.
+
+    CONFIRMED MEANS THE ROOT PROCESS IS GONE, not that the kill command exited 0:
+    a tree that ended between the timeout firing and the kill makes `taskkill`
+    exit non-zero, and `killpg` raise, for a stop that is entirely clean.
     """
     try:
-        if hasattr(os, "killpg"):
-            gid = os.getpgid(proc.pid)
-            if shares_our_group(proc.pid):
-                # THE CHILD IS IN OUR OWN GROUP, so `killpg` here would signal
-                # THIS process - the caller - and not the child's tree. That is
-                # not hypothetical: with `start_new_session` removed the whole
-                # test runner died mid-suite, which is how this branch was found.
-                # A platform with no `setsid` reaches the same state honestly, so
-                # the narrow kill is taken and the answer is `False`: the direct
-                # child goes, its descendants are not accounted for, and the caller
-                # says the teardown could not be confirmed rather than implying a
-                # clean stop.
-                proc.kill()
-                try:
-                    proc.wait(timeout=GRACE_SECONDS)
-                except Exception:
-                    pass
-                return False
-            os.killpg(gid, signal.SIGTERM)
+        if hasattr(os, "killpg") and shares_our_group(proc.pid) \
+                and not _gone(proc):
+            # THE CHILD IS IN OUR OWN GROUP, so `killpg` here would signal
+            # THIS process - the caller - and not the child's tree. That is
+            # not hypothetical: with `start_new_session` removed the whole
+            # test runner died mid-suite, which is how this branch was found.
+            # A platform with no `setsid` reaches the same state honestly, so
+            # the narrow kill is taken and the answer is `False`: the direct
+            # child goes, its descendants are not accounted for, and the caller
+            # says the teardown could not be confirmed rather than implying a
+            # clean stop.
+            proc.kill()
             try:
                 proc.wait(timeout=GRACE_SECONDS)
             except Exception:
-                os.killpg(gid, signal.SIGKILL)
-                proc.wait(timeout=GRACE_SECONDS)
-            return True
-        completed = subprocess.run(
-            ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return completed.returncode == 0
+                pass
+            return False
+        killed = _kill(proc)
     except Exception:
-        return False
+        killed = False
+    return bool(killed) or _gone(proc)
 
 
 def drain(proc):

@@ -3722,6 +3722,39 @@ def _cases(check):
           facts.get("outcome") == M.TIMED_OUT
           and facts.get("teardown") is None)
 
+    # The confirmation is a fact about the ROOT PROCESS, so it is pinned on every
+    # OS by swapping the kill command (`_pg._kill`) for one that fails: what the
+    # kill command's exit code says is then held apart from whether the child is
+    # gone. A real `taskkill` exits non-zero ("not found") when the tree ended
+    # between the timeout firing and the kill - a clean stop.
+    real_kill = _pg._kill
+    _pg._kill = lambda _proc: False
+    try:
+        gone_child = subprocess.Popen([sys.executable, "-c", "pass"],
+                                      **_pg.group_kwargs())
+        _harness.attempt(gone_child.wait, 10)
+        gone_read = M._tear_down(gone_child)
+        live_child = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            **_pg.group_kwargs())
+        try:
+            live_read = M._tear_down(live_child)
+            still_running = live_child.poll() is None
+        finally:
+            if live_child.poll() is None:
+                live_child.kill()
+            _harness.attempt(live_child.wait, 10)
+    finally:
+        _pg._kill = real_kill
+    check("lc10c a teardown whose kill command FAILS because the child had "
+          "already exited reads confirmed - the process is gone, which is what "
+          "the confirmation is about: %r" % (gone_read,), gone_read is True)
+    check("lc10d ...and one whose kill command fails while the child is STILL "
+          "RUNNING reads unconfirmed, so the liveness fact cannot be read "
+          "as an unconditional pass: read=%r running=%r"
+          % (live_read, still_running),
+          live_read is False and still_running is True)
+
     # --- the real runner's other two answers -------------------------------
     code, text, facts = M._shell(os.path.join(tmp, "no-such-dir"), "true")
     check("lc14 a command that could not be STARTED is `could-not-run` from the "

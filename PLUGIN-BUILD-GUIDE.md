@@ -323,7 +323,6 @@ L2:
   _merge_install -> _output
   _policy -> _output
   _priority -> _output
-  _proc_group -> _output
   _refs -> _output
   _runner_collects -> _output
   _runner_output -> _output
@@ -344,6 +343,7 @@ L3:
   _manifest_phases -> _ado_parent, _ado_tracked, _areas, _manifest_io, _manifest_vocab, _output, _task_outputs
   _manifest_typos -> _areas, _manifest_vocab, _output
   _panel_ui -> _output, _ui_theme
+  _proc_group -> _locks, _output
   _report_html -> _areas, _fmt, _manifest_io, _manifest_vocab, _output, _priority, _ui_theme
   _report_ui -> _output, _ui_theme
   _scope_companions -> _output, _runner_collects
