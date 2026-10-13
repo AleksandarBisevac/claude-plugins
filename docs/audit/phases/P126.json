@@ -21,7 +21,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P126-R1",
@@ -38,7 +38,9 @@
         "severity": "med",
         "file": "plugins/audit/scripts/ui/report-css/tables.css:54-61 (P126.1, 97c7e9d5)",
         "issue": "The fix lowers one OTHER column's narrowest width (bugs test-gate pills wrap) so the sum of min-widths stops crossing the column by the size of a title chunk. The hostile property the task names - no table-cell token widens the document at any width - is not established: break-word still does not lower a cell's min-content, and the executor's own probe shows the margin is the width of the pill (a chip-only variant still widened 16px). The pass depends on fonts-dejavu-core being the fallback font and on 833px; another font or viewport near the scroll breakpoint can reintroduce the same failure in the phases or data tables. u14kt pins the CSS text only (and a clip-rule absence that no one proposed), so it cannot fail for the behaviour.",
-        "resolution": "Either give the title cell a rule that bounds a planted token's contribution (for example overflow-wrap:anywhere on the free-text cells with a min-width on the title column, as the task suggested) so the bound holds independent of sibling columns, or keep this rule and have the orchestrator's CI run the hostile leg at the widths around the breakpoint on ubuntu and report the margin. Replace u14kt's text pin with a browser-gate leg that fails without the rule."
+        "resolution": "Either give the title cell a rule that bounds a planted token's contribution (for example overflow-wrap:anywhere on the free-text cells with a min-width on the title column, as the task suggested) so the bound holds independent of sibling columns, or keep this rule and have the orchestrator's CI run the hostile leg at the widths around the breakpoint on ubuntu and report the margin. Replace u14kt's text pin with a browser-gate leg that fails without the rule.",
+        "status": "accepted-open",
+        "acceptedReason": "- Reviewer answers accepted: Owner answered 'Prihvati (Recommended)' to both: P126.3's diverges is resolved by P126.14 (both sides compared in LF, si5-si7, red-first proved; re-review at 46462e88 says matches); P126.1's inherited test is accepted with CI's hostile leg on demo-large.html as the proof (green in runs 38316180338 and 38324787932, reproduced and fixed in a Linux container), the every-width invariant scheduled for 3.4.0 as table-width-invariant. Fix task(s) P126.18-13q signed off with their diff unreviewed."
       },
       {
         "id": "P126-R3",
@@ -75,13 +77,25 @@
         "severity": "low",
         "file": ".github/workflows/ci.yml:~895 (step 'The report is interactive on plans cut from the scale demo', P126.15-13q, b582f550); tools/gate-parity.py STEP_GUARD_EXEMPT",
         "issue": "The split step carries no `if:`, so it runs only under the default success(): it is skipped after ANY earlier failed step of the manifests job (screenshots, GIF, vitest, the guarded interactive step), not only after a failed `Scale demo`. The exemption reason and the step's own comment justify it by the one dependency (/tmp/dl), but the behaviour is broader than that dependency, so the one-status, all-parked and no-proposals legs stay hidden behind unrelated failures - the class P126.10-13q set out to remove, now confined to these legs. step_exemption_breadth_drift checks that the step reads the named path and that an earlier step mentions it; it cannot see this, and its own docstring says so.",
-        "resolution": "Give the Scale demo step an `id:` and the split step `if: ${{ !cancelled() && steps.<id>.outcome == 'success' }}`, so it is skipped only when its producer failed. Then the STEP_GUARD_EXEMPT row can say so, or be dropped if step_guard_drift is taught to accept an outcome condition naming an earlier step.",
-        "fixTask": "P126.18-13q"
+        "resolution": "fixed in P126.18-13q (46a87a37b627): Give the Scale demo step an `id:` and the split step `if: ${{ !cancelled() && steps.<id>.outcome == 'success' }}`, so it is skipped only when its producer failed. Then the STEP_GUARD_EXEMPT row can say so, or be dropped if step_guard_drift is taught to accept an outcome condition naming an earlier step.",
+        "fixTask": "P126.18-13q",
+        "commit": "46a87a37b627",
+        "status": "fixed"
       }
     ],
-    "outcome": "[findings: 6 - 0 high, 2 med, 4 low; 4 with a recorded fix commit]"
+    "outcome": "phase review filed at head 46462e889acd [findings: 6 - 0 high, 2 med, 4 low; 5 with a recorded fix commit]",
+    "readReturns": [
+      {
+        "return": "returns/P126/0aca587b173b597343e9b4da8ee0f186ae8746ad.reviewer.json",
+        "sha256": "c97d55b0260cd6ba6c5bd53c59ed60775b7a6f4d0f2d4bdf44f61232fb98a036"
+      },
+      {
+        "return": "returns/P126/46462e889acdd5fc45efa6f72fbaafc7ec25992f.reviewer.json",
+        "sha256": "2b6304e7002627c8cb0ce175c46250ec07b72bad72f8ee9ba7324192aa2625f0"
+      }
+    ]
   },
-  "summary": null,
+  "summary": "- Reviewer answers accepted: Owner answered 'Prihvati (Recommended)' to both: P126.3's diverges is resolved by P126.14 (both sides compared in LF, si5-si7, red-first proved; re-review at 46462e88 says matches); P126.1's inherited test is accepted with CI's hostile leg on demo-large.html as the proof (green in runs 38316180338 and 38324787932, reproduced and fixed in a Linux container), the every-width invariant scheduled for 3.4.0 as table-width-invariant. Fix task(s) P126.18-13q signed off with their diff unreviewed.",
   "tasks": [
     {
       "id": "P126.1",
@@ -169,9 +183,14 @@
         "at": "2026-10-12T21:10:39Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "97c7e9d55edf",
-        "at": "2026-10-12T21:10:41Z"
+        "at": "2026-10-13T06:49:02Z",
+        "return": "returns/P126/0aca587b173b597343e9b4da8ee0f186ae8746ad.reviewer.json",
+        "answer": "matches",
+        "redFirst": "not-attempted",
+        "redFirstBasis": "Executor: regression mode, expectRedFirst false; the CI failure was reproduced in a Playwright container before the fix, but u14kt is a CSS-text pin and was never run red. No red of a test the task added is shown.",
+        "inheritedTests": "flagged",
+        "inheritedTestsBasis": "Read from the gate entry node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html: the executor reports the hostile failure does not reproduce on the stock fonts and only appears with fonts-dejavu-core on the 40-phase demo, so the gate's own run of the hostile leg on the acme example would pass with the tevcell rule deleted (shape: a width assertion the example never reaches at the gate's fonts). Other gate entries run the whole project and are not asked."
       },
       "redFirst": {
         "status": "not-attempted",
@@ -228,9 +247,14 @@
         "at": "2026-10-12T21:23:04Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "f213f182f0ab",
-        "at": "2026-10-12T21:23:05Z"
+        "at": "2026-10-13T06:49:02Z",
+        "return": "returns/P126/0aca587b173b597343e9b4da8ee0f186ae8746ad.reviewer.json",
+        "answer": "matches",
+        "redFirst": "not-attempted",
+        "redFirstBasis": "Executor: regression task, expectRedFirst false, Windows-only failure; no test added.",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "Gate runs python3 tools/sweep-selftests.py over the whole project; no bounded set to read."
       },
       "redFirst": {
         "status": "not-attempted",
@@ -298,9 +322,14 @@
         "at": "2026-10-12T21:38:07Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "897c7c2abff8",
-        "at": "2026-10-12T21:38:08Z"
+        "at": "2026-10-13T06:49:02Z",
+        "return": "returns/P126/0aca587b173b597343e9b4da8ee0f186ae8746ad.reviewer.json",
+        "answer": "diverges",
+        "redFirst": "not-attempted",
+        "redFirstBasis": "Executor: regression task, expectRedFirst false; sh4, si5, si6 and sr44b are fixtures simulating the Windows shape and none was run red.",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "Gate runs python3 tools/sweep-selftests.py over the whole project; no bounded set to read."
       },
       "redFirst": {
         "status": "not-attempted",
@@ -403,9 +432,14 @@
         "at": "2026-10-12T22:36:59Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "11745d06040b",
-        "at": "2026-10-12T22:37:00Z"
+        "at": "2026-10-13T06:49:02Z",
+        "return": "returns/P126/0aca587b173b597343e9b4da8ee0f186ae8746ad.reviewer.json",
+        "answer": "matches",
+        "redFirst": "not-attempted",
+        "redFirstBasis": "Executor: regression task, expectRedFirst false; red appears only on windows-latest.",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "Gate runs python3 tools/sweep-selftests.py over the whole project; no bounded set to read."
       },
       "redFirst": {
         "status": "not-attempted",
@@ -471,9 +505,14 @@
         "at": "2026-10-12T22:46:52Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "4df3c529a116",
-        "at": "2026-10-12T22:46:53Z"
+        "at": "2026-10-13T06:49:02Z",
+        "return": "returns/P126/0aca587b173b597343e9b4da8ee0f186ae8746ad.reviewer.json",
+        "answer": "matches",
+        "redFirst": "could-not-prove",
+        "redFirstBasis": "Computed by the filing verb: the helper's run reported 'inline suite tools/check-committed-pii.py ... none of its 0 changed hunk(s) lies inside a test definition', so no test-only copy could be laid over HEAD.",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "Gate runs python3 tools/sweep-selftests.py over the whole project; no bounded set to read."
       },
       "redFirst": {
         "at": "2026-10-12T22:38:07Z",
@@ -533,9 +572,14 @@
         "at": "2026-10-12T22:57:09Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "602da24e95f1",
-        "at": "2026-10-12T22:57:10Z"
+        "at": "2026-10-13T06:49:02Z",
+        "return": "returns/P126/0aca587b173b597343e9b4da8ee0f186ae8746ad.reviewer.json",
+        "answer": "matches",
+        "redFirst": "not-attempted",
+        "redFirstBasis": "Executor: regression task, expectRedFirst false; red only on windows-latest, iv39a was not run red.",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "Gate runs python3 tools/sweep-selftests.py over the whole project; no bounded set to read."
       },
       "redFirst": {
         "status": "not-attempted",
@@ -594,9 +638,14 @@
         "at": "2026-10-12T23:06:48Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "b0d6d8a9f7b1",
-        "at": "2026-10-12T23:06:50Z"
+        "at": "2026-10-13T06:49:02Z",
+        "return": "returns/P126/0aca587b173b597343e9b4da8ee0f186ae8746ad.reviewer.json",
+        "answer": "matches",
+        "redFirst": "not-attempted",
+        "redFirstBasis": "Executor: regression mode, expectRedFirst false; bf44 was not run red.",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "Gate runs python3 tools/sweep-selftests.py over the whole project; no bounded set to read."
       },
       "redFirst": {
         "status": "not-attempted",
@@ -702,9 +751,14 @@
         "at": "2026-10-12T22:21:07Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "a07bf893019d",
-        "at": "2026-10-12T22:21:09Z"
+        "at": "2026-10-13T06:49:02Z",
+        "return": "returns/P126/0aca587b173b597343e9b4da8ee0f186ae8746ad.reviewer.json",
+        "answer": "matches",
+        "redFirst": "proved",
+        "redFirstBasis": "Computed by the filing verb from the helper block: python3 tools/gate-parity.py --selftest in a throwaway tree at HEAD exited 1 on NameError: name step_guard_drift is not defined, the symbol the task introduces; a second run with the working tree's implementation copied in exited 0, its tests reaching their assertions.",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "Gate runs python3 tools/sweep-selftests.py over the whole project; no bounded set to read."
       },
       "redFirst": {
         "at": "2026-10-12T21:45:31Z",
@@ -779,9 +833,14 @@
         "at": "2026-10-12T23:31:15Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "ba4be31a3ddb",
-        "at": "2026-10-12T23:31:16Z"
+        "at": "2026-10-13T06:49:02Z",
+        "return": "returns/P126/0aca587b173b597343e9b4da8ee0f186ae8746ad.reviewer.json",
+        "answer": "matches",
+        "redFirst": "not-attempted",
+        "redFirstBasis": "Executor: regression mode, expectRedFirst false; pl1 passes on macOS before and after and can only go red on windows-latest.",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "Gate runs python3 tools/sweep-selftests.py over the whole project; no bounded set to read."
       },
       "redFirst": {
         "status": "not-attempted",
@@ -839,9 +898,14 @@
         "at": "2026-10-12T23:42:14Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "aec0a2ab97c5",
-        "at": "2026-10-12T23:42:15Z"
+        "at": "2026-10-13T06:49:02Z",
+        "return": "returns/P126/0aca587b173b597343e9b4da8ee0f186ae8746ad.reviewer.json",
+        "answer": "matches",
+        "redFirst": "not-attempted",
+        "redFirstBasis": "Executor: regression mode, expectRedFirst false; Windows-only.",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "Gate runs python3 tools/sweep-selftests.py over the whole project; no bounded set to read."
       },
       "redFirst": {
         "status": "not-attempted",
@@ -906,9 +970,14 @@
         "at": "2026-10-12T23:56:51Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "0aca587b173b",
-        "at": "2026-10-12T23:56:53Z"
+        "at": "2026-10-13T06:49:02Z",
+        "return": "returns/P126/0aca587b173b597343e9b4da8ee0f186ae8746ad.reviewer.json",
+        "answer": "matches",
+        "redFirst": "not-attempted",
+        "redFirstBasis": "Executor: regression mode, expectRedFirst false; the failure is Windows-only (read-only git objects).",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "Gate runs python3 tools/sweep-selftests.py over the whole project; no bounded set to read."
       },
       "redFirst": {
         "status": "not-attempted",
@@ -1212,7 +1281,7 @@
     {
       "id": "P126.18-13q",
       "title": "fix P126-R6: The split step carries no `if:`, so it runs only under the defau...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The split step carries no `if:`, so it runs only under the default success(): it is skipped after ANY earlier failed step of the manifests job (screenshots, GIF, vitest, the guarded interactive step), not only after a failed `Scale demo`. The exemption reason and the step's own comment justify it by the one dependency (/tmp/dl), but the behaviour is broader than that dependency, so the one-status, all-parked and no-proposals legs stay hidden behind unrelated failures - the class P126.10-13q set out to remove, now confined to these legs. step_exemption_breadth_drift checks that the step reads the named path and that an earlier step mentions it; it cannot see this, and its own docstring says so.\n\nResolution asked: Give the Scale demo step an `id:` and the split step `if: ${{ !cancelled() && steps.<id>.outcome == 'success' }}`, so it is skipped only when its producer failed. Then the STEP_GUARD_EXEMPT row can say so, or be dropped if step_guard_drift is taught to accept an outcome condition naming an earlier step.",
       "files": [
         "tools/gate-parity.py",
@@ -1241,14 +1310,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "46a87a37b627",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "ci.yml: Scale demo step got id scale_demo; the split step got if: ${{ !cancelled() && steps.scale_demo.outcome == 'success' }}; its comment updated. tools/gate-parity.py: new _exempt_condition_problem; step_guard_drift now tracks step ids per job and requires an exempt step's if to hold !cancelled() inside ${{ }} and the outcome of an earlier step by id. sg2 fixture given id and condition; new case sg7 covers no id, unknown id, no ${{ }}, no !cancelled(). python3 tools/gate-parity.py exit 0; --selftest exit 0, 123/123 passed; ruff clean on the file. prove-gates rows: anchors untouched, none edited.",
+        "descriptive": "The split scale-demo step now skips only when its producer failed, and the guard check enforces that form for exempt steps."
       },
       "startedAt": "2026-10-13T01:38:02Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-13T01:56:44Z",
+      "verifiedBy": [
+        "sg7 (tools/gate-parity.py selftest)"
+      ],
       "notes": [
         {
           "at": "2026-10-13T01:38:01Z",
@@ -1263,16 +1334,28 @@
         "runId": "2026-10-13T01:56:43Z.e34cd0",
         "status": "passed",
         "at": "2026-10-13T01:56:43Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "46a87a37b627",
+        "at": "2026-10-13T01:56:44Z",
+        "basis": "a fix task for P126-R6: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "could-not-prove",
+        "at": "2026-10-13T01:39:10Z",
+        "basis": "P126.18-13q declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P126.18-13q declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+        "source": "red-first-helper"
       }
     }
   ],
   "request": "Make 3.3.0's release commit green on every OS CI runs: fix the windows-latest selftest failures and the ubuntu report hostile-content failure that CI run 38299118105 reported, before the release is cut.",
   "openChoices": [],
   "reviewPerTask": "phase",
-  "claim": {
-    "sessionId": "0a7c2fcc-df20-4990-96d6-d56b52648faf",
-    "branch": "audit/p126-3-3-0-release-ci-green-on-ever",
-    "at": "2026-10-12T20:10:57Z"
-  },
-  "startedAt": "2026-10-12T20:10:57Z"
+  "startedAt": "2026-10-12T20:10:57Z",
+  "testEvidence": {
+    "runId": "2026-10-13T06:48:13Z.0f063c",
+    "status": "passed",
+    "at": "2026-10-13T06:48:13Z"
+  }
 }
