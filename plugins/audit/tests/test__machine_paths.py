@@ -206,6 +206,26 @@ def _cases(check):
                   for v in ("python3 tools/gate.py", "npx vitest run",
                             ["test", "lint"])))
 
+        # THE ONE PREDICATE `tools/check-committed-pii.py` now reads too
+        # (`shape_fires`): a home directory deep enough still fires with its
+        # leading separator cut, and a sentence's words joined by slashes do
+        # not pick up a separator from standing nowhere near one.
+        _pattern = dict(M.MACHINE_PATH_SHAPES)["posix-home"]
+        _cut = "among them: Users/someone/p/x.js"
+        _prose = "callers pass home/cwd/project directories"
+        check("mp16 shape_fires still finds a cut home path (no leading "
+              "separator, but deep enough) and leaves alone a prose phrase "
+              "slashes merely join (shallower, no separator either): cut=%r "
+              "prose=%r"
+              % ([m.group(0) for m in _pattern.finditer(_cut)
+                  if M.shape_fires("posix-home", m)],
+                 [m.group(0) for m in _pattern.finditer(_prose)
+                  if M.shape_fires("posix-home", m)]),
+              any(M.shape_fires("posix-home", m)
+                  for m in _pattern.finditer(_cut))
+              and not any(M.shape_fires("posix-home", m)
+                         for m in _pattern.finditer(_prose)))
+
         _spaced_root_cases(check, proj)
 
         check("mp7 the journal re-exports the SAME objects, so the detector "

@@ -197,12 +197,12 @@ def redacted_paths(project, text):
 #
 # The token boundary is what keeps `docs/home/alice.md` and `src/users/x.ts`,
 # repo-relative paths that merely resemble a home directory, out of the set. The
-# leading separator is optional IN THE PATTERN because the detector reads
-# committed bytes, where a producer that trimmed it still left a home directory
-# behind and a human reviews what it flags. The writer reads the same pattern
-# and additionally requires that separator (`machine_path_shape`): a repository
-# may hold a `home/` directory of its own, and a writer that refused
-# `home/<x>` would refuse that repository's own paths with nobody to overrule it.
+# leading separator is optional IN THE PATTERN because a producer that trimmed
+# it still left a home directory behind, and `shape_fires` is where that is
+# told apart from an ordinary relative path or a sentence's words joined by
+# slashes - by depth rather than by which reader asks: a repository may hold a
+# `home/` directory of its own, and a two- or three-word match beneath that
+# depth is read as the repository's own path or as prose, never refused.
 # A character that may sit INSIDE a path token, so one standing before a
 # match means the match does not start a token. One class, two readers: the
 # lookbehind below, and the checkout-root search, which uses `str.find` and so
@@ -278,6 +278,18 @@ _TOKEN_CHAR = re.compile(_TOKEN_CLASS)
 # A `posix-home` match the writer takes: its home word stands behind a
 # separator, which a match missing its leading one does not have.
 _HOME_AFTER_SEPARATOR = re.compile(r"[/\\](?:Users|home)/")
+# What immediately continues a match with no gap - the rest of a real path,
+# never a sentence's next word, which carries no leading separator of its own.
+_TAIL_SEGMENTS = re.compile(r"(?:[/\\][A-Za-z0-9._~$+-]+)+")
+# The home word's own segment plus at least this many more make a path deep
+# enough to be a home directory rather than two or three words a sentence
+# happened to join with slashes. MEASURED OVER THIS TREE'S COMMITTED
+# ARTIFACTS: every `posix-home` row a plan, a journal or a return carried for a
+# prose phrase ("the isolated home/TMPDIR", "pass home/cwd/project
+# directories", a quoted relative "home/page.tsx") stopped at one or two
+# segments after the home word; the stripped-separator corpus this module is
+# built to catch ("Users/<name>/<dir>/<file>") carries at least two more.
+_HOME_PATH_MIN_DEPTH = 3
 # The shape name a refusal gives for the checkout's own root, which is machine
 # layout whatever directory it sits under and so has no pattern of its own.
 _CHECKOUT_ROOT_SHAPE = "checkout-root"
@@ -482,16 +494,31 @@ def _root_at(flat, root):
     return False
 
 
-def _shape_fires(name, match):
-    """Whether one pattern match is machine identity TO THE WRITER.
+def _segments_after(match):
+    """How many more `/segment` pieces immediately continue `match`, with no
+    gap - see `_TAIL_SEGMENTS`."""
+    tail = _TAIL_SEGMENTS.match(match.string, match.end())
+    return tail.group(0).count("/") + tail.group(0).count("\\") if tail else 0
 
-    `posix-home` fires only on a match carrying a separator before its home
-    word - first in the match, or after a file URL's host; the detector reads
-    the same pattern without that condition - the section's note above
-    `_MACHINE_PATH_SHAPES` says why the two differ."""
-    if name == "posix-home":
-        return _HOME_AFTER_SEPARATOR.search(match.group(0)) is not None
-    return True
+
+def shape_fires(name, match):
+    """Whether one pattern match is machine identity - the ONE predicate both
+    `tools/check-committed-pii.py` and this module's own writer's-door
+    functions read, so a home path answers the same question wherever it is
+    asked.
+
+    `posix-home` fires on a match carrying a separator before its home word -
+    first in the match, or after a file URL's host - the ordinary case. It
+    ALSO fires with no such separator when the match is deep enough
+    (`_HOME_PATH_MIN_DEPTH`) to be a home directory whose leading separator was
+    cut rather than a sentence's words joined by slashes: the home word's own
+    segment plus the further `/segment` pieces that continue it with no gap
+    must reach that depth. Every other shape fires unconditionally."""
+    if name != "posix-home":
+        return True
+    if _HOME_AFTER_SEPARATOR.search(match.group(0)) is not None:
+        return True
+    return 1 + _segments_after(match) >= _HOME_PATH_MIN_DEPTH
 
 
 def machine_path_shape(text, roots=()):
@@ -505,7 +532,7 @@ def machine_path_shape(text, roots=()):
         if _root_at(flat, root):
             return _CHECKOUT_ROOT_SHAPE
     for name, pattern in _MACHINE_PATH_SHAPES:
-        if any(_shape_fires(name, m) for m in pattern.finditer(text)):
+        if any(shape_fires(name, m) for m in pattern.finditer(text)):
             return name
     return None
 

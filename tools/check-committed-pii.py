@@ -133,6 +133,7 @@ import _output  # noqa: E402  (install_path: the plugin's folders are labels)
 
 _output.install_path()
 import _journal_io  # noqa: E402  (the machine-path shapes the writer refuses on)
+import _machine_paths  # noqa: E402  (shape_fires: the one predicate both readers call)
 
 # --- the domain ---------------------------------------------------------------
 # What the plugin GENERATES and tells a user to commit. Everything else this
@@ -241,8 +242,12 @@ def tracked_paths(repo=None):
 # `_journal_io.MACHINE_PATH_SHAPES`, the same pattern objects - and the token
 # boundary with them. A copy here would agree with the writer until the day one
 # side was widened, and the row the other side missed would be the one already
-# committed. The one deliberate difference is the writer's, not this table's:
-# it takes a relative path whose first segment is `home`, which this flags.
+# committed. `_machine_paths.shape_fires` is read for the same reason, by the
+# same name, over a match either pattern set produced: a `posix-home` match
+# only fires when it is deep enough to be a home directory rather than a
+# sentence's words joined by slashes (or carries a leading separator, which
+# settles it either way) - the one answer to "is this a home path", asked here
+# and at the writer's door alike.
 DETECTORS = _journal_io.MACHINE_PATH_SHAPES
 
 # --- the contract checks ------------------------------------------------------
@@ -369,7 +374,8 @@ def scan_text(rel, text, surface):
     for n, line in enumerate(text.split("\n"), 1):
         for name, pattern in DETECTORS:
             for m in pattern.finditer(line):
-                out.append((rel, n, name, m.start() + 1))
+                if _machine_paths.shape_fires(name, m):
+                    out.append((rel, n, name, m.start() + 1))
         if surface != "journal":
             continue
         stripped = line.strip()
@@ -648,21 +654,6 @@ BASELINE = (
      "journal-actor-host",
      "the second row of the same file, for the same reason: the chain runs through "
      "it, so it can be superseded by later rows but never corrected in place."),
-    ("docs/audit/journal/2026-09.24c1c300-045e-45b9-beaf.wt-cbe2f966.jsonl", 95,
-     "posix-home",
-     "a review.finding row whose prose says 'the isolated home/TMPDIR' - a phrase "
-     "about the sweep's scratch environment, not a directory of any machine. "
-     "posix-home matches `home/` before a word by design, and the row is chained and "
-     "already merged elsewhere, so it is recorded here rather than rewritten."),
-    ("docs/audit/journal/2026-09.24c1c300-045e-45b9-beaf.jsonl", 1419,
-     "posix-home",
-     "the phase.add row of the phase that adds the entry above: its outcome quotes "
-     "the same phrase 'home/TMPDIR' while naming the false positive it fixes. No "
-     "machine path is in it, and the chain runs through it, so it stays."),
-    ("docs/audit/journal/2026-09.24c1c300-045e-45b9-beaf.jsonl", 1420,
-     "posix-home",
-     "the task.add row beside it, whose title quotes the same phrase for the same "
-     "reason. A phrase, not a directory; chained, so recorded rather than rewritten."),
     ("docs/audit/journal/2026-10.6c881c24-c1fd-461f-8c48.wt-d215e320.jsonl", 23,
      "posix-home",
      "a task.note row whose text quoted an operator's command, and that command's "
@@ -670,12 +661,6 @@ BASELINE = (
      "plan's copy of the note was corrected to a repository-relative spelling; "
      "this row cannot be - its hash covers these bytes and the chain runs "
      "through it - so it is recorded here rather than rewritten."),
-    ("docs/audit/journal/2026-10.6c881c24-c1fd-461f-8c48.wt-d215e320.jsonl", 114,
-     "posix-home",
-     "a row whose text quotes a relative 'home/page.tsx' as the example of a "
-     "repository path the writer must accept - a file a repository may hold, "
-     "not a directory of any machine. posix-home flags `home/` at a token start "
-     "by design, and the row is chained, so it is recorded rather than rewritten."),
     ("docs/audit/journal/2026-10.6c881c24-c1fd-461f-8c48.wt-d215e320.jsonl", 194,
      "unexpanded-home",
      "a review-finding row quoting the reviewer's own probe text: the tilde "
@@ -736,26 +721,6 @@ BASELINE = (
      "a task's text naming two marker files a selftest writes and removes in the "
      "sandboxed home, both spelled with the tilde. Fixture names the suite "
      "invents; one row covers both columns because the key is the line's text."),
-    ("docs/audit/phases/P82.json", "line-sha256:6c0da7b36de3bf33",
-     "posix-home",
-     "a task's text saying a run is green under the sweep's isolated home and "
-     "temp directories - the phrase the journal rows above are baselined for. "
-     "Prose about the scratch environment, not a directory of any machine."),
-    ("docs/audit/phases/P90.json", "line-sha256:8a691891eb8e1159",
-     "posix-home",
-     "the phase outcome of the change that baselined the journal phrase above; "
-     "it quotes that phrase while saying it is not a home directory. Quoting "
-     "the false positive trips it again; nothing here names a machine."),
-    ("docs/audit/phases/P90.json", "line-sha256:e4ce8c0a69c04ed3",
-     "posix-home",
-     "the title of that same phase's task, quoting the phrase the detector "
-     "matched in the journal row. A description of a false positive, not a "
-     "path of any machine."),
-    ("docs/audit/phases/P90.json", "line-sha256:e6105cb8d2235f5d",
-     "posix-home",
-     "the description of that task, quoting the matched words to locate the "
-     "journal finding it baselines. It states in its own text that no path of "
-     "this machine is present, and none is."),
     (_BOUND_RETURN, 113, "posix-home", _BOUND_RETURN_WHY),
     (_BOUND_RETURN, 113, "unexpanded-home", _BOUND_RETURN_WHY),
     (_BOUND_RETURN, 124, "posix-home", _BOUND_RETURN_WHY),
@@ -769,45 +734,6 @@ BASELINE = (
     (_BOUND_RETURN, 190, "posix-home", _BOUND_RETURN_WHY),
     (_BOUND_RETURN, 190, "unexpanded-home", _BOUND_RETURN_WHY),
     (_BOUND_RETURN, 196, "posix-home", _BOUND_RETURN_WHY),
-    ("docs/audit/phases/P126.json", "line-sha256:6568f124de8e5dc3",
-     "posix-home",
-     "a review finding's prose saying callers 'pass home/cwd/project "
-     "directories' - three words joined by slashes, not a directory of any "
-     "machine. posix-home flags `home/` at a token start by design."),
-    ("docs/audit/phases/P126.json", "line-sha256:60ef6879a44564fa",
-     "posix-home",
-     "the fix task's description that copies the same finding text, so the "
-     "same phrase and the same reason: a list of words, not a path."),
-    ("docs/audit/journal/2026-10.0a7c2fcc-df20-4990-96d6.jsonl", 1440,
-     "posix-home",
-     "the review.finding row that filed the same prose. The chain runs through "
-     "it, so it is recorded here rather than rewritten."),
-    ("docs/audit/evidence/returns/P126/"
-     "0aca587b173b597343e9b4da8ee0f186ae8746ad.reviewer.json", 28,
-     "posix-home",
-     "the phase reviewer's return quoting the phrase 'pass home/cwd/project "
-     "directories' - words joined by slashes, not a directory of any machine. "
-     "Returns are keyed by line number, as the rows above are; the same prose "
-     "is baselined in the plan, shard and journal."),
-    ("docs/audit/evidence/returns/P126.15-13q/20261013T004154Z.executor.json", 17,
-     "posix-home",
-     "the executor return of the task that baselined the row above: its outcome "
-     "names the same quoted phrase while saying what it baselined. Prose, not a "
-     "directory of any machine."),
-    ("docs/audit/phases/P126.json", "line-sha256:3ae5029906af441a",
-     "posix-home",
-     "the plan's copy of that same outcome text, for the same reason."),
-    ("docs/audit/evidence/returns/P126.16-13q/20261013T005424Z.executor.json", 14,
-     "posix-home",
-     "the fix's own outcome sentence naming the kind of spelling it stops "
-     "treating as a root - two words joined by a slash, not a directory."),
-    ("docs/audit/phases/P126.json", "line-sha256:3f3d818d41f3f0d7",
-     "posix-home",
-     "the plan's copy of that outcome sentence, for the same reason."),
-    ("docs/audit/journal/2026-10.0a7c2fcc-df20-4990-96d6.jsonl", 1485,
-     "posix-home",
-     "the journal row that recorded that outcome; chained, so recorded here "
-     "rather than rewritten."),
 )
 
 _MIN_REASON = 60          # a reason short enough to be a label is not a reason
@@ -1497,6 +1423,35 @@ def _cases(check):
     check("q2b ...and a repo-relative path that merely RESEMBLES one is left "
           "alone: the separator became optional, not absent, and a match has "
           "to start where a word starts: %r" % (_wrong,), _wrong == [])
+
+    # THE ONE PREDICATE BOTH READERS CALL. A reviewer's prose joining words
+    # with slashes used to trip this file's posix-home detector at any token
+    # start, while the write scrub (`_machine_paths`) refused only a match
+    # still carrying its separator - two answers to one question, and a
+    # BASELINE row here per copy of the prose every time it recurred. Both
+    # now ask `_machine_paths.shape_fires`: it still finds a home path whose
+    # leading separator was cut (q2a's own case, repeated here against the
+    # live DETECTORS pattern rather than a hand-built sample), and it leaves
+    # alone a phrase of ordinary words a slash happens to join.
+    _posix_home = dict(_journal_io.MACHINE_PATH_SHAPES)["posix-home"]
+    _cut = '{"coverageBasis":"among them: Users/%s/p/x.js"}' % _user
+    _prose = ("the review finding says callers pass home/cwd/project "
+             "directories, not a path of any machine")
+    _cut_found = [h for h in scan_text("f.jsonl", _cut, "evidence")
+                 if h[2] == "posix-home"]
+    _prose_found = [h for h in scan_text("f.md", _prose, "report")
+                   if h[2] == "posix-home"]
+    check("q2i a home path with its leading separator cut is still found, "
+          "words joined by slashes in prose are not, and both outcomes come "
+          "from `shape_fires` alone - true for every match the detector's own "
+          "pattern produces over the cut text and false for every match over "
+          "the prose: cut=%r prose=%r" % (_cut_found, _prose_found),
+          len(_cut_found) == 1
+          and _prose_found == []
+          and all(_machine_paths.shape_fires("posix-home", m)
+                  for m in _posix_home.finditer(_cut))
+          and not any(_machine_paths.shape_fires("posix-home", m)
+                     for m in _posix_home.finditer(_prose)))
 
     # EVERY PLACE A REAL SLUG STANDS, each a whole path segment: at a token
     # start, under the harness's projects directory, under a scratch tempdir,
