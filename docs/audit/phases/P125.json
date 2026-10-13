@@ -198,7 +198,7 @@
     {
       "id": "P125.3",
       "title": "A usage row is priced at the rate in effect on its own date and stamped with it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Sketch 3a, the recording half. usage_ledger writes each row with the rate it was priced at, the rate row's effectiveFrom, and the table's source and asOf, so a later price change never rewrites history; _usage_core.priced_at_read prices a stamped row by its stamp and an unstamped (older) row by the table row in effect on the row's hour bucket, and returns the count of each so every surface's rate phrase states the mix. Haiku 5.5's tier is per request: the scan classifies each message by its own prompt size (in + cacheW5m + cacheW1h + cacheR above 100,000) and keeps the long-prompt tokens in their own row key so an hour bucket never mixes the two tiers. Inference-geo pricing is not visible in the transcript; rows are priced at global routing and the basis says so. An unpriced model's row keeps its tokens, carries no costUSD, and every surface (audit-usage, the report, the panel) prints 'unpriced' beside its tokens instead of a dollar figure. The hook (meter-usage) uses the same hooks/_config table, so it needs no new import.",
       "files": [
         "plugins/audit/scripts/usage/usage_ledger.py",
@@ -245,19 +245,41 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "372ab613dabd",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "usage_ledger.scan_transcripts now stamps every written row with the rate dict it was priced at (row['rate']), that rate's own effectiveFrom for a dated table row (None for a flat/legacy row), and the resolved table's own asOf/source (row['rateAsOf']/row['rateSource']), plumbed through new 'pricingAsOf'/'pricingSource' opts keys from meter-usage.py and audit-usage.py's --backfill. _usage_core.priced_at_read now prices a stamped row (one carrying a 'rate' key) from that stamp alone via a new _price_at_rate helper, never re-resolving it against whatever table a later reader hands in; an unstamped/legacy row is still priced again at read time but against the rate in effect ON ITS OWN hour-bucket date (bucket_date(row['ts'])) rather than 'now' - rates_for/_dated_row were split into _resolve_entry + _dated_row_with_from so the chosen dated row's own effectiveFrom could be recovered for the stamp (new public rate_for_stamp(model, pricing, at)). Haiku 5.5's published long-prompt tier (over 100,000 prompt tokens, billed at a materially higher rate incl. $0.05/MTok cache read vs $0.01) is now modelled: new tiered_model_key(model, context_tokens) classifies each message by its OWN prompt size (_context_of's in+cacheW5m+cacheW1h+cacheR) and groups/prices a long-prompt message under a distinct 'claude-haiku-5-5:long-prompt' key so one hour bucket never averages the two tiers; resolve_pricing lays this published row into every table it hands back (_with_long_prompt_tiers) without touching DEFAULT_PRICING itself, which stays pinned byte-for-byte against hooks/_config.py (pp8). An unpriced model's row now carries costUSD=None and unpriced=True instead of crashing scan_transcripts on round(None) (a real prior bug on the write path); _usage_core._add/_finish now sum an 'unpricedTokens' figure into totals()/aggregate() output, and audit-usage.py's dashboard prints 'unpriced' in the BY MODEL (and other grouped) tables via a new cost_cell() helper and names how many tokens the header's dollar total leaves out. Tests added: test_usage_ledger.py (st1/st2: a row's stamp survives a later table change; hk1/hk2/hk3: a 150,000-token Haiku 5.5 message lands in its own long-prompt row priced at 0.05/MTok cache read, a 50,000-token one in the same hour keeps 0.01), test__usage_core.py (rb1/rb2: an unstamped July/October row of a dated model price at different rows; rs1/rs2: a stamped row ignores a changed table, a stamp of None stays unpriced; ds1-ds3/lp1-lp6: rate_for_stamp and tiered_model_key/resolve_pricing's overlay directly), test_audit_usage.py (up1/up2: an unpriced model's row prints 'unpriced' and the total states the excluded token count). Verified: python3 plugins/audit/tests/test_usage_ledger.py --selftest -> ALL PASS 105/105; python3 plugins/audit/tests/test__usage_core.py --selftest -> ALL PASS 105/105; python3 plugins/audit/tests/test_audit_usage.py --selftest -> ALL PASS 170/170; python3 plugins/audit/tests/test_meter_usage.py --selftest -> ALL PASS 49/49 (updated its a6 closed-field pin for the new stamp/unpriced keys); python3 plugins/audit/tests/test__report_usage.py and test__panel_usage.py --selftest unchanged and pass (106/106, 40/40) since those two files' own surfaces are P125.4's scope and were not touched. ruff check and vermin -t=3.8- clean on every changed file. Full project sweep (python3 tools/sweep-selftests.py) in this tree: 331/331 files ok, 152 migrated to tests/, 15885 cases, exit 0.",
+        "descriptive": "Usage ledger rows now carry a permanent rate stamp immune to later price-table changes, Haiku 5.5's published long-prompt tier is priced per message instead of ignored, and an unpriced model's spend is shown rather than silently crashing the write path or vanishing from the total."
       },
       "startedAt": "2026-10-13T14:46:08Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-13T16:18:59Z",
+      "verifiedBy": [
+        "test_usage_ledger.py: st1 a row written today carries rate, effectiveFrom, source and asOf",
+        "test_usage_ledger.py: st2 re-pricing a stamped row after the table changes returns the stamped figure",
+        "test_usage_ledger.py: hk1 a 150,000-token Haiku 5.5 message lands in its own long-prompt row key",
+        "test_usage_ledger.py: hk2 the long-prompt row is priced at 0.05/MTok cache read",
+        "test_usage_ledger.py: hk3 a 50,000-token message in the same hour keeps the 0.01/MTok rate",
+        "test__usage_core.py: rb1/rb2 an unstamped July row and an October row of a dated model price at different rows",
+        "test__usage_core.py: rs1/rs2 a stamped row is priced from its own stamp, never re-resolved",
+        "test__usage_core.py: ds1-ds3 rate_for_stamp names the dated row's own effectiveFrom",
+        "test__usage_core.py: lp1-lp6 tiered_model_key and resolve_pricing's long-prompt overlay",
+        "test_audit_usage.py: up1/up2 a ledger holding an unpriced model prints its tokens and the word unpriced, and the total states the excluded token count"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-13T16:18:57Z.4db193",
         "status": "passed",
         "at": "2026-10-13T16:18:57Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "372ab613dabd",
+        "at": "2026-10-13T16:18:59Z"
+      },
+      "redFirst": {
+        "at": "2026-10-13T15:24:38Z",
+        "basis": "`python3 plugins/audit/tests/test_usage_ledger.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 82 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - st1 (house FAIL), st2 (house FAIL): SELFTEST FAILED: 79/82 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -367,9 +389,9 @@
       "verifiedBy": [],
       "reviewPerTask": "phase",
       "testEvidence": {
-        "runId": "2026-10-13T15:49:16Z.c02141",
-        "status": "failed",
-        "at": "2026-10-13T15:49:16Z"
+        "runId": "2026-10-13T16:27:39Z.473196",
+        "status": "passed",
+        "at": "2026-10-13T16:27:39Z"
       }
     },
     {

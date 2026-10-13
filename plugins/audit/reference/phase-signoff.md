@@ -36,8 +36,10 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    `review.perTask` asked the intent question per task (`always`, or `signals` where a signal
    fired), it was answered there. Under `phase` - the shipped default - it was not: each task closed
    `deferred`, and the phase brief (`audit-lookup.py brief <phaseId> --role phase`) hands this
-   reviewer every such task's description, claim and commit, which it answers in its return's
-   `tasks` entries; the sign-off verb refuses while a task owed its answers lacks one. What
+   reviewer every such task's description, claim, commit and its own diff - computed once into
+   the brief, docs/audit excluded, never re-derived by the reviewer - which it answers in its
+   return's `tasks` entries; the sign-off verb refuses while a task owed its answers lacks one.
+   A re-review (a phase already carrying findings) lists only the fix task(s) in its place. What
    sign-off adds beside that is the review skill over the whole phase. **Record the review's findings through the verb, all of
    them in one call:**
 

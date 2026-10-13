@@ -781,6 +781,96 @@ def _diff_lines(ctx, files, tree=None, base=None):
     return lines
 
 
+# Process bookkeeping, never code the reviewer judges: every diff this module
+# computes for a phase brief leaves it out, the same magic pathspec `_diff_lines`
+# itself does not need because a task-mode brief never spans more than one task.
+DOCS_AUDIT_EXCLUDE = ":(exclude)docs/audit"
+# git's own hash for the empty tree, the same on every repository - the `against`
+# side for a commit with no parent (a fixture's own root commit).
+_EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+
+def _task_commit_diff_lines(ctx, commit, files):
+    """One owed task's own diff, computed once here instead of left as an
+    instruction the reviewer re-derives: `commit`'s content restricted to
+    `files`, docs/audit excluded. This is `git show <commit> -- <files>`'s
+    patch half without its commit-message header, so concatenating every
+    listed task's own diff, in order, equals one `git diff <base> <head>`
+    over the union of their files - `commit`'s parent (or the empty tree for
+    a root commit) against `commit` is the same comparison `git show` makes."""
+    paths = [_vocab._strip_line_suffix(f) for f in files or []
+             if isinstance(f, str)]
+    command = ("git show %s -- %s" % (commit, " ".join(paths)) if paths
+              else "git show %s" % (commit,))
+    parent = "%s^" % (commit,)
+    has_parent = subprocess.run(
+        ["git", "-C", ctx["gitRoot"], "rev-parse", "--verify", "--quiet",
+         parent], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        timeout=60).returncode == 0
+    against = parent if has_parent else _EMPTY_TREE_SHA
+    try:
+        done = subprocess.run(
+            ["git", "-C", ctx["gitRoot"], "diff", against, commit, "--"]
+            + paths + [DOCS_AUDIT_EXCLUDE],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return ["`%s` could not be run here (%s); run it yourself." % (command, exc)]
+    if done.returncode != 0:
+        return ["`%s` exited %d here (%s); run it yourself."
+                % (command, done.returncode,
+                   _excerpt.excerpt(done.stderr.decode("utf-8", "replace")))]
+    out = done.stdout.decode("utf-8", "replace").rstrip("\n")
+    return ["diff (%s, docs/audit excluded) - computed once, not re-derived:"
+            % (command,), "```diff", out or "(empty)", "```"]
+
+
+def _phase_diff_paths(ctx, base, head):
+    """Every path `git diff <base> <head>` names, docs/audit excluded - or
+    `(None, why)` when it could not be read."""
+    command = "git diff --name-only %s %s -- %s" % (base, head,
+                                                     DOCS_AUDIT_EXCLUDE)
+    try:
+        done = subprocess.run(
+            ["git", "-C", ctx["gitRoot"], "diff", "--name-only", base, head,
+             "--", DOCS_AUDIT_EXCLUDE],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, "`%s` could not be run here (%s)." % (command, exc)
+    if done.returncode != 0:
+        return None, "`%s` exited %d (%s)." % (
+            command, done.returncode,
+            _excerpt.excerpt(done.stderr.decode("utf-8", "replace")))
+    return [p for p in done.stdout.decode("utf-8", "replace").splitlines()
+            if p], None
+
+
+def _phase_scope_lines(ctx, phase, head):
+    """The phase diff's whole path list and, named as such, every path it
+    changed that no task in the phase declares - the scope no per-task diff
+    can show, because each of those only ever reads one task's own files."""
+    base = phase.get("baseRef")
+    if not base:
+        return ["Not computed: phase.baseRef is absent, so the phase's whole "
+                "diff path list cannot be read."]
+    if not head:
+        return ["Not computed: the head could not be read."]
+    paths, why = _phase_diff_paths(ctx, base, head)
+    if why:
+        return ["Not computed: %s" % (why,)]
+    declared = set()
+    for t in phase.get("tasks") or []:
+        if isinstance(t, dict):
+            declared.update(_vocab._strip_line_suffix(f)
+                            for f in (t.get("files") or [])
+                            if isinstance(f, str))
+    outside = [p for p in paths if p not in declared]
+    return (["Phase diff paths (git diff %s %s, docs/audit excluded):"
+            % (base, head)]
+            + (["- %s" % (p,) for p in paths] or ["none"])
+            + ["Paths outside every task's declared files:"]
+            + (["- %s" % (p,) for p in outside] or ["none"]))
+
+
 def compose_reviewer_brief(manifest, phase, task, ctx, filed):
     """The task-mode reviewer's whole brief, as lines. `filed` is the
     executor's `(rel, text)` for the current start, text present."""
@@ -1036,7 +1126,23 @@ def compose_phase_brief(manifest, phase, ctx):
     mechanical = _fr.phase_answers(
         ctx["evidence"], phase, build,
         lambda entries: _evio.resolved_commands(manifest, entries))
-    for task in listed:
+    # A RE-REVIEW HANDS BACK ONLY WHAT CHANGED SINCE THE LAST ONE. A fix task
+    # among `listed` means this phase already carries findings from an earlier
+    # round; the tasks that round already reviewed are not reviewed twice, so
+    # only the fix task(s) get a per-task section here. `owed` below still
+    # reads the full `listed`, because which tasks the review MECHANICALLY
+    # owes answers to is unaffected - a fix task is never owed them
+    # (`_owed_line`), so filtering `listed` itself would just drop the same
+    # entries `owed_answer` already excludes, for the wrong reason.
+    fixers = [t for t in listed if _fr.is_fix_task(t, phase)]
+    shown = fixers if fixers else listed
+    if fixers:
+        lines += _section("Re-review scope", [
+            "This phase already carries findings from an earlier review; "
+            "only the fix task(s) below are shown here - the tasks that "
+            "round reviewed are not repeated: %s"
+            % (", ".join(str(t.get("id")) for t in fixers),)])
+    for task in shown:
         tid = str(task.get("id"))
         entries, whose = _task_gate(manifest, phase, task)
         evidence = task.get("testEvidence") or {}
@@ -1046,9 +1152,6 @@ def compose_phase_brief(manifest, phase, ctx):
             not owed_why and _fr.owed_answer(task, phase, live, answered)) else []
         lines += _section("%s %s" % (tid, task.get("title") or ""), [
             "commit: %s" % (task.get("commit"),),
-            "diff: git show %s -- %s"
-            % (task.get("commit"), " ".join(str(f) for f in task.get("files")
-                                            or [])),
             "files:"] + ["- %s" % (f,) for f in task.get("files") or []] + [
             "description (verbatim):",
             task.get("description") or "none recorded",
@@ -1057,7 +1160,10 @@ def compose_phase_brief(manifest, phase, ctx):
             + ["executor return (%s):" % (rel,),
                text if text is not None else
                "none filed for its current start",
-               _owed_line(task, phase, live, answered)] + computed)
+               _owed_line(task, phase, live, answered)] + computed
+            + _task_commit_diff_lines(ctx, task.get("commit"),
+                                      task.get("files")))
+    lines += _section("Phase diff scope", _phase_scope_lines(ctx, phase, head))
     lines += _section("Existing test files the phase modifies",
                       existing_test_lines(ctx, phase, head))
     if skipped:
@@ -1438,13 +1544,31 @@ def main(argv):
     elif args.question == "brief" and args.role:
         code, said = write_brief(manifest, args.manifest, args.project, args.id,
                                  args.role)
+        # MEASURED, NEVER GATED: this brief is a per-run artifact, not the
+        # agent's static prompt `tools/measure-context.py --gate`'s
+        # `AGENT_CEILINGS` bounds - printed so a brief that grew (a phase
+        # brief's embedded diffs are the usual reason) is visible before it is
+        # spent on a request, with no ceiling enforced here. Printed on
+        # STDERR in the human form: stdout's "written: <path>" line is a
+        # contract `drive-phase.py` parses with `written: (.+)$` to find the
+        # path, and a size appended there would feed it a path that is not one.
+        size = None
+        if code == E_OK:
+            try:
+                size = os.path.getsize(said)
+            except OSError:
+                size = None
         if args.as_json:
-            print(json.dumps({"ok": code == E_OK, "id": args.id,
-                              "role": args.role,
-                              "written" if code == E_OK else "message": said},
-                             indent=2, sort_keys=True))
+            payload = {"ok": code == E_OK, "id": args.id, "role": args.role,
+                      "written" if code == E_OK else "message": said}
+            if size is not None:
+                payload["bytes"] = size
+            print(json.dumps(payload, indent=2, sort_keys=True))
         elif code == E_OK:
             print("brief for %s (%s) written: %s" % (args.id, args.role, said))
+            if size is not None:
+                sys.stderr.write("audit-lookup.py: %s is %d bytes\n"
+                                 % (said, size))
         else:
             sys.stderr.write("audit-lookup.py: %s\n" % (said,))
         return code

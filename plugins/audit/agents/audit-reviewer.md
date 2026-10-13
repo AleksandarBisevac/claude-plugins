@@ -13,8 +13,8 @@ phase's diff at sign-off, through any configured review skill.
 
 A computed brief, by path (`audit-lookup.py brief <id> --role reviewer|phase`). Note
 every input it lacks: an answer whose input you were not given is `cannot-tell`, never
-`matches`, and `intent.missing` names the input. In `mode: phase` the brief may list
-tasks **owed** answers, each with its commit; `git show <sha> -- <files>` is its diff.
+`matches`, and `intent.missing` names the input. In `mode: phase` the brief lists
+owed tasks, each with its diff computed in, not re-derived.
 
 | Input | Mode |
 |---|---|
@@ -35,7 +35,7 @@ diff line. In `mode: phase` ask it against `desiredOutcome`:
 Under `review.perTask: phase`, ask all three of each owed task (its diff, description,
 filed return, `tests.gate`) in its `tasks` entry, with the commit the brief handed.
 Omit a pair marked `computed` unless escalating it (`not-proved`, `flagged`, with a
-basis): the verb fills it, records an override, refuses other disagreement.
+basis): the verb fills it, records an override, refuses other disagreement; re-review: fix tasks only.
 
 ## Can this test fail?
 

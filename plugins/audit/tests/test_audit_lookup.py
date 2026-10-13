@@ -729,12 +729,16 @@ def _brief_cases(check):
     path = brief_file(proj, "P1.1", "20260101T000000Z.executor.md")
     text = read(path) or ""
     task = _bf_manifest()["phases"][0]["tasks"][0]
+    said_lines = said.splitlines()
     check("bf1 `brief --role executor` writes the WHOLE brief to a file and "
-          "says where in one line: the description verbatim, every declared "
-          "file with who last declared it, the docs, the desired outcome, the "
-          "skill, the runsGate reading and the resolved commands, the filing "
-          "command among them: %r" % ((code, said),),
-          code == M.E_OK and len(said.splitlines()) == 1 and path in said
+          "says where in one line - a byte count may follow on stderr, which "
+          "`drive-phase.py` never reads, but the stdout line `written: (.+)$` "
+          "parses stays the path alone: the description verbatim, every "
+          "declared file with who last declared it, the docs, the desired "
+          "outcome, the skill, the runsGate reading and the resolved "
+          "commands, the filing command among them: %r" % ((code, said),),
+          code == M.E_OK and len(said_lines) <= 2 and path in said_lines[0]
+          and said_lines[0].rstrip().endswith(path)
           and task["description"] in text
           and all(f in text for f in task["files"])
           and "docs/refunds.md" in text
@@ -743,6 +747,30 @@ def _brief_cases(check):
           and "executor.runsGate: own-tests" in text
           and "submit P1.1 --role executor" in text
           and "--own --quiet" in text)
+
+    def brief_streams(proj, mpath, node_id, role):
+        """stdout and stderr kept APART - `drive-phase.py`'s
+        `re.search(r"written: (.+)$", out.strip())` reads only the verb's
+        stdout, so a regression here would feed it a byte count instead of a
+        path and read as no brief at all."""
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                code = M.main([mpath, "brief", node_id, "--role", role,
+                               "--project", proj])
+            except SystemExit as exc:
+                code = exc.code
+        return code, out.getvalue(), err.getvalue()
+
+    code1a, stdout1a, stderr1a = brief_streams(proj, mpath, "P1.1", "executor")
+    check("bf1a RED TWIN: the size this brief's write prints goes to stderr, "
+          "never appended to stdout's `written: <path>` line - the shape "
+          "`drive-phase.py`'s `written: (.+)$` parses to find the brief file, "
+          "so a size on that same line would hand it a path that is not one: "
+          "%r" % ((code1a, stdout1a, stderr1a),),
+          code1a == M.E_OK
+          and stdout1a == ("brief for P1.1 (executor) written: %s\n" % (path,))
+          and ("%s is " % (path,)) in stderr1a and "bytes" in stderr1a)
     _bf_bare = [ln.strip() for ln in text.splitlines()
                 if "file-return" in ln or "stamp-verification.py" in ln]
     check("bf14 the executor's filing line is ONE call, the driver's `submit`, "
@@ -1249,6 +1277,115 @@ def _brief_cases(check):
           and says("P1.1", "inherited tests:", "records the override")
           and not says("P1.2", "red-first:", "`not-proved`")
           and not says("P1.3", "inherited tests:", "`flagged`"))
+
+    # ---- the phase brief's per-task diffs, computed once rather than left
+    # for the reviewer to re-derive --------------------------------------------
+    def task_diff_block(text, tid):
+        """The fenced diff body of task `tid`'s own section in a phase brief,
+        or None when that section carries no fenced diff."""
+        part = text.split("\n## %s " % (tid,), 1)
+        if len(part) != 2:
+            return None
+        body = part[1].split("\n## ", 1)[0]
+        if "```diff\n" not in body:
+            return None
+        return body.split("```diff\n", 1)[1].split("\n```", 1)[0]
+
+    proj8, mpath8 = project("bf-diff-concat", _bf_manifest())
+    git(proj8, "init", "-q")
+    put(proj8, "src/a.py", "x = 1\n")
+    put(proj8, "src/b.py", "y = 1\n")
+    git(proj8, "add", "-A")
+    git(proj8, "commit", "-qm", "base")
+    base8 = git(proj8, "rev-parse", "HEAD").stdout.decode().strip()
+    put(proj8, "src/a.py", "x = 2\n")
+    git(proj8, "add", "-A")
+    git(proj8, "commit", "-qm", "task1")
+    sha_t1 = git(proj8, "rev-parse", "HEAD").stdout.decode().strip()
+    # A second task's commit also touches a file no task declares - the scope
+    # the next check names, which a per-task diff (bound to that task's own
+    # `files`) never shows.
+    put(proj8, "src/b.py", "y = 2\n")
+    put(proj8, "src/extra.py", "z = 1\n")
+    git(proj8, "add", "-A")
+    git(proj8, "commit", "-qm", "task2")
+    sha_t2 = git(proj8, "rev-parse", "HEAD").stdout.decode().strip()
+    man8 = _bf_manifest()
+    man8["phases"][0]["baseRef"] = base8
+    man8["phases"][0]["tasks"] = [
+        {"id": "P1.1", "title": "t1", "status": "done", "description": "d1",
+         "files": ["src/a.py"],
+         "tests": {"mode": "gate-only", "add": [], "expectRedFirst": False,
+                   "gate": ["python3 tests/t1.py"]},
+         "commit": sha_t1, "startedAt": _BF_START, "attempts": 1,
+         "maxAttempts": 3},
+        {"id": "P1.2", "title": "t2", "status": "done", "description": "d2",
+         "files": ["src/b.py"],
+         "tests": {"mode": "gate-only", "add": [], "expectRedFirst": False,
+                   "gate": ["python3 tests/t2.py"]},
+         "commit": sha_t2, "startedAt": _BF_START, "attempts": 1,
+         "maxAttempts": 3}]
+    with open(mpath8, "w", encoding="utf-8") as fh:
+        json.dump(man8, fh)
+    brief(proj8, mpath8, "P1", "phase")
+    text8 = read(brief_file(proj8, "P1", "phase.md")) or ""
+    d1 = task_diff_block(text8, "P1.1")
+    d2 = task_diff_block(text8, "P1.2")
+    concatenated = "\n".join(p for p in (d1, d2) if p)
+    expect = subprocess.run(
+        ["git", "-C", proj8, "diff", base8, sha_t2, "--", "src/a.py",
+         "src/b.py", ":(exclude)docs/audit"],
+        capture_output=True, timeout=60
+    ).stdout.decode("utf-8", "replace").rstrip("\n")
+    check("bf50 the brief's per-task diffs - each `commit`'s own content "
+          "restricted to that task's files, docs/audit excluded - "
+          "concatenate to exactly `git diff <base> <head> -- "
+          "':(exclude)docs/audit'` over the tasks' own files: %r"
+          % ((d1, d2, expect),),
+          d1 is not None and d2 is not None and expect != ""
+          and concatenated == expect)
+    outside_section = (text8.split("## Phase diff scope", 1)[1]
+                       .split("\n## ", 1)[0] if
+                       "## Phase diff scope" in text8 else "")
+    check("bf51 a phase that changed a file no task declares (task2's commit "
+          "also touched src/extra.py) names it, under the phase's whole diff "
+          "path list, as outside every task's scope - and not src/a.py or "
+          "src/b.py, which a task does declare: %r" % (outside_section,),
+          "src/extra.py" in outside_section
+          and "Paths outside every task's declared files:" in outside_section
+          and outside_section.split("Paths outside every task's declared "
+                                    "files:", 1)[1].count("src/a.py") == 0
+          and outside_section.split("Paths outside every task's declared "
+                                    "files:", 1)[1].count("src/b.py") == 0)
+
+    # ---- a re-review brief carries only the fix tasks' diffs -----------------
+    rereview = _bf_signed_phase()
+    rereview["phases"][0]["review"] = {"findings": [
+        {"id": "P1-R1", "severity": "med", "file": "src/m1.py:1",
+         "issue": "x", "resolution": "y", "fixTask": "P1.4"}]}
+    rereview["phases"][0]["tasks"].append({
+        "id": "P1.4", "title": "fix1", "status": "done",
+        "description": "fix the finding", "files": ["src/m1.py"],
+        "fixes": ["P1-R1"],
+        "tests": {"mode": "regression", "add": [], "expectRedFirst": False,
+                  "gate": ["python3 tests/t1.py"]},
+        "commit": "e" * 40, "startedAt": _BF_START, "attempts": 1,
+        "maxAttempts": 3,
+        "testEvidence": {"runId": "run-4", "status": "passed", "at": "z"}})
+    proj9, mpath9 = project("bf-phase-rereview", rereview)
+    brief(proj9, mpath9, "P1", "phase")
+    text9 = read(brief_file(proj9, "P1", "phase.md")) or ""
+    check("bf52 a re-review brief - this phase already carries a finding whose "
+          "fix task is P1.4 - lists only that fix task's section, not the "
+          "three tasks an earlier round already reviewed, and says so: %r"
+          % ([ln for ln in text9.splitlines() if ln.startswith("## P1.")],),
+          "## P1.4 fix1" in text9
+          and "## P1.1 t1" not in text9
+          and "## P1.2 t2" not in text9
+          and "## P1.3 t3" not in text9
+          and "## Re-review scope" in text9
+          and "P1.4" in text9.split("## Re-review scope", 1)[1]
+                            .split("\n## ", 1)[0])
 
     # ---- a wave task's brief says which tree it works in --------------------
     # The tree comes from the driver's state, which is where `add_tree` records
