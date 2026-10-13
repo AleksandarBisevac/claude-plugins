@@ -1,7 +1,7 @@
 {
   "id": "P127",
   "title": "3.3.0 release: no suite rides the Windows time cap",
-  "status": "in_progress",
+  "status": "done",
   "description": "P126 landed with CI green once on windows-latest, then the next round timed out both suites at the 300s cap with no change to their subjects: they ride the limit. This holds the 3.3.0 release.",
   "desiredOutcome": "test_commit_task_work and test_drive_phase finish on windows-latest with clear margin under the sweep's per-file cap in repeated CI runs, through staged blocks sized to the runner, with case ids and verdicts unchanged.",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "de039e5d5d65a9bb1b5e88cfd7655c6f9abbb113",
   "branch": "audit/p127-3-3-0-release-no-suite-rides-t",
-  "mergedAt": null,
+  "mergedAt": "2026-10-13T12:22:53Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -925,5 +925,6 @@
     "runId": "2026-10-13T12:22:22Z.8de5a5",
     "status": "passed",
     "at": "2026-10-13T12:22:22Z"
-  }
+  },
+  "mergedHead": "7b5394d4e9a1fa14a07ad1817c3c3f0654b5df2a"
 }
