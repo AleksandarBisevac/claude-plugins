@@ -27,6 +27,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -137,6 +138,35 @@ def _gone(proc):
         return False
 
 
+def _reaped_group_empty(pid):
+    """POSIX: whether the session group a reaped root led holds nothing now.
+
+    A session leader's pgid is its pid and the group outlives the leader, so
+    `killpg(pid, SIGKILL)` reaches any descendant the root left. ProcessLookupError
+    from it is the proof the group was already empty; success means a descendant
+    WAS there and was signalled, and confirmation then waits for the group to be
+    gone (`killpg(pid, 0)` raising ProcessLookupError). Anything else - including
+    our own group, which a recycled pid could name - is unconfirmed."""
+    try:
+        if pid == os.getpgid(0):
+            return False
+        os.killpg(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return True
+    except Exception:
+        return False
+    deadline = time.time() + GRACE_SECONDS
+    while time.time() < deadline:
+        try:
+            os.killpg(pid, 0)
+        except ProcessLookupError:
+            return True
+        except Exception:
+            return False
+        time.sleep(0.05)
+    return False
+
+
 def tear_down(proc):
     """Kill the process GROUP. True when that could be confirmed, False when not.
 
@@ -155,6 +185,11 @@ def tear_down(proc):
     CONFIRMED MEANS THE ROOT PROCESS IS GONE, not that the kill command exited 0:
     a tree that ended between the timeout firing and the kill makes `taskkill`
     exit non-zero, and `killpg` raise, for a stop that is entirely clean.
+
+    ON POSIX that holds for the whole group, not the root alone: a root already
+    reaped is confirmed only when its session group is empty (`_reaped_group_empty`).
+    On Windows confirmation is the root alone - `taskkill /T` is the only tree
+    reach there, and a root it reports gone is taken as the tree gone.
     """
     try:
         if hasattr(os, "killpg") and shares_our_group(proc.pid) \
@@ -177,6 +212,11 @@ def tear_down(proc):
         killed = _kill(proc)
     except Exception:
         killed = False
+    if not killed and hasattr(os, "killpg") and _gone(proc):
+        # A reaped root: `_kill` could not ask for its group (`getpgid` of a
+        # reaped pid raises), yet the root was started with `start_new_session`
+        # so the group outlives it and may hold descendants.
+        return _reaped_group_empty(proc.pid)
     return bool(killed) or _gone(proc)
 
 

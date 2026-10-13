@@ -112,9 +112,17 @@
         "fixTask": "P127.8-bgr",
         "commit": "06408e583e8d",
         "status": "fixed"
+      },
+      {
+        "id": "P127-R10",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_proc_group.py:117-150",
+        "issue": "Confirmation now means only that the ROOT process is gone. On POSIX, when the root has already been reaped, _kill's os.getpgid(proc.pid) raises, killed becomes False, _gone() reads True and tear_down returns True without ever signalling the session group. Any descendant the root left in its own session (start_new_session makes pgid == root pid, and the group outlives its leader) is neither killed nor accounted for, yet the caller records 'confirmed'. Before the diff the same path returned False (unconfirmed). The task description asked for exactly this root-only rule, so this is a narrowing of the claim 'the tree is stopped', not a departure from the ask; the module docstring and the teardown field's name still promise the whole tree. No case covers a root that exited leaving a live descendant.",
+        "resolution": "On POSIX, when getpgid fails for a reaped root, try os.killpg(proc.pid, SIGTERM/SIGKILL) (a session leader's pgid is its pid) and treat ProcessLookupError there as the proof the group is empty; keep 'confirmed' only on that. Add a case: root exits at once leaving a sleeping grandchild, kill command stubbed to fail, expect False or a killed grandchild. If the root-only rule is intended on Windows alone, say so in tear_down's docstring.",
+        "fixTask": "P127.10-bgr"
       }
     ],
-    "outcome": "[findings: 9 - 0 high, 4 med, 5 low; 9 with a recorded fix commit]"
+    "outcome": "[findings: 10 - 0 high, 4 med, 6 low; 9 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -739,7 +747,7 @@
     {
       "id": "P127.9-bgr",
       "title": "A timed-out step's teardown is confirmed by the process being gone, not by taskkill's exit code",
-      "status": "in_progress",
+      "status": "done",
       "description": "CI run 38386267432 (ci/p127 @ 06408e58), windows-latest cp1252 shard 2: FAIL lc10b in test_run_test_gate.py - a timed-out gate step whose teardown must be CONFIRMED came back {'outcome': 'timed-out', 'timeoutSeconds': 5, 'teardown': 'unconfirmed'}; it passed in runs 38379717433 and 38382182020, so it depends on timing. On Windows `_tear_down` confirms only when `taskkill /T /F` exits 0, and taskkill exits non-zero ('not found') when the process tree ended between the timeout firing and the kill - which is a clean stop, not an unaccounted one. Make the confirmation a fact about the process, not about the kill command's exit code: after a non-zero taskkill (and after killpg on POSIX), confirm when the root pid is no longer alive through the one liveness rule (_locks.pid_alive, P126.11), and say `unconfirmed` only when the process is still alive or cannot be asked. Pin on every OS: a fixture whose child has already exited before the teardown runs reads `confirmed`, and one whose kill truly fails while the child lives reads `unconfirmed`.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -774,19 +782,91 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "01671d211189",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_proc_group.py: split tear_down into _kill (seam; kill command success only: killpg+wait on POSIX, taskkill exit 0 on Windows) and _gone (proc.poll() reaps, then _locks.pid_alive(pid) is False; alive or unaskable = not gone). tear_down returns bool(killed) or _gone(proc), so a failed kill (taskkill not found, killpg on ended group) is confirmed when the root is gone and unconfirmed when alive. The shares-our-group narrow-kill arm is unchanged (still False) but skipped when the child is already gone. _proc_group now imports _locks, so _deps.LAYERS moves _proc_group from the _locks layer into the layer above (the _panel_ui tuple) with comment updated; PLUGIN-BUILD-GUIDE.md module-map line now reads '_proc_group -> _locks, _output' (from _deps.py --render). Tests added in test_run_test_gate.py after lc10b: lc10c (kill stubbed to fail, child already exited -> True) and lc10d (kill stubbed to fail, child alive -> False and still running). Callers derive-phase-gate and stamp-verification needed no change; their suites pass. run-test-gate.py and test__proc_group.py unchanged.",
+        "descriptive": "A timed-out step's teardown is confirmed by the root process being gone, not by the kill command's exit code, closing the timing-dependent lc10b failure on Windows."
       },
       "startedAt": "2026-10-13T11:23:43Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-13T11:39:43Z",
+      "verifiedBy": [
+        "lc10c",
+        "lc10d"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-13T11:39:41Z.084b81",
         "status": "passed",
         "at": "2026-10-13T11:39:41Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "01671d211189",
+        "at": "2026-10-13T11:39:43Z"
+      },
+      "redFirst": {
+        "at": "2026-10-13T11:30:57Z",
+        "basis": "`python3 plugins/audit/tests/test_run_test_gate.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_proc_group' has no attribute '_kill'\" (read as python), and the task introduces '_kill': absent from HEAD's plugins/audit/scripts/governance/run-test-gate.py, plugins/audit/scripts/governance/_proc_group.py, plugins/audit/scripts/_deps.py, PLUGIN-BUILD-GUIDE.md and present in the working tree's plugins/audit/scripts/governance/_proc_group.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P127.10-bgr",
+      "title": "fix P127-R10: Confirmation now means only that the ROOT process is gone. On P...",
+      "status": "in_progress",
+      "description": "Confirmation now means only that the ROOT process is gone. On POSIX, when the root has already been reaped, _kill's os.getpgid(proc.pid) raises, killed becomes False, _gone() reads True and tear_down returns True without ever signalling the session group. Any descendant the root left in its own session (start_new_session makes pgid == root pid, and the group outlives its leader) is neither killed nor accounted for, yet the caller records 'confirmed'. Before the diff the same path returned False (unconfirmed). The task description asked for exactly this root-only rule, so this is a narrowing of the claim 'the tree is stopped', not a departure from the ask; the module docstring and the teardown field's name still promise the whole tree. No case covers a root that exited leaving a live descendant.\n\nResolution asked: On POSIX, when getpgid fails for a reaped root, try os.killpg(proc.pid, SIGTERM/SIGKILL) (a session leader's pgid is its pid) and treat ProcessLookupError there as the proof the group is empty; keep 'confirmed' only on that. Add a case: root exits at once leaving a sleeping grandchild, kill command stubbed to fail, expect False or a killed grandchild. If the root-only rule is intended on Windows alone, say so in tear_down's docstring.",
+      "files": [
+        "plugins/audit/scripts/governance/_proc_group.py",
+        "plugins/audit/tests/test__proc_group.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__proc_group.py: on POSIX a reaped root whose process group still holds a live descendant reads unconfirmed (and the descendant is signalled); an empty group (killpg raises ProcessLookupError) reads confirmed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 2,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-13T11:53:08Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-13T11:53:00Z",
+          "text": "scope: plugins/audit/scripts/governance/_proc_group.py, every path the finding(s) P127-R10 name"
+        }
+      ],
+      "fixes": [
+        "P127-R10"
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-13T12:13:06Z.82ce58",
+        "status": "passed",
+        "at": "2026-10-13T12:13:06Z"
       }
     }
   ],

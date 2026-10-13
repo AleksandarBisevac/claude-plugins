@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "own-tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-13T11:54:18Z",
+    "basis": "`python3 plugins/audit/tests/test__proc_group.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 24 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pg21 (house FAIL): SELFTEST FAILED: 22/24 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "_proc_group.py: tear_down now, on POSIX, when the kill step did not succeed and the root is gone (reaped root: getpgid raises), calls new _reaped_group_empty(pid): refuses our own pgid, os.killpg(pid, SIGKILL); ProcessLookupError => group empty => confirmed; success => descendant signalled, confirmed only once killpg(pid,0) raises ProcessLookupError within GRACE_SECONDS, else unconfirmed. Windows branch untouched; tear_down docstring states root-only confirmation is the Windows rule. Added `import time`. test__proc_group.py: pg21 (real reaped root leaving a sleeping grandchild in its group, _kill stubbed to fail: group alive before, tear_down True, group gone after), pg22 (empty group confirmed), pg23 (group never empties -> False). Ran `python3 plugins/audit/tests/test__proc_group.py --selftest` from tests dir: 24/24 pass, exit 0; ruff check on both files clean. Note: brief's tests.add wording says 'reads unconfirmed (and signalled)'; followed the orchestrator's message (confirmed once group gone, unconfirmed if it never empties).",
+    "descriptive": "A reaped POSIX root is confirmed only when its session group is empty, so a surviving descendant is killed and accounted for."
+  },
+  "testsAdded": [
+    "pg21",
+    "pg22",
+    "pg23"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:dc652d54c2d6e657d3f17db7543fdbece6d18c3bae02abc9ce6be5acf1c7e86c\",\"dirtyDigest\":\"sha256:e243c843002c952d37e2f0834c6aac01e1125a5658c28c32e24e59c347060616\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_proc_group.py\":\"305b03ae07030a5a\",\"plugins/audit/tests/test__proc_group.py\":\"b4a504147938d609\"},\"head\":\"01671d21\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_proc_group.py\",\"plugins/audit/tests/test__proc_group.py\"],\"scopeDigest\":\"sha256:7b68dadb6bcbd31353af9121f6e074ed2feb19de694a5f8974284b95decadb88\",\"v\":2}"
+}

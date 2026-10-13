@@ -1,0 +1,37 @@
+{
+  "findings": [
+    {
+      "id": 1,
+      "severity": "low",
+      "file": "plugins/audit/scripts/governance/_proc_group.py:117-150",
+      "issue": "Confirmation now means only that the ROOT process is gone. On POSIX, when the root has already been reaped, _kill's os.getpgid(proc.pid) raises, killed becomes False, _gone() reads True and tear_down returns True without ever signalling the session group. Any descendant the root left in its own session (start_new_session makes pgid == root pid, and the group outlives its leader) is neither killed nor accounted for, yet the caller records 'confirmed'. Before the diff the same path returned False (unconfirmed). The task description asked for exactly this root-only rule, so this is a narrowing of the claim 'the tree is stopped', not a departure from the ask; the module docstring and the teardown field's name still promise the whole tree. No case covers a root that exited leaving a live descendant.",
+      "resolution": "On POSIX, when getpgid fails for a reaped root, try os.killpg(proc.pid, SIGTERM/SIGKILL) (a session leader's pgid is its pid) and treat ProcessLookupError there as the proof the group is empty; keep 'confirmed' only on that. Add a case: root exits at once leaving a sleeping grandchild, kill command stubbed to fail, expect False or a killed grandchild. If the root-only rule is intended on Windows alone, say so in tear_down's docstring."
+    }
+  ],
+  "preExisting": [],
+  "intent": {
+    "answer": "matches",
+    "note": "Phase desired outcome: the two suites finish on windows-latest with margin under the per-file cap, through staged blocks sized to the runner, case ids and verdicts unchanged. P127.1 staged test_commit_task_work (17 rows) and split two test_drive_phase blocks; P127.6 made the sweep and staged suites share one slot budget with per-file timeouts calibrated from the cost table; P127.8 re-recorded the table from Windows logs, gave an untimed staged suite the largest recorded timeout and an untimed ordinary file the floor, and cut every timeout to a CI deadline (SWEEP_DEADLINE 1380 + CI_SETUP_ALLOWANCE 120 under the 26-minute job bound, pinned by tt5); P127.9 removed a timing-dependent lc10b failure by confirming teardown from the process being gone. The brief's own evidence (CI run 38391766620 at the P127.9 head green on every job, whole run 10m07s, with 38379717433 and 38382182020 green) is the measured margin I was handed; I did not re-derive it. The one residual caveat is finding 1. P127.8 (read although the verb records it as owed no answer): all four asked items are in the diff (Windows-recorded table, untimed staged suite gets the largest timeout and an ordinary one the floor, CI deadline under the 26-minute bound pinned by tt5, no two-core wording left). The claim that no file of 20s or more varied by more than 1.51x rests on CI logs I was not handed, so TIMEOUT_PER_COST 3 is unverified here. Its red-first would grade could-not-prove (a TypeError on a new keyword, not a missing-symbol error).",
+    "missing": [
+      "the CI logs behind the 1.51x spread that sets TIMEOUT_PER_COST"
+    ],
+    "redFirst": "not-attempted",
+    "redFirstBasis": "mode phase: the phase's diff is a restructuring of test harness and CI plus fix tasks, no single red owed at phase level; per-task answers are in tasks.",
+    "inheritedTests": "not-asked",
+    "inheritedTestsBasis": "Every task's tests.gate runs the whole project (python3 tools/sweep-selftests.py plus manifest, report, lint and browser checks), so the question is not bounded to a selection I can read."
+  },
+  "verdict": "findings",
+  "tasks": [
+    {
+      "id": "P127.9-bgr",
+      "commit": "01671d211189",
+      "answer": "matches",
+      "note": "Description: confirm teardown by the root being gone through _locks.pid_alive, not taskkill's exit code, and pin both cases on every OS. Diff: _proc_group splits tear_down into _kill (seam, kill command success only) and _gone (poll() then _locks.pid_alive is False; alive or unaskable is not gone); tear_down returns bool(killed) or _gone(proc); lc10c (kill stubbed to fail, child exited -> True) and lc10d (kill stubbed to fail, child alive -> False and still running) pin both on every OS; _deps.LAYERS and PLUGIN-BUILD-GUIDE.md moved _proc_group up a layer for the new _locks import. The executor outcome describes the diff. Caveat: finding 1 (root-only confirmation; a reaped root on POSIX skips the group kill).",
+      "missing": [],
+      "redFirst": "proved",
+      "redFirstBasis": "Executor basis holds: test_run_test_gate.py --selftest at HEAD in a throwaway tree exited 1 on AttributeError: module '_proc_group' has no attribute '_kill', a symbol the task introduces and HEAD lacks, and a second run with the working tree's implementation copied in exited 0 reaching its assertions.",
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate is the whole-project sweep (python3 tools/sweep-selftests.py) with manifest, report, lint and browser commands; no selection narrower than the project to read."
+    }
+  ]
+}

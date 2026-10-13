@@ -275,7 +275,87 @@ def _shell_cases(check):
           and getattr(DERIVE, "_proc_group", None) is M)
 
 
+def _reaped_root(leave_grandchild, marks):
+    """A session-leader root that exits at once, REAPED, optionally leaving a
+    sleeping grandchild in its group. `(proc, began_path)`."""
+    began = os.path.join(marks, "began-%d" % leave_grandchild)
+    inner = "import time; open(%r, 'w').close(); time.sleep(60)" % (began,)
+    code = ("import subprocess, sys\n"
+            "subprocess.Popen([sys.executable, '-c', %r])\n" % (inner,)
+            if leave_grandchild else "pass\n")
+    proc = subprocess.Popen([sys.executable, "-c", code],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            **M.group_kwargs())
+    proc.wait()
+    for _i in range(200):
+        if not leave_grandchild or os.path.exists(began):
+            break
+        time.sleep(0.05)
+    return proc, began
+
+
+def _group_alive(pgid):
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def _reaped_cases(check):
+    """POSIX: a root already reaped must not read 'confirmed' while its session
+    group still holds a descendant."""
+    marks = _harness.fixture_root("proc-group-reaped-")
+    real_kill, real_killpg = M._kill, os.killpg
+    M._kill = lambda _p: False        # the kill command failing, as for a reaped root
+    live, dead = None, None
+    try:
+        live, began = _reaped_root(1, marks)
+        seen = _group_alive(live.pid)
+        confirmed = M.tear_down(live)
+        after = _group_alive(live.pid)
+        dead, _b = _reaped_root(0, marks)
+        empty_confirmed = M.tear_down(dead)
+
+        # unconfirmed shape: the group never empties, so confirmation is refused
+        stuck, _b2 = _reaped_root(1, marks)
+
+        def never_gone(gid, sig):
+            if sig == 0:
+                return None
+            return real_killpg(gid, sig)
+        os.killpg = never_gone
+        real_grace, M.GRACE_SECONDS = M.GRACE_SECONDS, 0.3
+        try:
+            stuck_confirmed = M.tear_down(stuck)
+        finally:
+            M.GRACE_SECONDS = real_grace
+            os.killpg = real_killpg
+    finally:
+        M._kill, os.killpg = real_kill, real_killpg
+        for p in (live, dead, locals().get("stuck")):
+            if p is not None:
+                try:
+                    os.killpg(p.pid, signal.SIGKILL)
+                except Exception:
+                    pass
+    check("pg21 A REAPED ROOT WITH A LIVE DESCENDANT IN ITS SESSION GROUP: the "
+          "descendant is seen running, tear_down signals the group and says "
+          "confirmed only once the group is gone (mutation: root-only "
+          "confirmation -> red): seen=%r confirmed=%r group_alive_after=%r"
+          % (seen, confirmed, after),
+          os.path.exists(began) and seen is True and confirmed is True
+          and after is False)
+    check("pg22 ...an EMPTY group (killpg raises ProcessLookupError) is the proof "
+          "of a clean stop: %r" % (empty_confirmed,), empty_confirmed is True)
+    check("pg23 ...and a group that never empties after the signal is "
+          "UNCONFIRMED, not clean: %r" % (stuck_confirmed,),
+          stuck_confirmed is False)
+
+
 def _cases(check):
+    if hasattr(os, "killpg"):
+        _reaped_cases(check)
     _shell_cases(check)
     _beside_git_cases(check)
     shared = [(name, getattr(GATE, name) is getattr(M, target))
