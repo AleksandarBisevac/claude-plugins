@@ -1,0 +1,25 @@
+{
+  "gates": {
+    "own-tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-13T17:15:04Z",
+    "basis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest --stage sm-export-missing --stage sr-playwright --stage sr-vitest-json --stage sr-could-not-start` in a throwaway tree at HEAD exited 1 with 5 of 7 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `sm-export-missing`, `sr-could-not-start`, `sr-playwright`, `sr-vitest-json`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - se1 (house FAIL), sp1 (house FAIL), sp2 (house FAIL), sv-json1 (house FAIL), sv-json2 (house FAIL): SELFTEST FAILED: 2/7 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "stamp-verification.py: added playwright JSON-reporter (--reporter=json) and line/list-reporter reading (_json_blob, playwright_json_cases/_tally, playwright_line_cases/_tally, playwright_cases), vitest's JSON reporter (jest-compatible schema: vitest_json_cases/_tally), wired through new red_read_tally/red_failing_cases wrappers used by classify_run, baseline_problem, fix_problem and red_verdict in place of the raw _runner_output.read_tally/failing_cases calls those three used before (which returned None/[] for both reporters, since _runner_output.py carries no row for either - out of this task's files scope, so the reporters are read locally rather than by widening that module). Added JS_RUNNERS += 'playwright' and widened js_test_cases' scope-opening check so a chained call ending in '.describe' (playwright's own 'test.describe(...)' nesting) opens a describe scope the same way jest's bare 'describe(...)' does, which is what lets a playwright spec's failing case be credited to a declared test file through the existing jest/vitest crediting machinery (case_site, _js_credit_problem) with no new crediting logic. Added a local _PW_LINE_ENTRY regex for playwright's line reporter instead of reusing _runner_output._FAILURE_READERS['playwright'], whose stored pattern lacks re.M and so never matches more than a single-line input (a latent bug in a file outside this task's scope, not touched). Added an 'export' row to MISSING_SPELLINGS reading node's/vite's \"The requested module '<spec>' does not provide an export named '<name>'\" wording, matched in missing_subjects by the export name directly (report_module now requires 'importer' before resolving a module-file report, so an export-only report falls through to None there rather than KeyError-ing on a missing key) - this is the --introduces evidence path the danuvia testbed's three unread import errors needed. tests/test_stamp_verification.py: 7 new cases (se1, se2, sm-export-missing stage; sp1, sp2, sr-playwright stage; sv-json1, sv-json2, sr-vitest-json stage; scs1, sr-could-not-start stage), each written and run red against the pre-fix code (classify_run returned no-tally/collection-error for playwright and vitest-json text, and case-credit failed on the test.describe nesting) before the implementation above turned them green. Full suite: python3 plugins/audit/tests/test_stamp_verification.py --selftest -> ALL PASS: 273/273 cases passed. Full tree sweep: python3 tools/sweep-selftests.py -> 332/332 files ok, 152 migrated to tests/, 15918 cases.",
+    "descriptive": "Red-first proofs now read Playwright's and vitest's JSON and line reporters, and a JS 'export not found' error naming an introduced symbol, closing three of the causes measured on the danuvia testbed (1 of 134 tasks proved)."
+  },
+  "testsAdded": [
+    "se1",
+    "se2",
+    "sp1",
+    "sp2",
+    "sv-json1",
+    "sv-json2",
+    "scs1"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:b36a410f9386f5f50a0d6bda39474922d97a72e025d10f8d40fbcb88da516bd8\",\"dirtyDigest\":\"sha256:78d8b94c5176b8b484a07c83764e4c9a9f88869de9c95ff4579791404f5b7eb8\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/stamp-verification.py\":\"f656098bd498ef46\",\"plugins/audit/tests/test_stamp_verification.py\":\"77255856acdecd7a\"},\"head\":\"48f2322d\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:474fad7f1048407be6832911e72461f8a7752456cb78c81ce8551dd0a74c1460\",\"v\":2}"
+}

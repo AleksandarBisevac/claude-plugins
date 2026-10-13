@@ -1,0 +1,37 @@
+{
+  "gates": {
+    "test_usage_ledger.py --selftest": "pass",
+    "test_audit_usage.py --selftest": "pass",
+    "test__doctor_trail.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-13T17:22:58Z",
+    "basis": "`python3 plugins/audit/tests/test_usage_ledger.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module 'usage_ledger' has no attribute 'read_cost_state'\" (read as python), and the task introduces 'read_cost_state': absent from HEAD's plugins/audit/scripts/usage/usage_ledger.py, plugins/audit/scripts/usage/audit-usage.py, plugins/audit/scripts/usage/_usage_spend.py, plugins/audit/scripts/report/_report_usage.py, plugins/audit/scripts/panel/_panel_usage.py, plugins/audit/scripts/status/_doctor_trail.py, plugins/audit/scripts/status/audit-doctor.py, plugins/audit/commands/doctor.md, plugins/audit/README.md and present in the working tree's plugins/audit/scripts/usage/usage_ledger.py, plugins/audit/scripts/usage/audit-usage.py, plugins/audit/scripts/status/_doctor_trail.py, plugins/audit/scripts/status/audit-doctor.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Added usage_ledger.py: strip_cli_tier()/_base_model() (normalise the CLI's `[1m]`-style tier suffix against the plugin's own `:long-prompt` one), read_cost_state(transcript_path) (last `cost-state` entry -> {totalCostUSD, perModel, hasUnknownModelCost}), cli_cost_compare()/cli_cost_divergences() (CLI vs plugin per-model cost for one session, with an `agrees` flag and a CLI_COST_TOLERANCE_USD=0.01 rounding guard). Probed on this repo's own transcripts (session 0a7c2fcc-df20-4990-96d6-d56b52648faf, 420 subagent transcripts) whether modelUsage folds in subagent spend: the main transcript alone carries zero sonnet messages while the cost-state entry reports real claude-sonnet-5-5 tokens and cost, so that spend can only have come from a subagent transcript - the answer is written into read_cost_state's docstring rather than assumed, with the caveat that absolute magnitudes differ widely too (consistent with conversation compaction trimming the retained .jsonl). audit-usage.py: added cli_cost_lines() and a `cli_cost` param on render() - a new 'CLI vs plugin cost' section that prints one figure when the two agree and both figures with their own basis ('the CLI's estimate' / the plugin's rate-basis phrase) when they differ or only one side has a reading; main() now builds {sessionId: cost_state} best-effort from find_transcripts()+read_cost_state() for sessions in view. _doctor_trail.py: added unpriced_model_tokens() and check_unpriced_models() - every model the ledger has tokens for but the price table has no row for is named with its token count and the config remedy (usage.pricing), folding in the CLI's hasUnknownModelCost=true (when a --transcript was given) beside the finding rather than instead of it. audit-doctor.py: pricing is now resolved unconditionally (was only under `if transcript_path`), cost_state is resolved from --transcript when given, and check_unpriced_models is wired into diagnose() right after check_ledger, with a re-exported alias. Tests added (17 new cases, tdd - written against the new functions, which did not exist on HEAD): test_usage_ledger.py cc1-cc7 (cost-state parsing, tier normalisation, cli_cost_compare/divergences, the None case); test_audit_usage.py cc-cli1-5 (agree prints one figure, disagree prints both with bases, 'bill' never appears, silent with no cli_cost and with a None cost_state); test__doctor_trail.py dt-up1-5 (fully priced ledger -> OK, unpriced model named with token count and remedy, hasUnknownModelCost folded in beside both a finding and an all-clear). Verified: `python3 plugins/audit/tests/test_usage_ledger.py --selftest` -> ALL PASS: 112/112; `python3 plugins/audit/tests/test_audit_usage.py --selftest` -> ALL PASS: 175/175; `python3 plugins/audit/tests/test__doctor_trail.py --selftest` -> ALL PASS: 145/145; `python3 plugins/audit/tests/test_audit_doctor.py --selftest` -> ALL PASS: 169/169 (no regression from the diagnose() re-wire). Ran `python3 tools/sweep-selftests.py` once over the whole tree per the orchestrator's note: '332/332 files ok, 152 migrated to tests/, 15928 cases', exit 0. Ran `ruff check` and `vermin -t=3.8- --no-tips --violations` over every touched file: both clean. Checked `_output.prose_number_claims('.')` for the touched files: no violations. plugins/audit/README.md and plugins/audit/commands/doctor.md were in this task's declared `files` (last touched by other pending tasks, P125.18/P125.12) but were not edited - doctor.md's frontmatter already describes 'the usage ledger' generically and names no individual check by name, so the new check needed no doc update under this task's own description; usage_ledger.py and test_usage_ledger.py's OTHER declared-by lines (P125.18, pending) were not otherwise touched beyond the additions above.",
+    "descriptive": "audit-usage and /audit:doctor now record the CLI's own per-session cost-state reading beside the plugin's own, print both when they disagree, and flag every model the ledger has tokens for but no price row covers."
+  },
+  "testsAdded": [
+    "cc1",
+    "cc2",
+    "cc3",
+    "cc4",
+    "cc5",
+    "cc6",
+    "cc7",
+    "cc-cli1",
+    "cc-cli2",
+    "cc-cli3",
+    "cc-cli4",
+    "cc-cli5",
+    "dt-up1",
+    "dt-up2",
+    "dt-up3",
+    "dt-up4",
+    "dt-up5"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:fa93dc7e409014f7367437f823a5c7b18fbd74e084a5351e14dfc2fbaba99b20\",\"dirtyDigest\":\"sha256:8100065e709b604209d58ab94d292de42d90c4f2de634c74d67a62a05cd87006\",\"dirtyPaths\":{\"plugins/audit/scripts/status/_doctor_trail.py\":\"e7d76a7cc52e1b54\",\"plugins/audit/scripts/status/audit-doctor.py\":\"bf688276c01e17de\",\"plugins/audit/scripts/usage/audit-usage.py\":\"6307995d3d600574\",\"plugins/audit/scripts/usage/usage_ledger.py\":\"c85a0b7a2149a52d\",\"plugins/audit/tests/test__doctor_trail.py\":\"fbde1fd874862d36\",\"plugins/audit/tests/test_audit_usage.py\":\"f97f74e0f9b87f94\",\"plugins/audit/tests/test_usage_ledger.py\":\"764e655617e9a2dc\"},\"head\":\"48f2322d\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/README.md\",\"plugins/audit/commands/doctor.md\",\"plugins/audit/scripts/panel/_panel_usage.py\",\"plugins/audit/scripts/report/_report_usage.py\",\"plugins/audit/scripts/status/_doctor_trail.py\",\"plugins/audit/scripts/status/audit-doctor.py\",\"plugins/audit/scripts/usage/_usage_spend.py\",\"plugins/audit/scripts/usage/audit-usage.py\",\"plugins/audit/scripts/usage/usage_ledger.py\",\"plugins/audit/tests/test__doctor_trail.py\",\"plugins/audit/tests/test_audit_doctor.py\",\"plugins/audit/tests/test_audit_usage.py\",\"plugins/audit/tests/test_usage_ledger.py\"],\"scopeDigest\":\"sha256:9eff51effd573fa1d3e699ccf64ea04e245240be4deb93bd700c2f59c53a4d8f\",\"v\":2}"
+}

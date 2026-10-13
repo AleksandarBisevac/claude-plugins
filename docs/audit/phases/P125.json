@@ -285,7 +285,7 @@
     {
       "id": "P125.4",
       "title": "The CLI's own costUSD is recorded beside the plugin's reading; doctor flags unpriced models",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Sketch 3a and N1's risk item. Main-session transcripts carry a `cost-state` entry with totalCostUSD, modelUsage.<model>.costUSD and hasUnknownModelCost (seen on the testbed's transcripts; none in subagent transcripts). The meter records the CLI's per-model figure per session beside the plugin's own reading of the same session, and audit-usage, the report and the panel print both wherever they differ by more than rounding, each with its basis ('the CLI's estimate' vs 'the plugin's table, <source> as of <date>'); neither is called the bill. Before writing the reader, establish with a probe on a recorded session whether modelUsage includes subagent spend (compare it to the ledger's per-model sum for that session) and state the answer in the docstring, not a guess. /audit:doctor gains a check over the ledger: every model id with tokens and no price row is named, with the token count it leaves unpriced and the remedy (a usage.pricing row in config). The CLI's hasUnknownModelCost=true is reported beside it.",
       "files": [
         "plugins/audit/scripts/usage/usage_ledger.py",
@@ -329,16 +329,17 @@
       "dependsOn": [
         "P125.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-13T16:52:11Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.5",
@@ -692,7 +693,7 @@
     {
       "id": "P125.11",
       "title": "tools/release.py cuts a release end to end, stopping on the first red and resuming",
-      "status": "in_progress",
+      "status": "done",
       "description": "Sketch section 0. Steps, each recorded in a resumable state file and skipped on resume once done: preflight (the open-bug and provisional-phase question guard-release asks, read from its own predicate, plus verify.sh --release's preflight); bump plugin.json; finalize the CHANGELOG section; the followers in verify.sh's #R order (README curl pins, examples/report.sh incl. docs/index.html, the scale demo commands check-rendered-artifacts --how prints, screenshots); tools/verify.sh --release; the release commit; push to a ci/<version> branch and gh workflow run ci.yml --ref it; wait for that run on that exact SHA (a cancelled run is not a failed one - read conclusion); annotated tag; push main and the tag; gh release create with the CHANGELOG section; check-release-published. The first red stops with the step, its excerpt and the resume command. Every remote step is named before it runs and nothing is pushed without an explicit --push the user typed (CLAUDE.md: permission to commit is not permission to push). guard-release learns to treat an invocation of tools/release.py as a publishing command so the #release-with-bugs bypass still governs it. The ci step is callable alone (release.py ci <ref>) so a landed phase can run CI the same way. A selftest drives every step against a fake runner, including resume after a stop at each step.",
       "files": [
         "tools/release.py",
@@ -731,19 +732,37 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "48f2322da405",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added release_permitted(ctx) to tools/release.py, built only from .claude/hooks/guard-release.py's own read_bugs, read_held_phases, bypass_armed and refusal (loaded by path via load_guard_release, untouched) - never a second copy of the bug/held-phase rule. The bypass session id is read from the CLAUDE_CODE_SESSION_ID environment variable (absent means no bypass is possible). step_preflight now calls release_permitted instead of inlining the same two reads; step_push_ci_branch, step_tag, step_push_main_tag and step_gh_release each call it again immediately before touching a remote, so a bug filed during the CI wait (wait-ci can run for up to an hour) stops the next remote step rather than relying on a preflight answer taken before the bug existed. Per the orchestrator's override, .claude/hooks/guard-release.py was left untouched (no _words_publishers arm, no command-spelling classification) - the rule now lives inside release.py, which is the file that actually issues the git/gh commands. Dropped the split literal '\"guard-release\" + \".py\"' workaround and the module docstring's _PYTHON_PROGRAM mention; load_guard_release() now writes the basename plainly as 'guard-release.py'. To make that legal under tool_basename_drift(), widened plugins/audit/scripts/_refs.py's TOOL_NAME_TREES to include '.claude/hooks' (a fourth, repository-level tree outside the plugin), rewording the surrounding comment to drop its 'four trees' cardinal claim. Added test cases to tools/release.py's _cases(): rl8 (a bug filed in the plan after preflight already ran stops the pipeline at the next remote step - push-ci-branch - naming the bug, with the FakeRunner recording zero calls), rl9 (an armed, unexpired bypass slot for CLAUDE_CODE_SESSION_ID lets a plan with an open bug through release_permitted), rl10 (an expired slot does not), rl11 (no session id set at all is refused, since no bypass file can be looked up). Added tb9/tb9b to plugins/audit/tests/test__refs.py proving the widened TOOL_NAME_TREES recognises a tools/ reference to '.claude/hooks/guard-release.py's basename while still reporting a reference naming no hook anywhere. Verified: python3 tools/sweep-selftests.py -> '332/332 files ok, 152 migrated to tests/, 15887 cases'; python3 tools/release.py --selftest -> 'ALL PASS: 20/20 cases passed'; python3 plugins/audit/tests/test__refs.py --selftest -> 'ALL PASS: 336/336 cases passed'; python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json -> 'OK: ... valid (128 phases, 953 tasks, 25 bugs, 1 warning line(s), 5 item(s))' (attempt 1's red validate finding from P125.2's missing fileIndex entries is already resolved in this tree, not touched by this task). ruff check and vermin -t=3.8- over the three edited files are clean; _output.house_style_violations() and _output.prose_number_claims() report nothing against them.",
+        "descriptive": "tools/release.py now re-asks the release guard's own open-bug / held-phase question immediately before every remote-touching step, not only at preflight, so a bug filed during a long CI wait stops the next push instead of being missed; the tools/ basename lint now also recognises .claude/hooks, so guard-release.py's name stays checked rather than worked around."
       },
       "startedAt": "2026-10-13T16:28:06Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-13T16:52:10Z",
+      "verifiedBy": [
+        "tools/release.py: rl8",
+        "tools/release.py: rl9",
+        "tools/release.py: rl10",
+        "tools/release.py: rl11",
+        "plugins/audit/tests/test__refs.py: tb9",
+        "plugins/audit/tests/test__refs.py: tb9b"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-13T16:52:08Z.67704f",
         "status": "passed",
         "at": "2026-10-13T16:52:08Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "48f2322da405",
+        "at": "2026-10-13T16:52:10Z"
+      },
+      "redFirst": {
+        "at": "2026-10-13T16:41:52Z",
+        "basis": "`python3 tools/release.py --selftest` in a throwaway tree at HEAD: inline suite tools/release.py (its test file is its implementation file): it is new at HEAD, so there is no HEAD copy to hold its implementation at; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1116,7 +1135,7 @@
     {
       "id": "P125.19",
       "title": "The intent check grades the diff against the task text, and the drive checks tests.add against the filed tests",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F633, measured on the testbed with a plain-session baseline and a blind A/B review: P5.3's text said src is set when the card ENTERS the viewport; the executor shipped `rootMargin: \"200px 0px\"`, said so, and renamed its test to 'once the card is near the viewport'; the phase reviewer's intentCheck answered `matches` on the basis of the executor's restatement. The blind pass also found two med defects the phase review missed. (1) The intent check QUOTES THE TASK TEXT and compares the diff and the tests against it - never against the outcome text or the test titles; a restatement whose scope differs from the task text is itself a finding, quoting both. (2) The reviewer brief puts the task text first and the executor's return last, labelled as the claim under review. (3) The drive diffs `tests.add` against the test names the return files, mechanically, and a declared case with no filed counterpart is a finding before any reviewer runs. Red-first: a fixture where the task says 'enters' and the return says 'near' with a 200px margin must answer `diverges` and quote both; a declared tests.add case missing from the return is named by the drive. (4) Measured on the testbed with the SAME model (plain Sonnet vs the plugin's Sonnet executors, blind A/B): the plugin's version alone shipped a lazy-load test that cannot fail, an e2e that drives the real server action (a key in env sends real mail), and a test-readiness race (asserting enabled state the SSR HTML already has). So the reviewer brief also asks, per declared test: can it fail on the unfixed code (the red-first block, or say it was never seen red), and does any test reach a real external service or side effect (mail, payment, network) rather than a stub - each a finding with its file:line. Faults: F633. (5) A FALSIFIER PER TEST, run by the drive at near-zero model cost (about +0.005 USD per task, research report 2026-10-12-agent-output-quality-research.md): every planned test carries a line 'must fail if <small code change>'; after the executor files, the drive applies that patch in a temporary tree (never the executor's tree) and runs the test, and a test that survives is a finding with file:line. A patch that breaks the build is could-not-run, never a kill. This REPLACES a revert-to-base check, which probe 1 measured as too weak: the plugin's P5.3 test fails on the revert yet survives the 'src set on mount' mutant, the real defect class; the plain Sonnet test kills both mount and margin_200 (artefacts danuvia-baseline/research-p53-plugin/probe-artifacts/probe1/*.log). (6) Parity in interaction states: when a task's design source names `:focus`/`:hover` rules for a form or control (as flux.css `.field input:focus` did), task synthesis writes into tests.add a design-parity case that snapshots that control's own box in its focus state (and hover where defined), not only rest, as a clipped element snapshot of that control or a computed-style assertion - a 1% threshold over a whole section hid a 2px ring (about 0.2% of the section) (2px/4px against the design's 9px, found by a live getComputedStyle probe). (7) Executor brief: scope must never push an executor into an inferior design. P6.3's plugin executor faked a 'Resend mock' by rewriting the browser response because `playwright.config.ts` was outside its scope; the plain session edited the config and ran a real mock. When the right design needs file X outside `files`, the executor files a widening request naming X and why, and does not work around it; P124's companions do not cover test infrastructure. Source: testbed monitor, 2026-10-12, at the owner's request. (8) Probe 2 (24 reviewer runs, Opus/Sonnet/Haiku, real P5.3 brief section): the brief as filed, task text first with the claim labelled, and the claim hidden each found 0/3 `diverges`; ONLY a CLAUSE-QUOTING RULE worked, 3/3 on all three models - the reviewer quotes each task clause, judges the diff against it, and a scope difference is `diverges`. So (1)-(2) are implemented as that rule, and: a contradicted clause carries a MED severity floor (4 of 6 Opus/Sonnet runs rated it low, which review-convergence would park as a carried low); the intent answer splits 'does the diff do what was asked' from 'does the claim describe the diff'; the phase brief carries tests.add, which it lacks today. (9) The tests.add-vs-filed-tests check of (3) cannot be a string diff: as one it flags 72 of 77 danuvia tasks, mostly Serbian plan text against English test titles. It matches a declared case by a verbatim title the executor must reuse, or by a clause mapping the return files; never a fuzzy string compare.",
       "files": [
         "plugins/audit/agents/audit-reviewer.md",
@@ -1129,7 +1148,10 @@
         "plugins/audit/agents/audit-executor.md",
         "plugins/audit/reference/execute-task.md",
         "plugins/audit/reference/manifest-conventions.md",
-        "plugins/audit/tests/test_audit_task.py"
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/scripts/manifest/audit-task.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1161,16 +1183,23 @@
       "dependsOn": [
         "P125.5"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-13T16:52:14Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "notes": [
+        {
+          "at": "2026-10-13T17:32:19Z",
+          "text": "Orchestrator: attempt 1 delivered items 3 and 9, item 5's falsifier runner and item 8's severity floor, but not the brief half (2, 4, the clause-quoting rule and tests.add in the brief: audit-lookup composes it) nor 6 (task synthesis: audit-task.py) nor 7 (executor brief), and claim_section() is unwired. Scope widened to audit-lookup.py, test_audit_lookup.py and audit-task.py so the description can be delivered as written."
+        }
+      ]
     },
     {
       "id": "P125.20",
@@ -1334,7 +1363,7 @@
     {
       "id": "P125.23",
       "title": "The red-first helper can prove red on the runners a real project uses",
-      "status": "pending",
+      "status": "in_progress",
       "description": "On the danuvia testbed redFirst is proved for 1 of 134 tasks (113 not-attempted, 9 could-not-prove; research report 2026-10-12). Causes measured there: Playwright output is never read, two vitest runs were unparsed, and three import errors of a symbol the task introduces were not taken as `--introduces` evidence. Deterministic code, zero model tokens: parse Playwright's and vitest's result formats (JSON reporter where available, line format otherwise), and read an ImportError/ModuleNotFound/'is not exported' on a symbol the diff introduces as a red. Source: testbed monitor relay, 2026-10-12.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -1363,16 +1392,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-13T16:52:17Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.24",
