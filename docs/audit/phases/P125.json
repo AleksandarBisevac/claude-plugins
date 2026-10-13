@@ -1,0 +1,1485 @@
+{
+  "id": "P125",
+  "title": "Process simplification and cost: affected-test gates, converging reviews, honest prices",
+  "status": "pending",
+  "description": "Merges the handoff's phase 2 (process simplification, sketch section 0) and phase 4 (cost: F597 and F577 first, then research N1-N5, then sketch section 3 incl. 3a) into one phase so it is reviewed once. Order inside the phase follows the handoff: the meter's dedup (F597) lands before any task that produces or prints a cost figure, because every figure after it would otherwise be biased in the plugin's favour; the price table (F577/N1) lands before Haiku-first review (N2) and the CI cost gate, because Haiku 5.5 is priced at `_default` today. Process items: affected-test gates per task with the full gate once per phase (F596, incl. its e2e extension), derived follower scope, review convergence (F605), one-command release. Cost items: one price table with effective dates and record-time stamping (3a), the CLI's costUSD beside the plugin's reading, the reviewer's diff computed once (N5), Haiku-first review behind a config key (N2), the git-snapshot report (N4), maxTurns caps (N12), cache-friendly dispatch prompts and briefs, an enforced one-line hand-back (F567), a CI cost regression gate over recorded sessions, and a design-and-measurement task only for running the phase cycle as a plugin Workflow (N3, implementation needs a paid probe). F575 is not included: it was addressed by P119.7 and P121.12. Prices were verified against Anthropic's pricing and models pages on 2026-10-10 (quoted in openChoices). No task makes a paid model call. Open choices settled by the orchestrator under the user's overnight mandate (2026-10-10), each the structurally correct option: one price table living in hooks/_config.py with _usage_core deriving it; no shipped _default row (a project-declared one is still honoured); effectiveFrom = the date the plugin first read the rate, older rows labelled; ship the published rate and show the CLI reading beside it, calling neither the bill; a carried low goes to a pending task in one plan-level carry-forward phase; Haiku-first review off by default behind review.cascade; e2e selection = runner related list + changed list + meta.coupling, else every spec with the reason printed; followers for user projects from meta.followers.command plus F599 companions; hand-backs enforced by a SubagentStop hook after a payload probe; the CI cost gate reads redacted committed recordings; maxTurns = 2x the largest measured request count with the command beside it; F575 closed in the register after one timed run.",
+  "desiredOutcome": "A task gate runs what the change can break, sign-off converges in at most the configured rounds, and every cost figure is priced at the rate in effect when it was recorded.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P125.1",
+      "title": "The usage meter counts each message.id at its largest usage, across scans too",
+      "status": "pending",
+      "description": "F597. usage_ledger._scan_file already keeps a PROVISIONAL figure for an id whose entries all carried stop_reason null, but every other repeat of an id is still dropped at the ring check, so a subagent message whose early entries carry a non-null stop_reason and a partial output_tokens is counted at its first entry (measured on the testbed and on this repo's subagent transcripts: output summed from first lines is under half the sum from final lines). Replace the stop_reason-gated pending map with one invariant: the cursor carries, for every id still in the ring, the per-field counts already added to the ledger; any later entry for that id adds only its field-wise excess (never negative, since the ledger is append-only), whether it arrives in the same scan or a later one, and adds no second message to `msgs`. Keep the ring's bound and drop the counts of an id that leaves it. Correct the module docstring's premise to what was measured (the block repeats, except subagent output_tokens, which grows) and the README's 'One trap' paragraph to match. Red first, with fixtures carrying only counts: one id three times with output_tokens 1, 1, 412 and stop_reason set on every entry must record 412; the same fixture split across two scans at the second line must still record 412; the existing streaming-partial cases stay green; a main-transcript fixture whose repeats are identical records exactly one message.",
+      "files": [
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/tests/test_usage_ledger.py",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_usage_ledger.py: an id seen three times with output_tokens 1, 1, 412 and a non-null stop_reason on each records out=412 and msgs=1",
+          "plugins/audit/tests/test_usage_ledger.py: the same three entries split across two scans at the second line still record out=412 in total and msgs=1",
+          "plugins/audit/tests/test_usage_ledger.py: a later entry whose counts are lower than the counted ones adds nothing and writes no row"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.2",
+      "title": "One price table with dated rows, Sonnet 5.5 and Haiku 5.5 priced, unknown models unpriced",
+      "status": "pending",
+      "description": "F577 + N1 + the table half of sketch 3a. (1) One home: hooks/_config.py DEFAULTS usage.pricing stays the table; _usage_core derives DEFAULT_PRICING, PRICING_AS_OF and PRICING_SOURCE_URL from it through _loader.load_hooks_config() instead of a hand copy, and pricing_divergences()/pricing_provenance_divergences() stay only for declared-vs-shipped reporting (see openChoices for the alternative). (2) Rows: add claude-sonnet-5-5 (in 2, cacheW5m 2.50, cacheW1h 4, cacheR 0.10, out 10) and claude-haiku-5-5 with its long-prompt tier (up to 100,000 prompt tokens: 0.10 / 0.125 / 0.20 / 0.01 / 0.50; over: 0.50 / 0.625 / 1 / 0.05 / 2.50), as quoted from the pricing page in openChoices, with a checked-in excerpt of the page rows the selftest pins against. (3) Dated rows: a model's entry may be a list of rate rows each carrying effectiveFrom; rates_for(model, table, at) returns the row in effect on `at`; the flat legacy row stays accepted and means 'in effect always' (COMPATIBILITY.md: a config key the plugin reads keeps being read - add the new shape to it). (4) Unpriced: the shipped table carries no `_default`; rates_for answers None for an unknown model and price() returns None, never a fallback figure; a `_default` a project declares is still honoured and labelled. Update the config schema, _config_rules vocabulary, the panel's price editor wording that says 'then the _default row', tools/stream-cost.py's _rate (an unpriced request prints unpriced rather than 0), COMPATIBILITY.md, and the README usage section. Red first: rates_for('claude-haiku-5-5') returns today's _default row; rates_for('claude-sonnet-5-5') returns the Sonnet 5 row's 0.2 read.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/scripts/usage/_usage_core.py",
+        "plugins/audit/scripts/config/_config_rules.py",
+        "plugins/audit/schema/audit-config.schema.json",
+        "plugins/audit/scripts/panel/_panel_settings.py",
+        "tools/stream-cost.py",
+        "plugins/audit/tests/test__usage_core.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/tests/test_validate_config.py",
+        "plugins/audit/tests/fixtures/pricing-page-2026-10-10.md",
+        "COMPATIBILITY.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__usage_core.py: rates_for('claude-sonnet-5-5') reads cacheR 0.10 and rates_for('claude-haiku-5-5') reads in 0.10, both equal to the checked-in page excerpt",
+          "plugins/audit/tests/test__usage_core.py: an unknown model id prices to None and its label says unpriced, never the _default figure",
+          "plugins/audit/tests/test__usage_core.py: a model with two dated rows is priced by the row whose effectiveFrom precedes the usage date, and a flat legacy row prices every date",
+          "plugins/audit/tests/test__usage_core.py: DEFAULT_PRICING is the hooks/_config table read through _loader, not a second literal (an edit to hooks/_config alone changes it)",
+          "plugins/audit/tests/test_validate_config.py: a usage.pricing row given as a list of {effectiveFrom, rates} validates and a row with a malformed effectiveFrom is refused by name"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.3",
+      "title": "A usage row is priced at the rate in effect on its own date and stamped with it",
+      "status": "pending",
+      "description": "Sketch 3a, the recording half. usage_ledger writes each row with the rate it was priced at, the rate row's effectiveFrom, and the table's source and asOf, so a later price change never rewrites history; _usage_core.priced_at_read prices a stamped row by its stamp and an unstamped (older) row by the table row in effect on the row's hour bucket, and returns the count of each so every surface's rate phrase states the mix. Haiku 5.5's tier is per request: the scan classifies each message by its own prompt size (in + cacheW5m + cacheW1h + cacheR above 100,000) and keeps the long-prompt tokens in their own row key so an hour bucket never mixes the two tiers. Inference-geo pricing is not visible in the transcript; rows are priced at global routing and the basis says so. An unpriced model's row keeps its tokens, carries no costUSD, and every surface (audit-usage, the report, the panel) prints 'unpriced' beside its tokens instead of a dollar figure. The hook (meter-usage) uses the same hooks/_config table, so it needs no new import.",
+      "files": [
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/scripts/usage/_usage_core.py",
+        "plugins/audit/hooks/meter-usage.py",
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/scripts/report/_report_usage.py",
+        "plugins/audit/scripts/panel/_panel_usage.py",
+        "plugins/audit/tests/test_usage_ledger.py",
+        "plugins/audit/tests/test__usage_core.py",
+        "plugins/audit/tests/test_meter_usage.py",
+        "plugins/audit/tests/test_audit_usage.py",
+        "plugins/audit/tests/test__report_usage.py",
+        "plugins/audit/tests/test__panel_usage.py",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_usage_ledger.py: a row written today carries rate, effectiveFrom, source and asOf, and re-pricing it after the table changes returns the stamped figure",
+          "plugins/audit/tests/test__usage_core.py: an unstamped July row and an October row of one model with two dated rates are priced by different rows",
+          "plugins/audit/tests/test_usage_ledger.py: a Haiku 5.5 message with a 150,000-token prompt lands in the long-prompt row and is priced at 0.05 per MTok cache read, while a 50,000-token one in the same hour is priced at 0.01",
+          "plugins/audit/tests/test_audit_usage.py: a ledger holding an unpriced model prints its tokens and the word unpriced, and the total says how many tokens it leaves out"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.4",
+      "title": "The CLI's own costUSD is recorded beside the plugin's reading; doctor flags unpriced models",
+      "status": "pending",
+      "description": "Sketch 3a and N1's risk item. Main-session transcripts carry a `cost-state` entry with totalCostUSD, modelUsage.<model>.costUSD and hasUnknownModelCost (seen on the testbed's transcripts; none in subagent transcripts). The meter records the CLI's per-model figure per session beside the plugin's own reading of the same session, and audit-usage, the report and the panel print both wherever they differ by more than rounding, each with its basis ('the CLI's estimate' vs 'the plugin's table, <source> as of <date>'); neither is called the bill. Before writing the reader, establish with a probe on a recorded session whether modelUsage includes subagent spend (compare it to the ledger's per-model sum for that session) and state the answer in the docstring, not a guess. /audit:doctor gains a check over the ledger: every model id with tokens and no price row is named, with the token count it leaves unpriced and the remedy (a usage.pricing row in config). The CLI's hasUnknownModelCost=true is reported beside it.",
+      "files": [
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/scripts/usage/_usage_spend.py",
+        "plugins/audit/scripts/report/_report_usage.py",
+        "plugins/audit/scripts/panel/_panel_usage.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/scripts/status/audit-doctor.py",
+        "plugins/audit/tests/test_usage_ledger.py",
+        "plugins/audit/tests/test_audit_usage.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/tests/test_audit_doctor.py",
+        "plugins/audit/commands/doctor.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_usage_ledger.py: a transcript fixture with a cost-state entry records the CLI's per-model costUSD for that session beside the plugin's figure",
+          "plugins/audit/tests/test_audit_usage.py: when the two readings differ the output prints both with their bases; when they agree it prints one",
+          "plugins/audit/tests/test__doctor_trail.py: a ledger with tokens on a model the table has no row for yields a finding naming the model and its token count; a fully priced ledger yields none"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.5",
+      "title": "The phase reviewer's brief carries each owed task's diff, computed once",
+      "status": "pending",
+      "description": "N5. audit-lookup.compose_phase_brief writes one diff per owed task (git show of its commit scoped to the task's files, docs/audit excluded) into the brief, plus the phase diff's path list and every path the phase changed outside every task's declared files, named as such. agents/audit-reviewer.md says the brief's diffs are the input and are not to be re-derived (replace the 'git show <sha> -- <files> is its diff' instruction). The diff is git's output either way; what changes is that it is computed once by a script. Keep the reviewer prompt within tools/measure-context.py's AGENT_CEILINGS; the brief file itself is read by the reviewer, so its size is measured and printed, not gated. A re-review brief (see review-convergence) lists only the fix tasks' diffs.",
+      "files": [
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/reference/phase-signoff.md",
+        "tools/measure-context.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_lookup.py: on a fixture repo the brief's per-task diffs concatenate to exactly git diff <base> <head> -- ':(exclude)docs/audit' over the tasks' files",
+          "plugins/audit/tests/test_audit_lookup.py: a phase that changed a file no task declares names it in the brief as outside every task's scope",
+          "plugins/audit/tests/test_audit_lookup.py: a re-review brief carries only the fix tasks' diffs"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.6",
+      "title": "Sign-off converges: re-review only for med+ or red fixes, lows carried, rounds capped",
+      "status": "pending",
+      "description": "F605. In drive-phase's triage: (1) a re-review is owed only for a fix task whose finding was med or high, or whose gate went red; a fixed low closes on its own green gate and fixes_after()/owed_tasks() stop listing it. (2) The triage's recommended answer for a low finding is carry (status `carried`, carriedTo a parked task - see openChoices for the target), and render_triage prints that as the default; fix stays available. (3) A re-review reads only the fix tasks' diffs (phase-diff-in-brief) and its brief says a new low in a fix is carried, not looped. (4) A round cap per phase, config review.maxRounds (default 2): reaching it prints the findings still open, the rounds' cost so far read from the usage ledger by phase (with its pricing basis, or 'unpriced' where it is), and asks once (carry all / one more round / sign-off with accept-open). The cap and the counts live in the driver's state, so a lost state file re-derives the round count from the filed phase returns rather than resetting to zero. Add the config key to hooks/_config.py DEFAULTS, _config_rules, the schema and the README config table. Red first: a review returning one med and two lows dispatches one fix task and one re-review over that fix's diff, the two lows end carried, and no third review is dispatched. Also measured in P123's review rounds: a fix task made from a finding defaults to tdd even when the finding is a missing test or a pin over a fix that already landed (P123.63, P123.66), so the red-first helper rightly refuses it and the task must be cancelled and re-added as regression - choose the fix task's mode from the finding: a finding whose resolution only adds a case over code already at HEAD is regression, with the red shown by restoring the old code in a scratch copy.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/scripts/config/_config_rules.py",
+        "plugins/audit/schema/audit-config.schema.json",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test__config_rules.py",
+        "plugins/audit/tests/test_validate_config.py",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a review with one med and two lows yields one fix task and one re-review over that fix's diff; both lows end carried and no third review is dispatched",
+          "plugins/audit/tests/test_drive_phase.py: a fixed low whose gate is green closes without a re-review; a fixed low whose gate went red owes one",
+          "plugins/audit/tests/test_drive_phase.py: at review.maxRounds the driver stops with the open findings and the rounds' cost and one question, and a deleted state file re-derives the same round count",
+          "plugins/audit/tests/test__config_rules.py: review.maxRounds accepts a positive integer, defaults to 2, and refuses 0 by name"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.5"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.7",
+      "title": "Phase review can run Haiku-first and escalate on a computed predicate, off by default",
+      "status": "pending",
+      "description": "N2. Config review.cascade: 'off' (default) | 'haiku-first'. When on, dispatch_phase_review dispatches the reviewer with model=claude-haiku-5-5 and the same brief and JSON return; a pure predicate escalate(filed, phase) decides whether a second, Sonnet dispatch is owed: any finding, any cannot-tell or missing intent input, any recorded open choice, red-first not proved, or an existing test file modified (the signals signals_fired() and the brief already compute). The second filing supersedes the first in _filed_returns, and both are kept in evidence with their model. The predicate's verdict per phase is computed offline over the recorded phase fixtures and printed by a selftest; the cascade's false-negative rate needs model calls and is not measured here (openChoices), which is why the default is off. Depends on the price table so a Haiku dispatch is priced, not _default. Evidence (research report 2026-10-12, probe 2): Haiku matched Opus on the target defect at about 1/18 of the cost ONLY under the clause-quoting rule of intent-against-task-text; one scenario, false-positive rate not measured - so this depends on that task and its predicate must be re-measured before default-on.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/scripts/config/_config_rules.py",
+        "plugins/audit/schema/audit-config.schema.json",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test__config_rules.py",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: with review.cascade off the phase reviewer is dispatched once at the phase's model, unchanged",
+          "plugins/audit/tests/test_drive_phase.py: with haiku-first, a clean Haiku filing with no signal signs off on one review; a filing with one low finding prints a second dispatch at the Sonnet model",
+          "plugins/audit/tests/test__filed_returns.py: a second phase filing supersedes the first for the same head and both stay readable with their model"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.6",
+        "P125.2",
+        "P125.19"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.8",
+      "title": "A task gate also runs every test its change can break; the full gate runs once per phase",
+      "status": "pending",
+      "description": "F596 incl. its EXTENSION. New pure module _affected_tests: given the task's changed paths (from its diff against the phase head in the task's own tree; a rename counts as both its old and new path, a deletion as its old path) and the project's observations, return the suites to add to the task's gate and the basis for each. Arms, in order: the project's related listing (meta.phaseGate.derived.listing.related, the same recorded and version-verified listing derive-phase-gate already trusts, e.g. vitest related / jest --findRelatedTests --listTests); for Python, a stdlib ast import graph from test files to the changed modules; the e2e runner's changed listing when one is recorded; meta.coupling entries whose sources overlap; and the e2e widening rule in openChoices. A listing that cannot run is a printed skip reason and widens to the phase gate, never an empty selection read as 'nothing affected'. run-test-gate.py, when it measures a task, runs the union of the task's own gate and the affected set and records which suites came from which arm in the evidence row. The phase's sign-off gate stays the wide one (derived narrowing remains the opt-in meta.phaseGate.mode it is today), so the full gate runs once per phase. Regression case from the testbed: a task that moves app/page.tsx to app/[locale]/page.tsx selects the smoke test that imports @/app/page, and its gate goes red.",
+      "files": [
+        "plugins/audit/scripts/governance/_affected_tests.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/tests/test__affected_tests.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__affected_tests.py: a rename of app/page.tsx selects a test importing @/app/page through the recorded related listing, and the basis names the listing",
+          "plugins/audit/tests/test__affected_tests.py: a Python module change selects every test whose import closure reaches it and no other",
+          "plugins/audit/tests/test__affected_tests.py: a related listing that exits non-zero yields the phase gate with the skip reason, never an empty selection",
+          "plugins/audit/tests/test__affected_tests.py: a task changing app source in a project with e2e specs and no listing that sees them selects every e2e spec, with the widening basis",
+          "plugins/audit/tests/test_run_test_gate.py: a task's recorded run includes the affected suites beside its own gate and the evidence row attributes each suite to its arm"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.9",
+      "title": "This repo's task gates select suites through tools/affected.py's import graph",
+      "status": "pending",
+      "description": "The dogfood half of affected-test-gate. This repo's Python resolves imports by bare basename across label folders (one flat namespace, CLAUDE.md), which a generic import graph cannot follow, and its tree-scanning suites go red on edits to files they never import. tools/affected.py already derives both from _deps's graph and its TREE_SCANNERS list. Give it a listing mode that takes paths and prints one suite path per line and executes nothing (the contract derive-phase-gate's listings hold), and an all-suites mode, then record them as this plan's related/all listing through the verb that writes meta (no hand edit of docs/audit/). Its existing rule 'an unrecognised path selects the full set' carries over unchanged.",
+      "files": [
+        "tools/affected.py",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/affected.py: --list-related with a scripts/ module prints its importers' suites plus every TREE_SCANNERS suite, one path per line, and runs no suite",
+          "tools/affected.py: --list-related with a path it does not recognise prints the full suite list"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.8"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.10",
+      "title": "A task's scope gains the follower files its changes owe, derived from the lints",
+      "status": "pending",
+      "description": "Sketch section 0: declared scope is exact-path and append-only, so tasks widened for followers mid-run. Each lint that requires a companion edit exposes its rule as data next to its own check, built from the constants it already reads: _deps (a new .py under scripts/ or hooks/ owes _deps.py's LAYERS, PLUGIN-BUILD-GUIDE.md's tree line and section, tests/test__output.py; an import change owes the guide's module-map fence), _output (a new scripts/ .py owes the path preamble - in-file, so no follower), _refs (a version bump owes the README pins), tools/prove-gates.py and tools/gate-parity.py (a new lint owes their rows). tools/followers.py collects these rules and prints them as JSON lines for a path set. The product side: a pure _followers module reads rules from the project's meta.followers.command plus the generic companions in openChoices, and audit-task add, scope and add --fixes append the followers to files with a printed basis per added path (never silently). Each repo rule is proven true rather than claimed: a selftest builds a fixture where the follower is omitted and asserts the owning lint goes red.",
+      "files": [
+        "plugins/audit/scripts/manifest/_followers.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/scripts/_refs.py",
+        "tools/followers.py",
+        "tools/prove-gates.py",
+        "tools/gate-parity.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/tests/test__followers.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__deps.py",
+        "plugins/audit/reference/verbs-in-full.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__followers.py: a task adding scripts/x/new-thing.py gains _deps.py, PLUGIN-BUILD-GUIDE.md and tests/test__output.py with a basis naming the owning lint",
+          "plugins/audit/tests/test__followers.py: a rule whose follower is omitted in a fixture makes the owning lint red (each repo rule, one case each)",
+          "plugins/audit/tests/test_audit_task.py: add with files a.py prints each appended follower and its basis; a project with no followers command appends only the generic companions",
+          "tools/followers.py: the printed rules for an import change name the guide's module-map fence"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.8"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.11",
+      "title": "tools/release.py cuts a release end to end, stopping on the first red and resuming",
+      "status": "pending",
+      "description": "Sketch section 0. Steps, each recorded in a resumable state file and skipped on resume once done: preflight (the open-bug and provisional-phase question guard-release asks, read from its own predicate, plus verify.sh --release's preflight); bump plugin.json; finalize the CHANGELOG section; the followers in verify.sh's #R order (README curl pins, examples/report.sh incl. docs/index.html, the scale demo commands check-rendered-artifacts --how prints, screenshots); tools/verify.sh --release; the release commit; push to a ci/<version> branch and gh workflow run ci.yml --ref it; wait for that run on that exact SHA (a cancelled run is not a failed one - read conclusion); annotated tag; push main and the tag; gh release create with the CHANGELOG section; check-release-published. The first red stops with the step, its excerpt and the resume command. Every remote step is named before it runs and nothing is pushed without an explicit --push the user typed (CLAUDE.md: permission to commit is not permission to push). guard-release learns to treat an invocation of tools/release.py as a publishing command so the #release-with-bugs bypass still governs it. The ci step is callable alone (release.py ci <ref>) so a landed phase can run CI the same way. A selftest drives every step against a fake runner, including resume after a stop at each step.",
+      "files": [
+        "tools/release.py",
+        "tools/verify.sh",
+        ".claude/hooks/guard-release.py",
+        "CONTRIBUTING.md",
+        "CLAUDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/release.py: a fake run that goes red at the CI step stops there, prints the resume command, and a resume starts at the CI step without bumping again",
+          "tools/release.py: with an open bug in the plan the preflight refuses before any file is written",
+          "tools/release.py: without --push no git push or gh release command is issued",
+          ".claude/hooks/guard-release.py: python3 tools/release.py --push is classified as a publishing command"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.12",
+      "title": "Doctor reports the git-snapshot setting and the README cost section names it",
+      "status": "pending",
+      "description": "N4. A plugin cannot set includeGitInstructions or CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS for its users (its settings carry only agent and subagentStatusLine), so this is a report and a documented recommendation. /audit:doctor reads the effective value (env var, then project .claude/settings.local.json and settings.json, then user settings) and names where it came from; it also reads, from the session's subagent transcripts, each later dispatch's first-request cache read and write so the user sees whether starts are served from cache. The README's cost section names the setting, recommends it at project level (a user-level setting removes Claude's built-in git instructions from every session), and states that the plugin's executors never commit and the driver commits by script. No figure is printed without the reading that produced it.",
+      "files": [
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/scripts/status/_claude_home.py",
+        "plugins/audit/scripts/status/audit-doctor.py",
+        "plugins/audit/tests/test__doctor_setup.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/commands/doctor.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__doctor_setup.py: the env var set reports 'off (env)'; a project settings.json includeGitInstructions false reports 'off (project settings)'; neither reports 'on (default)'",
+          "plugins/audit/tests/test__doctor_trail.py: transcripts whose later dispatch starts read their predecessor's start from cache report it; ones that rewrite it report the written tokens"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.4"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.13",
+      "title": "Every plugin agent carries a measured maxTurns cap and a capped run stops loudly",
+      "status": "pending",
+      "description": "N12. Add maxTurns to audit-executor, audit-reviewer and audit-explorer frontmatter, each set from a measurement written beside it (see openChoices for the rule). A _refs lint requires the field on every agent under plugins/audit/agents/ (guide.md included or exempted with a reason) and gets its prove-gates row. drive-phase already treats a dispatch with no filed return as stopped; its stop line now says the agent may have reached its maxTurns cap and names the cap, so a runaway is a named stop rather than a silent one.",
+      "files": [
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/agents/audit-explorer.md",
+        "plugins/audit/agents/guide.md",
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tools/prove-gates.py",
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__refs.py: an agent file without maxTurns is named by the lint; one with a non-integer value is named",
+          "plugins/audit/tests/test_drive_phase.py: an executor dispatch that returns with nothing filed stops naming the agent's maxTurns cap"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.7"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.14",
+      "title": "Dispatch prompts and briefs put the stable text first and the task-specific text last",
+      "status": "pending",
+      "description": "Sketch section 3. A subagent's cached prefix ends where its task message starts to differ, and today the main loop composes each dispatch prompt itself from the driver's one-line instruction. drive-phase prints the exact prompt to send for each role, as one fixed sentence per role followed by the variable part (task id, brief path) last, and the orchestrator reference says to send it verbatim; audit-lookup orders each brief file's sections stable-first (the role's rules and return contract before the task's description, files and diff). Measure, do not claim: tools/stream-cost.py's dispatches reading (startRead/startWritten) on a recorded session is the basis for any figure, and measure-context's INSTRUCTION_BYTES and AGENT_CEILINGS must still hold.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "tools/measure-context.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: two executor dispatches for different tasks print prompts identical up to the task id, and the task id and brief path come last",
+          "plugins/audit/tests/test_audit_lookup.py: every executor brief places the rules and return contract before the task-specific sections"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.13",
+        "P125.5"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.15",
+      "title": "An executor or reviewer reply longer than its filed line is sent back once",
+      "status": "pending",
+      "description": "F567: 'hand back the line above as your whole reply' is printed by submit and followed by no executor (measured hand-backs ran to kilobytes). A new SubagentStop hook, scoped by agent_type to the plugin's executor and reviewer: submit writes the line it printed to the state dir keyed by the task id the agent's meta description starts with; the hook compares last_assistant_message to that line and, when the reply is longer, returns decision block once with the line as the reason, so the agent's final message - the one the main loop carries - becomes that line. It blocks at most once per agent (a marker per agent_id) and is fail-open: no line on file, an unreadable payload or a non-plugin agent passes. Confirm the payload fields with a probe before relying on them (the hooks reference documents last_assistant_message on SubagentStop). Register it in hooks.json, keep it inside tools/bench-hooks.py's import budget, and list it in SECURITY.md's fail-open table. Also (F574): stream-cost apportions a rebuilt final's output over the whole tool-result bytes, counting the CLI's frame and trailer as emitted - subtract the frame and trailer before apportioning, and switch pipeline-cost-design.md's ad-hoc `analyse(load_events(...))` commands to the CLI so they meet its refusal of a follow-up stream read alone. Faults add: F574.",
+      "files": [
+        "plugins/audit/hooks/hold-handback.py",
+        "plugins/audit/hooks/hooks.json",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "SECURITY.md",
+        "tools/bench-hooks.py",
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/tests/test_hold_handback.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_hold_handback.py: a SubagentStop payload from audit-executor whose last_assistant_message is the filed line plus a paragraph is blocked with the line as the reason",
+          "plugins/audit/tests/test_hold_handback.py: the same agent's second stop passes, and a payload with no filed line on record passes",
+          "plugins/audit/tests/test_hold_handback.py: a payload from a non-plugin agent type passes untouched",
+          "plugins/audit/tests/test_drive_phase.py: submit writes the printed line where the hook reads it, keyed by the task id"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.14",
+        "P125.10"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.16",
+      "title": "CI fails when a recorded session's reconstructed cost exceeds its ceiling",
+      "status": "pending",
+      "description": "Sketch section 3. tools/stream-cost.py gains --gate: for each committed recording it reconstructs per-stage cost (main loop, executor, reviewer, hand-back) at the shipped table and fails on any stage above its ceiling, printing stage, figure, ceiling and pricing basis; an unpriced model fails the gate as unpriced rather than counting zero. Recordings are committed redacted (see openChoices): a redaction mode keeps counts, model ids, tool names and byte lengths and replaces text, and check-committed-pii must pass over them. Wire the gate into tools/verify.sh and .github/workflows/ci.yml, describe it in CONTRIBUTING.md and CLAUDE.md's test list, add its gate-parity entry and its prove-gates row (raising a recording's cost above the ceiling must go red; a recording at the ceiling must stay green).",
+      "files": [
+        "tools/stream-cost.py",
+        "tools/cost-recordings/README.md",
+        "tools/verify.sh",
+        ".github/workflows/ci.yml",
+        "tools/gate-parity.py",
+        "tools/prove-gates.py",
+        "CONTRIBUTING.md",
+        "CLAUDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/stream-cost.py: --gate over a recording whose executor stage is above its ceiling exits non-zero naming the stage, figure and ceiling",
+          "tools/stream-cost.py: --gate over a recording with an unpriced model fails as unpriced, not as zero cost",
+          "tools/stream-cost.py: the redaction mode keeps every usage count and removes every text field"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.2",
+        "P125.15"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.17",
+      "title": "The phase cycle as a plugin Workflow has a design and an offline measurement",
+      "status": "pending",
+      "description": "N3, design and measurement only - no implementation, because the decisive facts (hooks firing inside workflow-spawned agents, the stagger's cache read, the main loop's real saving) need a paid probe. Write the design: run-phase.js's stages, the Haiku runner that calls drive-phase next and returns {exit, print} by schema, the on-disk token the script must re-read so a mis-relayed print cannot mis-route the loop, how every decide ends the run (workflows take no mid-run input), the fallback to today's Agent path for orgs with workflows off, the Claude Code version floor for COMPATIBILITY.md, and the guarantees to re-argue (gate independence, plan gate inside workflow agents, nothing owed to a human lands unseen). Measure offline with tools/stream-cost.py on recorded sessions: the main loop's spend between dispatches and the hand-back rows, each figure beside the command that produced it. End with the paid probe's exact protocol and the readings that would accept or reject the design.",
+      "files": [
+        "docs/research/phase-workflow-design.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.16"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.18",
+      "title": "A phase boundary is a context boundary: a chained run starts each phase fresh and status shows the carried context",
+      "status": "pending",
+      "description": "F630, measured on the testbed: P2-P10 ran back to back in one never-cleared orchestrator context, mean context per request grew from 136k to 589k, and the orchestrator's share of phase cost from about half to over three quarters - an estimated 18.7 of 33.66 USD-equivalent bought nothing, because everything a phase needs is on disk (manifest, journal, evidence, drive state, briefs). (1) When the drive prints `done` and the phase command continues to a next phase, the command body (commands/phase.md and the run/drive reference) directs a fresh context per phase: clear and re-enter with `/audit:phase <next>`, stated as the step, not a tip. (2) The drive's entry line and `/audit:status` read the orchestrator's current context size from the transcript the usage meter already scans, and past a stated threshold say what each further request costs at the dated price (the basis named, or 'unknown' when the transcript cannot be read - never a default). Micro-test: two trivial phases driven back to back as the command directs; the second phase's first orchestrator request carries no more context than a fresh entry within a stated margin (an offline fixture over recorded transcript rows, no paid call). Faults: F630.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/tests/test_usage_ledger.py",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/README.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_status.py: status names the orchestrator's current context size read from the transcript, and says unknown with the reason when the transcript cannot be read",
+          "plugins/audit/tests/test_drive_phase.py: a drive `done` with a next phase in the chain prints the fresh-context step"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.1",
+        "P125.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.19",
+      "title": "The intent check grades the diff against the task text, and the drive checks tests.add against the filed tests",
+      "status": "pending",
+      "description": "F633, measured on the testbed with a plain-session baseline and a blind A/B review: P5.3's text said src is set when the card ENTERS the viewport; the executor shipped `rootMargin: \"200px 0px\"`, said so, and renamed its test to 'once the card is near the viewport'; the phase reviewer's intentCheck answered `matches` on the basis of the executor's restatement. The blind pass also found two med defects the phase review missed. (1) The intent check QUOTES THE TASK TEXT and compares the diff and the tests against it - never against the outcome text or the test titles; a restatement whose scope differs from the task text is itself a finding, quoting both. (2) The reviewer brief puts the task text first and the executor's return last, labelled as the claim under review. (3) The drive diffs `tests.add` against the test names the return files, mechanically, and a declared case with no filed counterpart is a finding before any reviewer runs. Red-first: a fixture where the task says 'enters' and the return says 'near' with a 200px margin must answer `diverges` and quote both; a declared tests.add case missing from the return is named by the drive. (4) Measured on the testbed with the SAME model (plain Sonnet vs the plugin's Sonnet executors, blind A/B): the plugin's version alone shipped a lazy-load test that cannot fail, an e2e that drives the real server action (a key in env sends real mail), and a test-readiness race (asserting enabled state the SSR HTML already has). So the reviewer brief also asks, per declared test: can it fail on the unfixed code (the red-first block, or say it was never seen red), and does any test reach a real external service or side effect (mail, payment, network) rather than a stub - each a finding with its file:line. Faults: F633. (5) A FALSIFIER PER TEST, run by the drive at near-zero model cost (about +0.005 USD per task, research report 2026-10-12-agent-output-quality-research.md): every planned test carries a line 'must fail if <small code change>'; after the executor files, the drive applies that patch in a temporary tree (never the executor's tree) and runs the test, and a test that survives is a finding with file:line. A patch that breaks the build is could-not-run, never a kill. This REPLACES a revert-to-base check, which probe 1 measured as too weak: the plugin's P5.3 test fails on the revert yet survives the 'src set on mount' mutant, the real defect class; the plain Sonnet test kills both mount and margin_200 (artefacts danuvia-baseline/research-p53-plugin/probe-artifacts/probe1/*.log). (6) Parity in interaction states: when a task's design source names `:focus`/`:hover` rules for a form or control (as flux.css `.field input:focus` did), task synthesis writes into tests.add a design-parity case that snapshots that control's own box in its focus state (and hover where defined), not only rest, as a clipped element snapshot of that control or a computed-style assertion - a 1% threshold over a whole section hid a 2px ring (about 0.2% of the section) (2px/4px against the design's 9px, found by a live getComputedStyle probe). (7) Executor brief: scope must never push an executor into an inferior design. P6.3's plugin executor faked a 'Resend mock' by rewriting the browser response because `playwright.config.ts` was outside its scope; the plain session edited the config and ran a real mock. When the right design needs file X outside `files`, the executor files a widening request naming X and why, and does not work around it; P124's companions do not cover test infrastructure. Source: testbed monitor, 2026-10-12, at the owner's request. (8) Probe 2 (24 reviewer runs, Opus/Sonnet/Haiku, real P5.3 brief section): the brief as filed, task text first with the claim labelled, and the claim hidden each found 0/3 `diverges`; ONLY a CLAUSE-QUOTING RULE worked, 3/3 on all three models - the reviewer quotes each task clause, judges the diff against it, and a scope difference is `diverges`. So (1)-(2) are implemented as that rule, and: a contradicted clause carries a MED severity floor (4 of 6 Opus/Sonnet runs rated it low, which review-convergence would park as a carried low); the intent answer splits 'does the diff do what was asked' from 'does the claim describe the diff'; the phase brief carries tests.add, which it lacks today. (9) The tests.add-vs-filed-tests check of (3) cannot be a string diff: as one it flags 72 of 77 danuvia tasks, mostly Serbian plan text against English test titles. It matches a declared case by a verbatim title the executor must reuse, or by a clause mapping the return files; never a fuzzy string compare.",
+      "files": [
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: the reviewer brief carries the task text first and the return last labelled as the claim; a tests.add case with no filed counterpart is named by the drive",
+          "plugins/audit/tests/test__filed_returns.py: an intent answer of matches whose basis quotes the return but not the task text is refused as unsupported",
+          "plugins/audit/tests/test_audit_task.py: a task whose design source names :focus/:hover rules for a control gets an interaction-state parity case in tests.add",
+          "plugins/audit/tests/test_drive_phase.py: a planned test whose 'must fail if' patch it survives is a finding with file:line; a patch that breaks the build is could-not-run, not a kill; the executor's tree is byte-identical afterwards",
+          "plugins/audit/tests/test_drive_phase.py: the reviewer brief states the clause-quoting rule and carries tests.add; a contradicted clause filed below med is raised to med",
+          "plugins/audit/tests/test_drive_phase.py: a declared case matched by verbatim title or a filed clause mapping is not flagged across languages; a case with neither is"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.5"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.20",
+      "title": "A task's model follows its recorded complexity as well as its risk, with the reason shown before approval",
+      "status": "pending",
+      "description": "F634 (owner-raised, measured on the testbed): `audit-task._model_floor` routes opus only for `risk: high`, and risk is blast radius, not difficulty - nearly every testbed task ran on Sonnet, including the plan's hardest code (an astronomy core, a WebGL sky layer), because each was low risk; no planning step asks about difficulty. (1) A task records `complexity` (low/med/high) with a one-line basis, separate from risk, written by planning (init synthesis, `/audit:phase add`, `audit-task add`/`scope`) and validated by the manifest schema and rules (additive: a plan without it stays valid and reads as unrecorded, never defaulted). (2) Routing: opus when risk is high OR complexity is high, else sonnet; the caller's explicit `--model` still wins; a config key (`executor.modelByComplexity`, documented in COMPATIBILITY.md as added) can turn the complexity arm off. (3) The plan preview and `/audit:status` show each task's model and the reason it was chosen (risk, complexity, or the caller). (4) Escalation: after a retry, or a med+ finding on a Sonnet attempt, the next attempt of that task runs on opus, journaled with the reason. Red-first: two low-risk fixture tasks - a WebGL scene marked complexity high and a copy edit marked low - route to opus and sonnet; a retried Sonnet task's next dispatch names opus and the journal row says why. Faults: F634.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/commands/init.md",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/schema/audit-config.schema.json",
+        "plugins/audit/scripts/config/_config_rules.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a low-risk task with complexity high routes to opus and one with complexity low to sonnet; an explicit --model wins; a plan without complexity stays valid and reads as unrecorded",
+          "plugins/audit/tests/test_drive_phase.py: after a retry on a sonnet attempt the next dispatch names opus and the journal row records why"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.21",
+      "title": "Parallel waves respect a shared external-resource budget: resources in config, needs on a task, and status says why a task was held",
+      "status": "pending",
+      "description": "F508 (deferred feature; its revisit trigger - a waves verb - has fired with P124's waves). Today parallel safety is disjoint `files` plus `dependsOn` only, so two tasks that each start a dev server on one port, or hit one rate-limited API, run side by side (the testbed's port 3100 collision is the live shape). Add `resources: {name: capacity}` to audit.config.json (schema + config rules, additive, documented in COMPATIBILITY.md), `needs: [name]` on a task (plan schema + rules, additive), cap wave membership where waves are computed so a wave never holds more tasks needing a resource than its capacity, and have status/the drive say which task was held and for which resource. In the scheduler, not in executor prose. Red-first: two ready tasks both needing `port3100` with capacity 1 never share a wave, the held one is named with the resource; without `resources` the waves are unchanged. Faults: F508.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/schema/audit-config.schema.json",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/config/_config_rules.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__status_facts.py: two ready tasks needing one capacity-1 resource never share a wave and the held one names the resource; no resources config leaves waves unchanged"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.22",
+      "title": "New behaviour is planned tests.mode tdd, its tests written from the task text before the code",
+      "status": "pending",
+      "description": "init.md's mode rules cover only bug -> tdd, refactor -> regression, config -> gate-only, so a feature falls to regression: on the danuvia testbed plan, tdd 18, regression 49, gate-only 67 of 134 tasks. Research report 2026-10-12 probe 3 (0.18 USD): tests written after seeing the code passed the 200px defect 3/3; tests written from the task text caught it 2/3 (one over-strict); an ISSTA 2026 paper on post-hoc tests confirming the code agrees. Rule: a task that adds or changes observable behaviour is tdd; the executor brief for a tdd task orders tests from the task text first, red-first, then code. Zero added model tokens. Source: testbed monitor relay, 2026-10-12.",
+      "files": [
+        "plugins/audit/commands/init.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a planned task that adds behaviour with no mode named is written tdd, a refactor regression, a config change gate-only, with the basis shown"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.23",
+      "title": "The red-first helper can prove red on the runners a real project uses",
+      "status": "pending",
+      "description": "On the danuvia testbed redFirst is proved for 1 of 134 tasks (113 not-attempted, 9 could-not-prove; research report 2026-10-12). Causes measured there: Playwright output is never read, two vitest runs were unparsed, and three import errors of a symbol the task introduces were not taken as `--introduces` evidence. Deterministic code, zero model tokens: parse Playwright's and vitest's result formats (JSON reporter where available, line format otherwise), and read an ImportError/ModuleNotFound/'is not exported' on a symbol the diff introduces as a red. Source: testbed monitor relay, 2026-10-12.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: a failing Playwright run, a failing vitest run (both reporters) and an import error of an introduced symbol each count as red; a run that could not start is could-not-prove"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.24",
+      "title": "A red CI run on a phase's ci/ branch files a manifest bug with its failing jobs and cases",
+      "status": "pending",
+      "description": "Observed 2026-10-12: ci/p122 (run 38017386858) and ci/p124 (run 38036907164) went red on windows-latest two days before the 3.3.0 cut, yet no task or bug was filed, P123 landed on top, and the release candidate's CI (38299118105) found nine Windows files red - all new in P123, none overlapping P124's bt2/sr210 which P123 had fixed. The per-phase CI ran as intended; its verdict reached no record a gate reads. A CI result is read into the plan: a command (or the drive's landing step, once it has pushed ci/<phase>) reads the run's failing jobs and case ids (`gh run view --log-failed`, parsed by the house FAIL/FAILED reader) and files `/audit:bug add` naming the run, the jobs and each failing case, so the release guard and the open-bug rule see it at once. Refuses rather than files when it cannot read the run. Source: testbed monitor, 2026-10-12.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/commands/bug.md",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a recorded red CI run for a phase's ci/ branch files one bug naming the run id, each failing job and each failing case id; an unreadable run is refused, not filed empty"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.25",
+      "title": "A long phase dispatches CI on its branch at a configured cadence, not only at landing",
+      "status": "pending",
+      "description": "P123 ran about 2.5 days and about 90 tasks with no CI run between its start and its landing, so nine windows-latest regressions it introduced surfaced only at the 3.3.0 cut (run 38299118105) and cost a fix phase (P126). The drive already pushes ci/ branches; give it a cadence: `ci.cadence` in config (every N task closes and/or every H hours of phase time, absent = landing only), on which it pushes the phase tip to ci/<phase> and dispatches the workflow without waiting, and reads the result at the next close; a red files a bug through ci-red-files-bug. Doctor reports the setting. Source: testbed monitor, 2026-10-12.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/config/_config_rules.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/reference/config.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: with ci.cadence every 3 closes the drive dispatches CI on the third close and not before, never waits on it, and reads its verdict at the next close; absent, it dispatches only at landing"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.24"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.26",
+      "title": "No report table can widen the page at any width, by construction rather than by font margin",
+      "status": "pending",
+      "description": "Carried from P126-R2 (med, P126 phase review 2026-10-13). P126.1 made the hostile-content leg green on CI by letting the bugs table's test-gate pills wrap (`white-space:normal`), which lowers that column's narrowest width - so the page passes by margin at CI's fonts (reproduced with DejaVu in mcr.microsoft.com/playwright:v1.56.0-jammy: +31px before, 0 after), not by an invariant: any table whose columns' min-content widths sum past the column can still widen the document above the breakpoint where `.tablewrap` starts to scroll. The structural options trade against the sticky header: (a) `.tablewrap{overflow-x:auto}` at every width - a contained scroll that can never widen the document, but `position:sticky` on thead then sticks to the wrapper, not the viewport; (b) keep the viewport-sticky header and give every non-prose column a bounded min-width plus `<wbr>` in every renderer-emitted unbroken run; (c) a JS-measured fallback that switches a table to (a) only when it overflows. Decide with the owner, implement, and add a hostile-leg case that plants a token in EVERY column kind at the narrowest unframed width on a wide-font fixture so the margin cannot be what passes it. Not a 3.2.0 regression: CI's hostile leg is green on 3.3.0.",
+      "files": [
+        "plugins/audit/scripts/ui/report-css/tables.css",
+        "plugins/audit/scripts/ui/report-css/shell.css",
+        "tools/check-report-interactive.mjs",
+        "plugins/audit/tests/test_render_report.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-report-interactive.mjs: a token planted in every column kind of every table, at the narrowest unframed width with a wide fallback font, widens nothing"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.27",
+      "title": "The PII check and the write scrub answer 'is this a home path' with one predicate",
+      "status": "pending",
+      "description": "Recurring class observed 2026-10-13 in P126: a reviewer's prose phrase made of words joined by slashes was flagged by tools/check-committed-pii.py's posix-home detector in the finding row, the fix task's description, the reviewer return, the next executor's return and the plan's copy of its outcome - each time a new BASELINE row, five in one phase, and four earlier rows in BASELINE for the same shape. The write scrub (_machine_paths) fires posix-home only when a separator stands before the home word; the committed-artifact check fires on `home/` at any token start 'by design'. Two readers disagree on what a home path is, so honest prose costs a baseline row per copy and every copy is a gate going red. Decide the one predicate (with its measurement over this tree's committed artifacts and the detector's purpose: catching a home directory whose leading separator was cut), make both readers call it, retire the BASELINE rows it makes dead, and pin both directions (a cut home path still found; prose with slashes not).",
+      "files": [
+        "plugins/audit/scripts/_machine_paths.py",
+        "tools/check-committed-pii.py",
+        "plugins/audit/tests/test__machine_paths.py",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-committed-pii.py: a home path with its leading separator cut is still found, words joined by slashes in prose are not, and both through the same predicate the write scrub uses"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.28",
+      "title": "A plan, shard or journal path is never a task's declared file",
+      "status": "pending",
+      "description": "F642: P127.8 was derived from finding P127-R9 whose file was the phase's own shard, so the fix task declared it; every verb rewrites that file, and commit-task-work refused the close as 'changed before this attempt began AND again during it'; scope could not drop the entry after an attempt. Fix-task derivation drops record paths a finding names, scope refuses to add one with the reason, and the commit treats them as records.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_commit_task_work.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a fix task derived from a finding naming the phase's shard declares no record path; scope --files with a record path is refused naming why"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ],
+  "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
+  "openChoices": []
+}
