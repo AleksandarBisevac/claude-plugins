@@ -1,0 +1,14 @@
+{
+  "gates": {},
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task with expectRedFirst false; no test added, an existing case narrowed",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "In test_stamp_verification.py, case sr214 no longer lists the parent directory for stamp-derive-* entries; it asserts only that its own root_d was removed (remove_tree returned True) and no longer exists (os.path.lexists false). Ran the file's --selftest: 266/266 cases passed; ruff check on the file passed. The brief names no gate of its own to run, so no other gate was run.",
+    "descriptive": "sr214 can no longer fail on stale or concurrent stamp-derive directories from other runs."
+  },
+  "testsAdded": [],
+  "stamp": "audit-stamp: {\"content\":\"sha256:9f9baa2dd7eee5049253183b0fdfbd93f884470ff9b71293ea5f15a240931572\",\"dirtyDigest\":\"sha256:aadf6094f7252189a8419d93d12624b0a8faa9a719d2c640ec153891b15aac6e\",\"dirtyPaths\":{\"plugins/audit/tests/test_stamp_verification.py\":\"f83855b4ba389517\"},\"head\":\"ab87b210\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:a1ada29d227e0f0a5ae3a8ef735eccb1d04429c5c0a39956b9714a9ef0b309d1\",\"v\":2}"
+}

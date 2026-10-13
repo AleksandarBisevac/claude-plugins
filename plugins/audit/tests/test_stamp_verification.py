@@ -2919,14 +2919,10 @@ def _located_cases(check):
         # to unlink; `remove_tree` retries after a chmod pass and reports whether
         # the tree is gone, so a failed removal is asserted below, not swallowed.
         removed_d = _harness.remove_tree(root_d)
-    scratch_d = os.path.dirname(root_d)
-    check("sr214 the derive fixture leaves nothing behind - not itself, and no "
-          "stamp-derive-* sibling in the directory it was made in, which is the "
-          "suite's working directory under the sweep: removed=%r left=%r"
-          % (removed_d, [n for n in os.listdir(scratch_d)
-                         if n.startswith("stamp-derive-")]),
-          removed_d is True and not os.path.lexists(root_d)
-          and not [n for n in os.listdir(scratch_d) if n.startswith("stamp-derive-")])
+    check("sr214 the derive fixture leaves nothing behind - the directory this "
+          "run made is removed and no longer exists: removed=%r exists=%r"
+          % (removed_d, os.path.lexists(root_d)),
+          removed_d is True and not os.path.lexists(root_d))
     check("sr213 the symbols a task's diff introduces are the new top-level def, "
           "class and assignment names of its declared Python files, plus the "
           "name of a file HEAD does not have - hyphenated included - and nothing "

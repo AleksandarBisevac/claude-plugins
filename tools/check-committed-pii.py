@@ -797,6 +797,17 @@ BASELINE = (
     ("docs/audit/phases/P126.json", "line-sha256:3ae5029906af441a",
      "posix-home",
      "the plan's copy of that same outcome text, for the same reason."),
+    ("docs/audit/evidence/returns/P126.16-13q/20261013T005424Z.executor.json", 14,
+     "posix-home",
+     "the fix's own outcome sentence naming the kind of spelling it stops "
+     "treating as a root - two words joined by a slash, not a directory."),
+    ("docs/audit/phases/P126.json", "line-sha256:3f3d818d41f3f0d7",
+     "posix-home",
+     "the plan's copy of that outcome sentence, for the same reason."),
+    ("docs/audit/journal/2026-10.0a7c2fcc-df20-4990-96d6.jsonl", 1485,
+     "posix-home",
+     "the journal row that recorded that outcome; chained, so recorded here "
+     "rather than rewritten."),
 )
 
 _MIN_REASON = 60          # a reason short enough to be a label is not a reason
