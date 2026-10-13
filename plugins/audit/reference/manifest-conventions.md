@@ -128,12 +128,15 @@ is free to re-mint).
   not be fixed, somebody investigated and the behaviour is correct
 - Proposal: `proposed | materialized | dropped` (enforced on payload-bearing
   proposals; legacy free-form entries are tolerated as-is)
-- `tests.mode`: `tdd | regression | gate-only` · `risk`: `low | med | high` — the stored
-  value is always one of these three; `/audit:task add --tests-mode auto` is a CLI-only
-  input that resolves to one of them before the write (`commands/init.md` → step 3's
-  mode rule, read off the task's own title and description), never a fourth stored
-  value. `scope` takes `tdd | regression | gate-only` only — `auto` answers "what mode
-  should a NEW task get", which a rescope of an existing task is not asking.
+- `tests.mode`: `tdd | regression | gate-only` · `risk`: `low | med | high` — `add` (and
+  a batch task naming none) only ever writes one of these three: when the caller names
+  no `--tests-mode` and nothing stronger already answered (a bug, a `--fixes` target, an
+  inline-suite `tests.add`), it is read off the task's own title and description instead
+  of defaulting silently (`commands/init.md`'s mode rule, `_change_kind_discipline` in
+  `scripts/manifest/audit-task.py`) — tdd for a task naming neither a refactor nor a
+  config/docs/mechanical change. `scope` takes `tdd | regression | gate-only` only and
+  applies none of this classification; a rescope of an existing task passes the mode it
+  wants.
 
 ## New task template
 

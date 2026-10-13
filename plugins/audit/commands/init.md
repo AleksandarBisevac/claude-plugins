@@ -303,10 +303,13 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
      at; measured on a real synthesized plan, the missing arm fell through to
      `regression` far more often than it landed on `tdd`. "No mode stated" is not
      "no behavior change" — a task that adds or changes what the system does is exactly
-     the shape the FAIL-then-fix proof exists for. `/audit:task add --tests-mode auto` makes the same
-     four-way call from a task's title and description once it already exists, for a
-     task added after synthesis rather than during it (`_change_kind_discipline` in
-     `scripts/manifest/audit-task.py`).
+     the shape the FAIL-then-fix proof exists for. `/audit:task add` (and a batch task
+     with no `tests.mode` of its own) makes this same four-way call from the task's
+     title and description whenever no mode was named and no stronger signal (a bug, a
+     `--fixes` target, an inline-suite `tests.add`) already settled one —
+     `_change_kind_discipline` in `scripts/manifest/audit-task.py` — so synthesis here
+     and a task added later land on the same rule; an explicit mode you pass always
+     wins over it.
    - **Write a `tdd` task's `tests.add` from the finding's text first, not from reading
      the implementation.** A probe comparing the two orders on the same defect found
      that tests written after seeing the code passed over it almost every time — the

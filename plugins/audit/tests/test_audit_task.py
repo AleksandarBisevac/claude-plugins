@@ -451,8 +451,9 @@ def _add_cases(check):
 
         # ---- (t) the template ---------------------------------------------
         t = task_in(mpath, "P2.4") or {}
-        check("t1 every template field initialized, each exactly once",
-              set(t.keys()) == set(M._TEMPLATE_KEYS))
+        check("t1 every template field initialized, each exactly once, plus "
+              "the one note the default mode classification wrote",
+              set(t.keys()) == set(M._TEMPLATE_KEYS) | {"notes"})
         check("t2 the conventions template values are the ones written",
               t.get("status") == "pending" and t.get("attempts") == 0
               and t.get("maxAttempts") == 3 and t.get("commit") is None
@@ -460,12 +461,13 @@ def _add_cases(check):
               and t.get("startedAt") is None and t.get("completedAt") is None
               and t.get("verifiedBy") == [] and t.get("blockedBy") == []
               and t.get("dependsOn") == [])
-        check("t3 tests default: gate-only, no red-first, gate from the "
+        check("t3 tests default: a title naming no mode, no refactor and no "
+              "config signal is classified tdd, red-first, gate from the "
               "phase's testGate - and `gateBasis` records WHICH arm produced "
               "that list, because the arm is the thing a rule needs and the "
               "sentence the report prints is thrown away: %r" % (t.get("tests"),),
-              t.get("tests") == {"mode": "gate-only", "add": [],
-                                 "expectRedFirst": False, "gate": ["test"],
+              t.get("tests") == {"mode": "tdd", "add": [],
+                                 "expectRedFirst": True, "gate": ["test"],
                                  "gateBasis": "phase-no-spelling"})
         check("t4 model floors at sonnet, risk defaults low",
               t.get("model") == "sonnet" and t.get("risk") == "low")
@@ -10684,6 +10686,7 @@ def _record_cases(check):
 
         codedg, txtdg = run(
             ["add", "New button", "--phase", "P1", "--project-dir", dg_proj,
+             "--tests-mode", "gate-only",
              "--files", "src/Button.tsx,README.md"])
         check("dg1 RED-FIRST: a gate-only task whose files name NO suite path "
               "gets `meta.phaseGate.always`, with basis `gate-only-no-suite` - "
@@ -10698,8 +10701,8 @@ def _record_cases(check):
         # the sibling's spelling - the arm this fix must not disable outright.
         codedg, txtdg = run(
             ["add", "New button, tested", "--phase", "P1",
-             "--project-dir", dg_proj, "--files",
-             "src/Button.tsx,src/Button.test.tsx"])
+             "--project-dir", dg_proj, "--tests-mode", "gate-only",
+             "--files", "src/Button.tsx,src/Button.test.tsx"])
         check("dg2 ALLOW CASE: a suite path among the files still narrows the "
               "gate, in the sibling's spelling: %r"
               % ((dg_tests("P1.3").get("gate"), dg_tests("P1.3").get("gateBasis")),),
@@ -14168,7 +14171,14 @@ def _batch_doc(**over):
                       "tests": {"mode": "tdd",
                                 "add": ["tests/b.test.ts: sums exactly"]}},
                      {"title": "document the rounding", "files": ["docs/b.md"],
-                      "dependsOn": ["sum"]}]}
+                      "dependsOn": ["sum"],
+                      # Named explicitly rather than left to the default mode
+                      # classification: this fixture's own point is the batch
+                      # write's byte-for-byte shape, not which mode a docs
+                      # task lands on, and an unnamed mode would also attach a
+                      # timestamped note -- a volatile field two independent
+                      # writes (file vs stdin, fb13) must not be compared on.
+                      "tests": {"mode": "gate-only"}}]}
     doc.update(over)
     return doc
 
@@ -15699,9 +15709,11 @@ def _inline_suite_mode_cases(check):
         code, text = verb(proj, "add", "Ordinary", "--phase", "P1",
                           "--tests-add", "tests/test_thing.py: the new case")
         t = task(mpath)
-        check("is2 ALLOW: a test file of the ordinary shape keeps add's default "
-              "and gets no inline note: %r" % ((code, t.get("tests"), notes(t)),),
-              code == 0 and (t.get("tests") or {}).get("mode") == "gate-only"
+        check("is2 ALLOW: a test file of the ordinary shape keeps add's "
+              "default (the mode classification's, since the caller named "
+              "no mode) and gets no inline note: %r"
+              % ((code, t.get("tests"), notes(t)),),
+              code == 0 and (t.get("tests") or {}).get("mode") == "tdd"
               and "inline" not in notes(t))
 
         proj, mpath = project("add-explicit")
@@ -15715,7 +15727,8 @@ def _inline_suite_mode_cases(check):
               code == 0 and (t.get("tests") or {}).get("mode") == "tdd")
 
         proj, mpath = project("scope-inline")
-        verb(proj, "add", "Later", "--phase", "P1", "--files", inline)
+        verb(proj, "add", "Later", "--phase", "P1", "--files", inline,
+             "--tests-mode", "gate-only")
         tid = task(mpath).get("id")
         code, text = verb(proj, "scope", tid, "--tests-add",
                           "%s: the new case" % (inline,))
@@ -15743,12 +15756,14 @@ def _inline_suite_mode_cases(check):
 
 
 def _change_kind_discipline_cases(check):
-    """`add --tests-mode auto` reads init.md's mode rule off the task's own
-    title and description: `init.md` used to state only bug -> tdd,
-    refactor -> regression, config -> gate-only, leaving a task that adds or
-    changes observable behaviour (a feature) to fall through to whatever a
-    planner guessed -- `auto` is the classification a caller can ask for
-    instead of guessing, and it says which arm it took."""
+    """A planned task naming no `--tests-mode` of its own is not left at
+    `gate-only` by default: `init.md`'s mode rule is read off the task's own
+    title and description, the same way whether the task is minted during
+    synthesis or added later by hand. A task naming neither a refactor nor a
+    config/docs/mechanical change is adding or changing behaviour, so it is
+    `tdd`; a refactor is `regression`; a config/docs/mechanical change is
+    `gate-only` -- each arm says why. An explicit `--tests-mode` is the
+    caller's own answer and is never overruled by this reading."""
     import io
     root = _harness.fixture_root("audit-task-ck-")
 
@@ -15786,48 +15801,54 @@ def _change_kind_discipline_cases(check):
     try:
         proj, mpath = project("feature")
         code, text = verb(proj, "add", "Add a new export button",
-                          "--phase", "P1", "--tests-mode", "auto",
+                          "--phase", "P1",
                           "--description", "lets the user download a CSV")
         t = task(mpath)
-        check("ck1 a planned task that adds behaviour, with no refactor or "
-              "config signal in its text, is written tdd, with the basis "
-              "shown: %r" % ((code, t.get("tests"), notes(t)),),
+        check("ck1 a planned task that adds behaviour, naming no mode and no "
+              "refactor or config signal in its text, is written tdd by "
+              "default, with the basis shown: %r"
+              % ((code, t.get("tests"), notes(t)),),
               code == 0 and (t.get("tests") or {}).get("mode") == "tdd"
               and (t.get("tests") or {}).get("expectRedFirst") is True
-              and "tdd" in notes(t) and "auto" in notes(t))
+              and "tdd" in notes(t))
 
         proj, mpath = project("refactor")
         code, text = verb(proj, "add", "Refactor the export module",
-                          "--phase", "P1", "--tests-mode", "auto",
+                          "--phase", "P1",
                           "--description", "extract the shared formatter, no "
                           "behaviour change")
         t = task(mpath)
-        check("ck2 a refactor is written regression, with the basis shown: %r"
+        check("ck2 a refactor naming no mode is written regression by "
+              "default, with the basis shown: %r"
               % ((code, t.get("tests"), notes(t)),),
               code == 0 and (t.get("tests") or {}).get("mode") == "regression"
               and (t.get("tests") or {}).get("expectRedFirst") is False
-              and "regression" in notes(t) and "auto" in notes(t))
+              and "regression" in notes(t))
 
         proj, mpath = project("config")
         code, text = verb(proj, "add", "Bump the lint config",
-                          "--phase", "P1", "--tests-mode", "auto",
+                          "--phase", "P1",
                           "--description", "update the eslint config file")
         t = task(mpath)
-        check("ck3 a config change is written gate-only, with the basis "
-              "shown: %r" % ((code, t.get("tests"), notes(t)),),
+        check("ck3 a config change naming no mode is written gate-only by "
+              "default, with the basis shown: %r"
+              % ((code, t.get("tests"), notes(t)),),
               code == 0 and (t.get("tests") or {}).get("mode") == "gate-only"
               and (t.get("tests") or {}).get("expectRedFirst") is False
-              and "gate-only" in notes(t) and "auto" in notes(t))
+              and "gate-only" in notes(t))
 
-        proj, mpath = project("scope-refused")
-        verb(proj, "add", "Later", "--phase", "P1", "--files", "src/a.ts")
-        tid = task(mpath).get("id")
-        code, text = verb(proj, "scope", tid, "--tests-mode", "auto")
-        check("ck4 ALLOW: `scope` refuses `auto` by name, writing nothing - "
-              "`auto` is add's own creation-time classification: %r"
-              % ((code, text[-200:]),),
-              code == M.E_USAGE and "auto" in text
-              and (task(mpath).get("tests") or {}).get("mode") == "gate-only")
+        proj, mpath = project("explicit-not-overridden")
+        code, text = verb(proj, "add", "Refactor the export module",
+                          "--phase", "P1", "--tests-mode", "tdd",
+                          "--description", "extract the shared formatter, no "
+                          "behaviour change")
+        t = task(mpath)
+        check("ck4 ALLOW: an explicit --tests-mode is the caller's own "
+              "answer and this reading never overrules it, even over text "
+              "that would otherwise read as a refactor: %r"
+              % ((code, t.get("tests")),),
+              code == 0 and (t.get("tests") or {}).get("mode") == "tdd"
+              and (t.get("tests") or {}).get("expectRedFirst") is True)
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
