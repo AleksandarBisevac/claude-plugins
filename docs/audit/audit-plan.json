@@ -788,6 +788,12 @@
       "title": "3.3.0 release: CI green on every OS",
       "status": "done",
       "shard": "phases/P126.json"
+    },
+    {
+      "id": "P127",
+      "title": "3.3.0 release: no suite rides the Windows time cap",
+      "status": "in_progress",
+      "shard": "phases/P127.json"
     }
   ],
   "fileIndex": {
@@ -854,7 +860,12 @@
       "P123.26",
       "P126.10-13q",
       "P126.15-13q",
-      "P126.18-13q"
+      "P126.18-13q",
+      "P127.2-bgr",
+      "P127.3-bgr",
+      "P127.7-bgr",
+      "P127.6-bgr",
+      "P127.8-bgr"
     ],
     ".gitignore": [
       "P4.4",
@@ -1036,7 +1047,9 @@
       "P118.9",
       "P123.26",
       "P123.27",
-      "P123.32"
+      "P123.32",
+      "P127.2-bgr",
+      "P127.6-bgr"
     ],
     "COMPATIBILITY.md": [
       "P18.8",
@@ -1121,7 +1134,11 @@
       "P123.27",
       "P123.31",
       "P123.56-64p",
-      "P123.71-64p"
+      "P123.71-64p",
+      "P127.2-bgr",
+      "P127.4-bgr",
+      "P127.6-bgr",
+      "P127.8-bgr"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -1352,7 +1369,8 @@
       "P123.59-64p",
       "P123.62-64p",
       "P123.65-64p",
-      "P126.11-13q"
+      "P126.11-13q",
+      "P127.9-bgr"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2754,7 +2772,8 @@
       "P123.70-64p",
       "P123.75-64p",
       "P123.76-64p",
-      "P123.93-64p"
+      "P123.93-64p",
+      "P127.9-bgr"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -3379,7 +3398,8 @@
       "P123.55-64p",
       "P123.62-64p",
       "P123.63-64p",
-      "P123.89-64p"
+      "P123.89-64p",
+      "P127.9-bgr"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -5663,7 +5683,8 @@
       "P123.58-64p",
       "P123.66-64p",
       "P123.69-64p",
-      "P126.9"
+      "P126.9",
+      "P127.1"
     ],
     "plugins/audit/tests/test_detect_plan_skip.py": [
       "P72.1",
@@ -6032,7 +6053,8 @@
       "P123.62-64p",
       "P123.63-64p",
       "P123.68-64p",
-      "P123.89-64p"
+      "P123.89-64p",
+      "P127.9-bgr"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
@@ -6298,7 +6320,11 @@
       "P123.93-64p",
       "P126.10-13q",
       "P126.15-13q",
-      "P126.18-13q"
+      "P126.18-13q",
+      "P127.2-bgr",
+      "P127.3-bgr",
+      "P127.6-bgr",
+      "P127.8-bgr"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -6373,7 +6399,11 @@
       "P126.4",
       "P126.10-13q",
       "P126.11-13q",
-      "P126.15-13q"
+      "P126.15-13q",
+      "P127.2-bgr",
+      "P127.3-bgr",
+      "P127.6-bgr",
+      "P127.8-bgr"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -6393,7 +6423,11 @@
       "P123.42-64p",
       "P126.4",
       "P126.5",
-      "P126.11-13q"
+      "P126.11-13q",
+      "P127.2-bgr",
+      "P127.4-bgr",
+      "P127.6-bgr",
+      "P127.8-bgr"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -6428,7 +6462,9 @@
       "P123.24",
       "P123.26",
       "P123.27",
-      "P123.56-64p"
+      "P123.56-64p",
+      "P127.2-bgr",
+      "P127.6-bgr"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",
@@ -6594,7 +6630,11 @@
       "P123.32",
       "P123.47-64p",
       "P123.51-64p",
-      "P126.9"
+      "P126.9",
+      "P127.1",
+      "P127.5-bgr",
+      "P127.6-bgr",
+      "P127.8-bgr"
     ],
     "plugins/audit/scripts/status/_claude_home.py": [
       "P77.2",
@@ -6612,13 +6652,17 @@
       "P94.2",
       "P94.5-579",
       "P94.8-579",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P127.9-bgr",
+      "P127.10-bgr"
     ],
     "plugins/audit/tests/test__proc_group.py": [
       "P77.3-6u9",
       "P94.2",
       "P94.5-579",
-      "P123.24"
+      "P123.24",
+      "P127.9-bgr",
+      "P127.10-bgr"
     ],
     "plugins/audit/scripts/governance/_verdict_binding.py": [
       "P74.3-qq5",
@@ -7747,7 +7791,8 @@
       "P123.91-64p",
       "P123.94-64p",
       "P126.9",
-      "P126.12-13q"
+      "P126.12-13q",
+      "P127.1"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6",
@@ -8051,6 +8096,15 @@
       "P123.88-64p",
       "P123.90-64p",
       "P126.1"
+    ],
+    ".github/sweep-costs.json": [
+      "P127.2-bgr",
+      "P127.4-bgr",
+      "P127.6-bgr",
+      "P127.8-bgr"
+    ],
+    "docs/audit/phases/P127.json": [
+      "P127.8-bgr"
     ]
   },
   "bugs": [
