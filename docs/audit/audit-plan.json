@@ -3905,7 +3905,8 @@
       "P125.22",
       "P125.24",
       "P125.28",
-      "P125.31-0h5"
+      "P125.31-0h5",
+      "P125.19"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -4454,7 +4455,8 @@
       "P126.8",
       "P125.5",
       "P125.14",
-      "P125.30-0h5"
+      "P125.30-0h5",
+      "P125.19"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -5542,7 +5544,8 @@
       "P126.8",
       "P125.5",
       "P125.14",
-      "P125.30-0h5"
+      "P125.30-0h5",
+      "P125.19"
     ],
     "plugins/audit/tests/test_audit_status.py": [
       "P25.2",
