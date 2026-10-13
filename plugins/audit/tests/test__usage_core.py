@@ -334,6 +334,46 @@ def _cases(check):
           and abs(M.price({"in": 1_000_000}, "claude-dated-9", _dr_table,
                           "2026-06-01") - 2.0) < 1e-9)
 
+    # --- ds: `rate_for_stamp` is `rates_for` plus which dated row answered --
+    check("ds1 a dated entry names the row's own effectiveFrom, not just "
+          "its rates",
+          M.rate_for_stamp("claude-dated-9", _dr_table, "2026-03-01")
+          == (_dr_old, "2026-01-01")
+          and M.rate_for_stamp("claude-dated-9", _dr_table, "2026-12-31")
+          == (_dr_new, "2026-06-01"))
+    check("ds2 a flat/legacy row carries no effectiveFrom - it is in effect "
+          "always, so no single date names it",
+          M.rate_for_stamp("claude-flat-9", _dr_table, "2020-01-01")
+          == (_dr_old, None))
+    check("ds3 an unknown model stamps (None, None), the same as rates_for",
+          M.rate_for_stamp("some-future-model", _dr_table) == (None, None))
+
+    # --- lp: Haiku 5.5's published long-prompt tier ------------------------
+    check("lp1 a short prompt keeps the base model name",
+          M.tiered_model_key("claude-haiku-5-5", 50_000) == "claude-haiku-5-5")
+    check("lp2 a prompt crossing the threshold is tiered under a DISTINCT "
+          "key, so an hour bucket never averages the two rates together",
+          M.tiered_model_key("claude-haiku-5-5", 150_000)
+          == "claude-haiku-5-5" + M.LONG_PROMPT_SUFFIX)
+    check("lp3 the threshold itself is still the base tier (over, not at "
+          "or over)",
+          M.tiered_model_key("claude-haiku-5-5", M.LONG_PROMPT_THRESHOLD_TOKENS)
+          == "claude-haiku-5-5")
+    check("lp4 a model nothing tiers is never suffixed, however large its "
+          "prompt",
+          M.tiered_model_key("claude-opus-5", 500_000) == "claude-opus-5")
+    _lp_resolved = M.resolve_pricing(None, None)["table"]
+    _lp_tiered_key = "claude-haiku-5-5" + M.LONG_PROMPT_SUFFIX
+    check("lp5 `resolve_pricing` lays the published long-prompt row into the "
+          "table it hands back, so `rates_for` resolves the tiered key "
+          "through its ordinary exact-match lookup",
+          M.rates_for(_lp_tiered_key, _lp_resolved)
+          == M.LONG_PROMPT_RATES["claude-haiku-5-5"])
+    check("lp6 ...while DEFAULT_PRICING itself stays untouched - the tiered "
+          "row is laid in by the resolver, never merged into the table "
+          "pinned byte-for-byte against hooks/_config.py (pp8)",
+          _lp_tiered_key not in M.DEFAULT_PRICING)
+
     # --- dp: DEFAULT_PRICING is DERIVED from hooks/_config.py through
     # `_loader`, never a second literal - pp7/pp8 above hold the two tables'
     # CONTENTS equal, which a pair of literals kept in sync by hand would also
@@ -750,6 +790,66 @@ def _read_price_cases(check):
           M.rates_for("claude-sonnet-5", table) == named
           and ans.get("basis") == "manifest")
 
+    # --- rb: an UNSTAMPED row is priced by the table row in effect on ITS
+    # OWN hour bucket - never by "now" - so two rows of one dated model, one
+    # written in July and one in October, price at whichever rate was in
+    # effect on each row's own date.
+    _rb_old = {"in": 1.0, "out": 5.0, "cacheW5m": 1.25, "cacheW1h": 2.0,
+               "cacheR": 0.1}
+    _rb_new = {"in": 2.0, "out": 10.0, "cacheW5m": 2.5, "cacheW1h": 4.0,
+               "cacheR": 0.2}
+    _rb_table = {"claude-dated-9": [
+        {"effectiveFrom": "2026-01-01", "rates": _rb_old},
+        {"effectiveFrom": "2026-09-15", "rates": _rb_new},
+    ]}
+
+    def _rb_row(ts):
+        tokens = dict((k, 0) for k in M.TOKEN_KEYS)
+        tokens["in"] = 1_000_000
+        row = {"ts": ts, "taskId": "TD", "phaseId": "P1",
+               "model": "claude-dated-9", "msgs": 1, "costUSD": 0.0}
+        row.update(tokens)
+        return row
+
+    _rb_july, _rb_october = _rb_row("2026-07-15T10"), _rb_row("2026-10-01T10")
+    _rb_priced = M.priced_at_read([_rb_july, _rb_october], _rb_table)["rows"]
+    check("rb1 the unstamped July row (before the rate changed) prices at "
+          "the EARLIER row ($1/MTok input), not at 'now': %r"
+          % (_rb_priced[0]["costUSD"],),
+          abs(_rb_priced[0]["costUSD"] - 1.0) < 1e-9)
+    check("rb2 ...while the unstamped October row of the SAME model prices "
+          "at the LATER row ($2/MTok) that took effect in between - one "
+          "model, two rows, two different rates: %r"
+          % (_rb_priced[1]["costUSD"],),
+          abs(_rb_priced[1]["costUSD"] - 2.0) < 1e-9)
+
+    # --- rs: a STAMPED row is priced from its OWN stamp, never re-resolved -
+    # the mechanism that keeps a rate change from rewriting history.
+    _rs_written_at = {"in": 3.0, "out": 15.0, "cacheW5m": 3.75, "cacheW1h": 6.0,
+                      "cacheR": 0.3}
+    _rs_row = dict(_rb_row("2026-09-01T10"), rate=_rs_written_at,
+                   rateEffectiveFrom=None, rateAsOf="2026-08-01",
+                   rateSource="https://example.invalid/pricing")
+    _rs_changed_table = {"claude-dated-9": {"in": 999.0, "out": 999.0,
+                                            "cacheW5m": 999.0, "cacheW1h": 999.0,
+                                            "cacheR": 999.0}}
+    _rs_priced = M.priced_at_read([_rs_row], _rs_changed_table)["rows"]
+    check("rs1 re-pricing a STAMPED row after the table changes completely "
+          "returns the figure its OWN stamp names (3.0/MTok input), never "
+          "the new table's (999.0): %r" % (_rs_priced[0]["costUSD"],),
+          abs(_rs_priced[0]["costUSD"] - 3.0) < 1e-9)
+    # The allow twin: a stamp of None (the row was unpriced when written)
+    # must not fall back to the table either - it stays unpriced.
+    _rs_unpriced_row = dict(_rb_row("2026-09-01T10"), rate=None,
+                            rateEffectiveFrom=None, rateAsOf=None,
+                            rateSource=None)
+    _rs_unpriced = M.priced_at_read([_rs_unpriced_row], _rb_table)["rows"]
+    check("rs2 a row stamped with NO rate (unpriced when written) stays "
+          "unpriced at read time too, rather than being guessed from "
+          "whatever table it is handed",
+          _rs_unpriced[0].get("costUSD") is None
+          and _rs_unpriced[0].get("unpriced") is True)
+
 
 # --- rp: one price table per project, whichever surface asks -------------------
 def _rp_ask(fn):
@@ -796,7 +896,12 @@ def _resolver_cases(check):
                               "cacheW1h": 14.0, "cacheR": 0.7},
                  "claude-sonnet-5": {"in": 1.5, "out": 7.5, "cacheW5m": 1.875,
                                      "cacheW1h": 3.0, "cacheR": 0.15}}
-    shipped = dict((k, dict(v)) for k, v in M.DEFAULT_PRICING.items())
+    # `_with_long_prompt_tiers` - every resolver answer carries the published
+    # long-prompt row laid in, so the expected table here must too (lp5/lp6
+    # hold that mechanism to account on its own; this is only the fixture
+    # catching up to it).
+    shipped = M._with_long_prompt_tiers(
+        dict((k, dict(v)) for k, v in M.DEFAULT_PRICING.items()))
     overlay = dict(shipped)
     overlay["claude-sonnet-5"] = dict(cfg_sonnet)
     man_overlay = dict(shipped)
@@ -862,10 +967,15 @@ def _resolver_cases(check):
     hooks_cfg = _loader.load_hooks_config(modname="rp_hooks_config", cache=False)
     raw = {"usage": {"pricing": {"claude-sonnet-5": {"in": 9.0}}}}
     got = _rp_ask(lambda: M.resolve_pricing({}, raw))
+    # hooks/_config.usage_cfg has no notion of the long-prompt overlay (that
+    # split lives in scripts/, which hooks/ may not import) - compared with it
+    # laid in on both sides, the same way `resolve_pricing` lays it into
+    # every table it hands back.
     check("rp-overlay a partial config row replaces the shipped row whole, "
           "exactly as usage_cfg merges it, and leaves the other rows shipped",
           isinstance(got, dict)
-          and got.get("table") == hooks_cfg.usage_cfg(raw).get("pricing")
+          and got.get("table") == M._with_long_prompt_tiers(
+              hooks_cfg.usage_cfg(raw).get("pricing"))
           and got.get("table", {}).get("claude-haiku-4-5")
           == M.DEFAULT_PRICING["claude-haiku-4-5"])
     # The second direction: a declared-but-empty table is no declaration.
@@ -878,7 +988,7 @@ def _resolver_cases(check):
     check("rp-mutate the shipped answer is a copy - writing to it does not "
           "reprice the next caller",
           isinstance(got_s, dict) and isinstance(got_s.get("table"), dict)
-          and got_s["table"] == M.DEFAULT_PRICING
+          and got_s["table"] == M._with_long_prompt_tiers(M.DEFAULT_PRICING)
           and got_s["table"] is not M.DEFAULT_PRICING
           and got_s["table"]["claude-sonnet-5"]
           is not M.DEFAULT_PRICING["claude-sonnet-5"])

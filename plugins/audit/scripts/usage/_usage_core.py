@@ -119,46 +119,13 @@ PRICING_SOURCE_URL = _hooks_config.PRICING_SOURCE_URL
 TOKEN_KEYS = ("in", "out", "cacheW5m", "cacheW1h", "cacheR")
 
 
-def _dated_row(entry, at):
-    """One flat/dated `entry` resolved to the rate dict in effect on `at`
-    (`YYYY-MM-DD`, default today). A flat dict means 'in effect always' (the
-    legacy shape, still accepted - COMPATIBILITY.md). A list of
-    `{"effectiveFrom", "rates"}` rows picks the LATEST row whose `effectiveFrom`
-    is on or before `at`, falling back to the earliest row when `at` precedes
-    every one (an `at` set before the first recorded rate still prices
-    SOMETHING, which is less wrong than pricing nothing). None when the entry
-    is neither shape, or a list with no usable row."""
-    if isinstance(entry, dict):
-        return entry
-    if not isinstance(entry, list):
-        return None
-    rows = sorted(
-        (r for r in entry
-         if isinstance(r, dict) and isinstance(r.get("rates"), dict)
-         and isinstance(r.get("effectiveFrom"), str) and r["effectiveFrom"]),
-        key=lambda r: r["effectiveFrom"])
-    if not rows:
-        return None
-    at = at or time.strftime("%Y-%m-%d", time.gmtime())
-    chosen = rows[0]["rates"]
-    for row in rows:
-        if row["effectiveFrom"] <= at:
-            chosen = row["rates"]
-        else:
-            break
-    return chosen
-
-
-def rates_for(model, pricing=None, at=None):
-    """Resolve the price row for `model`, in effect on `at` (`YYYY-MM-DD`,
-    default today): exact match, then LONGEST matching prefix (so a dated id
-    like `claude-haiku-4-5-20251001` resolves to `claude-haiku-4-5`), then the
-    TABLE's own `_default` when it declares one. None when nothing matches -
-    an unknown model is UNPRICED, never priced at a guess. Never raises.
-
-    An entry (exact, prefix or `_default`) may be a flat rate row or a list of
-    dated rows; see `_dated_row`."""
-    table = pricing if isinstance(pricing, dict) and pricing else DEFAULT_PRICING
+def _resolve_entry(model, table):
+    """The pricing table ENTRY for `model`: exact match, then LONGEST matching
+    prefix (so a dated id like `claude-haiku-4-5-20251001` resolves to
+    `claude-haiku-4-5`), then the TABLE's own `_default` when it declares one.
+    None when nothing matches. Shared by `rates_for` (which then picks a date
+    out of the entry via `_dated_row`) and `rate_for_stamp` (which also needs
+    to know WHICH dated row answered, something `_dated_row` throws away)."""
     entry = None
     if isinstance(model, str) and model:
         entry = table.get(model)
@@ -172,24 +139,149 @@ def rates_for(model, pricing=None, at=None):
             entry = best
     if entry is None:
         entry = table.get("_default")
+    return entry
+
+
+def _dated_row_with_from(entry, at):
+    """One flat/dated `entry` resolved to `(rates dict or None, effectiveFrom
+    or None)` on `at` (`YYYY-MM-DD`, default today). A flat dict means 'in
+    effect always' (the legacy shape, still accepted - COMPATIBILITY.md) and
+    carries no `effectiveFrom` of its own, so the second value is None. A list
+    of `{"effectiveFrom", "rates"}` rows picks the LATEST row whose
+    `effectiveFrom` is on or before `at`, falling back to the earliest row
+    when `at` precedes every one (an `at` set before the first recorded rate
+    still prices SOMETHING, which is less wrong than pricing nothing). `(None,
+    None)` when the entry is neither shape, or a list with no usable row."""
+    if isinstance(entry, dict):
+        return entry, None
+    if not isinstance(entry, list):
+        return None, None
+    rows = sorted(
+        (r for r in entry
+         if isinstance(r, dict) and isinstance(r.get("rates"), dict)
+         and isinstance(r.get("effectiveFrom"), str) and r["effectiveFrom"]),
+        key=lambda r: r["effectiveFrom"])
+    if not rows:
+        return None, None
+    at = at or time.strftime("%Y-%m-%d", time.gmtime())
+    chosen = rows[0]
+    for row in rows:
+        if row["effectiveFrom"] <= at:
+            chosen = row
+        else:
+            break
+    return chosen["rates"], chosen["effectiveFrom"]
+
+
+def _dated_row(entry, at):
+    """`_dated_row_with_from`'s rate dict alone - every caller that has no use
+    for which dated row answered, which is every caller except
+    `rate_for_stamp`."""
+    return _dated_row_with_from(entry, at)[0]
+
+
+def rates_for(model, pricing=None, at=None):
+    """Resolve the price row for `model`, in effect on `at` (`YYYY-MM-DD`,
+    default today): exact match, then LONGEST matching prefix, then the
+    TABLE's own `_default` when it declares one. None when nothing matches -
+    an unknown model is UNPRICED, never priced at a guess. Never raises.
+
+    An entry (exact, prefix or `_default`) may be a flat rate row or a list of
+    dated rows; see `_dated_row`."""
+    table = pricing if isinstance(pricing, dict) and pricing else DEFAULT_PRICING
+    entry = _resolve_entry(model, table)
     if entry is None:
         return None
     return _dated_row(entry, at)
 
 
-def price(counts, model, pricing=None, at=None):
-    """USD for one bag of token counts, or None when `model` carries no row at
-    all - never a fallback figure. `counts` uses the TOKEN_KEYS names."""
-    r = rates_for(model, pricing, at)
-    if r is None:
+def rate_for_stamp(model, pricing=None, at=None):
+    """`rates_for`'s answer, plus which DATED row (if any) answered `at` -
+    `(rate dict or None, effectiveFrom or None)`. `rates_for` itself throws
+    the date away because no other reader needs it; a WRITTEN ledger row's
+    stamp needs to name exactly what it was priced at, so this is the one
+    place that keeps it."""
+    table = pricing if isinstance(pricing, dict) and pricing else DEFAULT_PRICING
+    entry = _resolve_entry(model, table)
+    if entry is None:
+        return None, None
+    return _dated_row_with_from(entry, at)
+
+
+def _price_at_rate(counts, rate):
+    """USD for one bag of token counts AT a resolved rate dict directly - no
+    model lookup, no table. `price()` is this plus `rates_for`'s lookup; a
+    STAMPED ledger row already carries its own rate dict and must be priced
+    from it, at the exact rate it was written with, never re-resolved against
+    whatever table a later reader hands in."""
+    if rate is None:
         return None
     total = 0.0
     for k in TOKEN_KEYS:
         try:
-            total += float(counts.get(k) or 0) * float(r.get(k) or 0)
+            total += float(counts.get(k) or 0) * float(rate.get(k) or 0)
         except (TypeError, ValueError, AttributeError):
             continue
     return total / 1_000_000.0
+
+
+def price(counts, model, pricing=None, at=None):
+    """USD for one bag of token counts, or None when `model` carries no row at
+    all - never a fallback figure. `counts` uses the TOKEN_KEYS names."""
+    return _price_at_rate(counts, rates_for(model, pricing, at))
+
+
+# --- long-prompt tiers ------------------------------------------------------
+# Haiku 5.5's published rate depends on the size of the PROMPT one message
+# carried, not just its model id - a request over LONG_PROMPT_THRESHOLD_TOKENS
+# (in + cacheW5m + cacheW1h + cacheR, the same sum `usage_ledger._context_of`
+# reads) is billed at a materially higher rate, cache read five times over.
+# Kept OUT of DEFAULT_PRICING/hooks/_config.py's table on purpose: that table
+# is pinned byte-for-byte against hooks/_config.py (`pp8` below), and the
+# shipped page's long-prompt row has no sibling there to drift against - a
+# model whose family is not listed here is never tiered, long prompt or not.
+LONG_PROMPT_SUFFIX = ":long-prompt"
+LONG_PROMPT_THRESHOLD_TOKENS = 100_000
+# Transcribed from the published page (tests/fixtures/pricing-page-2026-10-10.md,
+# "Prompts over 100,000 tokens"), keyed by the model family it tiers.
+LONG_PROMPT_RATES = {
+    "claude-haiku-5-5": {"in": 0.50, "out": 2.50, "cacheW5m": 0.625,
+                         "cacheW1h": 1.0, "cacheR": 0.05},
+}
+
+
+def tiered_model_key(model, context_tokens):
+    """The name a message's tokens are grouped and priced under: `model`
+    unchanged, unless this message's own prompt (`context_tokens`) crossed
+    `LONG_PROMPT_THRESHOLD_TOKENS` AND `model` resolves (exact or longest
+    prefix) to a family `LONG_PROMPT_RATES` tiers. Returning a DISTINCT string
+    is what keeps one hour bucket from averaging a cheap short-prompt message
+    into the same row as an expensive long-prompt one - `rates_for` then
+    resolves the suffixed name through its ordinary exact-match lookup once
+    `resolve_pricing` has laid the tiered row into the table (see
+    `_with_long_prompt_tiers`); nothing in `rates_for` itself changed."""
+    if not isinstance(model, str) or not model:
+        return model
+    if context_tokens is None or context_tokens <= LONG_PROMPT_THRESHOLD_TOKENS:
+        return model
+    best, best_len = None, -1
+    for key in LONG_PROMPT_RATES:
+        if model.startswith(key) and len(key) > best_len:
+            best, best_len = key, len(key)
+    return (best + LONG_PROMPT_SUFFIX) if best else model
+
+
+def _with_long_prompt_tiers(table):
+    """`table`, plus a `<model>LONG_PROMPT_SUFFIX` row for every model
+    `LONG_PROMPT_RATES` names - laid in UNDER whatever `table` already
+    carries, so a project that declares its own override for that exact key
+    still wins. A model `LONG_PROMPT_RATES` does not name gets no such row."""
+    out = dict(table)
+    for model, rates in LONG_PROMPT_RATES.items():
+        key = model + LONG_PROMPT_SUFFIX
+        if key not in out:
+            out[key] = dict(rates)
+    return out
 
 
 def pricing_divergences(mine, theirs, mine_name="mine", theirs_name="theirs"):
@@ -338,7 +430,7 @@ def resolve_pricing(manifest, config):
     meta = (manifest or {}).get("meta") if isinstance(manifest, dict) else None
     meta_usage = meta.get("usage") if isinstance(meta, dict) else None
     declared = _declared_table(meta_usage)
-    table = _copy_table(DEFAULT_PRICING)
+    table = _with_long_prompt_tiers(_copy_table(DEFAULT_PRICING))
     if declared is not None:
         table.update(_copy_table(declared))
         return {"table": table, "basis": "manifest",
@@ -423,6 +515,7 @@ def _blank():
     slot = {k: 0 for k in TOKEN_KEYS}
     slot["msgs"] = 0
     slot["costUSD"] = 0.0
+    slot["unpricedTokens"] = 0
     for f in _SET_FIELDS:
         slot["_" + f] = set()
     return slot
@@ -442,6 +535,12 @@ def _add(slot, row):
         slot["costUSD"] += float(row.get("costUSD") or 0.0)
     except (TypeError, ValueError):
         pass
+    # `unpriced` is `priced_at_read`'s own marker: a row whose model carries no
+    # rate at all, so its tokens contributed nothing to `costUSD` above. Summed
+    # here rather than re-derived by a renderer, so every caller of `totals`/
+    # `aggregate` can say how many tokens a dollar figure silently leaves out.
+    if row.get("unpriced"):
+        slot["unpricedTokens"] += _tokens(row)
     for field, key in (("sessions", "sessionId"), ("authors", "author"),
                        ("models", "model"), ("tasks", "taskId"),
                        ("phases", "phaseId")):
@@ -454,6 +553,7 @@ def _finish(slot):
     out = {k: slot[k] for k in TOKEN_KEYS}
     out["msgs"] = slot["msgs"]
     out["costUSD"] = round(slot["costUSD"], 6)
+    out["unpricedTokens"] = slot["unpricedTokens"]
     out["tokens"] = sum(slot[k] for k in TOKEN_KEYS)
     for f in _SET_FIELDS:
         out[f] = len(slot["_" + f])
@@ -487,40 +587,61 @@ def _priceable(row):
 
 
 def priced_at_read(rows, table):
-    """Every row's `costUSD` as `table` prices its token counts now.
+    """Every row's `costUSD`, priced at the rate in effect ON ITS OWN DATE.
 
     -> {"rows": copies of `rows`, each priceable row's `costUSD` replaced,
         "pricedWhenWritten": how many rows kept their stored figure}
 
+    A row carrying a `rate` STAMP (written by `usage_ledger.scan_transcripts`
+    once it priced the row) is priced from that stamp directly
+    (`_price_at_rate`) - never re-resolved against `table`, which is what
+    keeps a rate change from rewriting history: re-pricing a stamped row
+    after the table changes returns the SAME figure it was written with.
+
+    An UNSTAMPED row (written before the stamp existed, or carrying none) is
+    priced against `table` at the rate in effect on the row's OWN hour bucket
+    (`bucket_date(row["ts"])`), not at the moment this function runs - a
+    project whose dated rate changed between when an old row was written and
+    today must not have that old row silently repriced at the CURRENT rate
+    rather than the one that was actually in effect when it was recorded.
+
     The surfaces print a cost beside a phrase naming the resolved table, while
     a row's stored `costUSD` was priced when it was written, at a rate the
-    ledger never recorded. So each surface sums these copies rather than the
-    rows it read, and every roll-up below inherits the resolved table. The
-    rows handed in are not touched: the ledger stays as written. Each figure
-    is rounded the way the writer rounds one, so a ledger written at the
-    resolved table sums to exactly what it stored.
+    ledger never recorded (or, for a stamped row, at exactly the rate its own
+    stamp names). So each surface sums these copies rather than the rows it
+    read, and every roll-up below inherits the resolved table. The rows
+    handed in are not touched: the ledger stays as written. Each figure is
+    rounded the way the writer rounds one, so a ledger written at the resolved
+    table sums to exactly what it stored.
 
-    A row that cannot be priced again (`_priceable`) keeps its stored figure,
-    and the count of those is returned for the rate phrase to state - never
-    left as a silent mix of two tables.
+    A row that cannot be priced again (`_priceable`, and unstamped) keeps its
+    stored figure, and the count of those is returned for the rate phrase to
+    state - never left as a silent mix of two tables.
 
-    A row whose MODEL carries no row at all in `table` is a third case, not
-    either of the other two: `price()` answers None rather than a fallback
-    figure, so `costUSD` is set to None and `unpriced` is True - a renderer
-    sums these with the same `or 0.0` guard `_cost()` already applies, and
-    prints "unpriced" rather than a fabricated dollar amount."""
+    A row whose MODEL carries no row at all in the table it is priced against
+    is a third case, not either of the other two: `price()`/`_price_at_rate`
+    answer None rather than a fallback figure, so `costUSD` is set to None and
+    `unpriced` is True - a renderer sums these with the same `or 0.0` guard
+    `_cost()` already applies, and prints "unpriced" rather than a fabricated
+    dollar amount."""
     out, kept = [], 0
     for row in rows:
         copy = dict(row)
-        if _priceable(row):
-            usd = price(row, row.get("model"), table)
-            if usd is None:
-                copy["costUSD"] = None
-                copy["unpriced"] = True
-            else:
-                copy["costUSD"] = round(usd, 6)
+        stamped_rate = row.get("rate")
+        if "rate" in row:
+            usd = _price_at_rate(row, stamped_rate) \
+                if isinstance(stamped_rate, dict) else None
+        elif _priceable(row):
+            usd = price(row, row.get("model"), table, at=bucket_date(row.get("ts")))
         else:
             kept += 1
+            out.append(copy)
+            continue
+        if usd is None:
+            copy["costUSD"] = None
+            copy["unpriced"] = True
+        else:
+            copy["costUSD"] = round(usd, 6)
         out.append(copy)
     return {"rows": out, "pricedWhenWritten": kept}
 

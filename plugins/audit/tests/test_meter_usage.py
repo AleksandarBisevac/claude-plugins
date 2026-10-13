@@ -138,7 +138,9 @@ def _cases(check):
               all(set(r).issubset({
                   "ts", "author", "sessionId", "agentId", "agentType", "phaseId",
                   "taskId", "attr", "model", "branch", "repo", "msgs", "costUSD",
-                  "in", "out", "cacheW5m", "cacheW1h", "cacheR", "maxContext"})
+                  "in", "out", "cacheW5m", "cacheW1h", "cacheR", "maxContext",
+                  "rate", "rateEffectiveFrom", "rateAsOf", "rateSource",
+                  "unpriced"})
                   for r in rows))
 
         # (b) re-running the same event is a no-op — the cursor holds the offset

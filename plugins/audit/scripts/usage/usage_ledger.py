@@ -146,11 +146,13 @@ import _manifest_io  # noqa: E402  (one home for reading a manifest's shape)
 # still cover every public name those modules define, so a name added down there and
 # forgotten here fails by name instead of at a call site.
 from _usage_core import (  # noqa: E402,F401  (re-exported, see above)
-    DEFAULT_PRICING, GROUP_KEYS, PRICING_AS_OF, PRICING_BASES,
+    DEFAULT_PRICING, GROUP_KEYS, LONG_PROMPT_RATES, LONG_PROMPT_SUFFIX,
+    LONG_PROMPT_THRESHOLD_TOKENS, PRICING_AS_OF, PRICING_BASES,
     PRICING_SOURCE_URL, TOKEN_KEYS, UNTAGGED_AREA, aggregate, aggregate_area,
     bucket_date, bucket_hour, bucket_month, heatmap, hour_bucket, parse_ts, price,
     priced_at_read, pricing_divergences, pricing_provenance_divergences,
-    rates_for, resolve_pricing, rows_for_area, task_index, totals)
+    rate_for_stamp, rates_for, resolve_pricing, rows_for_area, task_index,
+    tiered_model_key, totals)
 from _usage_coverage import (  # noqa: E402,F401  (re-exported, see above)
     MONTHLY_PLAN_KEYS, POOR_COVERAGE_PCT, coverage, monthly_activity)
 from _usage_economics import (  # noqa: E402,F401  (re-exported, see above)
@@ -609,8 +611,15 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
             continue                     # a repeat that adds nothing writes no row
         phase_id, task_id, attr = attributor.attribute(agent_meta, parse_ts(ts),
                                                        handoff=handoff)
+        # A model the published page tiers by prompt size (today: Haiku 5.5)
+        # is grouped and priced under a DISTINCT key once this message's own
+        # prompt crosses the long-prompt threshold - see `tiered_model_key`.
+        # Read off THIS message's counts, never the row's running sum, so a
+        # tier decided by one big turn never silently reclassifies a whole
+        # hour of small ones.
+        priced_model = tiered_model_key(model, _context_of(counts))
         key = (bucket, agent_meta.get("_agentId"), agent_meta.get("agentType"),
-               phase_id, task_id, attr, model, entry.get("gitBranch"))
+               phase_id, task_id, attr, priced_model, entry.get("gitBranch"))
         slot = groups.get(key)
         if slot is None:
             slot = groups[key] = {k: 0 for k in TOKEN_KEYS}
@@ -643,6 +652,11 @@ def scan_transcripts(transcript_path, session_id, cursor, manifest, opts):
     attributor = Attributor(manifest, session_id,
                             session_aliases=opts.get("sessionAliases"))
     pricing = opts.get("pricing")
+    # The table's OWN date and source - never a rate itself, so these travel
+    # with a row even when its model carries none (`rate` stamps None, these
+    # two still stamp what the table it was checked against claimed to be).
+    pricing_as_of = opts.get("pricingAsOf")
+    pricing_source = opts.get("pricingSource")
     author = cursor.get("author")
     repo = opts.get("repo")
 
@@ -674,11 +688,23 @@ def scan_transcripts(transcript_path, session_id, cursor, manifest, opts):
             # on its own, and why an OLD row simply has no such key rather than
             # a zero standing in for "not measured".
             row["maxContext"] = counts["maxContext"]
-            # Price at WRITE time and store the result. The ledger is never
-            # rewritten for a rate change: the surfaces price the token counts
-            # again at read time (`priced_at_read`), and this stored figure is
-            # what a row they cannot price again keeps.
-            row["costUSD"] = round(price(counts, model, pricing), 6)
+            # Priced at the rate in effect on the row's OWN date, and STAMPED
+            # with that rate, its effectiveFrom (None for a flat/legacy row),
+            # and the table's own source/asOf - so a later price change can
+            # never rewrite this figure: `priced_at_read` prices a stamped
+            # row from its own stamp, never from whatever table it is handed.
+            at_date = bucket_date(bucket)
+            rate, effective_from = rate_for_stamp(model, pricing, at_date)
+            row["rate"] = rate
+            row["rateEffectiveFrom"] = effective_from
+            row["rateAsOf"] = pricing_as_of
+            row["rateSource"] = pricing_source
+            usd = price(counts, model, pricing, at=at_date)
+            if usd is None:
+                row["costUSD"] = None
+                row["unpriced"] = True
+            else:
+                row["costUSD"] = round(usd, 6)
             rows.append(row)
 
     cursor["files"] = files

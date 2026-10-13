@@ -109,6 +109,19 @@ def fmt_cost(x, show=True):
     return _fmt.fmt_cost(x, show=show)
 
 
+def cost_cell(totals_row, show=True):
+    """One grouped row's cost cell: `fmt_cost` unless EVERY token in the
+    group is unpriced, in which case the word itself - a dollar figure built
+    only from the priced remainder of a fully-unpriced group would print a
+    confident `$0.00` for spend that was never zero, just never priced."""
+    if not show:
+        return ""
+    if totals_row.get("tokens") and totals_row.get("unpricedTokens") \
+            == totals_row.get("tokens"):
+        return "unpriced"
+    return fmt_cost(totals_row.get("costUSD"))
+
+
 def fmt_int(n):
     return _fmt.fmt_int(n)
 
@@ -363,6 +376,12 @@ def render(rows, args, manifest, window, show_cost, pt=None, pricing=None):
             else "  Total   %s tokens") % fmt_tokens(tot["tokens"])
     if show_cost:
         head += sep + "~%s equiv" % fmt_cost(tot["costUSD"])
+        # Said beside the dollar figure, never silently folded into it: an
+        # unpriced model's tokens are excluded from `costUSD` entirely (never
+        # priced at a guess), so the total above understates spend by exactly
+        # this many tokens unless a reader is told so.
+        if tot.get("unpricedTokens"):
+            head += sep + "%s tokens unpriced" % fmt_tokens(tot["unpricedTokens"])
     head += sep + "%s msgs" % fmt_int(tot["msgs"]) + sep + \
         "%s sessions" % tot["sessions"]
     if tot["authors"] > 1:
@@ -430,7 +449,7 @@ def render(rows, args, manifest, window, show_cost, pt=None, pricing=None):
         for key, v in items:
             row = [label_for(by, key), fmt_tokens(v["tokens"])]
             if show_cost:
-                row.append(fmt_cost(v["costUSD"]))
+                row.append(cost_cell(v))
             row += [fmt_int(v["msgs"]),
                     "%s %4s" % (_fmt.fmt_bar(v["tokens"], grand),
                                 _fmt.fmt_share(v["tokens"], grand))]
@@ -518,7 +537,7 @@ def render_by_area(manifest, rows, tot, show_cost, fmt="ascii", pt=None):
     for key, v in items:
         row = [key, fmt_tokens(v["tokens"])]
         if show_cost:
-            row.append(fmt_cost(v["costUSD"]))
+            row.append(cost_cell(v))
         row += [fmt_int(v["msgs"]), str(v["phases"]),
                 "%s %4s" % (_fmt.fmt_bar(v["tokens"], grand),
                             _fmt.fmt_share(v["tokens"], grand))]
@@ -859,11 +878,14 @@ def release_lock(project, handle):
     return None if code == 0 else lock.release_refusal(code, LOCK_NAME)
 
 
-def backfill(args, project, ledger_dir, manifest, pricing):
+def backfill(args, project, ledger_dir, manifest, pricing, pricing_as_of=None,
+            pricing_source=None):
     """Re-scan every transcript from offset 0 and rebuild the affected months.
 
     Rows carry `sessionId`, so a rebuild drops exactly the sessions it re-reads and
-    keeps everything else — which is what makes running it twice a no-op."""
+    keeps everything else — which is what makes running it twice a no-op.
+    `pricing_as_of`/`pricing_source` are the resolved table's own date and page -
+    stamped onto every row this rebuild writes, alongside the rate itself."""
     transcripts = find_transcripts(project, args.transcript_dir)
     if not transcripts:
         return 2, ("no transcripts found for %s\n"
@@ -884,6 +906,7 @@ def backfill(args, project, ledger_dir, manifest, pricing):
                 path, sid, {"author": ul.resolve_author(project, args.author_mode)},
                 manifest,
                 {"repo": os.path.basename(project) or "repo", "pricing": pricing,
+                 "pricingAsOf": pricing_as_of, "pricingSource": pricing_source,
                  "backfillOnFirstRun": True, "maxScanBytes": float("inf")})
             fresh += rows
             cursors[sid] = cursor
@@ -1024,7 +1047,8 @@ def main(argv):
     pricing = resolved["table"]
 
     if args.backfill:
-        code, message = backfill(args, project, ledger_dir, manifest, pricing)
+        code, message = backfill(args, project, ledger_dir, manifest, pricing,
+                                 resolved.get("asOf"), resolved.get("source"))
         (sys.stdout if code == 0 else sys.stderr).write(message + "\n")
         return code
 

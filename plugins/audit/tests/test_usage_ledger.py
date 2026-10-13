@@ -755,6 +755,90 @@ def _cases(check):
     finally:
         shutil.rmtree(ctx_tmp, ignore_errors=True)
 
+    # --- st: a written row is STAMPED with the rate it was priced at --------
+    # (the rate dict, its effectiveFrom, and the table's own source/asOf) so a
+    # later price change can never rewrite what an old row claims it cost.
+    _st_tmp = tempfile.mkdtemp(prefix="usage-ledger-stamp-")
+    try:
+        st_proj = os.path.join(_st_tmp, "projects")
+        os.makedirs(st_proj)
+        st_main = os.path.join(st_proj, "sess-stamp.jsonl")
+        with open(st_main, "w", encoding="utf-8") as fh:
+            fh.write(entry("msg-stamp", "2026-09-01T10:00:00Z", 100) + "\n")
+        st_table = {"claude-opus-5": {"in": 5.0, "out": 25.0, "cacheW5m": 6.25,
+                                      "cacheW1h": 10.0, "cacheR": 0.5}}
+        st_rows, _ = M.scan_transcripts(
+            st_main, "sess-stamp", {}, {},
+            {"backfillOnFirstRun": True, "pricing": st_table,
+             "pricingAsOf": "2026-10-10",
+             "pricingSource": "https://example.invalid/pricing"})
+        check("st1 a row written today carries the rate it was priced at, "
+              "the rate's own effectiveFrom (None for a flat/legacy row), "
+              "and the table's own source and asOf: %r" % (st_rows[0],),
+              st_rows[0].get("rate") == st_table["claude-opus-5"]
+              and st_rows[0].get("rateEffectiveFrom") is None
+              and st_rows[0].get("rateSource")
+              == "https://example.invalid/pricing"
+              and st_rows[0].get("rateAsOf") == "2026-10-10")
+        st_written_cost = st_rows[0]["costUSD"]
+        st_changed_table = {"claude-opus-5": {"in": 999.0, "out": 999.0,
+                                              "cacheW5m": 999.0, "cacheW1h": 999.0,
+                                              "cacheR": 999.0}}
+        st_repriced = M.priced_at_read(st_rows, st_changed_table)["rows"]
+        check("st2 re-pricing it after the table changes completely returns "
+              "the STAMPED figure, not one recomputed from the new table: "
+              "%r vs written %r" % (st_repriced[0]["costUSD"], st_written_cost),
+              abs(st_repriced[0]["costUSD"] - st_written_cost) < 1e-9
+              and st_repriced[0]["costUSD"] < 1.0)
+    finally:
+        shutil.rmtree(_st_tmp, ignore_errors=True)
+
+    # --- hk: Haiku 5.5's published long-prompt tier, per MESSAGE -------------
+    # A message whose own prompt (in + cacheW5m + cacheW1h + cacheR) crosses
+    # 100,000 tokens is billed at a different, higher rate - and must land in
+    # its OWN row key, never averaged into the same hour bucket as a small
+    # short-prompt message of the same model.
+    _hk_tmp = tempfile.mkdtemp(prefix="usage-ledger-haiku-tier-")
+    try:
+        hk_proj = os.path.join(_hk_tmp, "projects")
+        os.makedirs(hk_proj)
+        hk_main = os.path.join(hk_proj, "sess-haiku.jsonl")
+
+        def haiku_entry(mid, ts, cache_read):
+            return json.dumps({
+                "type": "assistant", "timestamp": ts, "gitBranch": "audit/p125",
+                "message": {"id": mid, "model": "claude-haiku-5-5", "usage": {
+                    "input_tokens": 0, "output_tokens": 0,
+                    "cache_creation_input_tokens": 0,
+                    "cache_read_input_tokens": cache_read}}})
+
+        with open(hk_main, "w", encoding="utf-8") as fh:
+            # Same hour bucket, deliberately: the only thing separating the
+            # two rows must be the tier, not the time.
+            fh.write(haiku_entry("hk-long", "2026-09-01T10:05:00Z", 150_000) + "\n")
+            fh.write(haiku_entry("hk-short", "2026-09-01T10:10:00Z", 50_000) + "\n")
+        hk_rows, _ = M.scan_transcripts(
+            hk_main, "sess-haiku", {}, {},
+            {"backfillOnFirstRun": True,
+             "pricing": M.resolve_pricing(None, None)["table"]})
+        by_model = {r["model"]: r for r in hk_rows}
+        long_key = "claude-haiku-5-5" + M.LONG_PROMPT_SUFFIX
+        check("hk1 the 150,000-token message lands in its own long-prompt row "
+              "key, distinct from the 50,000-token one - two rows, not one "
+              "averaged bucket: %r" % (sorted(by_model),),
+              len(hk_rows) == 2 and long_key in by_model
+              and "claude-haiku-5-5" in by_model)
+        check("hk2 the long-prompt row is priced at $0.05/MTok cache read "
+              "(150,000 * 0.05 / 1e6 = 0.0075): %r"
+              % (by_model[long_key]["costUSD"],),
+              abs(by_model[long_key]["costUSD"] - 0.0075) < 1e-9)
+        check("hk3 ...while the base-tier row (50,000 tokens, under the "
+              "threshold) keeps the $0.01/MTok rate (50,000 * 0.01 / 1e6 "
+              "= 0.0005): %r" % (by_model["claude-haiku-5-5"]["costUSD"],),
+              abs(by_model["claude-haiku-5-5"]["costUSD"] - 0.0005) < 1e-9)
+    finally:
+        shutil.rmtree(_hk_tmp, ignore_errors=True)
+
     # --- ig: the ledger dir is self-ignoring --------------------------------
     # It holds person identities and per-machine cursors; a `*` .gitignore
     # written by every dir-creating writer keeps `git add .claude` from

@@ -363,12 +363,19 @@ def meter(data, ul=None, cfg=None, root=None, notices=None):
 
     # Resolved once: it prices the rows written below and every figure the two
     # messages print.
-    table = _pricing(ul, manifest, root)["table"]
+    resolved_pricing = _pricing(ul, manifest, root)
+    table = resolved_pricing["table"]
     rows, cursor = ul.scan_transcripts(
         transcript, session_id, cursor, manifest,
         {
             "repo": os.path.basename(str(root)) or "repo",
             "pricing": table,
+            # The table's own date/source, stamped onto every row written
+            # below alongside the rate itself (see `scan_transcripts`) - so a
+            # later price change can never rewrite what an OLD row claims it
+            # was priced at.
+            "pricingAsOf": resolved_pricing.get("asOf"),
+            "pricingSource": resolved_pricing.get("source"),
             "backfillOnFirstRun": bool(ucfg.get("backfillOnFirstRun", True)),
             # `if is None`, NOT `or`, and the difference is a setting the user can
             # write and this hook could not read. `_config_rules` accepts a

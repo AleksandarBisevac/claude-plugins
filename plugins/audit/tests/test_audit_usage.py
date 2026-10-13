@@ -283,6 +283,31 @@ def _cases(check):
         check("render: --by renders one focused table",
               "MODEL" in one and "BY PHASE" not in one)
 
+        # --- up: a ledger holding an unpriced model ---------------------------
+        # `claude-future-9` carries no row in ANY table - `price()`/`rates_for`
+        # answer None for it, never a fallback figure, so its row's tokens must
+        # be visible while its dollar figure is not.
+        _up_counts = {"in": 10, "out": 400, "cacheW5m": 0, "cacheW1h": 0,
+                     "cacheR": 100}
+        _up_row = {"ts": "2026-08-03T10", "author": "a@x.io",
+                  "sessionId": "s-up", "agentId": None,
+                  "agentType": "audit-executor", "phaseId": "P1",
+                  "taskId": "P1.1", "attr": "task", "model": "claude-future-9",
+                  "branch": "audit/x", "repo": "demo", "msgs": 1}
+        _up_row.update(_up_counts)
+        _up_rows = M.ul.priced_at_read(loaded + [_up_row], M.ul.DEFAULT_PRICING)["rows"]
+        _up_tokens = sum(_up_counts.values())
+        _up_text = M.render(_up_rows, args_by, manifest, "all time", True)
+        check("up1 the BY MODEL table prints the unpriced model's tokens "
+              "and the word 'unpriced' instead of a dollar figure",
+              "claude-future-9" in _up_text and "unpriced" in _up_text,
+              _up_text)
+        _up_full = M.render(_up_rows, args, manifest, "all time", True)
+        check("up2 the total line says how many tokens the dollar figure "
+              "above it leaves out, by the real count - %r" % (_up_tokens,),
+              ("%s tokens unpriced" % M.fmt_tokens(_up_tokens)) in _up_full,
+              _up_full)
+
         # --- attribution coverage (ac): how much of the plan's done work a ---
         # --- per-task figure actually rests on -------------------------------
         # Four done tasks, three of which carry a priced row (P2.2 is done but
