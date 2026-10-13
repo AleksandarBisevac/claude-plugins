@@ -2967,7 +2967,8 @@
       "P44.1",
       "P118.9",
       "P122.8-z4y",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P125.6"
     ],
     "plugins/audit/scripts/config/validate-config.py": [
       "P15.4",
@@ -4049,7 +4050,8 @@
       "P124.13-k2x",
       "P123.38",
       "P123.65-64p",
-      "P125.2"
+      "P125.2",
+      "P125.6"
     ],
     "plugins/audit/scripts/panel/_panel_state.py": [
       "P12.3",
@@ -4464,7 +4466,8 @@
       "P125.5",
       "P125.14",
       "P125.30-0h5",
-      "P125.19"
+      "P125.19",
+      "P125.6"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -4739,7 +4742,8 @@
       "P123.59-64p",
       "P123.64-64p",
       "P123.72-64p",
-      "P125.2"
+      "P125.2",
+      "P125.6"
     ],
     "plugins/audit/tests/test__deps.py": [
       "P32.5",
@@ -4947,7 +4951,8 @@
       "P20.6",
       "P26.2",
       "P106.2",
-      "P118.9"
+      "P118.9",
+      "P125.6"
     ],
     "plugins/audit/tests/test__id_refs.py": [
       "P61.7",
@@ -5555,7 +5560,8 @@
       "P125.5",
       "P125.14",
       "P125.30-0h5",
-      "P125.19"
+      "P125.19",
+      "P125.6"
     ],
     "plugins/audit/tests/test_audit_status.py": [
       "P25.2",
@@ -7858,7 +7864,8 @@
       "P104.18-tog",
       "P118.6",
       "P124.7",
-      "P124.13-k2x"
+      "P124.13-k2x",
+      "P125.6"
     ],
     "tools/demo-gate.tape": [
       "P112.1-uce",
