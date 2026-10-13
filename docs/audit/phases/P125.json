@@ -97,7 +97,7 @@
     {
       "id": "P125.2",
       "title": "One price table with dated rows, Sonnet 5.5 and Haiku 5.5 priced, unknown models unpriced",
-      "status": "in_progress",
+      "status": "done",
       "description": "F577 + N1 + the table half of sketch 3a. (1) One home: hooks/_config.py DEFAULTS usage.pricing stays the table; _usage_core derives DEFAULT_PRICING, PRICING_AS_OF and PRICING_SOURCE_URL from it through _loader.load_hooks_config() instead of a hand copy, and pricing_divergences()/pricing_provenance_divergences() stay only for declared-vs-shipped reporting (see openChoices for the alternative). (2) Rows: add claude-sonnet-5-5 (in 2, cacheW5m 2.50, cacheW1h 4, cacheR 0.10, out 10) and claude-haiku-5-5 with its long-prompt tier (up to 100,000 prompt tokens: 0.10 / 0.125 / 0.20 / 0.01 / 0.50; over: 0.50 / 0.625 / 1 / 0.05 / 2.50), as quoted from the pricing page in openChoices, with a checked-in excerpt of the page rows the selftest pins against. (3) Dated rows: a model's entry may be a list of rate rows each carrying effectiveFrom; rates_for(model, table, at) returns the row in effect on `at`; the flat legacy row stays accepted and means 'in effect always' (COMPATIBILITY.md: a config key the plugin reads keeps being read - add the new shape to it). (4) Unpriced: the shipped table carries no `_default`; rates_for answers None for an unknown model and price() returns None, never a fallback figure; a `_default` a project declares is still honoured and labelled. Update the config schema, _config_rules vocabulary, the panel's price editor wording that says 'then the _default row', tools/stream-cost.py's _rate (an unpriced request prints unpriced rather than 0), COMPATIBILITY.md, and the README usage section. Red first: rates_for('claude-haiku-5-5') returns today's _default row; rates_for('claude-sonnet-5-5') returns the Sonnet 5 row's 0.2 read.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -159,13 +159,13 @@
       ],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c51a9ef5886c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "placeholder",
+        "descriptive": "placeholder"
       },
       "startedAt": "2026-10-13T14:19:45Z",
-      "completedAt": null,
+      "completedAt": "2026-10-13T14:46:07Z",
       "verifiedBy": [],
       "reviewPerTask": "phase",
       "notes": [
@@ -182,12 +182,23 @@
         "runId": "2026-10-13T14:46:05Z.6f41b2",
         "status": "passed",
         "at": "2026-10-13T14:46:05Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "c51a9ef5886c",
+        "at": "2026-10-13T14:46:07Z"
+      },
+      "redFirst": {
+        "at": "2026-10-13T14:34:50Z",
+        "basis": "`python3 plugins/audit/tests/test__usage_core.py --selftest` in a throwaway tree at HEAD exited 1 with 5 of 32 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code, its declared test files new at HEAD (plugins/audit/tests/fixtures/pricing-page-2026-10-10.md) laid over as empty files), each passing with the working tree's implementation - price: an unknown model is UNPRICED - None, never a fallback figure (house FAIL), price: a non-string model is the same unknown-model case (house FAIL) and 3 more: SELFTEST FAILED: 26/32 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P125.3",
       "title": "A usage row is priced at the rate in effect on its own date and stamped with it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Sketch 3a, the recording half. usage_ledger writes each row with the rate it was priced at, the rate row's effectiveFrom, and the table's source and asOf, so a later price change never rewrites history; _usage_core.priced_at_read prices a stamped row by its stamp and an unstamped (older) row by the table row in effect on the row's hour bucket, and returns the count of each so every surface's rate phrase states the mix. Haiku 5.5's tier is per request: the scan classifies each message by its own prompt size (in + cacheW5m + cacheW1h + cacheR above 100,000) and keeps the long-prompt tokens in their own row key so an hour bucket never mixes the two tiers. Inference-geo pricing is not visible in the transcript; rows are priced at global routing and the basis says so. An unpriced model's row keeps its tokens, carries no costUSD, and every surface (audit-usage, the report, the panel) prints 'unpriced' beside its tokens instead of a dollar figure. The hook (meter-usage) uses the same hooks/_config table, so it needs no new import.",
       "files": [
         "plugins/audit/scripts/usage/usage_ledger.py",
@@ -232,16 +243,22 @@
       "dependsOn": [
         "P125.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-13T14:46:08Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-13T15:40:50Z.ff1963",
+        "status": "failed",
+        "at": "2026-10-13T15:40:50Z"
+      }
     },
     {
       "id": "P125.4",
@@ -304,7 +321,7 @@
     {
       "id": "P125.5",
       "title": "The phase reviewer's brief carries each owed task's diff, computed once",
-      "status": "pending",
+      "status": "in_progress",
       "description": "N5. audit-lookup.compose_phase_brief writes one diff per owed task (git show of its commit scoped to the task's files, docs/audit excluded) into the brief, plus the phase diff's path list and every path the phase changed outside every task's declared files, named as such. agents/audit-reviewer.md says the brief's diffs are the input and are not to be re-derived (replace the 'git show <sha> -- <files> is its diff' instruction). The diff is git's output either way; what changes is that it is computed once by a script. Keep the reviewer prompt within tools/measure-context.py's AGENT_CEILINGS; the brief file itself is read by the reviewer, so its size is measured and printed, not gated. A re-review brief (see review-convergence) lists only the fix tasks' diffs.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -338,16 +355,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-13T14:46:12Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-13T15:49:16Z.c02141",
+        "status": "failed",
+        "at": "2026-10-13T15:49:16Z"
+      }
     },
     {
       "id": "P125.6",
@@ -631,14 +654,16 @@
     {
       "id": "P125.11",
       "title": "tools/release.py cuts a release end to end, stopping on the first red and resuming",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Sketch section 0. Steps, each recorded in a resumable state file and skipped on resume once done: preflight (the open-bug and provisional-phase question guard-release asks, read from its own predicate, plus verify.sh --release's preflight); bump plugin.json; finalize the CHANGELOG section; the followers in verify.sh's #R order (README curl pins, examples/report.sh incl. docs/index.html, the scale demo commands check-rendered-artifacts --how prints, screenshots); tools/verify.sh --release; the release commit; push to a ci/<version> branch and gh workflow run ci.yml --ref it; wait for that run on that exact SHA (a cancelled run is not a failed one - read conclusion); annotated tag; push main and the tag; gh release create with the CHANGELOG section; check-release-published. The first red stops with the step, its excerpt and the resume command. Every remote step is named before it runs and nothing is pushed without an explicit --push the user typed (CLAUDE.md: permission to commit is not permission to push). guard-release learns to treat an invocation of tools/release.py as a publishing command so the #release-with-bugs bypass still governs it. The ci step is callable alone (release.py ci <ref>) so a landed phase can run CI the same way. A selftest drives every step against a fake runner, including resume after a stop at each step.",
       "files": [
         "tools/release.py",
         "tools/verify.sh",
         ".claude/hooks/guard-release.py",
         "CONTRIBUTING.md",
-        "CLAUDE.md"
+        "CLAUDE.md",
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/tests/test__refs.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -666,16 +691,22 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-13T14:46:15Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-13T15:58:43Z.b2b1d6",
+        "status": "failed",
+        "at": "2026-10-13T15:58:43Z"
+      }
     },
     {
       "id": "P125.12",
@@ -1521,6 +1552,240 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.29-0h5",
+      "title": "Submit refuses a return whose outcome is a placeholder or whose testsAdded is empty while tests.add is not",
+      "status": "pending",
+      "description": "F643. drive-phase.py submit checks the return's shape and then files it once per start. Two executors in P125 filed outcome.technical == outcome.descriptive == 'placeholder' with testsAdded [] (returns/P125.1/20261013T125847Z, returns/P125.2/20261013T141945Z), the second despite an explicit instruction, and the record could not be corrected. An instruction does not hold this; the filing must. Before running the helper and before writing anything, refuse: (a) outcome texts that are identical to each other, shorter than a floor stated beside the check with its reason, or a template word (placeholder, TODO, TBD, <...>); (b) testsAdded empty while the task's tests.mode is tdd or regression and tests.add is non-empty. The refusal names the field and says nothing was filed, so the agent resubmits in the same start. The check lives in the one function every return passes through (_filed_returns), not in drive-phase alone, so a reviewer return and a /audit:run filing are held to it too.",
+      "files": [
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__filed_returns.py: an executor return with outcome.technical == outcome.descriptive == 'placeholder' is refused before the red-first helper runs, and nothing is written under evidence/returns/",
+          "plugins/audit/tests/test__filed_returns.py: a tdd or regression return with testsAdded [] while the task's tests.add is non-empty is refused, naming the field",
+          "plugins/audit/tests/test_drive_phase.py: after a refused submit the same start accepts a corrected return (the refusal filed nothing)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.30-0h5",
+      "title": "A retry brief quotes the operator's reason, each failing case, and the previous attempt's filed return",
+      "status": "pending",
+      "description": "F644. P125.1's retry brief (.claude/state/briefs/P125.1/20261013T131601Z.executor.md) dropped the --reason given with '--answer retry', cut the red sweep to its last lines so the failing case (test__deps rc16) was not named, and said 'redFirst: none recorded' and 'outcome.technical: none recorded' over a filed return (returns/P125.1/20261013T125847Z.executor.json) that carried a helper-proved redFirst. The orchestrator restated all three in the dispatch prompt. The retry section reads the answer's reason from where drive-phase records it (record it if it is not recorded), reads each failing file's FAIL lines from the sweep's per-file output, and reads attempt N-1's filed return before saying none recorded.",
+      "files": [
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_lookup.py: a retry brief over an attempt whose answer carried --reason prints that reason verbatim in the retry section",
+          "plugins/audit/tests/test_audit_lookup.py: a retry brief over a red sweep step names each failing file's own FAIL <case> lines, not only the step's tail",
+          "plugins/audit/tests/test_audit_lookup.py: a retry brief over an attempt whose filed return carries a proved redFirst prints it, never 'none recorded'"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.29-0h5"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.31-0h5",
+      "title": "Scope and add refuse a .py entry the moved-file lint would report, naming where it went",
+      "status": "pending",
+      "description": "F645. The orchestrator widened P125.2 with plugins/audit/scripts/usage/_usage_load.py, which had moved to scripts/report/_usage_load.py; scope wrote it to the shard and fileIndex silently, the next sweep had test__refs q1 red, and scope cannot drop an entry from an attempted task, so the plan was hand-edited. add and scope ask every new .py entry the same question q1 asks, through the one moved-file reader in _refs (no second copy of the rule), and refuse a moved one naming its new home.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: scope with a .py path whose file moved elsewhere in the tree is refused, names the path it moved to, and writes nothing",
+          "plugins/audit/tests/test_audit_task.py: add with a .py path that exists nowhere and whose basename exists nowhere is still accepted (a file the task creates)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.32-0h5",
+      "title": "An index-validity breach names the verb whose journal row last wrote the index before the commit",
+      "status": "pending",
+      "description": "F456 residual. The cross-commit invariant reports a commit that staged a manifest index which does not validate, with the path and the commit, and says nothing about which command put the index in that state. The journal already records every verb's write (action, actor.via, target, ts). The breach names the newest journal row targeting the index at or before the commit's committer time, as 'last written by <action> via <via> at <ts>'; with none, it says the write is not in the journal. Read the rows through the existing journal reader, not a second parser.",
+      "files": [
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/tests/test__invariants.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__invariants.py: a commit carrying an invalid manifest index is reported with the action and via of the newest journal row targeting the index before that commit's time",
+          "plugins/audit/tests/test__invariants.py: when no journal row targets the index before the commit, the breach says the writer is unrecorded (an out-of-band write) rather than naming a guess"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.33-0h5",
+      "title": "A filed return is bound to a journal row carrying its digest, and the close reads it through that row",
+      "status": "pending",
+      "description": "F646. drive-phase.py submit files a return once per start, but the only thing holding 'once' is that the file exists: it writes no journal row. The P125.3 executor filed a placeholder return, deleted docs/audit/evidence/returns/P125.3/20261013T144608Z.executor.json, and filed again; nothing recorded either filing. Submit appends a task.return.filed journal row (sha256 of the filed bytes, the task, the start timestamp, role, the red-first verdict) through the existing journal writer; a second filing for a start is refused by that row, not by the file; the close (and any reader that closes on a return) reads the return through the row and refuses one whose digest the row does not carry.",
+      "files": [
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__filed_returns.py: filing, deleting the file and filing again for the same start is refused, naming the journal row of the first filing",
+          "plugins/audit/tests/test__filed_returns.py: a return whose bytes changed after filing is refused at close, naming the recorded and the present digest",
+          "plugins/audit/tests/test_drive_phase.py: a submit appends exactly one task.return.filed row carrying the return's sha256 and the start it answers"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.29-0h5"
+      ],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,

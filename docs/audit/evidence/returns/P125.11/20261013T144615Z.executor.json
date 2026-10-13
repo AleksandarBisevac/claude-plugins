@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "own-tests (tools/release.py --selftest)": "pass",
+    "own-tests (.claude/hooks/guard-release.py --selftest)": "pass",
+    "full sweep (python3 tools/sweep-selftests.py, diagnostic)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-13T15:26:45Z",
+    "basis": "`python3 tools/release.py --selftest` in a throwaway tree at HEAD: inline suite tools/release.py (its test file is its implementation file): it is new at HEAD, so there is no HEAD copy to hold its implementation at; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "pending",
+    "descriptive": "pending"
+  },
+  "testsAdded": [],
+  "claims": "pending",
+  "stamp": "audit-stamp: {\"content\":\"sha256:20328b6b1a35262fa8285b2315322b2973ff27b1d010fcdda7d3daeed1ded9ed\",\"dirtyDigest\":\"sha256:e1076f42826f2c3c7fb98fb6299102e8a7c229d09a2eca3abd8c684097b05fb1\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"34fff00ece66f332\",\"CONTRIBUTING.md\":\"9dfcce1291c0d6bb\",\"tools/release.py\":\"315993aff6598c06\"},\"head\":\"c51a9ef5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".claude/hooks/guard-release.py\",\"CLAUDE.md\",\"CONTRIBUTING.md\",\"tools/release.py\",\"tools/verify.sh\"],\"scopeDigest\":\"sha256:88c590cf8228b36d96092797625c743d4752667d6ddf55c8b6f0b218505d4393\",\"v\":2}"
+}
