@@ -1,0 +1,134 @@
+{
+  "id": "P127",
+  "title": "3.3.0 release: no suite rides the Windows time cap",
+  "status": "in_progress",
+  "description": "P126 landed with CI green once on windows-latest, then the next round timed out both suites at the 300s cap with no change to their subjects: they ride the limit. This holds the 3.3.0 release.",
+  "desiredOutcome": "test_commit_task_work and test_drive_phase finish on windows-latest with clear margin under the sweep's per-file cap in repeated CI runs, through staged blocks sized to the runner, with case ids and verdicts unchanged.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": "de039e5d5d65a9bb1b5e88cfd7655c6f9abbb113",
+  "branch": "audit/p127-3-3-0-release-no-suite-rides-t",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P127.1",
+      "title": "test_commit_task_work and test_drive_phase run as right-sized staged blocks and finish well under the cap on a two-core runner",
+      "status": "in_progress",
+      "description": "CI evidence, two rounds on windows-latest (2 cores): run 38324787932 (ci/p126 @ 0aca587b) both suites passed; run 38333046789 (ci/p126 @ 46462e88, no change to either suite's subject) '--- plugins/audit/tests/test_commit_task_work.py: did not finish within 300s ---' and the same for test_drive_phase.py. So both sit at the sweep's 300s per-file cap on Windows and pass or fail by scheduling noise. Measured on macOS alone (no contention): test_commit_task_work 65s (106 cases, one process), test_drive_phase 103s (237 cases, already STAGES + _harness.staged_main). Windows starts a process several times slower, and both suites are made of git and interpreter starts. Fix by structure, never by raising DEFAULT_TIMEOUT alone: (1) measure each block's wall time (time each `--stage LABEL` run) and record the numbers in the return; (2) give test_commit_task_work a STAGES table and hand its __main__ to staged_main(), as test_drive_phase does, keeping its case ids and order as the replay contract requires; (3) rebalance test_drive_phase so no single stage holds most of its time (split the heaviest block along its existing case functions); (4) make the stage pool size respect the machine: _harness.STAGE_WORKERS is a fixed 6 while a windows-latest runner has 2 cores and the sweep already runs suites on them - use min(STAGE_WORKERS, a share of os.cpu_count()) and say why; (5) reduce per-case process starts where a fixture repo can be built once per block instead of once per case. Target: each suite's slowest stage well under STAGE_TIMEOUT and the whole suite under half the sweep cap on macOS, measured twice with a gap. The orchestrator verifies on windows-latest CI.",
+      "files": [
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/_harness.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-13T06:53:22Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-13T07:57:18Z.f593d2",
+        "status": "passed",
+        "at": "2026-10-13T07:57:18Z"
+      }
+    },
+    {
+      "id": "P127.2-bgr",
+      "title": "CI runs each sweep leg as its own parallel job, sharded, on every core - one plugin's CI finishes in about ten minutes",
+      "status": "pending",
+      "description": "Owner, 2026-10-13: CI for one repo and one plugin must not take enterprise-scale time - change it now. Measured on run 38324787932 (green): windows selftests 34 min = full sweep 16.7 min, then the SAME full sweep again under cp1252 16.4 min; ubuntu selftests 23 min = sweep 7.5 + cp1252 7.7 + spaced 7.2 min, one after another in one job; the sweep prints 'sweep: 331 files, 2 workers' on windows-latest because it keeps all cores but two free, which is right on a workstation and wastes half a CI runner. Restructure without weakening any check: (1) every sweep leg (plain, cp1252, spaced) becomes its own job, running in parallel instead of in sequence; (2) tools/sweep-selftests.py gains `--shard I/N` (a stable, deterministic split of the file list, balanced by recorded or estimated per-file cost so the slow suites do not land together; the union of shards is exactly the full set, pinned by a selftest case) and ci.yml runs each leg as a matrix of shards; (3) the sweep uses every core when it runs in CI (an explicit `--jobs` from ci.yml, or the CI environment), keeping the workstation default; (4) the cheap end-to-end launcher steps stay where they are or move to the shortest job. Keep `!cancelled()` on every independent step and gate-parity green - every leg CI runs must still be named in verify.sh, CONTRIBUTING.md and CLAUDE.md's gate list, so update the descriptions that state how CI runs the sweep (CLAUDE.md says the runner uses 'all cores but two'). Target: CI wall time at or under about 10 minutes, measured on the next CI run and stated in the return as before/after per job.",
+      "files": [
+        ".github/workflows/ci.yml",
+        "tools/sweep-selftests.py",
+        "tools/gate-parity.py",
+        "tools/verify.sh",
+        "CONTRIBUTING.md",
+        "CLAUDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/sweep-selftests.py: --shard I/N over N=1..4 splits the file list into disjoint shards whose union is exactly the full set, deterministically, with the costliest files spread across shards"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ],
+  "request": "Make the two suites that time out on windows-latest finish with margin, by structure.",
+  "openChoices": [],
+  "reviewPerTask": "phase",
+  "claim": {
+    "sessionId": "0a7c2fcc-df20-4990-96d6-d56b52648faf",
+    "branch": "audit/p127-3-3-0-release-no-suite-rides-t",
+    "at": "2026-10-13T06:53:22Z"
+  },
+  "startedAt": "2026-10-13T06:53:22Z"
+}

@@ -685,9 +685,25 @@ def run(body):
 # still runs the named blocks in this process, for a red-first proof in a
 # throwaway tree.
 #
-# How many blocks run at once. The sweep around a suite already runs other
-# suites on the remaining cores, so this stays well under the machine's count.
+# How many blocks run at once, at most. The sweep around a suite already runs
+# other suites on the remaining cores, so `stage_workers()` takes a share of the
+# machine's count and never more than this.
 STAGE_WORKERS = 6
+
+
+def stage_workers(cpus=None):
+    """Blocks to run at once on a machine with `cpus` cores (this machine's when
+    omitted): half the cores, at least two, at most `STAGE_WORKERS`.
+
+    WHY NOT THE FIXED SIX. A two-core runner given six children shares its cores
+    six ways while the sweep runs other suites beside it, so every block's wall
+    time stretches toward `STAGE_TIMEOUT` and the file toward the sweep's cap
+    with no work added. The floor of two is there because a block spends much
+    of its time waiting on a child it started, so one core carries more than
+    one of them; below that a block that hangs would hold the whole run."""
+    if cpus is None:
+        cpus = os.cpu_count() or 1
+    return max(2, min(STAGE_WORKERS, cpus // 2))
 # Below the sweep's per-file cap, so a block that hangs is reported by its own
 # label rather than as the whole file timing out.
 STAGE_TIMEOUT = 280
@@ -824,7 +840,7 @@ def run_stage(script, label, out_dir, timeout=STAGE_TIMEOUT):
     return res
 
 
-def run_stages(check, script, labels, prefix, workers=STAGE_WORKERS,
+def run_stages(check, script, labels, prefix, workers=None,
                timeout=STAGE_TIMEOUT):
     """Run each of `labels` as a child of `script`, then replay what each
     reported in `labels` order. A block that wrote no cases is ONE NAMED failing
@@ -833,6 +849,8 @@ def run_stages(check, script, labels, prefix, workers=STAGE_WORKERS,
     the children recorded."""
     from concurrent.futures import ThreadPoolExecutor
     out_dir = fixture_root(prefix)
+    if workers is None:
+        workers = stage_workers()
     with ThreadPoolExecutor(max_workers=max(1, min(workers, len(labels)))) as pool:
         results = list(pool.map(
             lambda lab: run_stage(script, lab, out_dir, timeout), labels))
@@ -1640,6 +1658,13 @@ def _stage_runner_cases(check):
           len(seen) == 1 and not seen[0][1]
           and seen[0][0].startswith("s-block DID NOT REPORT")
           and "did not finish within 1s" in seen[0][2])
+
+    got = dict((c, stage_workers(c)) for c in (1, 2, 4, 8, 12, 64))
+    check("sr12 the block pool is half the machine's cores, at least two and at "
+          "most `STAGE_WORKERS` - a two-core runner is not handed the pool a "
+          "workstation gets: %r" % (got,),
+          got == {1: 2, 2: 2, 4: 2, 8: 4, 12: STAGE_WORKERS, 64: STAGE_WORKERS}
+          and 2 <= stage_workers() <= STAGE_WORKERS)
 
 
 def _selftest():

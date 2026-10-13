@@ -96,6 +96,20 @@ class Repos(object):
         _harness.remove_tree(self.tmp)
 
 
+def _own_repos(fn):
+    """A block of cases that builds its own `Repos`, so it can run as a stage of
+    its own: `fn(check, repos)` becomes `(check)` and the repositories are torn
+    down when it ends, however it ends."""
+    def staged(check):
+        repos = Repos()
+        try:
+            fn(check, repos)
+        finally:
+            repos.close()
+    staged.__name__ = fn.__name__
+    return staged
+
+
 def _run(fx, task=TASK, *extra):
     """`(exitCode, printedText)` for one invocation, stderr swallowed.
 
@@ -295,366 +309,362 @@ def _name_status(fx, sha):
 
 
 # --- cases --------------------------------------------------------------------
-def _cases(check):
-    repos = Repos()
+# The staged blocks each build their own repositories: one process per block.
+@_own_repos
+def _ordinary_cases(check, repos):
+    """The ordinary run, its subject, the index and the foreign-path refusals."""
+    # --- the ordinary run --------------------------------------------------
+    fx = repos.make()
+    _dirty_work(fx)
+    _gate(fx)
+    before = _head(fx)
+    recorded_before = _phase_and_task(fx)[2].get("commit")
+    code, text = _run(fx)
+    after = _head(fx)
+    check("ctw1 a finished task's work is committed and the SHA is REPORTED "
+          "- `/audit:task done --commit <sha>` is the next step and a caller "
+          "told 'committed' with nothing to pass it would close the task "
+          "against no commit at all: %r / %r" % (code, text),
+          code == 0 and after != before and after[:12] in text)
+
+    carried = _carried(fx, after)
+    check("ctw2 ...and the commit carries the task's declared file, the "
+          "phase's manifest file and the journal file holding the row that "
+          "names it, and NOTHING else - asserted as the whole file list, "
+          "because a commit that swept the sibling in beside them also "
+          "contains all three: %r" % (carried,),
+          len(_row_files(fx)) == 1
+          and carried == sorted([OWNED, SHARD_REL] + _row_files(fx)))
+
+    clone = _clone_at(fx, after, repos.scratch("ordinary"))
+    check("ctw3 ...and the pair a clone proves: the declared file's NEW bytes "
+          "are in the commit, and the sibling task's edit and the undeclared "
+          "stray are not - both sat modified in the same working tree and "
+          "stayed there, which is the whole of what prose could not refuse: "
+          "%r" % (_read(os.path.join(clone, OWNED)),),
+          _read(os.path.join(clone, OWNED)) == "a = 2  # the task's own work\n"
+          and _read(os.path.join(clone, SIBLING)) == "b = 1\n"
+          and _read(os.path.join(clone, "src", "stray.py")) is None)
+
+    check("ctw4 ...and nothing was left staged for the next `git commit` to "
+          "sweep up, which is the condition step 4c's pathspec exists for: %r"
+          % (_staged(fx),),
+          _staged(fx) == [])
+
+    check("ctw5 ...and it does NOT write `task.commit` - the SHA is only "
+          "knowable after this commit and the shard is inside it, so writing "
+          "it here would need a second commit or the amend step 4c forbids. "
+          "`/audit:task done` records it and rides along with the next one. "
+          "Asserted as UNCHANGED rather than absent, because the fixture's "
+          "task already carries one and `is None` would have passed on a "
+          "command that wrote nothing at all: %r -> %r"
+          % (recorded_before, _phase_and_task(fx)[2].get("commit")),
+          _phase_and_task(fx)[2].get("commit") == recorded_before
+          and recorded_before != after)
+
+    rows = _task_rows(fx)
+    details = rows[0].get("details") if rows else {}
+    nonce = details.get(_invariants.NONCE_KEY)
+    resolved, _why = _invariants.commits_carrying(fx["root"], [nonce])
+    check("ctw6 the commit anchors itself with exactly one journal row "
+          "carrying a nonce, the task and the phase, and the nonce resolves "
+          "to THIS commit through its `Audit-Row` trailer - between this "
+          "commit and `/audit:task done` there is otherwise a commit nothing "
+          "points at, and a run that dies in the gap leaves one for ever: "
+          "%r -> %r" % (details, resolved),
+          len(rows) == 1 and (resolved or {}).get(nonce) == [after]
+          and _trailer_of(fx, after) == [nonce]
+          and details.get("taskId") == TASK
+          and details.get("phaseId") == PHASE)
+    check("ctw7 ...and all three keys are on `_journal_io.DETAILS_KEYS`, "
+          "checked rather than assumed: the allow-list silently DROPS a key "
+          "it does not know, so a row could carry none of them and the case "
+          "above would still see the action go by",
+          all(key in _journal_io.DETAILS_KEYS
+              for key in (_invariants.NONCE_KEY, "taskId", "phaseId")),
+          repr(sorted(_journal_io.DETAILS_KEYS)))
+
+    # --- the subject a commitlint repository will take ---------------------
+    subject = TI._git(fx["root"], "log", "-1", "--format=%s").strip()
+    check("ctw8 the scope is the TASK id and the type is the manifest's - "
+          "which is what tells this class from its two siblings, whose scope "
+          "is a phase id and whose type is a fixed literal: %r" % (subject,),
+          subject.startswith("chore(%s): %s" % (TASK, M.SUBJECT_LEAD))
+          and TASK in subject)
+    check("ctw9 ...and the SUBJECT git recorded is out of reach of every case "
+          "commitlint's default `subject-case` forbids and inside its header "
+          "cap: the id leading a lowercase sentence IS sentence-case, so the "
+          "subject opens with a fixed lowercase word this command owns: %r"
+          % (header_offences(subject),),
+          header_offences(subject) == []
+          and len(subject) <= HEADER_MAX_LENGTH)
+
+    # --- the grader agrees with the writer ---------------------------------
+    # THE LOOP THIS SUITE EXISTS TO CLOSE. `commit_scope` re-derives the same
+    # allow-list from git afterwards, so a commit this command made must be
+    # one that grader calls clean - the two lists are written against one
+    # paragraph, and nothing but this compares them.
+    _manifest, phase, task = _phase_and_task(fx)
+    task["commit"] = after
+    graded = _invariants.commit_scope(
+        phase, fx["root"], ".", SHARD_REL, INDEX_REL,
+        "docs/audit/journal", "docs/audit/evidence")
+    check("ctw10 the invariant checker that GRADES these commits calls this "
+          "one clean - the writer and the grader derive one allow-list twice "
+          "and nothing else compares them: %r"
+          % (graded.get("breaches"),),
+          not graded.get("breaches"))
+
+    # --- the index, which is its own refusal -------------------------------
+    fx = repos.make()
+    _dirty_work(fx)
+    index = _mio.read_json(fx["manifest"])
+    index["meta"]["title"] = "touched"
+    TI._write_json(fx["manifest"], index)
+    TI._git(fx["root"], "add", INDEX_REL)
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw11 the manifest INDEX staged beforehand is refused, and the "
+          "refusal NAMES it and says what it costs - two parallel phases "
+          "conflicting on merge is the property the sharded layout was "
+          "introduced to buy, and reporting that in the same words as a "
+          "stray README is what makes a reader skim past it: %r" % (text,),
+          code == 1 and INDEX_REL in text
+          and "commit-manifest-index" in text)
+    check("ctw12 ...and it refused BEFORE staging, so the git index is "
+          "exactly as it was found and no commit was made - a refusal that "
+          "had already staged the work would leave the tree in a state the "
+          "operator did not ask for: %r / %r" % (_staged(fx), _head(fx)),
+          _staged(fx) == [INDEX_REL] and _head(fx) == before)
+
+    # --- and the generic foreign path, which is a different sentence -------
+    fx = repos.make()
+    _dirty_work(fx)
+    TI._git(fx["root"], "add", "src/stray.py")
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw13 a path outside the allow-list that somebody else had staged "
+          "is NAMED in the refusal: 'something is staged that should not be' "
+          "sends a reader to find it, and finding it is the step that gets "
+          "skipped: %r" % (text,),
+          code == 1 and "src/stray.py" in text and _head(fx) == before)
+    check("ctw14 ...and that sentence is NOT the index one - the two "
+          "mistakes cost different things and a reader must be able to tell "
+          "at a glance which they made",
+          "commit-manifest-index" not in text, repr(text))
+
+    # --- nothing to do, and the two ways of it -----------------------------
+    fx = repos.make()
+    # The fixture leaves its last shard write uncommitted, which is what a
+    # finished task really looks like - so it is put back here rather than
+    # left, because the state under test is a tree with nothing in it for
+    # this commit to carry and not a tree that happens to be dirty.
+    TI._git(fx["root"], "checkout", "--", SHARD_REL)
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw15 a clean tree makes NO commit and says which of the "
+          "do-nothing states it was - a stream of empty commits is how a "
+          "record stops being read, and exit 0 because a healthy project "
+          "reported as broken is a step somebody deletes: %r / %r"
+          % (code, text),
+          code == 0 and _head(fx) == before
+          and "already in git" in text)
+
+
+@_own_repos
+def _declared_cases(check, repos):
+    """Declared files that are absent, the allow-list asked directly."""
+    # --- a declared file that is not there ---------------------------------
+    fx = repos.make()
+    _dirty_work(fx)
+    _manifest, _phase, task = _phase_and_task(fx)
+    shard = _mio.read_json(fx["shard"])
+    shard["tasks"][0]["files"] = [OWNED, "src/not-written-yet.py",
+                                  "src/a.py:10-20"]
+    TI._write_json(fx["shard"], shard)
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    after = _head(fx)
+    check("ctw16 a declared file that is neither on disk nor tracked is "
+          "REPORTED and passed over rather than failing the commit - the "
+          "red-first workflow names the case it will write before anything "
+          "is there, and `git add` does not shrug at a pathspec matching "
+          "nothing, it fails the whole staging call: %r / %r" % (code, text),
+          code == 0 and after != before
+          and "src/not-written-yet.py" in text)
+    check("ctw17 ...and a `:line-range` suffix is stripped before the path "
+          "reaches git, which has never heard of one - staging "
+          "`a/b.py:10-20` would either fail or, worse, match nothing and "
+          "leave the real file uncommitted: %r" % (_carried(fx, after),),
+          _carried(fx, after) == sorted([OWNED, SHARD_REL]
+                                        + _row_files(fx)))
+
+    # --- and the other direction of that same test -------------------------
+    fx = repos.make()
+    os.remove(os.path.join(fx["root"], OWNED))
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    after = _head(fx)
+    clone = _clone_at(fx, after, repos.scratch("deleted"))
+    check("ctw17b SECOND-DIRECTION CASE: a declared file the task DELETED is "
+          "absent from the working tree too, and staging it is exactly how "
+          "the deletion gets committed. A skip rule reading the tree alone "
+          "would pass every case above and silently drop every deletion a "
+          "task ever makes: %r / %r" % (code, _carried(fx, after)),
+          code == 0 and after != before
+          and OWNED in _carried(fx, after)
+          and _read(os.path.join(clone, OWNED)) is None)
+
+    # --- the allow-list itself, asked directly -----------------------------
+    fx = repos.make()
+    manifest, phase, task = _phase_and_task(fx)
+    targets = M.stage_targets(manifest, phase, task, fx["manifest"],
+                              fx["root"], fx["root"])
+    check("ctw18 the resolved allow-list is the task's declared files plus "
+          "the phase's manifest file, and the manifest INDEX is carried "
+          "APART so the refusal can name it as the specific mistake it is "
+          "rather than as one more stray path: %r"
+          % (targets["paths"], ),
+          OWNED in targets["paths"] and SHARD_REL in targets["paths"]
+          and INDEX_REL not in targets["paths"]
+          and targets["indexRel"] == INDEX_REL)
+    check("ctw19 ...and `declared` is the subset that came from the task's "
+          "own `files`, kept apart so a refusal can say which half of the "
+          "list a path failed against: %r" % (targets["declared"],),
+          targets["declared"] == [OWNED])
+    off = repos.make(journal_off=True)
+    off_manifest, off_phase, off_task = _phase_and_task(off)
+    off_targets = M.stage_targets(off_manifest, off_phase, off_task,
+                                  off["manifest"], off["root"], off["root"])
+    check("ctw20 ...and a record directory that does not exist yet is "
+          "REPORTED as skipped rather than silently dropped: 'it is outside "
+          "the repository' and 'it is not there yet' leave the same commit "
+          "behind while being different things to know. The journal is the "
+          "exception while it is on - the row this commit writes creates it "
+          "and is carried from there - and the pair is the same journal "
+          "turned off, where nothing will: %r / %r"
+          % (targets["skipped"], off_targets["skipped"]),
+          any(M.EVIDENCE_LABEL in line for line in targets["skipped"])
+          and not any(M.JOURNAL_LABEL in line for line in targets["skipped"])
+          and any(M.JOURNAL_LABEL in line
+                  for line in off_targets["skipped"]))
+
+    # --- the records, when there ARE records -------------------------------
+    fx = repos.make(leave_dirty=True)
+    _gate(fx, set_apart=False)
+    code, text = _run(fx)
+    after = _head(fx)
+    check("ctw21 the evidence a failed gate wrote IS carried - the rows a "
+          "commit's pointers name have to travel with the pointers, or a "
+          "clone receives a plan referring to runs it does not have: %r"
+          % (_carried(fx, after),),
+          code == 0
+          and any(p.startswith("docs/audit/evidence/")
+                  for p in _carried(fx, after)))
+    trail_dirty = [ln for ln in TI._git(fx["root"], "status",
+                                        "--porcelain").splitlines()
+                   if "docs/audit/journal/" in ln]
+    check("ctw22 ...and so is the journal row this run appended, which "
+          "names the commit by the trailer rather than by a SHA it could "
+          "not know, so no journal file is left dirty behind the commit: "
+          "%r / %r" % (_carried(fx, after), trail_dirty),
+          set(_row_files(fx)) <= set(_carried(fx, after))
+          and _row_files(fx) != [] and trail_dirty == [])
+
+
+@_own_repos
+def _records_cases(check, repos):
+    """The records carried, the single-file layout, usage and the message."""
+    # --- the single-file layout --------------------------------------------
+    fx = repos.make()
+    single = _mio.load_manifest(fx["manifest"])
+    single_path = os.path.join(fx["root"], "docs", "audit", "single.json")
+    for phase in single.get("phases") or []:
+        phase.pop("shard", None)
+    TI._write_json(single_path, single)
+    TI._git(fx["root"], "add", "docs/audit/single.json")
+    TI._git(fx["root"], "commit", "-q", "-m", "chore: single-file layout")
+    _dirty_work(fx)
+    single["meta"]["title"] = "touched"
+    TI._write_json(single_path, single)
+    _gate(fx, manifest=single_path)
+    single = _mio.load_manifest(single_path)
+    manifest, phase, task = None, None, None
+    for cand_phase, cand_task in _mio.iter_tasks(single):
+        if cand_task.get("id") == TASK:
+            manifest, phase, task = single, cand_phase, cand_task
+    targets = M.stage_targets(manifest, phase, task, single_path,
+                              fx["root"], fx["root"])
+    lines = []
+    held = sys.stderr
+    sys.stderr = io.StringIO()
     try:
-        # --- the ordinary run --------------------------------------------------
-        fx = repos.make()
-        _dirty_work(fx)
-        _gate(fx)
-        before = _head(fx)
-        recorded_before = _phase_and_task(fx)[2].get("commit")
-        code, text = _run(fx)
-        after = _head(fx)
-        check("ctw1 a finished task's work is committed and the SHA is REPORTED "
-              "- `/audit:task done --commit <sha>` is the next step and a caller "
-              "told 'committed' with nothing to pass it would close the task "
-              "against no commit at all: %r / %r" % (code, text),
-              code == 0 and after != before and after[:12] in text)
-
-        carried = _carried(fx, after)
-        check("ctw2 ...and the commit carries the task's declared file, the "
-              "phase's manifest file and the journal file holding the row that "
-              "names it, and NOTHING else - asserted as the whole file list, "
-              "because a commit that swept the sibling in beside them also "
-              "contains all three: %r" % (carried,),
-              len(_row_files(fx)) == 1
-              and carried == sorted([OWNED, SHARD_REL] + _row_files(fx)))
-
-        clone = _clone_at(fx, after, repos.scratch("ordinary"))
-        check("ctw3 ...and the pair a clone proves: the declared file's NEW bytes "
-              "are in the commit, and the sibling task's edit and the undeclared "
-              "stray are not - both sat modified in the same working tree and "
-              "stayed there, which is the whole of what prose could not refuse: "
-              "%r" % (_read(os.path.join(clone, OWNED)),),
-              _read(os.path.join(clone, OWNED)) == "a = 2  # the task's own work\n"
-              and _read(os.path.join(clone, SIBLING)) == "b = 1\n"
-              and _read(os.path.join(clone, "src", "stray.py")) is None)
-
-        check("ctw4 ...and nothing was left staged for the next `git commit` to "
-              "sweep up, which is the condition step 4c's pathspec exists for: %r"
-              % (_staged(fx),),
-              _staged(fx) == [])
-
-        check("ctw5 ...and it does NOT write `task.commit` - the SHA is only "
-              "knowable after this commit and the shard is inside it, so writing "
-              "it here would need a second commit or the amend step 4c forbids. "
-              "`/audit:task done` records it and rides along with the next one. "
-              "Asserted as UNCHANGED rather than absent, because the fixture's "
-              "task already carries one and `is None` would have passed on a "
-              "command that wrote nothing at all: %r -> %r"
-              % (recorded_before, _phase_and_task(fx)[2].get("commit")),
-              _phase_and_task(fx)[2].get("commit") == recorded_before
-              and recorded_before != after)
-
-        rows = _task_rows(fx)
-        details = rows[0].get("details") if rows else {}
-        nonce = details.get(_invariants.NONCE_KEY)
-        resolved, _why = _invariants.commits_carrying(fx["root"], [nonce])
-        check("ctw6 the commit anchors itself with exactly one journal row "
-              "carrying a nonce, the task and the phase, and the nonce resolves "
-              "to THIS commit through its `Audit-Row` trailer - between this "
-              "commit and `/audit:task done` there is otherwise a commit nothing "
-              "points at, and a run that dies in the gap leaves one for ever: "
-              "%r -> %r" % (details, resolved),
-              len(rows) == 1 and (resolved or {}).get(nonce) == [after]
-              and _trailer_of(fx, after) == [nonce]
-              and details.get("taskId") == TASK
-              and details.get("phaseId") == PHASE)
-        check("ctw7 ...and all three keys are on `_journal_io.DETAILS_KEYS`, "
-              "checked rather than assumed: the allow-list silently DROPS a key "
-              "it does not know, so a row could carry none of them and the case "
-              "above would still see the action go by",
-              all(key in _journal_io.DETAILS_KEYS
-                  for key in (_invariants.NONCE_KEY, "taskId", "phaseId")),
-              repr(sorted(_journal_io.DETAILS_KEYS)))
-
-        # --- the subject a commitlint repository will take ---------------------
-        subject = TI._git(fx["root"], "log", "-1", "--format=%s").strip()
-        check("ctw8 the scope is the TASK id and the type is the manifest's - "
-              "which is what tells this class from its two siblings, whose scope "
-              "is a phase id and whose type is a fixed literal: %r" % (subject,),
-              subject.startswith("chore(%s): %s" % (TASK, M.SUBJECT_LEAD))
-              and TASK in subject)
-        check("ctw9 ...and the SUBJECT git recorded is out of reach of every case "
-              "commitlint's default `subject-case` forbids and inside its header "
-              "cap: the id leading a lowercase sentence IS sentence-case, so the "
-              "subject opens with a fixed lowercase word this command owns: %r"
-              % (header_offences(subject),),
-              header_offences(subject) == []
-              and len(subject) <= HEADER_MAX_LENGTH)
-
-        # --- the grader agrees with the writer ---------------------------------
-        # THE LOOP THIS SUITE EXISTS TO CLOSE. `commit_scope` re-derives the same
-        # allow-list from git afterwards, so a commit this command made must be
-        # one that grader calls clean - the two lists are written against one
-        # paragraph, and nothing but this compares them.
-        _manifest, phase, task = _phase_and_task(fx)
-        task["commit"] = after
-        graded = _invariants.commit_scope(
-            phase, fx["root"], ".", SHARD_REL, INDEX_REL,
-            "docs/audit/journal", "docs/audit/evidence")
-        check("ctw10 the invariant checker that GRADES these commits calls this "
-              "one clean - the writer and the grader derive one allow-list twice "
-              "and nothing else compares them: %r"
-              % (graded.get("breaches"),),
-              not graded.get("breaches"))
-
-        # --- the index, which is its own refusal -------------------------------
-        fx = repos.make()
-        _dirty_work(fx)
-        index = _mio.read_json(fx["manifest"])
-        index["meta"]["title"] = "touched"
-        TI._write_json(fx["manifest"], index)
-        TI._git(fx["root"], "add", INDEX_REL)
-        before = _head(fx)
-        code, text = _run(fx)
-        check("ctw11 the manifest INDEX staged beforehand is refused, and the "
-              "refusal NAMES it and says what it costs - two parallel phases "
-              "conflicting on merge is the property the sharded layout was "
-              "introduced to buy, and reporting that in the same words as a "
-              "stray README is what makes a reader skim past it: %r" % (text,),
-              code == 1 and INDEX_REL in text
-              and "commit-manifest-index" in text)
-        check("ctw12 ...and it refused BEFORE staging, so the git index is "
-              "exactly as it was found and no commit was made - a refusal that "
-              "had already staged the work would leave the tree in a state the "
-              "operator did not ask for: %r / %r" % (_staged(fx), _head(fx)),
-              _staged(fx) == [INDEX_REL] and _head(fx) == before)
-
-        # --- and the generic foreign path, which is a different sentence -------
-        fx = repos.make()
-        _dirty_work(fx)
-        TI._git(fx["root"], "add", "src/stray.py")
-        before = _head(fx)
-        code, text = _run(fx)
-        check("ctw13 a path outside the allow-list that somebody else had staged "
-              "is NAMED in the refusal: 'something is staged that should not be' "
-              "sends a reader to find it, and finding it is the step that gets "
-              "skipped: %r" % (text,),
-              code == 1 and "src/stray.py" in text and _head(fx) == before)
-        check("ctw14 ...and that sentence is NOT the index one - the two "
-              "mistakes cost different things and a reader must be able to tell "
-              "at a glance which they made",
-              "commit-manifest-index" not in text, repr(text))
-
-        # --- nothing to do, and the two ways of it -----------------------------
-        fx = repos.make()
-        # The fixture leaves its last shard write uncommitted, which is what a
-        # finished task really looks like - so it is put back here rather than
-        # left, because the state under test is a tree with nothing in it for
-        # this commit to carry and not a tree that happens to be dirty.
-        TI._git(fx["root"], "checkout", "--", SHARD_REL)
-        before = _head(fx)
-        code, text = _run(fx)
-        check("ctw15 a clean tree makes NO commit and says which of the "
-              "do-nothing states it was - a stream of empty commits is how a "
-              "record stops being read, and exit 0 because a healthy project "
-              "reported as broken is a step somebody deletes: %r / %r"
-              % (code, text),
-              code == 0 and _head(fx) == before
-              and "already in git" in text)
-
-        # --- a declared file that is not there ---------------------------------
-        fx = repos.make()
-        _dirty_work(fx)
-        _manifest, _phase, task = _phase_and_task(fx)
-        shard = _mio.read_json(fx["shard"])
-        shard["tasks"][0]["files"] = [OWNED, "src/not-written-yet.py",
-                                      "src/a.py:10-20"]
-        TI._write_json(fx["shard"], shard)
-        _gate(fx)
-        before = _head(fx)
-        code, text = _run(fx)
-        after = _head(fx)
-        check("ctw16 a declared file that is neither on disk nor tracked is "
-              "REPORTED and passed over rather than failing the commit - the "
-              "red-first workflow names the case it will write before anything "
-              "is there, and `git add` does not shrug at a pathspec matching "
-              "nothing, it fails the whole staging call: %r / %r" % (code, text),
-              code == 0 and after != before
-              and "src/not-written-yet.py" in text)
-        check("ctw17 ...and a `:line-range` suffix is stripped before the path "
-              "reaches git, which has never heard of one - staging "
-              "`a/b.py:10-20` would either fail or, worse, match nothing and "
-              "leave the real file uncommitted: %r" % (_carried(fx, after),),
-              _carried(fx, after) == sorted([OWNED, SHARD_REL]
-                                            + _row_files(fx)))
-
-        # --- and the other direction of that same test -------------------------
-        fx = repos.make()
-        os.remove(os.path.join(fx["root"], OWNED))
-        _gate(fx)
-        before = _head(fx)
-        code, text = _run(fx)
-        after = _head(fx)
-        clone = _clone_at(fx, after, repos.scratch("deleted"))
-        check("ctw17b SECOND-DIRECTION CASE: a declared file the task DELETED is "
-              "absent from the working tree too, and staging it is exactly how "
-              "the deletion gets committed. A skip rule reading the tree alone "
-              "would pass every case above and silently drop every deletion a "
-              "task ever makes: %r / %r" % (code, _carried(fx, after)),
-              code == 0 and after != before
-              and OWNED in _carried(fx, after)
-              and _read(os.path.join(clone, OWNED)) is None)
-
-        # --- the allow-list itself, asked directly -----------------------------
-        fx = repos.make()
-        manifest, phase, task = _phase_and_task(fx)
-        targets = M.stage_targets(manifest, phase, task, fx["manifest"],
-                                  fx["root"], fx["root"])
-        check("ctw18 the resolved allow-list is the task's declared files plus "
-              "the phase's manifest file, and the manifest INDEX is carried "
-              "APART so the refusal can name it as the specific mistake it is "
-              "rather than as one more stray path: %r"
-              % (targets["paths"], ),
-              OWNED in targets["paths"] and SHARD_REL in targets["paths"]
-              and INDEX_REL not in targets["paths"]
-              and targets["indexRel"] == INDEX_REL)
-        check("ctw19 ...and `declared` is the subset that came from the task's "
-              "own `files`, kept apart so a refusal can say which half of the "
-              "list a path failed against: %r" % (targets["declared"],),
-              targets["declared"] == [OWNED])
-        off = repos.make(journal_off=True)
-        off_manifest, off_phase, off_task = _phase_and_task(off)
-        off_targets = M.stage_targets(off_manifest, off_phase, off_task,
-                                      off["manifest"], off["root"], off["root"])
-        check("ctw20 ...and a record directory that does not exist yet is "
-              "REPORTED as skipped rather than silently dropped: 'it is outside "
-              "the repository' and 'it is not there yet' leave the same commit "
-              "behind while being different things to know. The journal is the "
-              "exception while it is on - the row this commit writes creates it "
-              "and is carried from there - and the pair is the same journal "
-              "turned off, where nothing will: %r / %r"
-              % (targets["skipped"], off_targets["skipped"]),
-              any(M.EVIDENCE_LABEL in line for line in targets["skipped"])
-              and not any(M.JOURNAL_LABEL in line for line in targets["skipped"])
-              and any(M.JOURNAL_LABEL in line
-                      for line in off_targets["skipped"]))
-
-        # --- the records, when there ARE records -------------------------------
-        fx = repos.make(leave_dirty=True)
-        _gate(fx, set_apart=False)
-        code, text = _run(fx)
-        after = _head(fx)
-        check("ctw21 the evidence a failed gate wrote IS carried - the rows a "
-              "commit's pointers name have to travel with the pointers, or a "
-              "clone receives a plan referring to runs it does not have: %r"
-              % (_carried(fx, after),),
-              code == 0
-              and any(p.startswith("docs/audit/evidence/")
-                      for p in _carried(fx, after)))
-        trail_dirty = [ln for ln in TI._git(fx["root"], "status",
-                                            "--porcelain").splitlines()
-                       if "docs/audit/journal/" in ln]
-        check("ctw22 ...and so is the journal row this run appended, which "
-              "names the commit by the trailer rather than by a SHA it could "
-              "not know, so no journal file is left dirty behind the commit: "
-              "%r / %r" % (_carried(fx, after), trail_dirty),
-              set(_row_files(fx)) <= set(_carried(fx, after))
-              and _row_files(fx) != [] and trail_dirty == [])
-
-        # --- the single-file layout --------------------------------------------
-        fx = repos.make()
-        single = _mio.load_manifest(fx["manifest"])
-        single_path = os.path.join(fx["root"], "docs", "audit", "single.json")
-        for phase in single.get("phases") or []:
-            phase.pop("shard", None)
-        TI._write_json(single_path, single)
-        TI._git(fx["root"], "add", "docs/audit/single.json")
-        TI._git(fx["root"], "commit", "-q", "-m", "chore: single-file layout")
-        _dirty_work(fx)
-        single["meta"]["title"] = "touched"
-        TI._write_json(single_path, single)
-        _gate(fx, manifest=single_path)
-        single = _mio.load_manifest(single_path)
-        manifest, phase, task = None, None, None
-        for cand_phase, cand_task in _mio.iter_tasks(single):
-            if cand_task.get("id") == TASK:
-                manifest, phase, task = single, cand_phase, cand_task
-        targets = M.stage_targets(manifest, phase, task, single_path,
-                                  fx["root"], fx["root"])
-        lines = []
-        held = sys.stderr
-        sys.stderr = io.StringIO()
-        try:
-            code = M.main([single_path, TASK, "--project", fx["root"]],
-                          out=lines.append)
-        finally:
-            sys.stderr = held
-        carried = _carried(fx, _head(fx))
-        check("ctw23 in the SINGLE-FILE layout the manifest IS the index, so the "
-              "'do NOT stage the index' rule - which is about the SHARDED index a "
-              "parallel phase would conflict on - must not refuse the manifest "
-              "this commit is required to carry. `indexRel` is None and the file "
-              "is in the commit: %r / %r / %r"
-              % (targets["indexRel"], code, carried),
-              targets["indexRel"] is None and code == 0
-              and "docs/audit/single.json" in carried)
-
-        # --- usage --------------------------------------------------------------
-        fx = repos.make()
-        code, _text = _run(fx, "P9.9")
-        check("ctw24 a task id no phase holds is a USAGE error and not a failed "
-              "commit - exit 2 is what says the caller typed something wrong "
-              "rather than that git refused: %r" % (code,), code == 2)
-        lines = []
-        held = sys.stderr
-        sys.stderr = io.StringIO()
-        try:
-            code = M.main([os.path.join(fx["root"], "no-such.json"), TASK,
-                           "--project", fx["root"]], out=lines.append)
-        finally:
-            sys.stderr = held
-        check("ctw25 ...and so is a manifest that will not load: %r" % (code,),
-              code == 2)
-
-        # --- the message, asked directly ----------------------------------------
-        manifest, phase, task = _phase_and_task(fx)
-        check("ctw26 the conventional TYPE comes from `meta.commit.type` - a "
-              "task commit carries implementation, so a project's own convention "
-              "is the right one for it, unlike its two siblings whose types are "
-              "fixed literals so `git log` can tell those classes apart",
-              M.commit_message(TASK, "s", {"meta": {"commit": {"type": "fix"}}})[0]
-              .startswith("fix(%s): " % (TASK,)),
-              repr(M.commit_message(TASK, "s",
-                                    {"meta": {"commit": {"type": "fix"}}})))
-        check("ctw27 ...and the fallback is not `feat`: a default that claimed a "
-              "feature on work nobody described would be a wrong word written by "
-              "a default",
-              M.DEFAULT_COMMIT_TYPE != "feat"
-              and M.commit_message(TASK, "s", {})[0]
-              .startswith("%s(%s): " % (M.DEFAULT_COMMIT_TYPE, TASK)),
-              repr(M.commit_message(TASK, "s", {})))
-        check("ctw28 the coauthor is its OWN paragraph rather than a second "
-              "sentence of the subject line - a list is how it reaches git, one "
-              "`-m` each, so the trailer is a trailer",
-              M.commit_message(TASK, "s",
-                               {"meta": {"commit": {"coauthor": "Co: x"}}})
-              == ["chore(%s): %s - s" % (TASK, M.SUBJECT_LEAD), "Co: x"],
-              repr(M.commit_message(TASK, "s",
-                                    {"meta": {"commit": {"coauthor": "Co: x"}}})))
-
-        # --- the refusal builder, both directions -------------------------------
-        check("ctw29 SECOND-DIRECTION CASE: with nothing foreign there is NO "
-              "refusal, so the caller's branch reads as a question rather than "
-              "as a string test - a builder that always returned a sentence "
-              "would refuse every run and pass every refusal case above",
-              M.foreign_refusal([], {"indexRel": INDEX_REL}) is None
-              and M.foreign_refusal(None, {"indexRel": INDEX_REL}) is None)
-        _index_cases(check, repos)
-        _verdict_cases(check, repos)
-        _harness.stage(check, "cl-block", lambda c: _claims_cases(c, repos))
-        _harness.stage(check, "sl-block",
-                       lambda c: _success_line_cases(c, repos))
-        _harness.stage(check, "dp-block",
-                       lambda c: _default_project_cases(c, repos))
-        _harness.stage(check, "ae-block", lambda c: _attempt_cases(c, repos))
-        _harness.stage(check, "bl-block", lambda c: _bug_link_cases(c, repos))
-        _harness.stage(check, "ce-block",
-                       lambda c: _close_evidence_cases(c, repos))
+        code = M.main([single_path, TASK, "--project", fx["root"]],
+                      out=lines.append)
     finally:
-        repos.close()
+        sys.stderr = held
+    carried = _carried(fx, _head(fx))
+    check("ctw23 in the SINGLE-FILE layout the manifest IS the index, so the "
+          "'do NOT stage the index' rule - which is about the SHARDED index a "
+          "parallel phase would conflict on - must not refuse the manifest "
+          "this commit is required to carry. `indexRel` is None and the file "
+          "is in the commit: %r / %r / %r"
+          % (targets["indexRel"], code, carried),
+          targets["indexRel"] is None and code == 0
+          and "docs/audit/single.json" in carried)
+
+    # --- usage --------------------------------------------------------------
+    fx = repos.make()
+    code, _text = _run(fx, "P9.9")
+    check("ctw24 a task id no phase holds is a USAGE error and not a failed "
+          "commit - exit 2 is what says the caller typed something wrong "
+          "rather than that git refused: %r" % (code,), code == 2)
+    lines = []
+    held = sys.stderr
+    sys.stderr = io.StringIO()
+    try:
+        code = M.main([os.path.join(fx["root"], "no-such.json"), TASK,
+                       "--project", fx["root"]], out=lines.append)
+    finally:
+        sys.stderr = held
+    check("ctw25 ...and so is a manifest that will not load: %r" % (code,),
+          code == 2)
+
+    # --- the message, asked directly ----------------------------------------
+    manifest, phase, task = _phase_and_task(fx)
+    check("ctw26 the conventional TYPE comes from `meta.commit.type` - a "
+          "task commit carries implementation, so a project's own convention "
+          "is the right one for it, unlike its two siblings whose types are "
+          "fixed literals so `git log` can tell those classes apart",
+          M.commit_message(TASK, "s", {"meta": {"commit": {"type": "fix"}}})[0]
+          .startswith("fix(%s): " % (TASK,)),
+          repr(M.commit_message(TASK, "s",
+                                {"meta": {"commit": {"type": "fix"}}})))
+    check("ctw27 ...and the fallback is not `feat`: a default that claimed a "
+          "feature on work nobody described would be a wrong word written by "
+          "a default",
+          M.DEFAULT_COMMIT_TYPE != "feat"
+          and M.commit_message(TASK, "s", {})[0]
+          .startswith("%s(%s): " % (M.DEFAULT_COMMIT_TYPE, TASK)),
+          repr(M.commit_message(TASK, "s", {})))
+    check("ctw28 the coauthor is its OWN paragraph rather than a second "
+          "sentence of the subject line - a list is how it reaches git, one "
+          "`-m` each, so the trailer is a trailer",
+          M.commit_message(TASK, "s",
+                           {"meta": {"commit": {"coauthor": "Co: x"}}})
+          == ["chore(%s): %s - s" % (TASK, M.SUBJECT_LEAD), "Co: x"],
+          repr(M.commit_message(TASK, "s",
+                                {"meta": {"commit": {"coauthor": "Co: x"}}})))
+
+    # --- the refusal builder, both directions -------------------------------
+    check("ctw29 SECOND-DIRECTION CASE: with nothing foreign there is NO "
+          "refusal, so the caller's branch reads as a question rather than "
+          "as a string test - a builder that always returned a sentence "
+          "would refuse every run and pass every refusal case above",
+          M.foreign_refusal([], {"indexRel": INDEX_REL}) is None
+          and M.foreign_refusal(None, {"indexRel": INDEX_REL}) is None)
 
 
 def _link_bug(fx, tid=TASK, bid="BUG-1"):
@@ -672,6 +682,7 @@ def _link_bug(fx, tid=TASK, bid="BUG-1"):
     TI._write_json(fx["manifest"], index)
 
 
+@_own_repos
 def _bug_link_cases(check, repos):
     """A task commit whose shard links a bug carries the index holding the
     link's other half, so the manifest it records validates - and an index
@@ -727,6 +738,7 @@ def _bug_link_cases(check, repos):
           and INDEX_REL in TI._git(fx["root"], "status", "--porcelain"))
 
 
+@_own_repos
 def _default_project_cases(check, repos):
     """No `--project`, run from a directory outside the repository: the project
     is the one the manifest is in, the same root the remedy it prints - a gate
@@ -792,6 +804,7 @@ def _git_trailer(fx, sha, key):
         if ln.strip()]
 
 
+@_own_repos
 def _claims_cases(check, repos):
     # The declared file alone: this return dates the task's start, and a stray
     # made after it is a change no running task answers for (ctw-at3).
@@ -833,6 +846,7 @@ def _claims_cases(check, repos):
 
 
 # --- what the index says: renames, deletions, ignored directories -----------
+@_own_repos
 def _index_cases(check, repos):
     # A STAGED RENAME. `git mv` leaves the source path in HEAD and nowhere else -
     # not on disk, not in the index - so a skip rule asking only the index calls
@@ -982,6 +996,7 @@ def _index_cases(check, repos):
 
 
 # --- the verdict the commit was measured under --------------------------------
+@_own_repos
 def _verdict_cases(check, repos):
     # A RED NEWEST VERDICT.
     fx = repos.make()
@@ -1133,12 +1148,10 @@ def _verdict_cases(check, repos):
           "green: %r / %r"
           % (code, text),
           code == 0 and _const('NO_GATE') in text)
-    _scope_cases(check, repos)
-    _branch_cases(check, repos)
-    _empty_gate_cases(check, repos)
 
 
 # --- the recorded answer for an empty gate ------------------------------------
+@_own_repos
 def _empty_gate_cases(check, repos):
     # A TASK GATE CLEARED ON PURPOSE, WHOSE RECORDING WROTE AN EMPTY-GATE ROW.
     fx = repos.make()
@@ -1181,9 +1194,6 @@ def _empty_gate_cases(check, repos):
           "an unknown verdict: %r / %r"
           % (_const("VERDICT_EMPTY_GATE"), RTG.EMPTY_GATE),
           _const("VERDICT_EMPTY_GATE") == RTG.EMPTY_GATE)
-    _retired_red_cases(check, repos)
-    _gate_identity_cases(check, repos)
-    _kept_deletion_hook_cases(check, repos)
 
 
 def _hook(fx, name, body):
@@ -1206,6 +1216,7 @@ def _kept_deletion(fx):
     _gate(fx)
 
 
+@_own_repos
 def _kept_deletion_hook_cases(check, repos):
     # A HOOK THAT REFUSES, ON THE TEMPORARY-INDEX PATH.
     fx = repos.make()
@@ -1238,6 +1249,7 @@ def _kept_deletion_hook_cases(check, repos):
           and ("D\t%s" % (IGN_TRACKED,)) in _name_status(fx, after))
 
 
+@_own_repos
 def _retired_red_cases(check, repos):
     # A RED, THEN THE GATE CLEARED, THEN RECORDED: the empty-gate row is the
     # newest row, and it must not retire the red.
@@ -1281,6 +1293,7 @@ def _set_build(fx, name, command):
     TI._write_json(fx["manifest"], index)
 
 
+@_own_repos
 def _gate_identity_cases(check, repos):
     # WHAT AN ENTRY RUNS, CHANGED AFTER A GREEN.
     fx = repos.make()
@@ -1402,6 +1415,7 @@ def _append_ledger(fx, text):
 
 
 # --- the declared scope, normalised once ---------------------------------------
+@_own_repos
 def _scope_cases(check, repos):
     # A `:line-range` ENTRY EDITED AFTER A GREEN GATE.
     fx = repos.make()
@@ -1533,6 +1547,7 @@ def _scope_cases(check, repos):
 
 
 # --- the branches each refusal and each allowance takes ------------------------
+@_own_repos
 def _branch_cases(check, repos):
     # A CONFLICT RESOLVED IN THE TREE BUT NOT ADDED.
     fx = repos.make()
@@ -1731,6 +1746,7 @@ def _cli(fx, *extra):
     return done.returncode, done.stdout
 
 
+@_own_repos
 def _success_line_cases(check, repos):
     """A commit, said in one line naming the SHA it wrote; a refusal and
     `--verbose`, in full."""
@@ -1796,6 +1812,7 @@ def _start(fx):
     return code, "\n".join(str(x) for x in lines)
 
 
+@_own_repos
 def _attempt_cases(check, repos):
     """A task commit carries exactly its attempt: a declared file's change that
     was there before `start` is refused rather than swept in, a change made
@@ -1910,6 +1927,7 @@ def _owe_test(fx):
     TI._write_json(fx["shard"], shard)
 
 
+@_own_repos
 def _close_evidence_cases(check, repos):
     """A commit standing for a task's close refuses a return that attempted
     nothing over no declared change, and a `tests.add` file never written;
@@ -1955,13 +1973,20 @@ def _close_evidence_cases(check, repos):
           code == 0 and OWNED in carried and CE_TEST in carried)
 
 
-def _selftest():
-    return _harness.run(_cases)
+STAGES = (("or-block", "_ordinary_cases"), ("dc-block", "_declared_cases"),
+          ("rc-block", "_records_cases"), ("ix-block", "_index_cases"),
+          ("vd-block", "_verdict_cases"), ("sc-block", "_scope_cases"),
+          ("br-block", "_branch_cases"), ("eg-block", "_empty_gate_cases"),
+          ("rr-block", "_retired_red_cases"),
+          ("gi-block", "_gate_identity_cases"),
+          ("kd-block", "_kept_deletion_hook_cases"),
+          ("cl-block", "_claims_cases"), ("sl-block", "_success_line_cases"),
+          ("dp-block", "_default_project_cases"),
+          ("ae-block", "_attempt_cases"), ("bl-block", "_bug_link_cases"),
+          ("ce-block", "_close_evidence_cases"))
 
 
 if __name__ == "__main__":
     safe_stdio()
-    if "--selftest" in sys.argv[1:]:
-        raise SystemExit(_selftest())
-    sys.stderr.write("usage: test_commit_task_work.py --selftest\n")
-    raise SystemExit(2)
+    raise SystemExit(_harness.staged_main(sys.argv[1:], STAGES, globals(),
+                                          "ctw-stages-"))

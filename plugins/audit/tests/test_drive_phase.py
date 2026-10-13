@@ -481,6 +481,10 @@ def _drive_cases(check):
           % (marks,),
           marks == {"started": list(TASKS), "closed": list(TASKS)})
 
+
+def _drive_mutant_cases(check):
+    """The drive's properties, each red against a mutated driver - a block of its
+    own, because it builds a repository per mutant and nothing above it."""
     # --- each property, red against a mutated driver --------------------------
     mutant, _w = _load("drive_phase_stop_after_close")
     real_close = mutant.close_task
@@ -1727,6 +1731,10 @@ def _signoff_cases(check):
           % (seen_m.get(("audit-task.py", "signoff")),),
           seen_m.get(("audit-task.py", "signoff"), 0) >= 1)
 
+
+def _signoff_findings_cases(check):
+    """Sign-off over a phase review with several findings, and the fix one of
+    them is driven through - a block of its own, built from its own repository."""
     # A phase review with several findings: recorded in one call, triaged once.
     root, mpath = _repo("findings", per_task="phase")
     M2, _w = _load("drive_phase_signoff_count")
@@ -4368,7 +4376,8 @@ def _house_suite(cases):
     return "\n".join(body) + "\n"
 
 
-STAGES = (("dp-block", "_drive_cases"), ("dr-block", "_refusal_cases"),
+STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
+          ("dr-block", "_refusal_cases"),
           ("dd-block", "_decide_cases"), ("ct-block", "_continue_cases"),
           ("dd3-block", "_rerun_cases"), ("rs-block", "_resume_cases"),
           ("rm-block", "_rerun_measures_cases"),
@@ -4376,6 +4385,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dr-block", "_refusal_cases"),
           ("dt-block", "_single_task_cases"), ("dl-block", "_lock_stop_cases"),
           ("dk-block", "_key_cases"), ("ds-block", "_submit_cases"),
           ("dsm-block", "_submit_mutant_cases"), ("sg-block", "_signoff_cases"),
+          ("sgf-block", "_signoff_findings_cases"),
           ("sq-block", "_advance_signoff_cases"),
           ("sq3-block", "_advance_refused_cases"),
           ("sa-block", "_review_answer_cases"),
