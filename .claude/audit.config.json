@@ -1,6 +1,6 @@
 {
   "executor": {
-    "waveWidth": 1,
+    "waveWidth": 3,
     "worktreeSetup": "npm ci --no-audit --no-fund"
   }
 }
