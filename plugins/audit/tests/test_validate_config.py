@@ -54,6 +54,11 @@ def _cases(check):
               "nothing is a finding, never a drive that runs no task",
               M.main([path]) == 1)
         with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"review": {"maxRounds": 0}}, fh)
+        check("cc1r a config whose review.maxRounds is 0 exits 1: a cap of no "
+              "review round is a finding, never a sign-off that reviews nothing",
+              M.main([path]) == 1)
+        with open(path, "w", encoding="utf-8") as fh:
             json.dump({"executor": {"waveWidth": "auto"}}, fh)
         check("cc1a a config whose executor.waveWidth is 'auto' exits 0",
               M.main([path]) == 0)

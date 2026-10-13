@@ -2282,9 +2282,13 @@ def _cases(check):
           M.DEFAULTS["executor"]["runsGate"] in M.RUNS_GATE_MODES)
     # review.perTask: the shipped reading is `phase`, a word of its own
     # vocabulary, and the key reference a reader of this module meets says so.
-    check("rk1 review.perTask ships `phase`, one of REVIEW_PER_TASK_MODES, and "
-          "the module's key reference names the key and all three words",
-          M.DEFAULTS.get("review") == {"perTask": "phase"}
+    # review.maxRounds rides in the same block: the shipped cap is a positive
+    # integer and the key reference names it, so the block is pinned whole.
+    check("rk1 review.perTask ships `phase`, one of REVIEW_PER_TASK_MODES, "
+          "review.maxRounds ships 2, and the module's key reference names both "
+          "keys and all three words",
+          M.DEFAULTS.get("review") == {"perTask": "phase", "maxRounds": 2}
+          and "review.maxRounds" in (M.__doc__ or "")
           and M.DEFAULTS["review"]["perTask"] in M.REVIEW_PER_TASK_MODES
           and "review.perTask" in (M.__doc__ or "")
           and all('"%s"' % (w,) in (M.__doc__ or "")

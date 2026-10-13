@@ -1386,6 +1386,18 @@ def _brief_cases(check):
           and "## Re-review scope" in text9
           and "P1.4" in text9.split("## Re-review scope", 1)[1]
                             .split("\n## ", 1)[0])
+    # The re-review brief also says what a NEW low found in a fix becomes: it
+    # is carried, not looped into another fix and another round - read within
+    # the section, so the same words elsewhere in the brief cannot satisfy it.
+    _scope9 = (text9.split("## Re-review scope", 1)[1].split("\n## ", 1)[0]
+               if "## Re-review scope" in text9 else "")
+    check("bf52b the re-review scope says a new low in a fix is carried, not "
+          "looped, names the carry answer, and that only a med or high one "
+          "owes a fix: %r" % (_scope9,),
+          "new `low`" in _scope9 and "carried" in _scope9
+          and "not looped" in _scope9
+          and "--answer carry --to" in _scope9
+          and "`med` or `high`" in _scope9)
 
     # ---- a wave task's brief says which tree it works in --------------------
     # The tree comes from the driver's state, which is where `add_tree` records

@@ -98,7 +98,7 @@ RUNS_GATE_MODES = ("never", "own-tests", "full")
 # Mirror of hooks/_config.py REVIEW_PER_TASK_MODES, pinned the same way: where a
 # task's three review answers are given - by a reviewer per task, by the phase
 # review at sign-off, or per task only where a computed signal fires.
-KNOWN_REVIEW = {"perTask"}
+KNOWN_REVIEW = {"perTask", "maxRounds"}
 REVIEW_PER_TASK_MODES = ("always", "phase", "signals")
 
 
@@ -127,6 +127,38 @@ def review_per_task_mode(config, defaults=None):
     return None, ("review.perTask is %r, not one of %s - fix the config "
                   "(/audit:doctor names it); it is not read as the default"
                   % (mode, ", ".join(REVIEW_PER_TASK_MODES)))
+
+
+def _positive_int(value):
+    """A whole number of at least 1, never a bool - which Python counts as one."""
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 1
+
+
+def review_max_rounds(config, defaults=None):
+    """`(rounds, problem)` - `review.maxRounds` as `config` sets it, else the
+    shipped default: how many phase reviews a sign-off dispatches before the
+    step driver stops and asks once. `(None, problem)` for anything but a
+    positive integer.
+
+    REFUSED, NOT FOLDED INTO THE DEFAULT: a cap of 0 would read as "no review
+    round, successfully", and a typo read as the default would make a cap
+    nobody chose look chosen. `defaults` is the hooks' DEFAULTS when a caller
+    already holds it."""
+    if defaults is None:
+        defaults = getattr(_loader.load_hooks_config(), "DEFAULTS", None) or {}
+    block = (config or {}).get("review")
+    if not isinstance(block, dict) or "maxRounds" not in block:
+        shipped = (defaults.get("review") or {}).get("maxRounds")
+        if _positive_int(shipped):
+            return shipped, None
+        return None, ("the hooks' DEFAULTS ship no positive review.maxRounds, "
+                      "so there is no default to read")
+    rounds = block["maxRounds"]
+    if _positive_int(rounds):
+        return rounds, None
+    return None, ("review.maxRounds is %r, not a positive integer - fix the "
+                  "config (/audit:doctor names it); it is not read as the "
+                  "default" % (rounds,))
 
 
 def _valid_wave_width(value):
@@ -561,6 +593,10 @@ def _check_review(review, findings, warnings):
         findings.append("review.perTask must be one of %s - a value outside "
                         "this vocabulary is refused rather than read as the "
                         "default" % (REVIEW_PER_TASK_MODES,))
+    if "maxRounds" in review and not _positive_int(review["maxRounds"]):
+        findings.append("review.maxRounds must be a positive integer - a cap "
+                        "of %r is refused rather than read as the default"
+                        % (review["maxRounds"],))
 
 
 def _check_bands(bands, findings, warnings):

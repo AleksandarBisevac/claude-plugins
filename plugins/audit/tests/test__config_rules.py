@@ -299,7 +299,7 @@ def _cases(check):
                                     _hcfg.REVIEW_PER_TASK_MODES,
                                     _hcfg.DEFAULTS.get("review")),),
           tuple(M.REVIEW_PER_TASK_MODES) == tuple(_hcfg.REVIEW_PER_TASK_MODES)
-          and _hcfg.DEFAULTS.get("review") == {"perTask": "phase"})
+          and (_hcfg.DEFAULTS.get("review") or {}).get("perTask") == "phase")
     _defs = {"review": {"perTask": "phase"}}
     check("rv6 the reading: the key when set, the shipped default when absent, "
           "and a value outside the vocabulary refused with a problem rather "
@@ -320,6 +320,41 @@ def _cases(check):
           [(_pdefs[k]["properties"].get("reviewPerTask") or {}).get("enum")
            for k in ("phase", "task")]
           == [list(M.REVIEW_PER_TASK_MODES)] * 2)
+
+    # --- review.maxRounds --------------------------------------------------------
+    # How many phase reviews a sign-off runs before it stops and asks once. A
+    # cap of 0 would read as "no review at all, successfully", so it is refused
+    # by name rather than folded into the default - the waveWidth shape.
+    for _cap in (1, 2, 7):
+        f, w = M.validate_config({"review": {"maxRounds": _cap}})
+        check("rx1 review.maxRounds %r validates clean: %r" % (_cap, (f, w)),
+              not f and not w)
+    for _bad in (0, -1, True, "2", 1.5, None):
+        f, w = M.validate_config({"review": {"maxRounds": _bad}})
+        check("rx2 review.maxRounds %r is a FINDING naming the key: %r"
+              % (_bad, f), any("review.maxRounds" in x for x in f))
+    _rdefs = {"review": {"perTask": "phase", "maxRounds": 2}}
+    check("rx3 the reading: the key when set, the shipped default when absent, "
+          "and 0 refused by name with no value rather than read as the default",
+          M.review_max_rounds({"review": {"maxRounds": 5}}, _rdefs) == (5, None)
+          and M.review_max_rounds({}, _rdefs) == (2, None)
+          and M.review_max_rounds(None, _rdefs) == (2, None)
+          and M.review_max_rounds({"review": {"maxRounds": 0}}, _rdefs)[0] is None
+          and "review.maxRounds" in (M.review_max_rounds(
+              {"review": {"maxRounds": 0}}, _rdefs)[1] or ""))
+    check("rx4 the hooks ship review.maxRounds 2, and the reading with no "
+          "defaults handed in is that shipped value: %r"
+          % ((_hcfg.DEFAULTS.get("review"), M.review_max_rounds({})),),
+          (_hcfg.DEFAULTS.get("review") or {}).get("maxRounds") == 2
+          and M.review_max_rounds({}) == (2, None))
+    with open(os.path.join(os.path.dirname(_harness.SCRIPTS_DIR), "schema",
+                           "audit-config.schema.json"), "r", encoding="utf-8") as fh:
+        _rx_schema = json.load(fh)
+    _rx_prop = ((((_rx_schema.get("properties") or {}).get("review") or {})
+                 .get("properties") or {}).get("maxRounds") or {})
+    check("rx5 the config schema types review.maxRounds an integer of at least "
+          "1: %r" % (_rx_prop,),
+          _rx_prop.get("type") == "integer" and _rx_prop.get("minimum") == 1)
 
     # --- executor.maxHours -------------------------------------------------------
     # The same shape as runsGate above, for the bound on CONTINUING an agent

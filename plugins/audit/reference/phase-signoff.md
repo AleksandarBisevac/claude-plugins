@@ -39,7 +39,15 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    reviewer every such task's description, claim, commit and its own diff - computed once into
    the brief, docs/audit excluded, never re-derived by the reviewer - which it answers in its
    return's `tasks` entries; the sign-off verb refuses while a task owed its answers lacks one.
-   A re-review (a phase already carrying findings) lists only the fix task(s) in its place. What
+   A re-review (a phase already carrying findings) lists only the fix task(s) in its place, and
+   the driver owes one only where it can change the answer: a fix task whose finding was `med` or
+   `high`, or whose own recorded gate went red on the way. A fixed `low` closes on its green gate,
+   and the triage recommends `--answer carry --to <task or bug id>` for an open `low` rather than a
+   fix, recorded at sign-off as `carried`. Rounds are capped by `review.maxRounds` (the README's
+   config table gives its default), counted from the filed phase returns: at the cap, with a fix still unreviewed or a `med`+
+   finding open, the driver prints `decide round-cap` once - the open findings, the rounds' spend
+   from the usage ledger with its rate basis, and one answer line (carry every open finding, one
+   more round, or sign off accepting them open). What
    sign-off adds beside that is the review skill over the whole phase. **Record the review's findings through the verb, all of
    them in one call:**
 

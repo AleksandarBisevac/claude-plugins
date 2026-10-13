@@ -286,6 +286,14 @@ FIELD_HELP = {
         "a reviewer per task before its close. signals spawns one only where the "
         "task's red-first proof was not proved or its return disagrees with the "
         "recorded gate.",
+    "review.maxRounds":
+        "How many phase reviews a sign-off runs before the step driver stops and "
+        "asks once, showing the findings still open and the rounds' spend: carry "
+        "every open finding to a task or bug, run one more round, or sign off "
+        "accepting them open. A re-review is owed only for a fix whose finding "
+        "was med or high, or whose gate went red; an open low is recommended "
+        "carried. A whole number of at least 1; 0 is refused, not read as the "
+        "default.",
     "executor.waveWidth":
         "How many ready tasks whose declared files do not overlap the phase drive "
         "runs at once, each in a worktree of its own, integrated onto the phase "
@@ -630,15 +638,19 @@ SETTINGS_GROUPS = (
     },
     {
         "id": "review",
-        "title": "Per-task review",
+        "title": "Review",
         "blurb": "Where each task's three review answers are given: by a reviewer "
                  "per task before its close, or by the phase review at sign-off, "
                  "which then refuses to sign off a task that lacks them. Recorded "
                  "on a phase when its first task starts, so changing this does "
-                 "not change a phase already under way.",
+                 "not change a phase already under way. And how many phase "
+                 "reviews sign-off runs before it stops and asks once what to do "
+                 "with the findings still open.",
         "fields": (
             {"path": "review.perTask", "label": "Where a task's review is answered",
              "kind": "enum", "enum": "perTask"},
+            {"path": "review.maxRounds", "label": "Review rounds before sign-off asks",
+             "kind": "int", "min": 1},
         ),
     },
 )

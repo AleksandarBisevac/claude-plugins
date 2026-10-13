@@ -1141,7 +1141,10 @@ def compose_phase_brief(manifest, phase, ctx):
             "This phase already carries findings from an earlier review; "
             "only the fix task(s) below are shown here - the tasks that "
             "round reviewed are not repeated: %s"
-            % (", ".join(str(t.get("id")) for t in fixers),)])
+            % (", ".join(str(t.get("id")) for t in fixers),),
+            "A new `low` finding in these fixes is carried (`--answer carry "
+            "--to <task or bug id>`), not looped into another fix and another "
+            "round; only a `med` or `high` one owes a fix."])
     for task in shown:
         tid = str(task.get("id"))
         entries, whose = _task_gate(manifest, phase, task)

@@ -142,6 +142,12 @@ Config keys (all optional; defaults in DEFAULTS below):
         so the live value is read only while a phase records none. No hook
         reads this; `_config_rules.review_per_task_mode` does, and refuses a
         value outside the vocabulary rather than reading the default.
+  review.maxRounds        int   — how many phase reviews a sign-off dispatches
+        before the step driver stops and asks once: carry every open finding,
+        one more round, or sign off accepting them open. 2 by default; a
+        positive integer, and 0 is refused by name rather than read as 2.
+        Counted from the filed phase returns, so a lost driver state re-derives
+        it. No hook reads this; `_config_rules.review_max_rounds` does.
 
 This module also hosts the path/manifest helpers the hooks share (rel_path,
 within_root, matches_exempt, strip_line_suffix, in_progress_*).
@@ -378,7 +384,9 @@ DEFAULTS = {
     # which is a BEHAVIOUR CHANGE for a repository that sets nothing - see
     # COMPATIBILITY.md, where it is recorded as one. No hook reads this; it is
     # here for `ui`'s reason, and `_config_rules.review_per_task_mode` reads it.
-    "review": {"perTask": "phase"},
+    # "maxRounds" is how many phase reviews sign-off runs before it asks once
+    # whether to carry what is still open; `_config_rules.review_max_rounds`.
+    "review": {"perTask": "phase", "maxRounds": 2},
 }
 
 

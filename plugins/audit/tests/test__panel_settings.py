@@ -159,6 +159,26 @@ def _cases(check):
           M._cfg_enums()["perTask"] == list(_vc.REVIEW_PER_TASK_MODES)
           and tuple(_vc.REVIEW_PER_TASK_MODES)
           == tuple(_hcfg.REVIEW_PER_TASK_MODES))
+    # The round cap's control: a whole-number box whose floor is the
+    # validator's own - a form that let 0 through would write a config the
+    # validator then refuses by name.
+    _mr = [f for g in M.SETTINGS_GROUPS for f in g["fields"]
+           if f["path"] == "review.maxRounds"]
+    check("ps2 review.maxRounds is one whole-number control with a floor of 1, "
+          "in the review group, and the floor is one the validator accepts while "
+          "the step below it is refused: %r" % (_mr,),
+          len(_mr) == 1 and _mr[0]["kind"] == "int" and _mr[0].get("min") == 1
+          and _mr[0] in [f for g in M.SETTINGS_GROUPS if g["id"] == "review"
+                         for f in g["fields"]]
+          and not _vc.validate_config({"review": {"maxRounds": 1}})[0]
+          and _vc.validate_config({"review": {"maxRounds": 0}})[0])
+    _mrh = M.FIELD_HELP.get("review.maxRounds") or ""
+    check("ps3 its help text says what the cap does - asks once with the open "
+          "findings - names all three answers, and that 0 is refused: %r"
+          % (_mrh,),
+          "asks once" in _mrh and "carry" in _mrh
+          and "one more round" in _mrh and "accepting them open" in _mrh
+          and "0 is refused" in _mrh)
     check("_cfg_enums() is JSON-serializable (panel-server bakes it into UI_HTML "
           "with json.dumps)", json.dumps(M._cfg_enums(), sort_keys=True))
 

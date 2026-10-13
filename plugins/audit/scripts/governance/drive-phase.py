@@ -343,6 +343,11 @@ STEPS = {
         "line": "decide triage %(phase)s: %(why)s",
         "rule": ("Fix tasks come first: their edits invalidate a gate taken "
                  "before them. Then: gate, invariants, verdict, commit, landing.",)},
+    "decide-round-cap": {
+        "line": "decide round-cap %(phase)s: %(why)s",
+        "rule": ("Ask the human once (AskUserQuestion): carry every open finding "
+                 "to a task or bug of the plan, one more review round, or sign "
+                 "off accepting them open.",)},
     "decide-no-phase-review-return": {
         "line": "decide no-phase-review-return %(phase)s: the phase reviewer was "
                 "dispatched for head %(why)s and filed no return",
@@ -425,9 +430,16 @@ DECISIONS = {
     # their no, and `re-review` dispatches the phase review again over fix
     # tasks it never saw; the triage refuses each where it has nothing to act
     # on (`answer_refusal`). Every decision a human can say no to takes
-    # `decline`, which hands back to the work (`decline_answer`).
-    "triage": (("sign-off", "fix", "accept", "decline", "re-review"),
+    # `decline`, which hands back to the work (`decline_answer`). `carry` hands
+    # the open low findings to the task or bug `--to` names, recorded at
+    # sign-off: the answer the triage recommends for a low.
+    "triage": (("sign-off", "fix", "carry", "accept", "decline", "re-review"),
                ("sign-off", "accept", "decline")),
+    # At `review.maxRounds` with a round still wanted: `carry` hands every open
+    # finding to `--to` and signs off with `--reason` as the summary;
+    # `one-more-round` raises this phase's cap by one; `sign-off` accepts the
+    # open findings open, as the triage's does.
+    "round-cap": (("carry", "one-more-round", "sign-off"), ("carry", "sign-off")),
     "no-phase-review-return": (("redispatch",), ()),
     "invariant-breach": (("accept", "decline"), ("accept", "decline")),
     "gate-coverage": (("accept", "decline"), ("accept", "decline")),
@@ -436,8 +448,9 @@ DECISIONS = {
     "not-fast-forward": (("no-ff", "leave"), ("leave",)),
 }
 # The decisions sign-off owns, answered by `apply_phase_answer`.
-PHASE_DECISIONS = ("triage", "no-phase-review-return", "invariant-breach",
-                   "gate-coverage", "runtime-boot", "not-fast-forward")
+PHASE_DECISIONS = ("triage", "round-cap", "no-phase-review-return",
+                   "invariant-breach", "gate-coverage", "runtime-boot",
+                   "not-fast-forward")
 
 # --- sign-off's constants -------------------------------------------------------
 # The triage print holds one line per open finding, so it is bounded per line
@@ -452,6 +465,18 @@ TRIAGE_LINE_BYTES = 160
 FIX_TASK_PREDICTED = (0.1045, 0.1192)
 FIX_TASK_PRICE_BASIS = ("a benchmark prediction for a small task, not this "
                         "project's measurement")
+# The severity a finding is carried at by default rather than fixed, and whose
+# fix closes on its own green gate with no re-review. Every other word - and a
+# finding with none - owes the review a look at its fix: an unknown severity
+# is not a low one.
+CARRY_SEVERITY = "low"
+# The driver's state: which open findings a `carry` answer handed to which task
+# or bug (recorded at sign-off as `--carried`), how many phase reviews this
+# phase has filed, and the cap a `one-more-round` answer raised.
+CARRIED_FIELD = "carried"
+ROUNDS_FIELD = "reviewRounds"
+CAP_FIELD = "roundCap"
+EXTRA_ROUNDS_FIELD = "extraRounds"
 # The gate's banners a green exit still prints, and the clause each becomes.
 GATE_BANNERS = (("NO OVERLAP WITH THIS WORK", "NO OVERLAP"),
                 ("TREE CHANGED OUTSIDE THIS WORK", "TREE CHANGED"))
@@ -706,6 +731,8 @@ def render_decision(ctx, pending):
     name = pending["decision"]
     if name == "triage":
         return render_triage(ctx, pending)
+    if name == "round-cap":
+        return render_round_cap(ctx, pending)
     options, needs = DECISIONS[name]
     lines = step_text("decide-%s" % (name,), task=pending.get("task"),
                       phase=ctx["phase"], why=pending.get("why") or "")
@@ -1124,11 +1151,18 @@ def advance(ctx, state, manifest, phase, task, tree=None):
             "return's gates agree with the recorded green"))
     if key == _fr.KEY_PHASE and _fr.is_fix_task(task, phase):
         # A fix task closes `not-asked`, the answer the landing takes from one;
-        # its diff is the triage's to put to a re-review (`fixes_after`).
+        # its diff is the triage's to put to a re-review (`fixes_after`) where
+        # it owes one, and a fixed low whose gate never went red owes none.
+        named = ", ".join(str(f) for f in task.get("fixes") or [])
+        owes = owes_rereview(phase, task, gate_went_red(ctx)
+                             if fixes_only_lows(phase, task) else set())
         return close_task(ctx, state, phase, task, intent_basis=(
             "a fix task for %s: the phase review raised the finding; the fix's "
-            "own diff is unreviewed unless sign-off re-reviews it"
-            % (", ".join(str(f) for f in task.get("fixes") or []),)))
+            "own diff is unreviewed unless sign-off re-reviews it" % (named,)
+            if owes else
+            "a fix task for %s, every finding it fixes raised low and its gate "
+            "never red: it closes on its own green gate, and no re-review is "
+            "owed" % (named,)))
     return close_task(ctx, state, phase, task)
 
 
@@ -1705,9 +1739,44 @@ def answer_refusal(ctx, pending, answer, reason, fixes=()):
         return fix_refusal(pending, fixes)
     elif fixes:
         return "--fix belongs to --answer fix"
+    if answer == "carry" and not (ctx.get("carryTo") or "").strip():
+        return ("--answer carry needs --to <task or bug id>: the carried "
+                "finding is recorded as now held there")
+    if answer != "carry" and ctx.get("carryTo"):
+        return "--to belongs to --answer carry"
     if pending["decision"] == "triage":
         return triage_refusal(pending, answer)
     return None
+
+
+def carry_target_refusal(ctx, manifest, phase, answer):
+    """`--answer carry --to <id>` refused for a target the sign-off verb would
+    refuse, or a task of the phase being signed off - which would run before
+    the sign-off rather than carry anything past it. None when it may carry."""
+    if answer != "carry":
+        return None
+    target = ctx["carryTo"].strip()
+    mine = set(t.get("id") for t in _tasks(phase))
+    bugs = set(str(b.get("id")) for b in manifest.get("bugs") or []
+               if isinstance(b, dict))
+    if target in mine:
+        return ("--to %s is a task of %s itself, which runs before this sign-off "
+                "rather than carrying the finding past it: name a task of a "
+                "later phase, or a bug" % (target, phase["id"]))
+    if target not in _mio.tasks_by_id(manifest) and target not in bugs:
+        return ("--to %s names no task or bug of this plan: add the task that "
+                "will hold the carried finding first (/audit:task add --phase "
+                "<a later phase>), then carry to its id" % (target,))
+    return None
+
+
+def carry_ids(pending):
+    """The findings a `carry` answer hands on: the open lows at a triage - the
+    answer it recommends for them - and every open finding at the round cap."""
+    found = pending.get("findings") or []
+    if pending.get("decision") == "round-cap":
+        return [f.get("id") for f in found]
+    return [f.get("id") for f in found if f.get("severity") == CARRY_SEVERITY]
 
 
 def fix_refusal(pending, fixes):
@@ -1746,6 +1815,8 @@ def triage_refusal(pending, answer):
     if answer == "re-review" and not pending.get("fixesAfter"):
         return "no fix task closed after the review's head, so there is no " \
                "unreviewed diff to re-review"
+    if answer == "carry" and not carry_ids(pending):
+        return "no open low finding is offered here, so carry hands on nothing"
     return None
 
 
@@ -1967,14 +2038,51 @@ def is_ancestor(ctx, commit, head):
 
 def fixes_after(ctx, phase, head):
     """The recorded fix tasks closed `not-asked` under the phase key at a
-    commit the phase review's `head` does not hold - diffs no review saw. A fix
-    task its own per-task reviewer answered was reviewed, so it is not listed.
-    One git could not place is listed: an unknown is not a reviewed diff."""
-    return [t["id"] for t in _tasks(phase)
-            if t.get("commit") and _fr.is_fix_task(t, phase)
-            and (t.get("intentCheck") or {}).get("answer") == "not-asked"
-            and review_key(ctx, phase, t)[0] == _fr.KEY_PHASE
-            and is_ancestor(ctx, t["commit"], head) is not True]
+    commit the phase review's `head` does not hold - diffs no review saw - that
+    owe a re-review (`owes_rereview`). A fix task its own per-task reviewer
+    answered was reviewed, so it is not listed. One git could not place is
+    listed: an unknown is not a reviewed diff."""
+    unseen = [t for t in _tasks(phase)
+              if t.get("commit") and _fr.is_fix_task(t, phase)
+              and (t.get("intentCheck") or {}).get("answer") == "not-asked"
+              and review_key(ctx, phase, t)[0] == _fr.KEY_PHASE
+              and is_ancestor(ctx, t["commit"], head) is not True]
+    red = gate_went_red(ctx) if any(fixes_only_lows(phase, t)
+                                    for t in unseen) else set()
+    return [t["id"] for t in unseen if owes_rereview(phase, t, red)]
+
+
+def fixes_only_lows(phase, task):
+    """Whether every finding fix task `task` names was raised `low`. A finding
+    the review does not hold, or one with no severity, is not a low one."""
+    severity = dict((str(f.get("id")), f.get("severity"))
+                    for f in (phase.get("review") or {}).get("findings") or []
+                    if isinstance(f, dict))
+    fixes = task.get("fixes") or []
+    return bool(fixes) and all(severity.get(str(fid)) == CARRY_SEVERITY
+                               for fid in fixes)
+
+
+def owes_rereview(phase, task, red):
+    """Whether fix task `task`'s diff owes the phase review another look: one
+    of its findings was med or high, or its own gate went red on the way -
+    `red` is `gate_went_red`'s set, None where the ledger could not be read,
+    which owes one: an unread ledger is not a green one. A fixed low whose gate
+    was only ever green closes on that gate."""
+    if not fixes_only_lows(phase, task):
+        return True
+    return red is None or task.get("id") in red
+
+
+def gate_went_red(ctx):
+    """The ids of the tasks whose recorded gate ever came back `failed` in
+    the project's evidence ledger, or None when the ledger cannot be read."""
+    try:
+        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+    except Exception:                                          # noqa: BLE001
+        return None
+    return set(r.get("taskId") for r in rows if isinstance(r, dict)
+               and r.get("taskId") and r.get("status") == "failed")
 
 
 def dispatch_phase_review(ctx, state, phase):
@@ -2129,15 +2237,8 @@ def render_triage(ctx, pending):
     answers = pending.get("answers") or []
     after = pending.get("fixesAfter") or []
     head = step_text("decide-triage", phase=ctx["phase"], why=pending.get("why") or "")
-    lines = head[:1]
-    for f in found:
-        lines.append(_clip("  %s %s %s - %s [fix|leave]" % (
-            f.get("id"), f.get("severity"), f.get("file"), f.get("issue")),
-            TRIAGE_LINE_BYTES))
-    for f in pending.get("handed") or []:
-        lines.append(_clip("  %s %s - handed to %s, which runs before sign-off"
-                           % (f.get("id"), f.get("severity"), f.get("fixTask")),
-                           TRIAGE_LINE_BYTES))
+    lines = head[:1] + finding_lines(found, pending)
+    lows = carry_ids(pending)
     for a in answers:
         lines.append(_clip("  %s %s - %s" % (a.get("who"), a.get("what"),
                                              a.get("note") or "no note"),
@@ -2150,6 +2251,11 @@ def render_triage(ctx, pending):
     if found:
         lines.append(_clip("  a fix task: %.2f-%.2f USD-eq predicted (%s)" % (
             FIX_TASK_PREDICTED + (FIX_TASK_PRICE_BASIS,)), TRIAGE_LINE_BYTES))
+    if lows:
+        lines.append(_clip("answer: next %s --answer carry --to <task or bug id> "
+                           "(recommended for the low finding(s): %s)" % (
+                               ctx["phase"], ", ".join(lows)), TRIAGE_LINE_BYTES))
+    if found:
         lines.append("answer: next %s --answer fix --fix <id>[,<id>]" % (
             ctx["phase"],))
     if after:
@@ -2162,6 +2268,139 @@ def render_triage(ctx, pending):
             ctx["phase"], " (a finding left is kept as recorded)" if found else ""))
     return instruction("decide", lines + head[1:]
                        + ([ANSWERS_RULE] if answers else []))
+
+
+def finding_lines(found, pending, offer=True):
+    """One line per open finding with the answers it takes - a low offers
+    `carry` first, the answer the triage recommends for it; none with `offer`
+    False, where the decision's own answer line is the only one - then one per
+    finding handed to a fix task still to run and one per finding a `carry`
+    answer already handed on. The options are appended after the bound, so a
+    long issue is cut and its options never are."""
+    lines = []
+    for f in found:
+        options = ("" if not offer else " [carry|fix|leave]"
+                   if f.get("severity") == CARRY_SEVERITY else " [fix|leave]")
+        lines.append(_clip("  %s %s %s - %s" % (
+            f.get("id"), f.get("severity"), f.get("file"), f.get("issue")),
+            TRIAGE_LINE_BYTES - len(options)) + options)
+    for f in pending.get("handed") or []:
+        lines.append(_clip("  %s %s - handed to %s, which runs before sign-off"
+                           % (f.get("id"), f.get("severity"), f.get("fixTask")),
+                           TRIAGE_LINE_BYTES))
+    for f in pending.get("carried") or []:
+        lines.append(_clip("  %s - carried to %s, recorded so at sign-off"
+                           % (f.get("id"), f.get("to")), TRIAGE_LINE_BYTES))
+    return lines
+
+
+def render_round_cap(ctx, pending):
+    """The round cap's one question: the findings still open, each fix no
+    review saw, what the rounds cost and on what basis, and the three answers
+    on one line."""
+    head = step_text("decide-round-cap", phase=ctx["phase"],
+                     why=pending.get("why") or "")
+    lines = head[:1] + finding_lines(pending.get("findings") or [], pending,
+                                     offer=False)
+    after = pending.get("fixesAfter") or []
+    if after:
+        lines.append(_clip("  %s: fix task(s) closed after the review's head %s, "
+                           "their diff unreviewed" % (
+                               ", ".join(after), pending.get("head") or "?"),
+                           TRIAGE_LINE_BYTES))
+    lines += list(pending.get("cost") or [])
+    lines.append("answer: next %s --answer carry --to <task or bug id> --reason "
+                 "<the summary> | one-more-round | sign-off --reason <the "
+                 "summary>" % (ctx["phase"],))
+    return instruction("decide", lines + head[1:])
+
+
+def filed_review_rounds(ctx, phase):
+    """How many phase reviews `phase` has filed: one return per round, keyed on
+    the head its brief named, so the count survives the driver's state."""
+    return len(_fr.phase_returns(ctx["evidence"], phase["id"]))
+
+
+def review_rounds(ctx, state, phase):
+    """`(rounds, cap, problem)` - the phase reviews filed so far and the cap
+    sign-off stops at: `review.maxRounds`, raised by each `one-more-round`.
+    Both are kept in the driver's state, and the count is re-derived from the
+    filed returns on every read, so a lost state file never resets it to zero."""
+    base, problem = _config_rules.review_max_rounds(ctx["config"])
+    if problem:
+        return None, None, problem
+    held = state.get(ROUNDS_FIELD)
+    held = held if isinstance(held, int) and not isinstance(held, bool) else 0
+    rounds = max(filed_review_rounds(ctx, phase), held)
+    extra = state.get(EXTRA_ROUNDS_FIELD)
+    extra = extra if isinstance(extra, int) and not isinstance(extra, bool) \
+        and extra > 0 else 0
+    cap = base + extra
+    if state.get(ROUNDS_FIELD) != rounds or state.get(CAP_FIELD) != cap:
+        state[ROUNDS_FIELD], state[CAP_FIELD] = rounds, cap
+        write_state(ctx, state)
+    return rounds, cap, None
+
+
+# The `--by task` key `audit-usage.py` files a row under when it names no task:
+# the phase's own turns - its reviews and the main loop's - rather than a task's.
+NO_TASK_KEY = "--"
+
+
+def rounds_cost_lines(ctx, phase):
+    """What the review rounds have cost so far, read from the usage ledger by
+    phase through `audit-usage.py --phase --json` - the one reader every cost
+    surface prices through: the phase's rows with no task (its reviews and the
+    main loop's own turns) and its fix tasks' rows, with the rate basis beside
+    the figure, the tokens no rate covers said to be unpriced, and a ledger
+    that is absent or unreadable said so."""
+    code, out, err = run_verb(ctx, "audit-usage.py", [
+        ctx["manifest"], "--phase", phase["id"], "--json", "--project-dir",
+        ctx["project"]])
+    try:
+        usage = json.loads(out) if code == 0 else None
+    except ValueError:
+        usage = None
+    if not isinstance(usage, dict):
+        return ["  rounds' cost: not known - audit-usage.py exit %d: %s" % (
+            code, _clip(_excerpt.reason_of(err, out) or "no output", 80))]
+    fixers = set(t.get("id") for t in _tasks(phase) if _fr.is_fix_task(t, phase))
+    slots = [slot for key, slot in (usage.get("byTask") or {}).items()
+             if key == NO_TASK_KEY or key in fixers]
+    rows = sum(slot.get("msgs") or 0 for slot in slots)
+    tokens = sum(slot.get("tokens") or 0 for slot in slots)
+    unpriced = sum(slot.get("unpricedTokens") or 0 for slot in slots)
+    if not slots:
+        return ["  rounds' cost: not known - the usage ledger%s attributes "
+                "nothing to %s's reviews or fix tasks" % (
+                    "" if usage.get("ledgerDir") else " (none found)",
+                    phase["id"])]
+    if unpriced and unpriced >= tokens:
+        return ["  rounds' cost: unpriced - %d token(s) over %d message(s), on "
+                "models no rate covers" % (unpriced, rows)]
+    cost = sum(slot.get("costUSD") or 0.0 for slot in slots)
+    return ["  rounds' cost so far: %.2f USD-eq over %d message(s) of the "
+            "phase's reviews, main loop and fix tasks%s" % (
+                cost, rows, "; %d token(s) unpriced" % (unpriced,)
+                if unpriced else ""),
+            "  priced at %s" % (usage.get("rateBasis")
+                                or "a rate basis audit-usage.py did not name",)]
+
+
+def round_wanted(still, after):
+    """Whether the triage would ask for another review round: a fix closed
+    since the last review owes one, or a med-or-worse finding is still open,
+    whose fix would. Open lows are carried, which needs no round."""
+    return bool(after) or any(f.get("severity") != CARRY_SEVERITY for f in still)
+
+
+def carried_now(state, phase):
+    """`{finding id: target}` of the `carry` answers whose finding is still
+    open - a finding fixed or dispositioned since is no longer carried."""
+    held = state.get(CARRIED_FIELD) if isinstance(state.get(CARRIED_FIELD),
+                                                  dict) else {}
+    open_ids = set(f.get("id") for f in open_findings(phase))
+    return dict((fid, to) for fid, to in held.items() if fid in open_ids)
 
 
 def triage(ctx, state, manifest, phase):
@@ -2207,6 +2446,8 @@ def triage(ctx, state, manifest, phase):
             ctx["did"].append("phase review again: %s owed" % (", ".join(owed[:3]),))
             return dispatch_phase_review(ctx, state, phase)
     still, handed = triage_findings(phase)
+    carried = carried_now(state, phase)
+    still = [f for f in still if f.get("id") not in carried]
     # A settlement counts for the content it was given for: an answer settled
     # by name alone is put to the human again, so its accept records the
     # signature the sign-off verb honours.
@@ -2218,7 +2459,9 @@ def triage(ctx, state, manifest, phase):
                                                  or "no verdict",)
             if review is not None else "no phase review is due")
     extra = {"findings": still, "handed": handed, "answers": answers,
-             "fixesAfter": after, "head": (mark.get("head") or "")[:12]}
+             "fixesAfter": after, "head": (mark.get("head") or "")[:12],
+             "carried": [{"id": fid, "to": to}
+                         for fid, to in sorted(carried.items())]}
     if ctx.get("advance") is not None:
         reason = ctx.pop("advance")
         if advance_applies(review, extra):
@@ -2228,6 +2471,21 @@ def triage(ctx, state, manifest, phase):
                 ADVANCE_ANSWER, reason, ())
         ctx["did"].append(ADVANCE_NOT_APPLIED % (
             "the triage below has more than one answer",))
+    rounds, cap, problem = review_rounds(ctx, state, phase)
+    if problem:
+        return _stopped(ctx, problem)
+    if rounds >= cap and round_wanted(still, after) and not answers:
+        # THE LOOP STOPS HERE, ONCE: another round is wanted and the cap is
+        # spent, so the human is asked whether it is worth one - with what is
+        # open and what the rounds cost - rather than offered `fix` and
+        # `re-review` again. A reviewer answer waiting on a human is settled
+        # at the triage first: no answer here would settle it.
+        return decision(ctx, state, "round-cap", None, (
+            "%d of %d review round(s) spent; %d finding(s) open%s" % (
+                rounds, cap, len(still), "; %d fix(es) unreviewed" % (
+                    len(after),) if after else "")), extra=dict(
+            extra, rounds=rounds, cap=cap,
+            cost=rounds_cost_lines(ctx, phase)))
     return decision(ctx, state, "triage", None, "%s; %s%s" % (
         said, "%d finding(s) open" % (len(still),) if still
         else "no finding open", "; %d answer(s) for a human" % (len(answers),)
@@ -2257,6 +2515,22 @@ def advance_admissible(phase):
             and all(t.get("status") in _mio.TERMINAL for t in _tasks(phase)))
 
 
+def fix_tests(fid, finding):
+    """The `tests` block a fix task over `finding` is added with, or None to
+    leave the mode to the verb. A finding whose `file` names only test files -
+    a missing case, a pin over code already at HEAD - is resolved by adding a
+    case, which passes at HEAD with or without the fix: no red can be shown
+    first, so it is `regression`, its red shown by restoring the old code in a
+    scratch copy. The verb would give a test file that does not exist yet
+    `tdd`, which the red-first helper rightly refuses."""
+    paths = _phases.gate_entry_paths(finding.get("file") or "")
+    if not paths or not all(_fr.is_test_path(p) for p in paths):
+        return None
+    return {"mode": "regression",
+            "add": ["%s: the case %s asks for, locking the behaviour at HEAD"
+                    % (p, fid) for p in paths]}
+
+
 def add_fix_tasks(ctx, phase, fixes):
     """A task for each named finding, every one in ONE `audit-task.py add
     --from-file -` call; None, or the stop.
@@ -2271,10 +2545,14 @@ def add_fix_tasks(ctx, phase, fixes):
     tasks = []
     for fid in fixes:
         found = by_id.get(fid) or {}
-        tasks.append({"title": _clip("fix %s: %s" % (fid, found.get("issue") or ""), 80),
-                      "description": "%s\n\nResolution asked: %s" % (
-                          found.get("issue") or "", found.get("resolution") or ""),
-                      "fixes": [fid]})
+        task = {"title": _clip("fix %s: %s" % (fid, found.get("issue") or ""), 80),
+                "description": "%s\n\nResolution asked: %s" % (
+                    found.get("issue") or "", found.get("resolution") or ""),
+                "fixes": [fid]}
+        tests = fix_tests(fid, found)
+        if tests:
+            task["tests"] = tests
+        tasks.append(task)
     out, stop = _verb_or_stop(ctx, "audit-task.py", [
         "add", ctx["manifest"], "--project-dir", ctx["project"], "--from-file",
         "-", "--json"], stdin=json.dumps({"phase": {"id": phase["id"]},
@@ -2499,9 +2777,13 @@ def run_signoff(ctx, state, phase):
     # open finding - one no fix task landed for - is the human accepting it
     # open, and the verb refuses a sign-off that leaves one unsaid, so each is
     # recorded with the reason the answer carried. A finding handed to a fix
-    # task still to run is not offered one: that task is its answer.
+    # task still to run is not offered one: that task is its answer. One a
+    # `carry` answer handed on is recorded as carried to the id it named.
+    carried = carried_now(state, phase)
     for finding in triage_findings(phase)[0]:
-        args += ["--accept-open", "%s=%s" % (finding["id"], summary)]
+        args += (["--carried", "%s=%s" % (finding["id"], carried[finding["id"]])]
+                 if finding["id"] in carried else
+                 ["--accept-open", "%s=%s" % (finding["id"], summary)])
     mark = state.get("phaseReview") or {}
     if mark.get("head"):
         args += ["--review-outcome", "phase review filed at head %s"
@@ -2600,6 +2882,23 @@ def apply_phase_answer(ctx, state, manifest, phase, pending, answer, reason,
     name = pending["decision"]
     if answer == "fix":
         return add_fix_tasks(ctx, phase, fixes)
+    if answer == "carry":
+        ids = carry_ids(pending)
+        held = dict(state.get(CARRIED_FIELD) or {})
+        held.update((fid, ctx["carryTo"].strip()) for fid in ids)
+        state[CARRIED_FIELD] = held
+        write_state(ctx, state)
+        ctx["did"].append("carried %s to %s" % (", ".join(ids) or "nothing",
+                                                ctx["carryTo"].strip()))
+        if name == "triage":
+            return None
+    if answer == "one-more-round":
+        state[EXTRA_ROUNDS_FIELD] = (state.get(EXTRA_ROUNDS_FIELD) or 0) + 1
+        write_state(ctx, state)
+        ctx["did"].append("one more review round allowed")
+        if not pending.get("fixesAfter"):
+            return None
+        answer = "re-review"
     if answer in ("redispatch", "re-review"):
         state.pop("phaseReview", None)
         write_state(ctx, state)
@@ -2622,7 +2921,8 @@ def apply_phase_answer(ctx, state, manifest, phase, pending, answer, reason,
         ctx["did"].append("%d reviewer answer(s) accepted"
                           % (len(pending.get("answers") or []),))
         return None
-    if answer == "sign-off":
+    if answer in ("sign-off", "carry"):
+        # At the round cap `carry` signs off too, its reason the summary.
         state["summary"] = reason
         state["unreviewedFixes"] = list(pending.get("fixesAfter") or [])
     elif answer == "accept" and name == "gate-coverage":
@@ -2862,6 +3162,8 @@ def refresh_triage(ctx, state, phase, pending):
             ", ".join(f.get("id") for f in triage_findings(phase)[1]),))
         return None
     offered, handed = triage_findings(phase)
+    carried = carried_now(state, phase)
+    offered = [f for f in offered if f.get("id") not in carried]
     if offered != pending.get("findings") or handed != (pending.get("handed") or []):
         pending = dict(pending, findings=offered, handed=handed)
         state["pending"] = pending
@@ -2884,7 +3186,8 @@ def drive_locked(ctx, state, answer, reason, fixes):
                            "decision; answer it with next %s first"
                            % (PREFIX, ctx["phase"], pending["decision"], ctx["phase"]))
     if (answer == ADVANCE_ANSWER and pending is None and not ctx.get("only")
-            and not fixes and advance_admissible(phase)):
+            and not fixes and not ctx.get("carryTo")
+            and advance_admissible(phase)):
         if not (reason or "").strip():
             return E_USAGE, "%s %s: --answer %s needs --reason: it is recorded " \
                             "with the phase" % (PREFIX, ctx["phase"], answer)
@@ -2894,7 +3197,8 @@ def drive_locked(ctx, state, answer, reason, fixes):
             ctx["did"].append(ADVANCE_NOT_APPLIED % ("no triage was reached",))
         return code, said
     if answer is not None:
-        refused = answer_refusal(ctx, pending, answer, reason, fixes)
+        refused = (answer_refusal(ctx, pending, answer, reason, fixes)
+                   or carry_target_refusal(ctx, manifest, phase, answer))
         if refused:
             return E_USAGE, "%s %s: %s" % (PREFIX, ctx["phase"], refused)
         said = apply_answer(ctx, state, manifest, phase, pending, answer, reason,
@@ -3303,6 +3607,9 @@ def build_parser():
                      metavar="FINDING[,FINDING]",
                      help="with --answer fix: the findings to fix, each "
                           "becoming a task through `add --fixes`")
+    nxt.add_argument("--to", dest="carry_to", default=None, metavar="ID",
+                     help="with --answer carry: the task of a later phase, or "
+                          "the bug, that now holds the carried findings")
     nxt.add_argument("--verbose", action="store_true",
                      help="print each verb's run above the instruction")
     sbm = sub.add_parser("submit", help="file an agent's return, read on stdin: "
@@ -3453,6 +3760,7 @@ def main(argv, out=print, stdin=None):
     except Exception as exc:                                   # noqa: BLE001
         sys.stderr.write("drive-phase.py: %s\n" % (exc,))
         return E_USAGE
+    ctx["carryTo"] = args.carry_to
     try:
         fixes = [f.strip() for given in args.fix for f in given.split(",")
                  if f.strip()]

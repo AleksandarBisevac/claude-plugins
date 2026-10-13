@@ -23,12 +23,12 @@ phase id to run. A phase whose id is that word: ask (AskUserQuestion) which was 
    <manifest> <phaseId> --confirm-high-risk "<your words>"` first and print the task ids it covers
    verbatim in your own reply - a high-risk task not on that list still stops and asks.
    **The operator's words go in VERBATIM**: the journal keeps them as typed.
-2. Run `S/governance/drive-phase.py" next <phaseId>`, do what it prints, and run it again until
-   it prints `done` - a closed task is not a stop:
+2. Run `S/governance/drive-phase.py" next <phaseId>`, do what it prints, and repeat until it
+   prints `done` - a closed task is not a stop:
    `dispatch <agent> <id> model=<m> brief=<path>` → one Agent call with that `subagent_type` and
    `model`, the prompt `Read your brief at <path> and follow it.`, and the rule printed under it.
-3. `decide <name> ...` → `next <phaseId> --answer <option> [--reason "<words>"]`, a human's
-   decision going to the human first (AskUserQuestion); a `stopped` print → relay it as printed.
+3. `decide <name> ...` → `next <phaseId> --answer <option> [--to <id>] [--reason "<words>"]`,
+   put to the human first (AskUserQuestion); a `stopped` print → relay it as printed.
 4. `done` → report what landed and where. **Phase sign-off** (orchestrator) is the drive's last
    step: a fix task comes first, because its edits invalidate a gate taken before them. Nothing measures whether you held the order when a gate
    is run by hand.

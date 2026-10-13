@@ -2394,6 +2394,281 @@ def _fix_scope_cases(check, M):
               % (label, got), got == want)
 
 
+# --- sign-off converges: re-review only where it can change the answer --------
+def _carry_target(root, mpath):
+    """A later phase holding one pending task, made through the verbs: where a
+    carried finding goes. Its id, or the refusal's text."""
+    with _Env(root):
+        code_p, out_p = _verb(root, "audit-task.py", [
+            "add-phase", "later work", mpath, "--project-dir", root, "--id",
+            "P2", "--outcome", "what the first phase carried is done"])
+        code, out = _verb(root, "audit-task.py", [
+            "add", "carried findings", mpath, "--project-dir", root, "--phase",
+            "P2", "--files", "src/f3.txt", "--description",
+            "the findings P1 carried", "--gate", "true", "--json"])
+    try:
+        return json.loads(out).get("id")
+    except ValueError:
+        return "(add-phase exit %d: %s; add exit %d: %s)" % (
+            code_p, out_p[-200:], code, out[-200:])
+
+
+def _phase_review_briefs(root, run):
+    """The brief text of the last phase-review dispatch the run printed, and
+    how many phase reviews it dispatched."""
+    briefs = [_BRIEF.search(t) for (_c, t), s in zip(run["prints"], run["steps"])
+              if s == ("dispatch", "reviewer", PHASE)]
+    briefs = [b.group(1) for b in briefs if b]
+    text = ""
+    if briefs:
+        with open(os.path.join(root, *briefs[-1].split("/"))) as fh:
+            text = fh.read()
+    return text, len(briefs)
+
+
+def _converge_cases(check):
+    """A review returning one med and two lows dispatches one fix task and one
+    re-review over that fix's diff; the two lows end carried, and no third
+    review is dispatched."""
+    M, why = _load("drive_phase_converge")
+    if M is None:
+        check("cv1 the driver loads", False, why)
+        return
+    root, mpath = _repo("converge", task_ids=TASKS[:1], per_task="phase")
+    target = _carry_target(root, mpath)
+    live = list(FINDINGS)
+
+    def cleared(role, tid):
+        # The re-review finds nothing new: only the first review's findings.
+        if tid == PHASE:
+            del live[:]
+
+    def answer(kind, text):
+        if kind[1] != "triage":
+            return False
+        if "--answer re-review" in text:
+            return ["--answer", "re-review"]
+        if any("P1-R1" in ln and "[fix|leave]" in ln for ln in text.splitlines()):
+            return ["--answer", "fix", "--fix", "P1-R1"]
+        if "--answer carry" in text:
+            return ["--answer", "carry", "--to", target]
+        return ["--answer", "sign-off", "--reason", SUMMARY]
+    run = drive(M, root, mpath, findings=live, on_dispatch=cleared,
+                answer=answer, cap=30)
+    brief, reviews = _phase_review_briefs(root, run)
+    fixes = [t for t in tasks_of(mpath).values() if t.get("fixes")]
+    fix_id = fixes[0].get("id") if fixes else "-"
+    found = dict((f.get("id"), f) for f in
+                 (_phase_of(mpath).get("review") or {}).get("findings") or [])
+    lows = [(found.get(f) or {}) for f in ("P1-R2", "P1-R3")]
+    check("cv1 one med and two lows: ONE fix task (for the med), TWO phase "
+          "reviews - the second over that fix's diff alone - and the phase "
+          "signed off with no third review: %r"
+          % ((run["steps"][-4:], [t.get("fixes") for t in fixes], reviews),),
+          len(fixes) == 1 and fixes[0].get("fixes") == ["P1-R1"]
+          and reviews == 2 and run["steps"][-1] == DONE
+          and "Re-review scope" in brief and fix_id in brief
+          and _signed(mpath))
+    check("cv2 both lows end `carried`, each naming the task it went to (%s), "
+          "and the med ends fixed by its task's commit: %r"
+          % (target, (lows, found.get("P1-R1"))),
+          all(f.get("status") == "carried" and f.get("carriedTo") == target
+              for f in lows)
+          and (found.get("P1-R1") or {}).get("fixTask") == fix_id
+          and bool((found.get("P1-R1") or {}).get("commit")))
+    triages = [t for (_c, t), s in zip(run["prints"], run["steps"]) if s == TRIAGE]
+    first = triages[0] if triages else ""
+    recommend = [ln for ln in first.splitlines() if "--answer carry" in ln]
+    check("cv3 the first triage recommends carrying the lows - their lines "
+          "offer carry first, the answer line says it is the recommended one - "
+          "while the med keeps fix|leave: %r" % (first,),
+          all(any(fid in ln and "[carry|fix|leave]" in ln
+                  for ln in first.splitlines()) for fid in ("P1-R2", "P1-R3"))
+          and any("P1-R1" in ln and "[fix|leave]" in ln
+                  and "carry" not in ln for ln in first.splitlines())
+          and len(recommend) == 1 and "recommended" in recommend[0])
+
+    # The fix task's mode comes from its finding: one over a test file alone
+    # adds a case over code already at HEAD, so no red can be shown first.
+    pin = [{"severity": "med", "file": "tests/test_f1.py",
+            "issue": "nothing pins f1's text", "resolution": "add a case"}]
+    root_t, mpath_t = _triage_with(M, "converge-pin", pin)
+    _next(M, root_t, mpath_t, "--answer", "fix", "--fix", "P1-R1")
+    made = [t for t in tasks_of(mpath_t).values() if t.get("fixes") == ["P1-R1"]]
+    mode = ((made[0].get("tests") or {}).get("mode")) if made else None
+    check("cv4 a fix task over a finding naming only a test file is "
+          "`regression`, never `tdd` the red-first helper must refuse: %r"
+          % ((mode, made and made[0].get("tests")),), mode == "regression")
+
+
+# A gate green while the repository's own exclude file names `src/` and red once
+# it does not: git on every platform, and whatever task file a gate's
+# derivation re-spells its operand onto lies under `src/` either way.
+_FLIP_GATE = "git check-ignore -q --no-index src/f1.txt"
+
+
+def _low_fix_cases(check):
+    """A fixed low whose gate is green closes without a re-review; a fixed low
+    whose gate went red owes one."""
+    M, why = _load("drive_phase_low_fix")
+    if M is None:
+        check("lf1 the driver loads", False, why)
+        return
+    low = [dict(FINDINGS[1])]
+    root, mpath = _repo("low-fix", task_ids=TASKS[:1], per_task="phase")
+    answers = iter([["--answer", "fix", "--fix", "P1-R1"]])
+    run = drive(M, root, mpath, findings=low,
+                answer=lambda kind, text: next(answers, False))
+    # The decision alone: the did-line above it names the fix task it closed.
+    triage = "\n".join(ln for ln in run["prints"][-1][1].splitlines()
+                       if not ln.startswith("[drive-phase]"))
+    fix = [t for t in tasks_of(mpath).values() if t.get("fixes") == ["P1-R1"]]
+    fix_id = fix[0].get("id") if fix else "-"
+    basis = ((fix[0].get("intentCheck") or {}).get("basis") or "") if fix else ""
+    check("lf1 a fixed low whose gate went green closes on it: the triage after "
+          "it names no unreviewed fix and offers no re-review, and the close "
+          "basis says none is owed: %r" % ((run["steps"][-3:], triage, basis),),
+          run["steps"][-1] == TRIAGE and fix and fix[0].get("status") == "done"
+          and "--answer re-review" not in triage and fix_id not in triage
+          and "no re-review" in basis)
+
+    # The twin: the same low, its fix's gate red once and then green.
+    root_r, mpath_r = _repo("low-fix-red", task_ids=TASKS[:1],
+                            gate=(_FLIP_GATE,), per_task="phase")
+    exclude = os.path.join(root_r, ".git", "info", "exclude")
+
+    def flip(text):
+        os.makedirs(os.path.dirname(exclude), exist_ok=True)
+        _write_lf(exclude, text)
+
+    def make_green():
+        flip("src/\n")
+    make_green()
+    reds = []
+
+    def red_once(kind, text):
+        if kind[1] == "triage" and not reds and "--answer fix" in text:
+            flip("")
+            return ["--answer", "fix", "--fix", "P1-R1"]
+        if kind[1] == "gate-red" and not reds:
+            reds.append(text)
+            make_green()
+            return ["--answer", "rerun"]
+        return False
+    run_r = drive(M, root_r, mpath_r, findings=low, answer=red_once)
+    triage_r = run_r["prints"][-1][1]
+    fix_r = [t for t in tasks_of(mpath_r).values() if t.get("fixes") == ["P1-R1"]]
+    fix_r_id = fix_r[0].get("id") if fix_r else "-"
+    project, config = _evio.project_config_for(mpath_r, root_r)
+    red_rows = [r for r in _evio.read_rows(project, config)["rows"]
+                if isinstance(r, dict) and r.get("taskId") == fix_r_id
+                and r.get("status") == "failed"]
+    check("lf2 THE TWIN: a fixed low whose own gate went red before it went "
+          "green owes the re-review - the triage names it unreviewed and offers "
+          "`re-review`: %r" % ((run_r["steps"], len(red_rows), reds, triage_r),),
+          run_r["steps"][-1] == TRIAGE and ("decide", "gate-red", None)
+          in run_r["steps"] and red_rows and fix_r_id in triage_r
+          and "--answer re-review" in triage_r)
+
+
+_USAGE_ROWS = (
+    # A phase-level row (the reviews and the main loop) priced on the shipped
+    # table: one million input tokens.
+    {"ts": "2026-10-13T10:00:00Z", "phaseId": PHASE, "model": "claude-opus-4-8",
+     "in": 1000000, "out": 0, "cacheW5m": 0, "cacheW1h": 0, "cacheR": 0,
+     "msgs": 1},
+    # The original task's own spend: not a review round's, so not counted.
+    {"ts": "2026-10-13T10:00:00Z", "phaseId": PHASE, "taskId": "P1.1",
+     "model": "claude-opus-4-8", "in": 3000000, "out": 0, "cacheW5m": 0,
+     "cacheW1h": 0, "cacheR": 0, "msgs": 1},
+    # A model no rate covers: its tokens are said to be unpriced.
+    {"ts": "2026-10-13T10:00:00Z", "phaseId": PHASE, "model": "claude-nobody-1",
+     "in": 777, "out": 0, "cacheW5m": 0, "cacheW1h": 0, "cacheR": 0, "msgs": 1})
+
+
+def _round_line(text):
+    return [ln for ln in text.splitlines() if "review round" in ln]
+
+
+def _round_cap_cases(check):
+    """At review.maxRounds the driver stops with the open findings, the rounds'
+    cost and one question, and a deleted state file re-derives the same round
+    count rather than resetting it."""
+    M, why = _load("drive_phase_round_cap")
+    if M is None:
+        check("rc1 the driver loads", False, why)
+        return
+    root, mpath = _repo("round-cap", task_ids=TASKS[:1], per_task="phase")
+    live = [dict(FINDINGS[0])]
+    second = {"severity": "med", "file": "src/f1.txt",
+              "issue": "the fix left f1 half said", "resolution": "say it all"}
+    reviews = []
+
+    def next_round(role, tid):
+        if tid != PHASE:
+            return
+        reviews.append(tid)
+        if len(reviews) == 1:
+            live[:] = [second]
+            return
+        ledger = os.path.join(root, ".claude", "usage")
+        os.makedirs(ledger, exist_ok=True)
+        with open(os.path.join(ledger, "2026-10.jsonl"), "w") as fh:
+            fh.write("".join(json.dumps(r) + "\n" for r in _USAGE_ROWS))
+
+    def answer(kind, text):
+        if kind[1] != "triage":
+            return False
+        if "--answer re-review" in text:
+            return ["--answer", "re-review"]
+        if any("P1-R1" in ln and "[fix|leave]" in ln for ln in text.splitlines()):
+            return ["--answer", "fix", "--fix", "P1-R1"]
+        return False
+    run = drive(M, root, mpath, findings=live, on_dispatch=next_round,
+                answer=answer)
+    code, text = run["prints"][-1]
+    asks = [ln for ln in text.splitlines() if ln.startswith("answer:")]
+    check("rc1 at review.maxRounds (2, the default) the drive stops at one "
+          "`round-cap` decision naming the finding still open, with ONE answer "
+          "line offering carry, one more round and sign-off: %r"
+          % ((run["steps"][-3:], text),),
+          code == 0 and run["steps"][-1] == ("decide", "round-cap", None)
+          and len(reviews) == 2 and "P1-R2" in text and len(asks) == 1
+          and all(w in asks[0] for w in ("carry", "one-more-round", "sign-off")))
+    check("rc2 the rounds' cost is read from the usage ledger by phase - the "
+          "phase-level row at its shipped rate (5.00), not the original task's "
+          "own spend - with its rate basis, and the tokens no rate covers said "
+          "to be unpriced: %r" % (text,),
+          "5.00 USD-eq" in text and "20.00" not in text
+          and "shipped table" in text and "unpriced" in text)
+    before = _round_line(text)
+    os.remove(os.path.join(root, ".claude", "state", "drive", "%s.json" % (PHASE,)))
+    code_d, text_d = _next(M, root, mpath)
+    check("rc3 with the driver's state file deleted, the next `next` re-derives "
+          "the same round count from the filed phase returns and asks the same "
+          "question, rather than starting again at zero: %r"
+          % ((before, code_d, text_d),),
+          code_d == 0 and instruction(text_d) == ("decide", "round-cap", None)
+          and before and _round_line(text_d) == before
+          and _drive_state(root).get("reviewRounds") == 2)
+
+    mutant, _w = _load("drive_phase_round_cap_bad")
+    root_m, mpath_m = _repo("round-cap-mut", task_ids=TASKS[:1], per_task="phase")
+    live[:] = [dict(FINDINGS[0])]
+    del reviews[:]
+    drive(mutant, root_m, mpath_m, findings=live, on_dispatch=next_round,
+          answer=answer)
+    if hasattr(mutant, "filed_review_rounds"):
+        mutant.filed_review_rounds = lambda ctx, phase: 0
+    os.remove(os.path.join(root_m, ".claude", "state", "drive",
+                           "%s.json" % (PHASE,)))
+    code_m, text_m = _next(mutant, root_m, mpath_m)
+    check("rc3m RED TWIN: a driver that counts rounds only in its state file "
+          "forgets them with it, and rc3's question is not asked again: %r"
+          % ((code_m, text_m[-300:]),),
+          instruction(text_m) != ("decide", "round-cap", None))
+
+
 # Two med findings for one triage; the second carries ` :400`, the text the
 # argv prose check refuses as a flag value and stdin never sees as one.
 COLON_FINDINGS = [
@@ -4397,7 +4672,9 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("da-block", "_decline_answer_cases"),
           ("sr-block", "_redispatch_cases"), ("rr-block", "_reuse_review_cases"),
           ("lr-block", "_late_return_cases"),
-          ("sf-block", "_fix_review_cases"), ("hr-block", "_risk_cases"),
+          ("sf-block", "_fix_review_cases"),
+          ("cv-block", "_converge_cases"), ("lf-block", "_low_fix_cases"),
+          ("rc-block", "_round_cap_cases"), ("hr-block", "_risk_cases"),
           ("rb-block", "_boot_cases"), ("db-block", "_decline_boot_cases"),
           ("gb-block", "_banner_cases"), ("dc-block", "_decline_coverage_cases"),
           ("dc4-block", "_reuse_gate_cases"), ("gr-block", "_stale_gate_cases"),
