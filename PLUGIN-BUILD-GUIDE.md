@@ -147,6 +147,7 @@ claude-plugins/                           # this repo (personal, public)
           _journal_io.py                  # the audit trail: row shape, hash chain, read/append/verify
           _evidence_io.py                 # the test-evidence record: where it lives, what a row may say, and the chain over it
           _gate_derive.py                 # the gate helpers' one home (is_shared_key/path_scoped_sibling/repointed) and a pure derive() for a phase's sign-off gate
+          _affected_tests.py              # which suites a task's change can break, by arm (related listing, Python imports, e2e listing, coupling, e2e widening) - pure; run-test-gate adds them to a task's run
           audit-journal.py                # the CLI over both records: append/verify/show/archive, plus merge and sessions
           _invariants.py                  # the orchestrator's rules, re-derived from git + shard + journal + ledger
           verify-invariants.py            # the CLI over it: one phase or --all, breach = exit 1
@@ -372,6 +373,7 @@ L4:
   usage_ledger -> _manifest_io, _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
 
 L5:
+  _affected_tests -> _gate_derive, _manifest_phases, _output
   _doctor_completions -> _commit_trail, _doctor_report, _evidence_io, _journal_io, _manifest_vocab, _output
   _doctor_policy -> _branch, _doctor_report, _manifest_io, _output, _worktrees
   _doctor_setup -> _claude_home, _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _merge_install, _output, _status_facts, _warning_groups
@@ -441,7 +443,7 @@ L8:
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
-  run-test-gate -> _claude_home, _evidence_io, _fmt, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _task_outputs, _tree_stamp
+  run-test-gate -> _affected_tests, _claude_home, _evidence_io, _fmt, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _task_outputs, _tree_stamp
   set-priority -> _claude_home, _manifest_io, _output, _panel_write, _priority, _warning_groups
   stamp-verification -> _claude_home, _evidence_io, _locks, _manifest_io, _output, _proc_group, _runner_output, _task_outputs, _tree_stamp, _worktrees
   validate-config -> _config_rules, _output
@@ -3622,6 +3624,36 @@ sibling, or nothing to narrow to after all four arms, falls back to
 gate. Every narrowed answer's basis carries one pinned sentence (dg4):
 "selected by import graph and recorded couplings only" — naming the ceiling on
 what this derivation is allowed to have used.
+
+### `plugins/audit/scripts/governance/_affected_tests.py`
+Which suites a task's change can break, and the arm that selected each.
+
+A task's own gate runs the tests it wrote; a change that moves or edits a file
+another task's test imports breaks that test while the task's gate stays green,
+and the break used to surface only at sign-off. `run-test-gate.py`, measuring a
+task (`--task`, not `--own`), now runs the task's own gate plus what this module
+selects. The phase's sign-off gate is unchanged, so the wide gate still runs
+once per phase.
+
+`select(changed, meta, facts, exclude)` walks five arms in order: the recorded
+related listing (`meta.phaseGate.derived.listing.related`, under the same two
+version checks `_gate_derive` applies to it); a stdlib `ast` import graph from
+Python test files to the changed modules, reading packages, relative imports,
+bare-basename imports and a script handed to a call by its `.py` name; the e2e
+runner's changed listing (`listing.e2eChanged`); `meta.coupling` entries whose
+sources overlap the change; and, when the project has e2e specs and no recorded
+listing sees them, every spec. `changed_paths()` reads `git diff --name-status
+-z -M`, so a rename counts as both its paths and a deletion as its old one.
+
+It is PURE: the caller gathers every observation once. And it widens rather than
+returning an empty selection: a listing that exits non-zero, a version mismatch,
+a `.py` change with no sources read, or suites with no path-scoped spelling to run
+them under (`entries_for()` asks `_gate_derive.resolve_shape`) each answer
+`widen` with the reason, and the caller adds the phase gate. Each selected arm
+becomes a step named `affected/<arm>: <suites>`, so the evidence row says which
+arm put each suite there. The gate digest a commit is bound to stays the task's
+own declared gate, because the affected steps are measured, not declared. A task
+whose gate already carries every phase-gate entry adds nothing.
 
 ### `plugins/audit/scripts/governance/verify-invariants.py`
 The CLI over it: `verify-invariants.py <manifest> <phaseId>`, or `--all` for every phase that

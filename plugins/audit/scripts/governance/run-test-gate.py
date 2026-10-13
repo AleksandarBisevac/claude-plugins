@@ -156,6 +156,9 @@ import _status_facts  # noqa: E402  (CLOSED_BUG: the one reading of "not open", 
 import _panel_write  # noqa: E402  (project_of_manifest: the project a named manifest is in)
 import _runner_output as _ro  # noqa: E402  (every reading of what a test runner
 #                                         printed: its summary, its failure lines)
+import _affected_tests as _affected  # noqa: E402  (which suites a task's change
+#                                     can break, by which arm - pure; this file
+#                                     gathers its observations and runs them)
 
 E_OK, E_FAIL, E_ASK = 0, 1, 2
 # A `--record` run that measured and stored nothing. Its own code because it is
@@ -2300,6 +2303,141 @@ def own_gate_of(manifest, phase_id, task_id):
         "%s declares no gate entry pointed at its own tests.add paths "
         "(tests.gateBasis=%s) - there is nothing of its own to run"
         % (task_id, basis))
+
+
+# --- what else a task's change can break --------------------------------------
+# A task's own gate runs the tests it wrote; a change another task's test
+# imports breaks that test with the task's gate green. `_affected_tests` picks
+# the suites; this gathers what it reads - the changed paths, the recorded
+# listings' answers, the sources - and turns its answer into steps. The phase's
+# sign-off gate is not touched here: the wide gate still runs once per phase.
+AFFECTED_LISTING_TIMEOUT_SECONDS = 120
+AFFECTED_GIT_TIMEOUT_SECONDS = 30
+
+
+def _git_text(tree, args):
+    """git's stdout in `tree`, or None when it could not answer."""
+    try:
+        proc = subprocess.run(["git", "-C", tree] + args, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL,
+                              timeout=AFFECTED_GIT_TIMEOUT_SECONDS)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return proc.stdout.decode("utf-8", "replace") if proc.returncode == 0 else None
+
+
+def task_changed_paths(tree, declared, own_tree):
+    """`(paths, why)` - what the task changed against the head its tree is at:
+    `git diff -M HEAD` (a rename both paths, a deletion its old one) plus the
+    untracked files. In the SHARED project tree a sibling's edits are there
+    too, so only the task's declared `files` are kept; its own worktree holds
+    nothing else."""
+    diff = _git_text(tree, ["diff", "--relative", "--name-status", "-z", "-M",
+                            "HEAD"])
+    others = _git_text(tree, ["ls-files", "-z", "--others", "--exclude-standard"])
+    if diff is None or others is None:
+        return None, "git could not list what this tree changed"
+    paths = _affected.changed_paths(diff)
+    paths += [p for p in others.split("\0") if p and p not in paths]
+    if not own_tree:
+        keep = set(_declared_files(declared))
+        paths = [p for p in paths if p in keep]
+    return paths, None
+
+
+def _affected_facts(tree, meta, changed):
+    """Every observation `_affected_tests.select` reads, measured in `tree`."""
+    facts = {}
+    wrap = {"meta": {"nodePreamble": meta.get("nodePreamble")}}
+    templates = _affected.listing_templates(meta)
+    gate = meta.get("phaseGate") if isinstance(meta.get("phaseGate"), dict) else {}
+    derived = gate.get("derived") if isinstance(gate.get("derived"), dict) else {}
+    verified = derived.get("verifiedOn")
+    version = verified.get("command") if isinstance(verified, dict) else None
+    if "related" in templates and isinstance(version, str) and version.strip():
+        code, text, _f = _shell(tree, _ev.resolved_commands(wrap, [version])[0][1],
+                                timeout=AFFECTED_GIT_TIMEOUT_SECONDS)
+        if code == 0:
+            facts["versionAnswer"] = text.strip()
+        else:
+            facts["versionCheckFailed"] = True
+    quoted = " ".join(shlex.quote(p) for p in changed)
+    for key, template in sorted(templates.items()):
+        command = template.replace("{paths}", quoted)
+        code, text, _f = _shell(tree, _ev.resolved_commands(wrap, [command])[0][1],
+                                timeout=AFFECTED_LISTING_TIMEOUT_SECONDS)
+        facts[key] = {"command": command, "exit": code,
+                      "paths": [ln.strip() for ln in text.splitlines()
+                                if ln.strip()]}
+    listed = _git_text(tree, ["ls-files", "-z", "--cached", "--others",
+                              "--exclude-standard"])
+    files = [p for p in (listed or "").split("\0") if p]
+    facts["suites"] = [p for p in files if _phases.is_suite_path(p)]
+    if any(p.endswith(".py") for p in changed) and listed is not None:
+        sources = {}
+        for path in files:
+            if not path.endswith(".py"):
+                continue
+            try:
+                with open(os.path.join(tree, path), encoding="utf-8",
+                          errors="replace") as fh:
+                    sources[path] = fh.read()
+            except OSError:
+                continue
+        facts["pySources"] = sources
+    return facts
+
+
+def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands):
+    """`(steps, published, info)` - the steps that join a task's measured run,
+    the manifest-published commands among them, and `{lines, suites, widen}`
+    saying why. Nothing joins a gate that already carries the phase's wide one.
+    """
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    phase = _phase_by_id(manifest, phase_id) or {}
+    task = ([t for t in (phase.get("tasks") or [])
+             if isinstance(t, dict) and t.get("id") == task_id] or [{}])[0]
+    phase_entries = _mio.gate_entries(phase, None)[0]
+    names = [name for name, _command in commands]
+    if _affected.already_wide(names, phase_entries):
+        # NOT PRINTED: nothing joins and nothing changed, so a line on every
+        # run of a wide task gate would be noise; `--json` still carries it.
+        return [], [], {"lines": [], "suites": [], "widen": None,
+                        "basis": "this task's gate already runs the phase's "
+                                 "wide gate - nothing to add"}
+    changed, why = task_changed_paths(tree, task.get("files"), own_tree)
+    if changed is None:
+        info = {"suites": [], "lines": [],
+                "widen": "%s - the task's gate widens to the phase gate" % (why,)}
+    else:
+        own = [p for e in names for p in _phases.gate_entry_paths(e)]
+        facts = _affected_facts(tree, meta, changed) if changed else {}
+        info = _affected.select(changed, meta, facts, exclude=own)
+    steps = []
+    if info["widen"] is None and info["suites"]:
+        steps, why = _affected.entries_for(info["suites"], phase, meta, tree)
+        if why:
+            info = dict(info, widen=why)
+    if info["widen"] is None:
+        return steps, [], info
+    build = meta.get("buildCommands")
+    build = build if isinstance(build, dict) else {}
+    wide, _left = split_not_commands(
+        _resolved([e for e in phase_entries if e not in names], build,
+                  meta.get("nodePreamble")), manifest)
+    steps = [("%sphase-gate: %s" % (_affected.STEP_PREFIX, name), command)
+             for name, command in wide]
+    return steps, [command for _name, command in wide], info
+
+
+def affected_lines(info):
+    """The lines a task-scope run prints about what joined its gate."""
+    out = list(info.get("lines") or [])
+    out.extend("affected: %s joins - %s" % (s["path"], s["basis"])
+               for s in info.get("suites") or [])
+    if info.get("widen") and info["widen"] not in out:
+        out.append(info["widen"])
+    return out
 
 
 # --- a verdict already measured on these bytes --------------------------------
@@ -4882,6 +5020,22 @@ def main(argv, out=print):
     if terr:
         out("[run-test-gate] %s" % terr)
         return E_ASK
+    # THE TASK'S OWN GATE, AND WHAT ITS CHANGE CAN BREAK. The declared list is
+    # kept apart: it is what the gate digest binds a commit to, while the
+    # affected steps are measured, never declared.
+    declared_commands = list(commands)
+    published_extra = []
+    affected_info = None
+    # A task borrowing its phase's gate (`source == "phase"`) runs the wide gate
+    # already, so it is not asked.
+    if args.task is not None and not args.own and source == "task":
+        extra, published_extra, affected_info = affected_steps(
+            tree or project, tree is not None, manifest, args.phase, args.task,
+            commands)
+        commands = commands + extra
+        if not args.as_json:
+            for line in affected_lines(affected_info):
+                out("[run-test-gate] %s" % (line,))
     # THE HALF OF THE OVERLAP QUESTION THAT NEEDS NOTHING FROM THE RUN, asked
     # here rather than at the end of one. Both sides of it - the files the work
     # declares, and the fact that an empty declaration can be related to nothing -
@@ -5043,8 +5197,10 @@ def main(argv, out=print):
         res["manifestPath"] = args.manifest
     # The resolved gate, as a digest the row carries: what `commit-task-work`
     # compares so a `meta.buildCommands` edit after a green is a changed gate.
+    if affected_info is not None:
+        res["affected"] = affected_info
     res[_ev.GATE_DIGEST_KEY] = _ev.gate_digest(
-        [name for name, _command in (commands or [])],
+        [name for name, _command in (declared_commands or [])],
         (manifest.get("meta") or {}).get("buildCommands"))
     # STRICTLY AFTER THE VERDICT, and that placement is the whole of it: the
     # evidence file, the journal and the manifest all live inside the repository
@@ -5052,8 +5208,10 @@ def main(argv, out=print):
     # this line would appear in the very comparison it is being judged by. Every
     # measurement `run_gate` makes is complete before anything here writes.
     if args.record:
-        res["recorded"] = _record_run(project, args, res, source, commands,
-                                      manifest, out=out)
+        res["recorded"] = _record_run(
+            project, args, res, source,
+            declared_commands + [("", c) for c in published_extra],
+            manifest, out=out)
     if args.as_json:
         out(json.dumps(res, indent=2, sort_keys=True))
         # ONE TERM, BECAUSE THE STATUS NOW CARRIES BOTH FACTS. This read

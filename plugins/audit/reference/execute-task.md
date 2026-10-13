@@ -253,6 +253,14 @@ verb writes and refuses, and what the run commands leave behind, is
      (`GATE NOT RECORDED`) — that is not a pass, so repair the ledger the `evidence: NOT recorded`
      line names and run again.
 
+     **The run is the task's own gate plus every suite its change can break.** It reads what the
+     task changed (a rename counts as both its paths) and adds the suites `_affected_tests` selects,
+     each as a step named `affected/<arm>: <suites>` so the row says which arm put it there. A
+     listing that cannot answer, or no path-scoped spelling to run the suites under, adds the
+     phase gate instead, and the reason is printed. A task whose gate already is the phase's wide
+     gate adds nothing. The phase's sign-off gate is unchanged, so the wide gate still runs once
+     per phase.
+
      A run over a tree whose identity an earlier MEASURED row already carries repeats that row
      (`GATE VERDICT REUSED`), and the newest such verdict is the one repeated: a green you
      recorded by hand supersedes an older red from the drive. The banner names the row it repeats

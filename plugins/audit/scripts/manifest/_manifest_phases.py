@@ -422,22 +422,26 @@ def _check_phase_gate_derived(derived, build_keys):
             "got %s" % (type(listing).__name__,)))
         listing = None
     if isinstance(listing, dict):
-        related = listing.get("related")
-        if related is not None:
+        # `e2eChanged` is the e2e runner's own changed-spec listing, read by
+        # `_affected_tests` per task; it takes `{paths}` exactly as `related`.
+        for key, code in (("related", "related"), ("e2eChanged", "e2e-changed")):
+            related = listing.get(key)
+            if related is None:
+                continue
             if not (isinstance(related, str) and related.strip()):
                 out.append(_output.finding(
-                    "phases.phase_gate_derived.listing-related-shape",
-                    "meta.phaseGate.derived.listing.related: must be a "
+                    "phases.phase_gate_derived.listing-%s-shape" % (code,),
+                    "meta.phaseGate.derived.listing.%s: must be a "
                     "non-blank string, got %s - write a command that lists "
                     "the suites related to a path set"
-                    % (type(related).__name__,)))
+                    % (key, type(related).__name__)))
             elif "{paths}" not in related:
                 out.append(_output.finding(
-                    "phases.phase_gate_derived.listing-related-placeholder",
-                    "meta.phaseGate.derived.listing.related: %r carries no "
-                    "{paths} placeholder - derive-phase-gate.py fills one in "
-                    "per phase, so every phase would list the same suites "
-                    "without it; add {paths} to the command" % (related,)))
+                    "phases.phase_gate_derived.listing-%s-placeholder" % (code,),
+                    "meta.phaseGate.derived.listing.%s: %r carries no "
+                    "{paths} placeholder - it is filled in per phase and per "
+                    "task, so every one would list the same suites "
+                    "without it; add {paths} to the command" % (key, related)))
         all_cmd = listing.get("all")
         if all_cmd is not None:
             if not (isinstance(all_cmd, str) and all_cmd.strip()):

@@ -1786,7 +1786,7 @@
     {
       "id": "P125.28",
       "title": "A plan, shard or journal path is never a task's declared file",
-      "status": "in_progress",
+      "status": "done",
       "description": "F642: P127.8 was derived from finding P127-R9 whose file was the phase's own shard, so the fix task declared it; every verb rewrites that file, and commit-task-work refused the close as 'changed before this attempt began AND again during it'; scope could not drop the entry after an attempt. Fix-task derivation drops record paths a finding names, scope refuses to add one with the reason, and the commit treats them as records.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1819,13 +1819,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "108a787144c0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "placeholder",
+        "descriptive": "placeholder"
       },
       "startedAt": "2026-10-13T21:55:47Z",
-      "completedAt": null,
+      "completedAt": "2026-10-13T23:05:47Z",
       "verifiedBy": [],
       "reviewPerTask": "phase",
       "notes": [
@@ -1838,6 +1838,17 @@
         "runId": "2026-10-13T23:05:44Z.5ebeb7",
         "status": "passed",
         "at": "2026-10-13T23:05:44Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "108a787144c0",
+        "at": "2026-10-13T23:05:47Z"
+      },
+      "redFirst": {
+        "at": "2026-10-13T22:29:03Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage cz-block` in a throwaway tree at HEAD exited 1 with 2 of 27 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cz20 (house FAIL), cz21 (house FAIL): SELFTEST FAILED: 25/27 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {

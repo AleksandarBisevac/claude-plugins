@@ -579,7 +579,12 @@ LAYERS = (
      "_usage_overview", "_usage_detail", "_usage_markdown",
      "_doctor_setup", "_doctor_trail", "_doctor_completions", "_doctor_policy",
      "_panel_viewer", "_proposals", "_panel_composition", "_panel_policy", "_panel_runstate",
-     "_panel_usage"),
+     "_panel_usage",
+     # `_affected_tests` (which suites a task's change can break) asks
+     # `_gate_derive` for the coupling arm, the e2e reading of a path and the
+     # path-scoped shape, so it sits one layer above it; `run-test-gate` is its
+     # only consumer.
+     "_affected_tests"),
     # `_report_md` (render_html's Markdown twin) and `_report_page` (the whole
     # document) are the report's answer to the same question `_panel_page`
     # answered above, and they land the same way: at the FIRST layer that holds

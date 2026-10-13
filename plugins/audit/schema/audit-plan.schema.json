@@ -307,6 +307,10 @@
                     "all": {
                       "type": "string",
                       "description": "A command listing every suite this runner would collect, with no path filter -- what 'the full suite' means for this project's own runner."
+                    },
+                    "e2eChanged": {
+                      "type": "string",
+                      "description": "`related`, for e2e specs."
                     }
                   }
                 },

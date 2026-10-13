@@ -1163,6 +1163,23 @@ def _cases(check):
           and M._output.finding_code(_dl_all_haspaths[0])
           == "phases.phase_gate_derived.listing-all-paths-present"
           and "list-all {paths}" in _dl_all_haspaths[0])
+    _dl_e2e = M._check_phase_gate_derived(
+        {"listing": {"e2eChanged": "playwright test --list --only-changed"},
+         "verifiedOn": _dl_verified}, set())
+    _dl_e2e_blank = M._check_phase_gate_derived(
+        {"listing": {"e2eChanged": " "}, "verifiedOn": _dl_verified}, set())
+    _dl_e2e_ok = M._check_phase_gate_derived(
+        {"listing": {"e2eChanged": "playwright test --list {paths}"},
+         "verifiedOn": _dl_verified}, set())
+    check("dl8 `listing.e2eChanged` is held to `related`'s two rules - no "
+          "{paths} is its PLACEHOLDER code, blank its SHAPE code - and a "
+          "well-formed one draws nothing: %r" % ((_dl_e2e, _dl_e2e_blank,
+                                                   _dl_e2e_ok),),
+          [M._output.finding_code(x) for x in _dl_e2e]
+          == ["phases.phase_gate_derived.listing-e2e-changed-placeholder"]
+          and [M._output.finding_code(x) for x in _dl_e2e_blank]
+          == ["phases.phase_gate_derived.listing-e2e-changed-shape"]
+          and _dl_e2e_ok == [])
 
     # --- the phase-gate family as one check: it RETURNS its lines, each coded,
     # rather than writing into a list the caller hands it ----------------------

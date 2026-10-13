@@ -5634,6 +5634,15 @@ def _no_verdict_cases(check):
                              "in_progress", "files": ["src/b.ts"],
                              "tests": {"mode": "gate-only", "add": [],
                                        "gate": ["own"]}}]}]}, fh)
+    # A COMMITTED REPOSITORY, as every project the gate measures is: a task
+    # graded by its own gate is asked what its change touched, and a tree git
+    # cannot answer for widens the run to the phase gate - which is not the
+    # question these cases put.
+    for arg in (["init", "-q"], ["add", "--", "."],
+                ["-c", "user.email=fixture@example.com", "-c", "user.name=Fixture",
+                 "-c", "commit.gpgsign=false", "commit", "-qm", "fixture"]):
+        subprocess.run(["git", "-C", root] + arg, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def _main(*extra):
         lines = []
@@ -9696,6 +9705,119 @@ def _success_line_cases(check):
                                root, "--own", "--record", "--verbose"]))
 
 
+def _affected_cases(check):
+    """A task's recorded run: its own gate, and the suites its change can break.
+
+    THE TESTBED'S REGRESSION, END TO END. A task moves `app/page.tsx` under
+    `app/[locale]/`; another task's smoke test still opens the old path. The
+    task's own gate is green on its own, so the run is red only if the
+    related listing's answer reaches the runner as a step - and the row is
+    only readable for WHICH arm put it there if the step's recorded name says.
+    """
+    root = _harness.fixture_root("run-test-gate-affected-")
+    os.makedirs(os.path.join(root, "docs", "audit", "phases"))
+    os.makedirs(os.path.join(root, ".claude"))
+    os.makedirs(os.path.join(root, "app"))
+    os.makedirs(os.path.join(root, "tests"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    related = "printf '%s\\n' tests/smoke_test.sh # {paths}"
+    with open(mpath, "w") as fh:
+        json.dump({"meta": {"version": 3, "buildCommands": {"wide": "true"},
+                            "phaseGate": {"derived": {
+                                "listing": {"related": related},
+                                "verifiedOn": {"command": "echo v1",
+                                               "answer": "v1"}}}},
+                   "phases": [{"id": "P1", "title": "one",
+                               "shard": "phases/P1.json"}]}, fh)
+    with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
+              "w") as fh:
+        json.dump({"id": "P1", "title": "one", "status": "in_progress",
+                   "testGate": ["wide"], "tasks": [
+                       {"id": "P1.2", "title": "move the page",
+                        "status": "in_progress",
+                        "files": ["app/page.tsx", "app/[locale]/page.tsx",
+                                  "tests/i18n_test.sh"],
+                        "tests": {"mode": "regression",
+                                  "gate": ["sh tests/i18n_test.sh"]}},
+                       {"id": "P1.3", "title": "already wide",
+                        "status": "in_progress", "files": ["app/page.tsx"],
+                        "tests": {"mode": "regression", "gate": ["wide"]}}]},
+                  fh)
+    for rel, body in (("app/page.tsx", "export default function Page() {}\n"),
+                      ("tests/smoke_test.sh", "test -f app/page.tsx\n"),
+                      ("tests/i18n_test.sh", "exit 0\n")):
+        with open(os.path.join(root, rel), "w") as fh:
+            fh.write(body)
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for arg in (["add", "--", "."],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        subprocess.run(["git", "-C", root] + arg, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    os.makedirs(os.path.join(root, "app", "[locale]"))
+    os.rename(os.path.join(root, "app", "page.tsx"),
+              os.path.join(root, "app", "[locale]", "page.tsx"))
+
+    lines = []
+    code = M.main([mpath, "P1", "--task", "P1.2", "--project-dir", root,
+                   "--record"], out=lines.append)
+    rows = _recorded_rows(os.path.join(root, "docs", "audit", "evidence"))
+    row = rows[-1] if rows else {}
+    names = [s.get("name") for s in row.get("steps") or []]
+    affected = [s for s in row.get("steps") or []
+                if s.get("name") == "affected/related: tests/smoke_test.sh"]
+    check("ag1 a task's recorded run includes the affected suite BESIDE its own "
+          "gate, and the row attributes the suite to the arm that selected it - "
+          "the move broke the smoke test, so the task's gate is red: exit=%r "
+          "steps=%r" % (code, [(s.get("name"), s.get("exit"))
+                               for s in row.get("steps") or []]),
+          code == M.E_FAIL and row.get("taskId") == "P1.2"
+          and names == ["sh tests/i18n_test.sh",
+                        "affected/related: tests/smoke_test.sh"]
+          and len(affected) == 1 and affected[0].get("exit") not in (0, None))
+    check("ag2 ...and the output names what joined the gate and why: %r"
+          % (lines[:6],),
+          any("affected" in ln and "tests/smoke_test.sh" in ln
+              and "related" in ln for ln in lines))
+    check("ag3 ...and the gate digest a commit is bound to is still the task's "
+          "OWN declared gate - the affected steps are measured, not declared: "
+          "%r" % (row.get("gateDigest"),),
+          row.get("gateDigest") == M._ev.gate_digest(
+              ["sh tests/i18n_test.sh"], {"wide": "true"}))
+
+    wide_lines = []
+    M.main([mpath, "P1", "--task", "P1.3", "--project-dir", root, "--record"],
+           out=wide_lines.append)
+    rows = _recorded_rows(os.path.join(root, "docs", "audit", "evidence"))
+    check("ag4 a task whose gate already IS the phase's wide gate adds nothing - "
+          "the wide gate runs anyway: %r"
+          % ([s.get("name") for s in rows[-1].get("steps") or []],),
+          [s.get("name") for s in rows[-1].get("steps") or []] == ["wide"])
+
+    with open(mpath) as fh:
+        plan = json.load(fh)
+    plan["meta"]["phaseGate"]["derived"]["listing"]["related"] = "exit 3 # {paths}"
+    with open(mpath, "w") as fh:
+        json.dump(plan, fh)
+    failed_lines = []
+    M.main([mpath, "P1", "--task", "P1.2", "--project-dir", root, "--record"],
+           out=failed_lines.append)
+    rows = _recorded_rows(os.path.join(root, "docs", "audit", "evidence"))
+    check("ag5 a related listing that cannot answer WIDENS the task's run to the "
+          "phase gate, recorded under its own arm, and the reason is printed - "
+          "never an empty selection: %r"
+          % (([s.get("name") for s in rows[-1].get("steps") or []],
+              [ln for ln in failed_lines if "exited 3" in ln]),),
+          [s.get("name") for s in rows[-1].get("steps") or []]
+          == ["sh tests/i18n_test.sh", "affected/phase-gate: wide"]
+          and any("exited 3" in ln and "phase gate" in ln
+                  for ln in failed_lines))
+
+
 def _tree_cases(check):
     """`--tree DIR`: the commands, the tree bracket and the digests are taken over
     DIR, while the row, the pointer and the boundary land in the project the
@@ -9789,6 +9911,7 @@ def _selftest():
         _cases(check)
         _harness.stage(check, "tr-block", _tree_cases)
         _harness.stage(check, "sl-block", _success_line_cases)
+        _harness.stage(check, "ag-block", _affected_cases)
         _group_cases(check)
         _crowd_cases(check)
         _full_scope_cases(check)
