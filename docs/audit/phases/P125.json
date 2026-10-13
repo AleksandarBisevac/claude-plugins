@@ -1603,7 +1603,8 @@
         "docs/screenshots/panel-policy-expanded.png",
         "docs/screenshots/panel-policy.png",
         "docs/screenshots/panel-proposals.png",
-        "docs/screenshots/panel-usage.png"
+        "docs/screenshots/panel-usage.png",
+        "docs/index.html"
       ],
       "tests": {
         "mode": "tdd",
