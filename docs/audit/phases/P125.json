@@ -255,9 +255,9 @@
       "verifiedBy": [],
       "reviewPerTask": "phase",
       "testEvidence": {
-        "runId": "2026-10-13T15:40:50Z.ff1963",
+        "runId": "2026-10-13T16:09:12Z.3ad956",
         "status": "failed",
-        "at": "2026-10-13T15:40:50Z"
+        "at": "2026-10-13T16:09:12Z"
       }
     },
     {
@@ -1833,6 +1833,54 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.35-0h5",
+      "title": "Every record a wave member's gate reads is the phase tree's",
+      "status": "pending",
+      "description": "F648, the second instance of F619's class (a wave member reads its own tree's stale plan). Wave 1 was cut at c51a9ef5; record-only commits then landed on the phase tree, and every member's gate ran validate and check-example-ledgers against the member tree's docs/audit, i.e. stale records: red twice for nothing the members did, fixed only by checking out the phase HEAD's docs/audit in each member. Integration already defines the record paths (integrate-task.record_paths: manifest pair, journal dir, evidence dir) as the phase tree's. One invariant through that one definition: before each member gate (and any verb run in a member tree that reads records) the drive brings the member's record paths to the phase tree's committed records, never touching work paths. No per-check special case.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a wave is cut, the phase tree then commits a record-only commit (a task add), and the member's gate is green: its record checks see the phase tree's manifest pair, journal and evidence",
+          "plugins/audit/tests/test_drive_phase.py: the refresh touches record paths only - a member's work files are byte-identical before and after it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.29-0h5"
+      ],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,
