@@ -601,7 +601,7 @@
     {
       "id": "P125.8",
       "title": "A task gate also runs every test its change can break; the full gate runs once per phase",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F596 incl. its EXTENSION. New pure module _affected_tests: given the task's changed paths (from its diff against the phase head in the task's own tree; a rename counts as both its old and new path, a deletion as its old path) and the project's observations, return the suites to add to the task's gate and the basis for each. Arms, in order: the project's related listing (meta.phaseGate.derived.listing.related, the same recorded and version-verified listing derive-phase-gate already trusts, e.g. vitest related / jest --findRelatedTests --listTests); for Python, a stdlib ast import graph from test files to the changed modules; the e2e runner's changed listing when one is recorded; meta.coupling entries whose sources overlap; and the e2e widening rule in openChoices. A listing that cannot run is a printed skip reason and widens to the phase gate, never an empty selection read as 'nothing affected'. run-test-gate.py, when it measures a task, runs the union of the task's own gate and the affected set and records which suites came from which arm in the evidence row. The phase's sign-off gate stays the wide one (derived narrowing remains the opt-in meta.phaseGate.mode it is today), so the full gate runs once per phase. Regression case from the testbed: a task that moves app/page.tsx to app/[locale]/page.tsx selects the smoke test that imports @/app/page, and its gate goes red.",
       "files": [
         "plugins/audit/scripts/governance/_affected_tests.py",
@@ -645,16 +645,17 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-13T21:55:38Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.9",
@@ -1628,7 +1629,7 @@
     {
       "id": "P125.26",
       "title": "No report table can widen the page at any width, by construction rather than by font margin",
-      "status": "in_progress",
+      "status": "done",
       "description": "Carried from P126-R2 (med, P126 phase review 2026-10-13). P126.1 made the hostile-content leg green on CI by letting the bugs table's test-gate pills wrap (`white-space:normal`), which lowers that column's narrowest width - so the page passes by margin at CI's fonts (reproduced with DejaVu in mcr.microsoft.com/playwright:v1.56.0-jammy: +31px before, 0 after), not by an invariant: any table whose columns' min-content widths sum past the column can still widen the document above the breakpoint where `.tablewrap` starts to scroll. The structural options trade against the sticky header: (a) `.tablewrap{overflow-x:auto}` at every width - a contained scroll that can never widen the document, but `position:sticky` on thead then sticks to the wrapper, not the viewport; (b) keep the viewport-sticky header and give every non-prose column a bounded min-width plus `<wbr>` in every renderer-emitted unbroken run; (c) a JS-measured fallback that switches a table to (a) only when it overflows. Decide with the owner, implement, and add a hostile-leg case that plants a token in EVERY column kind at the narrowest unframed width on a wide-font fixture so the margin cannot be what passes it. Not a 3.2.0 regression: CI's hostile leg is green on 3.3.0.",
       "files": [
         "plugins/audit/scripts/ui/report-css/tables.css",
@@ -1690,13 +1691,13 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9c0e97a5594d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Root cause: the hostile-content override rule added by attempt 1 (`:where(table.phases,table.data) :is(.chip,.rchip,.bandpill,.dl,.heldby,.tevn,.tevf,.ptev){white-space:normal;overflow-wrap:anywhere}` in tables.css) has the same specificity (0,1,0) as the atoms' own component rules declared elsewhere (e.g. `.bandpill{...;white-space:nowrap}` in usage.css), because :where() strips the table ancestor's specificity to zero. tables.css loads before usage.css in _ui_theme.py's REPORT_CSS_PARTS, so on an equal-specificity tie the LATER-loaded file wins in a real engine: `.bandpill`'s own `nowrap` beat the override. Isolated the exact element with a temporary debug pass inside tools/check-report-interactive.mjs (reverted before filing, not part of this diff): at viewport 833px, `SPAN.bandpill.b-outlier` computed `white-space:nowrap`, width 1120px, with document.documentElement.scrollWidth 1489 vs clientWidth 833 - the only atom of the eight still refusing to wrap. Fix: dropped the :where() around the table ancestor (kept :is() for the atom-class list), so the selector reads `table.phases :is(...), table.data :is(...)`. Specificity becomes (0,2,1), which outranks every plain `.chip`/`.bandpill`/etc. base rule (0,1,0) regardless of file load order - the override wins by construction, not by which stylesheet happens to load later. Verification: a scratch render (CLAUDE_PROJECT_DIR=examples/acme-store python3 plugins/audit/scripts/report/render-report.py examples/acme-store/audit-plan.json --out-dir /tmp/p125-26-scratch --basename acme-store-audit, then node tools/check-report-interactive.mjs /tmp/p125-26-scratch/acme-store-audit.html) passes all 186 checks, including the new hostile-content case ('an unbroken run with no space or hyphen, planted into every status/value atom ... widens nothing ...: got none, want none'). Updated the pre-existing literal CSS pin u14ktw in plugins/audit/tests/test_render_report.py to the corrected selector text (it still pinned the old, losing :where() form); python3 plugins/audit/tests/test_render_report.py --selftest now passes 298/298 (was 297/298 before the pin update). Per the orchestrator's explicit instruction for this retry, capture-screenshots.mjs, verify.sh and examples/report.sh were not run here, so the COMMITTED examples/acme-store/acme-store-audit.html, docs/index.html, docs/demo-large.html and docs/screenshots/*.png still carry attempt 1's pre-fix bytes. Two consequences, both already anticipated by the brief: (1) `node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html` still reports the identical FAIL ('got widened to 1489 (viewport 833), want none') against that stale committed HTML, because the CSS inlined into it predates the fix - the scratch-render run above shows the same check green once the CSS is actually baked in; (2) `python3 tools/sweep-selftests.py` now reports 330/332 files ok (up from 329/332 at the start of this attempt - test_render_report.py's pin is fixed). The two still-red files are plugins/audit/tests/test__refs.py (case sc1/sc2: every committed screenshot's recorded source-digest no longer matches - 'report sources digesting 1bb62ecbce47 and they now digest 3b805458f84b') and tools/check-rendered-artifacts.py (case ra5/ra5b: STALE examples/acme-store/acme-store-audit.html and docs/demo-large.html against a fresh render) - both are exactly the named staleness, not new failures. Did not regenerate docs/index.html, docs/demo-large.html, docs/screenshots/*.png, docs/screenshots/captured-at.json or examples/acme-store/acme-store-audit.html myself; docs/index.html is pinned as a byte-copy of the example report (COPY_PROVEN in tools/check-rendered-artifacts.py), so regenerating one without the other would have introduced a new, real drift rather than just leaving the known staleness - that regeneration (examples/report.sh, the demo-large recipe, capture-screenshots --only report) is left to the orchestrator as instructed. redFirst: ran `stamp-verification.py red` directly (the same helper drive-phase.py submit invokes) against the task's own test command before filing; it reported could-not-prove, basis: the helper cannot extract test hunks from tools/check-report-interactive.mjs because it is JS, not Python ('an inline suite's test hunks are read from Python definitions'), so it never actually executed the command - matching attempt 1's own retry note ('redFirst: none recorded'); this is a structural limitation of the helper against this file shape, unrelated to the fix.",
+        "descriptive": "Made the table-atom wrap override win by CSS specificity rather than stylesheet load order, so no table column can widen the document regardless of which part loads later; the committed example/demo/screenshot artifacts still need the orchestrator's regeneration pass before their own gates read green."
       },
       "startedAt": "2026-10-13T21:16:53Z",
-      "completedAt": null,
+      "completedAt": "2026-10-13T21:55:28Z",
       "verifiedBy": [],
       "reviewPerTask": "phase",
       "notes": [
@@ -1713,12 +1714,23 @@
         "runId": "2026-10-13T21:55:26Z.ddfc9a",
         "status": "passed",
         "at": "2026-10-13T21:55:26Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "9c0e97a5594d",
+        "at": "2026-10-13T21:55:28Z"
+      },
+      "redFirst": {
+        "at": "2026-10-13T21:42:37Z",
+        "basis": "`node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html` in a throwaway tree at HEAD: inline suite tools/check-report-interactive.mjs (its test file is its implementation file): it is not Python, and an inline suite's test hunks are read from Python definitions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P125.27",
       "title": "The PII check and the write scrub answer 'is this a home path' with one predicate",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Recurring class observed 2026-10-13 in P126: a reviewer's prose phrase made of words joined by slashes was flagged by tools/check-committed-pii.py's posix-home detector in the finding row, the fix task's description, the reviewer return, the next executor's return and the plan's copy of its outcome - each time a new BASELINE row, five in one phase, and four earlier rows in BASELINE for the same shape. The write scrub (_machine_paths) fires posix-home only when a separator stands before the home word; the committed-artifact check fires on `home/` at any token start 'by design'. Two readers disagree on what a home path is, so honest prose costs a baseline row per copy and every copy is a gate going red. Decide the one predicate (with its measurement over this tree's committed artifacts and the detector's purpose: catching a home directory whose leading separator was cut), make both readers call it, retire the BASELINE rows it makes dead, and pin both directions (a cut home path still found; prose with slashes not).",
       "files": [
         "plugins/audit/scripts/_machine_paths.py",
@@ -1749,21 +1761,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-13T21:55:43Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.28",
       "title": "A plan, shard or journal path is never a task's declared file",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F642: P127.8 was derived from finding P127-R9 whose file was the phase's own shard, so the fix task declared it; every verb rewrites that file, and commit-task-work refused the close as 'changed before this attempt began AND again during it'; scope could not drop the entry after an attempt. Fix-task derivation drops record paths a finding names, scope refuses to add one with the reason, and the commit treats them as records.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1794,16 +1807,23 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-13T21:55:47Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "notes": [
+        {
+          "at": "2026-10-13T22:30:53Z",
+          "text": "Outcome (the filed return carries placeholder text and testsAdded []; this note is the record): audit-task.py gains _record_rels/_is_record_path composed from the primitives integrate-task.record_paths reads; a finding naming a record path (manifest pair, journal dir, evidence dir) is dropped from a fix task's derived files with a note, a finding left with no path falls to the pathless refusal; scope --files refuses a record path; commit-task-work.stage_targets resolves records before the declared files, so a declared file that is a record is staged as the record. Tests cz20, cz21 (cz-block). Red-first proved by the helper (cz20, cz21 red at HEAD). Sweep 332/332. Open: the composition is a second copy of record_paths; one shared definition belongs in _invariants.py."
+        }
+      ]
     },
     {
       "id": "P125.29-0h5",

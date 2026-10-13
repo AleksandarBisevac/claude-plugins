@@ -1,0 +1,17 @@
+{
+  "gates": {
+    "selftests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-13T22:29:03Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage cz-block` in a throwaway tree at HEAD exited 1 with 2 of 27 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cz20 (house FAIL), cz21 (house FAIL): SELFTEST FAILED: 25/27 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "placeholder",
+    "descriptive": "placeholder"
+  },
+  "testsAdded": [],
+  "stamp": "audit-stamp: {\"content\":\"sha256:0f72bc08988261a1d0d37003582b913abe297e8acd57cf1b28c79da2939007ce\",\"dirtyDigest\":\"sha256:0651141f9eee31222678e9e910f86f85eb1ad876fb42df8c15972055ca4c9bc7\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/commit-task-work.py\":\"5d1ddc4ad7309dc9\",\"plugins/audit/scripts/manifest/audit-task.py\":\"a619573642762127\",\"plugins/audit/tests/test_audit_task.py\":\"5a4b91b12e47fbd6\"},\"head\":\"9c0e97a5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/commit-task-work.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\",\"plugins/audit/tests/test_commit_task_work.py\"],\"scopeDigest\":\"sha256:a0cd6db1db9e01875f0192549102a534236c7dd408ad42cc5c1a8d34d42f3138\",\"v\":2}"
+}
