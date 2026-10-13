@@ -1,0 +1,46 @@
+{
+  "findings": [
+    {
+      "id": 1,
+      "severity": "med",
+      "file": "tools/sweep-selftests.py:TIMEOUT_PER_COST, file_timeout; .github/sweep-costs.json",
+      "issue": "The phase outcome's margin is met against a per-file cap the phase itself raised per file, not against the 300s cap the outcome and P127.1 name. Windows CI run 38379717433 (544576f) printed test_drive_phase.py at 384.8s (plain 1) and 386.8s (cp1252 1), which is over the old fixed 300s and over the 280s default block timeout; it passes because file_timeout() gives it 1428s from a darwin-recorded cost of 535 slot-seconds times 8 over 3 slots. The same log shows test__deps.py at 259.6s and 268.2s against a 538s timeout (about 2.0x, and run 38370435884 killed it at 300s), so a heavy-file margin of 2x to 3.7x rests on a table nobody has re-recorded from the Windows seconds that now exist. 'Repeated CI runs' is one completed run at this shape; run 38382182020 (1730909c) was still in progress when I read it.",
+      "resolution": "State the margin against the calibrated timeout in the P127 outcome (drive 3.7x, commit_task_work 69s against its calibrated bound) instead of the fixed 300s, and once run 38382182020 completes re-record the table with `--costs-from-log <saved windows log> --platform win32 --record-costs .github/sweep-costs.json` so deps and drive are weighted by their Windows seconds."
+    },
+    {
+      "id": 2,
+      "severity": "med",
+      "file": "CONTRIBUTING.md (cost-table paragraph added by 915565f6..2944d260); tools/sweep-selftests.py:file_timeout",
+      "issue": "P127.4 made the claim that a stale or partial cost table 'can only cost balance' and 'no longer turns the sweep red'. P127.6 then made the same table set each file's timeout: an entry missing or too low leaves the file at the 300s floor, and 300s is below what test_drive_phase.py needs on Windows (385s). So a stale table can again turn a cell red, through the timeout rather than through a ghost entry. The CONTRIBUTING sentence and sh7/sh9/sh10 describe only the balance half; table_notes() prints nothing about a staged or heavy file with no timed entry.",
+      "resolution": "Either add a table_notes() note for a staged suite (staged_paths) that has no recorded cost, and reword the CONTRIBUTING sentence to 'costs balance and the length of a hang detector, never which files run'; or give a staged suite a floor of its stage-timeout default times the grant so an unrecorded one is not left at 300s. Add a selftest case for whichever is chosen."
+    },
+    {
+      "id": 3,
+      "severity": "low",
+      "file": ".github/workflows/ci.yml:selftests timeout-minutes: 25; tools/sweep-selftests.py:TIMEOUT_PER_COST",
+      "issue": "The calibrated timeout for test_drive_phase.py is 1428s (23.8 minutes) and its blocks get 1408s each. A selftests cell has timeout-minutes 25 and about one minute of setup, so a hung drive suite is stopped by the runner's job timeout (the 'cancelled, names no step' outcome the ci.yml header says bounds exist to avoid) rather than named by the sweep. The header also says a bound far above twice the figure is wrong, yet lint (35s) and plugin-validate (14s) have a 5 minute bound.",
+      "resolution": "Cap file_timeout() at the cell's budget minus setup (for example 15 minutes, still 2.3x the 385s Windows figure) or lower TIMEOUT_PER_COST; if the 5 minute lint and plugin-validate bounds are intended as a floor, say so in the header line."
+    },
+    {
+      "id": 4,
+      "severity": "low",
+      "file": "docs/audit/phases/P127.json (P127.1 title and description); plugins/audit/tests/_harness.py stage_workers history",
+      "issue": "The P127.1 title still reads 'finish well under the cap on a two-core runner' and its description still says 'a windows-latest runner has 2 cores'. Run 38324787932 printed 4 workers' worth of cores (a 4-vCPU runner) and P127.6 replaced the sizing premise; the executor's P127.6 return lists this as NOT DONE because the manifest was outside its files. The record the phase signs off still states the premise the phase refuted.",
+      "resolution": "Correct the P127.1 description through the task verb (note, not a rewrite of history) so the manifest says 4 vCPU and a slot grant."
+    }
+  ],
+  "preExisting": [],
+  "intent": {
+    "answer": "matches",
+    "note": "The diff does what desiredOutcome asks: test_commit_task_work.py is 17 STAGES rows (106 check ids statically identical between de039e5d and HEAD, 237 and 106 cases seen passing on windows-latest), test_drive_phase.py has two more blocks, and the pool is sized from the sweep's slot grant (stage_workers reads SWEEP_STAGE_GRANT) rather than a fixed 6 or a guessed core share. Windows evidence read from run 38379717433 (544576f, P127.6), every job green, whole run 10m20s: test_drive_phase.py 384.8s and 386.8s at 3 slots, test_commit_task_work.py 69.1s and 69.9s, test_audit_task.py 182.3s and 190.3s, test_close_phase.py 100.4s and 109.9s; windows cells 6m48s to 9m18s. Run 38382182020 (1730909c, P127.7) had NOT completed when read: manifest validation, 17 of 19 selftest cells and nothing failed yet; claude plugin validate, lint and both e2e cells had passed. So 'repeated CI runs' is one completed run at this shape plus one pending, and 'under the sweep's per-file cap' holds only against the calibrated per-file timeout (finding 1). P127.7's remaining question, whether a branch protection entry names the old check names, is answerable: `gh api repos/.../branches/main/protection/required_status_checks` returned 404 'Branch not protected' and the rulesets list is empty, so no required-check name is orphaned today. P127.3 (shard_matrix_drift reads the matrix cells and every matrix.leg/os/shard if: reference, with shm2 to shm5) and P127.5 (no diff) read as claimed.",
+    "missing": [
+      "the result of CI run 38382182020, still in progress at read time"
+    ],
+    "redFirst": "not-attempted",
+    "redFirstBasis": "mode phase: intent.redFirst is not-attempted by the brief's rule. For the record, the executors' own words: P127.6 proved sr13 red (sr13 failed on HEAD with the working-tree implementation passing); P127.2 and P127.3, P127.4, P127.7 filed could-not-prove with the helper's refusal text.",
+    "inheritedTests": "not-asked",
+    "inheritedTestsBasis": "Every task's tests.gate lists `selftests` -> `python3 tools/sweep-selftests.py`, which runs the whole project's suites, plus manifest, report, lint and browser gates; the question is not asked of a gate that selects the whole tree."
+  },
+  "verdict": "findings",
+  "tasks": []
+}
