@@ -4501,6 +4501,209 @@ def _missing_module_cases(check):
           stays[0] == M.E_CANNOT_PROVE)
 
 
+def _export_missing_cases(check):
+    """A module that IS found, whose named export is not: node's and vite's
+    own wording for it (`missing_subjects`'s "export" row), read as
+    `--introduces` evidence straight off the export name - no `report_module`
+    file resolution owed, since the specifier already resolved."""
+    root = _harness.fixture_root("stamp-export-missing-")
+    try:
+        os.makedirs(os.path.join(root, "src"))
+        _write(os.path.join(root, "src", "math.mjs"),
+               "export function subtract(a, b) { return a - b; }\n")
+        ctx = {"root": root, "implementation": ["src/math.mjs"],
+               "tests": ["tests/math.test.mjs"], "cases": [],
+               "symbols": ["subtract"], "dropped": [], "new": [], "absent": [],
+               "head_files": None, "head_defs": None, "head_modules": None,
+               "head_js": None, "path": None}
+        missing = ("FAIL tests/math.test.mjs\n"
+                   "SyntaxError: The requested module './math.mjs' does not "
+                   "provide an export named 'subtract'\n")
+        run = {"cmd": ["npx", "vitest", "run"], "code": 1, "text": missing,
+               "problem": None, "head": {"code": 0, "text": "", "problem": None},
+               "second": {"code": 0, "text": "Tests  1 passed (1)\n",
+                         "problem": None},
+               "fix": None}
+        code, _v, block, _n = M.red_verdict(run, ctx)
+        other = M.red_verdict(
+            dict(run, text=missing.replace("subtract", "divide")), ctx)[0]
+    finally:
+        _harness.remove_tree(root)
+    basis = (block or {}).get("basis", "")
+    check("se1 a module found whose export is not - node's/vite's \"does not "
+          "provide an export named\" wording - is read as --introduces "
+          "evidence for the symbol it names, proved by a second run that no "
+          "longer prints it: exit=%r %r" % (code, basis[-200:]),
+          code == M.E_PROVED and "subtract" in basis and "second run" in basis)
+    check("se2 THE DENY TWIN for se1: the error naming a DIFFERENT export than "
+          "the one --introduces declares stays could-not-prove: %r" % (other,),
+          other != M.E_PROVED)
+
+
+# A playwright spec file: `test.describe`/`test` calls read by the SAME
+# tokenizer jest's and vitest's files are (`js_test_cases`), since playwright
+# imports its own `test` the same way and calls it the same way.
+_PW_SPEC_NEW = "\n".join([
+    "import { test, expect } from '@playwright/test';",
+    "test.describe('math', () => {",
+    "  test('adds numbers', async () => {",
+    "    expect(1 + 2).toBe(3);",
+    "  });",
+    "});", ""])
+
+
+def _pw_stats(unexpected=0, expected=0, flaky=0, skipped=0):
+    return {"expected": expected, "unexpected": unexpected, "flaky": flaky,
+            "skipped": skipped}
+
+
+def _pw_json(chain=("math", "adds numbers"), file_rel="tests/example.spec.ts",
+            status="unexpected",
+            message="Error: expect(received).toBe(expected)"):
+    """A playwright JSON reporter document (`--reporter=json`) naming one test
+    under nested suites, failed when `status` is `"unexpected"`."""
+    spec_title = chain[-1]
+    suite_titles = chain[:-1]
+    node = {"title": spec_title, "file": file_rel,
+            "tests": [{"status": status,
+                       "results": [{"status": "failed" if status == "unexpected"
+                                    else "passed",
+                                    "errors": ([{"message": message}]
+                                              if status == "unexpected" else [])}]}]}
+    suites = [{"specs": [node]}]
+    for title in reversed(suite_titles):
+        suites = [{"title": title, "suites": suites, "specs": []}]
+    return json.dumps({"suites": suites,
+                       "stats": _pw_stats(unexpected=1 if status == "unexpected" else 0,
+                                          expected=0 if status == "unexpected" else 1)})
+
+
+def _playwright_credit_cases(check):
+    """A failing playwright run proves red end to end: its JSON reporter read,
+    the failing spec located by file and title chain in a declared test file
+    exactly as a jest or vitest case is (`JS_RUNNERS`), and credited because
+    the working tree defines that chain."""
+    new = "tests/example.spec.ts"
+    text = _pw_json()
+    empty_green = json.dumps({"suites": [], "stats": _pw_stats()})
+    run = {"cmd": ["npx", "playwright", "test", "--reporter=json"], "code": 1,
+           "text": text, "problem": None,
+           "head": {"code": 0, "text": empty_green, "problem": None},
+           "second": None,
+           "fix": {"code": 0, "text": json.dumps(
+               {"suites": [], "stats": _pw_stats(expected=1)}), "problem": None}}
+    root = _harness.fixture_root("stamp-pw-credit-")
+    try:
+        os.makedirs(os.path.join(root, "tests"))
+        _write(os.path.join(root, new), _PW_SPEC_NEW)
+        ctx = {"root": root, "implementation": ["src/add.ts"], "tests": [new],
+               "cases": [], "symbols": [], "dropped": [], "new": [new],
+               "head_files": ["src/add.ts"], "head_defs": {}, "head_modules": {},
+               "path": None, "head_js": M.js_test_definitions({})}
+        code, _v, block, _n = M.red_verdict(run, ctx)
+        line_text = (
+            "  tests/example.spec.ts:4:7 › math › adds numbers\n\n"
+            "     Error: expect(received).toBe(expected)\n\n"
+            "  1 failed\n")
+        run_line = dict(run, text=line_text)
+        code_line, _v, block_line, _n = M.red_verdict(run_line, ctx)
+    finally:
+        _harness.remove_tree(root)
+    basis = (block or {}).get("basis", "")
+    check("sp1 a playwright JSON reporter's failing spec, new in a declared "
+          "test file, is credited to the task and red proves it end to end: "
+          "exit=%r %r" % (code, basis[-220:]),
+          code == M.E_PROVED and "adds numbers" in basis)
+    basis_line = (block_line or {}).get("basis", "")
+    check("sp2 THE ALLOW TWIN for sp1: the SAME failure read off playwright's "
+          "line/list reporter instead of its JSON one proves too - the line "
+          "reporter carries no per-failure assertion detail, so every entry it "
+          "names is read as one: exit=%r %r" % (code_line, basis_line[-220:]),
+          code_line == M.E_PROVED and "adds numbers" in basis_line)
+
+
+_VITEST_JSON_SPEC_NEW = "\n".join([
+    "import { describe, it, expect } from 'vitest';",
+    "describe('math', () => {",
+    "  it('adds', () => {",
+    "    expect(1 + 2).toBe(3);",
+    "  });",
+    "});", ""])
+
+
+def _vitest_json(chain=("math", "adds"), file_rel="tests/add.test.ts",
+                 failed=True):
+    assertion = {"status": "failed" if failed else "passed",
+                "ancestorTitles": list(chain[:-1]), "title": chain[-1],
+                "failureMessages": (["AssertionError: expected 1 to be 2"]
+                                    if failed else [])}
+    return json.dumps({
+        "numTotalTests": 1, "numFailedTests": 1 if failed else 0,
+        "numPassedTests": 0 if failed else 1,
+        "testResults": [{"name": file_rel, "assertionResults": [assertion]}]})
+
+
+def _vitest_json_credit_cases(check):
+    """`vitest --reporter=json`'s own schema (jest-compatible: `testResults` /
+    `assertionResults`) read and credited the same way its line reporter is -
+    `_runner_output.read_tally` carries no row for it at all, which is the
+    "two vitest runs were unparsed" cause this widens."""
+    new = "tests/add.test.ts"
+    text = _vitest_json()
+    run = {"cmd": ["npx", "vitest", "run", "--reporter=json"], "code": 1,
+           "text": text, "problem": None,
+           "head": {"code": 0, "text": _vitest_json(failed=False), "problem": None},
+           "second": None,
+           "fix": {"code": 0, "text": _vitest_json(failed=False), "problem": None}}
+    root = _harness.fixture_root("stamp-vitest-json-credit-")
+    try:
+        os.makedirs(os.path.join(root, "tests"))
+        _write(os.path.join(root, new), _VITEST_JSON_SPEC_NEW)
+        ctx = {"root": root, "implementation": ["src/add.ts"], "tests": [new],
+               "cases": [], "symbols": [], "dropped": [], "new": [new],
+               "head_files": ["src/add.ts"], "head_defs": {}, "head_modules": {},
+               "path": None, "head_js": M.js_test_definitions({})}
+        code, _v, block, _n = M.red_verdict(run, ctx)
+        line_run = dict(run, text=" FAIL  tests/add.test.ts > math > adds\n"
+                                 "AssertionError: expected 1 to be 2\n"
+                                 "Tests  1 failed | 0 passed (1)\n")
+        code_line, _v, block_line, _n = M.red_verdict(line_run, ctx)
+    finally:
+        _harness.remove_tree(root)
+    basis = (block or {}).get("basis", "")
+    check("sv-json1 a vitest JSON reporter's failing assertion, new in a "
+          "declared test file, is credited to the task and red proves it end "
+          "to end: exit=%r %r" % (code, basis[-220:]),
+          code == M.E_PROVED and "adds" in basis)
+    basis_line = (block_line or {}).get("basis", "")
+    check("sv-json2 THE ALLOW TWIN for sv-json1: the SAME failure read off "
+          "vitest's line reporter instead of its JSON one proves too - both "
+          "reporters of one runner credit the same declared test file: "
+          "exit=%r %r" % (code_line, basis_line[-220:]),
+          code_line == M.E_PROVED and "adds" in basis_line)
+
+
+def _could_not_start_cases(check):
+    """A run `red` could not even START - the executable named after `--` is
+    not on PATH, the sandbox refused it - is `could-not-prove`, never `red`:
+    there is no output to misread as one."""
+    run = {"cmd": ["no-such-runner-binary-xyz"], "code": None, "text": "",
+          "problem": "the command could not start: [Errno 2] No such file "
+                     "or directory: 'no-such-runner-binary-xyz'",
+          "second": None, "head": None, "fix": None}
+    ctx = {"root": None, "implementation": [], "tests": ["tests/test_mine.py"],
+          "cases": [], "symbols": [], "dropped": [], "new": [],
+          "head_files": None, "head_defs": None, "head_modules": None,
+          "path": None}
+    code, verdict, block, note = M.red_verdict(run, ctx)
+    check("scs1 a run that could not start is could-not-prove, never red: it "
+          "carries no output a tally or a case could be read from: %r %r"
+          % (code, (block or {}).get("status")),
+          code == M.E_CANNOT_PROVE and block is not None
+          and block.get("status") == M.RED_CANNOT and note is None
+          and "could not start" in block["basis"])
+
+
 # --- a house suite whose body aborts on the task's new name ---
 # What `_harness.run` prints when the body raises: every case before it, the
 # abort as one more FAIL line carrying `<Error>: <message>`, and the tally. The
@@ -4852,6 +5055,10 @@ STAGES = (
     ("sr-tally", "_tally_cases"),
     ("sr-introduces", "_introduces_cases"),
     ("sm-missing-module", "_missing_module_cases"),
+    ("sm-export-missing", "_export_missing_cases"),
+    ("sr-playwright", "_playwright_credit_cases"),
+    ("sr-vitest-json", "_vitest_json_credit_cases"),
+    ("sr-could-not-start", "_could_not_start_cases"),
     ("sh-house-abort", "_house_abort_cases"),
     ("sh-crlf-abort", "_crlf_abort_cases"),
     ("si-inline", "_inline_suite_cases"),

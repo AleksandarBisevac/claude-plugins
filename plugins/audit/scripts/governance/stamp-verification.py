@@ -601,10 +601,257 @@ INTRODUCES_CLASSES = ("ImportError", "ModuleNotFoundError", "AttributeError",
 _SYMBOL_SHAPE = re.compile(r"^[A-Za-z_][\w.-]*$")
 
 
+# --- playwright, and vitest's JSON reporter - the two `_runner_output` has no
+# row for (its docstring says so: "Mocha and playwright have no row there").
+# `red` needs a runner it has no row for exactly where the danuvia testbed
+# measured it losing a proof: a Playwright run's own output was never read at
+# all, and a vitest run under `--reporter=json` printed none of the `Tests`
+# line `_runner_output`'s vitest reader looks for - two reporters, not one
+# runner, each read here rather than by widening a module this command does
+# not own.
+def _json_blob(text):
+    """The LARGEST `{...}` document `text` parses whole as JSON, or None.
+
+    A wrapper (`npm test`, a package script) prints banner lines before and
+    after the reporter's own document, so every `{` is tried as a start and
+    the biggest span that parses whole is kept - a small unrelated object (a
+    lockfile notice, a config echo) printed beside the real one is not read
+    as it."""
+    text = text or ""
+    decoder, idx, found = json.JSONDecoder(), 0, None
+    while True:
+        start = text.find("{", idx)
+        if start == -1:
+            return found[2] if found else None
+        try:
+            obj, end = decoder.raw_decode(text, start)
+        except ValueError:
+            idx = start + 1
+            continue
+        if found is None or (end - start) > (found[1] - found[0]):
+            found = (start, end, obj)
+        idx = end
+
+
+def _pw_specs(suites, path=()):
+    """`[(chain, file, test)]` - every test playwright's JSON reporter nests
+    under `suites`, the chain its own title and every enclosing suite's,
+    walked depth first the way the reporter nests them."""
+    out = []
+    for suite in suites or []:
+        title = suite.get("title") or ""
+        sub = path + ((title,) if title else ())
+        for spec in suite.get("specs") or []:
+            chain = sub + (spec.get("title") or "",)
+            for test in spec.get("tests") or []:
+                out.append((chain, spec.get("file"), test))
+        out.extend(_pw_specs(suite.get("suites") or [], sub))
+    return out
+
+
+# An `expect()` or a `node:assert` failure prints `AssertionError`, or the
+# matcher's own line, in its error's message; anything else - a timeout, a
+# thrown value with no assertion in it - is read `assertion: False`, the same
+# distinction `_JEST_ASSERTION`/`_VITEST_ASSERTION` make for their runners.
+_PW_ASSERTION = re.compile(r"\bexpect[.(]|AssertionError\b")
+
+
+def _pw_error_text(test):
+    results = test.get("results") or []
+    if not results:
+        return ""
+    last = results[-1]
+    errors = last.get("errors") or ([last["error"]] if last.get("error") else [])
+    return "\n".join((e or {}).get("message") or "" for e in errors).strip()
+
+
+def playwright_json_cases(obj):
+    """`[{"id", "label", "assertion", "why", "suite", "chain"}]` from a
+    playwright JSON reporter document (`--reporter=json`), or None when `obj`
+    carries neither `suites` nor `stats` - the two keys the reporter always
+    writes, a passing run included, so their absence means this is not one."""
+    if not isinstance(obj, dict) or "stats" not in obj or "suites" not in obj:
+        return None
+    out = []
+    for chain, file_rel, test in _pw_specs(obj.get("suites") or []):
+        if test.get("status") != "unexpected":
+            continue
+        error = _pw_error_text(test)
+        case = {"id": chain[-1] if chain else None, "label": " > ".join(chain),
+                "assertion": bool(_PW_ASSERTION.search(error)),
+                "why": error or "playwright: unexpected", "suite": file_rel,
+                "chain": list(chain)}
+        if case not in out:
+            out.append(case)
+    return out
+
+
+def playwright_json_tally(obj):
+    """The tally of a playwright JSON reporter document, or None (see
+    `playwright_json_cases`). `collected` is every test that ran at least
+    once - `expected`, `unexpected` and `flaky` are playwright's own words for
+    that - `skipped` left out exactly as `_runner_output`'s own summary table
+    leaves it out for every other runner."""
+    cases = playwright_json_cases(obj)
+    if cases is None:
+        return None
+    stats = obj.get("stats") or {}
+    collected = sum(int(stats.get(k) or 0) for k in ("expected", "unexpected", "flaky"))
+    failed = int(stats.get("unexpected") or 0)
+    return {"runner": "playwright", "collected": collected, "failed": failed,
+            "assertions": len([c for c in cases if c["assertion"]])}
+
+
+# The shape `_runner_output._FAILURE_READERS["playwright"]` locates an entry
+# by (`<file>:<line>:<col> › <chain>`, a project prefix allowed) - read again,
+# with MULTILINE, here: that module's own copy has no `re.M` flag, so its `^`/
+# `$` anchor the WHOLE string rather than each line and its `finditer` never
+# matches a real multi-entry run; widening it is that module's call, not this
+# command's, so the shape is read again rather than reused broken.
+_PW_LINE_ENTRY = re.compile(
+    r"^[ \t]+((?:\[[^\]]+\][ \t]*›[ \t]*)?\S+:\d+:\d+[ \t]*›[ \t]*.+?)"
+    r"(?:[ \t]+─+)?[ \t]*$", re.M)
+
+
+def playwright_line_cases(text):
+    """`playwright_json_cases`'s shape, read off playwright's line/list
+    reporter instead of its JSON one: each entry `_PW_LINE_ENTRY` locates
+    (`<file>:<line>:<col> › <chain>`, a project prefix allowed), its chain
+    split on playwright's own `' › '`. That reporter prints no per-failure
+    detail this command can tell an assertion from a timeout by -
+    `_runner_output`'s docstring says so - so every entry here is
+    `assertion: True`: playwright itself already decided the test failed, and
+    that is the claim this `why` carries, not a stronger one about its cause."""
+    out = []
+    for hit in _PW_LINE_ENTRY.finditer(_runner_output.plain_text(text)):
+        entry = re.sub(r"^\[[^\]]+\][ \t]*›[ \t]*", "", hit.group(1))
+        loc, sep, rest = entry.partition(" › ")
+        if not sep:
+            continue
+        chain = [c.strip() for c in rest.split(" › ")]
+        case = {"id": chain[-1] if chain else None, "label": entry,
+                "assertion": True, "why": "playwright: failed",
+                "suite": loc.split(":")[0], "chain": chain}
+        if case not in out:
+            out.append(case)
+    return out
+
+
+def playwright_line_tally(text):
+    """The tally of playwright's line/list reporter, or None - `collected` and
+    `failed` off its own summary line (`_runner_output.summary_readers`,
+    already carrying a `playwright` row), `assertions` the entries
+    `playwright_line_cases` names (all of them, per that function's own
+    limit)."""
+    rows = [(joined, words) for name, joined, words in
+            _runner_output.summary_readers(_runner_output.plain_text(text))
+            if name == "playwright"]
+    if not rows:
+        return None
+    joined, words = rows[0]
+    counts = {}
+    for n, word in _runner_output._SUMMARY_PAIR.findall(joined):
+        counts[word] = counts.get(word, 0) + int(n)
+    cases = playwright_line_cases(text)
+    return {"runner": "playwright",
+            "collected": sum(counts.get(w, 0) for w in words),
+            "failed": counts.get("failed", 0) + counts.get("flaky", 0),
+            "assertions": len(cases)}
+
+
+def playwright_cases(text):
+    """Every failing case a playwright run named: its JSON reporter first,
+    its line/list reporter otherwise - the pair `playwright_json_tally` and
+    `playwright_line_tally` read from the same text."""
+    obj = _json_blob(text)
+    cases = playwright_json_cases(obj) if obj is not None else None
+    return cases if cases is not None else playwright_line_cases(text)
+
+
+# vitest's `--reporter=json` writes jest's own schema (`testResults`, each
+# holding `assertionResults`), which is why no new chain or suite reading is
+# owed here beyond walking that shape.
+_VITEST_JSON_ASSERTION = re.compile(r"^AssertionError\b", re.M)
+
+
+def vitest_json_cases(obj):
+    """`playwright_json_cases`'s shape, read off a vitest (or jest) JSON
+    reporter document - `None` when `obj` carries no `testResults`, the key
+    this schema always writes."""
+    if not isinstance(obj, dict) or "testResults" not in obj:
+        return None
+    out = []
+    for file_result in obj.get("testResults") or []:
+        file_rel = file_result.get("name")
+        for assertion in file_result.get("assertionResults") or []:
+            if assertion.get("status") != "failed":
+                continue
+            chain = list(assertion.get("ancestorTitles") or []) + [
+                assertion.get("title") or ""]
+            why = "\n".join(assertion.get("failureMessages") or [])
+            case = {"id": chain[-1], "label": " > ".join(chain),
+                    "assertion": bool(_VITEST_JSON_ASSERTION.search(why)),
+                    "why": why.strip() or "vitest: failed", "suite": file_rel,
+                    "chain": chain}
+            if case not in out:
+                out.append(case)
+    return out
+
+
+def vitest_json_tally(obj):
+    """The tally of a vitest (or jest) JSON reporter document, or None.
+
+    A suite that never ran a test - a crashed import, a syntax error - is a
+    `testResults` entry with no `assertionResults` at all; it is counted as
+    one failure with no case, the same convention `_runner_output`'s own
+    `_summary_tally` uses for a jest or vitest suite the line reporter names
+    with no chain."""
+    cases = vitest_json_cases(obj)
+    if cases is None:
+        return None
+    crashed = len([r for r in obj.get("testResults") or []
+                  if r.get("status") == "failed" and not r.get("assertionResults")])
+    return {"runner": "vitest",
+            "collected": int(obj.get("numTotalTests") or 0) + crashed,
+            "failed": int(obj.get("numFailedTests") or 0) + crashed,
+            "assertions": len([c for c in cases if c["assertion"]])}
+
+
+def red_read_tally(text, cmd=None):
+    """The tally `red` reads for one run: `_runner_output.read_tally` first -
+    house, pytest, unittest, jest, vitest's line reporter - then the two
+    reporters it carries no row for, playwright (its JSON reporter, else its
+    line one) and vitest's JSON reporter."""
+    tally = read_tally(text, cmd)
+    if tally is not None:
+        return tally
+    obj = _json_blob(text)
+    if obj is not None:
+        for reader in (playwright_json_tally, vitest_json_tally):
+            got = reader(obj)
+            if got is not None:
+                return got
+    return playwright_line_tally(text)
+
+
+def red_failing_cases(text, runner):
+    """`failing_cases`'s shape for a run `red` graded, widened to the two
+    reporters `red_read_tally` reads and `_runner_output.failing_cases`
+    cannot: playwright (either reporter) and vitest's JSON one."""
+    if runner == "playwright":
+        return playwright_cases(text)
+    if runner == "vitest":
+        obj = _json_blob(text)
+        got = vitest_json_cases(obj) if obj is not None else None
+        if got is not None:
+            return got
+    return failing_cases(text, runner)
+
+
 def classify_run(code, text, cmd=None):
     """`(verdict, tally)` for one run: `green` / `red` / `collection-error` /
     `mixed-tally` / `no-tally`. Exit 0 is `green` whatever the output says."""
-    tally = read_tally(text, cmd)
+    tally = red_read_tally(text, cmd)
     if code == 0:
         return V_GREEN, tally
     if tally is None:
@@ -673,6 +920,15 @@ MISSING_SPELLINGS = (
         r"(?P<importer>[^\r\n]*[^\s])")),
     ("jest", ("jest", None), re.compile(
         r"Cannot find module '(?P<spec>[^']+)' from '(?P<importer>[^']+)'")),
+    # A module IS found and its export is not: node's own ESM loader and
+    # vite's (under vitest or a vite-built jest config) both print this
+    # wording for a named import nothing in the module defines - the shape the
+    # danuvia testbed's "is not exported" cause names, distinct from the
+    # "module not found" rows above because the specifier resolved and the
+    # NAME did not.
+    ("export", ("vitest", "jest", None), re.compile(
+        r"[Tt]he requested module '(?P<spec>[^']+)' does not provide an "
+        r"export named '(?P<name>[^']+)'")),
 )
 # A house abort is read for one class more than a final error: a TypeError
 # naming the name - a keyword the task adds - is the same absence, and the
@@ -705,6 +961,9 @@ def missing_reports(text, runner=None):
                 if cls in ABORT_CLASSES:
                     out.append({"spelling": spelling, "cls": cls, "message": message,
                                 "line": "%s: %s" % (cls, message)})
+            elif "name" in found:
+                out.append({"spelling": spelling, "spec": found["spec"],
+                            "name": found["name"], "line": hit.group(0)})
             else:
                 out.append({"spelling": spelling, "spec": found["spec"],
                             "importer": found["importer"], "line": hit.group(0)})
@@ -746,8 +1005,14 @@ def _js_module_file(spec, importer, sources, roots):
 def report_module(report, sources, roots):
     """The declared source file a missing-module report names, or None: a JS
     specifier resolved (`_js_module_file`), or a Python import error's module -
-    a quoted dotted name, or the path it prints in parentheses."""
-    if "spec" in report:
+    a quoted dotted name, or the path it prints in parentheses.
+
+    A `name` report - a module FOUND whose export was not - carries `spec` with
+    no `importer`, so it falls through here to None: resolving a `--introduces`
+    symbol from it is `missing_subjects`'s job, done straight off the export
+    name, and this function answers a different question (`changed_source`'s,
+    about a whole missing FILE) that such a report does not raise."""
+    if "importer" in report:
         return _js_module_file(report["spec"], report["importer"], sources, roots)
     if report.get("cls") not in _IMPORT_CLASSES:
         return None
@@ -800,7 +1065,8 @@ def missing_subjects(text, runner, symbols, sources, roots):
     out = []
     for symbol in symbols:
         hit = next((r for r in reports
-                    if "message" in r and _quotes(r["message"], symbol)), None)
+                    if ("message" in r and _quotes(r["message"], symbol))
+                    or r.get("name") == symbol), None)
         if hit is not None:
             out.append((("symbol", symbol), hit))
     for report in reports:
@@ -1372,7 +1638,7 @@ def baseline_problem(head, cmd, stages=()):
         return "HEAD's own run was not made - %s" % (NARROW,)
     if head.get("problem"):
         return "HEAD's own run could not be made (%s) - %s" % (head["problem"], NARROW)
-    tally = read_tally(head["text"], cmd)
+    tally = red_read_tally(head["text"], cmd)
     if head["code"] == 5 and tally is not None and tally["runner"] is not None \
             and not tally["collected"] and not tally["failed"]:
         return None
@@ -1394,7 +1660,7 @@ def fix_problem(fix, cmd, task_tally):
         return "the fix run was not made"
     if fix.get("problem"):
         return "the fix run could not be made: %s" % (fix["problem"],)
-    tally = read_tally(fix["text"], cmd)
+    tally = red_read_tally(fix["text"], cmd)
     if fix["code"] != 0 or tally is None or tally["runner"] is None or tally["failed"]:
         return ("with the working tree's implementation the task's tests do not all "
                 "pass (%s), so the red is not one the fix turns green"
@@ -1797,7 +2063,11 @@ def test_definitions(texts):
 # like no HEAD copy at all. JSX text and a regex literal right after `)` are
 # blind spots; a misreading of either surfaces as an unbalanced file (refused)
 # or as the same misreading of both copies (compared alike).
-JS_RUNNERS = ("jest", "vitest")
+# playwright's chain and suite are read the same way jest's and vitest's are
+# (`case_site`, `_js_credit_problem`): a spec's title and its enclosing
+# `describe` blocks, and a playwright test file calls `describe`/`test`/`it`
+# the same way, so `js_test_cases`'s tokenizer reads one with no change.
+JS_RUNNERS = ("jest", "vitest", "playwright")
 _JS_TEST_FILE = re.compile(r"\.(test|spec)\.[cm]?[jt]sx?$")
 _JS_SOURCE = re.compile(r"\.[cm]?[jt]sx?$")
 _JS_CALLS = ("describe", "test", "it")
@@ -2014,9 +2284,15 @@ def js_test_cases(text):
                 k and tokens[k - 1][0] == "p" and tokens[k - 1][1] == "."):
             k += 1
             continue
-        j, each = k + 1, False
+        j, each, nests = k + 1, False, False
         while j + 1 < len(tokens) and tokens[j][1] == "." and tokens[j + 1][0] == "id":
             each = each or tokens[j + 1][1] == "each"
+            # playwright nests with `test.describe(...)` rather than a bare
+            # `describe(...)`: the modifier chain carries the word that opens
+            # a scope instead of the leading identifier, the mirror image of
+            # jest's `describe.skip(...)` - `raw` stays "test" either way,
+            # so the chain itself is read for it too.
+            nests = nests or tokens[j + 1][1] == "describe"
             j += 2
         if j >= len(tokens) or tokens[j][1] != "(" or tokens[j][0] != "p":
             k += 1
@@ -2034,7 +2310,7 @@ def js_test_cases(text):
             "~", _js_title_pattern(tokens, open_at, close_at, each))
         parent = scopes[-1][1] if scopes else ()
         chain = parent + (element,)
-        if raw == "describe":
+        if raw == "describe" or nests:
             scopes.append((close_at, chain))
         elif any(not isinstance(e, str) for e in chain):
             dynamic.append(chain)
@@ -2925,7 +3201,7 @@ def red_verdict(run, ctx):
             "it proves nothing yet; fix the test, there is no redFirst word to "
             "record for this%s" % (where, line, ", ".join(ctx["dropped"]) or "nothing",
                                    deps_clause(ctx.get("deps"))))
-    failing = (failing_cases(text, tally["runner"])
+    failing = (red_failing_cases(text, tally["runner"])
                if tally is not None and tally["runner"] is not None else [])
     fresh = new_stage_baseline(run.get("head"), run["cmd"], ctx.get("stages"))
     how = ("HEAD's own tests on HEAD's code failing only the unknown-stage check "
