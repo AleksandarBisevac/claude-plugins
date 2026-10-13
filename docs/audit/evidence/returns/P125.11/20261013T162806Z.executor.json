@@ -1,0 +1,26 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/release.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-13T16:41:52Z",
+    "basis": "`python3 tools/release.py --selftest` in a throwaway tree at HEAD: inline suite tools/release.py (its test file is its implementation file): it is new at HEAD, so there is no HEAD copy to hold its implementation at; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Added release_permitted(ctx) to tools/release.py, built only from .claude/hooks/guard-release.py's own read_bugs, read_held_phases, bypass_armed and refusal (loaded by path via load_guard_release, untouched) - never a second copy of the bug/held-phase rule. The bypass session id is read from the CLAUDE_CODE_SESSION_ID environment variable (absent means no bypass is possible). step_preflight now calls release_permitted instead of inlining the same two reads; step_push_ci_branch, step_tag, step_push_main_tag and step_gh_release each call it again immediately before touching a remote, so a bug filed during the CI wait (wait-ci can run for up to an hour) stops the next remote step rather than relying on a preflight answer taken before the bug existed. Per the orchestrator's override, .claude/hooks/guard-release.py was left untouched (no _words_publishers arm, no command-spelling classification) - the rule now lives inside release.py, which is the file that actually issues the git/gh commands. Dropped the split literal '\"guard-release\" + \".py\"' workaround and the module docstring's _PYTHON_PROGRAM mention; load_guard_release() now writes the basename plainly as 'guard-release.py'. To make that legal under tool_basename_drift(), widened plugins/audit/scripts/_refs.py's TOOL_NAME_TREES to include '.claude/hooks' (a fourth, repository-level tree outside the plugin), rewording the surrounding comment to drop its 'four trees' cardinal claim. Added test cases to tools/release.py's _cases(): rl8 (a bug filed in the plan after preflight already ran stops the pipeline at the next remote step - push-ci-branch - naming the bug, with the FakeRunner recording zero calls), rl9 (an armed, unexpired bypass slot for CLAUDE_CODE_SESSION_ID lets a plan with an open bug through release_permitted), rl10 (an expired slot does not), rl11 (no session id set at all is refused, since no bypass file can be looked up). Added tb9/tb9b to plugins/audit/tests/test__refs.py proving the widened TOOL_NAME_TREES recognises a tools/ reference to '.claude/hooks/guard-release.py's basename while still reporting a reference naming no hook anywhere. Verified: python3 tools/sweep-selftests.py -> '332/332 files ok, 152 migrated to tests/, 15887 cases'; python3 tools/release.py --selftest -> 'ALL PASS: 20/20 cases passed'; python3 plugins/audit/tests/test__refs.py --selftest -> 'ALL PASS: 336/336 cases passed'; python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json -> 'OK: ... valid (128 phases, 953 tasks, 25 bugs, 1 warning line(s), 5 item(s))' (attempt 1's red validate finding from P125.2's missing fileIndex entries is already resolved in this tree, not touched by this task). ruff check and vermin -t=3.8- over the three edited files are clean; _output.house_style_violations() and _output.prose_number_claims() report nothing against them.",
+    "descriptive": "tools/release.py now re-asks the release guard's own open-bug / held-phase question immediately before every remote-touching step, not only at preflight, so a bug filed during a long CI wait stops the next push instead of being missed; the tools/ basename lint now also recognises .claude/hooks, so guard-release.py's name stays checked rather than worked around."
+  },
+  "testsAdded": [
+    "tools/release.py: rl8",
+    "tools/release.py: rl9",
+    "tools/release.py: rl10",
+    "tools/release.py: rl11",
+    "plugins/audit/tests/test__refs.py: tb9",
+    "plugins/audit/tests/test__refs.py: tb9b"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:2b0ac16e61813a7744c4ae17551be201ce3de0a2e32a1f8e6fe662211a50f913\",\"dirtyDigest\":\"sha256:54e200c9098389366d7dee889a4b00d9234966499f433fef5edcf0c4f38f5488\",\"dirtyPaths\":{\"CONTRIBUTING.md\":\"9dfcce1291c0d6bb\",\"plugins/audit/scripts/_refs.py\":\"ac6bf0a1f98bc114\",\"plugins/audit/tests/test__refs.py\":\"601eb2af358ab3af\",\"tools/release.py\":\"4ac5223ac88ec37b\"},\"head\":\"c51a9ef5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".claude/hooks/guard-release.py\",\"CLAUDE.md\",\"CONTRIBUTING.md\",\"plugins/audit/scripts/_refs.py\",\"plugins/audit/tests/test__refs.py\",\"tools/release.py\",\"tools/verify.sh\"],\"scopeDigest\":\"sha256:60c999ec18a995ad3129f41f368962554f6487bb5894718c5e669e646c9a0048\",\"v\":2}"
+}

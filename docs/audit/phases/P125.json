@@ -343,7 +343,7 @@
     {
       "id": "P125.5",
       "title": "The phase reviewer's brief carries each owed task's diff, computed once",
-      "status": "in_progress",
+      "status": "done",
       "description": "N5. audit-lookup.compose_phase_brief writes one diff per owed task (git show of its commit scoped to the task's files, docs/audit excluded) into the brief, plus the phase diff's path list and every path the phase changed outside every task's declared files, named as such. agents/audit-reviewer.md says the brief's diffs are the input and are not to be re-derived (replace the 'git show <sha> -- <files> is its diff' instruction). The diff is git's output either way; what changes is that it is computed once by a script. Keep the reviewer prompt within tools/measure-context.py's AGENT_CEILINGS; the brief file itself is read by the reviewer, so its size is measured and printed, not gated. A re-review brief (see review-convergence) lists only the fix tasks' diffs.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -379,19 +379,35 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a8c9d75e3f1d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "compose_phase_brief in plugins/audit/scripts/status/audit-lookup.py now computes each owed task's own diff once (_task_commit_diff_lines: git diff <commit>^..<commit> -- <task files> ':(exclude)docs/audit', or the empty tree for a root commit), embedded in the brief in place of the old 'diff: git show <sha> -- <files>' instruction line; added a 'Phase diff scope' section (_phase_diff_paths/_phase_scope_lines) listing the whole phase diff's changed paths and, named as such, every path outside every task's declared files; a re-review (any task for which _filed_returns.is_fix_task holds) now shows only the fix task(s)' sections under a new 'Re-review scope' note, leaving the mechanically-computed 'owed' set (still read off every task) unaffected. agents/audit-reviewer.md's 'git show <sha> -- <files> is its diff' instruction is replaced by 'each with its diff already computed in, not re-derived' plus a re-review note, trimmed to stay at 6992 bytes under tools/measure-context.py's AGENT_CEILINGS['reviewer']=7000 (verified via python3 tools/measure-context.py --gate --tree plugins/audit). reference/phase-signoff.md's description of what the phase brief hands the reviewer updated to mention the diff and the re-review case. The CLI's `brief --role` success message now also measures the written brief's byte size (a per-run artifact, never gated by AGENT_CEILINGS) and prints it - but on STDERR, because drive-phase.py's own `re.search(r\"written: (.+)$\", out.strip())` parses stdout alone to find the brief path; putting the size on stdout broke that parse (test_drive_phase.py fell to 166/231) until this attempt caught and fixed it, now locked by test bf1a. Tests added in plugins/audit/tests/test_audit_lookup.py: bf50 (two tasks' own commits, each touching only its own file - their per-task diffs concatenate to exactly `git diff <base> <head> -- ':(exclude)docs/audit'` over the tasks' files), bf51 (a task commit also touching a file no task declares names it under 'Paths outside every task's declared files', not the declared ones), bf52 (a phase carrying a finding whose fixTask is P1.4 lists only that task's section, not the three an earlier round already reviewed), bf1a (regression lock: stdout's 'written: <path>' line stays the path alone, with any byte count on stderr instead). python3 plugins/audit/tests/test_audit_lookup.py --selftest: 90/90 cases passed. Full sweep python3 tools/sweep-selftests.py: 331/331 files ok, 152 migrated to tests/, 15869 cases (exit 0, re-run clean after an earlier contested run on a shared, multi-agent machine showed two unrelated transient failures in test_drive_phase.py and test_stamp_verification.py that both files' own --selftest later confirmed were not real - test_drive_phase.py: 237/237, test_stamp_verification.py: 266/266 - caused by CPU contention from concurrent sibling sweeps, not by this change).",
+        "descriptive": "Phase briefs now carry each owed task's own diff and the phase's whole changed-path scope computed once, so the reviewer reads rather than re-derives it, and a re-review shows only the fix tasks."
       },
       "startedAt": "2026-10-13T14:46:12Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-13T16:27:41Z",
+      "verifiedBy": [
+        "bf50",
+        "bf51",
+        "bf52",
+        "bf1a"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-13T16:27:39Z.473196",
         "status": "passed",
         "at": "2026-10-13T16:27:39Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "a8c9d75e3f1d",
+        "at": "2026-10-13T16:27:41Z"
+      },
+      "redFirst": {
+        "at": "2026-10-13T15:31:02Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_lookup.py --selftest` in a throwaway tree at HEAD exited 1 with 4 of 90 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bf1a (house FAIL), bf50 (house FAIL), bf51 (house FAIL), bf52 (house FAIL): SELFTEST FAILED: 86/90 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -713,14 +729,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-13T14:46:15Z",
+      "startedAt": "2026-10-13T16:28:06Z",
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "phase",
@@ -1903,6 +1919,50 @@
       "dependsOn": [
         "P125.29-0h5"
       ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.36-0h5",
+      "title": "A throwaway tree left after a torn-down run is removed with a bounded retry, not one attempt",
+      "status": "pending",
+      "description": "F649. CI run 38430725479 (ci/p125, windows-latest cp1252 shard 3): test_stamp_verification sr9 got exit 4 (E_LEFT_BEHIND) for the timed-out run: _run_in tears down the process group on timeout, then _remove_throwaway calls git worktree remove and shutil.rmtree(holder, ignore_errors=True) once; on Windows a killed process's handles are released asynchronously, so the single attempt can leave the tree. Not a regression (unchanged since v3.3.0, whose CI was green; seen once in the last seven failed runs). _remove_throwaway retries the removal while the holder still exists, with a short backoff and a total bound stated beside the constant with its reason, and the bound is injectable so the test needs no real sleep.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: a removal whose first rmtree leaves the holder in place (simulated: a removal function that fails once then succeeds) still returns removed, within a stated bound",
+          "plugins/audit/tests/test_stamp_verification.py: a holder that never goes away is reported left behind after the bound, not retried forever"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,
