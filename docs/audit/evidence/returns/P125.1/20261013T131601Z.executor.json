@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "own-tests: python3 plugins/audit/tests/test_usage_ledger.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__deps.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-13T13:18:12Z",
+    "basis": "`python3 plugins/audit/tests/test_usage_ledger.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 100 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sf6 (house FAIL), sf7 (house FAIL): SELFTEST FAILED: 97/100 cases passed; --case sf8 names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Reworked usage_ledger._scan_file's pending-id dedup: the cursor's pending map now carries, for every id still in the scan ring, the per-field counts already added to the ledger (in/out/cacheW5m/cacheW1h/cacheR), regardless of stop_reason; a later entry for that id (same scan or a later one, via the cursor) adds only its field-wise excess over those counts, clamped at zero, and never appends a second message to msgs. The old stop_reason==None gate is gone, so a subagent repeat whose entries all carry a non-null stop_reason but growing output_tokens is now summed to its largest figure instead of its first. Updated the module docstring's premise and README's usage-ledger paragraph to state the measured behaviour (repeats are byte-identical in a main session, but a subagent's output_tokens grows across repeats) instead of the old stop_reason-based claim. Added tests sf6 (3 entries, output_tokens 1,1,412, non-null stop_reason throughout -> out=412, msgs=1), sf7 (same fixture split across two scans at the second line -> out=412, msgs=1 in total), and sf8 (a later entry with lower counts than already recorded adds nothing and writes no row). Also removed a code comment at test_usage_ledger.py:323 that cited a fault-register id (F597), replacing it with prose stating the constraint in its own words, per CLAUDE.md's rule that comments never cite F/P/BUG ids - this was flagged by the orchestrator after attempt 1 failed tools/sweep-selftests.py's test__deps.py rc16 case. Verified: python3 plugins/audit/tests/test_usage_ledger.py --selftest -> ALL PASS: 100/100 cases passed; python3 plugins/audit/tests/test__deps.py --selftest -> ALL PASS: 314/314 cases passed (rc16 no longer fires). Confirmed no other added line in the diff cites a fault/phase/task/bug id via `git diff -U0 plugins/ | grep -E '^+.*\\b(F[0-9]{2,4}|P[0-9]+\\.[0-9]+|BUG-[0-9]+)\\b'` (no output).",
+    "descriptive": "Usage ledger now sums a subagent repeat's growing output_tokens to its true largest figure instead of stopping at the first entry, across scans too."
+  },
+  "testsAdded": [
+    "sf6: an id seen three times with output_tokens 1, 1, 412 and a non-null stop_reason on each records out=412 and msgs=1",
+    "sf7: the same three entries split across two scans at the second line still record out=412 in total and msgs=1",
+    "sf8: a later entry whose counts are lower than the counted ones adds nothing and writes no row",
+    "sf4 (pre-existing, unchanged assertion target): the cursor keeps the counted-so-far tally for an id still in the ring even once a final entry is counted"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:6b998ea7b59bb4d32cf2f92a29efbacb0e079efcb25ed83e9e33d6a8cd79e66e\",\"dirtyDigest\":\"sha256:3998ef448d3b2f5df7221188bdeddab51cf7f6a7169dfcd0203fddbf30142ddd\",\"dirtyPaths\":{\"plugins/audit/README.md\":\"a20edb257486d824\",\"plugins/audit/scripts/usage/usage_ledger.py\":\"73b8410721ad8660\",\"plugins/audit/tests/test_usage_ledger.py\":\"f2c9920fb8f5327d\"},\"head\":\"96c8de25\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/README.md\",\"plugins/audit/scripts/usage/usage_ledger.py\",\"plugins/audit/tests/test_usage_ledger.py\"],\"scopeDigest\":\"sha256:a90e7d6fe004d243b49fe9ebadd0903447b3b831ed4131004df0e2f6c754bd65\",\"v\":2}"
+}

@@ -1,0 +1,15 @@
+{
+  "gates": {},
+  "redFirst": {
+    "at": "2026-10-13T13:03:35Z",
+    "basis": "`python3 plugins/audit/tests/test_usage_ledger.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 100 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sf4 (house FAIL), sf6 (house FAIL), sf7 (house FAIL): SELFTEST FAILED: 97/100 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "placeholder",
+    "descriptive": "placeholder"
+  },
+  "testsAdded": [],
+  "stamp": "audit-stamp: {\"content\":\"sha256:1225e7c0cb1f46b2f32bf8acbf9ff10651d7a2b97a10c39645a01efd010cf174\",\"dirtyDigest\":\"sha256:3998ef448d3b2f5df7221188bdeddab51cf7f6a7169dfcd0203fddbf30142ddd\",\"dirtyPaths\":{\"plugins/audit/README.md\":\"a20edb257486d824\",\"plugins/audit/scripts/usage/usage_ledger.py\":\"73b8410721ad8660\",\"plugins/audit/tests/test_usage_ledger.py\":\"8bff6e5330bce71f\"},\"head\":\"96c8de25\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/README.md\",\"plugins/audit/scripts/usage/usage_ledger.py\",\"plugins/audit/tests/test_usage_ledger.py\"],\"scopeDigest\":\"sha256:0dc9c377566a26f1f5807bd17b7bd3ca4c6472851310d5ea0404adf2aa7b2e75\",\"v\":2}"
+}

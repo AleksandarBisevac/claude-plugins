@@ -959,7 +959,11 @@ hand them a `transcript_path`, and the transcript records `usage` per assistant 
 `Stop` / `SubagentStop` / `SessionEnd` hook tails that file from a saved byte offset and appends
 to `.claude/usage/<YYYY-MM>.jsonl`. One trap is worth naming: a single `usage` block is repeated
 across every transcript entry sharing its `message.id`, so anything that sums entries naively
-over-reports spend by roughly 2.4x. The ledger dedups by message id, and a selftest pins it.
+over-reports spend by roughly 2.4x. The ledger dedups by message id — but a subagent's repeats of
+one id are not identical the way a main session's are: its `output_tokens` grows across them,
+with or without a `stop_reason`, so the ledger keeps a running per-field tally for every id still
+in its ring and a later entry adds only what it exceeds that tally by, never the whole count
+again. A selftest pins both halves.
 
 **Attribution**, most precise first — nothing is ever dropped:
 

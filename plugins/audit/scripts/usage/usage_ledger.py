@@ -20,14 +20,17 @@ transcript entry that shares its `message.id` (measured: 1543 assistant entries 
 ~2.4x. Everything here dedups by `message.id` — within a scan, and across scans via
 a bounded ring carried in the cursor. `_selftest` pins this.
 
-The repeats are not always identical. A message can be written first as a streaming
-partial (`stop_reason` null, the output count of the first few streamed tokens) and
-then again as the final entry carrying the real count; keeping the first entry for an
-id counted the partial and lost nearly all of that message's output. So a message
-counted while every entry seen for it was a partial stays PROVISIONAL: its counted
-figures ride in the cursor beside the ring, and a later entry for the same id adds
-only what it exceeds them by. See `_scan_file` for why that, and not "count only the
-final entry".
+The repeats are not always identical. A main-session transcript's repeats of one id
+are byte-identical; a SUBAGENT's are not — its `output_tokens` grows across the
+repeats of an id, with or without a `stop_reason`, and keeping only the first entry
+seen for an id counted it at a fraction of what it actually spent (measured on the
+testbed and on this repo's own subagent transcripts: output summed from the first
+line of each repeated id came in under half the sum from the final line). So the
+cursor carries, for every id still in the ring, the per-field counts already added
+to the ledger; a later entry for that id — same scan or a later one — adds only its
+field-wise excess over those counts, never a negative figure, and never a second
+message. An id that leaves the ring drops its counts with it. See `_scan_file` for
+why that, and not "count only the final entry" or "trust `stop_reason`".
 
 Attribution, highest precision first (nothing is ever dropped):
 
@@ -474,9 +477,10 @@ def _context_of(counts):
 
 
 def _pending_of(raw):
-    """The cursor's provisional counts, keyed by message id, read defensively: a
-    cursor written before this field existed has none, and an id it does not hold is
-    treated as finally counted, exactly as the ring alone treated it."""
+    """The cursor's per-id counted-so-far tally, keyed by message id, read
+    defensively: a cursor written before this field existed has none, and an id
+    it does not hold is read as a plain ring member — a repeat of it adds
+    nothing rather than growing, exactly as the ring alone treated it."""
     if not isinstance(raw, dict):
         return {}
     out = {}
@@ -497,14 +501,18 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
     Only COMPLETE lines are consumed — a trailing partial line stays unread so the
     next scan picks it up whole.
 
-    A streaming partial is counted when it is read, and its counts are kept in the
-    cursor's `pending` map until an entry for the same id arrives with a stop
-    reason; that entry contributes only its excess over what was already counted,
-    field by field, and adds no second message. Counting final entries only was
-    the other way to do it, and it loses a message whose stream was cut off before
-    any final entry was written, along with every token that partial records. The
-    ledger is append-only and a scan can end between the partial and the final, so
-    a correction has to be an addition: a row already written cannot be edited."""
+    Every id still inside the ring keeps its counted-so-far tally in the cursor's
+    `pending` map, whether or not any entry seen for it carried a `stop_reason` —
+    a later entry for that id contributes only its excess over that tally, field
+    by field, and adds no second message. Gating the tally on `stop_reason` was
+    the other way to do it, and it undercounts: a subagent's repeats of one id
+    are not identical, `output_tokens` grows across them, and a non-null
+    `stop_reason` on every entry (never a streaming partial) still left later,
+    bigger entries counted as nothing. Counting final entries only was rejected
+    too, since it loses a message whose stream was cut off before any final entry
+    was written, along with every token that partial records. The ledger is
+    append-only and a scan can end mid-repeat, so a correction has to be an
+    addition: a row already written cannot be edited."""
     groups = {}
     prev = file_cursor if isinstance(file_cursor, dict) else {}
     recent = list(prev.get("recent") or [])
@@ -572,12 +580,9 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
         mid = message.get("id")
         if not isinstance(usage, dict) or not mid:
             continue
-        provisional = pending.get(mid)
-        if mid in seen and provisional is None:
+        counted = pending.get(mid)
+        if mid in seen and counted is None:
             continue                     # <- THE dedup. See module docstring.
-        if provisional is None:
-            seen.add(mid)
-            recent.append(mid)
         model = message.get("model") or ""
         if model.startswith("<"):
             continue                     # `<synthetic>` API-error placeholders
@@ -586,18 +591,21 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
         if bucket is None:
             continue
         counts = _usage_counts(usage)
-        if provisional is None:
+        if counted is None:
             added = counts
         else:
-            # Only the excess over what the partial already put in the ledger,
-            # never a negative: an earlier row cannot be taken back.
-            added = dict((k, max(0, counts[k] - provisional[k])) for k in TOKEN_KEYS)
-        if message.get("stop_reason") is None:
-            pending[mid] = dict((k, max(counts[k], (provisional or counts)[k]))
-                                for k in TOKEN_KEYS)
-        else:
-            pending.pop(mid, None)
-        if provisional is not None and not any(added.values()):
+            # Only the excess over what was already added to the ledger for
+            # this id, never a negative: an earlier row cannot be taken back.
+            added = dict((k, max(0, counts[k] - counted[k])) for k in TOKEN_KEYS)
+        # The running per-field max for this id, kept for as long as it stays in
+        # the ring — regardless of `stop_reason`, since a repeat's counts can
+        # grow (a subagent transcript) with no streaming partial in sight.
+        pending[mid] = dict((k, max(counts[k], (counted or counts)[k]))
+                            for k in TOKEN_KEYS)
+        if counted is None:
+            seen.add(mid)
+            recent.append(mid)
+        elif not any(added.values()):
             continue                     # a repeat that adds nothing writes no row
         phase_id, task_id, attr = attributor.attribute(agent_meta, parse_ts(ts),
                                                        handoff=handoff)
@@ -610,14 +618,14 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
             slot["maxContext"] = 0
         for k, v in added.items():
             slot[k] += v
-        if provisional is None:
+        if counted is None:
             slot["msgs"] += 1
         slot["maxContext"] = max(slot["maxContext"], _context_of(counts))
 
     if len(recent) > RECENT_IDS_CAP:
         recent = recent[-RECENT_IDS_CAP:]
-    # A provisional id that has left the ring can no longer be told apart from a
-    # new message, so carrying its counts would only grow the cursor.
+    # An id that has left the ring can no longer be told apart from a new
+    # message, so carrying its counted-so-far tally would only grow the cursor.
     kept = set(recent)
     pending = dict((mid, c) for mid, c in pending.items() if mid in kept)
     return groups, {"offset": offset + consumed, "size": size, "recent": recent,

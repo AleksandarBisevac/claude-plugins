@@ -299,9 +299,12 @@ def _cases(check):
               r_t3 == [] and M.totals(r_t4)["tokens"] == 0,
               (r_t3, M.totals(r_t4)))
         pend = (c_t2.get("files") or {}).get(two_scans, {}).get("pending")
-        check("sf4 ...and the cursor stops carrying a message as provisional once "
-              "its final entry is counted",
-              not pend, pend)
+        check("sf4 ...and the cursor keeps the counted-so-far tally for an id "
+              "still in the ring even once a final entry is counted, so a "
+              "later repeat (sf3) or a later growth is still measured "
+              "against something",
+              pend == {"msg-T": {"in": 2306, "out": 125, "cacheW5m": 0,
+                                  "cacheW1h": 0, "cacheR": 0}}, pend)
 
         # Allow twin, for the mutation that counts final entries only: a message
         # whose stream was cut off never gets a final entry, and its partial is
@@ -315,6 +318,56 @@ def _cases(check):
               "rather than dropped",
               (t_u["out"], t_u["in"], t_u["msgs"]) == (7, 2306, 1),
               (t_u["out"], t_u["in"], t_u["msgs"]))
+
+        # --- scanning: a non-null stop_reason on every entry, growing -------
+        # A subagent's repeat can carry a non-null stop_reason on every entry
+        # while later entries still carry more output_tokens than the first;
+        # dedup on id alone must still track the per-field excess rather than
+        # keeping only whichever entry it saw first.
+        def finalized(mid, out_tokens, ts="2026-08-06T09:00:00Z"):
+            return json.dumps({
+                "type": "assistant", "timestamp": ts, "gitBranch": "audit/p3",
+                "message": {"id": mid, "model": "claude-haiku-4-5",
+                            "stop_reason": "end_turn", "usage": {
+                                "input_tokens": 2306, "output_tokens": out_tokens,
+                                "cache_creation_input_tokens": 0,
+                                "cache_read_input_tokens": 0}}})
+
+        grows = os.path.join(proj, "sess-grows.jsonl")
+        with open(grows, "w", encoding="utf-8") as fh:
+            fh.write(finalized("msg-G", 1) + "\n")
+            fh.write(finalized("msg-G", 1) + "\n")
+            fh.write(finalized("msg-G", 412) + "\n")
+        r_g, _ = M.scan_transcripts(grows, "sess-1", {}, manifest, opts)
+        t_g = M.totals(r_g)
+        check("sf6 an id seen three times with a non-null stop_reason on every "
+              "entry and output_tokens growing 1, 1, 412 records the largest "
+              "figure (412) and exactly one message, not the first entry's 1",
+              (t_g["out"], t_g["msgs"]) == (412, 1), (t_g["out"], t_g["msgs"]))
+
+        grows_split = os.path.join(proj, "sess-grows-split.jsonl")
+        with open(grows_split, "w", encoding="utf-8") as fh:
+            fh.write(finalized("msg-H", 1) + "\n")
+            fh.write(finalized("msg-H", 1) + "\n")
+        r_h1, c_h1 = M.scan_transcripts(grows_split, "sess-1", {}, manifest, opts)
+        with open(grows_split, "a", encoding="utf-8") as fh:
+            fh.write(finalized("msg-H", 412) + "\n")
+        r_h2, _ = M.scan_transcripts(grows_split, "sess-1", c_h1, manifest, opts)
+        t_h = M.totals(r_h1 + r_h2)
+        check("sf7 the same growth split across two scans at the second line "
+              "still records 412 total and one message",
+              (t_h["out"], t_h["msgs"]) == (412, 1), (t_h["out"], t_h["msgs"]))
+
+        shrinks = os.path.join(proj, "sess-shrinks.jsonl")
+        with open(shrinks, "w", encoding="utf-8") as fh:
+            fh.write(finalized("msg-K", 412) + "\n")
+        r_k1, c_k1 = M.scan_transcripts(shrinks, "sess-1", {}, manifest, opts)
+        with open(shrinks, "a", encoding="utf-8") as fh:
+            fh.write(finalized("msg-K", 50) + "\n")
+        r_k2, _ = M.scan_transcripts(shrinks, "sess-1", c_k1, manifest, opts)
+        check("sf8 a later entry whose counts are lower than the already-"
+              "counted ones adds nothing and writes no row",
+              r_k2 == [], r_k2)
 
         # --- scanning: subagents + parallel attribution --------------------
         sub = os.path.join(proj, "sess-1", "subagents")
