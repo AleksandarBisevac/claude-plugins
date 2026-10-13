@@ -798,7 +798,7 @@
     {
       "id": "P125",
       "title": "Process simplification and cost: affected-test gates, converging reviews, honest prices",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P125.json"
     }
   ],
@@ -2928,7 +2928,9 @@
       "P122.8-z4y",
       "P123.65-64p",
       "P125.10",
-      "P125.13"
+      "P125.13",
+      "P125.31-0h5",
+      "P125.11"
     ],
     "plugins/audit/scripts/_ui_theme.py": [
       "P20.5",
@@ -3003,7 +3005,8 @@
       "P122.8-z4y",
       "P123.24",
       "P123.11",
-      "P123.74-64p"
+      "P123.74-64p",
+      "P125.2"
     ],
     "plugins/audit/scripts/demo/gen-demo-usage.py": [
       "P10.3",
@@ -3014,7 +3017,8 @@
       "P104.13-tog",
       "P122.8-z4y",
       "P123.24",
-      "P123.33"
+      "P123.33",
+      "P125.2"
     ],
     "plugins/audit/scripts/git/_worktrees.py": [
       "P18.1",
@@ -3199,7 +3203,8 @@
       "P123.83-64p",
       "P123.85-64p",
       "P123.92-64p",
-      "P126.7"
+      "P126.7",
+      "P125.32-0h5"
     ],
     "plugins/audit/scripts/governance/_journal_io.py": [
       "P29.3",
@@ -3894,7 +3899,8 @@
       "P125.20",
       "P125.22",
       "P125.24",
-      "P125.28"
+      "P125.28",
+      "P125.31-0h5"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -4342,7 +4348,8 @@
       "P123.65-64p",
       "P123.62-64p",
       "P125.4",
-      "P125.12"
+      "P125.12",
+      "P125.2"
     ],
     "plugins/audit/scripts/status/_gate_feed.py": [
       "P48.3",
@@ -4407,7 +4414,8 @@
       "P124.6",
       "P123.65-64p",
       "P125.4",
-      "P125.12"
+      "P125.12",
+      "P125.2"
     ],
     "plugins/audit/scripts/status/audit-lookup.py": [
       "P56.3",
@@ -4440,7 +4448,8 @@
       "P123.71-64p",
       "P126.8",
       "P125.5",
-      "P125.14"
+      "P125.14",
+      "P125.30-0h5"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -4604,7 +4613,8 @@
       "P123.33",
       "P123.65-64p",
       "P125.3",
-      "P125.4"
+      "P125.4",
+      "P125.2"
     ],
     "plugins/audit/scripts/usage/usage_ledger.py": [
       "P14.1",
@@ -4639,7 +4649,8 @@
       "P1.2",
       "P4.2",
       "P5.1",
-      "P104.2"
+      "P104.2",
+      "P125.2"
     ],
     "plugins/audit/tests/test__areas.py": [
       "P20.6",
@@ -4955,7 +4966,8 @@
       "P123.7",
       "P123.21",
       "P123.81-64p",
-      "P126.7"
+      "P126.7",
+      "P125.32-0h5"
     ],
     "plugins/audit/tests/test__journal_io.py": [
       "P29.3",
@@ -5341,7 +5353,8 @@
       "P121.10-eof",
       "P123.38",
       "P123.21",
-      "P125.13"
+      "P125.13",
+      "P125.11"
     ],
     "plugins/audit/tests/test__report_html.py": [
       "P25.1",
@@ -5464,7 +5477,8 @@
       "P81.17-j7p",
       "P118.10",
       "P124.6",
-      "P125.4"
+      "P125.4",
+      "P125.2"
     ],
     "plugins/audit/tests/test_audit_journal.py": [
       "P34.3",
@@ -5521,7 +5535,8 @@
       "P123.71-64p",
       "P126.8",
       "P125.5",
-      "P125.14"
+      "P125.14",
+      "P125.30-0h5"
     ],
     "plugins/audit/tests/test_audit_status.py": [
       "P25.2",
@@ -5698,7 +5713,8 @@
       "P125.19",
       "P125.20",
       "P125.22",
-      "P125.28"
+      "P125.28",
+      "P125.31-0h5"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -5721,7 +5737,8 @@
       "P121.3",
       "P121.16-eof",
       "P125.3",
-      "P125.4"
+      "P125.4",
+      "P125.2"
     ],
     "plugins/audit/tests/test_audit_version.py": [
       "P67.1",
@@ -7648,7 +7665,8 @@
     "plugins/audit/tests/test_gen_demo_usage.py": [
       "P104.1",
       "P104.13-tog",
-      "P123.24"
+      "P123.24",
+      "P125.2"
     ],
     "plugins/audit/scripts/usage/_usage_core.py": [
       "P104.2",
@@ -7742,16 +7760,19 @@
       "P104.1",
       "P104.10-tog",
       "P104.13-tog",
-      "P104.14-tog"
+      "P104.14-tog",
+      "P125.2"
     ],
     "plugins/audit/scripts/usage/_usage_spend.py": [
       "P104.1",
       "P122.8-z4y",
       "P123.65-64p",
-      "P125.4"
+      "P125.4",
+      "P125.2"
     ],
     "plugins/audit/tests/test__usage_spend.py": [
-      "P104.1"
+      "P104.1",
+      "P125.2"
     ],
     "plugins/audit/tests/test__panel_usage.py": [
       "P104.10-tog",
@@ -7763,7 +7784,8 @@
       "P125.3"
     ],
     "plugins/audit/tests/test__usage_bench.py": [
-      "P104.11-tog"
+      "P104.11-tog",
+      "P125.2"
     ],
     "plugins/audit/scripts/usage/_usage_bench.py": [
       "P104.11-tog",
@@ -7927,7 +7949,10 @@
       "P125.20",
       "P125.21",
       "P125.24",
-      "P125.25"
+      "P125.25",
+      "P125.29-0h5",
+      "P125.30-0h5",
+      "P125.33-0h5"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -7994,7 +8019,10 @@
       "P125.20",
       "P125.21",
       "P125.24",
-      "P125.25"
+      "P125.25",
+      "P125.29-0h5",
+      "P125.30-0h5",
+      "P125.33-0h5"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6",
@@ -8020,7 +8048,9 @@
       "P123.67-64p",
       "P125.6",
       "P125.7",
-      "P125.19"
+      "P125.19",
+      "P125.29-0h5",
+      "P125.33-0h5"
     ],
     "plugins/audit/tests/test__filed_returns.py": [
       "P118.3",
@@ -8040,7 +8070,9 @@
       "P123.67-64p",
       "P125.6",
       "P125.7",
-      "P125.19"
+      "P125.19",
+      "P125.29-0h5",
+      "P125.33-0h5"
     ],
     "plugins/audit/agents/guide.md": [
       "P118.9",
@@ -8159,7 +8191,8 @@
       "P122.8-z4y"
     ],
     "plugins/audit/scripts/usage/_usage_routing.py": [
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P125.2"
     ],
     "plugins/audit/scripts/_machine_paths.py": [
       "P122.9-z4y",
@@ -8358,6 +8391,9 @@
     ],
     "plugins/audit/reference/config.md": [
       "P125.25"
+    ],
+    "plugins/audit/tests/test__usage_routing.py": [
+      "P125.2"
     ]
   },
   "bugs": [
