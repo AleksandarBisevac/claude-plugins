@@ -2320,6 +2320,104 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P125.40-0h5",
+      "title": "With a plan that holds phases and no phase running, an edit past the session's free file is denied before it lands, naming how to start a phase",
+      "status": "pending",
+      "description": "F651, owner-requested behaviour change (danuvia-software testbed, 2026-10-13, plugin 3.3.0): with a plan holding phases and no phase in_progress, every file past the session's free one was only reported after the edit (PostToolUse 'the plan gate is advisory until a phase is running'); several hundred lines across three files changed before any phase existed. The owner expects a hard stop and a forced phase creation. Change the graded ladder, not a special case: the warn tier gains a deny step when the manifest holds at least one phase, none is in_progress, and this session's free file is already spent - PreToolUse denies with the no-plan warning and the exact commands (/audit:phase add ..., then run it). The free file stays. No manifest, and a manifest with no phases, keep their tiers; planGate still pins any tier by hand and wins; doctor's plan-gate row names the new step when it is the one in force. The README's ladder paragraph says the new step and the consequence (a project with a plan but nothing running now gets refusals past its free file); the CHANGELOG line is written at release. This is the plan gate's edit-path reading, not command reading.",
+      "files": [
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test_require_plan.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/README.md",
+        "plugins/audit/scripts/status/audit-doctor.py",
+        "plugins/audit/tests/test_audit_doctor.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_require_plan.py: a manifest holding phases, none in_progress, the free file already spent: the next Edit to another file is denied at PreToolUse with the no-plan warning and the commands that add and start a phase",
+          "plugins/audit/tests/test_require_plan.py: the free file itself is still allowed; a manifest with no phases and no manifest at all keep today's tiers; a covered edit while a phase runs is allowed",
+          "plugins/audit/tests/test_require_plan.py: planGate pinned to warn or observe keeps that tier (the pin outranks the new step)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.41-0h5",
+      "title": "add, add-phase and retarget take --parent-branch, so start's 'set the phase's parentBranch' remedy is a verb",
+      "status": "pending",
+      "description": "F652 (owner, danuvia-software testbed, 2026-10-13, plugin 3.3.0): after /audit:phase add on a feature branch, audit-task start refused 'phase ... forks from main ... git switch main, or set the phase's parentBranch, then start again', but no verb sets parentBranch; the only route was a hand edit of the manifest, which the auto-mode classifier denied as audit tampering. Add --parent-branch <name> to add (the batch's phase key parentBranch too), add-phase and retarget: validated as an existing local branch, written and journaled through the verb; retarget refuses it once the phase has a branch (the same reason --rename is refused: the branch name and the fork point are already recorded). start's refusal names the flag. commands/phase.md is at its byte ceiling (measure-context): take bytes out of it for any word added.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/reference/manifest-conventions.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: add-phase on a feature branch with --parent-branch feature/x, then start from feature/x, forks the phase branch from feature/x and records baseRef there",
+          "plugins/audit/tests/test_audit_task.py: --parent-branch naming no local branch is refused and writes nothing; retarget --parent-branch on a phase that already has a branch is refused like --rename",
+          "plugins/audit/tests/test_audit_task.py: start's refusal for a parent that is not the current branch names the --parent-branch flag"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
