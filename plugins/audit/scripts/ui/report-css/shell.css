@@ -93,7 +93,10 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
 .content{overflow-wrap:anywhere}
 /* `anywhere` lowers a table cell's min-content width to one letter, so the columns would
    collapse and split titles mid-word; `break-word` wraps the same tokens without that, and the
-   table keeps its natural column sizing inside its scrolling wrapper */
+   table keeps its natural column sizing inside its scrolling wrapper. tables.css carves a
+   narrower exception back OUT of this for the value atoms a title is not - a status chip, a
+   risk word, a cost band - because a title's long tokens get a renderer-placed break point and
+   theirs do not, so their column needs the size reduction this rule declines to give titles. */
 .content :where(table){overflow-wrap:break-word}
 /* Prose keeps a measure even when the shell is wide. A 1400px-wide sentence is
    not "using the space", it is unreadable. Tables and charts take the full

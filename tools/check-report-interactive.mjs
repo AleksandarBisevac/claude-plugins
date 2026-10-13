@@ -2543,6 +2543,69 @@ expect('...nor the panel inside it', onPaper.panel, true);
     planted.made.length > 0 && narrowest !== null && narrowest.painted, true);
 }
 
+// 10c. 10b plants a long run into the columns the renderer actually gives a
+//     paragraph - prose, full-width cells, evidence marks. Every OTHER column
+//     a table carries - a status, a risk word, a cost band, a delta, the name
+//     of what holds a phase shut - was left alone on the theory that the
+//     renderer never puts a long run there, so the question was never about
+//     content, it was about MARGIN: a bugs-table run reproduced this at the
+//     narrowest unframed width with CI's own fallback font and nothing longer
+//     than an ordinary word planted anywhere. This asks the same question of
+//     every one of those columns directly, with a run that has neither a
+//     space nor a hyphen to break at - and under a monospace fallback, a
+//     portable stand-in for "a font wide enough to find the margin", rather
+//     than depending on which font happens to be installed on whichever host
+//     runs this.
+{
+  const styleHandle = await page.addStyleTag(
+    { content: 'table.phases,table.data{font-family:monospace}' });
+  const HOSTILE_ATOM = 'q9z7k2m4'.repeat(20);
+  const ATOM_SELECTORS = ['.chip', '.rchip', '.bandpill', '.dl', '.heldby',
+    '.tevn', '.tevf', '.ptev'];
+  await page.setViewportSize({ width: FRAMED_BELOW + 1, height: 945 });
+  await page.waitForTimeout(60);
+  const planted = await page.evaluate(({ selectors, token }) => {
+    const made = [];
+    const skipped = [];
+    for (const sel of selectors) {
+      const n = document.querySelector(`table.phases ${sel}, table.data ${sel}`);
+      if (!n || !n.checkVisibility()) { skipped.push(sel); continue; }
+      n.setAttribute('data-hostile-orig', n.textContent);
+      n.setAttribute('data-hostile-atom', '');
+      n.textContent = token;
+      made.push(sel);
+    }
+    return { made, skipped };
+  }, { selectors: ATOM_SELECTORS, token: HOSTILE_ATOM });
+  const after = await page.evaluate(() => {
+    const de = document.documentElement;
+    const atoms = [...document.querySelectorAll('[data-hostile-atom]')];
+    const painted = atoms.length > 0 && atoms.every((a) => a.checkVisibility()
+      && a.getBoundingClientRect().width > 0);
+    return { scrollWidth: de.scrollWidth, clientWidth: de.clientWidth, painted };
+  });
+  await page.evaluate(() => {
+    for (const n of document.querySelectorAll('[data-hostile-atom]')) {
+      n.textContent = n.getAttribute('data-hostile-orig');
+      n.removeAttribute('data-hostile-atom');
+      n.removeAttribute('data-hostile-orig');
+    }
+  });
+  await styleHandle.evaluate((el) => el.remove());
+  await page.setViewportSize({ width: 1512, height: 945 });
+  await page.waitForTimeout(200);
+  if (planted.skipped.length) {
+    notes.push(`ok   (no atom of kind ${planted.skipped.join(', ')} on this fixture)`);
+  }
+  expect(`an unbroken run with no space or hyphen, planted into every status/value atom `
+    + `(${planted.made.join(', ') || 'none found'}), widens nothing at the narrowest `
+    + `unframed width (${FRAMED_BELOW + 1}px) under a monospace fallback`,
+    after.scrollWidth > after.clientWidth + 1
+      ? `widened to ${after.scrollWidth} (viewport ${after.clientWidth})` : 'none', 'none');
+  expect('...and every planted atom was really on the page to be measured',
+    planted.made.length > 0 && after.painted, true);
+}
+
 // --- the full-run line: the third place's verdict, as a reader gets it -------
 // `_report_html._verified_line` is pinned string by string in Python, and no
 // browser had ever looked at what it paints: a stylesheet rule hiding the chip,

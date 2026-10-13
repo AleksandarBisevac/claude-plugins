@@ -347,6 +347,27 @@ def _cases(check):
           "<wbr> chunk, widened the document just above the scroll breakpoint)",
           M._CSS.count("table.bugs td.tevcell,table.bugs td.tevcell *{white-space:normal}") == 1
           and ".tablewrap{overflow-x:clip}" not in M._CSS)
+    # u14kt was one column named by hand; this is the rule it was standing in
+    # for. `overflow-wrap:anywhere` (not `break-word`) is what actually shrinks
+    # a cell's min-content width, so every value atom that is not a title gets
+    # it - a status chip, a risk word, a cost band, a delta, the name of what
+    # holds a phase shut, and both evidence-mark classes - regardless of
+    # whether the word it happens to carry has a hyphen to break at.
+    # The ancestor is deliberately not wrapped in `:where()`: each atom also
+    # carries its own component rule elsewhere (e.g. `.bandpill{white-space:
+    # nowrap}` in usage.css), declared at the same zero-added specificity a
+    # `:where()`-wrapped ancestor would leave this at - so whichever file
+    # happened to load later decided the column's floor by source order
+    # alone, in a real engine, regardless of what either rule said. A real
+    # `table.phases`/`table.data` ancestor outranks that base rule on its own
+    # terms, by construction, at any load order.
+    check("u14ktw every status/value atom a table carries - not just the bugs "
+          "table's test-gate cell - may wrap and break anywhere, so no single "
+          "atom's length alone can set its column's floor",
+          "table.phases :is(.chip,.rchip,.bandpill,.dl,.heldby,"
+          ".tevn,.tevf,.ptev),\ntable.data :is(.chip,.rchip,.bandpill,.dl,"
+          ".heldby,.tevn,.tevf,.ptev){" in M._CSS
+          and "white-space:normal;overflow-wrap:anywhere}" in M._CSS)
     # A missing `;` after a custom property annexes the comment and declarations
     # that follow it. Silent, and it killed every animation in this stylesheet once.
     _unterm = M._unterminated_css_decls(M._CSS)
