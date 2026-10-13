@@ -1,0 +1,173 @@
+{
+  "findings": [
+    {
+      "id": 1,
+      "severity": "med",
+      "file": "plugins/audit/scripts/governance/stamp-verification.py:1012-1021 (P126.3, 897c7c2a)",
+      "issue": "_wt_text now reads with newline='' while _head_text returns the blob as git printed it. That matches the CRLF-blob fixture CI failed on, but it breaks the common Windows checkout: core.autocrlf=true gives an LF blob and a CRLF working file. Every line then differs, so inline_test_text sees one whole-file hunk (the 'none of its N changed hunk(s) lies inside a test definition' refusal returns for those users), and changed_source's head == now is never true, so an UNCHANGED declared source is reported 'changed over HEAD' and credited as supplying the missing module. The second effect loosens a check rather than tightening it. The old universal-newline read was right for the LF-blob case; the new si6 case pins the new behaviour, so nothing catches the regression.",
+      "resolution": "Compare line content, not line terminators: normalise both _head_text and _wt_text to the same newline form (for example replace CRLF with LF on both) in one shared helper, then keep sh/si cases for CRLF-blob/CRLF-wt, LF-blob/CRLF-wt and LF/LF. si6 should assert equality of the normalised pair, not that the working copy keeps its CRs."
+    },
+    {
+      "id": 2,
+      "severity": "med",
+      "file": "plugins/audit/scripts/ui/report-css/tables.css:54-61 (P126.1, 97c7e9d5)",
+      "issue": "The fix lowers one OTHER column's narrowest width (bugs test-gate pills wrap) so the sum of min-widths stops crossing the column by the size of a title chunk. The hostile property the task names - no table-cell token widens the document at any width - is not established: break-word still does not lower a cell's min-content, and the executor's own probe shows the margin is the width of the pill (a chip-only variant still widened 16px). The pass depends on fonts-dejavu-core being the fallback font and on 833px; another font or viewport near the scroll breakpoint can reintroduce the same failure in the phases or data tables. u14kt pins the CSS text only (and a clip-rule absence that no one proposed), so it cannot fail for the behaviour.",
+      "resolution": "Either give the title cell a rule that bounds a planted token's contribution (for example overflow-wrap:anywhere on the free-text cells with a min-width on the title column, as the task suggested) so the bound holds independent of sibling columns, or keep this rule and have the orchestrator's CI run the hostile leg at the widths around the breakpoint on ubuntu and report the margin. Replace u14kt's text pin with a browser-gate leg that fails without the rule."
+    },
+    {
+      "id": 3,
+      "severity": "low",
+      "file": ".github/workflows/ci.yml:845 and tools/gate-parity.py:2857-2861 (P126.10-13q, a07bf893)",
+      "issue": "'The report is interactive' is exempted whole because its one-status leg reads /tmp/dl from the Scale demo step. The other legs (example, docs/index.html, docs/demo-large.html loop) depend on nothing earlier, yet this is the step whose result was hidden behind earlier failures in the run that motivated the task: any failing step above it (screenshots, GIF, vitest) still skips it.",
+      "resolution": "Give the step if: ${{ !cancelled() }} and make its /tmp/dl leg regenerate or skip with a printed reason when the tree is absent, or split the leg into its own step that carries the exemption."
+    },
+    {
+      "id": 4,
+      "severity": "low",
+      "file": "plugins/audit/scripts/_machine_paths.py:329-333 (P126.6, 4df3c529)",
+      "issue": "The as-given spelling is added for any path containing a slash, relative ones included. A relative root such as proj/sub becomes a known root and scrubs that substring from free text, where abspath used to anchor it. Callers pass home/cwd/project directories, so this is unlikely, but nothing bounds it.",
+      "resolution": "Add the given spelling only when it is rooted (starts with / or has a drive prefix), which is the drive-less case the Windows fix targets."
+    },
+    {
+      "id": 5,
+      "severity": "low",
+      "file": "plugins/audit/tests/test_stamp_verification.py:2918-2929 (P126.13-13q, 0aca587b)",
+      "issue": "sr214 lists the directory root_d was made in and fails on ANY stamp-derive-* sibling. Under the sweep that directory is the private scratch, but run directly with the system TMPDIR a stale directory from an earlier killed run, or a second concurrent run of this suite, turns the case red for a reason that is not this run's.",
+      "resolution": "Assert on this run's own root_d (removed is True and not lexists) and leave the cwd-unchanged guarantee to the sweep's watched-directory check, or snapshot the sibling names before creating root_d and compare after."
+    }
+  ],
+  "preExisting": [],
+  "intent": {
+    "answer": "matches",
+    "note": "Phase outcome is CI green on all three OS with no weakened check. Reading the diffs, every fix addresses the quoted CI line and none skips or loosens an assertion except sp3's POSIX shell half, which the task itself asked to skip on Windows with a printed reason (the TMPDIR space-and-link half still asserts there). Windows-only causes are reasoned, not observed, and the executors say so; the orchestrator's CI runs on ci/p126 are the only evidence for them. Two diffs carry a defect of their own (findings 1 and 2); the rest follow their descriptions. Notable correct fixes: pid liveness is now one exit-code probe in _locks used by locks, sweep markers and the panel server (which also stops panel-server calling os.kill(pid, 0), a TerminateProcess on Windows); iv39, wd3a and sr214 were fixture text-mode writes, and the product code was left alone; ci.yml steps carry !cancelled() and gate-parity holds it.",
+    "missing": [],
+    "redFirst": "not-attempted",
+    "redFirstBasis": "Phase-level: every task but one is a regression task with expectRedFirst false and a Windows-only failure; none of their executors claims a red. P126.10-13q carries the helper-computed proved block (missing step_guard_drift symbol at HEAD, second run with the implementation copied in reaches its assertions). P126.6 carries the helper-computed could-not-prove.",
+    "inheritedTests": "not-asked",
+    "inheritedTestsBasis": "tests.gate runs python3 tools/sweep-selftests.py, which runs the whole project, so the question has no bound for the phase; the one narrower entry (check-report-interactive on the acme example) is answered under P126.1."
+  },
+  "verdict": "findings",
+  "tasks": [
+    {
+      "id": "P126.1",
+      "commit": "97c7e9d55edf",
+      "answer": "matches",
+      "note": "Diff adds table.bugs td.tevcell,table.bugs td.tevcell *{white-space:normal} and re-renders the three committed artifacts; the outcome describes exactly that, including that screenshots are not recaptured and the live plan could not run in the container. The cause (pill column width plus title chunk at 833px with a DejaVu fallback) was reproduced and isolated by probe per the executor, but the rule works by margin rather than bounding a planted token, so the stated invariant is only measured at one font and width (finding 2).",
+      "missing": [],
+      "redFirst": "not-attempted",
+      "redFirstBasis": "Executor: regression mode, expectRedFirst false; the CI failure was reproduced in a Playwright container before the fix, but u14kt is a CSS-text pin and was never run red. No red of a test the task added is shown.",
+      "inheritedTests": "flagged",
+      "inheritedTestsBasis": "Read from the gate entry node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html: the executor reports the hostile failure does not reproduce on the stock fonts and only appears with fonts-dejavu-core on the 40-phase demo, so the gate's own run of the hostile leg on the acme example would pass with the tevcell rule deleted (shape: a width assertion the example never reaches at the gate's fonts). Other gate entries run the whole project and are not asked."
+    },
+    {
+      "id": "P126.2",
+      "commit": "f213f182f0ab",
+      "answer": "matches",
+      "note": "Test-only: _drive_as now runs sh -c with a dot command that sources the launcher from disk, passing the backslash or mixed spelling as $0. py-launch.sh is unchanged. The diagnosis (argv text mangling, not a parse fault in the file) is supported by the other launcher cases that run the file from disk passing on windows-latest in the same run, so the product file parses there. Assumes Git's sh passes $0 verbatim (CI output shows it intact) and that sourcing a forward-slash drive path works, which is unverified until the next Windows run.",
+      "missing": [],
+      "redFirst": "not-attempted",
+      "redFirstBasis": "Executor: regression task, expectRedFirst false, Windows-only failure; no test added.",
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "Gate runs python3 tools/sweep-selftests.py over the whole project; no bounded set to read."
+    },
+    {
+      "id": "P126.3",
+      "commit": "897c7c2abff8",
+      "answer": "diverges",
+      "note": "Three reader fixes. The CR in _HOUSE_ABORT and the sr44 fixture escaping are plausible and consistent with node's quoted-backslash rule. The _wt_text change (newline='') fixes a CRLF-blob fixture but regresses LF-blob/CRLF-working-file checkouts, so the executor's claim that the reader is now CRLF-tolerant is true for one pairing only (finding 1). The description asked for 'a CRLF-tolerant split'; reading working text as written is not tolerance of either.",
+      "missing": [],
+      "redFirst": "not-attempted",
+      "redFirstBasis": "Executor: regression task, expectRedFirst false; sh4, si5, si6 and sr44b are fixtures simulating the Windows shape and none was run red.",
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "Gate runs python3 tools/sweep-selftests.py over the whole project; no bounded set to read."
+    },
+    {
+      "id": "P126.5",
+      "commit": "11745d06040b",
+      "answer": "matches",
+      "note": "sp3's separator literal becomes os.sep + via + os.sep and its unquoted-versus-quoted exit-code half is gated on os.name != nt with a printed reason, which is what the description asked. The TMPDIR space-and-link half still asserts on Windows, so no assertion is dropped beyond the POSIX-shell one. Assumes shell=True is cmd.exe on Windows (Python docs).",
+      "missing": [],
+      "redFirst": "not-attempted",
+      "redFirstBasis": "Executor: regression task, expectRedFirst false; red appears only on windows-latest.",
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "Gate runs python3 tools/sweep-selftests.py over the whole project; no bounded set to read."
+    },
+    {
+      "id": "P126.6",
+      "commit": "4df3c529a116",
+      "answer": "matches",
+      "note": "_spellings adds the path as given (backslashes to slash) before the abspath and realpath spellings, so a drive-less home matches on Windows where abspath prefixes a drive. This is consistent with the CI line (the head of the path scrubbed, tail left). tools/check-committed-pii.py is unchanged and q2s is the case that settles it. mp14 backslash case should be red on POSIX before the fix; the drive-less case cannot be, as the executor says. Low-risk widening for relative roots (finding 4).",
+      "missing": [],
+      "redFirst": "could-not-prove",
+      "redFirstBasis": "Computed by the filing verb: the helper's run reported 'inline suite tools/check-committed-pii.py ... none of its 0 changed hunk(s) lies inside a test definition', so no test-only copy could be laid over HEAD.",
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "Gate runs python3 tools/sweep-selftests.py over the whole project; no bounded set to read."
+    },
+    {
+      "id": "P126.7",
+      "commit": "602da24e95f1",
+      "answer": "matches",
+      "note": "Fixture fix, product unchanged: the iv39 probe was written in text mode, so on Windows it hashed CRLF bytes while the journal hash is over git's exact bytes; _write_exact (newline='') fixes that. The test _git decodes bytes losslessly, so the cause holds whichever line ending git stored. iv39a pins the byte-exact writer on every OS. The product claim 'already newline-exact' was read against _materialise per the executor, not re-measured.",
+      "missing": [],
+      "redFirst": "not-attempted",
+      "redFirstBasis": "Executor: regression task, expectRedFirst false; red only on windows-latest, iv39a was not run red.",
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "Gate runs python3 tools/sweep-selftests.py over the whole project; no bounded set to read."
+    },
+    {
+      "id": "P126.8",
+      "commit": "b0d6d8a9f7b1",
+      "answer": "matches",
+      "note": "The writer held the defect: submit_command joined a backslash project to a slash manifest. absolute_manifest normalises with the path module, and bf44 pins the ntpath and posixpath shapes on every OS, so it does not depend on the host. bf42's expectation (os.path.join of parts) equals the normalised form on Windows. Assumes ntpath.normpath converts / to backslash (Python docs).",
+      "missing": [],
+      "redFirst": "not-attempted",
+      "redFirstBasis": "Executor: regression mode, expectRedFirst false; bf44 was not run red.",
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "Gate runs python3 tools/sweep-selftests.py over the whole project; no bounded set to read."
+    },
+    {
+      "id": "P126.10-13q",
+      "commit": "a07bf893019d",
+      "answer": "matches",
+      "note": "ci.yml gives every non-setup step an if with !cancelled() (combined with existing Windows conditions, never replacing them); gate-parity gains step_guard_drift with sg0-sg4, a reasoned exemption table registered as an audited exemption, and prove-gates gets a RED and an ALLOW row. The one exemption is wider than its reason needs (finding 3). prove-gates live run was refused on a dirty tree, so the two rows are unproven live.",
+      "missing": [],
+      "redFirst": "proved",
+      "redFirstBasis": "Computed by the filing verb from the helper block: python3 tools/gate-parity.py --selftest in a throwaway tree at HEAD exited 1 on NameError: name step_guard_drift is not defined, the symbol the task introduces; a second run with the working tree's implementation copied in exited 0, its tests reaching their assertions.",
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "Gate runs python3 tools/sweep-selftests.py over the whole project; no bounded set to read."
+    },
+    {
+      "id": "P126.11-13q",
+      "commit": "ba4be31a3ddb",
+      "answer": "matches",
+      "note": "One liveness probe: _locks._pid_alive_windows now reads GetExitCodeProcess == STILL_ACTIVE after OpenProcess, because an exited process whose handle is still open (a Popen the caller holds) still opens; _suite.pid_alive and panel-server._pid_alive delegate to _locks.pid_alive(pid) is True. No other OpenProcess or os.kill(pid, 0) probe remains in plugins, tools or .claude. POSIX branch untouched. The description's premise (os.kill used) was not quite the code: the old probes were OpenProcess-succeeds in _suite and os.kill in panel-server (a TerminateProcess on Windows), and the diff fixes both. The executor could not explain tk2 from CI text and says so.",
+      "missing": [],
+      "redFirst": "not-attempted",
+      "redFirstBasis": "Executor: regression mode, expectRedFirst false; pl1 passes on macOS before and after and can only go red on windows-latest.",
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "Gate runs python3 tools/sweep-selftests.py over the whole project; no bounded set to read."
+    },
+    {
+      "id": "P126.12-13q",
+      "commit": "aec0a2ab97c5",
+      "answer": "matches",
+      "note": "Fixture fix: _write_lf writes the member's change with newline LF in both fixture writers; wd3a stays byte-exact against an LF literal, and the executor's reading of the product (binary git plumbing and wb) is consistent with the CI log showing only wd3a failing. wd3c pins the writer on every OS. Assumes text-mode open writes CRLF on Windows (io docs).",
+      "missing": [],
+      "redFirst": "not-attempted",
+      "redFirstBasis": "Executor: regression mode, expectRedFirst false; Windows-only.",
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "Gate runs python3 tools/sweep-selftests.py over the whole project; no bounded set to read."
+    },
+    {
+      "id": "P126.13-13q",
+      "commit": "0aca587b173b",
+      "answer": "matches",
+      "note": "The stamp-derive fixture and the holder removals now go through _harness.remove_tree (read-only git objects), and sr214 and sr23c assert the removal succeeded instead of swallowing it. stamp-verification.py is unchanged in this commit, which fits: the creator was the test's own mkdtemp. The sr214 sibling scan is looser than needed (finding 5).",
+      "missing": [],
+      "redFirst": "not-attempted",
+      "redFirstBasis": "Executor: regression mode, expectRedFirst false; the failure is Windows-only (read-only git objects).",
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "Gate runs python3 tools/sweep-selftests.py over the whole project; no bounded set to read."
+    }
+  ]
+}

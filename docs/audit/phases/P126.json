@@ -22,7 +22,48 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P126-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:1012-1021 (P126.3, 897c7c2a)",
+        "issue": "_wt_text now reads with newline='' while _head_text returns the blob as git printed it. That matches the CRLF-blob fixture CI failed on, but it breaks the common Windows checkout: core.autocrlf=true gives an LF blob and a CRLF working file. Every line then differs, so inline_test_text sees one whole-file hunk (the 'none of its N changed hunk(s) lies inside a test definition' refusal returns for those users), and changed_source's head == now is never true, so an UNCHANGED declared source is reported 'changed over HEAD' and credited as supplying the missing module. The second effect loosens a check rather than tightening it. The old universal-newline read was right for the LF-blob case; the new si6 case pins the new behaviour, so nothing catches the regression.",
+        "resolution": "Compare line content, not line terminators: normalise both _head_text and _wt_text to the same newline form (for example replace CRLF with LF on both) in one shared helper, then keep sh/si cases for CRLF-blob/CRLF-wt, LF-blob/CRLF-wt and LF/LF. si6 should assert equality of the normalised pair, not that the working copy keeps its CRs.",
+        "fixTask": "P126.14-13q"
+      },
+      {
+        "id": "P126-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/ui/report-css/tables.css:54-61 (P126.1, 97c7e9d5)",
+        "issue": "The fix lowers one OTHER column's narrowest width (bugs test-gate pills wrap) so the sum of min-widths stops crossing the column by the size of a title chunk. The hostile property the task names - no table-cell token widens the document at any width - is not established: break-word still does not lower a cell's min-content, and the executor's own probe shows the margin is the width of the pill (a chip-only variant still widened 16px). The pass depends on fonts-dejavu-core being the fallback font and on 833px; another font or viewport near the scroll breakpoint can reintroduce the same failure in the phases or data tables. u14kt pins the CSS text only (and a clip-rule absence that no one proposed), so it cannot fail for the behaviour.",
+        "resolution": "Either give the title cell a rule that bounds a planted token's contribution (for example overflow-wrap:anywhere on the free-text cells with a min-width on the title column, as the task suggested) so the bound holds independent of sibling columns, or keep this rule and have the orchestrator's CI run the hostile leg at the widths around the breakpoint on ubuntu and report the margin. Replace u14kt's text pin with a browser-gate leg that fails without the rule."
+      },
+      {
+        "id": "P126-R3",
+        "severity": "low",
+        "file": ".github/workflows/ci.yml:845 and tools/gate-parity.py:2857-2861 (P126.10-13q, a07bf893)",
+        "issue": "'The report is interactive' is exempted whole because its one-status leg reads /tmp/dl from the Scale demo step. The other legs (example, docs/index.html, docs/demo-large.html loop) depend on nothing earlier, yet this is the step whose result was hidden behind earlier failures in the run that motivated the task: any failing step above it (screenshots, GIF, vitest) still skips it.",
+        "resolution": "Give the step if: ${{ !cancelled() }} and make its /tmp/dl leg regenerate or skip with a printed reason when the tree is absent, or split the leg into its own step that carries the exemption.",
+        "fixTask": "P126.15-13q"
+      },
+      {
+        "id": "P126-R4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/_machine_paths.py:329-333 (P126.6, 4df3c529)",
+        "issue": "The as-given spelling is added for any path containing a slash, relative ones included. A relative root such as proj/sub becomes a known root and scrubs that substring from free text, where abspath used to anchor it. Callers pass home/cwd/project directories, so this is unlikely, but nothing bounds it.",
+        "resolution": "Add the given spelling only when it is rooted (starts with / or has a drive prefix), which is the drive-less case the Windows fix targets.",
+        "fixTask": "P126.16-13q"
+      },
+      {
+        "id": "P126-R5",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_stamp_verification.py:2918-2929 (P126.13-13q, 0aca587b)",
+        "issue": "sr214 lists the directory root_d was made in and fails on ANY stamp-derive-* sibling. Under the sweep that directory is the private scratch, but run directly with the system TMPDIR a stale directory from an earlier killed run, or a second concurrent run of this suite, turns the case red for a reason that is not this run's.",
+        "resolution": "Assert on this run's own root_d (removed is True and not lexists) and leave the cwd-unchanged guarantee to the sweep's watched-directory check, or snapshot the sibling names before creating root_d and compare after.",
+        "fixTask": "P126.17-13q"
+      }
+    ],
+    "outcome": "[findings: 5 - 0 high, 2 med, 3 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -794,7 +835,7 @@
     {
       "id": "P126.13-13q",
       "title": "The red-first helper's suite leaves no stamp-derive directory behind on Windows",
-      "status": "in_progress",
+      "status": "done",
       "description": "Run 38316180338 (ci/p126 @ a07bf893), windows-latest: the sweep marks test_stamp_verification.py red because it \"wrote outside the fixtures it makes for itself: working directory: left behind: stamp-derive-8srsathk\". A `stamp-derive-*` temp directory is created in the CURRENT working directory (not under tempfile.mkdtemp()'s TMPDIR) and not removed on Windows - most likely a shutil.rmtree failing on a file a child process still holds open (Windows refuses to delete an open file) with the error swallowed, or a mkdtemp(dir=\".\")/relative path. Find the creator (grep 'stamp-derive'), make it create under the temp root and remove it reliably (close handles before removal; on Windows retry rmtree with an onerror that clears the read-only bit and retries after the child exits), and never swallow a failed removal silently. Pin on every OS: the suite leaves its cwd unchanged. It reproduces only on windows-latest; state the Windows behaviour the fix assumes with its source.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -825,14 +866,17 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0aca587b173b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Kept sr213/sr214 fix. Additionally: _drop_leftovers (worktree holder, carries git objects) now removes via _harness.remove_tree and returns the holders it could not remove; sr23c asserts that list is empty. The sr209 fake_home removal (no git objects) was also converted to _harness.remove_tree because every other fixture removal in the file already uses it (house idiom); it is not pinned separately. Left alone: the atexit shutil.rmtree inside the generated child-script string (_TMP), which runs in a child that cannot import _harness and holds no git objects. Dropped the now-unused shutil import. ruff clean; selftest 264/264.",
+        "descriptive": "Every git-bearing fixture removal in the red-first suite now tolerates Windows read-only objects and its failure is asserted."
       },
       "startedAt": "2026-10-12T23:44:44Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-12T23:56:53Z",
+      "verifiedBy": [
+        "sr214 the derive fixture leaves nothing behind",
+        "sr23c (extended: holder removal asserted)"
+      ],
       "reviewPerTask": "phase",
       "notes": [
         {
@@ -844,7 +888,234 @@
         "runId": "2026-10-12T23:56:51Z.977eba",
         "status": "passed",
         "at": "2026-10-12T23:56:51Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "0aca587b173b",
+        "at": "2026-10-12T23:56:53Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "mode regression, expectRedFirst false; failure is Windows-only (read-only git objects), not reproducible on darwin"
       }
+    },
+    {
+      "id": "P126.14-13q",
+      "title": "fix P126-R1: _wt_text now reads with newline='' while _head_text returns the ...",
+      "status": "in_progress",
+      "description": "_wt_text now reads with newline='' while _head_text returns the blob as git printed it. That matches the CRLF-blob fixture CI failed on, but it breaks the common Windows checkout: core.autocrlf=true gives an LF blob and a CRLF working file. Every line then differs, so inline_test_text sees one whole-file hunk (the 'none of its N changed hunk(s) lies inside a test definition' refusal returns for those users), and changed_source's head == now is never true, so an UNCHANGED declared source is reported 'changed over HEAD' and credited as supplying the missing module. The second effect loosens a check rather than tightening it. The old universal-newline read was right for the LF-blob case; the new si6 case pins the new behaviour, so nothing catches the regression.\n\nResolution asked: Compare line content, not line terminators: normalise both _head_text and _wt_text to the same newline form (for example replace CRLF with LF on both) in one shared helper, then keep sh/si cases for CRLF-blob/CRLF-wt, LF-blob/CRLF-wt and LF/LF. si6 should assert equality of the normalised pair, not that the working copy keeps its CRs.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "tools/check-committed-pii.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: an LF HEAD blob against a CRLF working file (autocrlf=true) and a CRLF blob against a CRLF file both split into exactly the changed hunks, and an unchanged source is not reported changed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 2,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-13T00:01:32Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-13T00:01:21Z",
+          "text": "scope: plugins/audit/scripts/governance/stamp-verification.py, every path the finding(s) P126-R1 name"
+        }
+      ],
+      "fixes": [
+        "P126-R1"
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-13T00:27:34Z.67f260",
+        "status": "passed",
+        "at": "2026-10-13T00:27:34Z"
+      }
+    },
+    {
+      "id": "P126.15-13q",
+      "title": "fix P126-R3: 'The report is interactive' is exempted whole because its one-st...",
+      "status": "pending",
+      "description": "'The report is interactive' is exempted whole because its one-status leg reads /tmp/dl from the Scale demo step. The other legs (example, docs/index.html, docs/demo-large.html loop) depend on nothing earlier, yet this is the step whose result was hidden behind earlier failures in the run that motivated the task: any failing step above it (screenshots, GIF, vitest) still skips it.\n\nResolution asked: Give the step if: ${{ !cancelled() }} and make its /tmp/dl leg regenerate or skip with a printed reason when the tree is absent, or split the leg into its own step that carries the exemption.",
+      "files": [
+        ".github/workflows/ci.yml",
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-13T00:01:21Z",
+          "text": "scope: .github/workflows/ci.yml, tools/gate-parity.py, every path the finding(s) P126-R3 name"
+        }
+      ],
+      "fixes": [
+        "P126-R3"
+      ]
+    },
+    {
+      "id": "P126.16-13q",
+      "title": "fix P126-R4: The as-given spelling is added for any path containing a slash, ...",
+      "status": "pending",
+      "description": "The as-given spelling is added for any path containing a slash, relative ones included. A relative root such as proj/sub becomes a known root and scrubs that substring from free text, where abspath used to anchor it. Callers pass home/cwd/project directories, so this is unlikely, but nothing bounds it.\n\nResolution asked: Add the given spelling only when it is rooted (starts with / or has a drive prefix), which is the drive-less case the Windows fix targets.",
+      "files": [
+        "plugins/audit/scripts/_machine_paths.py",
+        "plugins/audit/tests/test__machine_paths.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__machine_paths.py: a relative home spelling adds no known root, and an absolute one with a space (both separators) is still scrubbed whole"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-13T00:01:21Z",
+          "text": "scope: plugins/audit/scripts/_machine_paths.py, every path the finding(s) P126-R4 name"
+        }
+      ],
+      "fixes": [
+        "P126-R4"
+      ]
+    },
+    {
+      "id": "P126.17-13q",
+      "title": "fix P126-R5: sr214 lists the directory root_d was made in and fails on ANY st...",
+      "status": "pending",
+      "description": "sr214 lists the directory root_d was made in and fails on ANY stamp-derive-* sibling. Under the sweep that directory is the private scratch, but run directly with the system TMPDIR a stale directory from an earlier killed run, or a second concurrent run of this suite, turns the case red for a reason that is not this run's.\n\nResolution asked: Assert on this run's own root_d (removed is True and not lexists) and leave the cwd-unchanged guarantee to the sweep's watched-directory check, or snapshot the sibling names before creating root_d and compare after.",
+      "files": [
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-13T00:01:21Z",
+          "text": "scope: plugins/audit/tests/test_stamp_verification.py, every path the finding(s) P126-R5 name"
+        },
+        {
+          "at": "2026-10-13T00:01:21Z",
+          "text": "regression, not tdd: every file P126-R5 names is a test file (plugins/audit/tests/test_stamp_verification.py), so the defect is in the test itself and a red-first run at HEAD would pass with the fixed test; the gate proves it by the suite running"
+        },
+        {
+          "at": "2026-10-13T00:01:21Z",
+          "text": "no test runner in this task's gate for the test P126-R5 asks for: the gate is ['selftests', 'validate', 'plugin-validate', 'gate', 'report', 'lint', 'shots', 'interactive'], derived as the phase's testGate, wide -- no sibling task in P126 declares a path-scoped gate entry to read this project's spelling off; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P126-R5"
+      ]
     }
   ],
   "request": "Make 3.3.0's release commit green on every OS CI runs: fix the windows-latest selftest failures and the ubuntu report hostile-content failure that CI run 38299118105 reported, before the release is cut.",

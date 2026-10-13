@@ -1002,23 +1002,43 @@ def _git(root, args, timeout=120, strip=True):
     return out.returncode, text.strip() if strip else text
 
 
+def _lf(text):
+    """`text` with every CRLF read as LF. HEAD's blob and the working file are
+    compared by which lines changed, never by their terminators: core.autocrlf
+    gives an LF blob and a CRLF file, a CRLF blob and a CRLF file, or LF both."""
+    return None if text is None else text.replace("\r\n", "\n")
+
+
 def _head_text(root, rel, timeout=120):
-    """HEAD's bytes of `rel` as text, or None when HEAD has no such file."""
+    """HEAD's bytes of `rel` as text in LF form, or None when HEAD has no such
+    file."""
     code, text = _git(root, ["show", "HEAD:%s" % (rel,)], timeout=timeout,
                       strip=False)
-    return text if code == 0 else None
+    return _lf(text) if code == 0 else None
 
 
 def _wt_text(root, rel):
-    """The working tree's `rel` as text with its line endings as written
-    (`newline=""`): universal-newline reading would turn a CRLF file into LF
-    and make every line differ from the HEAD blob `_head_text` returns as-is."""
+    """The working tree's `rel` as text in LF form (the same form
+    `_head_text` returns), or None when it cannot be read. The file is read
+    with its terminators as written and normalised here, so the two sides
+    agree whatever the checkout's autocrlf did."""
     try:
         with open(os.path.join(root, *rel.split("/")), "r", encoding="utf-8",
                   errors="replace", newline="") as fh:
-            return fh.read()
+            return _lf(fh.read())
     except OSError:
         return None
+
+
+def _in_endings_of(dst, text):
+    """`text` (LF form) in the line ends the file already at `dst` uses: CRLF
+    when it holds any, LF otherwise."""
+    try:
+        with open(dst, "rb") as fh:
+            crlf = b"\r\n" in fh.read()
+    except OSError:
+        crlf = False
+    return text.replace("\n", "\r\n") if crlf else text
 
 
 def _names(text, word):
@@ -3130,9 +3150,10 @@ def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
         return {"code": None, "text": "", "problem": problem, "seconds": 0.0}, []
     copied = _lay_over(root, path, rels)
     for rel, text in sorted((texts or {}).items()):
-        with open(os.path.join(path, *rel.split("/")), "w", encoding="utf-8",
-                  newline="") as fh:
-            fh.write(text)
+        dst = os.path.join(path, *rel.split("/"))
+        body = _in_endings_of(dst, text)
+        with open(dst, "w", encoding="utf-8", newline="") as fh:
+            fh.write(body)
     for rel in stubs:
         dst = os.path.join(path, *rel.split("/"))
         if not os.path.isdir(os.path.dirname(dst)):

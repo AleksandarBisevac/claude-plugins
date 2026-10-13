@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "own-tests: python3 plugins/audit/tests/test_stamp_verification.py --selftest": "pass",
+    "ruff check on the two files": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-13T00:08:28Z",
+    "basis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 266 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - si5 (house FAIL): SELFTEST FAILED: 263/266 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "stamp-verification.py: added _lf (CRLF->LF) applied in both _head_text and _wt_text so the hunk split and changed_source compare line content in one newline form; added _in_endings_of and _isolated_run now writes an inline suite's test-only copy in the line ends the throwaway's file (HEAD's blob) already uses. Tests: replaced si5/si6 with si5 (LF blob vs CRLF wt, autocrlf=true), si6 (CRLF vs CRLF), si7 (LF vs LF), each through a real git repo asserting exact hunk split (1 held, 1 applied) and changed_source True for the edit / False for an unchanged copy; si8 pins write-back line ends. Own selftest run: 266/266 passed, exit 0; ruff clean.",
+    "descriptive": "An inline suite and a declared source compare by line content, so Windows autocrlf checkouts no longer see whole-file hunks or phantom changed sources."
+  },
+  "testsAdded": [
+    "si5",
+    "si6",
+    "si7",
+    "si8"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:7ef92191d87c301d46da5717ec605cc2a7932ea332a962edc5a4aaad9315ed99\",\"dirtyDigest\":\"sha256:78d8b94c5176b8b484a07c83764e4c9a9f88869de9c95ff4579791404f5b7eb8\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/stamp-verification.py\":\"7d13ab7e06c63652\",\"plugins/audit/tests/test_stamp_verification.py\":\"333e5e9de34b5e6b\"},\"head\":\"0aca587b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:638297b7d77fb715dcbe27b58db83bec4570f28adac2f7fdc97aa0bb28c66cd0\",\"v\":2}"
+}

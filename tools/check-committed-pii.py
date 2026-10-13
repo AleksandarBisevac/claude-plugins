@@ -769,6 +769,19 @@ BASELINE = (
     (_BOUND_RETURN, 190, "posix-home", _BOUND_RETURN_WHY),
     (_BOUND_RETURN, 190, "unexpanded-home", _BOUND_RETURN_WHY),
     (_BOUND_RETURN, 196, "posix-home", _BOUND_RETURN_WHY),
+    ("docs/audit/phases/P126.json", "line-sha256:6568f124de8e5dc3",
+     "posix-home",
+     "a review finding's prose saying callers 'pass home/cwd/project "
+     "directories' - three words joined by slashes, not a directory of any "
+     "machine. posix-home flags `home/` at a token start by design."),
+    ("docs/audit/phases/P126.json", "line-sha256:60ef6879a44564fa",
+     "posix-home",
+     "the fix task's description that copies the same finding text, so the "
+     "same phrase and the same reason: a list of words, not a path."),
+    ("docs/audit/journal/2026-10.0a7c2fcc-df20-4990-96d6.jsonl", 1440,
+     "posix-home",
+     "the review.finding row that filed the same prose. The chain runs through "
+     "it, so it is recorded here rather than rewritten."),
 )
 
 _MIN_REASON = 60          # a reason short enough to be a label is not a reason

@@ -4668,22 +4668,50 @@ def _inline_suite_cases(check):
           problem is None and held == 1 and applied == 1
           and "    return 1\n" in text and "('new1', value() == 2)" in text
           and len(head_lines) + 1 == len(wt_lines))
-    crlf_head, crlf_wt = (_INLINE_HEAD.replace("\n", "\r\n"),
-                          _INLINE_WT.replace("\n", "\r\n"))
-    text_c, held_c, applied_c, problem_c = M.inline_test_text(crlf_head, crlf_wt)
-    check("si5 two CRLF copies of an inline suite split as the LF ones do - one "
-          "test hunk applied, one held, the fix still at HEAD: %r"
-          % ((held_c, applied_c, problem_c),),
-          problem_c is None and held_c == 1 and applied_c == 1
-          and "    return 1\r\n" in text_c)
-    crlf_root = _harness.fixture_root("stamp-inline-crlf-")
-    with open(os.path.join(crlf_root, "f.py"), "w", encoding="utf-8",
-              newline="") as fh:
-        fh.write(crlf_wt)
-    check("si6 the working tree's copy is read with its line ends as written, "
-          "so a CRLF file compares to a CRLF HEAD blob line for line: %r"
-          % (M._wt_text(crlf_root, "f.py")[:40],),
-          M._wt_text(crlf_root, "f.py") == crlf_wt)
+    shapes = [("si5 an LF HEAD blob against a CRLF working file (autocrlf=true)",
+               _INLINE_HEAD, _INLINE_WT.replace("\n", "\r\n")),
+              ("si6 a CRLF HEAD blob against a CRLF working file (autocrlf=false)",
+               _INLINE_HEAD.replace("\n", "\r\n"),
+               _INLINE_WT.replace("\n", "\r\n")),
+              ("si7 an LF HEAD blob against an LF working file", _INLINE_HEAD,
+               _INLINE_WT)]
+    for label, blob, wt in shapes:
+        root_s = _harness.fixture_root("stamp-inline-ends-")
+        subprocess.run(["git", "init", "-q", root_s], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _git(root_s, "config", "core.autocrlf", "false")
+        with open(os.path.join(root_s, "f.py"), "wb") as fh:
+            fh.write(blob.encode("utf-8"))
+        _git(root_s, "add", "f.py")
+        _git(root_s, "commit", "-q", "-m", "f")
+        with open(os.path.join(root_s, "f.py"), "wb") as fh:
+            fh.write(wt.encode("utf-8"))
+        head_s, now_s = M._head_text(root_s, "f.py"), M._wt_text(root_s, "f.py")
+        text_s, held_s, applied_s, problem_s = M.inline_test_text(head_s, now_s)
+        changed_s = M.changed_source(root_s, "f.py")[0]
+        _git(root_s, "checkout", "--", "f.py")
+        with open(os.path.join(root_s, "f.py"), "wb") as fh:
+            fh.write(blob.encode("utf-8"))
+        same_s = M.changed_source(root_s, "f.py")[0]
+        check("%s splits into exactly the changed hunks - one test hunk applied, "
+              "one held, the fix still at HEAD - and an unchanged copy is not "
+              "reported changed: %r" % (label, (held_s, applied_s, problem_s,
+                                                changed_s, same_s)),
+              head_s == now_s.replace("    return 2", "    return 1").replace(
+                  "    results.append(('new1', value() == 2))\n", "")
+              and problem_s is None and held_s == 1 and applied_s == 1
+              and "    return 1\n" in text_s and "\r" not in text_s
+              and changed_s is True and same_s is False)
+    ends_root = _harness.fixture_root("stamp-inline-write-")
+    ends_dst = os.path.join(ends_root, "w.py")
+    pairs = []
+    for on_disk in (b"a = 1\r\nb = 2\r\n", b"a = 1\nb = 2\n"):
+        with open(ends_dst, "wb") as fh:
+            fh.write(on_disk)
+        pairs.append(M._in_endings_of(ends_dst, "a = 9\nb = 2\n"))
+    check("si8 a test-only copy is written in the line ends the file under it "
+          "already uses, so the fixture on disk keeps its bytes: %r" % (pairs,),
+          pairs == ["a = 9\r\nb = 2\r\n", "a = 9\nb = 2\n"])
 
 
 # --- a stage the task's own test files add: new at HEAD, not red there ---
