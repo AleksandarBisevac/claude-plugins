@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "own-tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-13T18:31:17Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage ck-block` in a throwaway tree at HEAD exited 1 with 4 of 4 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `ck-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - ck1 (house FAIL), ck2 (house FAIL), ck3 (house FAIL), ck4 (house FAIL): SELFTEST FAILED: 0/4 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "placeholder",
+    "descriptive": "placeholder"
+  },
+  "testsAdded": [
+    "ck1",
+    "ck2",
+    "ck3",
+    "ck4"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:9c0f426f9894a4f8d09be03e02f8c1e103fa2f8fde786938c2933731a61df1a6\",\"dirtyDigest\":\"sha256:cff3a85dd390bbf08c8b74a5c80b8315044473a8a3d2ac81288a08e8cde38459\",\"dirtyPaths\":{\"plugins/audit/agents/audit-executor.md\":\"b747014781751b6b\",\"plugins/audit/commands/init.md\":\"7a8b47e342da0bb2\",\"plugins/audit/reference/execute-task.md\":\"f06853b1b79b09c4\",\"plugins/audit/reference/manifest-conventions.md\":\"de0594b53d02db08\",\"plugins/audit/scripts/manifest/audit-task.py\":\"2f8c10082434d87f\",\"plugins/audit/tests/test_audit_task.py\":\"0a777d5dae3cb776\"},\"head\":\"9bd3f940\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/agents/audit-executor.md\",\"plugins/audit/commands/init.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/reference/manifest-conventions.md\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:4eed10531ea3673641f8ecee56bb12a2505a852eb3f84a9aacace8ec3bb06249\",\"v\":2}"
+}

@@ -462,7 +462,14 @@
         "plugins/audit/tests/test__filed_returns.py",
         "plugins/audit/tests/test__config_rules.py",
         "plugins/audit/tests/test_validate_config.py",
-        "plugins/audit/README.md"
+        "plugins/audit/README.md",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/scripts/config/_help.py",
+        "plugins/audit/tests/test__help.py",
+        "plugins/audit/scripts/panel/_panel_settings.py",
+        "plugins/audit/tests/test__panel_settings.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py"
       ],
       "tests": {
         "mode": "tdd",
