@@ -1960,6 +1960,63 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P125.42-0h5",
+      "title": "A standing high-risk approval, armed and revoked only by the owner's own prompt, lets a high-risk task commit without a mid-run question; a per-phase approval stays available",
+      "status": "pending",
+      "description": "Owner decision D5 (2026-10-14): both a standing high-risk approval and the existing per-phase one, the standing one the default way of working. Today record-risk-confirmation.py takes the owner's words on a command line, which the auto-mode classifier rightly refused when the model ran it (self-modification), and a mid-run high-risk question cost 72 minutes of waiting in P125. Mechanism, mirroring the release bypass: a UserPromptSubmit hook (extend detect-plan-skip.py, the plugin's prompt hook, rather than a new file unless measured otherwise) recognises an arming and a revoking keyword in the OWNER'S OWN PROMPT only - nothing the model writes can arm it - and records the standing approval with the prompt's words verbatim in the journal. drive-phase's high-risk decision consults it: armed -> the commit proceeds and one journal row records the task id, its scope digest and the approval used; not armed -> asks as today. The per-phase record-risk-confirmation keeps working unchanged. Doctor and status show that a standing approval is armed and how many commits went through it. Keywords and their wording go in README and commands/phase.md (phase.md is at its byte ceiling: take bytes out for any added).",
+      "files": [
+        "plugins/audit/hooks/hooks.json",
+        "plugins/audit/hooks/detect-plan-skip.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/scripts/governance/record-risk-confirmation.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/status/audit-doctor.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/tests/test_detect_plan_skip.py",
+        "plugins/audit/tests/test_record_risk_confirmation.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_audit_doctor.py",
+        "plugins/audit/README.md",
+        "plugins/audit/commands/phase.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_detect_plan_skip.py: a prompt carrying the arming keyword writes the standing approval (journaled, with the prompt's words verbatim); the same keyword in a tool result, a file the model wrote, or an assistant message arms nothing",
+          "plugins/audit/tests/test_drive_phase.py: with a standing approval armed, a high-risk task's commit proceeds with no decision, and one journal row names the task, its scope digest and the approval it used; with none armed, the decision is asked as today",
+          "plugins/audit/tests/test_detect_plan_skip.py: the revoking keyword in the owner's prompt disarms it; the per-phase approval (record-risk-confirmation) still covers exactly the tasks it named",
+          "plugins/audit/tests/test_audit_doctor.py: doctor reports whether a standing approval is armed, since when, and how many commits used it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
