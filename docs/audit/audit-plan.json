@@ -3251,7 +3251,8 @@
       "P124.7",
       "P123.15",
       "P123.24",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P125.38-0h5"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -3277,7 +3278,8 @@
       "P123.24",
       "P123.33",
       "P123.65-64p",
-      "P126.11-13q"
+      "P126.11-13q",
+      "P125.38-0h5"
     ],
     "plugins/audit/scripts/governance/_policy.py": [
       "P15.4",
@@ -3647,7 +3649,8 @@
       "P123.54-64p",
       "P123.65-64p",
       "P123.75-64p",
-      "P123.76-64p"
+      "P123.76-64p",
+      "P125.38-0h5"
     ],
     "plugins/audit/scripts/manifest/_manifest_merge.py": [
       "P60.1"
@@ -4113,7 +4116,8 @@
       "P123.54-64p",
       "P123.65-64p",
       "P123.75-64p",
-      "P123.76-64p"
+      "P123.76-64p",
+      "P125.38-0h5"
     ],
     "plugins/audit/scripts/panel/panel-server.py": [
       "P10.2",
@@ -5014,7 +5018,8 @@
       "P123.15",
       "P123.24",
       "P123.25",
-      "P123.47-64p"
+      "P123.47-64p",
+      "P125.38-0h5"
     ],
     "plugins/audit/tests/test__locks.py": [
       "P22.11",
@@ -5037,7 +5042,8 @@
       "P106.8-b6f",
       "P106.10-b6f",
       "P123.24",
-      "P126.11-13q"
+      "P126.11-13q",
+      "P125.38-0h5"
     ],
     "plugins/audit/tests/test__manifest_crossrefs.py": [
       "P22.5",
@@ -6076,7 +6082,8 @@
       "P105.9-m32",
       "P115.3-4yc",
       "P121.6",
-      "P123.23"
+      "P123.23",
+      "P125.38-0h5"
     ],
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6",
