@@ -542,66 +542,9 @@
       }
     },
     {
-      "id": "P125.7",
-      "title": "Phase review can run Haiku-first and escalate on a computed predicate, off by default",
-      "status": "pending",
-      "description": "N2. Config review.cascade: 'off' (default) | 'haiku-first'. When on, dispatch_phase_review dispatches the reviewer with model=claude-haiku-5-5 and the same brief and JSON return; a pure predicate escalate(filed, phase) decides whether a second, Sonnet dispatch is owed: any finding, any cannot-tell or missing intent input, any recorded open choice, red-first not proved, or an existing test file modified (the signals signals_fired() and the brief already compute). The second filing supersedes the first in _filed_returns, and both are kept in evidence with their model. The predicate's verdict per phase is computed offline over the recorded phase fixtures and printed by a selftest; the cascade's false-negative rate needs model calls and is not measured here (openChoices), which is why the default is off. Depends on the price table so a Haiku dispatch is priced, not _default. Evidence (research report 2026-10-12, probe 2): Haiku matched Opus on the target defect at about 1/18 of the cost ONLY under the clause-quoting rule of intent-against-task-text; one scenario, false-positive rate not measured - so this depends on that task and its predicate must be re-measured before default-on.",
-      "files": [
-        "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/scripts/manifest/_filed_returns.py",
-        "plugins/audit/hooks/_config.py",
-        "plugins/audit/scripts/config/_config_rules.py",
-        "plugins/audit/schema/audit-config.schema.json",
-        "plugins/audit/reference/phase-signoff.md",
-        "plugins/audit/tests/test_drive_phase.py",
-        "plugins/audit/tests/test__filed_returns.py",
-        "plugins/audit/tests/test__config_rules.py",
-        "plugins/audit/README.md"
-      ],
-      "tests": {
-        "mode": "tdd",
-        "add": [
-          "plugins/audit/tests/test_drive_phase.py: with review.cascade off the phase reviewer is dispatched once at the phase's model, unchanged",
-          "plugins/audit/tests/test_drive_phase.py: with haiku-first, a clean Haiku filing with no signal signs off on one review; a filing with one low finding prints a second dispatch at the Sonnet model",
-          "plugins/audit/tests/test__filed_returns.py: a second phase filing supersedes the first for the same head and both stay readable with their model"
-        ],
-        "expectRedFirst": true,
-        "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive"
-        ],
-        "gateBasis": "phase-no-spelling"
-      },
-      "model": "sonnet",
-      "skills": [],
-      "risk": "med",
-      "blockedBy": [],
-      "dependsOn": [
-        "P125.6",
-        "P125.2",
-        "P125.19"
-      ],
-      "attempts": 0,
-      "maxAttempts": 3,
-      "commit": null,
-      "outcome": {
-        "technical": null,
-        "descriptive": null
-      },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
-    },
-    {
       "id": "P125.8",
       "title": "A task gate also runs every test its change can break; the full gate runs once per phase",
-      "status": "in_progress",
+      "status": "done",
       "description": "F596 incl. its EXTENSION. New pure module _affected_tests: given the task's changed paths (from its diff against the phase head in the task's own tree; a rename counts as both its old and new path, a deletion as its old path) and the project's observations, return the suites to add to the task's gate and the basis for each. Arms, in order: the project's related listing (meta.phaseGate.derived.listing.related, the same recorded and version-verified listing derive-phase-gate already trusts, e.g. vitest related / jest --findRelatedTests --listTests); for Python, a stdlib ast import graph from test files to the changed modules; the e2e runner's changed listing when one is recorded; meta.coupling entries whose sources overlap; and the e2e widening rule in openChoices. A listing that cannot run is a printed skip reason and widens to the phase gate, never an empty selection read as 'nothing affected'. run-test-gate.py, when it measures a task, runs the union of the task's own gate and the affected set and records which suites came from which arm in the evidence row. The phase's sign-off gate stays the wide one (derived narrowing remains the opt-in meta.phaseGate.mode it is today), so the full gate runs once per phase. Regression case from the testbed: a task that moves app/page.tsx to app/[locale]/page.tsx selects the smoke test that imports @/app/page, and its gate goes red.",
       "files": [
         "plugins/audit/scripts/governance/_affected_tests.py",
@@ -647,19 +590,39 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3321ac71d1a2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "New pure module plugins/audit/scripts/governance/_affected_tests.py (390 lines): changed_paths() reads `git diff --name-status -z -M` (rename = both paths, deletion = old path, copy = new path); select(changed, meta, facts, exclude) walks the arms in order - related (meta.phaseGate.derived.listing.related, behind the same versionCheckFailed / verifiedOn.answer checks _gate_derive._importers_arm applies), python (stdlib ast import graph: absolute, relative and bare-basename imports with parent packages, plus a *.py name handed to a loader-named call; one reverse walk from the changed modules; a test that does not parse is selected with that basis; a deleted module stays a node), e2e-changed (new listing.e2eChanged key), coupling (reuses _gate_derive._coupling_arm), e2e-widening (every e2e spec when app source changed and no recorded listing sees e2e). A listing that exits non-zero, a version mismatch or failed version command, a .py change with no sources read, or no path-scoped spelling (entries_for asks _gate_derive.resolve_shape / repointed_by_runner) returns widen with the reason - never an empty selection. run-test-gate.py: task-scope runs (--task, not --own, the task's OWN gate) now run declared gate + affected steps named `affected/<arm>: <suites>` (or `affected/phase-gate: <key>` when widened), so the evidence row's steps attribute each suite to its arm; reasons are printed as `[run-test-gate] affected: ...` and carried in --json as res.affected; the gate digest and the `published` list stay the task's declared gate (plus widened manifest commands); a task whose gate already carries every phase-gate entry, or that borrows the phase gate, adds nothing and prints nothing. Changed paths: git diff -M HEAD + untracked in the tree measured; in the shared project tree filtered to the task's declared files, in --tree taken whole. Phase sign-off gate untouched (meta.phaseGate.mode narrowing stays opt-in). _manifest_phases: listing.e2eChanged held to related's shape/placeholder rules (codes phases.phase_gate_derived.listing-e2e-changed-shape/-placeholder; the related loop is shared). Schema: listing.e2eChanged property (description kept to 25 chars because test__help p5 bounds the help payload at < 200000 and HEAD already sat at about 199950; it is now 199987). _deps.LAYERS: _affected_tests one layer above _gate_derive. PLUGIN-BUILD-GUIDE tree line, module map rows, section; README and reference/execute-task.md paragraph. Tests: test__affected_tests.py af1-af21 (21/21); test_run_test_gate.py new ag-block ag1-ag5 (testbed regression end to end: moved app/page.tsx, related listing names tests/smoke_test.sh, run red, row steps ['sh tests/i18n_test.sh', 'affected/related: tests/smoke_test.sh'], digest unchanged, wide task adds nothing, failing listing widens to 'affected/phase-gate: wide'); full suite 531/531; the gb-block fixture is now a committed git repo (a task with its own gate is asked what changed, and a non-repo widens). test__manifest_phases dl8 (125/125). test__output sc11/sc13 list the new file (259/259). Mutations in scratch copies of plugins/audit, each confirmed landed: rename-new-only -> af1 red; listing failure not widening -> raises; no transitive walk -> af3, af16 red; e2e widening off -> af12 red; version check off -> af9 red; loader restriction removed -> af3 red; widened phase-gate steps dropped from run-test-gate -> ag5 red. Before the implementation ag1/ag2 were red (exit 0, steps [('sh tests/i18n_test.sh', 0)]). Gates: `python3 tools/sweep-selftests.py --quiet` in the tree -> 334/334 files ok, 153 migrated to tests/, 16003 cases, exit 0; `ruff check plugins/audit tools` exit 0; `vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests` exit 0. COST, measured: BEFORE - the project's evidence ledger, the 12 newest P125 task rows (python over docs/audit/evidence/*.jsonl, scope=task, taskId P125.*): durationMs 502495 to 592280, steps selftests 196822-279463, shots 262294-267662, interactive 35281-36197. AFTER on this repo: unchanged, because every P125 task's tests.gate is the phase gate verbatim (gateBasis phase-no-spelling) - affected_steps(P125.8, real manifest) returns 0 steps in 0.000 s with basis 'already runs the phase's wide gate'. The lever needs a path-scoped spelling this repo does not record. PROJECTION, if it did (python arm over this tree, recorded per-file costs in .github/sweep-costs.json, 155 suites summing 4714.9 s serial): a change to run-test-gate.py alone selects 9 suites (498.8 s), render-report.py 28 (2991.6 s), _output.py 155 (4704.7 s); P125.8's own diff selects 60 (3862.4 s); selection cost 2.3-2.9 s per run, measured while a sweep was running. Lines: production +390 new, run-test-gate +161/-3, _manifest_phases +14/-10, _deps +6/-1 - more added than removed because the capability is new; reuse is _gate_derive's coupling arm, e2e reading, resolve_shape and repointed_by_runner and run-test-gate's own _shell/_resolved/split_not_commands. Two duplications remain, their homes outside this task's files: _affected_tests._untrusted restates _gate_derive._importers_arm's two version checks, and run-test-gate._affected_facts restates derive-phase-gate._gather_facts' version/listing spawn; a shared listing-trust helper and facts gatherer in _gate_derive.py would remove both. NOT DONE, outside files: (1) this repo needs a path-scoped spelling for its house runner (meta.phaseGate.derived.spelling with {paths} - tools/sweep-selftests.py takes no path list today) and (2) task gates re-derived to own tests (audit-task.py) before a task gate here stops running the full ~505 s gate. drive-phase.py needed no change: it already calls run-test-gate.py --task --record.",
+        "descriptive": "A task's recorded gate now also runs every suite its change can break, each attributed to the arm that selected it, and widens to the phase gate with the reason printed whenever a listing cannot answer; the phase's sign-off gate stays the wide one."
       },
       "startedAt": "2026-10-13T21:55:38Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-13T23:07:45Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__affected_tests.py: af2 a rename of app/page.tsx selects the smoke test importing @/app/page through the recorded related listing, and its basis names the listing command",
+        "plugins/audit/tests/test__affected_tests.py: af3 a Python module change selects every test whose import closure reaches it and no other",
+        "plugins/audit/tests/test__affected_tests.py: af8 a related listing that exits non-zero yields the phase gate with the skip reason, never an empty selection",
+        "plugins/audit/tests/test__affected_tests.py: af12 a task changing app source in a project with e2e specs and no listing that sees them selects every e2e spec, with the widening basis",
+        "plugins/audit/tests/test_run_test_gate.py: ag1 a task's recorded run includes the affected suites beside its own gate and the evidence row attributes each suite to its arm",
+        "plugins/audit/tests/test__affected_tests.py: af1, af4-af7, af9-af11, af13-af21",
+        "plugins/audit/tests/test_run_test_gate.py: ag2-ag5",
+        "plugins/audit/tests/test__manifest_phases.py: dl8"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-13T22:47:28Z.5b6654",
         "status": "passed",
         "at": "2026-10-13T22:47:28Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "3321ac71d1a2",
+        "at": "2026-10-13T23:07:45Z"
+      },
+      "redFirst": {
+        "at": "2026-10-13T22:37:21Z",
+        "basis": "`python3 plugins/audit/tests/test__affected_tests.py --selftest` in a throwaway tree at HEAD exited 1 on \"ModuleNotFoundError: No module named '_affected_tests'\" (read as python), and the task introduces '_affected_tests': absent from HEAD's plugins/audit/scripts/governance/_affected_tests.py, plugins/audit/scripts/governance/run-test-gate.py, plugins/audit/scripts/governance/drive-phase.py, plugins/audit/scripts/manifest/_manifest_phases.py, plugins/audit/schema/audit-plan.schema.json, plugins/audit/scripts/_deps.py, PLUGIN-BUILD-GUIDE.md, plugins/audit/reference/execute-task.md, plugins/audit/README.md and present in the working tree's plugins/audit/scripts/governance/_affected_tests.py, plugins/audit/scripts/governance/run-test-gate.py, plugins/audit/scripts/manifest/_manifest_phases.py, plugins/audit/scripts/_deps.py, PLUGIN-BUILD-GUIDE.md, plugins/audit/reference/execute-task.md; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -693,66 +656,6 @@
       "model": "sonnet",
       "skills": [],
       "risk": "low",
-      "blockedBy": [],
-      "dependsOn": [
-        "P125.8"
-      ],
-      "attempts": 0,
-      "maxAttempts": 3,
-      "commit": null,
-      "outcome": {
-        "technical": null,
-        "descriptive": null
-      },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
-    },
-    {
-      "id": "P125.10",
-      "title": "A task's scope gains the follower files its changes owe, derived from the lints",
-      "status": "pending",
-      "description": "Sketch section 0: declared scope is exact-path and append-only, so tasks widened for followers mid-run. Each lint that requires a companion edit exposes its rule as data next to its own check, built from the constants it already reads: _deps (a new .py under scripts/ or hooks/ owes _deps.py's LAYERS, PLUGIN-BUILD-GUIDE.md's tree line and section, tests/test__output.py; an import change owes the guide's module-map fence), _output (a new scripts/ .py owes the path preamble - in-file, so no follower), _refs (a version bump owes the README pins), tools/prove-gates.py and tools/gate-parity.py (a new lint owes their rows). tools/followers.py collects these rules and prints them as JSON lines for a path set. The product side: a pure _followers module reads rules from the project's meta.followers.command plus the generic companions in openChoices, and audit-task add, scope and add --fixes append the followers to files with a printed basis per added path (never silently). Each repo rule is proven true rather than claimed: a selftest builds a fixture where the follower is omitted and asserts the owning lint goes red.",
-      "files": [
-        "plugins/audit/scripts/manifest/_followers.py",
-        "plugins/audit/scripts/manifest/audit-task.py",
-        "plugins/audit/scripts/_deps.py",
-        "plugins/audit/scripts/_refs.py",
-        "tools/followers.py",
-        "tools/prove-gates.py",
-        "tools/gate-parity.py",
-        "PLUGIN-BUILD-GUIDE.md",
-        "plugins/audit/schema/audit-plan.schema.json",
-        "plugins/audit/tests/test__output.py",
-        "plugins/audit/tests/test__followers.py",
-        "plugins/audit/tests/test_audit_task.py",
-        "plugins/audit/tests/test__deps.py",
-        "plugins/audit/reference/verbs-in-full.md"
-      ],
-      "tests": {
-        "mode": "tdd",
-        "add": [
-          "plugins/audit/tests/test__followers.py: a task adding scripts/x/new-thing.py gains _deps.py, PLUGIN-BUILD-GUIDE.md and tests/test__output.py with a basis naming the owning lint",
-          "plugins/audit/tests/test__followers.py: a rule whose follower is omitted in a fixture makes the owning lint red (each repo rule, one case each)",
-          "plugins/audit/tests/test_audit_task.py: add with files a.py prints each appended follower and its basis; a project with no followers command appends only the generic companions",
-          "tools/followers.py: the printed rules for an import change name the guide's module-map fence"
-        ],
-        "expectRedFirst": true,
-        "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive"
-        ],
-        "gateBasis": "phase-no-spelling"
-      },
-      "model": "sonnet",
-      "skills": [],
-      "risk": "med",
       "blockedBy": [],
       "dependsOn": [
         "P125.8"
@@ -935,214 +838,7 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [
-        "P125.7"
-      ],
-      "attempts": 0,
-      "maxAttempts": 3,
-      "commit": null,
-      "outcome": {
-        "technical": null,
-        "descriptive": null
-      },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
-    },
-    {
-      "id": "P125.14",
-      "title": "Dispatch prompts and briefs put the stable text first and the task-specific text last",
-      "status": "pending",
-      "description": "Sketch section 3. A subagent's cached prefix ends where its task message starts to differ, and today the main loop composes each dispatch prompt itself from the driver's one-line instruction. drive-phase prints the exact prompt to send for each role, as one fixed sentence per role followed by the variable part (task id, brief path) last, and the orchestrator reference says to send it verbatim; audit-lookup orders each brief file's sections stable-first (the role's rules and return contract before the task's description, files and diff). Measure, do not claim: tools/stream-cost.py's dispatches reading (startRead/startWritten) on a recorded session is the basis for any figure, and measure-context's INSTRUCTION_BYTES and AGENT_CEILINGS must still hold.",
-      "files": [
-        "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/scripts/status/audit-lookup.py",
-        "plugins/audit/reference/orchestrator.md",
-        "plugins/audit/commands/phase.md",
-        "plugins/audit/tests/test_drive_phase.py",
-        "plugins/audit/tests/test_audit_lookup.py",
-        "tools/measure-context.py"
-      ],
-      "tests": {
-        "mode": "tdd",
-        "add": [
-          "plugins/audit/tests/test_drive_phase.py: two executor dispatches for different tasks print prompts identical up to the task id, and the task id and brief path come last",
-          "plugins/audit/tests/test_audit_lookup.py: every executor brief places the rules and return contract before the task-specific sections"
-        ],
-        "expectRedFirst": true,
-        "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive"
-        ],
-        "gateBasis": "phase-no-spelling"
-      },
-      "model": "sonnet",
-      "skills": [],
-      "risk": "low",
-      "blockedBy": [],
-      "dependsOn": [
-        "P125.13",
-        "P125.5"
-      ],
-      "attempts": 0,
-      "maxAttempts": 3,
-      "commit": null,
-      "outcome": {
-        "technical": null,
-        "descriptive": null
-      },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
-    },
-    {
-      "id": "P125.15",
-      "title": "An executor or reviewer reply longer than its filed line is sent back once",
-      "status": "pending",
-      "description": "F567: 'hand back the line above as your whole reply' is printed by submit and followed by no executor (measured hand-backs ran to kilobytes). A new SubagentStop hook, scoped by agent_type to the plugin's executor and reviewer: submit writes the line it printed to the state dir keyed by the task id the agent's meta description starts with; the hook compares last_assistant_message to that line and, when the reply is longer, returns decision block once with the line as the reason, so the agent's final message - the one the main loop carries - becomes that line. It blocks at most once per agent (a marker per agent_id) and is fail-open: no line on file, an unreadable payload or a non-plugin agent passes. Confirm the payload fields with a probe before relying on them (the hooks reference documents last_assistant_message on SubagentStop). Register it in hooks.json, keep it inside tools/bench-hooks.py's import budget, and list it in SECURITY.md's fail-open table. Also (F574): stream-cost apportions a rebuilt final's output over the whole tool-result bytes, counting the CLI's frame and trailer as emitted - subtract the frame and trailer before apportioning, and switch pipeline-cost-design.md's ad-hoc `analyse(load_events(...))` commands to the CLI so they meet its refusal of a follow-up stream read alone. Faults add: F574.",
-      "files": [
-        "plugins/audit/hooks/hold-handback.py",
-        "plugins/audit/hooks/hooks.json",
-        "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/agents/audit-executor.md",
-        "plugins/audit/agents/audit-reviewer.md",
-        "plugins/audit/scripts/_deps.py",
-        "PLUGIN-BUILD-GUIDE.md",
-        "SECURITY.md",
-        "tools/bench-hooks.py",
-        "plugins/audit/tests/test__output.py",
-        "plugins/audit/tests/test_hold_handback.py",
-        "plugins/audit/tests/test_drive_phase.py"
-      ],
-      "tests": {
-        "mode": "tdd",
-        "add": [
-          "plugins/audit/tests/test_hold_handback.py: a SubagentStop payload from audit-executor whose last_assistant_message is the filed line plus a paragraph is blocked with the line as the reason",
-          "plugins/audit/tests/test_hold_handback.py: the same agent's second stop passes, and a payload with no filed line on record passes",
-          "plugins/audit/tests/test_hold_handback.py: a payload from a non-plugin agent type passes untouched",
-          "plugins/audit/tests/test_drive_phase.py: submit writes the printed line where the hook reads it, keyed by the task id"
-        ],
-        "expectRedFirst": true,
-        "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive"
-        ],
-        "gateBasis": "phase-no-spelling"
-      },
-      "model": "sonnet",
-      "skills": [],
-      "risk": "med",
-      "blockedBy": [],
-      "dependsOn": [
-        "P125.14",
-        "P125.10"
-      ],
-      "attempts": 0,
-      "maxAttempts": 3,
-      "commit": null,
-      "outcome": {
-        "technical": null,
-        "descriptive": null
-      },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
-    },
-    {
-      "id": "P125.16",
-      "title": "CI fails when a recorded session's reconstructed cost exceeds its ceiling",
-      "status": "pending",
-      "description": "Sketch section 3. tools/stream-cost.py gains --gate: for each committed recording it reconstructs per-stage cost (main loop, executor, reviewer, hand-back) at the shipped table and fails on any stage above its ceiling, printing stage, figure, ceiling and pricing basis; an unpriced model fails the gate as unpriced rather than counting zero. Recordings are committed redacted (see openChoices): a redaction mode keeps counts, model ids, tool names and byte lengths and replaces text, and check-committed-pii must pass over them. Wire the gate into tools/verify.sh and .github/workflows/ci.yml, describe it in CONTRIBUTING.md and CLAUDE.md's test list, add its gate-parity entry and its prove-gates row (raising a recording's cost above the ceiling must go red; a recording at the ceiling must stay green).",
-      "files": [
-        "tools/stream-cost.py",
-        "tools/cost-recordings/README.md",
-        "tools/verify.sh",
-        ".github/workflows/ci.yml",
-        "tools/gate-parity.py",
-        "tools/prove-gates.py",
-        "CONTRIBUTING.md",
-        "CLAUDE.md"
-      ],
-      "tests": {
-        "mode": "tdd",
-        "add": [
-          "tools/stream-cost.py: --gate over a recording whose executor stage is above its ceiling exits non-zero naming the stage, figure and ceiling",
-          "tools/stream-cost.py: --gate over a recording with an unpriced model fails as unpriced, not as zero cost",
-          "tools/stream-cost.py: the redaction mode keeps every usage count and removes every text field"
-        ],
-        "expectRedFirst": true,
-        "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive"
-        ],
-        "gateBasis": "phase-no-spelling"
-      },
-      "model": "sonnet",
-      "skills": [],
-      "risk": "med",
-      "blockedBy": [],
-      "dependsOn": [
-        "P125.2",
-        "P125.15"
-      ],
-      "attempts": 0,
-      "maxAttempts": 3,
-      "commit": null,
-      "outcome": {
-        "technical": null,
-        "descriptive": null
-      },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
-    },
-    {
-      "id": "P125.17",
-      "title": "The phase cycle as a plugin Workflow has a design and an offline measurement",
-      "status": "pending",
-      "description": "N3, design and measurement only - no implementation, because the decisive facts (hooks firing inside workflow-spawned agents, the stagger's cache read, the main loop's real saving) need a paid probe. Write the design: run-phase.js's stages, the Haiku runner that calls drive-phase next and returns {exit, print} by schema, the on-disk token the script must re-read so a mis-relayed print cannot mis-route the loop, how every decide ends the run (workflows take no mid-run input), the fallback to today's Agent path for orgs with workflows off, the Claude Code version floor for COMPATIBILITY.md, and the guarantees to re-argue (gate independence, plan gate inside workflow agents, nothing owed to a human lands unseen). Measure offline with tools/stream-cost.py on recorded sessions: the main loop's spend between dispatches and the hand-back rows, each figure beside the command that produced it. End with the paid probe's exact protocol and the readings that would accept or reject the design.",
-      "files": [
-        "docs/research/phase-workflow-design.md"
-      ],
-      "tests": {
-        "mode": "gate-only",
-        "add": [],
-        "expectRedFirst": false,
-        "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive"
-        ],
-        "gateBasis": "phase-no-spelling"
-      },
-      "model": "sonnet",
-      "skills": [],
-      "risk": "low",
-      "blockedBy": [],
-      "dependsOn": [
-        "P125.16"
+        "P128.3-0h5"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -1291,118 +987,6 @@
       }
     },
     {
-      "id": "P125.20",
-      "title": "A task's model follows its recorded complexity as well as its risk, with the reason shown before approval",
-      "status": "pending",
-      "description": "F634 (owner-raised, measured on the testbed): `audit-task._model_floor` routes opus only for `risk: high`, and risk is blast radius, not difficulty - nearly every testbed task ran on Sonnet, including the plan's hardest code (an astronomy core, a WebGL sky layer), because each was low risk; no planning step asks about difficulty. (1) A task records `complexity` (low/med/high) with a one-line basis, separate from risk, written by planning (init synthesis, `/audit:phase add`, `audit-task add`/`scope`) and validated by the manifest schema and rules (additive: a plan without it stays valid and reads as unrecorded, never defaulted). (2) Routing: opus when risk is high OR complexity is high, else sonnet; the caller's explicit `--model` still wins; a config key (`executor.modelByComplexity`, documented in COMPATIBILITY.md as added) can turn the complexity arm off. (3) The plan preview and `/audit:status` show each task's model and the reason it was chosen (risk, complexity, or the caller). (4) Escalation: after a retry, or a med+ finding on a Sonnet attempt, the next attempt of that task runs on opus, journaled with the reason. Red-first: two low-risk fixture tasks - a WebGL scene marked complexity high and a copy edit marked low - route to opus and sonnet; a retried Sonnet task's next dispatch names opus and the journal row says why. Faults: F634.",
-      "files": [
-        "plugins/audit/scripts/manifest/audit-task.py",
-        "plugins/audit/tests/test_audit_task.py",
-        "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/tests/test_drive_phase.py",
-        "plugins/audit/scripts/manifest/_manifest_vocab.py",
-        "plugins/audit/tests/test__manifest_vocab.py",
-        "plugins/audit/schema/audit-plan.schema.json",
-        "plugins/audit/scripts/status/audit-status.py",
-        "plugins/audit/tests/test_audit_status.py",
-        "plugins/audit/commands/init.md",
-        "plugins/audit/commands/phase.md",
-        "plugins/audit/reference/verbs-in-full.md",
-        "COMPATIBILITY.md",
-        "PLUGIN-BUILD-GUIDE.md",
-        "plugins/audit/schema/audit-config.schema.json",
-        "plugins/audit/scripts/config/_config_rules.py"
-      ],
-      "tests": {
-        "mode": "tdd",
-        "add": [
-          "plugins/audit/tests/test_audit_task.py: a low-risk task with complexity high routes to opus and one with complexity low to sonnet; an explicit --model wins; a plan without complexity stays valid and reads as unrecorded",
-          "plugins/audit/tests/test_drive_phase.py: after a retry on a sonnet attempt the next dispatch names opus and the journal row records why"
-        ],
-        "expectRedFirst": true,
-        "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive"
-        ],
-        "gateBasis": "phase-no-spelling"
-      },
-      "model": "sonnet",
-      "skills": [],
-      "risk": "low",
-      "blockedBy": [],
-      "dependsOn": [
-        "P125.2"
-      ],
-      "attempts": 0,
-      "maxAttempts": 3,
-      "commit": null,
-      "outcome": {
-        "technical": null,
-        "descriptive": null
-      },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
-    },
-    {
-      "id": "P125.21",
-      "title": "Parallel waves respect a shared external-resource budget: resources in config, needs on a task, and status says why a task was held",
-      "status": "pending",
-      "description": "F508 (deferred feature; its revisit trigger - a waves verb - has fired with P124's waves). Today parallel safety is disjoint `files` plus `dependsOn` only, so two tasks that each start a dev server on one port, or hit one rate-limited API, run side by side (the testbed's port 3100 collision is the live shape). Add `resources: {name: capacity}` to audit.config.json (schema + config rules, additive, documented in COMPATIBILITY.md), `needs: [name]` on a task (plan schema + rules, additive), cap wave membership where waves are computed so a wave never holds more tasks needing a resource than its capacity, and have status/the drive say which task was held and for which resource. In the scheduler, not in executor prose. Red-first: two ready tasks both needing `port3100` with capacity 1 never share a wave, the held one is named with the resource; without `resources` the waves are unchanged. Faults: F508.",
-      "files": [
-        "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/tests/test_drive_phase.py",
-        "plugins/audit/scripts/status/_status_facts.py",
-        "plugins/audit/tests/test__status_facts.py",
-        "plugins/audit/schema/audit-config.schema.json",
-        "plugins/audit/schema/audit-plan.schema.json",
-        "plugins/audit/scripts/config/_config_rules.py",
-        "plugins/audit/scripts/manifest/_manifest_vocab.py",
-        "plugins/audit/tests/test__manifest_vocab.py",
-        "COMPATIBILITY.md",
-        "PLUGIN-BUILD-GUIDE.md"
-      ],
-      "tests": {
-        "mode": "tdd",
-        "add": [
-          "plugins/audit/tests/test__status_facts.py: two ready tasks needing one capacity-1 resource never share a wave and the held one names the resource; no resources config leaves waves unchanged"
-        ],
-        "expectRedFirst": true,
-        "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive"
-        ],
-        "gateBasis": "phase-no-spelling"
-      },
-      "model": "sonnet",
-      "skills": [],
-      "risk": "low",
-      "blockedBy": [],
-      "dependsOn": [],
-      "attempts": 0,
-      "maxAttempts": 3,
-      "commit": null,
-      "outcome": {
-        "technical": null,
-        "descriptive": null
-      },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
-    },
-    {
       "id": "P125.22",
       "title": "New behaviour is planned tests.mode tdd, its tests written from the task text before the code",
       "status": "done",
@@ -1538,98 +1122,6 @@
         "status": "proved",
         "source": "red-first-helper"
       }
-    },
-    {
-      "id": "P125.24",
-      "title": "A red CI run on a phase's ci/ branch files a manifest bug with its failing jobs and cases",
-      "status": "pending",
-      "description": "Observed 2026-10-12: ci/p122 (run 38017386858) and ci/p124 (run 38036907164) went red on windows-latest two days before the 3.3.0 cut, yet no task or bug was filed, P123 landed on top, and the release candidate's CI (38299118105) found nine Windows files red - all new in P123, none overlapping P124's bt2/sr210 which P123 had fixed. The per-phase CI ran as intended; its verdict reached no record a gate reads. A CI result is read into the plan: a command (or the drive's landing step, once it has pushed ci/<phase>) reads the run's failing jobs and case ids (`gh run view --log-failed`, parsed by the house FAIL/FAILED reader) and files `/audit:bug add` naming the run, the jobs and each failing case, so the release guard and the open-bug rule see it at once. Refuses rather than files when it cannot read the run. Source: testbed monitor, 2026-10-12.",
-      "files": [
-        "plugins/audit/scripts/manifest/audit-task.py",
-        "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/commands/bug.md",
-        "plugins/audit/tests/test_drive_phase.py"
-      ],
-      "tests": {
-        "mode": "tdd",
-        "add": [
-          "plugins/audit/tests/test_drive_phase.py: a recorded red CI run for a phase's ci/ branch files one bug naming the run id, each failing job and each failing case id; an unreadable run is refused, not filed empty"
-        ],
-        "expectRedFirst": true,
-        "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive"
-        ],
-        "gateBasis": "phase-no-spelling"
-      },
-      "model": "sonnet",
-      "skills": [],
-      "risk": "low",
-      "blockedBy": [],
-      "dependsOn": [],
-      "attempts": 0,
-      "maxAttempts": 3,
-      "commit": null,
-      "outcome": {
-        "technical": null,
-        "descriptive": null
-      },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
-    },
-    {
-      "id": "P125.25",
-      "title": "A long phase dispatches CI on its branch at a configured cadence, not only at landing",
-      "status": "pending",
-      "description": "P123 ran about 2.5 days and about 90 tasks with no CI run between its start and its landing, so nine windows-latest regressions it introduced surfaced only at the 3.3.0 cut (run 38299118105) and cost a fix phase (P126). The drive already pushes ci/ branches; give it a cadence: `ci.cadence` in config (every N task closes and/or every H hours of phase time, absent = landing only), on which it pushes the phase tip to ci/<phase> and dispatches the workflow without waiting, and reads the result at the next close; a red files a bug through ci-red-files-bug. Doctor reports the setting. Source: testbed monitor, 2026-10-12.",
-      "files": [
-        "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/scripts/config/_config_rules.py",
-        "plugins/audit/tests/test_drive_phase.py",
-        "plugins/audit/reference/config.md"
-      ],
-      "tests": {
-        "mode": "tdd",
-        "add": [
-          "plugins/audit/tests/test_drive_phase.py: with ci.cadence every 3 closes the drive dispatches CI on the third close and not before, never waits on it, and reads its verdict at the next close; absent, it dispatches only at landing"
-        ],
-        "expectRedFirst": true,
-        "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive"
-        ],
-        "gateBasis": "phase-no-spelling"
-      },
-      "model": "sonnet",
-      "skills": [],
-      "risk": "low",
-      "blockedBy": [],
-      "dependsOn": [
-        "P125.24"
-      ],
-      "attempts": 0,
-      "maxAttempts": 3,
-      "commit": null,
-      "outcome": {
-        "technical": null,
-        "descriptive": null
-      },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
     },
     {
       "id": "P125.26",
