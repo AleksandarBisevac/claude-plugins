@@ -6,6 +6,219 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-10-13
+
+This release has two halves. A phase can now run its ready, disjoint tasks as a **wave**: each task
+in its own worktree, gated there, and folded into the phase tree one at a time, with conflicts and
+undeclared overlaps refused by name. It is off unless you ask for it: `executor.waveWidth` absent
+or `1` reproduces the 3.2.0 drive exactly. The other half is a sweep of the places where the
+records the plugin writes, or the verdicts it gives, were not true - a coverage rule that differed
+between the plan gate and the hooks, a task commit that swept in older dirt, a stopped drive that
+left a lock, a scrub that rewrote a gate command - each closed at the shared reader or writer
+rather than at the one place it was seen.
+
+### Added
+- **Waves: `executor.waveWidth` in `.claude/audit.config.json`** (a number, or `auto`; absent = 1).
+  With a width above 1, `drive-phase.py` runs a phase's ready tasks whose files are disjoint
+  together, each in a detached task worktree created at the phase head outside the project and
+  marked with its task, each gated in its own tree (`run-test-gate.py --tree DIR` measures there
+  and records in the project), and each folded into the phase tree serially by `integrate-task`,
+  which refuses a conflict or an undeclared change by name. A wave survives a crash during tree
+  setup, a blocked member keeps its tree into a later wave, a wave reviewer reads its own task's
+  diff, and a discarded change keeps its named tree. A wave executor's brief states its tree, its
+  base and the rule that it never commits. The panel's Settings tab edits the key as a number or
+  `auto`, and saves a number as a number. A wave keeps to one task per tree even when the width
+  allows more: **when the installed hooks are shown to lack the task-tree binding, the phase drops
+  to width 1** and says why, rather than running tasks in trees nothing would bind. A change that
+  integration refused is offered a redo that spends no attempt, and a discarded change's kept tree
+  is named in status every time, not once.
+- **A task worktree gets its environment.** A `.worktreeinclude` file lists what is copied into a
+  task tree, and the optional `executor.worktreeSetup` command runs there (a failing setup is
+  "could not run", and spends no attempt). `/audit:doctor` reports both. **`executor.worktreeSetup`
+  must not rewrite git-tracked files:** a setup that does surfaces as an undeclared change at
+  integration and the task is refused, so install dependencies or copy ignored files there, and
+  nothing tracked.
+- **The plan gate binds a task worktree to its task.** The task is read from the phase tree's plan
+  by the tree's marker; a marker it cannot prove refuses every edit in that tree, and the phase
+  tree refuses a file a bound worktree holds.
+- **A task's companion files are derived, not guessed.** A task's dependency manifest and lockfile,
+  locale files and runner config are derived from its intent and the repository layout (Node and
+  Python), each with its basis and every absence reported. `audit-task.py add` and `scope` take
+  `--introduces`, `/audit:init` synthesis writes them, and a fix task is scoped from every path
+  and every test its finding names, gated by the runner that fits (vitest for unit tests,
+  playwright for end-to-end specs). A fix task that would declare no path is refused rather than
+  created, and its gate runs the test its finding asks for.
+- **The plugin can tell whether a runner collects a test path** - collected, not collected, or
+  could not tell - by asking vitest, jest or pytest for its own listing, else reading its config.
+  `audit-task.py start` uses it: a declared test the runner will never collect stops at
+  `decide scope-gap` before an executor is spent.
+- **A review-only offered gate entry is never run as a command.** A `buildCommands` value starting
+  `review-only:`, and `claimsMatchCode`, reach the reviewer as a claim to check; the gate does not
+  execute them.
+- **A first `/audit:phase add` creates the plan.** On a repository with no plan, one verb call
+  creates it with the phase and no placeholder task; `seed` takes `--no-task`.
+- **Every cross-file plan fact has a verb that writes it whole**: `fileIndex`, `bugs[]` and the
+  bug-task link. A task commit that links a bug records a manifest that validates.
+- **The finding schema names `status`, `acceptedReason` and `carriedTo`**, `task move` rewrites
+  `carriedTo`, and `done` journals the rewrite it made to a finding.
+- **Redactions are journaled.** Every plan save that redacts a machine path writes a `plan.redact`
+  row.
+- **A mutating gate sweep announces itself** with a marker in the git directory; the sweep refuses
+  to read a tree that is mid-mutation, and the orchestrator-state report says so.
+- **`check-committed-pii.py` reads filed returns**, and a release check holds the Azure example's
+  pin: the example pins a tag that holds every script it calls, and the release set refuses a
+  stale or unverifiable pin.
+- **`scope` takes `--gate-set` and `--gate-drop` on a pending task**, so a task's gate can be
+  replaced without removing and re-adding the task.
+- **A wave executor's `submit` files against the project's plan** from wherever its shell stands.
+
+### Changed
+- **One coverage rule.** A declared entry covers itself and everything under it, with or without a
+  trailing slash, and the plan gate, the guards, the TDD nudge, commit-scope, staging,
+  `run-test-gate` and scope widening all ask the same predicate (`covers()`). A declared directory
+  no longer reads as a breach in one place and as covered in another, and the red-first fix tree
+  lays a declared directory over, not only files.
+- **A task commit carries exactly its attempt.** Older uncommitted changes in a declared file are
+  refused rather than swept in; a close also refuses while an undeclared git-tracked file changed
+  during the attempt; a file made during the attempt outside every running task's scope
+  is refused by name (and a bash-created non-source file outside every running scope - an image
+  or config copied in with `cp` - is refused with a blocking decision naming the scope remedy,
+  where source files keep their notice). `done` refuses while a task's work sits uncommitted, and
+  `start` refuses a task with no files. Paths with spaces or non-ASCII bytes are matched.
+- **The write scrub no longer rewrites a gate, build or config command.** Every door that writes
+  one refuses a machine path and names the field; elsewhere, every string written into a committed
+  plan, journal or evidence row is scrubbed of machine paths at the write, and committed executor
+  and reviewer returns are scrubbed at their one writer. A machine path containing a space is
+  scrubbed whole, and a quoted preload is named. **On upgrade:** a gate command that held
+  a machine path will now be refused where it used to be silently rewritten - replace the path
+  with a project-relative one.
+- **Closing a fix task records the fix on its findings, and sign-off records every open
+  finding's disposition.** The driver and the verb share one definition of an open finding. A bug
+  whose files are all test files materializes as a regression task, not `tdd`.
+- **A single-checkout landing leaves you on the branch it landed on.** A clean checkout ends on the
+  parent with the stamp committed there and the branch deleted; a dirty checkout stays put and is
+  told the `git switch` to run. A landing over a git-ignored evidence or journal directory is
+  refused before the merge instead of merging and then exiting 1. A layout migration's restore
+  points go to the ignored `.claude/audit-backups` directory, not beside the plan.
+- **`/audit:run` given a phase id refuses** with one line naming `/audit:phase`, instead of driving
+  a phase or picking a task.
+- **`validate-manifest.py` applies the published schema to the whole plan** - as warnings in 3.x,
+  as findings under `--strict` - and never raises; a list or object id is a named finding.
+- **A fix batch lands whole from stdin**, a `rerun` re-measures, a hand-added fix task satisfies
+  the triage, and a fix task that would declare no path is refused. A retry brief names the red
+  step and what it printed, and an executor that returned nothing is resumed without spending an
+  attempt.
+- **The red-first helper reads more reds as reds**: a JavaScript missing-module failure, a
+  house-runner abort and an inline suite, and a reused gate verdict is always the newest
+  measurement for its tree. `rerun` never repeats a red that a newer run superseded.
+- **A printed brief survives a scope widening**, so an executor sent a brief before `scope` widened
+  its files is not left holding a stale one.
+- **A failing tool's output is excerpted head and tail, with the failure lines kept and the
+  elision counted**, through one helper behind every refusal reason in the scoped commit, the
+  Azure DevOps calls and the phase close (a refusal reason that used to cut at a fixed width now
+  keeps its tail and marks the elision); the journal keeps the output whole, and `tools/verify.sh` names the failing
+  test.
+- **Timestamps are ordered by the moment they name**, not their spelling, everywhere the ledger and
+  journal order rows.
+- **The plan gate's free-file budget is per task attempt for subagents**: a dispatched agent gets
+  its own free file, and a refusal names who spent the slot and when.
+- **`run-test-gate` resolves its project the way every other verb does.** A hand-run gate no longer
+  records into `docs/audit/docs/audit`; the report, the status read, `commit-task-work` and the
+  manifest commands share the one resolver.
+- **Every reader of a manifest's project asks the one resolver**, so a run named by its manifest
+  is no longer sited by the session directory.
+- **Every text write states its newline**, in the hooks as well as the scripts, so no file the
+  plugin writes carries a platform newline.
+- **Documentation says which tree a wave task works in**, and the stale parallel-tasks paragraph is
+  replaced.
+- **CI is proportionate to one plugin: about ten minutes instead of half an hour.** Every sweep leg
+  (plain, legacy code page, spaced path) runs as its own job in cost-balanced shards on every core,
+  one slot budget sizes the sweep and a staged suite's blocks together, each file's time limit is
+  calibrated from recorded Windows timings (and named by the sweep before the job limit), and every
+  independent step runs after a failure so a red run lists every failure at once.
+
+### Fixed
+- **The release guard finds `git` and `gh` past assignments, wrappers, global options and
+  `sh -c`**, so a publishing command is no longer missed because of how it was spelled.
+- **On Windows a stamp's manifest label reads back as the native path**, and a binding refusal
+  names the worktree in the native form.
+- **A drive that stops releases the phase lock it took**, and an index-lock refusal has its own
+  followed rule.
+- **A `--record` gate run that stored nothing exits 3** rather than 0, and a reused verdict repeats
+  the `NO OVERLAP` / `TREE CHANGED` banners of the run it reuses.
+- **The history guard reads `git` where the shell runs it.** Prose that names an operation is no
+  longer refused, a quoted `<<` no longer hides the command after it, and a quoted heredoc body
+  that `cat` pipes to a plain script run is treated as that script's input.
+- **The shared command readers read as the shell does.** A quoted or escaped target containing a
+  space is the whole path, candidates an outer wrapper already found are kept, a `cd` target the
+  shell would split differently is not guessed at, and a plan-gate refusal is signed by the plan
+  gate.
+- **The manifest-diff hook never journals another session's verb write as its own.** Ambiguous
+  cases name both candidates and order no stop.
+- **The sign-off's tip-only remedy no longer states a worktree list it did not read or an add git
+  refuses.**
+- **The red-first helper reads `for`/`with` replacements and bare annotations correctly**, `submit`
+  derives introduced symbols itself, and only blocks `submit` marked count as the helper's.
+- **Stubs recognise `--selftest` in any position before `--`**, keeping the forwarded-command
+  boundary; a script's own selftest is read only from its own arguments.
+- **`covering_key` loads its rule once per process**, and not at all for an empty map.
+- **Scripts find their directory on a backslash-only `$0`**, committed demo and plan writers emit
+  LF, and the Windows lock-break denial retries instead of refusing.
+- **The panel's `api()` gives up on a silent server after 60 s** and reads it as no answer instead
+  of hanging; its gate-catches payload says when the evidence ledger was unreadable instead of
+  reporting an empty history.
+- **A long unbroken token in a task title wraps in the HTML report** instead of widening the page.
+- **The red-first helper's own suite waits for its child honestly**, so it is green inside a
+  throwaway tree too.
+- **The loader probe no longer writes into the shared `scripts/` tree**, so parallel suites cannot
+  race it, and suites pass with a space and a symlink in `TMPDIR` and in the interpreter path.
+- **Copies are graded where the host's `cp` puts them.** One reader says where `cp`, `mv` and
+  `install` write, both shell-write hooks ask it the same question, and on macOS and the BSDs a
+  `cp -r src/ dest/` into an existing directory lands as its contents, as it does there. A copy is
+  named as the writer only of files its source holds, so a peer's file beside it is never blamed.
+- **close-phase reads the returns at the verdict's own commit**, so a return merged in after the
+  verdict still reads as unseen.
+- **A fullGate is counted by its runnable entries everywhere.** A review-only entry is never run
+  as a command and never records a red full run; `not_declared` means no runnable entry.
+- **A triage's fix tasks are added whole from stdin**, including findings whose text holds a
+  spaced code span.
+- **A drive stop raised after the phase lock is taken releases the lock.**
+- **The bash-write guard's out-of-scope record is read by the commit check.**
+- **The example-pin check passes across a release**: the pending tag is accepted.
+- **The branch-history invariant reads git's own reflog action, never prose.** The action is
+  parsed as a command and its flags: `rebase`, `reset`, `filter-branch`, and a `pull` carrying
+  `--rebase` (any value but a false one) or `-r` alone are rewrites. A commit subject or a branch
+  name that mentions a rebase or a reset no longer reports a history rewrite on a linear branch,
+  which in 3.2.0 put a human decision in front of any sign-off whose history used the word.
+- **A drive keeps the phase lock only while it owes something to work in flight**: a pending
+  decision or an executor dispatch that has not returned. A mistyped `--answer` otherwise gives
+  the lock back, and a plan the drive cannot read keeps it with a printed reason until a later
+  `next`.
+- **A first plan is written once, under its real name, already holding its phase**, so no reader
+  sees an empty plan, no crash leaves one behind, and every journal row names the real path.
+- **The HTML report wraps an unbroken token anywhere in its content column**, so a long path or
+  branch name in the live plan's notes no longer scrolls the page sideways on a phone.
+- **gate-parity's exemption check no longer counts a side's own name as the gate making the
+  comparison**, and the prove-gates rows a full run left unproven are proven again.
+- **Windows, end to end.** The red-first helper reads a Windows interpreter's abort and an inline
+  suite's hunks whatever the line ends (both sides compared in LF), a dead pid reads as dead through
+  one liveness rule shared by the phase locks, the sweep marker and the panel, a timed-out step's
+  teardown is confirmed by the process (and on POSIX its whole group) being gone rather than by the
+  kill command's exit code, a home path holding a space is scrubbed whole and a relative one never
+  becomes a root, and a wave task's submit block names the plan by an absolute native path.
+- **The report's bugs table no longer widens the page** on a long unbroken token at narrow widths.
+
+### Documentation
+- The wave-driver documentation says what the code does, and the `/audit:worktree` row no longer
+  says a second tree is refused.
+- `CLAUDE.md` states the under-ten rule for numbers in prose; a layer number written in prose is
+  checked against `_deps.LAYERS` or not written, and no prose states a count a command prints.
+- No layer position is written in prose: the module map prints the layers, and a lint refuses a
+  layer number beside a layer word, as a numeral or a word.
+- ruff's whitespace-around-operator rule is on, so an assignment cannot lose its spaces again.
+- The layer lint also refuses an absolute layer position written as an ordinal (`the bottom
+  layer`), keeping relational wording (`the lowest layer both can reach`) allowed.
+
 ## [3.2.0] - 2026-10-09
 
 This release is about what the pipeline costs per task, and that cost dropped sharply. A step
