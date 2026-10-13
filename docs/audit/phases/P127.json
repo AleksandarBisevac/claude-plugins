@@ -21,7 +21,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P127-R1",
@@ -118,13 +118,29 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_proc_group.py:117-150",
         "issue": "Confirmation now means only that the ROOT process is gone. On POSIX, when the root has already been reaped, _kill's os.getpgid(proc.pid) raises, killed becomes False, _gone() reads True and tear_down returns True without ever signalling the session group. Any descendant the root left in its own session (start_new_session makes pgid == root pid, and the group outlives its leader) is neither killed nor accounted for, yet the caller records 'confirmed'. Before the diff the same path returned False (unconfirmed). The task description asked for exactly this root-only rule, so this is a narrowing of the claim 'the tree is stopped', not a departure from the ask; the module docstring and the teardown field's name still promise the whole tree. No case covers a root that exited leaving a live descendant.",
-        "resolution": "On POSIX, when getpgid fails for a reaped root, try os.killpg(proc.pid, SIGTERM/SIGKILL) (a session leader's pgid is its pid) and treat ProcessLookupError there as the proof the group is empty; keep 'confirmed' only on that. Add a case: root exits at once leaving a sleeping grandchild, kill command stubbed to fail, expect False or a killed grandchild. If the root-only rule is intended on Windows alone, say so in tear_down's docstring.",
-        "fixTask": "P127.10-bgr"
+        "resolution": "fixed in P127.10-bgr (405e3f7ada79): On POSIX, when getpgid fails for a reaped root, try os.killpg(proc.pid, SIGTERM/SIGKILL) (a session leader's pgid is its pid) and treat ProcessLookupError there as the proof the group is empty; keep 'confirmed' only on that. Add a case: root exits at once leaving a sleeping grandchild, kill command stubbed to fail, expect False or a killed grandchild. If the root-only rule is intended on Windows alone, say so in tear_down's docstring.",
+        "fixTask": "P127.10-bgr",
+        "commit": "405e3f7ada79",
+        "status": "fixed"
       }
     ],
-    "outcome": "[findings: 10 - 0 high, 4 med, 6 low; 9 with a recorded fix commit]"
+    "outcome": "phase review filed at head 01671d211189 [findings: 10 - 0 high, 4 med, 6 low; 10 with a recorded fix commit]",
+    "readReturns": [
+      {
+        "return": "returns/P127/01671d2111896e62f90e7b6c480b9cde754d69cd.reviewer.json",
+        "sha256": "292a74f1ae5111aaa4e108101dfd7cccedd6986d993c253bfcaed97f4443f77a"
+      },
+      {
+        "return": "returns/P127/1730909cdc8fe426d4889d43da60aaea47e99b49.reviewer.json",
+        "sha256": "d3abc752c4ba6bc8cbc1f290583145181ae0a20a3c4047116525efb35c397f6e"
+      },
+      {
+        "return": "returns/P127/622d7254be7e6258c2ccfd3963304af2fdfd1618.reviewer.json",
+        "sha256": "86d977ebe091a7221d1f447a42d05cf363feaee14c71e1ce61621d2340fa1024"
+      }
+    ]
   },
-  "summary": null,
+  "summary": "- Reviewer answers accepted: Owner answered 'Prihvati (Recommended)': the cannot-tell intent from the first P127 review is resolved - CI runs 38379717433 and 38382182020 were green on every OS (10m20s, 9m22s) and the re-review at 1730909c answered matches. Fix task(s) P127.10-bgr signed off with their diff unreviewed.",
   "tasks": [
     {
       "id": "P127.1",
@@ -176,9 +192,14 @@
         "at": "2026-10-13T07:57:18Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "bedee98e63ac",
-        "at": "2026-10-13T07:57:20Z"
+        "at": "2026-10-13T12:22:45Z",
+        "return": "returns/P127/622d7254be7e6258c2ccfd3963304af2fdfd1618.reviewer.json",
+        "answer": "matches",
+        "redFirst": "not-attempted",
+        "redFirstBasis": "Executor filed not-attempted: 'gate-only task, expectRedFirst false: block restructuring, no new behaviour under test beyond harness case sr12'. The mode owes none; no red of sr12 was handed (finding 3: sr12 does not pin the run_stages wiring).",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "tests.gate entry `selftests` is `python3 tools/sweep-selftests.py`, the whole tree; the other entries are validators, lints and browser checks over unrelated files. No selection to read."
       },
       "redFirst": {
         "status": "not-attempted",
@@ -263,9 +284,14 @@
         "at": "2026-10-13T08:36:36Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "622d7254be7e",
-        "at": "2026-10-13T08:36:38Z"
+        "at": "2026-10-13T12:22:45Z",
+        "return": "returns/P127/622d7254be7e6258c2ccfd3963304af2fdfd1618.reviewer.json",
+        "answer": "matches",
+        "redFirst": "could-not-prove",
+        "redFirstBasis": "`python3 tools/sweep-selftests.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 13/14 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'load_costs': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_SHARD_MATRIX_RE': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'shard_matrix_drift': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'COSTS_PATH': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_median': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'cost_of': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'costs_from_rows': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'parse_shard': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'record_costs': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'run_order': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'shard_paths': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home) (the red-first helper's block in returns/P127.2-bgr/20261013T082242Z.executor.json, at 2026-10-13T08:27:38Z)",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "tests.gate entry `selftests` is `python3 tools/sweep-selftests.py`, the whole tree; the remaining entries are validators, lints and browser checks. No selection to read."
       },
       "redFirst": {
         "at": "2026-10-13T08:27:38Z",
@@ -800,9 +826,14 @@
         "at": "2026-10-13T11:39:41Z"
       },
       "intentCheck": {
-        "answer": "deferred",
         "commit": "01671d211189",
-        "at": "2026-10-13T11:39:43Z"
+        "at": "2026-10-13T12:22:45Z",
+        "return": "returns/P127/01671d2111896e62f90e7b6c480b9cde754d69cd.reviewer.json",
+        "answer": "matches",
+        "redFirst": "proved",
+        "redFirstBasis": "Executor basis holds: test_run_test_gate.py --selftest at HEAD in a throwaway tree exited 1 on AttributeError: module '_proc_group' has no attribute '_kill', a symbol the task introduces and HEAD lacks, and a second run with the working tree's implementation copied in exited 0 reaching its assertions.",
+        "inheritedTests": "not-asked",
+        "inheritedTestsBasis": "tests.gate is the whole-project sweep (python3 tools/sweep-selftests.py) with manifest, report, lint and browser commands; no selection narrower than the project to read."
       },
       "redFirst": {
         "at": "2026-10-13T11:30:57Z",
@@ -814,7 +845,7 @@
     {
       "id": "P127.10-bgr",
       "title": "fix P127-R10: Confirmation now means only that the ROOT process is gone. On P...",
-      "status": "in_progress",
+      "status": "done",
       "description": "Confirmation now means only that the ROOT process is gone. On POSIX, when the root has already been reaped, _kill's os.getpgid(proc.pid) raises, killed becomes False, _gone() reads True and tear_down returns True without ever signalling the session group. Any descendant the root left in its own session (start_new_session makes pgid == root pid, and the group outlives its leader) is neither killed nor accounted for, yet the caller records 'confirmed'. Before the diff the same path returned False (unconfirmed). The task description asked for exactly this root-only rule, so this is a narrowing of the claim 'the tree is stopped', not a departure from the ask; the module docstring and the teardown field's name still promise the whole tree. No case covers a root that exited leaving a live descendant.\n\nResolution asked: On POSIX, when getpgid fails for a reaped root, try os.killpg(proc.pid, SIGTERM/SIGKILL) (a session leader's pgid is its pid) and treat ProcessLookupError there as the proof the group is empty; keep 'confirmed' only on that. Add a case: root exits at once leaving a sleeping grandchild, kill command stubbed to fail, expect False or a killed grandchild. If the root-only rule is intended on Windows alone, say so in tear_down's docstring.",
       "files": [
         "plugins/audit/scripts/governance/_proc_group.py",
@@ -845,14 +876,18 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "405e3f7ada79",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_proc_group.py: tear_down now, on POSIX, when the kill step did not succeed and the root is gone (reaped root: getpgid raises), calls new _reaped_group_empty(pid): refuses our own pgid, os.killpg(pid, SIGKILL); ProcessLookupError => group empty => confirmed; success => descendant signalled, confirmed only once killpg(pid,0) raises ProcessLookupError within GRACE_SECONDS, else unconfirmed. Windows branch untouched; tear_down docstring states root-only confirmation is the Windows rule. Added `import time`. test__proc_group.py: pg21 (real reaped root leaving a sleeping grandchild in its group, _kill stubbed to fail: group alive before, tear_down True, group gone after), pg22 (empty group confirmed), pg23 (group never empties -> False). Ran `python3 plugins/audit/tests/test__proc_group.py --selftest` from tests dir: 24/24 pass, exit 0; ruff check on both files clean. Note: brief's tests.add wording says 'reads unconfirmed (and signalled)'; followed the orchestrator's message (confirmed once group gone, unconfirmed if it never empties).",
+        "descriptive": "A reaped POSIX root is confirmed only when its session group is empty, so a surviving descendant is killed and accounted for."
       },
       "startedAt": "2026-10-13T11:53:08Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-13T12:13:07Z",
+      "verifiedBy": [
+        "pg21",
+        "pg22",
+        "pg23"
+      ],
       "notes": [
         {
           "at": "2026-10-13T11:53:00Z",
@@ -867,16 +902,28 @@
         "runId": "2026-10-13T12:13:06Z.82ce58",
         "status": "passed",
         "at": "2026-10-13T12:13:06Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "405e3f7ada79",
+        "at": "2026-10-13T12:13:07Z",
+        "basis": "a fix task for P127-R10: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-13T11:54:18Z",
+        "basis": "`python3 plugins/audit/tests/test__proc_group.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 24 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pg21 (house FAIL): SELFTEST FAILED: 22/24 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
   "request": "Make the two suites that time out on windows-latest finish with margin, by structure.",
   "openChoices": [],
   "reviewPerTask": "phase",
-  "claim": {
-    "sessionId": "0a7c2fcc-df20-4990-96d6-d56b52648faf",
-    "branch": "audit/p127-3-3-0-release-no-suite-rides-t",
-    "at": "2026-10-13T06:53:22Z"
-  },
-  "startedAt": "2026-10-13T06:53:22Z"
+  "startedAt": "2026-10-13T06:53:22Z",
+  "testEvidence": {
+    "runId": "2026-10-13T12:22:22Z.8de5a5",
+    "status": "passed",
+    "at": "2026-10-13T12:22:22Z"
+  }
 }
