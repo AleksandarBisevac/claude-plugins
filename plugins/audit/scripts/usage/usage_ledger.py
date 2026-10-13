@@ -711,6 +711,131 @@ def scan_transcripts(transcript_path, session_id, cursor, manifest, opts):
     return rows, cursor
 
 
+# --- the CLI's own cost reading ---------------------------------------------
+# The CLI's long-context tier suffix, e.g. `claude-opus-5-5[1m]` - a DIFFERENT
+# spelling of the same distinction this module's own `LONG_PROMPT_SUFFIX`
+# (`:long-prompt`) makes, so a model id read off a `cost-state` entry has to
+# be normalised before it is compared against a ledger row's `model`.
+_CLI_TIER_SUFFIX_RE = re.compile(r"\[[^\]]*\]$")
+
+
+def strip_cli_tier(model):
+    """The CLI's own `[...]` tier suffix stripped off a `cost-state` model id,
+    e.g. `claude-opus-5-5[1m]` -> `claude-opus-5-5`. A model carrying none is
+    returned unchanged."""
+    return _CLI_TIER_SUFFIX_RE.sub("", model or "")
+
+
+def _base_model(model):
+    """A ledger row's `model` with THIS module's own tiering suffix stripped,
+    so it compares against a `cost-state` model id on the same base name -
+    never the rate, just the label the two sides agree on."""
+    model = model or ""
+    if model.endswith(LONG_PROMPT_SUFFIX):
+        model = model[:-len(LONG_PROMPT_SUFFIX)]
+    return model
+
+
+def read_cost_state(transcript_path):
+    """The last `cost-state` entry in a MAIN session transcript -> the CLI's
+    own read of what that session cost, normalised to
+    `{"totalCostUSD", "perModel": {baseModel: costUSD}, "hasUnknownModelCost"}`,
+    or None when the file carries none or cannot be read.
+
+    PROBED, NOT ASSUMED: a `cost-state` entry's `modelUsage` DOES fold in
+    subagent spend. Checked on this repo's own session
+    `0a7c2fcc-df20-4990-96d6-d56b52648faf` (622 USD, 420 subagent
+    transcripts): the main transcript alone carries not one `sonnet` message,
+    while `modelUsage` reports real `claude-sonnet-5-5` tokens and a non-zero
+    `costUSD` for that model - spend that can only have come from a
+    subagent's own transcript. (The two sides also disagree in absolute
+    magnitude, by a wide margin, on every model - consistent with
+    conversation compaction trimming turns out of the retained `.jsonl` while
+    `cost-state`'s own totals stay cumulative; that gap is a transcript-
+    retention fact, not evidence against the finding above.) A `cost-state`
+    entry is written only to the MAIN transcript - none of this project's own
+    subagent `.jsonl` files carry one - so this never reads a subagent path.
+
+    Only the LAST entry is kept: `cost-state` is cumulative for the whole
+    session, so an earlier one is a strict subset of a later one and never
+    corrects it."""
+    last = None
+    try:
+        with open(transcript_path, "rb") as fh:
+            for raw in fh:
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    entry = json.loads(raw.decode("utf-8", "replace"))
+                except Exception:
+                    continue
+                if isinstance(entry, dict) and entry.get("type") == "cost-state":
+                    last = entry
+    except OSError:
+        return None
+    if last is None:
+        return None
+    model_usage = last.get("modelUsage")
+    per_model = {}
+    if isinstance(model_usage, dict):
+        for model, data in model_usage.items():
+            if isinstance(data, dict) and "costUSD" in data:
+                key = strip_cli_tier(model)
+                per_model[key] = per_model.get(key, 0.0) + (data.get("costUSD") or 0.0)
+    return {
+        "totalCostUSD": last.get("totalCostUSD"),
+        "perModel": per_model,
+        "hasUnknownModelCost": bool(last.get("hasUnknownModelCost")),
+    }
+
+
+# How far the CLI's own figure and the plugin's own figure may differ, in
+# absolute USD, before a reader is told they disagree - rounding alone (the
+# CLI publishes more decimal places than any surface here prints) must never
+# read as a divergence.
+CLI_COST_TOLERANCE_USD = 0.01
+
+
+def cli_cost_compare(rows, cost_state, tolerance=CLI_COST_TOLERANCE_USD):
+    """The CLI's per-model cost beside the plugin's own, for one session's
+    `rows` -> `{model: {"cliCostUSD", "pluginCostUSD", "agrees"}}`, over
+    every model EITHER side has a reading for. `agrees` is True when both
+    sides have a figure and they are within `tolerance` USD of each other -
+    never when only one side has a reading, since there is nothing there to
+    agree. Returns `{}` when `cost_state` is None (no `cost-state` entry was
+    recorded for this session) - never a comparison manufactured from
+    nothing."""
+    if not cost_state:
+        return {}
+    plugin_cost = {}
+    for row in rows:
+        usd = row.get("costUSD")
+        if usd is None:
+            continue
+        model = _base_model(row.get("model"))
+        plugin_cost[model] = plugin_cost.get(model, 0.0) + usd
+    cli_cost = cost_state.get("perModel") or {}
+    out = {}
+    for model in set(plugin_cost) | set(cli_cost):
+        cli_usd = cli_cost.get(model)
+        plugin_usd = plugin_cost.get(model)
+        agrees = (cli_usd is not None and plugin_usd is not None
+                 and abs(cli_usd - plugin_usd) <= tolerance)
+        out[model] = {"cliCostUSD": cli_usd, "pluginCostUSD": plugin_usd,
+                      "agrees": agrees}
+    return out
+
+
+def cli_cost_divergences(rows, cost_state, tolerance=CLI_COST_TOLERANCE_USD):
+    """`cli_cost_compare`, narrowed to the models that do NOT agree - the two
+    disagree, or one side has no reading at all for it."""
+    return dict((model, {"cliCostUSD": v["cliCostUSD"],
+                         "pluginCostUSD": v["pluginCostUSD"]})
+               for model, v in cli_cost_compare(rows, cost_state, tolerance).items()
+               if not v["agrees"])
+
+
 # --- ledger I/O -----------------------------------------------------------------
 def cursor_path(ledger_dir, session_id):
     safe = "".join(c if (c.isalnum() or c in "._-") else "_" for c in str(session_id))

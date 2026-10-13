@@ -1276,6 +1276,70 @@ def _cases(check):
           % (_core_public, _rx_core_src, _analytics_public, _rx_analytics_src))
 
 
+    # --- the CLI's own cost reading (cc) -----------------------------------
+    import shutil
+    import tempfile
+
+    def _write_jsonl(path, entries):
+        with open(path, "w", encoding="utf-8") as fh:
+            for entry in entries:
+                fh.write(json.dumps(entry) + "\n")
+
+    _cc_dir = tempfile.mkdtemp(prefix="usage-ledger-ccstate-")
+    try:
+        _cc_path = os.path.join(_cc_dir, "s-cc.jsonl")
+        # Two `cost-state` entries - `cost-state` is cumulative for a session,
+        # so the LATER one must win, never a sum of the two.
+        _write_jsonl(_cc_path, [
+            {"type": "cost-state", "sessionId": "s-cc", "totalCostUSD": 1.0,
+             "modelUsage": {"claude-opus-5[1m]": {"costUSD": 1.0}},
+             "hasUnknownModelCost": False},
+            {"type": "cost-state", "sessionId": "s-cc", "totalCostUSD": 5.5,
+             "modelUsage": {"claude-opus-5[1m]": {"costUSD": 5.5},
+                           "claude-haiku-4-5": {"costUSD": 0.2}},
+             "hasUnknownModelCost": True},
+        ])
+        cost_state = M.read_cost_state(_cc_path)
+        check("cc1 cost-state: the LAST entry wins, never an earlier partial "
+              "total", cost_state["totalCostUSD"] == 5.5, cost_state)
+        check("cc2 cost-state: the CLI's own [tier] suffix is stripped so the "
+              "model id compares against a ledger row's",
+              cost_state["perModel"] == {"claude-opus-5": 5.5,
+                                        "claude-haiku-4-5": 0.2},
+              cost_state["perModel"])
+        check("cc3 cost-state: hasUnknownModelCost carries through unchanged",
+              cost_state["hasUnknownModelCost"] is True)
+        check("cc4 cost-state: a transcript with none of these entries "
+              "answers None, never an empty dict standing in for 'absent'",
+              M.read_cost_state(os.path.join(_cc_dir, "nope.jsonl")) is None)
+
+        # Beside the plugin's own figure for the SAME session - what the
+        # description actually asks for: the CLI's per-model costUSD recorded
+        # next to the plugin's own reading, not instead of it.
+        _cc_rows = [
+            {"sessionId": "s-cc", "model": "claude-opus-5", "costUSD": 5.5},
+            {"sessionId": "s-cc", "model": "claude-haiku-4-5", "costUSD": 0.9},
+        ]
+        _cc_cmp = M.cli_cost_compare(_cc_rows, cost_state)
+        check("cc5 cli cost: the CLI's figure sits beside the plugin's own, "
+              "per model - agreeing on one, disagreeing on the other",
+              _cc_cmp["claude-opus-5"] == {"cliCostUSD": 5.5,
+                                           "pluginCostUSD": 5.5,
+                                           "agrees": True}
+              and _cc_cmp["claude-haiku-4-5"]["cliCostUSD"] == 0.2
+              and _cc_cmp["claude-haiku-4-5"]["pluginCostUSD"] == 0.9
+              and _cc_cmp["claude-haiku-4-5"]["agrees"] is False,
+              _cc_cmp)
+        check("cc6 cli cost: divergences narrows to the disagreement only",
+              list(M.cli_cost_divergences(_cc_rows, cost_state))
+              == ["claude-haiku-4-5"])
+        check("cc7 cli cost: no cost-state recorded means no comparison at "
+              "all, never one manufactured from nothing",
+              M.cli_cost_compare(_cc_rows, None) == {})
+    finally:
+        shutil.rmtree(_cc_dir, ignore_errors=True)
+
+
 def _selftest():
     return _harness.run(_cases)
 

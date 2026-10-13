@@ -343,12 +343,58 @@ def rate_basis(usage):
     return (value.strip() or None) if isinstance(value, str) else None
 
 
-def render(rows, args, manifest, window, show_cost, pt=None, pricing=None):
+def cli_cost_lines(rows, cli_cost, pricing, md=False):
+    """Lines comparing the CLI's own `cost-state` reading against the
+    plugin's own, one model per line, over every session named in
+    `cli_cost` (`{sessionId: cost_state or None}`).
+
+    A model where the two AGREE prints one figure - naming both would read
+    as a disagreement that is not there. A model where they differ by more
+    than rounding, or where only one side has a reading, prints BOTH figures
+    with their own basis - 'the CLI's estimate' for the CLI's side, 'the
+    plugin's table, <source> as of <date>' for the plugin's - and neither is
+    ever called the bill. A session with no `cost_state` (no `cost-state`
+    entry was recorded for it) contributes no line at all."""
+    lines = []
+    by_session = {}
+    for row in rows:
+        by_session.setdefault(row.get("sessionId"), []).append(row)
+    basis = rate_basis_phrase(pricing)
+    for sid, cost_state in sorted((cli_cost or {}).items()):
+        if not cost_state:
+            continue
+        compared = ul.cli_cost_compare(by_session.get(sid) or [], cost_state)
+        for model in sorted(compared):
+            pair = compared[model]
+            cli_usd, plugin_usd = pair["cliCostUSD"], pair["pluginCostUSD"]
+            prefix = ("- " if md else "  ") + "session %s  %s: " % (sid, model)
+            if pair["agrees"]:
+                lines.append(prefix + "%s" % fmt_cost(plugin_usd))
+            elif cli_usd is not None and plugin_usd is not None:
+                lines.append(prefix + "CLI %s (the CLI's estimate) vs plugin "
+                             "%s (%s)" % (fmt_cost(cli_usd), fmt_cost(plugin_usd),
+                                         basis))
+            elif cli_usd is not None:
+                lines.append(prefix + "CLI %s (the CLI's estimate); the "
+                             "plugin's own table has no reading for it"
+                             % fmt_cost(cli_usd))
+            else:
+                lines.append(prefix + "plugin %s (%s); the CLI's own "
+                             "reading has no model for it"
+                             % (fmt_cost(plugin_usd), basis))
+    return lines
+
+
+def render(rows, args, manifest, window, show_cost, pt=None, pricing=None,
+          cli_cost=None):
     """The dashboard. `pricing` is `project_pricing`'s answer, `{table, basis,
     asOf, source}`: its table prices the routing advice and the rest is the
     rate basis printed beside the costs. None resolves it from the manifest
     alone (no config read). `rows` are summed as handed in: `main` hands
-    `ul.priced_at_read`'s copies, priced at that same table."""
+    `ul.priced_at_read`'s copies, priced at that same table. `cli_cost` is
+    `{sessionId: cost_state}` - the CLI's own per-session read
+    (`ul.read_cost_state`), absent by default since it needs a transcript on
+    disk to read at all; see `cli_cost_lines`."""
     if pricing is None:
         pricing = ul.resolve_pricing(manifest, None)
     phase_titles, task_titles = titles_of(manifest)
@@ -401,6 +447,13 @@ def render(rows, args, manifest, window, show_cost, pt=None, pricing=None):
     if show_cost and rows:
         out.append(("- " if md else "          ") + "costs priced at %s"
                    % rate_basis_phrase(pricing))
+    if show_cost and rows and cli_cost:
+        cc_lines = cli_cost_lines(rows, cli_cost, pricing, md=md)
+        if cc_lines:
+            out.append("")
+            out.append(("**CLI vs plugin cost**" if md
+                       else pt.paint("  CLI vs plugin cost", "header")))
+            out.extend(cc_lines)
     if not rows:
         out.append("")
         out.append(pt.paint("  No usage recorded for this window.", "warn"))
@@ -1113,8 +1166,25 @@ def main(argv):
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
 
+    # The CLI's own per-session read, best-effort: only for sessions actually
+    # in view, and never fatal to the dashboard when a transcript has moved
+    # or cannot be read - `cli_cost_lines` already skips a session with no
+    # `cost_state` at all.
+    cli_cost = {}
+    sessions_in_view = set(r.get("sessionId") for r in rows if r.get("sessionId"))
+    if sessions_in_view:
+        for path in find_transcripts(project, args.transcript_dir):
+            sid = os.path.splitext(os.path.basename(path))[0]
+            if sid not in sessions_in_view:
+                continue
+            try:
+                cli_cost[sid] = ul.read_cost_state(path)
+            except Exception:
+                cli_cost[sid] = None
+
     print(render(rows, args, manifest, window, show_cost,
-                 pt=_cli_fmt.painter(args.color), pricing=resolved))
+                 pt=_cli_fmt.painter(args.color), pricing=resolved,
+                 cli_cost=cli_cost))
     return 0
 
 

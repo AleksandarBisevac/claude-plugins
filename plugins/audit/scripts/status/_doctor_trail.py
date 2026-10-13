@@ -177,6 +177,85 @@ def check_ledger(rep, project, cfg, manifest_rel):
     rep.ok("usage ledger", "%d ledger file(s) in %s" % (len(files), ledger_dir))
 
 
+def unpriced_model_tokens(rows, pricing, ul):
+    """Token totals by model among `rows` whose `ul.rates_for` has no row at
+    all - `[(model, tokenCount), ...]` in first-seen order, so the message
+    does not reshuffle between runs over an unchanged ledger. A model
+    `price()` CAN rate is left out entirely, same as every other priced
+    surface - this is the complement, naming only what none of them can
+    price."""
+    totals = {}
+    order = []
+    for row in rows:
+        model = row.get("model")
+        if not model or ul.rates_for(model, pricing) is not None:
+            continue
+        tokens = sum(int(row.get(k) or 0) for k in ul.TOKEN_KEYS)
+        if model not in totals:
+            order.append(model)
+            totals[model] = 0
+        totals[model] += tokens
+    return [(model, totals[model]) for model in order]
+
+
+def check_unpriced_models(rep, project, cfg, manifest_rel,
+                          pricing=None, cost_state=None):
+    """Every model id the ledger has tokens for but the price table has no
+    row for - named with its token count and the config key that fixes it,
+    never folded silently into the `unpriced` word the way a dollar total
+    does. `cost_state` is the CLI's own `cost-state` read for one session
+    (`usage_ledger.read_cost_state`), passed only when a transcript was
+    named - its `hasUnknownModelCost` flag is reported beside this ledger's
+    own finding rather than in place of it, since the two name different
+    things: this reads every model this project ever metered, the CLI's flag
+    is scoped to one session."""
+    usage = cfg.get("usage") or {}
+    if usage.get("enabled") is False:
+        return
+    ul = _load("usage_ledger", "usage_ledger.py")
+    try:
+        ledger_dir = ul.find_ledger_dir(os.path.join(project, manifest_rel),
+                                        rel=usage.get("ledgerDir"),
+                                        project_dir=project)
+    except Exception:
+        return
+    if not ledger_dir or not os.path.isdir(ledger_dir):
+        return
+    try:
+        rows = ul.read_ledger(ledger_dir)
+    except Exception:
+        return
+    if not rows:
+        return
+    unknown_flag = bool(cost_state and cost_state.get("hasUnknownModelCost"))
+    unpriced = unpriced_model_tokens(rows, pricing, ul)
+    if not unpriced:
+        if unknown_flag:
+            rep.warn("unpriced models",
+                     "every model in the ledger has a price row, but the "
+                     "CLI's own cost-state for this session reports "
+                     "hasUnknownModelCost=true - a model this ledger never "
+                     "recorded for this session, or one costed only on the "
+                     "CLI's own table",
+                     "re-run with --transcript on a session that actually "
+                     "ran the unpriced model, then add it to usage.pricing")
+            return
+        rep.ok("unpriced models", "every model in the ledger has a price row")
+        return
+    for model, tokens in unpriced:
+        rep.warn("unpriced models",
+                 "%s has %d token(s) recorded with no price row, so its "
+                 "spend is left out of every dollar figure this ledger "
+                 "prints" % (model, tokens),
+                 "add a usage.pricing row for %s in "
+                 ".claude/audit.config.json" % (model,))
+    if unknown_flag:
+        rep.warn("unpriced models",
+                 "the CLI's own cost-state for this session also reports "
+                 "hasUnknownModelCost=true",
+                 "see the model(s) named above")
+
+
 # --- checks: the main-loop TTL trade, documentation only ------------------------
 FIVE_MIN_S = 300
 

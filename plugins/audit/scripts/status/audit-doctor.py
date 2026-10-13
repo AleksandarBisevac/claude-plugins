@@ -161,6 +161,7 @@ state_shape_drift = _trail.state_shape_drift
 running_plugin_verdict = _trail.running_plugin_verdict
 check_running_plugin = _trail.check_running_plugin
 check_ledger = _trail.check_ledger
+check_unpriced_models = _trail.check_unpriced_models
 check_ttl_trade = _trail.check_ttl_trade
 _journal_never_committed = _trail._journal_never_committed
 _anchor_row = _trail._anchor_row
@@ -243,19 +244,26 @@ def diagnose(project, deep=False, transcript_path=None):
     check_running_plugin(rep, project, cfg, cfg_mod)
     check_ledger(rep, project, cfg, manifest_rel)
     # Directly after: the same ledger's pricing table, read the way every other
-    # priced usage surface reads it, resolved only when a transcript was named
-    # - nothing here needs it otherwise, and `check_ttl_trade` itself says so
-    # plainly when none was given.
-    pricing = None
+    # priced usage surface reads it - resolved unconditionally now, since
+    # `check_unpriced_models` needs it whether or not a transcript was named;
+    # `check_ttl_trade` still says so plainly when none was given.
+    ul = _trail._load("usage_ledger", "usage_ledger.py")
+    try:
+        pricing = ul.project_pricing(
+            manifest, manifest_path=os.path.join(project, manifest_rel),
+            project_dir=project)["table"]
+    except Exception:
+        pricing = None
+    # The CLI's own per-session read, only when a transcript was named - the
+    # one place this run can see it at all.
+    cost_state = None
     if transcript_path:
         try:
-            ul = _trail._load("usage_ledger", "usage_ledger.py")
-            pricing = ul.project_pricing(
-                manifest, manifest_path=os.path.join(project, manifest_rel),
-                project_dir=project)["table"]
+            cost_state = ul.read_cost_state(transcript_path)
         except Exception:
-            pricing = None
+            cost_state = None
     check_ttl_trade(rep, transcript_path, pricing)
+    check_unpriced_models(rep, project, cfg, manifest_rel, pricing, cost_state)
     check_journal(rep, project, cfg, cfg_mod, git_root)
     # Directly after: `check_journal` asks whether the trail still HOLDS, and
     # these two ask what it has been SAYING all along. Both fold the whole

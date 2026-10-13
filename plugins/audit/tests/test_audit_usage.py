@@ -308,6 +308,47 @@ def _cases(check):
               ("%s tokens unpriced" % M.fmt_tokens(_up_tokens)) in _up_full,
               _up_full)
 
+        # --- cli cost (cc): the CLI's own cost-state reading beside the ---
+        # --- plugin's own, per session -------------------------------------
+        _cc_by_session = {}
+        for r in loaded:
+            _cc_by_session.setdefault(r["sessionId"], []).append(r)
+        _cc_opus = _cc_by_session["s-P1.1"][0]["costUSD"]
+        _cc_haiku = _cc_by_session["s-P1.2"][0]["costUSD"]
+        _cc_state = {
+            # Agrees exactly - the plugin's own figure, handed straight back.
+            "s-P1.1": {"totalCostUSD": None,
+                      "perModel": {"claude-opus-5": _cc_opus},
+                      "hasUnknownModelCost": False},
+            # Disagrees - the CLI reports a figure well past the tolerance.
+            "s-P1.2": {"totalCostUSD": None,
+                      "perModel": {"claude-haiku-4-5": round(_cc_haiku + 5.0, 6)},
+                      "hasUnknownModelCost": False},
+        }
+        _cc_text = M.render(loaded, args, manifest, "all time", True,
+                            cli_cost=_cc_state)
+        check("cc-cli1 a model where the CLI and the plugin agree prints "
+              "exactly one figure, not two",
+              ("claude-opus-5: %s" % M.fmt_cost(_cc_opus)) in _cc_text
+              and "claude-opus-5: CLI" not in _cc_text,
+              _cc_text)
+        check("cc-cli2 a model where they differ prints BOTH figures, each "
+              "with its own basis",
+              ("claude-haiku-4-5: CLI %s (the CLI's estimate) vs plugin %s ("
+               % (M.fmt_cost(_cc_state["s-P1.2"]["perModel"]["claude-haiku-4-5"]),
+                  M.fmt_cost(_cc_haiku))) in _cc_text,
+              _cc_text)
+        check("cc-cli3 neither reading is ever called the bill",
+              "bill" not in _cc_text.lower())
+        check("cc-cli4 the section is silent without a cli_cost reading at "
+              "all - nothing invented from nothing",
+              "CLI vs plugin cost" not in text)
+        check("cc-cli5 ...and silent for a session with no cost-state entry "
+              "recorded (None), rather than a comparison against nothing",
+              "CLI vs plugin cost" not in M.render(
+                  loaded, args, manifest, "all time", True,
+                  cli_cost={"s-P1.1": None}))
+
         # --- attribution coverage (ac): how much of the plan's done work a ---
         # --- per-task figure actually rests on -------------------------------
         # Four done tasks, three of which carry a priced row (P2.2 is done but

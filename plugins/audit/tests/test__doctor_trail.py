@@ -173,6 +173,61 @@ def _cases(check):
               _levels(rep, "usage ledger") == ["OK"]
               and "1 ledger file(s)" in _detail(rep, "usage ledger"))
 
+        # ------------------------------------------------- check_unpriced_models
+        # A fresh ledger, priced models only - a fully priced ledger yields no
+        # finding at all.
+        priced_ledger = os.path.join(tmp, "priced-usage")
+        ul.append_rows(priced_ledger, [
+            {"ts": "2026-01-01T00", "sessionId": "s-priced",
+             "model": "claude-opus-5", "in": 10, "out": 100, "cacheW5m": 0,
+             "cacheW1h": 0, "cacheR": 0}])
+        rep = base.Report()
+        M.check_unpriced_models(rep, tmp, {"usage": {"ledgerDir": "priced-usage"}},
+                               mrel, ul.DEFAULT_PRICING)
+        check("dt-up1 a fully priced ledger yields no finding - %r"
+              % (_levels(rep, "unpriced models"),),
+              _levels(rep, "unpriced models") == ["OK"])
+
+        # A ledger with tokens on a model the table has no row for at all.
+        unpriced_ledger = os.path.join(tmp, "unpriced-usage")
+        ul.append_rows(unpriced_ledger, [
+            {"ts": "2026-01-01T00", "sessionId": "s-unpriced",
+             "model": "claude-future-9", "in": 10, "out": 400, "cacheW5m": 0,
+             "cacheW1h": 0, "cacheR": 90}])
+        rep = base.Report()
+        M.check_unpriced_models(rep, tmp,
+                               {"usage": {"ledgerDir": "unpriced-usage"}},
+                               mrel, ul.DEFAULT_PRICING)
+        check("dt-up2 a model the price table has no row for is named with its "
+              "own token count - %r" % (_detail(rep, "unpriced models"),),
+              _levels(rep, "unpriced models") == ["WARNING"]
+              and "claude-future-9" in _detail(rep, "unpriced models")
+              and "500 token" in _detail(rep, "unpriced models"))
+        check("dt-up3 ...and the remedy names the config key that fixes it",
+              "usage.pricing" in _fix(rep, "unpriced models"))
+
+        # The CLI's own hasUnknownModelCost=true rides beside the finding
+        # rather than instead of it, and beside the all-clear too.
+        rep = base.Report()
+        M.check_unpriced_models(rep, tmp,
+                               {"usage": {"ledgerDir": "unpriced-usage"}},
+                               mrel, ul.DEFAULT_PRICING,
+                               {"hasUnknownModelCost": True})
+        check("dt-up4 hasUnknownModelCost=true from the CLI's own cost-state "
+              "is reported BESIDE the model(s) already named, not swallowed",
+              _levels(rep, "unpriced models").count("WARNING") == 2
+              and "claude-future-9" in _detail(rep, "unpriced models")
+              and "hasUnknownModelCost" in _detail(rep, "unpriced models"))
+        rep = base.Report()
+        M.check_unpriced_models(rep, tmp, {"usage": {"ledgerDir": "priced-usage"}},
+                               mrel, ul.DEFAULT_PRICING,
+                               {"hasUnknownModelCost": True})
+        check("dt-up5 ...and beside a fully priced ledger's all-clear too - the "
+              "CLI's flag is a DIFFERENT claim, scoped to one session, not a "
+              "contradiction of this ledger's own coverage",
+              _levels(rep, "unpriced models") == ["WARNING"]
+              and "hasUnknownModelCost" in _detail(rep, "unpriced models"))
+
         # ----------------------------------------------------- check_journal
         rep = base.Report()
         M.check_journal(rep, tmp, {"journal": {"enabled": False}}, cfgmod, None)
