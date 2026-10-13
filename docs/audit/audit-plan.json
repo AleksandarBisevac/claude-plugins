@@ -1598,7 +1598,8 @@
       "P123.30",
       "P123.88-64p",
       "P123.90-64p",
-      "P126.1"
+      "P126.1",
+      "P125.26"
     ],
     "examples/acme-store/acme-store-audit.html": [
       "P13.3",
