@@ -1800,7 +1800,8 @@
       "P125.12",
       "P125.18",
       "P125.39-0h5",
-      "P125.40-0h5"
+      "P125.40-0h5",
+      "P125.42-0h5"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -2047,7 +2048,8 @@
       "P128.5-0h5",
       "P125.18",
       "P128.9-0h5",
-      "P125.41-0h5"
+      "P125.41-0h5",
+      "P125.42-0h5"
     ],
     "plugins/audit/commands/propose.md": [
       "P31.2",
@@ -2298,7 +2300,8 @@
       "P125.2",
       "P125.6",
       "P128.3-0h5",
-      "P125.40-0h5"
+      "P125.40-0h5",
+      "P125.42-0h5"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -2308,7 +2311,8 @@
       "P72.8-ttl",
       "P109.4",
       "P109.5",
-      "P123.46-64p"
+      "P123.46-64p",
+      "P125.42-0h5"
     ],
     "plugins/audit/hooks/guard-bash-writes.py": [
       "P4.2",
@@ -2423,7 +2427,8 @@
       "P109.4",
       "P109.5",
       "P128.6-0h5",
-      "P125.39-0h5"
+      "P125.39-0h5",
+      "P125.42-0h5"
     ],
     "plugins/audit/hooks/journal-writes.py": [
       "P15.4",
@@ -3446,7 +3451,8 @@
       "P42.6",
       "P102.10",
       "P122.8-z4y",
-      "P123.43-64p"
+      "P123.43-64p",
+      "P125.42-0h5"
     ],
     "plugins/audit/scripts/governance/run-test-gate.py": [
       "P22.1",
@@ -4382,7 +4388,8 @@
       "P123.62-64p",
       "P125.4",
       "P125.12",
-      "P125.2"
+      "P125.2",
+      "P125.42-0h5"
     ],
     "plugins/audit/scripts/status/_gate_feed.py": [
       "P48.3",
@@ -4449,7 +4456,8 @@
       "P125.4",
       "P125.12",
       "P125.2",
-      "P125.40-0h5"
+      "P125.40-0h5",
+      "P125.42-0h5"
     ],
     "plugins/audit/scripts/status/audit-lookup.py": [
       "P56.3",
@@ -5522,7 +5530,8 @@
       "P124.6",
       "P125.4",
       "P125.2",
-      "P125.40-0h5"
+      "P125.40-0h5",
+      "P125.42-0h5"
     ],
     "plugins/audit/tests/test_audit_journal.py": [
       "P34.3",
@@ -5898,7 +5907,8 @@
     "plugins/audit/tests/test_detect_plan_skip.py": [
       "P72.1",
       "P109.4",
-      "P109.5"
+      "P109.5",
+      "P125.42-0h5"
     ],
     "plugins/audit/tests/test_gate_parity.py": [
       "P19.2",
@@ -6132,7 +6142,8 @@
     ],
     "plugins/audit/tests/test_record_risk_confirmation.py": [
       "P42.6",
-      "P123.43-64p"
+      "P123.43-64p",
+      "P125.42-0h5"
     ],
     "plugins/audit/tests/test_remind_tdd.py": [
       "P42.4",
@@ -8035,7 +8046,8 @@
       "P125.30-0h5",
       "P125.33-0h5",
       "P125.35-0h5",
-      "P125.37-0h5"
+      "P125.37-0h5",
+      "P125.42-0h5"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -8107,7 +8119,8 @@
       "P125.30-0h5",
       "P125.33-0h5",
       "P125.35-0h5",
-      "P125.37-0h5"
+      "P125.37-0h5",
+      "P125.42-0h5"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6",
