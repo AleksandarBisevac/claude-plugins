@@ -2075,6 +2075,50 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P125.37-0h5",
+      "title": "A scope change after a filed return makes the drive decide rather than close",
+      "status": "pending",
+      "description": "F650. P125.19's executor filed a half-delivered return naming the files the rest needed; the orchestrator widened its files with audit-task scope and the next drive step closed it anyway ('stamp current; closed P125.19 at 19836db'), because the close compares the stamp with the tree, not with the task's scope as it now stands. The close compares the scope the filing was made under (the stamp's scope / scopeDigest) with the task's current files; a difference is a decision with the two lists, not a close.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: an executor files, the task's files are then widened by scope, and the next drive step prints a decision (dispatch again under the new scope, or close with a recorded reason), never a close",
+          "plugins/audit/tests/test_drive_phase.py: with no scope change after the filing the close proceeds as today"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
