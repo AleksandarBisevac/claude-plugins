@@ -28,8 +28,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/stamp-verification.py:1012-1021 (P126.3, 897c7c2a)",
         "issue": "_wt_text now reads with newline='' while _head_text returns the blob as git printed it. That matches the CRLF-blob fixture CI failed on, but it breaks the common Windows checkout: core.autocrlf=true gives an LF blob and a CRLF working file. Every line then differs, so inline_test_text sees one whole-file hunk (the 'none of its N changed hunk(s) lies inside a test definition' refusal returns for those users), and changed_source's head == now is never true, so an UNCHANGED declared source is reported 'changed over HEAD' and credited as supplying the missing module. The second effect loosens a check rather than tightening it. The old universal-newline read was right for the LF-blob case; the new si6 case pins the new behaviour, so nothing catches the regression.",
-        "resolution": "Compare line content, not line terminators: normalise both _head_text and _wt_text to the same newline form (for example replace CRLF with LF on both) in one shared helper, then keep sh/si cases for CRLF-blob/CRLF-wt, LF-blob/CRLF-wt and LF/LF. si6 should assert equality of the normalised pair, not that the working copy keeps its CRs.",
-        "fixTask": "P126.14-13q"
+        "resolution": "fixed in P126.14-13q (2daa337dafe6): Compare line content, not line terminators: normalise both _head_text and _wt_text to the same newline form (for example replace CRLF with LF on both) in one shared helper, then keep sh/si cases for CRLF-blob/CRLF-wt, LF-blob/CRLF-wt and LF/LF. si6 should assert equality of the normalised pair, not that the working copy keeps its CRs.",
+        "fixTask": "P126.14-13q",
+        "commit": "2daa337dafe6",
+        "status": "fixed"
       },
       {
         "id": "P126-R2",
@@ -63,7 +65,7 @@
         "fixTask": "P126.17-13q"
       }
     ],
-    "outcome": "[findings: 5 - 0 high, 2 med, 3 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 5 - 0 high, 2 med, 3 low; 1 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -902,7 +904,7 @@
     {
       "id": "P126.14-13q",
       "title": "fix P126-R1: _wt_text now reads with newline='' while _head_text returns the ...",
-      "status": "in_progress",
+      "status": "done",
       "description": "_wt_text now reads with newline='' while _head_text returns the blob as git printed it. That matches the CRLF-blob fixture CI failed on, but it breaks the common Windows checkout: core.autocrlf=true gives an LF blob and a CRLF working file. Every line then differs, so inline_test_text sees one whole-file hunk (the 'none of its N changed hunk(s) lies inside a test definition' refusal returns for those users), and changed_source's head == now is never true, so an UNCHANGED declared source is reported 'changed over HEAD' and credited as supplying the missing module. The second effect loosens a check rather than tightening it. The old universal-newline read was right for the LF-blob case; the new si6 case pins the new behaviour, so nothing catches the regression.\n\nResolution asked: Compare line content, not line terminators: normalise both _head_text and _wt_text to the same newline form (for example replace CRLF with LF on both) in one shared helper, then keep sh/si cases for CRLF-blob/CRLF-wt, LF-blob/CRLF-wt and LF/LF. si6 should assert equality of the normalised pair, not that the working copy keeps its CRs.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -934,14 +936,19 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2daa337dafe6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stamp-verification.py: added _lf (CRLF->LF) applied in both _head_text and _wt_text so the hunk split and changed_source compare line content in one newline form; added _in_endings_of and _isolated_run now writes an inline suite's test-only copy in the line ends the throwaway's file (HEAD's blob) already uses. Tests: replaced si5/si6 with si5 (LF blob vs CRLF wt, autocrlf=true), si6 (CRLF vs CRLF), si7 (LF vs LF), each through a real git repo asserting exact hunk split (1 held, 1 applied) and changed_source True for the edit / False for an unchanged copy; si8 pins write-back line ends. Own selftest run: 266/266 passed, exit 0; ruff clean.",
+        "descriptive": "An inline suite and a declared source compare by line content, so Windows autocrlf checkouts no longer see whole-file hunks or phantom changed sources."
       },
       "startedAt": "2026-10-13T00:01:32Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-13T00:27:35Z",
+      "verifiedBy": [
+        "si5",
+        "si6",
+        "si7",
+        "si8"
+      ],
       "notes": [
         {
           "at": "2026-10-13T00:01:21Z",
@@ -956,16 +963,30 @@
         "runId": "2026-10-13T00:27:34Z.67f260",
         "status": "passed",
         "at": "2026-10-13T00:27:34Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "2daa337dafe6",
+        "at": "2026-10-13T00:27:35Z",
+        "basis": "a fix task for P126-R1: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-13T00:08:28Z",
+        "basis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 266 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - si5 (house FAIL): SELFTEST FAILED: 263/266 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P126.15-13q",
       "title": "fix P126-R3: 'The report is interactive' is exempted whole because its one-st...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "'The report is interactive' is exempted whole because its one-status leg reads /tmp/dl from the Scale demo step. The other legs (example, docs/index.html, docs/demo-large.html loop) depend on nothing earlier, yet this is the step whose result was hidden behind earlier failures in the run that motivated the task: any failing step above it (screenshots, GIF, vitest) still skips it.\n\nResolution asked: Give the step if: ${{ !cancelled() }} and make its /tmp/dl leg regenerate or skip with a printed reason when the tree is absent, or split the leg into its own step that carries the exemption.",
       "files": [
         ".github/workflows/ci.yml",
-        "tools/gate-parity.py"
+        "tools/gate-parity.py",
+        "tools/prove-gates.py",
+        "tools/check-committed-pii.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -988,14 +1009,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-13T00:41:54Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1006,7 +1027,13 @@
       ],
       "fixes": [
         "P126-R3"
-      ]
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-13T00:54:22Z.1b0744",
+        "status": "passed",
+        "at": "2026-10-13T00:54:22Z"
+      }
     },
     {
       "id": "P126.16-13q",

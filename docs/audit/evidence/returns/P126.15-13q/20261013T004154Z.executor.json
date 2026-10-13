@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "prove-gates --selftest": "pass",
+    "check-committed-pii --selftest": "pass",
+    "check-committed-pii": "pass",
+    "gate-parity --selftest": "pass",
+    "gate-parity": "pass",
+    "ruff check tools": "pass"
+  },
+  "redFirst": {
+    "status": "could-not-prove",
+    "at": "2026-10-13T00:45:41Z",
+    "basis": "P126.15-13q declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P126.15-13q declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Kept the ci.yml split and gate-parity change. prove-gates.py: added a TABLE row (red, after the sg0 row; case sg6) and an ALLOW row (case sg5) for step_exemption_breadth_drift; c1/a4 now pass (prove-gates --selftest all pass). check-committed-pii.py: BASELINE row for docs/audit/evidence/returns/P126/0aca587b...reviewer.json line 28 posix-home with a reason (prose 'pass home/cwd/project directories'); `check-committed-pii.py` exits 0 and its selftest passes. gate-parity --selftest passes; ruff clean.",
+    "descriptive": "The new breadth lint is covered by prove-gates rows and the reviewer return's prose is baselined, so the sweep's two red files go green."
+  },
+  "testsAdded": [],
+  "stamp": "audit-stamp: {\"content\":\"sha256:37d9fca24c837c7ea1089abb3a71fd053839a6044f49196376a3635a1e958573\",\"dirtyDigest\":\"sha256:4d86f256038d6de51383b8c4f6812d72af365230220ad4e21b35728a964a1680\",\"dirtyPaths\":{\".github/workflows/ci.yml\":\"a15706e6af051bb7\",\"tools/check-committed-pii.py\":\"b52cdfe0610dcf75\",\"tools/gate-parity.py\":\"574741335d4fe572\",\"tools/prove-gates.py\":\"e47864c9b96ef9b4\"},\"head\":\"2daa337d\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".github/workflows/ci.yml\",\"tools/check-committed-pii.py\",\"tools/gate-parity.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:1747c670e57f53fd19128d865d398a9ea583bf5faf1f27ca6479132af28b0503\",\"v\":2}"
+}

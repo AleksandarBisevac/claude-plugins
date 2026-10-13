@@ -782,6 +782,13 @@ BASELINE = (
      "posix-home",
      "the review.finding row that filed the same prose. The chain runs through "
      "it, so it is recorded here rather than rewritten."),
+    ("docs/audit/evidence/returns/P126/"
+     "0aca587b173b597343e9b4da8ee0f186ae8746ad.reviewer.json", 28,
+     "posix-home",
+     "the phase reviewer's return quoting the phrase 'pass home/cwd/project "
+     "directories' - words joined by slashes, not a directory of any machine. "
+     "Returns are keyed by line number, as the rows above are; the same prose "
+     "is baselined in the plan, shard and journal."),
 )
 
 _MIN_REASON = 60          # a reason short enough to be a label is not a reason

@@ -1144,6 +1144,14 @@ TABLE = (
   "        if: ${{ !cancelled() }}\n",
   "      - name: ruff (rules and py38 target from pyproject.toml)\n",
   "tools/gate-parity.py", "sg0"),
+ # THE EXEMPTION'S BREADTH CHECK, SWITCHED OFF. The exempt step must read the
+ # path its reason names; stop asking and an exemption that no longer rests on any
+ # dependency (a step widened, or its dependency dropped) passes. `sg6`'s
+ # fixture is the step that does not read the named path, and it must go red.
+ ("step_exemption_breadth_drift", "tools/gate-parity.py", "replace",
+  "        if path not in steps[at[0]][2]:\n",
+  "        if False:\n",
+  "tools/gate-parity.py", "sg6"),
 
  # --- The remainder the hand-written source list was hiding --------------------
  # Fifteen lints arrived the moment `_gate_sources()` became a walk. Every row
@@ -2261,6 +2269,14 @@ ALLOW = (
  # asserts a vocabulary WITH members stays quiet.
  ("claim_drift", S + "manifest/_areas.py", "replace",
   "        if not members:", "        if members is not None:", ARE, "oa29"),
+ # THE BREADTH CHECK, OVER-FIRING. The second half asks whether an EARLIER step
+ # mentions the dependency. Make it unconditional and the live exemption - whose
+ # dependency `Scale demo` really does produce - is convicted. `sg5` reads the
+ # live workflow and must go red.
+ ("step_exemption_breadth_drift", "tools/gate-parity.py", "replace",
+  "        elif not any(j == job and path in t for j, _n, t in steps[:at[0]]):\n",
+  "        elif True:\n",
+  "tools/gate-parity.py", "sg5"),
 )
 
 

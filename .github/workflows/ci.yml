@@ -843,6 +843,7 @@ jobs:
           node tools/capture-screenshots.mjs --check
 
       - name: The report is interactive, not just well-formed
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           set -e
@@ -891,6 +892,39 @@ jobs:
           python plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json \
             --out-dir /tmp/live-plan --format html
           node tools/check-report-interactive.mjs /tmp/live-plan/*.html
+          # ...and one document none of the legs above can stand in for: a
+          # report OLDER than the checks. Every artifact CI renders is by
+          # definition current, so the path that meets a missing element ran
+          # nowhere — and it met one by dereferencing it, dying inside
+          # page.evaluate with `Cannot read properties of null` and a stack ending
+          # in the checker (F7). A diagnostic that dies computing its own
+          # diagnosis reports the wrong thing twice, and the first reader of an
+          # older report believes the report is broken. Faked here by taking the
+          # class off the fresh render's filter bar, which is what a report
+          # predating .sectools looks like to a selector.
+          sed 's/class="toolbar sectools"/class="toolbar was-sectools"/' \
+            /tmp/live-plan/audit-report.html > /tmp/live-plan/aged.html
+          set +e
+          node tools/check-report-interactive.mjs /tmp/live-plan/aged.html > /tmp/aged.log 2>&1
+          aged=$?
+          set -e
+          cat /tmp/aged.log
+          # Exit 2 is the assertion — "could not run", NOT exit 1 "the report is
+          # inert", which is the accusation this fault made. The grep is the
+          # second half and not the verdict: exit 2 alone is also what a missing
+          # browser produces, so the element has to be named too.
+          test "$aged" -eq 2 || { echo "expected exit 2 (cannot check), got $aged"; exit 1; }
+          grep -q 'no \.sectools' /tmp/aged.log \
+            || { echo 'expected the missing element to be named'; exit 1; }
+      - name: The report is interactive on plans cut from the scale demo
+        shell: bash
+        run: |
+          set -e
+          # Split from the step above because THESE legs read /tmp/dl, the tree the
+          # `Scale demo` step generates, and nothing else in that step does. This is
+          # the one step exempted from `!cancelled()` (STEP_GUARD_EXEMPT in
+          # tools/gate-parity.py): run after a failed `Scale demo` it would report a
+          # second, spurious failure about a tree that was never built.
           # ...and a plan whose phases ALL share one status, which is the normal
           # END STATE of a plan: everything done. None of the reports above is
           # one, and the checker's one-status path was wrong the first time it met
@@ -985,30 +1019,6 @@ jobs:
             echo "--no-proposals did not drop the section"; exit 1
           fi
 
-          # ...and one document none of the four above can stand in for either: a
-          # report OLDER than the checks. Every artifact CI renders is by
-          # definition current, so the path that meets a missing element ran
-          # nowhere — and it met one by dereferencing it, dying inside
-          # page.evaluate with `Cannot read properties of null` and a stack ending
-          # in the checker (F7). A diagnostic that dies computing its own
-          # diagnosis reports the wrong thing twice, and the first reader of an
-          # older report believes the report is broken. Faked here by taking the
-          # class off the fresh render's filter bar, which is what a report
-          # predating .sectools looks like to a selector.
-          sed 's/class="toolbar sectools"/class="toolbar was-sectools"/' \
-            /tmp/live-plan/audit-report.html > /tmp/live-plan/aged.html
-          set +e
-          node tools/check-report-interactive.mjs /tmp/live-plan/aged.html > /tmp/aged.log 2>&1
-          aged=$?
-          set -e
-          cat /tmp/aged.log
-          # Exit 2 is the assertion — "could not run", NOT exit 1 "the report is
-          # inert", which is the accusation this fault made. The grep is the
-          # second half and not the verdict: exit 2 alone is also what a missing
-          # browser produces, so the element has to be named too.
-          test "$aged" -eq 2 || { echo "expected exit 2 (cannot check), got $aged"; exit 1; }
-          grep -q 'no \.sectools' /tmp/aged.log \
-            || { echo 'expected the missing element to be named'; exit 1; }
       - name: JSON Schema validation (ajv, draft 2020-12)
         if: ${{ !cancelled() }}
         run: |

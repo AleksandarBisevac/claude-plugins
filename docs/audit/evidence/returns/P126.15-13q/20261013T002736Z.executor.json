@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "gate-parity": "pass",
+    "gate-parity --selftest": "pass",
+    "ruff check tools": "pass",
+    "vermin gate-parity.py": "pass",
+    "ci.yml YAML load (ruby)": "pass"
+  },
+  "redFirst": {
+    "status": "could-not-prove",
+    "at": "2026-10-13T00:31:48Z",
+    "basis": "P126.15-13q declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P126.15-13q declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "ci.yml: 'The report is interactive, not just well-formed' now has if: ${{ !cancelled() }} and keeps the loop over shipped reports, the live-plan leg and the aged-report leg. The legs that read /tmp/dl (one-status AND all-parked; the all-parked leg also reads /tmp/dl, not only one-status) moved into a new step 'The report is interactive on plans cut from the scale demo', the only exempted step. gate-parity.py: STEP_GUARD_EXEMPT now names that step with a reason naming `/tmp/dl`; added _step_texts and step_exemption_breadth_drift (the step must exist, read the path its reason names, and an earlier step of the job must mention it), wired into step_guard_findings (rows for jobs absent from a fixture workflow are skipped). Breadth beyond that (a dependent step also holding independent legs) is not mechanically decidable; it is pinned by the table naming the narrow step. Selftest cases sg5 (live exemption narrow) and sg6 (broader-than-dependency variants reported). Ran: python3 tools/gate-parity.py exit 0; --selftest 122/122; ruff check tools clean; vermin ok; ruby YAML load ok. The full sweep was started but not awaited (own-tests only). Not checked: tools/prove-gates.py rows for step_guard_drift anchored on gate-parity.py text.",
+    "descriptive": "A failing step above no longer hides the report-interactive result; only the legs that truly need the Scale demo tree are exempt, and the exemption's dependency is checked."
+  },
+  "testsAdded": [
+    "gate-parity selftest sg5",
+    "gate-parity selftest sg6"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:ccac75ebcd4e3c1b7d19dc72c020be557612d9113f6c99e147f8402c1f88c085\",\"dirtyDigest\":\"sha256:83e5553116b87c790eb6b7f37c4c38dbc4f5b0371531f4967b5d40988ad7d3e8\",\"dirtyPaths\":{\".github/workflows/ci.yml\":\"a15706e6af051bb7\",\"tools/gate-parity.py\":\"574741335d4fe572\"},\"head\":\"2daa337d\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".github/workflows/ci.yml\",\"tools/gate-parity.py\"],\"scopeDigest\":\"sha256:024d7de5cde20f88b1690be4f4991a58124b015e0a7d056bd1fd4acd6c5247d1\",\"v\":2}"
+}

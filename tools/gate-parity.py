@@ -2855,10 +2855,65 @@ _SETUP_RUN = re.compile(
 # something an earlier non-setup step produced, so running it after that step
 # failed would report a second, spurious failure.
 STEP_GUARD_EXEMPT = {
-    ("manifests", "The report is interactive, not just well-formed"):
-        "its one-status leg cuts /tmp/dl, the tree the earlier `Scale demo` "
-        "step generates",
+    ("manifests", "The report is interactive on plans cut from the scale demo"):
+        "both legs derive their fixture from `/tmp/dl`, the tree the earlier "
+        "`Scale demo` step generates; the legs that depend on nothing earlier "
+        "live in the guarded step above it",
 }
+
+
+def _step_texts(text):
+    """[(job, step name, raw text)] in file order, read off the `- name:` lines.
+
+    Raw lines rather than `_job_steps`' keys, because the question below is
+    whether a PATH appears in a step's body, and a key holds only the first line.
+    """
+    out = []
+    job = None
+    for line in text.splitlines():
+        if re.match(r"  [A-Za-z0-9_-]+:\s*$", line):
+            job = line.strip().rstrip(":")
+        elif re.match(r"      - ", line):
+            got = re.match(r"      - name:\s*(.*)$", line)
+            out.append((job, got.group(1).strip() if got else "?", [line]))
+        elif out:
+            out[-1][2].append(line)
+    return [(j, n, "\n".join(ls)) for j, n, ls in out]
+
+
+def step_exemption_breadth_drift(text, exempt=None):
+    """[(job, step, why)] for an exemption that does not rest on a real dependency.
+
+    NOT DECIDABLE: that an exempt step holds NOTHING BUT dependent work. What is
+    decidable, and checked here, is the dependency the reason itself names - its
+    first backticked absolute path. The step must exist, must mention that path in
+    its own body, and an EARLIER step of the same job must mention it too (else
+    nothing produces it and the exemption excuses nothing). The breadth is pinned
+    the other way: the table names the narrow step, so widening the exemption
+    back to a step with independent legs means editing that row, in review.
+    """
+    table = STEP_GUARD_EXEMPT if exempt is None else exempt
+    steps = _step_texts(text)
+    findings = []
+    for (job, name), why in sorted(table.items()):
+        got = re.search(r"`(/[^`\s]+)`", why)
+        if got is None:
+            findings.append((job, name, "its reason names no backticked path "
+                             "it depends on, so its breadth cannot be read"))
+            continue
+        path = got.group(1)
+        at = [i for i, (j, n, _t) in enumerate(steps) if (j, n) == (job, name)]
+        if not at:
+            findings.append((job, name, "no such step in the workflow"))
+            continue
+        if path not in steps[at[0]][2]:
+            findings.append((job, name, "does not read %s, so the exemption is "
+                             "broader than any dependency" % path))
+        elif not any(j == job and path in t for j, _n, t in steps[:at[0]]):
+            findings.append((job, name, "%s is mentioned by no earlier step of "
+                             "the job, so nothing it depends on can have failed"
+                             % path))
+    return findings
 
 
 def _job_steps(text):
@@ -2960,9 +3015,15 @@ def step_guard_drift(text, exempt=None):
 
 
 def step_guard_findings(text):
-    """`step_guard_drift()` as the [(subject, why)] rows `render()` takes."""
+    """`step_guard_drift()` plus the exemption-breadth check, as `render()` rows.
+
+    A row naming a job this workflow does not have is left to the exemption
+    audit: a smaller workflow (a fixture) has no business answering for it.
+    """
+    jobs = set(j for j, _n, _t in _step_texts(text))
+    breadth = [f for f in step_exemption_breadth_drift(text) if f[0] in jobs]
     return [("%s / %s" % (job, step), why)
-            for job, step, why in step_guard_drift(text)]
+            for job, step, why in step_guard_drift(text) + breadth]
 
 
 # --- ...and every bound is twice the longest run it was measured against ------
@@ -4766,6 +4827,39 @@ def _cases(check):
           "job and step, so it fails the command and not only this function",
           ("one / First check" in
            [s for s, _w in step_guard_findings(_sg_wf)]))
+    _sg_live_br = step_exemption_breadth_drift(_sg_live_text)
+    check("sg5 THE LIVE EXEMPTION IS NARROW: the one exempted step reads the "
+          "path its reason names and an earlier step produces it: %r"
+          % (_sg_live_br,),
+          _sg_live_br == [] and len(STEP_GUARD_EXEMPT) > 0)
+    _sg_ok = {("one", "Needs the first"): "reads `/tmp/x` from First check"}
+    _sg_wide = ("jobs:\n  one:\n    steps:\n"
+                "      - name: First check\n        run: echo one > /tmp/x\n"
+                "      - name: Needs the first\n"
+                "        run: |\n          cat /tmp/x\n          echo unrelated\n"
+                "      - name: Independent\n        run: echo y\n")
+    _sg_b_ok = step_exemption_breadth_drift(_sg_wide, exempt=_sg_ok)
+    _sg_b_nodep = step_exemption_breadth_drift(
+        _sg_wide.replace("cat /tmp/x", "cat /tmp/y"), exempt=_sg_ok)
+    _sg_b_noprod = step_exemption_breadth_drift(
+        _sg_wide.replace("echo one > /tmp/x", "echo one"), exempt=_sg_ok)
+    _sg_b_nopath = step_exemption_breadth_drift(
+        _sg_wide, exempt={("one", "Needs the first"): "reads x from First"})
+    _sg_b_gone = step_exemption_breadth_drift(
+        _sg_wide, exempt={("one", "Renamed"): "reads `/tmp/x` earlier"})
+    check("sg6 an exemption broader than its dependency is reported: a step "
+          "that does not read the named path, a path no earlier step mentions, "
+          "a reason naming none, and a step that is gone are each a finding, "
+          "while a step reading it after a producer is not - breadth beyond "
+          "that (a dependent step that also holds independent legs) is NOT "
+          "decidable and is pinned by the table naming the narrow step: "
+          "%r / %r / %r / %r / %r"
+          % (_sg_b_ok, _sg_b_nodep, _sg_b_noprod, _sg_b_nopath, _sg_b_gone),
+          _sg_b_ok == []
+          and len(_sg_b_nodep) == 1 and "broader" in _sg_b_nodep[0][2]
+          and len(_sg_b_noprod) == 1 and "earlier" in _sg_b_noprod[0][2]
+          and len(_sg_b_nopath) == 1 and "no backticked" in _sg_b_nopath[0][2]
+          and len(_sg_b_gone) == 1 and "no such step" in _sg_b_gone[0][2])
 
 
 def _selftest():
