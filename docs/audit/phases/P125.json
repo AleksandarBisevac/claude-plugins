@@ -509,7 +509,12 @@
       "startedAt": "2026-10-13T17:57:48Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-13T19:00:17Z.77aaa6",
+        "status": "failed",
+        "at": "2026-10-13T19:00:17Z"
+      }
     },
     {
       "id": "P125.7",
@@ -1412,7 +1417,12 @@
       "startedAt": "2026-10-13T17:57:51Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-13T19:08:44Z.b2108c",
+        "status": "passed",
+        "at": "2026-10-13T19:08:44Z"
+      }
     },
     {
       "id": "P125.23",

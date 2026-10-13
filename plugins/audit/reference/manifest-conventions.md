@@ -128,7 +128,12 @@ is free to re-mint).
   not be fixed, somebody investigated and the behaviour is correct
 - Proposal: `proposed | materialized | dropped` (enforced on payload-bearing
   proposals; legacy free-form entries are tolerated as-is)
-- `tests.mode`: `tdd | regression | gate-only` · `risk`: `low | med | high`
+- `tests.mode`: `tdd | regression | gate-only` · `risk`: `low | med | high` — the stored
+  value is always one of these three; `/audit:task add --tests-mode auto` is a CLI-only
+  input that resolves to one of them before the write (`commands/init.md` → step 3's
+  mode rule, read off the task's own title and description), never a fourth stored
+  value. `scope` takes `tdd | regression | gate-only` only — `auto` answers "what mode
+  should a NEW task get", which a rescope of an existing task is not asking.
 
 ## New task template
 

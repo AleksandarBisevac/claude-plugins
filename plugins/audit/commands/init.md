@@ -296,6 +296,29 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
      this is a step YOU perform rather than a value you copy.
    - Behavior-preserving change (refactor/hardening) → `"regression"`.
    - Config/docs/mechanical → `"gate-only"`.
+   - **New or changed observable behavior (a feature) → `"tdd"`, `expectRedFirst: true`,
+     `tests.add` written from the finding's own text, before the code is read.** The
+     three rules above used to be the whole list, which covers only bug, refactor and
+     config and leaves the fourth and most common finding — a feature — to be guessed
+     at; measured on a real synthesized plan, the missing arm fell through to
+     `regression` far more often than it landed on `tdd`. "No mode stated" is not
+     "no behavior change" — a task that adds or changes what the system does is exactly
+     the shape the FAIL-then-fix proof exists for. `/audit:task add --tests-mode auto` makes the same
+     four-way call from a task's title and description once it already exists, for a
+     task added after synthesis rather than during it (`_change_kind_discipline` in
+     `scripts/manifest/audit-task.py`).
+   - **Write a `tdd` task's `tests.add` from the finding's text first, not from reading
+     the implementation.** A probe comparing the two orders on the same defect found
+     that tests written after seeing the code passed over it almost every time — the
+     test matched the buggy behavior instead of catching it — while tests written from
+     the task text alone caught it on nearly every try, the one miss being a test drawn
+     too strict rather than one that failed to notice the bug. A study of post-hoc
+     tests (written to confirm code already seen) found the same direction: a test
+     written with the implementation already visible tends to agree with it rather than
+     probe the behavior it claims to check. So draft every `tdd` task's `tests.add` from
+     the finding alone, confirm each entry would fail against the change being
+     described, and only then open the file it is about to change — the same ordering
+     `agents/audit-executor.md` states for the executor that later implements it.
    - **`tests.gate` — and a task gate is not a small phase gate.** A **phase** gate asks
      *is the repository still whole*: it runs once, at sign-off, over everything the phase's
      tasks touched together, and it is the only thing that can catch the interaction no single

@@ -15742,6 +15742,96 @@ def _inline_suite_mode_cases(check):
         shutil.rmtree(root, ignore_errors=True)
 
 
+def _change_kind_discipline_cases(check):
+    """`add --tests-mode auto` reads init.md's mode rule off the task's own
+    title and description: `init.md` used to state only bug -> tdd,
+    refactor -> regression, config -> gate-only, leaving a task that adds or
+    changes observable behaviour (a feature) to fall through to whatever a
+    planner guessed -- `auto` is the classification a caller can ask for
+    instead of guessing, and it says which arm it took."""
+    import io
+    root = _harness.fixture_root("audit-task-ck-")
+
+    def project(name):
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        _panel_write._atomic_write_json(
+            os.path.join(proj, ".claude", "audit.config.json"),
+            {"manifestPath": "docs/audit/audit-plan.json"})
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        _panel_write._atomic_write_json(mpath, {
+            "meta": {"version": 2, "buildCommands": {"test": "true"}},
+            "phases": [{"id": "P1", "title": "P1", "status": "in_progress",
+                        "testGate": ["test"], "tasks": []}],
+            "fileIndex": {}})
+        return proj, mpath
+
+    def verb(proj, *argv):
+        lines, real = [], sys.stdin
+        sys.stdin = io.StringIO("")
+        try:
+            code = M.main(list(argv) + ["--project-dir", proj], out=lines.append)
+        finally:
+            sys.stdin = real
+        return code, "\n".join(str(x) for x in lines)
+
+    def task(mpath, i=0):
+        tasks = _mio.load_manifest(mpath)["phases"][0]["tasks"]
+        return tasks[i] if len(tasks) > i else {}
+
+    def notes(t):
+        return " ".join(str(n.get("text")) for n in (t.get("notes") or []))
+
+    try:
+        proj, mpath = project("feature")
+        code, text = verb(proj, "add", "Add a new export button",
+                          "--phase", "P1", "--tests-mode", "auto",
+                          "--description", "lets the user download a CSV")
+        t = task(mpath)
+        check("ck1 a planned task that adds behaviour, with no refactor or "
+              "config signal in its text, is written tdd, with the basis "
+              "shown: %r" % ((code, t.get("tests"), notes(t)),),
+              code == 0 and (t.get("tests") or {}).get("mode") == "tdd"
+              and (t.get("tests") or {}).get("expectRedFirst") is True
+              and "tdd" in notes(t) and "auto" in notes(t))
+
+        proj, mpath = project("refactor")
+        code, text = verb(proj, "add", "Refactor the export module",
+                          "--phase", "P1", "--tests-mode", "auto",
+                          "--description", "extract the shared formatter, no "
+                          "behaviour change")
+        t = task(mpath)
+        check("ck2 a refactor is written regression, with the basis shown: %r"
+              % ((code, t.get("tests"), notes(t)),),
+              code == 0 and (t.get("tests") or {}).get("mode") == "regression"
+              and (t.get("tests") or {}).get("expectRedFirst") is False
+              and "regression" in notes(t) and "auto" in notes(t))
+
+        proj, mpath = project("config")
+        code, text = verb(proj, "add", "Bump the lint config",
+                          "--phase", "P1", "--tests-mode", "auto",
+                          "--description", "update the eslint config file")
+        t = task(mpath)
+        check("ck3 a config change is written gate-only, with the basis "
+              "shown: %r" % ((code, t.get("tests"), notes(t)),),
+              code == 0 and (t.get("tests") or {}).get("mode") == "gate-only"
+              and (t.get("tests") or {}).get("expectRedFirst") is False
+              and "gate-only" in notes(t) and "auto" in notes(t))
+
+        proj, mpath = project("scope-refused")
+        verb(proj, "add", "Later", "--phase", "P1", "--files", "src/a.ts")
+        tid = task(mpath).get("id")
+        code, text = verb(proj, "scope", tid, "--tests-mode", "auto")
+        check("ck4 ALLOW: `scope` refuses `auto` by name, writing nothing - "
+              "`auto` is add's own creation-time classification: %r"
+              % ((code, text[-200:]),),
+              code == M.E_USAGE and "auto" in text
+              and (task(mpath).get("tests") or {}).get("mode") == "gate-only")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def _introduces_cases(check):
     """`--introduces` writes the files a change cannot avoid, and a fix task gets
     every path its finding names, the companions, the discipline it asks for and
@@ -16872,6 +16962,7 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("fd-block", "_finding_disposition_cases"),
           ("bf-block", "_bug_fix_discipline_cases"),
           ("is-block", "_inline_suite_mode_cases"),
+          ("ck-block", "_change_kind_discipline_cases"),
           ("cz-block", "_introduces_cases"),
           ("ps-block", "_stage_runner_cases"),
           ("of-block", "_open_finding_shape_cases"),

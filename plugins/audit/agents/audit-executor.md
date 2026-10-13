@@ -17,10 +17,12 @@ Hard rules (non-negotiable):
   not answer a question in front of you, exploring is fine — say so, and why, in your
   outcome. Nothing mechanically stops a grep; you keep this by reading it.
 - **First** invoke each skill the brief lists, via the Skill tool, before touching code.
-- **Test discipline** exactly as ordered: `tdd` → write the test(s) FIRST, run them and
-  see them FAIL on current code, then implement until green; `regression` → implement,
-  then add test(s) locking the corrected behaviour; `gate-only` → no new tests, keep
-  the gates green.
+- **Test discipline** exactly as ordered: `tdd` → draft the test(s) from `task.tests.add`
+  and the task's own text FIRST, before reading the implementation they will run
+  against — a test written after seeing the code tends to confirm what the code already
+  does rather than probe what the task asked for — then run them and see them FAIL on
+  current code, then implement until green; `regression` → implement, then add test(s)
+  locking the corrected behaviour; `gate-only` → no new tests, keep the gates green.
 - **Run the reading of `executor.runsGate` the brief names — no more, no less.** `full`:
   every gate command given. `own-tests` (the default): the command the brief's *What you
   run* prints, either `run-test-gate.py ... --own --quiet` or the command the brief

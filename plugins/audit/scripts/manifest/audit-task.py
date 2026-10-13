@@ -15,7 +15,7 @@ Usage:
                 [--skills a,b | --skills null] [--model m] [--files f1,f2]
                 [--outputs pat,pat]
                 [--risk low|med|high] [--blocked-by id,id] [--depends-on id,id]
-                [--description TEXT|-] [--tests-mode tdd|regression|gate-only]
+                [--description TEXT|-] [--tests-mode tdd|regression|gate-only|auto]
                 [--tests-add TEXT ...] [--gate CMD ... | --gate-clear]
                 [--failing-from RUNID] [--fixes finding,finding]
                 [--bug BUGID] [--introduces KIND ...] [--dry-run]
@@ -2878,6 +2878,44 @@ def _inline_suite_discipline(paths):
            "its" if len(paths) == 1 else "their"))
 
 
+_REFACTOR_TEXT = re.compile(
+    r"\b(?:refactor(?:ing)?|restructur(?:e|ing)|reorgani[sz](?:e|ing)|"
+    r"renam(?:e|ing)|extract(?:ing|ed)?|simplif(?:y|ying)|clean[- ]?up|"
+    r"harden(?:ing)?|deduplicat(?:e|ing))\b", re.IGNORECASE)
+_CONFIG_TEXT = re.compile(
+    r"\b(?:config(?:uration)?|docs?|documentation|typo|comment(?:s)?|"
+    r"formatting|mechanical|lint(?:ing)?|version bump|bump the version)\b",
+    re.IGNORECASE)
+
+
+def _change_kind_discipline(title, description):
+    """`(mode, note)` for a task whose caller asked `--tests-mode auto`:
+    `init.md`'s mode rule, read off the task's own title and description
+    rather than left to a planner's guess. `regression` when the text names
+    a behaviour-preserving change (refactor/restructure/cleanup/hardening),
+    `gate-only` when it names a config/docs/mechanical change, else `tdd` --
+    `init.md` used to state only bug -> tdd, refactor -> regression and
+    config -> gate-only, leaving the common case (a task that adds or
+    changes observable behaviour -- a feature) to fall through to whatever a
+    planner guessed; measured on a real plan, the guess landed on
+    `regression` more often than on `tdd`. A task naming neither signal is
+    assumed to add or change behaviour, because "no mode named" is not "no
+    behaviour change"."""
+    text = "%s %s" % (title or "", description or "")
+    if _REFACTOR_TEXT.search(text):
+        return "regression", (
+            "regression, not tdd (--tests-mode auto): the task's own text "
+            "names a behaviour-preserving change")
+    if _CONFIG_TEXT.search(text):
+        return "gate-only", (
+            "gate-only, not tdd (--tests-mode auto): the task's own text "
+            "names a config/docs/mechanical change")
+    return "tdd", (
+        "tdd by default (--tests-mode auto, init.md's mode rule): the "
+        "task's own text names neither a refactor nor a config change, so "
+        "it adds or changes observable behaviour")
+
+
 def _bug_for_add(assembled, bug_id):
     """`(bug, refusal)` -- the open bug `add --bug` names, or why it cannot."""
     bug = next((b for b in (assembled.get("bugs") or [])
@@ -3319,6 +3357,11 @@ def _locked_add(args, project, config, mpath, title, out):
             args = argparse.Namespace(**vars(args))
             args.tests_mode = inline_mode
             fix_notes = fix_notes + [inline_note]
+    if args.tests_mode == "auto":
+        args = argparse.Namespace(**vars(args))
+        args.tests_mode, kind_note = _change_kind_discipline(
+            title, args.description)
+        fix_notes = fix_notes + [kind_note]
     declared = _union_paths(_split_csv(args.files), _tests_add_paths(args.tests_add)[0])
     by_runner = _unit_runner_paths(phase, assembled, project, declared) if fixes else {}
     companions, companion_notes = _companions_for(project, declared, intent, by_runner)
@@ -8241,6 +8284,13 @@ def _locked_scope(args, project, config, mpath, tid, out):
     if contradiction:
         out(contradiction)
         return E_USAGE
+    if args.tests_mode == "auto":
+        out("[audit-task] scope takes --tests-mode tdd|regression|gate-only; "
+            "`auto` is `add`'s own classification, read off a task's title "
+            "and description at the moment it is CREATED. Rescoping an "
+            "existing task is a judgement the caller already has the text "
+            "for -- pass the mode directly.")
+        return E_USAGE
     # `--gate-set` / `--gate-drop` are the pending task's spellings. A started
     # task keeps the rule it has: it takes `--gate` (replace) and `--gate-clear`,
     # so the refusal says exactly those rather than leaving the caller to guess.
@@ -12837,7 +12887,12 @@ def build_parser():
     # that can refuse rather than by hand.
     p.add_argument("--rename", default="", metavar="TITLE", help=_PROSE_HELP)
     p.add_argument("--tests-mode", dest="tests_mode",
-                   choices=["tdd", "regression", "gate-only"], default=None)
+                   choices=["tdd", "regression", "gate-only", "auto"],
+                   default=None,
+                   help="add: tdd|regression|gate-only, or `auto` to classify "
+                        "from the title and description (init.md's mode rule, "
+                        "`_change_kind_discipline`); scope takes tdd|"
+                        "regression|gate-only only")
     p.add_argument("--tests-add", dest="tests_add", action="append",
                    default=None)
     p.add_argument("--gate", action="append", default=None)
