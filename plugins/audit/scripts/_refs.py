@@ -375,8 +375,9 @@ def _py_index(repo_root, rel_root=None):
     way that lint reports by name.
 
     `rel_root` defaults to the plugin, which is what `manifest_moved_files()` asks about;
-    `tool_basename_drift()` asks the same question of three narrower trees, and one walk
-    answering for both is a walk that cannot drift from itself."""
+    `tool_basename_drift()` asks the same question of each of TOOL_NAME_TREES's narrower
+    trees in turn, and one walk answering for both is a walk that cannot drift from
+    itself."""
     index = {}
     base = os.path.join(repo_root, (rel_root or PLUGIN_REL).replace("/", os.sep))
     for root, dirnames, filenames in os.walk(base):
@@ -492,16 +493,20 @@ def manifest_moved_files(repo_root=None):
 # that only a machine with Playwright installed ever executes.
 TOOLS_REL = "tools"
 
-# The four trees a `.py` basename written in `tools/` may legitimately name. The first
-# two are what a tool RUNS. `tools/` itself is not a loophole: a tool's own usage line
-# names its own file (`--check` instructions, an `argparse` prog) and a sibling tool is a
-# real file too — leaving it out would make every usage string a violation, and a lint
-# everyone has to argue with is a lint that gets deleted. The test tree is here for the
-# same reason and was added by this lint's FIRST run, which reported the cross-language
-# pin's own name: a tool that says where its behaviour is pinned is doing the right
-# thing, and that name goes stale on a rename exactly like any other.
+# The trees a `.py` basename written in `tools/` may legitimately name. The plugin's
+# own `scripts` and `hooks` are what a tool RUNS. `tools/` itself is not a loophole: a
+# tool's own usage line names its own file (`--check` instructions, an `argparse` prog)
+# and a sibling tool is a real file too — leaving it out would make every usage string
+# a violation, and a lint everyone has to argue with is a lint that gets deleted. The
+# test tree is here for the same reason and was added by this lint's FIRST run, which
+# reported the cross-language pin's own name: a tool that says where its behaviour is
+# pinned is doing the right thing, and that name goes stale on a rename exactly like
+# any other. `.claude/hooks` is a fourth, repository-level tree rather than part of the
+# plugin: `tools/release.py` loads `.claude/hooks/guard-release.py` by path and names
+# it in its own prose, and that is this repository's configuration, not the plugin's
+# product - the same reason `_tool_known_basenames` must look there too.
 TOOL_NAME_TREES = (PLUGIN_REL + "/scripts", PLUGIN_REL + "/hooks",
-                   PLUGIN_REL + "/tests", TOOLS_REL)
+                   PLUGIN_REL + "/tests", TOOLS_REL, ".claude/hooks")
 
 # A basename, not a path: at least one leading word character (so `*.py` and the `.py`
 # in a bare `.py file(s)` are not tokens), then the name, then `.py` not followed by a

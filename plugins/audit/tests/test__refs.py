@@ -777,6 +777,28 @@ def _cases(check):
               "whole reason the joins became resolvers: this covers a name that ceased "
               "to exist, and only a resolver covers a name that moved",
               res["unknown"] == [], repr(res["unknown"]))
+        # --- a fourth, repository-level tree: `.claude/hooks` -----------------------
+        # `tools/release.py` loads this repository's own release-guard hook by path
+        # and names its basename in prose; that tree is outside the plugin, so it has
+        # to be named in TOOL_NAME_TREES in its own right, not folded into the three
+        # plugin trees above.
+        _write(tmp, ".claude/hooks/guard-release.py", "# a repo-level hook\n")
+        _write(tmp, "tools/release.py",
+               "usage: release.py --push; loads guard-release.py by path\n")
+        res = M.tool_basename_drift(tmp)
+        check("tb9 a tools/ file naming `.claude/hooks/guard-release.py`'s "
+              "basename is recognised - that tree is outside the plugin and "
+              "outside tools/ itself, so a reader cannot tell the two trees "
+              "apart from the lint's behaviour unless both are checked: %r"
+              % (res["unknown"],),
+              not any(n == "guard-release.py" for _f, _l, n in res["unknown"]))
+        _write(tmp, "tools/release.py",
+               "usage: release.py --push; loads no-such-hook-anywhere.py by path\n")
+        res = M.tool_basename_drift(tmp)
+        check("tb9b ...while a basename naming NO hook anywhere is still "
+              "reported - the widened tree recognises a real name, it does "
+              "not stop checking: %r" % (res["unknown"],),
+              any(n == "no-such-hook-anywhere.py" for _f, _l, n in res["unknown"]))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

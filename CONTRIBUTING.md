@@ -661,6 +661,16 @@ message that later grows past one line does not quietly start tripping this.
 
 ## Release rule
 
+**`tools/release.py run --version <version> [--push]` drives this whole
+procedure end to end**, stopping at the first red step and resuming from it
+on a later run (its own state file names which steps already finished).
+Nothing is pushed, tagged remotely, or published without an explicit
+`--push`. `tools/release.py ci <ref>` runs the dispatch-and-wait half alone,
+for a landed phase that wants CI run the same way without a release in
+flight. Each of `release.py`'s own steps calls the exact command named below
+or in `tools/verify.sh --release`'s `#R` block; the module's own docstring
+is the step list.
+
 One release = **one commit** that:
 1. bumps `plugins/audit/.claude-plugin/plugin.json` `version`,
 2. finalizes the `CHANGELOG.md` section for that version,
