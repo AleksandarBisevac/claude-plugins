@@ -1,0 +1,25 @@
+{
+  "gates": {
+    "gate-parity": "pass",
+    "gate-parity --selftest": "pass",
+    "prove-gates --selftest": "pass",
+    "ruff": "pass"
+  },
+  "redFirst": {
+    "status": "could-not-prove",
+    "at": "2026-10-13T08:45:03Z",
+    "basis": "P127.3-bgr declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P127.3-bgr declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/gate-parity.py: shard_matrix_drift now also returns _matrix_references(text): _matrix_cells() parses the single matrix block (axes crossed, exclude removed, include added), every matrix.leg/os/shard ==/!= '<x>' in an if: must name a produced value, and every produced leg must be named by some if:. Selftest cases shm2 (leg dropped from leg: list), shm3 (cp1252 trailing space and cp1251 typo), shm4 (include e2e cells removed), shm5 (exclude dropped stays clean; unknown os named). tools/prove-gates.py: RED rows shm2 and shm4 mutating ci.yml, ALLOW rows (shm1) for the two over-fires. Ran: gate-parity.py exit 0; gate-parity.py --selftest 131/131; prove-gates.py --selftest 37/37; ruff clean; prove-gates --only shard_matrix: 3 of 3 RED (shm1..shm4); the ALLOW half refused DIRTY (files uncommitted) so allow rows are unproven by run. ci.yml itself not changed. Helper named _matrix_references with underscore because prove-gates derives any *_drift lint and demands rows.",
+    "descriptive": "Dropping a leg from the CI matrix, mistyping an if: leg name, or removing the e2e include cells is now reported by name by gate-parity."
+  },
+  "testsAdded": [
+    "shm2",
+    "shm3",
+    "shm4",
+    "shm5"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:09fdbdcf9a3eff9db285fbda7e4183e3d64311ad441d08648fec3d626cb3c8d5\",\"dirtyDigest\":\"sha256:836654c7b0179f568af4b2be7333e3dc2ea40c76c403c2878e3bee7003a79a16\",\"dirtyPaths\":{\"tools/gate-parity.py\":\"b787a68e37cee8ca\",\"tools/prove-gates.py\":\"4bcf4310b260218c\"},\"head\":\"622d7254\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".github/workflows/ci.yml\",\"tools/gate-parity.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:c087e72b1b9fe539cc3644145713db405a3eb17f3213b8294d0f46c45e07f72b\",\"v\":2}"
+}

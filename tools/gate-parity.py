@@ -2138,6 +2138,106 @@ def sweep_leg_drift(repo=None, read=None, source=None, not_legs=None):
 _SHARD_MATRIX_RE = re.compile(r"^\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}/([0-9]+)$")
 
 
+_MATRIX_REF_RE = re.compile(
+    r"matrix\.(leg|os|shard)\s*(?:==|!=)\s*'([^']*)'")
+
+
+def _matrix_cells(text):
+    """{"cells": [dict], "problem": str or None} for the workflow's one `matrix:`.
+
+    Axes (`key: [a, b]`) are crossed, `exclude` entries remove the cells they
+    match, `include` entries are added as cells. Only the shapes this repo writes
+    are read; anything else is a `problem`, never an empty cell list, because no
+    cells would read as "nothing is wrong".
+    """
+    lines = [re.sub(r"\s+#.*$", "", ln.rstrip()) for ln in text.splitlines()
+             if ln.strip() and not ln.strip().startswith("#")]
+    heads = [i for i, ln in enumerate(lines) if ln.strip() == "matrix:"]
+    if len(heads) != 1:
+        return {"cells": [], "problem": "the workflow has %d `matrix:` blocks, so "
+                "which cells run cannot be read" % len(heads)}
+    base = len(lines[heads[0]]) - len(lines[heads[0]].lstrip())
+    block = []
+    for ln in lines[heads[0] + 1:]:
+        if len(ln) - len(ln.lstrip()) <= base:
+            break
+        block.append(ln)
+    if not block:
+        return {"cells": [], "problem": "the `matrix:` block is empty"}
+    top = len(block[0]) - len(block[0].lstrip())
+    axes, groups, current = {}, {"include": [], "exclude": []}, None
+    for ln in block:
+        indent = len(ln) - len(ln.lstrip())
+        body = ln.strip()
+        if indent == top:
+            key, _sep, rest = body.partition(":")
+            rest = rest.strip()
+            current = None
+            if key in groups and not rest:
+                current = key
+            elif rest.startswith("[") and rest.endswith("]"):
+                axes[key] = [v.strip() for v in rest[1:-1].split(",") if v.strip()]
+            else:
+                return {"cells": [], "problem": "matrix key `%s` is in a form "
+                        "this reader cannot resolve" % key}
+        elif current is not None:
+            if body.startswith("- "):
+                groups[current].append({})
+                body = body[2:]
+            key, _sep, val = body.partition(":")
+            if not groups[current]:
+                return {"cells": [], "problem": "an `%s` entry is not a list item"
+                        % current}
+            groups[current][-1][key.strip()] = val.strip()
+    names = sorted(axes)
+    cells = [{}]
+    for name in names:
+        cells = [dict(c, **{name: v}) for c in cells for v in axes[name]]
+    cells = [c for c in cells
+             if not any(all(c.get(k) == v for k, v in ex.items())
+                        for ex in groups["exclude"])]
+    return {"cells": cells + groups["include"], "problem": None}
+
+
+def _matrix_references(text):
+    """[(spec, why)] for a matrix cell an `if:` asks about that no cell produces.
+
+    A step runs only if the matrix produces its leg AND its `if:` spells that leg
+    the same, so a leg dropped from `leg:`, an `if:` typed `'cp1251'` or with a
+    trailing space, and a deleted `include` cell each leave every step in the file
+    while the leg never runs. Every `matrix.leg|os|shard == '<x>'` must name a
+    value some cell holds, and every leg some cell holds must be named by a step.
+    """
+    refs = []
+    for ln in text.splitlines():
+        body = ln.strip()
+        if body.startswith("- "):
+            body = body[2:]
+        if body.startswith("if:"):
+            refs += _MATRIX_REF_RE.findall(body)
+    if not refs and "matrix:" not in text:
+        return []
+    got = _matrix_cells(text)
+    if got["problem"] is not None:
+        return [("matrix", got["problem"])] if refs else []
+    produced = {}
+    for cell in got["cells"]:
+        for key, val in cell.items():
+            produced.setdefault(key, set()).add(val)
+    findings = []
+    for key, val in sorted(set(refs)):
+        if val not in produced.get(key, set()):
+            findings.append(("matrix.%s == %r" % (key, val),
+                             "an `if:` asks for a %s the matrix never produces "
+                             "(it produces %s), so that step never runs"
+                             % (key, sorted(produced.get(key, set())))))
+    named = set(val for key, val in refs if key == "leg")
+    for leg in sorted(produced.get("leg", set()) - named):
+        findings.append(("leg %s" % leg, "the matrix produces this leg and no "
+                         "step's `if:` names it, so its cells run nothing"))
+    return findings
+
+
 def shard_matrix_drift(text):
     """[(shard spec, why)] for a `--shard` in the workflow whose parts are not all run.
 
@@ -2184,7 +2284,7 @@ def shard_matrix_drift(text):
         if seen != set(range(1, count + 1)):
             findings.append(("%s/%d" % (sorted(seen), count),
                              "the workflow runs only these parts of %d" % count))
-    return findings
+    return findings + _matrix_references(text)
 
 
 def sweep_leg_verdict(repo=None):
@@ -4015,6 +4115,45 @@ def _cases(check):
     check("shm1 THE LIVE CLAIM: ci.yml runs every part of every leg it shards "
           "(%d `--shard` calls read): %r" % (_shm_specs, _shm_live),
           _shm_live == [] and _shm_specs > 0)
+
+    # THE MATRIX IS HALF OF WHAT MAKES A LEG RUN; the step's `if:` is the other.
+    # Each mutation leaves every step in the file, so the leg comparison cannot see it.
+    _shm_leg_list = "        leg: [plain, cp1252, spaced]\n"
+    _shm_e2e = ("          - os: ubuntu-latest\n            leg: e2e\n"
+                "          - os: windows-latest\n            leg: e2e\n")
+    _shm_drop = shard_matrix_drift(_shm_live_text.replace(
+        _shm_leg_list, "        leg: [plain, spaced]\n"))
+    check("shm2 a leg dropped from the matrix's `leg:` list is named: the steps "
+          "still carry `matrix.leg == 'cp1252'`, so only reading the matrix finds "
+          "that no cell runs them: %r" % (_shm_drop,),
+          _shm_live_text.count(_shm_leg_list) == 1 and len(_shm_drop) == 1
+          and _shm_drop[0][0] == "matrix.leg == 'cp1252'")
+    _shm_typo = shard_matrix_drift(_shm_live_text.replace(
+        "matrix.leg == 'cp1252' }}", "matrix.leg == 'cp1252 ' }}"))
+    _shm_typo2 = shard_matrix_drift(_shm_live_text.replace(
+        "matrix.leg == 'cp1252' }}", "matrix.leg == 'cp1251' }}"))
+    check("shm3 an `if:` that spells a leg differently from the matrix is named "
+          "twice over - the spelling nothing produces, and the real leg left with "
+          "no step: %r" % ([_shm_typo, _shm_typo2],),
+          all(sorted(w[0] for w in f) == ["leg cp1252", "matrix.leg == %r" % v]
+              for f, v in ((_shm_typo, "cp1252 "), (_shm_typo2, "cp1251"))))
+    _shm_noe2e = shard_matrix_drift(_shm_live_text.replace(_shm_e2e, ""))
+    check("shm4 removing the `include` e2e cells is named - every launcher step "
+          "and the runner's own selftest ask for a leg no cell produces: %r"
+          % (_shm_noe2e,),
+          _shm_e2e in _shm_live_text and len(_shm_noe2e) == 1
+          and _shm_noe2e[0][0] == "matrix.leg == 'e2e'")
+    _shm_ex = shard_matrix_drift(_shm_live_text.replace(
+        "          - os: windows-latest\n            leg: spaced\n", ""))
+    _shm_os = shard_matrix_drift(_shm_live_text.replace(
+        "runner.os != 'Windows' && matrix.leg == 'spaced'",
+        "matrix.os == 'macos-latest' && matrix.leg == 'spaced'"))
+    check("shm5 the matrix is read as GitHub reads it: dropping the `exclude` "
+          "entry changes no leg (spaced still runs on ubuntu), so the live file "
+          "stays clean, while an `if:` naming an os no cell has is named: %r"
+          % ([_shm_ex, _shm_os],),
+          _shm_ex == [] and len(_shm_os) == 1
+          and _shm_os[0][0] == "matrix.os == 'macos-latest'")
 
     _sl_none = sweep_leg_drift(read={"verify.sh": [], "ci.yml": _sl_ci},
                                source=_sl_src)

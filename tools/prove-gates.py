@@ -1104,6 +1104,19 @@ TABLE = (
   "        shard: [1, 2, 3]",
   "        shard: [1, 2]",
   "tools/gate-parity.py", "shm1"),
+ # A LEG THE MATRIX NO LONGER PRODUCES. Every step stays in ci.yml and every
+ # `if:` still spells its leg, so the leg comparison is silent; only reading the
+ # matrix's own `leg:` list finds that no cell runs `--encoding cp1252`.
+ ("shard_matrix_drift", ".github/workflows/ci.yml", "replace",
+  "        leg: [plain, cp1252, spaced]",
+  "        leg: [plain, spaced]",
+  "tools/gate-parity.py", "shm2"),
+ # ...and the include cells that alone produce the e2e leg.
+ ("shard_matrix_drift", ".github/workflows/ci.yml", "replace",
+  "          - os: ubuntu-latest\n            leg: e2e\n"
+  "          - os: windows-latest\n            leg: e2e\n",
+  "",
+  "tools/gate-parity.py", "shm4"),
  # ...and the same blind spot for the sweep, whose flags are its legs. CI sweeps a
  # second time under a forced legacy codec; the mutation is the runner that did
  # not, with the sweep still named on both sides so every gate set still agrees.
@@ -1972,6 +1985,17 @@ ALLOW = (
   "            elif [v.strip() for v in lists[0].split(\",\")] != want:",
   "            elif True:",
   "tools/gate-parity.py", "shm0"),
+ # THE MATRIX CHECK'S TWO OVER-FIRES. Convict every value an `if:` names, or
+ # every produced leg for having no step, and the live ci.yml - which `shm1` reads
+ # and expects clean - is reported broken.
+ ("shard_matrix_drift", "tools/gate-parity.py", "replace",
+  "        if val not in produced.get(key, set()):",
+  "        if True:",
+  "tools/gate-parity.py", "shm1"),
+ ("shard_matrix_drift", "tools/gate-parity.py", "replace",
+  "    for leg in sorted(produced.get(\"leg\", set()) - named):",
+  "    for leg in sorted(produced.get(\"leg\", set())):",
+  "tools/gate-parity.py", "shm1"),
  # THE OVER-FIRE THIS RULE IS ONE LINE AWAY FROM. The discriminator is the
  # COMPARISON: four of the five exempted scripts name a committed path in CI and
  # only READ it - `render-report.py docs/audit/audit-plan.json --out-dir /tmp/...`

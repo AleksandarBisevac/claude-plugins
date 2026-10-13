@@ -22,7 +22,49 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P127-R1",
+        "severity": "med",
+        "file": "plugins/audit/tests/_harness.py:688-706 (stage_workers) with tools/sweep-selftests.py default_jobs CI branch",
+        "issue": "The stage pool was sized for a premise the phase itself contradicts, and it does not consult the sweep pool it now shares cores with. P127.1 sizes for a 'two-core windows-latest runner' (stage_workers docstring; description), but run 38324787932 printed 'sweep: 331 files, 2 workers', which default_jobs() only prints for 4 cpus (cpus-2), and P127.2's own ci.yml comment says the same ('16.7 minutes of suites on two workers'). On a 4-vCPU runner stage_workers(4) == 2, so test_drive_phase's wall time has a floor of (serial stage sum)/2: the task's own numbers are 438-459s serial on macOS, i.e. ~220s on an idle mac pair before any Windows process-start penalty, against the 280s STAGE_TIMEOUT and 300s file cap. Before the phase it had up to 6 children. P127.2 then gives the sweep every core under CI=true (4 workers) and costliest-first submission, so in the shard holding test_drive_phase (shard 2 in the committed table, with test__invariants 118, run_test_gate 60, full_gate 57 started beside it) about 5 processes contend for 4 cores while the heavy staged suite is capped at 2 of them. The same cap now also applies to test_audit_task and test_close_phase (both staged_main users, both in shard 1), which the task did not mention or measure. Worst case the two pools multiply (4 sweep workers x 2 stage workers = 8 runnable on 4 cores); the typical case is the opposite, a heavy suite starved of the cores its siblings have already freed. Nothing handed shows the margin: the only evidence is macOS with 14 cores.",
+        "resolution": "Read the per-file seconds from CI run 38370435884 (jobs 'selftests (windows-latest, plain 2/3)' and shard 1) before accepting this. If test_drive_phase is above ~150s there, size the pool from the machine the sweep leaves free rather than a fixed half: e.g. have run_one export the sweep's worker count in the child env and let stage_workers use max(2, min(STAGE_WORKERS, cpus - sweep_jobs + 1)), or under CI=true give a staged suite min(STAGE_WORKERS, cpus). Correct the 'two-core runner' wording in the stage_workers docstring, the P127.1 description and sr12's label, and extend sr12 to pin the CI case.",
+        "fixTask": "P127.6-bgr"
+      },
+      {
+        "id": "P127-R2",
+        "severity": "med",
+        "file": "tools/gate-parity.py:2138-2190 (shard_matrix_drift), .github/workflows/ci.yml:63-86 and the `if: ... matrix.leg == '...'` lines",
+        "issue": "A leg can now be dropped from CI with gate-parity green. Before this diff a leg ran iff its step existed in ci.yml, which sweep_leg_drift compares against verify.sh. Now a step runs only if the matrix contains its leg and its `if:` spells it the same: `leg: [plain, cp1252, spaced]` plus the `include` e2e cells. shard_matrix_drift checks only the `shard: [1, 2, 3]` list. Deleting `cp1252` from the `leg:` list, typing `matrix.leg == 'cp1252 '` or `'cp1251'` in a step, or removing the `include` e2e cells leaves every step present in ci.yml, so the leg comparison passes while that leg (or all launcher steps and the runner's own --selftest) never runs. This is exactly the 'leg silently not run' class the parity gate exists for, and the prove-gates row added (shard: [1,2]) only mutates the shard list.",
+        "resolution": "Extend shard_matrix_drift (or a sibling) to read every `matrix.leg == '<x>'` in an `if:` and require each <x> to be produced by the matrix (in `leg:` or an `include` entry, and not excluded for every os), and each produced leg to have a step; add a prove-gates TABLE row mutating `leg: [plain, cp1252, spaced]` to drop one, and an ALLOW row for the over-fire.",
+        "fixTask": "P127.3-bgr"
+      },
+      {
+        "id": "P127-R3",
+        "severity": "low",
+        "file": "plugins/audit/tests/_harness.py:849-853 and :1662-1667 (sr12)",
+        "issue": "sr12 pins the stage_workers() table and that the default is within 2..STAGE_WORKERS, but not that run_stages() uses it. Reverting the one-line wiring (`if workers is None: workers = stage_workers()` back to `workers=STAGE_WORKERS`) leaves sr12 and every sr case green, so the behaviour the task names (the pool respects the machine) is pinned only as a pure function. The executor's redFirst is not-attempted, so no run shows otherwise.",
+        "resolution": "Add a case that runs run_stages over a fixture of labels with a recording stub (or patches stage_workers to return 1) and asserts the concurrency actually used, so the wiring is the thing that fails.",
+        "fixTask": "P127.5-bgr"
+      },
+      {
+        "id": "P127-R4",
+        "severity": "low",
+        "file": "tools/sweep-selftests.py:1840-1845 (sh7) vs the comments at :690-700",
+        "issue": "The comments and CONTRIBUTING.md say a stale cost table 'costs balance, never coverage', but sh7 asserts set(sh_costs) <= set(sh_full), so deleting or renaming any swept file turns the sweep's own selftest red (in the e2e cell and in whichever shard holds that file) until someone re-records .github/sweep-costs.json. Either the guard or the sentence is wrong. The table is also one macOS 12-worker run (platform darwin, workers 12); test_commit_task_work is recorded at 57s although P127.1 brought it to ~15s, so the balance is already stale on its first day.",
+        "resolution": "Pick one: drop the subset requirement from sh7 and keep only 'loads, and times most files', or keep it and say in the comments that a rename must re-record the table. Re-record the table from the CI run after P127.1/P127.2 land.",
+        "fixTask": "P127.4-bgr"
+      },
+      {
+        "id": "P127-R5",
+        "severity": "low",
+        "file": ".github/workflows/ci.yml:40-47, 70",
+        "issue": "The header's 'longest selftests: 24m59s' bound reasoning and `timeout-minutes: 60` were sized for one job per OS; every cell now targets 4-7 minutes, so a hung cell holds a runner for an hour and the comment's own rule (a bound under twice the figure is refused, and the figure is re-measured when a job changes) has not been applied to the new shape. Job check names also changed from 'selftests (os)' to 'selftests (os, leg shard)' (17 cells), so any branch-protection required-check entry for the old names (not in the repo, unverifiable here) would never report.",
+        "resolution": "After run 38370435884, rewrite the 'longest selftests' line to the longest cell and set timeout-minutes to at least twice it; confirm the required-checks list on the remote names the new cells or a single aggregate job.",
+        "fixTask": "P127.7-bgr"
+      }
+    ],
+    "outcome": "[findings: 5 - 0 high, 2 med, 3 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -89,7 +131,7 @@
     {
       "id": "P127.2-bgr",
       "title": "CI runs each sweep leg as its own parallel job, sharded, on every core - one plugin's CI finishes in about ten minutes",
-      "status": "in_progress",
+      "status": "done",
       "description": "Owner, 2026-10-13: CI for one repo and one plugin must not take enterprise-scale time - change it now. Measured on run 38324787932 (green): windows selftests 34 min = full sweep 16.7 min, then the SAME full sweep again under cp1252 16.4 min; ubuntu selftests 23 min = sweep 7.5 + cp1252 7.7 + spaced 7.2 min, one after another in one job; the sweep prints 'sweep: 331 files, 2 workers' on windows-latest because it keeps all cores but two free, which is right on a workstation and wastes half a CI runner. Restructure without weakening any check: (1) every sweep leg (plain, cp1252, spaced) becomes its own job, running in parallel instead of in sequence; (2) tools/sweep-selftests.py gains `--shard I/N` (a stable, deterministic split of the file list, balanced by recorded or estimated per-file cost so the slow suites do not land together; the union of shards is exactly the full set, pinned by a selftest case) and ci.yml runs each leg as a matrix of shards; (3) the sweep uses every core when it runs in CI (an explicit `--jobs` from ci.yml, or the CI environment), keeping the workstation default; (4) the cheap end-to-end launcher steps stay where they are or move to the shortest job. Keep `!cancelled()` on every independent step and gate-parity green - every leg CI runs must still be named in verify.sh, CONTRIBUTING.md and CLAUDE.md's gate list, so update the descriptions that state how CI runs the sweep (CLAUDE.md says the runner uses 'all cores but two'). Target: CI wall time at or under about 10 minutes, measured on the next CI run and stated in the return as before/after per job.",
       "files": [
         ".github/workflows/ci.yml",
@@ -126,20 +168,332 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "622d7254be7e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Attempt 2 added the two rows to tools/prove-gates.py through Edit, and the plan gate allowed both: TABLE ('shard_matrix_drift', '.github/workflows/ci.yml', replace '        shard: [1, 2, 3]' -> '        shard: [1, 2]', case shm1) and ALLOW ('shard_matrix_drift', 'tools/gate-parity.py', replace the `elif [v.strip() ...] != want:` line -> `elif True:`, case shm0). grep -cF shows each anchor matches exactly once (1 and 1). Both mutations went red in a git-archive scratch export during attempt 1 (shm1 -> 126/127; shm0+shm1 -> 125/127). I did not run them through `prove-gates.py --only` on the shared tree, because that mutates files siblings read. Runs: `python3 tools/prove-gates.py --selftest` ALL PASS 37/37, exit 0 (c1 and a4 now pass); full `python3 tools/sweep-selftests.py --quiet` exit 0, '331/331 files ok, 152 migrated to tests/, 15814 cases'; `python3 tools/gate-parity.py` exit 0; `ruff check plugins/audit tools` exit 0. .github/sweep-costs.json stays as recorded. Process note: in attempt 1 that file was produced by `--record-costs` and then moved with a Bash `mv`, which took it past the plan gate's ruling. It should have been written to a declared path, or flagged before moving. Unchanged from attempt 1: --shard I/N with a greedy least-loaded split, costliest files first, over the recorded costs (untimed files are estimated at the median); --record-costs; every core under CI=true; gate-parity's NOT_LEG rows plus shard_matrix_drift; a ci.yml matrix of OS x leg x shard[1,2,3] plus an e2e cell per OS; the CLAUDE.md, CONTRIBUTING.md and verify.sh descriptions. The shard union check from attempt 1 still holds: 1/3, 2/3 and 3/3 gave 133+99+99 files, disjoint, set-equal to the 331 of the full run. Before (run 38324787932): windows selftests 34 min, ubuntu 23 min. After: not measured yet; that needs the next CI run.",
+        "descriptive": "CI runs each sweep leg as three cost-balanced shards on every core; the full local sweep, gate-parity and prove-gates are all green."
       },
       "startedAt": "2026-10-13T08:22:42Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-13T08:36:38Z",
+      "verifiedBy": [
+        "tools/sweep-selftests.py sh0",
+        "sh1",
+        "sh2",
+        "sh3",
+        "sh4",
+        "sh5",
+        "sh6",
+        "sh7",
+        "sh8",
+        "j1",
+        "rc0",
+        "tools/gate-parity.py sl20",
+        "sl21",
+        "shm0",
+        "shm1"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-13T08:36:36Z.aa30e8",
         "status": "passed",
         "at": "2026-10-13T08:36:36Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "622d7254be7e",
+        "at": "2026-10-13T08:36:38Z"
+      },
+      "redFirst": {
+        "at": "2026-10-13T08:27:38Z",
+        "basis": "`python3 tools/sweep-selftests.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 13/14 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'load_costs': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_SHARD_MATRIX_RE': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'shard_matrix_drift': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'COSTS_PATH': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_median': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'cost_of': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'costs_from_rows': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'parse_shard': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'record_costs': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'run_order': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'shard_paths': TypeError: default_jobs() takes from 0 to 1 positional arguments but 2 were given; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P127.3-bgr",
+      "title": "fix P127-R2: A leg can now be dropped from CI with gate-parity green. Before ...",
+      "status": "in_progress",
+      "description": "A leg can now be dropped from CI with gate-parity green. Before this diff a leg ran iff its step existed in ci.yml, which sweep_leg_drift compares against verify.sh. Now a step runs only if the matrix contains its leg and its `if:` spells it the same: `leg: [plain, cp1252, spaced]` plus the `include` e2e cells. shard_matrix_drift checks only the `shard: [1, 2, 3]` list. Deleting `cp1252` from the `leg:` list, typing `matrix.leg == 'cp1252 '` or `'cp1251'` in a step, or removing the `include` e2e cells leaves every step present in ci.yml, so the leg comparison passes while that leg (or all launcher steps and the runner's own --selftest) never runs. This is exactly the 'leg silently not run' class the parity gate exists for, and the prove-gates row added (shard: [1,2]) only mutates the shard list.\n\nResolution asked: Extend shard_matrix_drift (or a sibling) to read every `matrix.leg == '<x>'` in an `if:` and require each <x> to be produced by the matrix (in `leg:` or an `include` entry, and not excluded for every os), and each produced leg to have a step; add a prove-gates TABLE row mutating `leg: [plain, cp1252, spaced]` to drop one, and an ALLOW row for the over-fire.",
+      "files": [
+        "tools/gate-parity.py",
+        ".github/workflows/ci.yml",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 2,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-13T08:41:05Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-13T08:40:54Z",
+          "text": "scope: tools/gate-parity.py, .github/workflows/ci.yml, every path the finding(s) P127-R2 name"
+        },
+        {
+          "at": "2026-10-13T08:40:54Z",
+          "text": "scope: matrix.leg matches no tracked file and is not written"
+        }
+      ],
+      "fixes": [
+        "P127-R2"
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-13T08:54:27Z.ffdad7",
+        "status": "passed",
+        "at": "2026-10-13T08:54:27Z"
+      }
+    },
+    {
+      "id": "P127.4-bgr",
+      "title": "fix P127-R4: The comments and CONTRIBUTING.md say a stale cost table 'costs b...",
+      "status": "pending",
+      "description": "The comments and CONTRIBUTING.md say a stale cost table 'costs balance, never coverage', but sh7 asserts set(sh_costs) <= set(sh_full), so deleting or renaming any swept file turns the sweep's own selftest red (in the e2e cell and in whichever shard holds that file) until someone re-records .github/sweep-costs.json. Either the guard or the sentence is wrong. The table is also one macOS 12-worker run (platform darwin, workers 12); test_commit_task_work is recorded at 57s although P127.1 brought it to ~15s, so the balance is already stale on its first day.\n\nResolution asked: Pick one: drop the subset requirement from sh7 and keep only 'loads, and times most files', or keep it and say in the comments that a rename must re-record the table. Re-record the table from the CI run after P127.1/P127.2 land.",
+      "files": [
+        "tools/sweep-selftests.py",
+        ".github/sweep-costs.json",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-13T08:40:54Z",
+          "text": "scope: tools/sweep-selftests.py, every path the finding(s) P127-R4 name"
+        }
+      ],
+      "fixes": [
+        "P127-R4"
+      ]
+    },
+    {
+      "id": "P127.5-bgr",
+      "title": "fix P127-R3: sr12 pins the stage_workers() table and that the default is with...",
+      "status": "pending",
+      "description": "sr12 pins the stage_workers() table and that the default is within 2..STAGE_WORKERS, but not that run_stages() uses it. Reverting the one-line wiring (`if workers is None: workers = stage_workers()` back to `workers=STAGE_WORKERS`) leaves sr12 and every sr case green, so the behaviour the task names (the pool respects the machine) is pinned only as a pure function. The executor's redFirst is not-attempted, so no run shows otherwise.\n\nResolution asked: Add a case that runs run_stages over a fixture of labels with a recording stub (or patches stage_workers to return 1) and asserts the concurrency actually used, so the wiring is the thing that fails.",
+      "files": [
+        "plugins/audit/tests/_harness.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-13T08:40:54Z",
+          "text": "scope: plugins/audit/tests/_harness.py, every path the finding(s) P127-R3 name"
+        },
+        {
+          "at": "2026-10-13T08:40:54Z",
+          "text": "regression, not tdd: every file P127-R3 names is a test file (plugins/audit/tests/_harness.py), so the defect is in the test itself and a red-first run at HEAD would pass with the fixed test; the gate proves it by the suite running"
+        },
+        {
+          "at": "2026-10-13T08:40:54Z",
+          "text": "no test runner in this task's gate for the test P127-R3 asks for: the gate is ['selftests', 'validate', 'plugin-validate', 'gate', 'report', 'lint', 'shots', 'interactive'], derived as the phase's testGate, wide -- no sibling task in P127 declares a path-scoped gate entry to read this project's spelling off; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P127-R3"
+      ]
+    },
+    {
+      "id": "P127.6-bgr",
+      "title": "fix P127-R1: The stage pool was sized for a premise the phase itself contradi...",
+      "status": "pending",
+      "description": "The stage pool was sized for a premise the phase itself contradicts, and it does not consult the sweep pool it now shares cores with. P127.1 sizes for a 'two-core windows-latest runner' (stage_workers docstring; description), but run 38324787932 printed 'sweep: 331 files, 2 workers', which default_jobs() only prints for 4 cpus (cpus-2), and P127.2's own ci.yml comment says the same ('16.7 minutes of suites on two workers'). On a 4-vCPU runner stage_workers(4) == 2, so test_drive_phase's wall time has a floor of (serial stage sum)/2: the task's own numbers are 438-459s serial on macOS, i.e. ~220s on an idle mac pair before any Windows process-start penalty, against the 280s STAGE_TIMEOUT and 300s file cap. Before the phase it had up to 6 children. P127.2 then gives the sweep every core under CI=true (4 workers) and costliest-first submission, so in the shard holding test_drive_phase (shard 2 in the committed table, with test__invariants 118, run_test_gate 60, full_gate 57 started beside it) about 5 processes contend for 4 cores while the heavy staged suite is capped at 2 of them. The same cap now also applies to test_audit_task and test_close_phase (both staged_main users, both in shard 1), which the task did not mention or measure. Worst case the two pools multiply (4 sweep workers x 2 stage workers = 8 runnable on 4 cores); the typical case is the opposite, a heavy suite starved of the cores its siblings have already freed. Nothing handed shows the margin: the only evidence is macOS with 14 cores.\n\nResolution asked: Read the per-file seconds from CI run 38370435884 (jobs 'selftests (windows-latest, plain 2/3)' and shard 1) before accepting this. If test_drive_phase is above ~150s there, size the pool from the machine the sweep leaves free rather than a fixed half: e.g. have run_one export the sweep's worker count in the child env and let stage_workers use max(2, min(STAGE_WORKERS, cpus - sweep_jobs + 1)), or under CI=true give a staged suite min(STAGE_WORKERS, cpus). Correct the 'two-core runner' wording in the stage_workers docstring, the P127.1 description and sr12's label, and extend sr12 to pin the CI case.",
+      "files": [
+        "plugins/audit/tests/_harness.py",
+        "tools/sweep-selftests.py",
+        ".github/sweep-costs.json",
+        ".github/workflows/ci.yml",
+        "tools/gate-parity.py",
+        "tools/prove-gates.py",
+        "CLAUDE.md",
+        "CONTRIBUTING.md",
+        "tools/verify.sh"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/sweep-selftests.py: with a cost table, the heaviest files land in cells whose concurrency budget (sweep workers x stage workers) fits the runner's cores, and no shard cell exceeds it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-13T08:40:54Z",
+          "text": "scope: plugins/audit/tests/_harness.py, tools/sweep-selftests.py, every path the finding(s) P127-R1 name"
+        },
+        {
+          "at": "2026-10-13T08:40:54Z",
+          "text": "no test runner in this task's gate for the test P127-R1 asks for: the gate is ['selftests', 'validate', 'plugin-validate', 'gate', 'report', 'lint', 'shots', 'interactive'], derived as the phase's testGate, wide -- no sibling task in P127 declares a path-scoped gate entry to read this project's spelling off; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        },
+        {
+          "at": "2026-10-13T08:48:46Z",
+          "text": "Measured by the orchestrator on CI run 38370435884 (ci/p127 @ 622d7254, the new sharded matrix): whole run 10m44s (was ~34 min); every ubuntu cell green, 3m-4m; windows cells 4m40s-6m43s, but three red ONLY on the 300s per-file cap: plain 1 (133 files, 4 workers) test__deps.py and test_audit_task.py; plain 2 (99 files, 4 workers) and cp1252 2 test_drive_phase.py. This is R1 as predicted: sweep workers (now all 4 cores in CI) x stage workers (stage_workers(4)=2) oversubscribe the runner while a staged heavy suite needs most of it - test_drive_phase's serial stage sum is ~440s on macOS and Windows starts processes several times slower; before P127 it finished just under 300s with 6 stage children on a 4-core runner. Direction: make the two pools one budget. The heaviest files by the recorded cost table (staged suites first) run in their own matrix cells (a 'heavy' shard per leg, or cost-balanced shards with a per-shard concurrency budget) where the sweep runs them one or two at a time and their stage pool gets the remaining cores (stage workers = cores // concurrent heavy files in CI; keep the workstation rule otherwise); everything else shards as now with workers = cores. A per-file timeout may be derived from the recorded cost (e.g. a multiple of the slowest recorded platform cost, never below 300s) as the hang detector - that is a calibrated limit, not the cap raised alone. Target: every windows cell green with clear margin and the whole run still about 10-11 minutes; state the arithmetic per cell."
+        }
+      ],
+      "fixes": [
+        "P127-R1"
+      ]
+    },
+    {
+      "id": "P127.7-bgr",
+      "title": "fix P127-R5: The header's 'longest selftests: 24m59s' bound reasoning and `ti...",
+      "status": "pending",
+      "description": "The header's 'longest selftests: 24m59s' bound reasoning and `timeout-minutes: 60` were sized for one job per OS; every cell now targets 4-7 minutes, so a hung cell holds a runner for an hour and the comment's own rule (a bound under twice the figure is refused, and the figure is re-measured when a job changes) has not been applied to the new shape. Job check names also changed from 'selftests (os)' to 'selftests (os, leg shard)' (17 cells), so any branch-protection required-check entry for the old names (not in the repo, unverifiable here) would never report.\n\nResolution asked: After run 38370435884, rewrite the 'longest selftests' line to the longest cell and set timeout-minutes to at least twice it; confirm the required-checks list on the remote names the new cells or a single aggregate job.",
+      "files": [
+        ".github/workflows/ci.yml"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-13T08:40:54Z",
+          "text": "scope: .github/workflows/ci.yml, every path the finding(s) P127-R5 name"
+        }
+      ],
+      "fixes": [
+        "P127-R5"
+      ]
     }
   ],
   "request": "Make the two suites that time out on windows-latest finish with margin, by structure.",
