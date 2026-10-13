@@ -2958,6 +2958,35 @@ def _bug_for_add(assembled, bug_id):
     return bug, None
 
 
+# --- record paths: the manifest pair, the journal, the evidence --------------------
+# `integrate-task.py`'s `record_paths` is the one definition of these three - the
+# manifest pair, the journal directory and the evidence directory - but an entry
+# point may not import another, so what is composed here is the SAME primitives
+# that function reads (`_invariants.manifest_files`, `_journal_io.journal_dir`,
+# `_evidence_io.evidence_dir`) rather than a second list of the three names.
+# `commit-task-work.py`'s `stage_targets` reads the same three for the same reason.
+def _record_rels(assembled, phase, mpath, project):
+    """Git-root-relative paths that are RECORD, not work: the manifest pair, the
+    journal directory and the evidence directory - the paths a task commit
+    stages beside its declared `files` and never as one of them."""
+    config = _journal_io.load_config(project)
+    git_root = _invariants.git_root_for(assembled, project)
+    index_abs, phase_abs = _invariants.manifest_files(mpath, phase)
+    found = []
+    for absolute in (index_abs, phase_abs, _journal_io.journal_dir(project, config),
+                     _evidence_io.evidence_dir(project, config)):
+        rel = _invariants._rel(absolute, git_root)
+        if rel is not None and rel not in found:
+            found.append(rel)
+    return found
+
+
+def _is_record_path(path, records):
+    """Whether `path` is one of `records`, or lives under one of them - a
+    record directory's own tree (the journal, the evidence) is still a record."""
+    return any(path == r or path.startswith(r.rstrip("/") + "/") for r in records)
+
+
 # --- what a fix task's scope is built from -----------------------------------------
 # A review finding names its file in free text: `a.tsx, b.tsx, c.tsx`, `X.tsx:4 and
 # Y.tsx:71`, `lib/a.ts:291-294,308`. The driver used to cut that at the first colon,
@@ -2988,16 +3017,20 @@ def _scope_paths(entry):
     return [p for p in _finding_paths(entry.get("file")) if not _path_problems([p])]
 
 
-def _pathless_refusal(targets, files, project):
+def _pathless_refusal(targets, files, project, records=()):
     """The refusal for `--fixes` findings whose `file` text names no path a task
     can be scoped to, or None. A fix task scoped to nothing by accident is refused
     edit by edit by the plan gate, so it is not made: each such finding is named
     with the text it carried, and with what each word it did name resolved to
     (`_resolve_finding_path`). A path the caller named in `files` is a scope of its
-    own, so nothing is refused then."""
+    own, so nothing is refused then.
+
+    A FINDING NAMING ONLY A RECORD PATH (`records`) is bare too, and for the same
+    reason: `_fix_scope` drops a record path rather than scoping a task onto it,
+    so a finding whose `file` named nothing else has nothing left."""
     if files:
         return None
-    bare = [e for e in targets if not _fix_scope([e], project)["paths"]]
+    bare = [e for e in targets if not _fix_scope([e], project, records)["paths"]]
     if not bare:
         return None
     return ("[audit-task] --fixes names finding(s) whose `file` text names no path "
@@ -3008,18 +3041,18 @@ def _pathless_refusal(targets, files, project):
             % ("; ".join("%s (file: %r)%s" % (
                 e.get("id"), e.get("file"),
                 "".join(" - " + _unresolved_sentence(p, c) for p, c
-                        in _fix_scope([e], project)["unresolved"]))
+                        in _fix_scope([e], project, records)["unresolved"]))
                 for e in bare),))
 
 
-def _runnerless_test_note(targets, project, gate, basis, fixes):
+def _runnerless_test_note(targets, project, gate, basis, fixes, records=()):
     """The note for a fix task that owes a test but whose gate names no test
     runner, else None: the findings whose resolution asks for a test (or, failing
     those, all of `fixes` when the scope holds a test path) and why the gate has
     none - `basis`, the sentence the gate derivation gave for its own choice.
     Which runner a test belongs to is `_gate_derive`'s to say, so a gate it reads
     a runner off is never noted."""
-    scope = _fix_scope(targets, project)
+    scope = _fix_scope(targets, project, records)
     owed = scope["asksForTest"] or (
         list(fixes) if any(_fr.is_test_path(p) for p in scope["paths"]) else [])
     if not owed or any(_gate_derive.entry_runner(e) for e in gate):
@@ -3092,20 +3125,29 @@ def _unresolved_sentence(path, candidates):
     return "%s matches no tracked file and is not written" % (path,)
 
 
-def _fix_scope(targets, project):
-    """`{"paths", "newTests", "asksForTest", "unplaced", "unresolved"}` for the
-    findings `--fixes` names: every path they name that can be a `files` entry,
-    each resolved to an existing repo-relative path (`_resolve_finding_path`; a
-    word that resolves to several, or to none and is not a test file still to be
-    written, is in `unresolved` as `(word, candidates)` instead); the new test
-    files - those a finding names that do not exist yet, and the one a finding's
-    RESOLUTION asks for, placed beside its source when the directory shows where
-    tests live; and the findings that ask for a test the repo gives no place for.
-    A test file the resolution names that exists is scoped too, so the task
-    carries the test it is asked to add. The prose reading is confined to the
-    resolution - the sentence that says what to do - and only ever defaults a
-    mode the caller did not pick."""
-    paths, asking, unresolved, tracked = [], [], [], []
+def _fix_scope(targets, project, records=()):
+    """`{"paths", "newTests", "asksForTest", "unplaced", "unresolved",
+    "droppedRecords"}` for the findings `--fixes` names: every path they name
+    that can be a `files` entry, each resolved to an existing repo-relative path
+    (`_resolve_finding_path`; a word that resolves to several, or to none and is
+    not a test file still to be written, is in `unresolved` as `(word,
+    candidates)` instead); the new test files - those a finding names that do
+    not exist yet, and the one a finding's RESOLUTION asks for, placed beside
+    its source when the directory shows where tests live; and the findings that
+    ask for a test the repo gives no place for. A test file the resolution
+    names that exists is scoped too, so the task carries the test it is asked
+    to add. The prose reading is confined to the resolution - the sentence that
+    says what to do - and only ever defaults a mode the caller did not pick.
+
+    A WORD THAT RESOLVES TO A RECORD PATH (`records` - the manifest pair, the
+    journal, the evidence) IS DROPPED, not scoped: the finding's own file was the
+    phase's shard, a journal row or an evidence file once, and a fix task is this
+    phase's own WORK, not the record the phase keeps of every task's work -
+    declaring it would have every later verb that rewrites the record read as
+    this task's own change (`stamp-verification`'s evidence write, the next
+    task's journal row). `droppedRecords` names each one, once, so the caller's
+    notes can say why it is missing rather than leave it looking forgotten."""
+    paths, asking, unresolved, tracked, dropped = [], [], [], [], []
     for entry in targets:
         mine = []
         for word in _scope_paths(entry):
@@ -3122,6 +3164,13 @@ def _fix_scope(targets, project):
             found = _resolve_finding_path(word, project, tracked)
             if len(found) == 1 and found[0] not in mine:
                 mine.append(found[0])
+        mine, kept = [], mine
+        for p in kept:
+            if _is_record_path(p, records):
+                if p not in dropped:
+                    dropped.append(p)
+            else:
+                mine.append(p)
         paths.extend(p for p in mine if p not in paths)
         if _ASKS_FOR_TEST.search(str(entry.get("resolution") or "")):
             asking.append((str(entry.get("id")), mine))
@@ -3140,7 +3189,7 @@ def _fix_scope(targets, project):
     return {"paths": paths + [t for t in new_tests if t not in paths],
             "newTests": new_tests, "unplaced": unplaced,
             "asksForTest": [fid for fid, _m in asking],
-            "unresolved": unresolved}
+            "unresolved": unresolved, "droppedRecords": dropped}
 
 
 def _unit_runner_paths(phase, assembled, project, declared):
@@ -3157,7 +3206,7 @@ def _unit_runner_paths(phase, assembled, project, declared):
                 if r in _gate_derive.UNIT_RUNNERS and ps)
 
 
-def _fix_task_args(args, targets, project, fixes):
+def _fix_task_args(args, targets, project, fixes, records=()):
     """`(args, notes)` for a task fixing the findings `targets` (`fixes`, their
     ids): `args` copied, widened onto every path the findings name, with the
     discipline they ask for when the caller picked none, and the notes that
@@ -3170,13 +3219,18 @@ def _fix_task_args(args, targets, project, fixes):
     else tdd - a fix task used to default to gate-only, and a finding asking
     for a new test was handed a gate that could not run it. Gate-only is the
     caller's to ask for, never a default."""
-    scope = _fix_scope(targets, project)
+    scope = _fix_scope(targets, project, records)
     args = argparse.Namespace(**vars(args))
     args.files = list(args.files or []) + scope["paths"]
     notes = []
     if scope["paths"]:
         notes.append("scope: %s, every path the finding(s) %s name"
                      % (", ".join(scope["paths"]), ", ".join(fixes)))
+    if scope["droppedRecords"]:
+        notes.append("scope: dropped %s, named by the finding(s) %s but a "
+                     "record this commit already carries beside the task's own "
+                     "files, not a task's own work"
+                     % (", ".join(scope["droppedRecords"]), ", ".join(fixes)))
     notes.extend("scope: " + _unresolved_sentence(w, c)
                  for w, c in scope["unresolved"])
     if scope["unplaced"]:
@@ -3247,13 +3301,14 @@ def _companion_basis(companions):
                      for c in companions)
 
 
-def _fixes_targets(assembled, phase, fixes, files, project):
+def _fixes_targets(assembled, phase, fixes, files, project, records=()):
     """`(findings, None)` - the review findings `--fixes` names, each of the new
     task's own phase and naming no task yet - or `(None, refusal)` naming every
     one that is not. A finding of another phase would key an exception the task's
     landing is never asked about, and one already naming a task belongs to it.
     A finding whose `file` names no path is refused too, unless the caller's own
-    `files` give the task a scope (`_pathless_refusal`)."""
+    `files` give the task a scope (`_pathless_refusal`) - and a finding naming
+    only a record path (`records`) is exactly that: nothing to scope a task onto."""
     if not fixes:
         return [], None
     own = dict((str(f.get("id")), f) for f in
@@ -3277,7 +3332,7 @@ def _fixes_targets(assembled, phase, fixes, files, project):
         return None, ("[audit-task] --fixes names only findings of the task's own "
                       "phase that name no fix task yet: %s. Nothing written."
                       % ("; ".join(bad),))
-    refusal = _pathless_refusal(found, list(files), project)
+    refusal = _pathless_refusal(found, list(files), project, records)
     if refusal:
         return None, refusal
     return found, None
@@ -3347,8 +3402,9 @@ def _locked_add(args, project, config, mpath, title, out):
             out(refusal)
             return E_USAGE
     fixes = _split_csv(args.fixes)
+    records = _record_rels(assembled, phase, mpath, project) if fixes else ()
     targets, refusal = _fixes_targets(assembled, phase, fixes,
-                                      _split_csv(args.files), project)
+                                      _split_csv(args.files), project, records)
     if refusal:
         out(refusal)
         return E_USAGE
@@ -3367,7 +3423,7 @@ def _locked_add(args, project, config, mpath, title, out):
 
     fix_notes = []
     if fixes:
-        args, fix_notes = _fix_task_args(args, targets, project, fixes)
+        args, fix_notes = _fix_task_args(args, targets, project, fixes, records)
     if args.tests_mode is None:
         inline_mode, inline_note = _inline_suite_discipline(
             _tests_add_paths(args.tests_add)[0])
@@ -3385,7 +3441,7 @@ def _locked_add(args, project, config, mpath, title, out):
                                                 runner_aware=bool(fixes))
     if fixes:
         bare_runner = _runnerless_test_note(targets, project, task["tests"]["gate"],
-                                            gate_basis, fixes)
+                                            gate_basis, fixes, records)
         fix_notes = fix_notes + ([bare_runner] if bare_runner else [])
     for text in fix_notes + ([_companion_basis(companions)] if companions else []):
         task.setdefault("notes", []).append({"at": _utc_now(), "text": text})
@@ -7773,7 +7829,7 @@ def _locked_batch_add(args, project, config, mpath, doc, out, seed=None):
         return E_USAGE
 
     bases, refusal = _batch_build_tasks(doc, ids, keys, phase, first, assembled,
-                                        project)
+                                        project, mpath)
     if refusal:
         out(refusal)
         return E_USAGE
@@ -7853,7 +7909,7 @@ def _locked_batch_add(args, project, config, mpath, doc, out, seed=None):
     return 0
 
 
-def _batch_build_tasks(doc, ids, keys, phase, first, assembled, project):
+def _batch_build_tasks(doc, ids, keys, phase, first, assembled, project, mpath):
     """Build every task of the batch in place of its placeholder at
     `phase["tasks"][first:]`: `(bases, None)` - the companion basis each task's
     journal row carries - or `(None, refusal)` before anything is written.
@@ -7867,14 +7923,15 @@ def _batch_build_tasks(doc, ids, keys, phase, first, assembled, project):
     for i, (spec_task, tid) in enumerate(zip(doc["tasks"], ids)):
         args = _batch_task_args(spec_task, keys)
         fixes = list(spec_task.get("fixes") or [])
+        records = _record_rels(assembled, phase, mpath, project) if fixes else ()
         targets, refusal = _fixes_targets(assembled, phase, fixes,
-                                          _split_csv(args.files), project)
+                                          _split_csv(args.files), project, records)
         if refusal:
             bad.append("tasks[%d]: %s" % (i, refusal))
             continue
         notes, companions = [], []
         if fixes:
-            args, notes = _fix_task_args(args, targets, project, fixes)
+            args, notes = _fix_task_args(args, targets, project, fixes, records)
             declared = _union_paths(_split_csv(args.files),
                                     _tests_add_paths(args.tests_add)[0])
             companions, _cn = _companions_for(
@@ -7887,7 +7944,7 @@ def _batch_build_tasks(doc, ids, keys, phase, first, assembled, project):
         if fixes:
             bare_runner = _runnerless_test_note(targets, project,
                                                 task["tests"]["gate"], gate_basis,
-                                                fixes)
+                                                fixes, records)
             notes = notes + ([bare_runner] if bare_runner else [])
         for text in notes + ([basis] if basis else []):
             task.setdefault("notes", []).append({"at": _utc_now(), "text": text})
@@ -8315,6 +8372,19 @@ def _locked_scope(args, project, config, mpath, tid, out):
     if refusal:
         out(refusal)
         return E_USAGE
+    if files:
+        records = _record_rels(assembled, phase, mpath, project)
+        hit = [f for f in files if _is_record_path(f, records)]
+        if hit:
+            out("[audit-task] --files may not take %s: %s a record this "
+                "commit already carries beside a task's own files - the "
+                "phase's manifest file, the journal directory or the evidence "
+                "directory - and not a task's own work. Scoping a task onto it "
+                "would have every verb that rewrites the record read as this "
+                "task's own change. Nothing written."
+                % (", ".join(repr(h) for h in hit),
+                   "it is" if len(hit) == 1 else "they are"))
+            return E_USAGE
     # `is None` for the two ID-LIST flags and not truthiness, because an EMPTY
     # value of either is an instruction rather than an absence: `--depends-on ""`
     # is how the field is emptied, which is `retarget --area ""`'s spelling and

@@ -655,7 +655,12 @@
       "startedAt": "2026-10-13T21:55:38Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-13T22:47:28Z.5b6654",
+        "status": "passed",
+        "at": "2026-10-13T22:47:28Z"
+      }
     },
     {
       "id": "P125.9",
@@ -1771,7 +1776,12 @@
       "startedAt": "2026-10-13T21:55:43Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-13T22:56:27Z.727961",
+        "status": "failed",
+        "at": "2026-10-13T22:56:27Z"
+      }
     },
     {
       "id": "P125.28",
@@ -1823,7 +1833,12 @@
           "at": "2026-10-13T22:30:53Z",
           "text": "Outcome (the filed return carries placeholder text and testsAdded []; this note is the record): audit-task.py gains _record_rels/_is_record_path composed from the primitives integrate-task.record_paths reads; a finding naming a record path (manifest pair, journal dir, evidence dir) is dropped from a fix task's derived files with a note, a finding left with no path falls to the pathless refusal; scope --files refuses a record path; commit-task-work.stage_targets resolves records before the declared files, so a declared file that is a record is staged as the record. Tests cz20, cz21 (cz-block). Red-first proved by the helper (cz20, cz21 red at HEAD). Sweep 332/332. Open: the composition is a second copy of record_paths; one shared definition belongs in _invariants.py."
         }
-      ]
+      ],
+      "testEvidence": {
+        "runId": "2026-10-13T23:05:44Z.5ebeb7",
+        "status": "passed",
+        "at": "2026-10-13T23:05:44Z"
+      }
     },
     {
       "id": "P125.29-0h5",

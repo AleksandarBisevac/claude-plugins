@@ -16147,6 +16147,33 @@ def _introduces_cases(check):
               "runner says why no runner was added instead of leaving a "
               "lint-only gate in silence: %r" % ((code, t.get("tests"), notes),),
               code == 0 and "no test runner" in notes and "P1-R1" in notes)
+
+        # ---- a record path (the manifest pair, the journal, the evidence) is
+        # never a task's own `files` entry -------------------------------------
+        proj, mpath = project("fx-record", [finding(
+            "P1-R1", "docs/audit/audit-plan.json, src/a.ts")])
+        write(proj, "src/a.ts")
+        code, text = verb(proj, "add", "Fix", "--phase", "P1", "--fixes", "P1-R1")
+        t = tasks(mpath).get("P1.2") or {}
+        notes = " ".join(n.get("text", "") for n in t.get("notes") or [])
+        check("cz20 a fix task derived from a finding naming the phase's own "
+              "shard (the manifest file itself, single-file layout) declares no "
+              "record path - only src/a.ts, with a note naming the drop: %r"
+              % ((code, t.get("files"), notes),),
+              code == 0 and t.get("files") == ["src/a.ts"]
+              and "docs/audit/audit-plan.json" in notes and "record" in notes)
+
+        proj, mpath = project("fx-record-scope")
+        write(proj, "src/a.ts")
+        verb(proj, "add", "Plain", "--phase", "P1", "--files", "src/a.ts")
+        before = open(mpath, "rb").read()
+        code, text = verb(proj, "scope", "P1.2", "--files",
+                          "src/a.ts,docs/audit/audit-plan.json")
+        check("cz21 `scope --files` with a record path is refused naming why, "
+              "and writes nothing: %r" % ((code, text[:400]),),
+              code == M.E_USAGE and "docs/audit/audit-plan.json" in text
+              and "record" in text
+              and open(mpath, "rb").read() == before)
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

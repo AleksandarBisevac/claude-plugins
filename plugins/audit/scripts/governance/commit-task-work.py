@@ -300,6 +300,24 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
     index_abs, phase_file_abs = _invariants.manifest_files(manifest_path, phase)
     candidates, skipped = [], []
 
+    # RECORD RELS COME FIRST, so a declared file that happens to BE one of
+    # these three - the phase's own shard, say, named in a fix task's `files` -
+    # is recognised as the record it is before the loop below would otherwise
+    # read it as the task's own work. A commit grading a record path's changes
+    # against the attempt's own edits would refuse a close for changes this
+    # task never made - every verb rewrites the phase's shard.
+    record_abs = ((MANIFEST_LABEL, phase_file_abs),
+                  (JOURNAL_LABEL, _journal_io.journal_dir(project, config)),
+                  (EVIDENCE_LABEL, _evidence_io.evidence_dir(project, config)))
+    record_rels = []
+    for label, absolute in record_abs:
+        rel = _invariants._rel(absolute, git_root)
+        if rel is None:
+            skipped.append("%s lives outside the git root, so it cannot be "
+                           "committed - proceeding without it" % (label,))
+            continue
+        record_rels.append((rel, label, absolute))
+
     for entry in (task.get("files") or []):
         name = _vocab._strip_line_suffix(entry)
         if not name.strip():
@@ -310,20 +328,13 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
             skipped.append("%s %s lives outside the git root, so it cannot be "
                            "committed at all" % (DECLARED_LABEL, name))
             continue
+        if rel in [r for r, _label, _abs in record_rels]:
+            continue
         if rel in [c[0] for c in candidates]:
             continue
         candidates.append((rel, name, os.path.exists(absolute), True))
 
-    for label, absolute in ((MANIFEST_LABEL, phase_file_abs),
-                            (JOURNAL_LABEL, _journal_io.journal_dir(project,
-                                                                    config)),
-                            (EVIDENCE_LABEL, _evidence_io.evidence_dir(project,
-                                                                       config))):
-        rel = _invariants._rel(absolute, git_root)
-        if rel is None:
-            skipped.append("%s lives outside the git root, so it cannot be "
-                           "committed - proceeding without it" % (label,))
-            continue
+    for rel, label, absolute in record_rels:
         if not os.path.exists(absolute):
             # A journal that does not exist yet is created by the row this
             # commit writes and carried from there, so it is not a skip.
