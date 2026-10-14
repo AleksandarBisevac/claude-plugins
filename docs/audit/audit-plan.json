@@ -1174,7 +1174,8 @@
       "P125.9",
       "P125.11",
       "P128.7-0h5",
-      "P125.44-0h5"
+      "P125.44-0h5",
+      "P125.47-0h5"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -6655,7 +6656,8 @@
       "P127.6-bgr",
       "P127.8-bgr",
       "P128.4-0h5",
-      "P128.7-0h5"
+      "P128.7-0h5",
+      "P125.47-0h5"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -6803,7 +6805,8 @@
       "P127.6-bgr",
       "P125.11",
       "P128.7-0h5",
-      "P128.12-0h5"
+      "P128.12-0h5",
+      "P125.47-0h5"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",
@@ -8610,6 +8613,9 @@
     ],
     "plugins/audit/tests/test__usage_routing.py": [
       "P125.2"
+    ],
+    "tools/check-plan-gate-e2e.py": [
+      "P125.47-0h5"
     ]
   },
   "bugs": [
