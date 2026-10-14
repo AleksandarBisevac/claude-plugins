@@ -27,9 +27,11 @@ import json
 import os
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -9949,8 +9951,49 @@ def _tree_cases(check):
           full_code == M.E_ASK and any("--full" in ln for ln in full_lines))
 
 
+def _shared_facts_cases(check):
+    """One tree, one set of changed paths: both gatherers must hand back the
+    same version answer and the same related listing, and must get them from
+    `_gate_derive`'s helpers (a sentinel patched into the helper reaches both).
+    """
+    dpg = _loader.load_script("derive-phase-gate.py", "rtg_dpg")
+    gd = M._gate_derive
+    tree = tempfile.mkdtemp()
+    try:
+        derived = {"listing": {"all": "printf 'a.t\\nb.t\\n'",
+                               "related": "printf 'a.t\\n#%s\\n' {paths}"},
+                   "verifiedOn": {"command": "echo v9", "answer": "v9"}}
+        meta = {"phaseGate": {"derived": derived}}
+        changed = ["src/x y.py", "src/z.py"]
+        phase = {"id": "P1", "tasks": [{"id": "P1.1", "files": changed}]}
+        a = M._affected_facts(tree, meta, changed)
+        b, _lines = dpg._gather_facts({"meta": meta, "phases": [phase]}, phase,
+                                      tree, lambda _l: None)
+        real_v, real_f = gd.version_facts, gd.listing_fact
+        gd.version_facts = lambda _d, _r: {"versionAnswer": "SENTINEL"}
+        gd.listing_fact = lambda _r: {"exit": 0, "paths": ["SENTINEL"]}
+        try:
+            sa = M._affected_facts(tree, meta, changed)
+            sb, _l = dpg._gather_facts({"meta": meta, "phases": [phase]}, phase,
+                                       tree, lambda _l: None)
+        finally:
+            gd.version_facts, gd.listing_fact = real_v, real_f
+    finally:
+        shutil.rmtree(tree, ignore_errors=True)
+    pick = lambda f: (f.get("versionAnswer"), f["related"]["paths"]
+                      if "related" in f else f["listing"]["paths"])
+    check("run-test-gate's affected facts and derive-phase-gate's gathered "
+          "facts come from the one _gate_derive helper and agree over the "
+          "same tree and changed paths: %r %r / %r %r"
+          % (pick(a), pick(b), pick(sa), pick(sb)),
+          pick(a) == pick(b)
+          and pick(a) == ("v9", ["a.t", "#src/x y.py", "a.t", "#src/z.py"])
+          and pick(sa) == pick(sb) == ("SENTINEL", ["SENTINEL"]))
+
+
 def _selftest():
     def body(check):
+        _shared_facts_cases(check)
         _cases(check)
         _harness.stage(check, "tr-block", _tree_cases)
         _harness.stage(check, "sl-block", _success_line_cases)

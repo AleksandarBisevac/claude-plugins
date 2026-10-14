@@ -200,12 +200,6 @@ def _spawn(command, cwd, timeout):
             "durationMs": duration_ms, "timedOut": timed_out}
 
 
-def _lines_of(text):
-    """One path per non-blank line -- the one listing-output convention this
-    file reads, for both the version answer's cousin and the two listings."""
-    return [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
-
-
 # --- gathering the observations `_gate_derive.derive` needs ----------------------
 def _touched_paths(phase):
     return _gate_derive._touched_files(phase)
@@ -238,19 +232,9 @@ def _gather_facts(manifest, phase, project, out):
                      "so there is no listing to run")
         derived_cfg = {}
 
-    verified_on = derived_cfg.get("verifiedOn")
-    verified_on = verified_on if isinstance(verified_on, dict) else {}
-    version_cmd = verified_on.get("command")
-    if isinstance(version_cmd, str) and version_cmd.strip():
-        res = _spawn(_with_preamble(version_cmd, preamble), project,
-                     VERSION_TIMEOUT_SECONDS)
-        if res["exit"] == 0:
-            facts["versionAnswer"] = res["output"].strip()
-        else:
-            # ITS OWN SKIP REASON, never folded into "this machine answers
-            # None": that would read as an actual (mismatched) answer rather
-            # than as no answer at all having been produced.
-            facts["versionCheckFailed"] = True
+    facts.update(_gate_derive.version_facts(
+        derived_cfg, lambda cmd: _spawn(_with_preamble(cmd, preamble), project,
+                                        VERSION_TIMEOUT_SECONDS)))
 
     listing_cfg = derived_cfg.get("listing")
     listing_cfg = listing_cfg if isinstance(listing_cfg, dict) else None
@@ -261,16 +245,15 @@ def _gather_facts(manifest, phase, project, out):
     if have_all and have_related:
         full_cmd = _with_preamble(all_cmd_tpl, preamble)
         full_res = _spawn(full_cmd, project, LISTING_TIMEOUT_SECONDS)
-        facts["fullListing"] = {"exit": full_res["exit"],
-                                "paths": _lines_of(full_res["output"]),
-                                "durationMs": full_res["durationMs"]}
-        touched = _touched_paths(phase)
-        quoted = " ".join(shlex.quote(p) for p in touched)
-        related_cmd = _with_preamble(related_tpl.replace("{paths}", quoted), preamble)
+        facts["fullListing"] = dict(_gate_derive.listing_fact(full_res),
+                                    durationMs=full_res["durationMs"])
+        related_cmd = _with_preamble(
+            _gate_derive.listing_command(related_tpl, _touched_paths(phase)),
+            preamble)
         related_res = _spawn(related_cmd, project, LISTING_TIMEOUT_SECONDS)
-        facts["listing"] = {"command": related_cmd, "exit": related_res["exit"],
-                            "paths": _lines_of(related_res["output"]),
-                            "durationMs": related_res["durationMs"]}
+        facts["listing"] = dict(_gate_derive.listing_fact(related_res),
+                                command=related_cmd,
+                                durationMs=related_res["durationMs"])
     elif derived_cfg:
         lines.append("importers: skipped - meta.phaseGate.derived.listing "
                      "carries no usable related/all pair")
@@ -280,7 +263,7 @@ def _gather_facts(manifest, phase, project, out):
         diff_cmd = "git diff --name-only %s...HEAD" % shlex.quote(base_ref)
         diff_res = _spawn(diff_cmd, project, GIT_TIMEOUT_SECONDS)
         if diff_res["exit"] == 0:
-            facts["changedSince"] = _lines_of(diff_res["output"])
+            facts["changedSince"] = _gate_derive.output_lines(diff_res["output"])
         else:
             lines.append("changed: skipped - %r exited %r"
                          % (diff_cmd, diff_res["exit"]))

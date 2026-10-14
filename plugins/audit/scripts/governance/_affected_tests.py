@@ -223,16 +223,15 @@ def listing_templates(meta):
 
 
 def _untrusted(meta, facts):
-    """Why the related listing's answer may not be read, or None. The two
-    version checks `_gate_derive._importers_arm` applies to the same listing."""
-    if facts.get("versionCheckFailed"):
+    """Why the related listing's answer may not be read, or None. The verdict
+    is `_gate_derive.version_distrust`'s; only the wording is this arm's."""
+    distrust = _gate_derive.version_distrust(_derived(meta), facts)
+    if distrust is None:
+        return None
+    if distrust[0] == "failed":
         return "the version command failed"
-    verified = _derived(meta).get("verifiedOn")
-    declared = verified.get("answer") if isinstance(verified, dict) else None
-    if declared != facts.get("versionAnswer"):
-        return ("the listing was verified on %s and this machine answers %s"
-                % (declared, facts.get("versionAnswer")))
-    return None
+    return ("the listing was verified on %s and this machine answers %s"
+            % (distrust[1], distrust[2]))
 
 
 def _ran(facts, key):

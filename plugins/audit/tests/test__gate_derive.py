@@ -688,8 +688,61 @@ def _cases(check):
           and no_spelling_result["narrowed"] is False)
 
 
+def _version_trust_cases(check):
+    import _affected_tests as at
+
+    derived = {"listing": {"all": "ls", "related": "rel {paths}"},
+               "verifiedOn": {"command": "v", "answer": "1.0"}}
+    meta = {"phaseGate": {"derived": derived}}
+    listing = {"exit": 0, "paths": ["a.test.ts"]}
+    full = {"exit": 0, "paths": ["a.test.ts", "b.test.ts"]}
+
+    def both(facts):
+        facts = dict(facts, listing=listing, fullListing=full)
+        return (M._importers_arm(meta, facts)[2], at._untrusted(meta, facts))
+
+    trusted = both({"versionAnswer": "1.0"})
+    other = both({"versionAnswer": "2.0"})
+    failed = both({"versionCheckFailed": True})
+    # The mutation: a helper that distrusts everything flips BOTH callers,
+    # which only holds if neither keeps a private copy of the checks. The
+    # trusted fixture is the other direction: a helper that always distrusts
+    # fails the first clause, one that never does fails the second.
+    real = M.version_distrust
+    M.version_distrust = lambda _d, _f: ("failed", None, None)
+    try:
+        mutated = both({"versionAnswer": "1.0"})
+    finally:
+        M.version_distrust = real
+    check("the version-trust verdict _affected_tests uses and the one "
+          "_importers_arm uses are the same function's answer (a mutation of "
+          "the helper changes both): trusted %r, other %r, failed %r, "
+          "mutated %r" % (trusted, other, failed, mutated),
+          trusted[1] is None and trusted[0] != failed[0]
+          and other[0] is not None and other[1] is not None
+          and "1.0" in other[0] and "2.0" in other[0]
+          and "1.0" in other[1] and "2.0" in other[1]
+          and failed[0] is not None and failed[1] == "the version command failed"
+          and mutated[0] == failed[0] and mutated[1] == failed[1])
+    ran = M.version_facts(derived, lambda c: {"exit": 0, "output": " 1.0\n"})
+    bad = M.version_facts(derived, lambda c: {"exit": 1, "output": "x"})
+    none = M.version_facts({}, lambda c: 1 / 0)
+    check("vt3 version_facts: an answer, a failure as its own fact, and no "
+          "command run when none is recorded: %r %r %r" % (ran, bad, none),
+          ran == {"versionAnswer": "1.0"}
+          and bad == {"versionCheckFailed": True} and none == {})
+    check("vt4 listing_command quotes each path and listing_fact strips "
+          "blank lines",
+          M.listing_command("t {paths}", ["a b", "c"]) == "t 'a b' c"
+          and M.listing_fact({"exit": 0, "output": " x \n\n y\n"})
+          == {"exit": 0, "paths": ["x", "y"]})
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _version_trust_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

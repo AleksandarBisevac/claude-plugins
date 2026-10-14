@@ -435,6 +435,56 @@ def _full_listing_empty(facts):
     return isinstance(paths, list) and len(paths) == 0
 
 
+def version_distrust(derived, facts):
+    """Why the machine's version answer cannot vouch for a recorded listing,
+    as `None` (it can), `("failed", None, None)` (the version command could
+    not be run, or exited non-zero) or `("mismatch", declared, current)`.
+
+    The one reading of the two version checks, so the importers arm and the
+    task-gate arm cannot drift on which answer counts. The verdict is data and
+    each caller words its own skip line.
+    """
+    if facts.get("versionCheckFailed"):
+        return ("failed", None, None)
+    verified_on = derived.get("verifiedOn") if isinstance(derived, dict) else None
+    declared = verified_on.get("answer") if isinstance(verified_on, dict) else None
+    current = facts.get("versionAnswer")
+    if declared != current:
+        return ("mismatch", declared, current)
+    return None
+
+
+def output_lines(text):
+    """One entry per non-blank line of a listing command's output, stripped."""
+    return [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+
+
+def version_facts(derived, run):
+    """`{versionAnswer}` or `{versionCheckFailed: True}` -- the version
+    command in `derived.verifiedOn` run through `run(command)`, which returns
+    `{exit, output}`. `{}` when no command is recorded. A command that did not
+    exit 0 is its own fact, never an answer of `None`.
+    """
+    verified_on = derived.get("verifiedOn") if isinstance(derived, dict) else None
+    command = verified_on.get("command") if isinstance(verified_on, dict) else None
+    if not (isinstance(command, str) and command.strip()):
+        return {}
+    res = run(command)
+    if res["exit"] == 0:
+        return {"versionAnswer": res["output"].strip()}
+    return {"versionCheckFailed": True}
+
+
+def listing_command(template, paths):
+    """`template` with `{paths}` replaced by the shell-quoted `paths`."""
+    return template.replace("{paths}", " ".join(shlex.quote(p) for p in paths))
+
+
+def listing_fact(res):
+    """`{exit, paths}` for a listing command's `{exit, output}` result."""
+    return {"exit": res["exit"], "paths": output_lines(res["output"])}
+
+
 def _importers_arm(meta, facts):
     """`(paths, full, note)` for the importer-listing arm.
 
@@ -468,15 +518,12 @@ def _importers_arm(meta, facts):
     derived = derived if isinstance(derived, dict) else None
     if not derived or not isinstance(derived.get("listing"), dict):
         return [], False, None
-    if facts.get("versionCheckFailed"):
+    distrust = version_distrust(derived, facts)
+    if distrust and distrust[0] == "failed":
         return [], False, "importers: skipped - the version command failed"
-    verified_on = derived.get("verifiedOn")
-    verified_on = verified_on if isinstance(verified_on, dict) else {}
-    declared_answer = verified_on.get("answer")
-    current_answer = facts.get("versionAnswer")
-    if declared_answer != current_answer:
+    if distrust:
         return [], False, ("importers: skipped - listing verified on %s, this "
-                           "machine answers %s" % (declared_answer, current_answer))
+                           "machine answers %s" % (distrust[1], distrust[2]))
     listing = facts.get("listing")
     listing = listing if isinstance(listing, dict) else {}
     exit_code = listing.get("exit")

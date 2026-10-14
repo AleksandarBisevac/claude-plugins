@@ -156,6 +156,7 @@ import _status_facts  # noqa: E402  (CLOSED_BUG: the one reading of "not open", 
 import _panel_write  # noqa: E402  (project_of_manifest: the project a named manifest is in)
 import _runner_output as _ro  # noqa: E402  (every reading of what a test runner
 #                                         printed: its summary, its failure lines)
+import _gate_derive  # noqa: E402  (version_facts/listing_fact: the one reading of a listing run, shared with derive-phase-gate)
 import _affected_tests as _affected  # noqa: E402  (which suites a task's change
 #                                     can break, by which arm - pure; this file
 #                                     gathers its observations and runs them)
@@ -2354,26 +2355,22 @@ def _affected_facts(tree, meta, changed):
     """Every observation `_affected_tests.select` reads, measured in `tree`."""
     facts = {}
     wrap = {"meta": {"nodePreamble": meta.get("nodePreamble")}}
+
+    def run(command, timeout):
+        code, text, _f = _shell(tree, _ev.resolved_commands(wrap, [command])[0][1],
+                                timeout=timeout)
+        return {"exit": code, "output": text}
+
     templates = _affected.listing_templates(meta)
     gate = meta.get("phaseGate") if isinstance(meta.get("phaseGate"), dict) else {}
     derived = gate.get("derived") if isinstance(gate.get("derived"), dict) else {}
-    verified = derived.get("verifiedOn")
-    version = verified.get("command") if isinstance(verified, dict) else None
-    if "related" in templates and isinstance(version, str) and version.strip():
-        code, text, _f = _shell(tree, _ev.resolved_commands(wrap, [version])[0][1],
-                                timeout=AFFECTED_GIT_TIMEOUT_SECONDS)
-        if code == 0:
-            facts["versionAnswer"] = text.strip()
-        else:
-            facts["versionCheckFailed"] = True
-    quoted = " ".join(shlex.quote(p) for p in changed)
+    if "related" in templates:
+        facts.update(_gate_derive.version_facts(
+            derived, lambda cmd: run(cmd, AFFECTED_GIT_TIMEOUT_SECONDS)))
     for key, template in sorted(templates.items()):
-        command = template.replace("{paths}", quoted)
-        code, text, _f = _shell(tree, _ev.resolved_commands(wrap, [command])[0][1],
-                                timeout=AFFECTED_LISTING_TIMEOUT_SECONDS)
-        facts[key] = {"command": command, "exit": code,
-                      "paths": [ln.strip() for ln in text.splitlines()
-                                if ln.strip()]}
+        command = _gate_derive.listing_command(template, changed)
+        facts[key] = dict(_gate_derive.listing_fact(
+            run(command, AFFECTED_LISTING_TIMEOUT_SECONDS)), command=command)
     listed = _git_text(tree, ["ls-files", "-z", "--cached", "--others",
                               "--exclude-standard"])
     files = [p for p in (listed or "").split("\0") if p]
