@@ -268,12 +268,11 @@ jobs:
         # lints that every entry point installs it), and hooks/ - which stay
         # importless on purpose - are covered by exactly this pass.
         #
-        # NOTHING IS SKIPPED HERE and no contract is required. This pass asserts only
-        # that a file can print whatever it prints on a legacy code page, which a
-        # migrated file's one-line pointer has to survive exactly as much as a suite
-        # does - so the skip the step above needs would only narrow this one. The
-        # runner encodes that difference in `grade(..., encoding_pass=True)`, and its
-        # own case g5 is the one that pins the two passes as two questions.
+        # GRADED EXACTLY AS THE STEP ABOVE. Every file runs on both, a migrated one
+        # included, and a forced codec changes the stream a suite writes to, not the
+        # rules it is read by: a suite that swallows its own UnicodeEncodeError and
+        # exits 0 without its contract is the codec failure itself, which a grade
+        # without the contract would call green. The runner's own case g5 pins it.
       - name: ...and again with a spaced, symlinked TMPDIR and interpreter path
         if: ${{ !cancelled() && runner.os != 'Windows' && matrix.leg == 'spaced' }}
         shell: bash

@@ -1,0 +1,141 @@
+# TEMPORARY STUDY WORKFLOW, for the throwaway branch `ci/study-c` only. It gates
+# nothing and is not meant to be merged - nothing enforces that, so the branch is
+# deleted once its readings are taken. It takes two readings the CI redesign owes
+# before any sweep leg is deleted:
+#
+#   codec (<os>)       what a sweep child's piped stdout is encoded as, on both
+#                      runners, read through the sweep's own `run_one` so the child
+#                      gets the environment, cwd and pipe a real sweep gives it;
+#   selftests (ubuntu-latest, <leg> <shard>)
+#                      the sweep under cp1252 AND a spaced, linked TMPDIR in ONE
+#                      execution (`stress`), beside the plain, cp1252 and spaced legs
+#                      of the SAME run, so the four can be compared file by file.
+#
+# Each existing leg is run with the command ci.yml gives it, on the same checkout
+# depth and interpreter; the job names follow ci.yml's pattern so one reader parses
+# both. Nothing in the tree reads this file - every checker names ci.yml - and a push
+# to this branch does not trigger ci.yml, whose push trigger is main alone.
+name: study-c
+
+on:
+  push:
+    branches: [ci/study-c]
+
+jobs:
+  codec:
+    name: codec (${{ matrix.os }})
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Codec of a sweep child's piped stdout
+        shell: bash
+        run: |
+          # A second reading through a SHELL pipe, the one-liner the analysis proposed.
+          python -c "import sys; print('CODEC-SHELL-PIPE stdout=%s' % sys.stdout.encoding)" | cat
+          python - <<'PY'
+          import importlib.util
+          import json
+          import locale
+          import os
+          import shutil
+          import sys
+          import tempfile
+
+          spec = importlib.util.spec_from_file_location(
+              "sweep_runner", os.path.join("tools", "sweep-selftests.py"))
+          runner = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(runner)
+
+          FACTS = r'''
+          import json, locale, os, sys
+          def facts():
+              out = {
+                  "stdout": sys.stdout.encoding,
+                  "stdout_errors": sys.stdout.errors,
+                  "isatty": sys.stdout.isatty(),
+                  "preferred": locale.getpreferredencoding(False),
+                  "fs": sys.getfilesystemencoding(),
+                  "utf8_mode": sys.flags.utf8_mode,
+                  "python": sys.version.split()[0],
+                  "env": dict((k, os.environ.get(k)) for k in (
+                      "PYTHONIOENCODING", "PYTHONUTF8", "PYTHONLEGACYWINDOWSSTDIO",
+                      "LANG", "LC_ALL", "LC_CTYPE")),
+              }
+              if os.name == "nt":
+                  import ctypes
+                  k32 = ctypes.windll.kernel32
+                  out["acp"] = k32.GetACP()
+                  out["oemcp"] = k32.GetOEMCP()
+                  out["console_out_cp"] = k32.GetConsoleOutputCP()
+              try:
+                  sys.stdout.write("\u2713\n")
+                  sys.stdout.flush()
+                  out["glyph"] = "written"
+              except UnicodeEncodeError:
+                  out["glyph"] = "UnicodeEncodeError"
+              return out
+          '''
+          # The parent's own facts too: the sweep process writes every child's
+          # output to this same kind of stream, the step's pipe to the runner.
+          exec(FACTS)
+          print("CODEC-PARENT " + json.dumps(facts(), sort_keys=True))
+
+          root = tempfile.mkdtemp(prefix="codec-")
+          rel = "codec_child.py"
+          with open(os.path.join(root, rel), "w", encoding="utf-8") as fh:
+              fh.write(FACTS + "\nsys.stdout.write('\\nCODEC-CHILD ' + json.dumps("
+                       "facts(), sort_keys=True) + '\\n')\n")
+          legs = [("plain", None, False), ("cp1252", "cp1252", False)]
+          if os.name != "nt":
+              legs.append(("stress", "cp1252", True))
+          failed = False
+          for label, enc, spaced in legs:
+              ran = runner.run_one(rel, repo=root, encoding=enc, timeout=60,
+                                   spaced=spaced)
+              got = [ln for ln in ran["output"].splitlines()
+                     if ln.startswith("CODEC-CHILD ")]
+              if ran["code"] != 0 or len(got) != 1:
+                  failed = True
+                  print("CODEC-FAILED %s exit=%r output=%r"
+                        % (label, ran["code"], ran["output"]))
+                  continue
+              print("CODEC-PROBE %s %s" % (label, got[0][len("CODEC-CHILD "):]))
+          shutil.rmtree(root, ignore_errors=True)
+          sys.exit(1 if failed else 0)
+          PY
+
+  selftests:
+    name: selftests (ubuntu-latest, ${{ matrix.leg }} ${{ matrix.shard }})
+    timeout-minutes: 26
+    strategy:
+      fail-fast: false
+      matrix:
+        leg: [plain, cp1252, spaced, stress]
+        shard: [1, 2, 3]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Selftest sweep, this cell's leg
+        shell: bash
+        run: |
+          case "${{ matrix.leg }}" in
+            plain)  set -- ;;
+            cp1252) set -- --encoding cp1252 ;;
+            spaced) set -- --spaced ;;
+            stress) set -- --encoding cp1252 --spaced ;;
+            *) echo "unknown leg: ${{ matrix.leg }}"; exit 2 ;;
+          esac
+          python tools/sweep-selftests.py "$@" --shard "${{ matrix.shard }}/3"
