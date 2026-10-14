@@ -142,7 +142,78 @@ def _text_field(body, key):
     return isinstance(body.get(key), str) and body.get(key).strip() != ""
 
 
-def _executor_problems(body):
+# The floor below which an outcome's text reads as unwritten rather than
+# reported, not merely terse: a bare word standing in for the real text
+# ("placeholder" and "pending" among them) always falls under it, while a
+# sentence stating what changed does not. Stated beside the check so the
+# number and its reason travel together.
+_OUTCOME_FLOOR = 12
+# The words that stand in for unwritten text, matched whole so a legitimate
+# sentence mentioning one in passing is not caught by it, and the angle-bracket
+# shape a template leaves when nobody fills it in (`<what changed>`).
+_TEMPLATE_WORD = re.compile(r"\b(?:placeholder|todo|tbd)\b", re.I)
+_TEMPLATE_ANGLE = re.compile(r"<[^<>]{1,80}>")
+
+
+def _template_reason(text):
+    """Why `text` reads as a template left unfilled rather than a written
+    outcome, or None."""
+    if _TEMPLATE_WORD.search(text):
+        return "carries a template word (`placeholder`, `TODO` or `TBD`) in place of the real text"
+    if _TEMPLATE_ANGLE.search(text):
+        return "carries an unfilled `<...>` placeholder"
+    return None
+
+
+def _outcome_problems(outcome):
+    """What `outcome.technical`/`outcome.descriptive` lack beyond being
+    present and non-empty: either text under `_OUTCOME_FLOOR`, either carrying
+    a template word or an unfilled `<...>`, or the two given identical - the
+    shapes every outcome this check exists to catch took, so the same start
+    can be resubmitted with the real text rather than the filing staying
+    uncorrectable."""
+    problems = []
+    texts = {}
+    for half in ("technical", "descriptive"):
+        text = outcome.get(half)
+        if not (isinstance(text, str) and text.strip()):
+            continue
+        stripped = text.strip()
+        texts[half] = stripped
+        if len(stripped) < _OUTCOME_FLOOR:
+            problems.append(
+                "`outcome.%s` is %d character(s), under the floor of %d "
+                "characters beside this check - it reads as unwritten, not "
+                "merely terse" % (half, len(stripped), _OUTCOME_FLOOR))
+        reason = _template_reason(stripped)
+        if reason:
+            problems.append("`outcome.%s` %s" % (half, reason))
+    if len(texts) == 2 and texts["technical"] == texts["descriptive"]:
+        problems.append(
+            "`outcome.technical` and `outcome.descriptive` are identical "
+            "(%r) - say what changed and what it means for a reader "
+            "separately" % (texts["technical"],))
+    return problems
+
+
+def _tests_add_empty_problem(added, task):
+    """Why `added` (the return's `testsAdded`) is refused for `task`, or
+    None: a tdd or regression task whose plan declares `tests.add` cases owes
+    at least one filed title, so an empty list under those modes is the shape
+    every return that filed no test at all took."""
+    if not isinstance(task, dict) or added != []:
+        return None
+    tests = task.get("tests") or {}
+    mode = tests.get("mode")
+    declared = tests.get("add") or []
+    if mode not in ("tdd", "regression") or not declared:
+        return None
+    return ("`testsAdded` is empty while the task's tests.add names %d "
+            "case(s) and tests.mode is %s - name the filed titles"
+            % (len(declared), mode))
+
+
+def _executor_problems(body, task=None):
     problems = []
     if not isinstance(body.get("gates"), dict):
         problems.append("`gates` is missing or not an object")
@@ -153,9 +224,14 @@ def _executor_problems(body):
         problems += ["`outcome.%s` is missing or empty" % half
                      for half in ("technical", "descriptive")
                      if not _text_field(outcome, half)]
+        problems += _outcome_problems(outcome)
     added = body.get("testsAdded")
     if not (isinstance(added, list) and all(isinstance(t, str) for t in added)):
         problems.append("`testsAdded` is missing or not a list of names")
+    else:
+        gap = _tests_add_empty_problem(added, task)
+        if gap:
+            problems.append(gap)
     red = body.get("redFirst")
     if not isinstance(red, dict):
         problems.append("`redFirst` is missing or not an object")
@@ -319,7 +395,7 @@ def return_problems(role, body, task=None):
         return ["the role %r is not one of %s" % (role, ", ".join(RETURN_ROLES))]
     if not isinstance(body, dict):
         return ["the return is a JSON %s, not an object" % type(body).__name__]
-    return _executor_problems(body) if role == "executor" \
+    return _executor_problems(body, task) if role == "executor" \
         else _reviewer_problems(body, task)
 
 

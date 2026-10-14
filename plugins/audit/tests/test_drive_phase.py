@@ -1272,8 +1272,8 @@ def _submit_cases(check):
           and _head(root).startswith(_stamp_head(filed.get("stamp")) or "-"))
     first = _read(path) if os.path.exists(path) else None
     code, text = _submit(None, root, mpath, "P1.1", _executor_body(
-        "P1.1", {"outcome": {"technical": "a second claim",
-                             "descriptive": "again"}}))
+        "P1.1", {"outcome": {"technical": "resubmitted the same claim a second time",
+                             "descriptive": "still the same change as before"}}))
     check("ds3 a second filing is refused before anything runs, and the first "
           "stays byte-identical: %r" % (text,),
           code == 1 and "already filed" in text and "stamp taken" not in text
@@ -1296,6 +1296,23 @@ def _submit_cases(check):
     code, text = _submit(None, root, mpath, "P1.1", _executor_body("P1.1"))
     check("ds5 THE ALLOW TWIN: the same task takes the whole return, and files "
           "it: %r" % (text,), code == 0 and os.path.exists(path))
+
+    # A placeholder outcome is refused before the stamp is taken or the
+    # red-first helper runs, and the same start takes the corrected return
+    # right after - the refusal filed nothing, so nothing blocks the retry.
+    root, mpath, _t = _started(M, "placeholder")
+    _edit(root, "P1.1", "changed\n")
+    path = _filed_path(mpath, "P1.1")
+    code, text = _submit(None, root, mpath, "P1.1", _executor_body("P1.1", {
+        "outcome": {"technical": "placeholder", "descriptive": "placeholder"}}))
+    check("ds5p a placeholder outcome is refused by name, before the stamp is "
+          "taken, and nothing is written: %r" % (text,),
+          code == 1 and "placeholder" in text and "stamp taken" not in text
+          and not os.path.exists(path))
+    code, text = _submit(None, root, mpath, "P1.1", _executor_body("P1.1"))
+    check("ds5q THE ALLOW TWIN: the same start accepts the corrected return "
+          "right after the refusal: %r" % (text,),
+          code == 0 and os.path.exists(path))
 
     # A tdd task: the red-first block is the helper's.
     plan = _plan(TASKS[:1], ("true",))
@@ -4583,7 +4600,8 @@ def _close_evidence_cases(check):
     root, mpath = _repo("ce-absent", task_ids=TASKS[:1], per_task="phase")
     _commit_plan(root, mpath, _with_tests_add, "fixture: tests.add")
     _next(M, root, mpath)
-    _file_executor(root, mpath, "P1.1")
+    _file_executor(root, mpath, "P1.1",
+                   {"testsAdded": ["%s: the f1 case" % (TESTS_ADD_FILE,)]})
     code, text = _next(M, root, mpath)
     task = tasks_of(mpath).get("P1.1", {})
     check("ce2 a `tests.add` file absent at the close refuses it by name, with "
@@ -4599,7 +4617,8 @@ def _close_evidence_cases(check):
     os.makedirs(os.path.join(root, "tests"))
     with open(os.path.join(root, "tests", "test_f1.py"), "w") as fh:
         fh.write("assert True\n")
-    _file_executor(root, mpath, "P1.1")
+    _file_executor(root, mpath, "P1.1",
+                   {"testsAdded": ["%s: the f1 case" % (TESTS_ADD_FILE,)]})
     code, text = _next(M, root, mpath)
     task = tasks_of(mpath).get("P1.1", {})
     check("ce3 ALLOW: a real change with its `tests.add` file present closes - "

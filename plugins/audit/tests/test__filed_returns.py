@@ -35,7 +35,8 @@ def _executor(**over):
     body = {"gates": {"python3 t.py": "pass"},
             "redFirst": {"status": "proved", "basis": "the run exited non-zero on its own case",
                          "at": "z"},
-            "outcome": {"technical": "t", "descriptive": "d"},
+            "outcome": {"technical": "ran the gate command and it exited zero",
+                        "descriptive": "the change landed and the gate stayed green"},
             "testsAdded": ["one"], "stamp": "audit-stamp: v2 x"}
     body.update(over)
     return body
@@ -113,6 +114,37 @@ def _cases(check):
           M.return_problems("executor", _executor()) == []
           and any("claims" in p for p in
                   M.return_problems("executor", _executor(claims=["x"]))))
+
+    placeholder = M.return_problems("executor", _executor(
+        outcome={"technical": "placeholder", "descriptive": "placeholder"}))
+    short = M.return_problems("executor", _executor(
+        outcome={"technical": "did it", "descriptive": "done"}))
+    check("rp13 an outcome whose `technical` and `descriptive` are both the "
+          "bare word `placeholder` is refused - named for the template word "
+          "and the identical pair - and so is one that merely falls under "
+          "the stated floor, before anything is written: %r"
+          % ((placeholder, short),),
+          any("placeholder" in p for p in placeholder)
+          and any("identical" in p for p in placeholder)
+          and any("outcome.technical" in p and "floor" in p for p in short)
+          and any("outcome.descriptive" in p and "floor" in p for p in short))
+
+    tdd_task = dict(task, tests={"mode": "tdd",
+                                 "add": ["tests/test_x.py: a case worth filing"]})
+    empty_added = M.return_problems("executor", _executor(testsAdded=[]), tdd_task)
+    filed_added = M.return_problems(
+        "executor", _executor(testsAdded=["tests/test_x.py: a case worth filing"]),
+        tdd_task)
+    gate_only_task = dict(task, tests={"mode": "gate-only", "add": []})
+    check("rp14 a tdd or regression return with `testsAdded` empty while the "
+          "task's tests.add names a case is refused by naming `testsAdded`; "
+          "one that files the case is not, and a gate-only task with no "
+          "`tests.add` is never asked: %r"
+          % ((empty_added, filed_added),),
+          any("testsAdded" in p for p in empty_added)
+          and filed_added == []
+          and M.return_problems("executor", _executor(testsAdded=[]),
+                                gate_only_task) == [])
 
     # ---- the write and the read ----------------------------------------------
     path = M.return_path(root, task, "executor")
