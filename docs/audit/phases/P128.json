@@ -745,6 +745,49 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P128.14-0h5",
+      "title": "test_audit_task rv13's writer goes through the shared sharing-denial helper, so a Windows denial is waited out",
+      "status": "pending",
+      "description": "F654: CI run 38488610602 (windows-latest) had test_audit_task rv13 red in one draw only; the CI study (quality-gates-internal studies/C-ci-study.md) places it in the sharing-race class P125.38 fixes through one helper in _output.py. Check whether rv13's writer already goes through that helper after P125.38; if it does, close with that evidence; if not, route it through it. No per-site retry.",
+      "files": [
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/audit-task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: rv13 with a simulated sharing denial on the writer it races still passes"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ]
 }
