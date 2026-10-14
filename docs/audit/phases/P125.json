@@ -3710,7 +3710,7 @@
     {
       "id": "P125.60-0h5",
       "title": "A task's start is identified uniquely, so a restart within the same second never reads the previous start's return or marks",
-      "status": "in_progress",
+      "status": "done",
       "description": "Seen on CI run 38575164197 (ubuntu spaced leg, test_drive_phase sc4): after `--answer retry` the attempts went 1 -> 2, yet the next step printed the OLD start's scope-changed decision ('filed under 1 files'), because the return path and the drive's per-start marks are keyed by `startedAt` at one-second resolution (`_filed_returns.return_start_key`, `drive-phase.start_key`): a restart inside the same second as the start it replaces gets the same key, so it finds the previous start's filed return, its `gated` mark and its brief. A fast runner does this; locally sc4 passed twelve times out of twelve. Invariant: every start has an identity no earlier start of the task can share (the attempt number in the key, or a strictly increasing stamp - one definition, read by every place that keys by start: return paths, drive marks, briefs, attempts records), with returns already filed under the old key still found. Make sc4 deterministic: pin the clock so the restart lands in the start's second, and prove it red against today's key.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -3746,19 +3746,34 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a16b0ba7ffbc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "A task's start identity is made strictly increasing at the one place a start is stamped, so the existing key every reader uses (`_filed_returns.return_start_key(startedAt)`: return paths, drive-phase.start_key marks, audit-lookup brief_file and retry_reason) can no longer be shared by two starts. New `_filed_returns.next_start_at(previous, now)` (with START_AT_FORMAT and `_start_epoch`, stdlib calendar/time): a `now` at or before the task's previous `startedAt` becomes the second after it; a later second is kept as read; an unparseable previous bounds nothing. `audit-task.py _start_task` now stamps `startedAt = _fr.next_start_at(was['startedAt'], now)`; its docstrings and `_start_changes`' docstring and the `_filed_returns` module docstring updated to name the mechanism. The key spelling is unchanged, so every return already filed under a one-second key still resolves for its start, and no reader outside the declared files (audit-lookup.py) needed an edit; drive-phase.py was left as is because its start_key already reads return_start_key(startedAt). Chosen over an attempt number in the key because `unblock` resets attempts (so start+attempt can recur within one second) and because changing the key spelling would have required editing audit-lookup.py (outside files) plus a legacy-path fallback. Tests: test_drive_phase sc4 rewritten - a `_pinned_clock` helper writes a sitecustomize.py onto PYTHONPATH that answers argument-less time.gmtime() with one fixed second in every child the driver spawns, both starts run under it; on the pre-fix code sc4 went red with startedAt equal for both starts and the retry printing the old start's `decide scope-changed ... filed under 1 files` (brief None), after the fix 5/5 sc-block. test__filed_returns gains ss-block: ss1 (two same-second starts -> distinct paths; a committed-style return under key 20261013T112343Z is found for its start), ss2 (twin: later second keeps wall clock; clock behind the last start -> next second). Mutation in a scratch copy: next_start_at always returning now -> ss1, ss2 red (87/89); bump without the `read > last` test -> ss2 red (88/89). Runs: test__filed_returns 89/89, test_drive_phase --stage sc-block 5/5, tools/sweep-selftests.py exit 0 (335/335 files ok), ruff exit 0, vermin exit 0. Residual: a startedAt written by hand (orchestrator.md step 2's hand Edit) bypasses next_start_at; nothing enforces that route.",
+        "descriptive": "A restart in the same second as the start it replaces now gets its own start identity, so it never reads the previous start's return, drive marks or brief, and every return already filed still resolves."
       },
       "startedAt": "2026-10-14T19:18:21Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T19:44:54Z",
+      "verifiedBy": [
+        "sc4 a retry whose new start falls in the same second as the start it replaces dispatches the executor again and does not read the previous start's return, marks or brief",
+        "ss1 two starts of one task in the same second get distinct return paths, and a return filed under the old one-second key is still found for the start it answers",
+        "ss2 a start in a later second keeps its own clock reading, and one whose clock reads at or before the last start is the second after it"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T19:44:52Z.f09a2a",
         "status": "passed",
         "at": "2026-10-14T19:44:52Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "a16b0ba7ffbc",
+        "at": "2026-10-14T19:44:54Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T19:33:40Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage sc-block` in a throwaway tree at HEAD exited 1 with 1 of 5 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sc4 (house FAIL): SELFTEST FAILED: 4/5 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -3902,7 +3917,12 @@
       "startedAt": "2026-10-14T19:18:23Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-14T19:54:22Z.f2b1bf",
+        "status": "passed",
+        "at": "2026-10-14T19:54:22Z"
+      }
     },
     {
       "id": "P125.64-0h5",

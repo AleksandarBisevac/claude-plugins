@@ -3281,7 +3281,7 @@ def _remove_retry_cases(check):
         M._git = git_ok
         M.shutil.rmtree = lambda target, *a, **k: rmtree(target, seen)
         try:
-            kwargs = {"wait": wait}
+            kwargs = {} if wait is None else {"wait": wait}
             if clock is not None:
                 kwargs["clock"] = clock
             removed = M._remove_throwaway(holder, holder,
@@ -3341,6 +3341,49 @@ def _remove_retry_cases(check):
     finally:
         M._output.while_shared = real_shared
 
+    # A holder that lets go 0.6 s in: later than a quarter second, well inside
+    # the shared bound. The clock is fake, so no real waiting beyond the
+    # helper's own short pause. No `wait` is passed - the default is the thing
+    # under test.
+    now = [0.0]
+
+    def late_clock():
+        now[0] += 0.1
+        return now[0]
+
+    def releases_late(target, seen):
+        seen.append(target)
+        if now[0] < 0.6:
+            raise denial()
+        real_rmtree(target)
+    removed_late, seen_late = run(releases_late, None, late_clock)
+
+    # The deadline the removal asks for, read at two values of the shared
+    # bound, against a clock that stands still so the difference is the wait.
+    bound = M._output.SHARING_WAIT_SECONDS
+    asked = []
+
+    def recording(op, deadline=None, clock=None):
+        asked.append(deadline - 100.0)
+        return None
+    M._output.while_shared = recording
+    try:
+        for value in (3.0, 7.0):
+            M._output.SHARING_WAIT_SECONDS = value
+            run(plain, None, lambda: 100.0)
+    finally:
+        M._output.while_shared = real_shared
+        M._output.SHARING_WAIT_SECONDS = bound
+
+    check("sr220 a throwaway whose holder releases its files after more than "
+          "a quarter second, within the shared sharing wait, is removed after "
+          "a timed-out run - %d attempt(s): %r"
+          % (len(seen_late), (removed_late, bound)),
+          removed_late is True and len(seen_late) > 2 and 0.25 < 0.6 < bound)
+    check("sr221 the throwaway removal's wait is the shared helper's bound, "
+          "not a constant of its own: a change to the shared bound changes "
+          "it - waits asked for at bounds 3.0 and 7.0: %r" % (asked,),
+          asked == [3.0, 7.0])
     check("sr215 a removal refused once as a sharing denial is retried and "
           "returns removed - %d attempt(s): %r"
           % (len(seen_ok), (removed_ok, seen_ok)),

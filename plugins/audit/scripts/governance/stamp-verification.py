@@ -553,12 +553,11 @@ REMOVE_GIT_TIMEOUT = 10
 TEARDOWN_MARGIN = 3 * _proc_group.GRACE_SECONDS + 2 * REMOVE_GIT_TIMEOUT
 # A killed process's handles are released asynchronously on Windows, so the
 # `rmtree` right after tearing down a timed-out run's process group can still
-# find the holder busy on the very first try. Retried for this long through
-# `_output.while_shared` rather than trusted once - and bounded so a holder
-# that is genuinely stuck (not merely slow to let go) is still reported left
-# behind rather than retried forever. Small enough to stay within "local and
-# not budgeted" above: the worst case adds a quarter second, not a deadline.
-REMOVE_WAIT_S = 0.25
+# find the holder busy on the very first try. Retried through
+# `_output.while_shared` for `_output.SHARING_WAIT_SECONDS` rather than
+# trusted once - bounded so a holder that is genuinely stuck (not merely slow
+# to let go) is still reported left behind rather than retried forever. Still
+# "local and not budgeted" above: the worst case adds that bound, not a deadline.
 MAX_TIMEOUT = HOST_BASH_LIMIT - TEARDOWN_MARGIN
 
 # Every throwaway's temp directory starts with this, which is how a leftover from
@@ -2810,8 +2809,7 @@ def _lay_over(root, path, rels):
     return copied
 
 
-def _remove_throwaway(root, holder, path, wait=REMOVE_WAIT_S,
-                      clock=time.monotonic):
+def _remove_throwaway(root, holder, path, wait=None, clock=time.monotonic):
     """True only when the directory is gone AND git no longer lists it.
 
     The removal is asked of git whether or not the build got as far as
@@ -2821,8 +2819,12 @@ def _remove_throwaway(root, holder, path, wait=REMOVE_WAIT_S,
     holds open - a single attempt can lose a race against handles a
     just-killed process has not yet released - but only for `wait` seconds
     on `clock`, so a holder that never clears is reported left behind rather
-    than retried forever. Any other refusal ends the attempt at once and
-    shows as a holder still there."""
+    than retried forever. `wait` defaults to the shared helper's own bound,
+    read at the call, so a killed process's slow release gets the same grace
+    every other sharing retry here gets. Any other refusal ends the attempt
+    at once and shows as a holder still there."""
+    if wait is None:
+        wait = _output.SHARING_WAIT_SECONDS
     _git(root, ["worktree", "remove", "--force", path], timeout=REMOVE_GIT_TIMEOUT)
     try:
         _output.while_shared(lambda: shutil.rmtree(holder),
