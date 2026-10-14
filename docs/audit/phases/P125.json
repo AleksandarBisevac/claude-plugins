@@ -1985,7 +1985,8 @@
         "plugins/audit/tests/test_usage_ledger.py",
         "tools/bench-hooks.py",
         "PLUGIN-BUILD-GUIDE.md",
-        "plugins/audit/README.md"
+        "plugins/audit/README.md",
+        "SECURITY.md"
       ],
       "tests": {
         "mode": "tdd",
