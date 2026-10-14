@@ -2724,7 +2724,18 @@
       "startedAt": "2026-10-14T10:32:22Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "notes": [
+        {
+          "at": "2026-10-14T13:57:37Z",
+          "text": "Red-first proved by the orchestrator (the check is a new file, so the helper had no red baseline): git archive of HEAD plus the new tools/check-plan-gate-e2e.py, run without CLAUDE_PROJECT_DIR -> exit 0, 'OK: 7 scenarios held through the launcher'; with _config.plan_gate_step mutated to answer no-phase where the plan holds phases, __pycache__ purged -> exit 1, 'FAIL: phases all done, none running, a big first edit: deny that names how to start a phase: expected permissionDecision deny, got None'. Decision (a) recorded: the CI step was stale, require-plan unchanged."
+        }
+      ],
+      "testEvidence": {
+        "runId": "2026-10-14T14:07:04Z.28b279",
+        "status": "passed",
+        "at": "2026-10-14T14:07:04Z"
+      }
     },
     {
       "id": "P125.48-0h5",

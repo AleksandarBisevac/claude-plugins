@@ -262,6 +262,12 @@ ABSENT_BY_DESIGN = (
      "follower of a version bump, and both documents name it in their Releasing "
      "sections. This row goes stale the day the CI checkout fetches tags"),
 
+    ("tools/check-plan-gate-e2e.py", ("CLAUDE.md",),
+     "the plan gate's tiers through the launcher: ci.yml's e2e step, verify.sh and "
+     "CONTRIBUTING.md name it, and its cases run in the sweep, which covers tools/. "
+     "CLAUDE.md's list does not name the other launcher-driven checks "
+     "either, and this row goes stale the day that list names this one"),
+
     ("tools/prove-gates.py", ("verify.sh", "ci.yml", "CONTRIBUTING.md"),
      "minutes rather than seconds, and it MUTATES the tree while it runs, so it is "
      "not a per-commit gate. This was once the argument for no row at all: a gate no "

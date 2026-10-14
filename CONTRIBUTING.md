@@ -358,6 +358,10 @@ python3 tools/measure-context.py --gate
 # run says the machinery around the model works on a real repository.
 python3 tools/check-git-pipeline.py
 
+# the plan gate's tiers, driven through the launcher with a payload on stdin - the
+# script ci.yml's e2e step calls, so the same scenarios run locally
+python3 tools/check-plan-gate-e2e.py
+
 # the JavaScript unit tests. They ran only in CI for a long time, so a change under
 # scripts/ui/ could reach a push with none of the suites covering it having run.
 npx vitest run

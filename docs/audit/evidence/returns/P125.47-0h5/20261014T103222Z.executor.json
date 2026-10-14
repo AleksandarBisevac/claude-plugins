@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/gate-parity.py": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "python3 tools/check-plan-gate-e2e.py": "pass"
+  },
+  "redFirst": {
+    "status": "could-not-prove",
+    "at": "2026-10-14T13:57:01Z",
+    "basis": "P125.47-0h5 declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P125.47-0h5 declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Decision (a): require-plan.py unchanged. New tools/check-plan-gate-e2e.py drives sh py-launch.sh require-plan.py ask via stdin over 7 scenarios (no manifest silent; no-phase manifest no permissionDecision; all-done phases big first edit denies with /audit:phase add; same manifest small first edit allowed; running phase deny; sharded running deny; enforce deny), with --selftest of 10 cases incl. 2 mutation cases. ci.yml step body replaced by 'python tools/check-plan-gate-e2e.py'. Added to verify.sh and CONTRIBUTING.md; ABSENT_BY_DESIGN row for CLAUDE.md in tools/gate-parity.py. gate-parity exit 0, full sweep 335/335 files ok exit 0, ruff clean. Files changed beyond the two originally declared: tools/check-plan-gate-e2e.py, tools/gate-parity.py, tools/verify.sh, CONTRIBUTING.md (all in the widened scope). require-plan.py not edited.",
+    "descriptive": "The e2e plan-gate CI step now asserts the current tiers and runs locally in the sweep and verify.sh."
+  },
+  "testsAdded": [
+    "tools/check-plan-gate-e2e.py --selftest (s0-s6, m1, m2, d1)"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:6fb755f047c09c0dcc372cb3a04f56fe14251a93b9da6a4e19f7a7a8d2cf3513\",\"dirtyDigest\":\"sha256:af896a066b4af2092690b1e612d1e907bd1f77e5df69c8408a801a87e8e17885\",\"dirtyPaths\":{\".github/workflows/ci.yml\":\"4cbd16dee451830a\",\"CONTRIBUTING.md\":\"6758d34d7d588796\",\"tools/check-plan-gate-e2e.py\":\"4a6b0f1fdbda4e27\",\"tools/gate-parity.py\":\"18d7fa6607c70ef3\",\"tools/verify.sh\":\"d88e9555e787f3fb\"},\"head\":\"7de52b51\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".github/workflows/ci.yml\",\"CONTRIBUTING.md\",\"plugins/audit/hooks/require-plan.py\",\"tools/check-plan-gate-e2e.py\",\"tools/gate-parity.py\",\"tools/verify.sh\"],\"scopeDigest\":\"sha256:e5c650a9c6b06948742c1bf81567c2174e1144de93182521c37413f86b493ff3\",\"v\":2}"
+}

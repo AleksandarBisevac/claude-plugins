@@ -346,6 +346,11 @@ run "pipeline context ceilings" python3 tools/measure-context.py --gate
 # OPEN when git cannot be asked, so the gap looked exactly like a clean result. It is
 # also where the five hooks ci.yml's launcher steps leave out are wired.
 run "git pipeline (a real repository)" python3 tools/check-git-pipeline.py
+
+# The plan gate's tiers through the launcher: the same script ci.yml's e2e step runs.
+# It was an inline shell block there for a long time, which no local gate reached, so
+# a change to the hook's tiers went red on the runner alone.
+run "plan gate tiers (through the launcher)" python3 tools/check-plan-gate-e2e.py
 run "ruff" ruff check plugins/audit tools
 run "vermin (3.8 floor)" vermin -t=3.8- --no-tips --violations \
   plugins/audit/scripts plugins/audit/hooks plugins/audit/tests

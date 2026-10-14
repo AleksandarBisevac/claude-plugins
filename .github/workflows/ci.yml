@@ -306,66 +306,13 @@ jobs:
         if: ${{ !cancelled() && matrix.leg == 'e2e' }}
         shell: bash
         run: |
-          set -e
-          # Exercises all three tiers through py-launch.sh, because the selftests
-          # call decide() directly and cannot prove the wiring: the launcher, the
-          # stdin contract and the emitted JSON shape.
-          #
-          # The gate is graded, so the project dir must carry the right evidence for
-          # each tier. Before 0.20.0 this step piped cwd=/tmp with no manifest and
-          # asserted a deny; that combination is now deliberately an observe.
-          big=$(python -c 'print("x\\n" * 120, end="")')
-          proj=$(mktemp -d)
-          mkdir -p "$proj/docs/audit"
-
-          fire() {
-            printf '{"tool_name":"Edit","tool_input":{"file_path":"src/x.ts","new_string":"%s"},"session_id":"ci-%s","cwd":"%s","hook_event_name":"PreToolUse"}' \
-              "$big" "$1" "$proj" \
-              | env CLAUDE_PROJECT_DIR="$proj" sh plugins/audit/hooks/py-launch.sh require-plan.py ask
-          }
-
-          # 1. no manifest -> observe: nothing is printed, so nothing is denied.
-          out=$(fire observe)
-          if [ -n "$out" ]; then
-            echo "expected silence with no manifest, got: $out"; exit 1
-          fi
-
-          # 2. manifest, no phase running -> warn, still never a deny on Pre.
-          printf '{"meta":{"version":2},"phases":[{"id":"P1","title":"p","status":"done","tasks":[{"id":"P1.1","title":"t","status":"done"}]}]}' \
-            > "$proj/docs/audit/audit-plan.json"
-          out=$(fire warn)
-          if echo "$out" | grep -q 'permissionDecision'; then
-            echo "warn tier must not emit a permissionDecision, got: $out"; exit 1
-          fi
-
-          # 3. manifest + a running phase -> the canonical deny JSON.
-          printf '{"meta":{"version":2},"phases":[{"id":"P1","title":"p","status":"in_progress","tasks":[{"id":"P1.1","title":"t","status":"pending"}]}]}' \
-            > "$proj/docs/audit/audit-plan.json"
-          fire deny | grep -q '"permissionDecision": *"deny"'
-
-          # 3b. ...and the same, SHARDED. The three cases above all use a
-          # single-file manifest, which is the one layout that needs nothing from
-          # scripts/ to read: the index of a sharded plan carries phase stubs with
-          # no `status` at all, so a hook that fails to load scripts/_manifest_io
-          # falls back to a plain read, sees no phase running, and goes SILENT on a
-          # project whose gate should be denying. That is a wiring failure no
-          # selftest can see (they call the loader directly) and no case here could
-          # see either, because the layout it needs the module for ran nowhere.
-          # Proven by breaking the delegation: deny becomes silence.
-          mkdir -p "$proj/docs/audit/phases"
-          printf '{"meta":{"version":2},"phases":[{"id":"P1","title":"p","shard":"phases/P1.json"}]}' \
-            > "$proj/docs/audit/audit-plan.json"
-          printf '{"id":"P1","title":"p","status":"in_progress","tasks":[{"id":"P1.1","title":"t","status":"pending"}]}' \
-            > "$proj/docs/audit/phases/P1.json"
-          fire sharded | grep -q '"permissionDecision": *"deny"' \
-            || { echo "sharded manifest: expected deny, got silence — the assembled read is not reaching scripts/_manifest_io through the launcher"; exit 1; }
-
-          # 4. enforce:true restores always-on deny with no manifest at all.
-          rm -rf "$proj/docs"
-          mkdir -p "$proj/.claude"
-          printf '{"enforce":true}' > "$proj/.claude/audit.config.json"
-          fire enforced | grep -q '"permissionDecision": *"deny"'
-          echo "OK: observe / warn / deny / enforce all behave through the launcher"
+          # The tiers are driven through py-launch.sh by one script, because the
+          # selftests call decide() directly and cannot prove the wiring: the
+          # launcher, the stdin contract and the emitted JSON shape. The script is
+          # in the selftest sweep too, so the same scenarios run locally. Its
+          # docstring lists the tiers; this step used to carry them as shell, and
+          # a shell step no local gate runs is how it went stale.
+          python tools/check-plan-gate-e2e.py
       - name: Capability policy decides, end to end through the launcher
         if: ${{ !cancelled() && matrix.leg == 'e2e' }}
         shell: bash
