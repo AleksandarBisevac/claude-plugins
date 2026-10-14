@@ -3001,7 +3001,13 @@
       "startedAt": "2026-10-14T14:56:11Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "notes": [
+        {
+          "at": "2026-10-14T15:18:52Z",
+          "text": "Red-first proved by the orchestrator in a scratch copy of the wave base: with only the new test__refs.py copied in -> exit 1, 16/17, KeyError fixtures (the key this task introduces); with the work copied in and the path half of split_literal_violations disabled (the one line asserted mutated) -> exit 1, 343/345, FAIL on the first tests.add case and sl2; unmutated work 345/345. prove-gates --only split_literal refuses on a dirty tree; it runs at sign-off over the committed tree."
+        }
+      ]
     },
     {
       "id": "P125.52-0h5",
