@@ -10039,8 +10039,10 @@ def _follower_cases(check):
               % (row.get("followersOwed"),),
               code == 1
               and row.get("followersOwed") == [
-                  {"path": rel, "recipe": cra.refresh_for(rel),
-                   "owner": "check-rendered-artifacts"} for rel in stale]
+                  {"path": rel, "recipe": cra.refresh_for(src),
+                   "owner": "check-rendered-artifacts"}
+                  for rel, src in ((stale[0], stale[0]), ("docs/index.html", stale[0]),
+                                   (stale[1], stale[1]))]
               and all(cra.refresh_for(rel).split("\n")[0] in printed for rel in stale))
 
         # THE TWIN, for the over-firing direction: a step that names no follower

@@ -3829,7 +3829,18 @@
       "startedAt": "2026-10-14T20:03:52Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "notes": [
+        {
+          "at": "2026-10-14T20:47:33Z",
+          "text": "Red-first proved by the orchestrator (the helper missed it on the case-label shape): git archive of the wave base plus the task's three new test files, Claude session variables unset, __pycache__ purged -> test_integrate_task exit 1 24/27 (FAIL the tests.add integrate case, i9b), test_drive_phase --stage fm-block exit 1 0/2 (FAIL the tests.add drive case), test__deps exit 1 99/100; with the task's integrate-task.py, drive-phase.py, _evidence_io.py, _deps.py, check-rendered-artifacts.py and capture-screenshots.mjs -> 27/27, 2/2, 320/320. Case labels were reshaped after the stamp; the stamp is behind by those three labels."
+        }
+      ],
+      "testEvidence": {
+        "runId": "2026-10-14T20:59:46Z.b4f772",
+        "status": "passed",
+        "at": "2026-10-14T20:59:46Z"
+      }
     },
     {
       "id": "P125.62-0h5",

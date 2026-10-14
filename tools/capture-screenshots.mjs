@@ -8455,11 +8455,33 @@ async function main() {
     : 'screenshots captured'} — ${legsRun.join(' + ')}`);
 }
 
+/**
+ * `--follower-for <path>...`: the owner's answer an integration asks for (the
+ * scripts `_evidence_io.FOLLOWER_OWNERS` names). One `FOLLOWER-OWED` line, the
+ * shape `_evidence_io.follower_line` prints, per path inside the directory a
+ * capture writes; nothing for any other path. Marked `needsBrowser`, so the
+ * drive prints the capture for the orchestrator and never runs it in an agent.
+ * @param {string[]} rels repo-relative paths
+ * @returns {string[]}
+ */
+function followerLines(rels) {
+  const out = path.relative(REPO, OUT).split(path.sep).join('/') + '/';
+  return rels.filter((rel) => rel.startsWith(out)).map((rel) => 'FOLLOWER-OWED '
+    + JSON.stringify({ needsBrowser: true, owner: 'capture-screenshots', path: rel,
+                       recipe: 'node tools/capture-screenshots.mjs' }));
+}
+
 // Run only when invoked as a CLI: the exported CSV helpers above are imported
 // by red-first probes, and an import that launched a full capture would make
 // every probe a screenshot run.
 if (process.argv[1]
     && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  (REPRO ? reproduce() : main())
-    .catch((err) => { console.error(err); process.exit(1); });
+  if (argv.includes('--follower-for')) {
+    for (const line of followerLines(argv.slice(argv.indexOf('--follower-for') + 1))) {
+      console.log(line);
+    }
+  } else {
+    (REPRO ? reproduce() : main())
+      .catch((err) => { console.error(err); process.exit(1); });
+  }
 }

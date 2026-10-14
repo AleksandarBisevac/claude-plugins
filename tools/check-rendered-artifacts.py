@@ -902,6 +902,27 @@ def _recipe_lines(rel):
     return ["      %s" % (line,) for line in how.split("\n")]
 
 
+def _copies_of(rel):
+    """The byte copies `COPY_PROVEN` says are taken of `rel`."""
+    return [copy for copy, source, _sides in COPY_PROVEN if source == rel]
+
+
+def follower_lines(rels):
+    """One `FOLLOWER-OWED` line per path of `rels` this tool owns - a tabled
+    artifact with its refresh command, or a byte copy with its source's, since
+    that recipe writes the copy too - and nothing for any other path."""
+    # Deferred for the reason `tools/_suite.py` gives: only a follower pays for
+    # the plugin's path, and it needs `follower_line` from it.
+    if os.path.join(REPO, "tools") not in sys.path:
+        sys.path.insert(0, os.path.join(REPO, "tools"))
+    import _suite  # noqa: F401
+    import _evidence_io
+    source = dict((copy, src) for copy, src, _sides in COPY_PROVEN)
+    return [_evidence_io.follower_line(rel, refresh_for(source.get(rel, rel)),
+                                       "check-rendered-artifacts")
+            for rel in rels if rel in source or rel in _tabled_artifacts()]
+
+
 def arm_verdict(arms, root=None, subjects=None, drift=None):
     """([lines], exit code) for the named arms, and a line for each arm left out.
 
@@ -914,19 +935,11 @@ def arm_verdict(arms, root=None, subjects=None, drift=None):
     lines, code = [], 0
     if FRESH_ARM in arms:
         bad = drifted() if drift is None else drift()
-        if bad:
-            # Deferred for the reason `tools/_suite.py` gives: only a stale page
-            # pays for the plugin's path, and it needs `follower_line` from it.
-            if os.path.join(REPO, "tools") not in sys.path:
-                sys.path.insert(0, os.path.join(REPO, "tools"))
-            import _suite  # noqa: F401
-            import _evidence_io
         for rel, detail in bad:
             lines.append("STALE %s - %s" % (rel, detail))
             lines.extend(_recipe_lines(rel))
-            # The record the gate runner keeps, recipe and all, for the drive.
-            lines.append(_evidence_io.follower_line(
-                rel, refresh_for(rel), "check-rendered-artifacts"))
+            # The records the gate runner keeps, recipe and all, for the drive.
+            lines.extend(follower_lines([rel] + _copies_of(rel)))
         if bad:
             lines.append("%d committed artifact(s) no longer match their source. "
                          "Re-render with the command printed under each, and commit "
@@ -1346,6 +1359,27 @@ def _arm_cases(check):
     check("ra26 ...but a page matching NEITHER a fresh render nor HEAD still fails "
           "the before-commit arms, once, as STALE: %r" % (_neither_lines,),
           _neither_code == 1 and _count(_neither_lines, "STALE") == 1)
+    _html, _md = ARTIFACTS[0][0], ARTIFACTS[1][0]
+    _owed = {}
+    for _rel in (_html, _md):
+        _lines, _code = arm_verdict(BEFORE_COMMIT_ARMS,
+                                    drift=lambda r=_rel: [(r, "differs")])
+        import _evidence_io   # follower_lines put the plugin on the path for this
+        _owed[_rel] = _evidence_io.followers_in("\n".join(_lines))
+    _copies = [f for f in _owed[_html][0] if f["path"] == "docs/index.html"]
+    # The second direction: the Markdown twin has no copy, so a line printed for
+    # every stale page would name docs/index.html under it too.
+    check("a stale example report names docs/index.html as a follower of the same "
+          "refresh recipe (%r)" % (_owed,),
+          len(_copies) == 1 and _copies[0]["recipe"] == refresh_for(_html)
+          and refresh_for(_html) is not None
+          and [f["path"] for f in _owed[_md][0]] == [_md]
+          and _owed[_html][1] == 0 and _owed[_md][1] == 0)
+    _asked = [f["path"] for f in _evidence_io.followers_in("\n".join(
+        follower_lines(["README.md", "docs/index.html", _md])))[0]]
+    check("ra31 asked by path, as an integration asks, the tool owns the copy and "
+          "the tabled page and claims nothing else: %r" % (_asked,),
+          _asked == ["docs/index.html", _md])
     check("ra27 ...and the run CI makes (no flag) and the one `verify.sh --release` "
           "makes (`--against-commit`) both still fail on a page the commit does "
           "not carry: %r / %r" % (_ci_lines, _rel_lines),
@@ -1797,6 +1831,11 @@ def main():
     argv = sys.argv[1:]
     if "--selftest" in argv:
         return _selftest()
+    if "--follower-for" in argv:
+        # The owner's answer an integration asks for: `_evidence_io.FOLLOWER_OWNERS`.
+        for line in follower_lines(argv[argv.index("--follower-for") + 1:]):
+            sys.stdout.write(line + "\n")
+        return 0
     if "--how" in argv:
         for rel in _tabled_artifacts():
             sys.stdout.write("%s\n" % (rel,))

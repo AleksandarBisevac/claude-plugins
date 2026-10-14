@@ -2403,7 +2403,16 @@ def map_follower(guide_path=None, script_dir=None, layers=None):
     drift = map_drift(guide_path, script_dir, layers)
     if [problem for _rel, problem in drift] != [_MAP_STALE]:
         return None
-    return {"path": drift[0][0], "recipe": MAP_RECIPE, "owner": "_deps.map_drift"}
+    return dict(follower_for(_GUIDE_REL_PATH), path=drift[0][0])
+
+
+def follower_for(path):
+    """The follower record when `path` is the guide `MAP_RECIPE` writes, else
+    None - asked of a path a task changed undeclared, stale map or not: the
+    recipe, run where the change was, is what settles the bytes."""
+    if path != _GUIDE_REL_PATH:
+        return None
+    return {"path": path, "recipe": MAP_RECIPE, "owner": "_deps.map_drift"}
 
 
 def write_map(guide_path=None):
@@ -6411,6 +6420,15 @@ if __name__ == "__main__":
     if "--render" in sys.argv[1:]:
         sys.stdout.write(render())
         raise SystemExit(0)
+    if "--follower-for" in sys.argv[1:]:
+        # The owner's answer an integration asks for by command. The line is
+        # `_evidence_io.follower_line`'s, spelled here because that layer sits
+        # above this one; test__deps holds its reader to this spelling.
+        for _path in sys.argv[sys.argv.index("--follower-for") + 1:]:
+            if follower_for(_path):
+                print("FOLLOWER-OWED %s" % (json.dumps(follower_for(_path),
+                                                       sort_keys=True),))
+        raise SystemExit(0)
     if "--write-map" in sys.argv[1:]:
         if not write_map():
             sys.stderr.write("_deps.py: %s\n" % (map_drift()[0][1],))
@@ -6437,5 +6455,6 @@ if __name__ == "__main__":
             _lines.append("")
         _output.write_lf_lines(_lines)
         raise SystemExit(0)
-    sys.stderr.write("usage: _deps.py --selftest | --render | --write-map | --contracts\n")
+    sys.stderr.write("usage: _deps.py --selftest | --render | --write-map | --contracts"
+                     " | --follower-for <path>...\n")
     raise SystemExit(2)

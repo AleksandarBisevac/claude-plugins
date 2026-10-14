@@ -27,11 +27,13 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
+import _deps                                       # noqa: E402  (the module map's owner)
 import _loader                                     # noqa: E402
 
 M = _loader.load_script("integrate-task.py")
@@ -63,14 +65,17 @@ def _read(root, rel):
         return fh.read()
 
 
-def _world(prefix, tasks, files, trees=True):
+def _world(prefix, tasks, files, trees=True, seed=None):
     """A committed phase repository holding `files` (rel -> text) and its manifest,
-    whose phase P1 carries `tasks` (id -> declared files). -> dict."""
+    whose phase P1 carries `tasks` (id -> declared files); `seed(proj)` adds to
+    it before the base commit. -> dict."""
     root = os.path.realpath(_harness.fixture_root(prefix))
     proj = os.path.join(root, "proj")
     os.makedirs(proj)
     for rel, text in files.items():
         _write(proj, rel, text)
+    if seed is not None:
+        seed(proj)
     manifest = {"meta": {"version": 3, "developmentBranch": "main"},
                 "phases": [{"id": "P1", "title": "p", "status": "in_progress",
                             "tasks": [{"id": tid, "title": tid,
@@ -282,6 +287,89 @@ def _undeclared_cases(check):
           and _read(world["proj"], "a.txt") == "a\n")
 
 
+GUIDE = "PLUGIN-BUILD-GUIDE.md"
+
+
+def _seed_map_owner(proj):
+    """The plugin's real scripts and its guide with a map from before the change,
+    so the owner's recipe really runs and really renders."""
+    shutil.copytree(M._output.SCRIPTS_DIR,
+                    os.path.join(proj, "plugins", "audit", "scripts"),
+                    ignore=shutil.ignore_patterns("__pycache__"))
+    with open(os.path.join(M._output.REPO_ROOT, GUIDE), encoding="utf-8") as fh:
+        text = fh.read()
+    block = _deps._fenced_block_after(text, _deps._GUIDE_HEADING)
+    _write(proj, GUIDE, text.replace(block, "a map from before this change\n", 1))
+    _write(proj, ".gitignore", "__pycache__/\n")
+
+
+def _write_map(tree):
+    subprocess.run([sys.executable, os.path.join(tree, "plugins", "audit", "scripts",
+                                                 "_deps.py"), "--write-map"],
+                   cwd=tree, check=True, capture_output=True, timeout=120)
+
+
+def _follower_cases(check):
+    world = _world("itf", {"P1.1": ["a.txt"]}, {"a.txt": "a\n"},
+                   seed=_seed_map_owner)
+    tree = world["trees"]["P1.1"]
+    _write(tree, "a.txt", "a1\n")
+    _write_map(tree)
+    _write(tree, GUIDE, _read(tree, GUIDE).replace(
+        "module map (", "module map, edited by hand (", 1))
+    code, ans = _integrate(world, "P1.1")
+    decision = ans.get("decision") or {}
+    check("an undeclared module-map edit whose bytes the recipe does not reproduce "
+          "stays an undeclared-change decision, naming the path (%r %r)"
+          % (code, decision),
+          code == 3 and "edited by hand" in _read(tree, GUIDE)
+          and decision.get("paths") == [GUIDE]
+          and sorted(decision.get("unreproduced") or {}) == [GUIDE]
+          and _deps.MAP_RECIPE in decision["unreproduced"][GUIDE]
+          and GUIDE in ans.get("sentence", "")
+          and "a map from before" in _read(world["proj"], GUIDE))
+
+    # The over-fire direction: a guard that kept every claimed path a decision
+    # passes the case above and fails this one.
+    world = _world("itg", {"P1.1": ["a.txt"]}, {"a.txt": "a\n"},
+                   seed=_seed_map_owner)
+    tree = world["trees"]["P1.1"]
+    _write(tree, "a.txt", "a1\n")
+    _write_map(tree)
+    code, ans = _integrate(world, "P1.1")
+    check("i9b a module map the owner's recipe reproduces byte for byte is "
+          "integrated with no decision, as that owner's follower: %r %r"
+          % (code, ans.get("followers")),
+          code == 0 and not ans.get("decision")
+          and ans.get("followers") == [{"path": GUIDE, "recipe": _deps.MAP_RECIPE,
+                                        "owner": "_deps.map_drift"}]
+          and _read(world["proj"], GUIDE) == _read(tree, GUIDE))
+
+
+def _noop_owner_cases(check):
+    # An owner whose recipe writes nothing: run over the tree's own bytes it
+    # would "reproduce" every edit, so the path must go back to the base first.
+    owner = [o for o in M._evidence_io.FOLLOWER_OWNERS
+             if o.startswith("tools/") and o.endswith(".py")][0]
+    world = _world("ith", {"P1.1": ["a.txt"]}, {"a.txt": "a\n", "made.txt": "0\n",
+                                                owner: _NOOP_OWNER})
+    _write(world["trees"]["P1.1"], "made.txt", "1\n")
+    code, ans = _integrate(world, "P1.1")
+    check("i9c a recipe that writes nothing reproduces nothing: the claimed path "
+          "is put back at the base before it runs, so it stays a decision: %r %r"
+          % (code, ans.get("decision")),
+          code == 3 and (ans.get("decision") or {}).get("paths") == ["made.txt"]
+          and "other bytes" in (ans["decision"].get("unreproduced") or {}).get(
+              "made.txt", ""))
+
+
+_NOOP_OWNER = ("import json, sys\n"
+               "for rel in sys.argv[2:]:\n"
+               "    if rel == 'made.txt':\n"
+               "        print('FOLLOWER-OWED ' + json.dumps({'path': rel, "
+               "'recipe': 'true', 'owner': 'noop'}))\n")
+
+
 def _cli_cases(check):
     world = _world("itm", {"P1.1": ["a.txt"]}, {"a.txt": "a\n"})
     _write(world["trees"]["P1.1"], "a.txt", "a1\n")
@@ -311,6 +399,8 @@ def _cases(check):
     _harness.stage(check, "iti", _index_cases)
     _harness.stage(check, "itl", _lockfile_cases)
     _harness.stage(check, "itu", _undeclared_cases)
+    _harness.stage(check, "itf", _follower_cases)
+    _harness.stage(check, "itx", _noop_owner_cases)
     _harness.stage(check, "itm", _cli_cases)
 
 

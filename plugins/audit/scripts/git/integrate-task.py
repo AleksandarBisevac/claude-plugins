@@ -30,7 +30,10 @@ THE ORDER OF THE QUESTIONS is the order of what each one costs to get wrong:
      every task involved. This runs BEFORE the declaration check on purpose: a
      path two tasks both wrote is a refusal whether or not either declared it.
   4. which changed paths does the task not declare?  A DECISION (exit 3) - widen,
-     discard or block - because the task tree is about to be removed.
+     discard or block - because the task tree is about to be removed. Except a
+     path an owner claims whose recipe, run in a scratch copy of the task's work
+     with that path back at the base, writes the tree's bytes exactly
+     (`reproduced`): it is integrated as that owner's follower, in `followers`.
   5. write, with the intent recorded first so a crash mid-write is resumable.
 
 RESUME. A second run is a no-op that says "already integrated": the state file
@@ -87,7 +90,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
-import _evidence_io  # noqa: E402  (where the evidence ledger lives: a record path)
+import _evidence_io  # noqa: E402  (a record path; the follower protocol and its owners)
 import _invariants  # noqa: E402  (the git root and the manifest file pair)
 import _journal_io  # noqa: E402  (where the journal lives: a record path)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader)
@@ -283,12 +286,67 @@ def merge_bytes(current, base, other):
                   else "git merge-file refused: %s" % (err.strip() or "binary content"))
 
 
+# --- followers: an undeclared path its owner's recipe writes byte for byte --------
+def owned(root, paths):
+    """Every follower record an owner gives for one of `paths`, each
+    `_evidence_io.FOLLOWER_OWNERS` script `root` holds asked by command - an
+    owner that cannot be asked claims nothing."""
+    records = []
+    for rel in _evidence_io.FOLLOWER_OWNERS:
+        script = os.path.join(root, rel)
+        runner = sys.executable if rel.endswith(".py") else shutil.which("node")
+        if not (runner and os.path.isfile(script)):
+            continue
+        try:
+            done = subprocess.run([runner, script, "--follower-for"] + list(paths),
+                                  cwd=root, capture_output=True, timeout=120)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        said = _evidence_io.followers_in(done.stdout.decode("utf-8", "replace"))[0]
+        records += [r for r in said if r["path"] in paths and r not in records]
+    return records
+
+
+def reproduced(tree, base, records):
+    """`(followers, refused)` - the records whose recipe, run in a scratch copy
+    of the tree's work with every claimed path put back at the base, writes the
+    tree's bytes exactly; and `{path: why}` for every other claimed path. A
+    recipe that needs a browser or a hand is never run here."""
+    refused = dict((r["path"], "its owner %s %s" % (
+        r["owner"], "runs `%s` in a browser" % (r["recipe"],) if r["recipe"]
+        else "names no recipe: a hand edit")) for r in records
+        if not r["recipe"] or r.get("needsBrowser"))
+    runnable = [r for r in records if r["path"] not in refused]
+    if not runnable:
+        return [], refused
+    scratch = tempfile.mkdtemp(prefix="integrate-follow-")
+    try:
+        for rel in _nul_list(_git_ok(tree, ["ls-files", "-z"])):
+            if _file_bytes(tree, rel) is not None:
+                _place(scratch, tree, rel, _file_bytes(tree, rel))
+        for r in runnable:
+            _place(scratch, tree, r["path"], _base_bytes(tree, base, r["path"]))
+        for recipe in sorted(set(r["recipe"] for r in runnable)):
+            code, _said = _evidence_io.run_recipe(recipe, scratch)
+            why = None if code == 0 else "could not run" if code is None \
+                else "exited %d" % (code,)
+            for r in runnable:
+                if r["recipe"] == recipe and (why or _file_bytes(scratch, r["path"])
+                                              != _file_bytes(tree, r["path"])):
+                    refused[r["path"]] = "its owner %s's recipe `%s` %s" % (
+                        r["owner"], recipe, why or "writes other bytes than the "
+                        "tree holds")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return [r for r in runnable if r["path"] not in refused], refused
+
+
 # --- the answer --------------------------------------------------------------------
 def _answer(task_id, phase_id, **fields):
     base = {"task": task_id, "phaseId": phase_id, "tree": None, "base": None,
             "headBefore": None, "paths": [], "already": False, "regate": False,
-            "overlapWith": [], "discarded": [], "widened": [], "refused": None,
-            "decision": None, "error": None, "sentence": ""}
+            "overlapWith": [], "discarded": [], "widened": [], "followers": [],
+            "refused": None, "decision": None, "error": None, "sentence": ""}
     base.update(fields)
     return base
 
@@ -337,6 +395,7 @@ def _integrate(manifest, phase, task, manifest_path, project, git_root, undeclar
     if own.get("status") == "done":
         return E_OK, dict(answer, already=True, paths=own.get("paths") or [],
                           regate=own.get("regate"),
+                          followers=own.get("followers") or [],
                           overlapWith=own.get("overlapWith") or [],
                           sentence="task %s is already integrated (recorded for "
                                    "base %s)" % (task_id, base[:12]))
@@ -412,12 +471,18 @@ def _integrate(manifest, phase, task, manifest_path, project, git_root, undeclar
                        "; ".join("%s: %s" % (p, w) for p, w in sorted(conflicts.items())))
 
     extra = undeclared_paths(task.get("files") or [], paths)
+    claimed = owned(tree, extra) if extra else []
+    followers, unreproduced = reproduced(tree, base, claimed)
+    extra = [p for p in extra if p not in [f["path"] for f in followers]]
     if extra and undeclared is None:
         return E_DECIDE, dict(answer, decision={
-            "kind": "undeclared-change", "options": list(CHOICES), "paths": extra},
+            "kind": "undeclared-change", "options": list(CHOICES), "paths": extra,
+            "unreproduced": unreproduced,
+            "browser": [r for r in claimed if r.get("needsBrowser")]},
             sentence="task %s changed %d path(s) it does not declare: %s - choose "
                      "widen, discard or block (the task tree is removed after "
-                     "integration)" % (task_id, len(extra), ", ".join(extra)))
+                     "integration)%s" % (task_id, len(extra), ", ".join(extra), "".join(
+                         "; %s: %s" % pw for pw in sorted(unreproduced.items()))))
     if extra and undeclared == "block":
         return _refuse(answer, "undeclared", extra, [task_id],
                        "undeclared paths, blocked on request: %s" % (", ".join(extra),))
@@ -430,13 +495,14 @@ def _integrate(manifest, phase, task, manifest_path, project, git_root, undeclar
     overlap_with = sorted(set(t for p in written for t in siblings.get(p, [])))
     regate = any(p in siblings for p in written)
     entries[task_id] = {"base": base, "paths": written, "status": "writing",
-                        "regate": regate, "overlapWith": overlap_with}
+                        "regate": regate, "overlapWith": overlap_with,
+                        "followers": followers}
     _save_state(sfile, entries)
     for path in written:
         _place(git_root, tree, path, results[path])
     entries[task_id]["status"] = "done"
     _save_state(sfile, entries)
-    return E_OK, dict(answer, paths=written, regate=regate,
+    return E_OK, dict(answer, paths=written, regate=regate, followers=followers,
                       overlapWith=overlap_with, discarded=discarded, widened=widened,
                       sentence="integrated %d path(s) of task %s%s"
                                % (len(written), task_id,
@@ -553,6 +619,9 @@ def render(answer, out=print):
     for key in ("discarded", "widened"):
         if answer.get(key):
             out("  %s: %s" % (key, ", ".join(answer[key])))
+    for follower in answer.get("followers") or []:
+        out("  follower: %s, written by `%s` (%s)" % (
+            follower["path"], follower["recipe"], follower["owner"]))
     if answer.get("regate"):
         out("  regate: true")
 

@@ -48,11 +48,12 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
 
-import _harness                                    # sets sys.path for scripts/ + hooks/
+import _harness                                   # sets sys.path for scripts/ + hooks/
 import _output                                     # noqa: E402  (PLUGIN_ROOT)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402  (script_path, load_script)
@@ -4453,6 +4454,108 @@ def _follower_wave_cases(check):
           and _read(os.path.join(root, "notes.txt")) == b"current\n")
 
 
+def _follower_map_cases(check):
+    """A green gate owes nothing, so the module map a member regenerated itself
+    reaches integration undeclared: its owner's recipe is what decides it."""
+    M, why = _load("drive_phase_follower_map")
+    if M is None:
+        check("fm0 the driver loads", False, why)
+        return
+    import _deps
+    root, mpath = _wave_repo("followmap", 2)
+    shutil.copytree(_output.SCRIPTS_DIR,
+                    os.path.join(root, "plugins", "audit", "scripts"),
+                    ignore=shutil.ignore_patterns("__pycache__"))
+    guide = "PLUGIN-BUILD-GUIDE.md"
+    with open(os.path.join(_output.REPO_ROOT, guide), encoding="utf-8") as fh:
+        text = fh.read()
+    block = _deps._fenced_block_after(text, _deps._GUIDE_HEADING)
+    _write_lf(os.path.join(root, guide),
+              text.replace(block, "a map from before this change\n", 1))
+    with open(os.path.join(root, ".gitignore"), "a") as fh:
+        fh.write("__pycache__/\n")
+    for argv in (["add", "-A"], ["commit", "-qm", "the module map's owner"]):
+        subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
+                       timeout=60)
+    _code, first = _next_wave(M, root, mpath)
+    tree, fresh = _tree_of(root, "P1.2"), None
+    if tree:
+        subprocess.run([sys.executable, os.path.join(
+            tree, "plugins", "audit", "scripts", "_deps.py"), "--write-map"],
+            cwd=tree, check=True, capture_output=True, timeout=120)
+        fresh = _read(os.path.join(tree, guide)).decode("utf-8")
+    for t in _dispatched(first):
+        _file_wave_executor(root, mpath, t)
+    prints = []
+    for _ in range(6):
+        said = []
+        with _Env(root):
+            M.main(["next", PHASE, mpath, "--project-dir", root], out=said.append)
+        prints.append("\n".join(said))
+        if all(t.get("status") == "done" for t in tasks_of(mpath).values()):
+            break
+    task = tasks_of(mpath)["P1.2"]
+    notes = " ".join(str(n) for n in task.get("notes") or [])
+    said = "\n".join(prints)
+    held = _git_out(root, "show", "%s:%s" % (task.get("commit") or "HEAD", guide))
+    check("a wave member that regenerated the module map itself, with its gate "
+          "green, is integrated with the map widened on the owner's basis and no "
+          "undeclared-change decision printed (%r)"
+          % ((task.get("status"), task.get("files"), notes, prints),),
+          task.get("status") == "done" and guide in (task.get("files") or [])
+          and "_deps.map_drift" in notes and _deps.MAP_RECIPE in notes
+          and "undeclared-change" not in said
+          and fresh is not None and "a map from before" not in fresh
+          and held == fresh)
+
+    # An owner whose recipe needs a browser, standing at the path the protocol
+    # asks: its bytes cannot be reproduced, so the orchestrator is told to run it.
+    root, mpath = _wave_repo("followshotwave", 2)
+    recipe = "git show HEAD:map.fresh > docs/shot.png"
+    _write_lf(os.path.join(root, "map.fresh"), "captured\n")
+    os.makedirs(os.path.join(root, "tools"))
+    os.makedirs(os.path.join(root, "docs"), exist_ok=True)
+    owner = [o for o in _evio.FOLLOWER_OWNERS if o.startswith("tools/")
+             and o.endswith(".py")][0]
+    _write_lf(os.path.join(root, *owner.split("/")), (
+        "import json, sys\n"
+        "for rel in sys.argv[2:]:\n"
+        "    if rel == 'docs/shot.png':\n"
+        "        print('FOLLOWER-OWED ' + json.dumps({'path': rel, 'recipe': %r,\n"
+        "              'owner': 'shots', 'needsBrowser': True}))\n" % (recipe,)))
+    for argv in (["add", "-A"], ["commit", "-qm", "a browser owner"]):
+        subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
+                       timeout=60)
+    _code, first = _next_wave(M, root, mpath)
+    tree = _tree_of(root, "P1.2")
+    if tree:
+        _write_lf(os.path.join(tree, "docs", "shot.png"), "by the executor\n")
+    for t in _dispatched(first):
+        _file_wave_executor(root, mpath, t)
+    prints, ran = [], False
+    for _ in range(6):
+        said = []
+        with _Env(root):
+            M.main(["next", PHASE, mpath, "--project-dir", root], out=said.append)
+        prints.append("\n".join(said))
+        if "follow P1.2: run `%s`" % (recipe,) in prints[-1] and tree and not ran:
+            subprocess.run(recipe, shell=True, cwd=tree, check=True, timeout=60)
+            ran = True
+        elif all(t.get("status") == "done" for t in tasks_of(mpath).values()):
+            break
+    task = tasks_of(mpath)["P1.2"]
+    notes = " ".join(str(n) for n in task.get("notes") or [])
+    check("fm2 an undeclared path whose owner's recipe needs a browser is never run "
+          "by the drive: it prints the orchestrator the follow, and the next drive "
+          "widens what that run wrote and closes, with no undeclared-change "
+          "decision: %r" % ((task.get("status"), task.get("files"), notes, prints),),
+          ran and task.get("status") == "done"
+          and "docs/shot.png" in (task.get("files") or [])
+          and "on the drive's follow" in notes
+          and "undeclared-change" not in "\n".join(prints)
+          and _read(os.path.join(root, "docs", "shot.png")) == b"captured\n")
+
+
 # --- a wave member's tree outlives a crash, a failed setup and a block ----------
 # The setup every case below declares: it appends the directory it ran in to a
 # log outside the fixture, so the log is the evidence a tree was provisioned -
@@ -5618,6 +5721,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("wc-block", "_wave_crash_cases"), ("w1-block", "_width_one_cases"),
           ("wz-block", "_wave_width_cases"),
           ("fw-block", "_follower_cases"), ("fh-block", "_follower_wave_cases"),
+          ("fm-block", "_follower_map_cases"),
           ("wt-block", "_wave_resume_cases"), ("wt5-block", "_wave_adopt_cases"),
           ("wt7-block", "_wave_review_discard_cases"),
           ("wd-block", "_wave_redo_cases"), ("wg-block", "_wave_regate_cases"),

@@ -1298,6 +1298,19 @@ def _cases(check):
               _wrote == (True, False) and M.map_drift(stale_path) == []
               and _rewritten.startswith("intro\n\n" + M._GUIDE_HEADING + "\n\nsome text")
               and _rewritten.endswith("```\n\nmore text\n"))
+        _claims = [M.follower_for(p) for p in (M._GUIDE_REL_PATH, "README.md",
+                                               "docs/" + M._GUIDE_REL_PATH)]
+        check("g10 asked by path, the map's owner claims the guide alone, with the "
+              "recipe and owner a stale fence owes: %r" % (_claims,),
+              _claims == [dict(_followers[0], path=M._GUIDE_REL_PATH), None, None])
+        import subprocess
+        _said = subprocess.run(
+            [sys.executable, os.path.join(_output.SCRIPTS_DIR, "_deps.py"),
+             "--follower-for", "README.md", M._GUIDE_REL_PATH],
+            capture_output=True, text=True, timeout=120).stdout
+        check("g11 ...and as a command, the way an integration asks it, in the line "
+              "the follower reader parses, nothing unread: %r" % (_said,),
+              _ev.followers_in(_said) == ([_claims[0]], 0))
     finally:
         shutil.rmtree(guide_tmp, ignore_errors=True)
 

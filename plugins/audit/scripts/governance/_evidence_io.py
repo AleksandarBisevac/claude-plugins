@@ -58,6 +58,7 @@ import json
 import math
 import os
 import re
+import subprocess
 import sys
 import time
 
@@ -763,6 +764,29 @@ def followers_in(text):
         elif record not in records:
             records.append(record)
     return records, unread
+
+
+# The steps that answer, by path, for the followers they own: each is run from
+# the root of the tree asked, as `<script> --follower-for <path>...`, and prints a
+# follower line for every path it owns and nothing for the rest. Asked by
+# command, never imported, so the tree's own copy answers and a script the tree
+# does not hold is no owner there.
+FOLLOWER_OWNERS = ("plugins/audit/scripts/_deps.py", "tools/check-rendered-artifacts.py",
+                   "tools/capture-screenshots.mjs")
+# A recipe is a regeneration, not a suite: bounded so a hung one ends the run.
+RECIPE_TIMEOUT = 600
+
+
+def run_recipe(recipe, cwd):
+    """`(code, said)` of a follower's recipe run in `cwd`: code None when it
+    could not run at all, `said` the texts that say why it failed."""
+    try:
+        done = subprocess.run(recipe, shell=True, cwd=cwd, capture_output=True,
+                              timeout=RECIPE_TIMEOUT)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, ("%s" % (exc,),)
+    return done.returncode, tuple(s.decode("utf-8", "replace")
+                                  for s in (done.stderr, done.stdout))
 
 
 def row_for(project, result, scope, ids, identity, published=None):
