@@ -47,6 +47,14 @@ def _cases(check):
     import shutil
     import tempfile
 
+    # --- is_model_id: ids that name no model --------------------------------
+    check("is_model_id: a real model id is one, the synthetic turn, an empty "
+          "id and a non-string are not",
+          [M.is_model_id(m) for m in
+           ("claude-opus-5", "some-future-model", "<synthetic>", "<x>", "",
+            None, 7)]
+          == [True, True, False, False, False, False, False])
+
     # --- usage normalization ----------------------------------------------
     counts = M._usage_counts({
         "input_tokens": 2, "output_tokens": 264,

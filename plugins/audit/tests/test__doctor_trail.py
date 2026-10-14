@@ -206,6 +206,28 @@ def _cases(check):
         check("dt-up3 ...and the remedy names the config key that fixes it",
               "usage.pricing" in _fix(rep, "unpriced models"))
 
+        # A synthetic turn beside a real unknown model: only the real one is
+        # named, with its own count; the synthetic one is never a finding.
+        mixed_ledger = os.path.join(tmp, "mixed-usage")
+        ul.append_rows(mixed_ledger, [
+            {"ts": "2026-01-01T00", "sessionId": "s-mixed",
+             "model": "<synthetic>", "in": 7, "out": 7, "cacheW5m": 0,
+             "cacheW1h": 0, "cacheR": 0},
+            {"ts": "2026-01-01T01", "sessionId": "s-mixed",
+             "model": "claude-future-9", "in": 10, "out": 400, "cacheW5m": 0,
+             "cacheW1h": 0, "cacheR": 90}])
+        rep = base.Report()
+        M.check_unpriced_models(rep, tmp,
+                               {"usage": {"ledgerDir": "mixed-usage"}},
+                               mrel, ul.DEFAULT_PRICING)
+        check("dt-up2b ledger rows with model <synthetic> are not named by the "
+              "unpriced-models row, and rows of an unknown real model are, "
+              "with their token count - %r" % (_detail(rep, "unpriced models"),),
+              _levels(rep, "unpriced models") == ["WARNING"]
+              and "<synthetic>" not in _detail(rep, "unpriced models")
+              and "claude-future-9" in _detail(rep, "unpriced models")
+              and "500 token" in _detail(rep, "unpriced models"))
+
         # The CLI's own hasUnknownModelCost=true rides beside the finding
         # rather than instead of it, and beside the all-clear too.
         rep = base.Report()

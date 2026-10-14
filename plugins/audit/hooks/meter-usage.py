@@ -316,7 +316,8 @@ def session_start_check(data, ul=None, cfg=None, root=None):
         table = _pricing(ul, manifest, root)["table"]
 
         _tokens, model, _reason = ul.current_context_size(prev)
-        if model and ul.rates_for(model, table) is None:
+        if (model and ul.is_model_id(model)
+                and ul.rates_for(model, table) is None):
             return ("[audit] the previous session's model (%s) has no price "
                     "row in this project's table, so its cost is not being "
                     "counted - add a rate for it under usage.pricing in "

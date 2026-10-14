@@ -521,6 +521,15 @@ class Attributor(object):
 
 
 # --- scanning -------------------------------------------------------------------
+def is_model_id(model):
+    """Whether `model` names a model at all. The host stamps its own
+    placeholder turns (`<synthetic>`, the API-error stand-ins) with an id in
+    angle brackets; those carry no price because they are not a model, so no
+    surface may call one "unpriced". The scan skips them and the two
+    unpriced-model checks leave them out, all through this one reading."""
+    return isinstance(model, str) and bool(model) and not model.startswith("<")
+
+
 # How many recently-seen message ids the cursor carries between scans. Duplicates of
 # one `message.id` are always adjacent in the file, so a small ring is enough to cover
 # a chunk boundary that splits a run of duplicates.
@@ -689,7 +698,7 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
         if mid in seen and counted is None:
             continue                     # <- THE dedup. See module docstring.
         model = message.get("model") or ""
-        if model.startswith("<"):
+        if model and not is_model_id(model):
             continue                     # `<synthetic>` API-error placeholders
         ts = entry.get("timestamp")
         bucket = hour_bucket(ts)

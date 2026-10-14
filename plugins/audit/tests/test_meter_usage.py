@@ -562,6 +562,23 @@ def _cases(check):
                   msg and "some-future-model-nobody-priced" in msg
                   and "usage.pricing" in msg and "\n" not in msg, msg)
 
+            # ss1b: the host's synthetic turn is not a model with a price, so
+            # it is never named; ss1 above is the other direction (a real
+            # unknown id still is), which an always-silent check would fail.
+            proj1b, prev1b, payload1b = _ss_case("synthetic")
+            (proj1b / (prev1b + ".jsonl")).write_text(
+                json.dumps({"type": "assistant", "message": {
+                    "model": "<synthetic>",
+                    "usage": {"input_tokens": 1, "output_tokens": 1}}}) + "\n",
+                encoding="utf-8")
+            msg1b = M.session_start_check(payload1b, ul=ul, cfg=ss_cfg,
+                                          root=ss_root)
+            check("ss1b a previous session whose last model id is <synthetic> "
+                  "prints no unpriced-model notice, and one whose id is an "
+                  "unknown real model still does: %r / %r" % (msg1b, msg),
+                  msg1b is None and msg and "some-future-model-nobody-priced"
+                  in msg, msg1b)
+
             # ss2: a priced model with no cost-state at all - silent.
             proj2, prev2, payload2 = _ss_case("quiet")
             (proj2 / (prev2 + ".jsonl")).write_text(

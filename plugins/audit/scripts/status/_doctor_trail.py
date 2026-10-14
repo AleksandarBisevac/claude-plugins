@@ -183,12 +183,13 @@ def unpriced_model_tokens(rows, pricing, ul):
     does not reshuffle between runs over an unchanged ledger. A model
     `price()` CAN rate is left out entirely, same as every other priced
     surface - this is the complement, naming only what none of them can
-    price."""
+    price. An id that names no model (`<synthetic>`, see
+    `ul.is_model_id`) is not a finding either."""
     totals = {}
     order = []
     for row in rows:
         model = row.get("model")
-        if not model or ul.rates_for(model, pricing) is not None:
+        if not ul.is_model_id(model) or ul.rates_for(model, pricing) is not None:
             continue
         tokens = sum(int(row.get(k) or 0) for k in ul.TOKEN_KEYS)
         if model not in totals:
