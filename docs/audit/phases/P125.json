@@ -4136,7 +4136,7 @@
     {
       "id": "P125.66-0h5",
       "title": "The drive's brief and follower cases hold on Windows: a brief read back is the brief written, and fixtures write UTF-8",
-      "status": "in_progress",
+      "status": "done",
       "description": "Regressions in this phase on windows-latest shard 1 (plain and cp1252), CI runs 38638062120 and 38640789691 at d893e549, every other leg green: (1) test_drive_phase fm-block raised `UnicodeEncodeError: 'charmap' codec can't encode character '\\u2190'` in the test helper `_write_lf` (test_drive_phase.py around line 240), which opens a file with no encoding - a test-only defect, fix it by writing UTF-8 as the product does; (2) test_drive_phase sn6 - `brief <id> --role <role>` printed the brief the drive wrote for the executor dispatches but NOT for the reviewer ones (`(4, [True, False, True, False])`). Establish whether the product's `brief --read` (audit-lookup.py read_brief, reached through drive-phase.py's brief verb) changes bytes on Windows (a text-mode read or print translating newlines, or a non-cp1252 character in the reviewer brief failing on a cp1252 stdout) or only the test's comparison does; if the product, fix it so the printed brief is the written bytes on every platform and stdout encoding, with a POSIX-visible case that simulates the translation; if the test, fix the test. (3) test_audit_task tk7 failed once on windows plain 2 (run 38638062120) and passed on the next run: its 'no live holder' uses `pc_gone_pid()`; make the gone pid certain on Windows (a pid the test itself spawned and reaped), not assumed. Also, generally: grep test_drive_phase.py and the drive's own writes for any `open(..., 'w')` without an encoding and fix them in the same change - this is the second encoding defect in this phase.",
       "files": [
         "plugins/audit/tests/test_drive_phase.py",
@@ -4171,20 +4171,128 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c317df64ccf6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The product WAS affected. audit-lookup.py `brief --read` printed the brief with sys.stdout.write(text). On Windows a text stdout turns every \\n into \\r\\n, and its encoding is the console code page. A reviewer brief embeds the executor's filed return as filed, and a return filed on Windows carries CRLF: subprocess on Windows writes `input=` through a TextIOWrapper that turns \\n into \\r\\n, and run_verb hands the return to file-return that way. So each embedded CRLF line came out as \\r\\r\\n. drive-phase run_brief's universal-newline capture then read that as two newlines, while sn6 read the file as one. That explains (4, [True, False, True, False]): the executor briefs embed no filed return. Probe on macOS: the reviewer brief from a two-task --signal drive holds 0 CR and 0 non-ASCII here, so sn6 is green on POSIX. The Windows half is reasoned from CPython's subprocess source (Popen.__init__ wraps stdin in TextIOWrapper(newline=None); _stdin_write writes through it). It was not observed on a Windows host. Fix: new audit-lookup.write_exact(stream, text) writes the UTF-8 bytes to stream.buffer after a flush. A stream with no buffer (StringIO) gets the text, which it neither translates nor encodes, so bo2 is unchanged. New case in test_audit_lookup _brief_cases: a filed return with CRLF and U+2190 gives a reviewer brief. It is read through main --read under redirect_stdout(io.TextIOWrapper(BytesIO, encoding='cp1252', errors='strict', newline='\\r\\n')), and the bytes printed must equal the file's bytes. Before the fix it raised UnicodeEncodeError (red; 99/100). After the fix it passes (100/100). Second-direction mutant, run in a scratch copy and not in the tree: write_exact replaced by reconfigure-to-utf-8 plus a text write goes red with 3543 vs 3490 bytes and 3 \\r\\r\\n, so the CRLF half is held separately. drive-phase.py's own writes: none of its open() calls is a text-mode open without an encoding, so it is unchanged. test_drive_phase.py: new unencoded_text_opens(source), an AST walk reporting the line of each open()/io.open() in text mode with no encoding=. A new case in sb-block runs it over governance/drive-phase.py and tests/test_drive_phase.py, plus a seven-line twin (lines 1,2,3,6 reported; 4,5,7 not). It was red first with 68 sites, all in the test file, _write_lf among them (the fm-block cp1252 crash). Every site now names encoding='utf-8'. Mutants (none / every open / ignore encoding) each give a twin answer other than [1,2,3,6]. Also set encoding='utf-8', errors='replace' on the four subprocess captures of verb/driver/hook output in that file, which decoded UTF-8 output in the locale encoding. test_audit_task.py tk7: pc_gone_pid now keeps each exited Popen in a list for the life of the block. On Windows an open process handle keeps the pid from being reused; before this, the Popen was collected on return and its handle closed. No POSIX red is possible for this. Runs: test_audit_lookup 100/100 (also under PYTHONIOENCODING=cp1252); test_drive_phase --stage sb-block --stage sn5-block 9/9 under cp1252; full sweep 335/335 files ok, exit 0; ruff and vermin exit 0.",
+        "descriptive": "brief --read now prints a brief's exact bytes on any platform and stdout encoding, so Windows reviewer briefs are no longer mangled. The drive's test fixtures write UTF-8 under a lint that names any open without an encoding, and tk7's dead pid can no longer be reused on Windows."
       },
       "startedAt": "2026-10-14T21:42:06Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T22:05:08Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_lookup.py: a reviewer brief carrying non-cp1252 characters and CRLF-prone text, read back through brief --read under a cp1252 stdout, prints exactly the bytes that were written",
+        "plugins/audit/tests/test_drive_phase.py: every file the drive and its fixtures write in text mode names its encoding (a write without one is reported by file and line)"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T22:05:07Z.2459ee",
         "status": "passed",
         "at": "2026-10-14T22:05:07Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "c317df64ccf6",
+        "at": "2026-10-14T22:05:08Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T21:54:49Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_lookup.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 100 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - plugins/audit/tests/test_audit_lookup.py: a reviewer brief carrying non-cp1252 characters and CRLF-prone text, read back through brief --read under a cp1252 stdout, prints exactly the bytes that were written (the brief holds both, and the bytes printed are the file's): (0, \"UnicodeEncodeError: 'charmap' codec can't encode character '\\\\u2190' in position 2839: character maps to <undefined>\", 3575, 0, 0) (house FAIL): SELFTEST FAILED: 99/100 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P125.67-0h5",
+      "title": "The Windows user-path shape does not read escaped control characters as path segments",
+      "status": "pending",
+      "description": "CI run 38645130027 (every leg running tools/check-committed-pii.py, ci/p125 at c317df64): the P125.66 return's text describing CRLF bytes as `<outside-repo>` (JSON-escaped) was reported as `windows-user-path` at two columns, and q26/q27/q27b/q7 went red with it. This is the SECOND instance of the class: check-committed-pii's BASELINE already carries rows for P82 text 'with the carriage-return and newline escapes spelled out as escaped backslash sequences. The detector reads the escapes as path separators; no path.' A baseline per instance is the patch; the invariant is in the shape: `_machine_paths._MACHINE_PATH_SHAPES` 'windows-user-path' second alternative (`\\\\{2,4}[A-Za-z0-9._-]+\\\\{1,2}[A-Za-z0-9._$-]+\\\\`) accepts one-character segments, which is exactly an escape sequence. Require a segment shape no escape sequence has (at least two characters, and not a lone escape letter), keep every real UNC and escaped Windows home path found, remove the BASELINE rows the change makes stale (the check reports a dead baseline itself), and prove both directions: the escape text is quiet, a real escaped `<outside-repo><name>\\\\` and a `<outside-repo>` path are still found. The write scrub uses the same predicate, so the filed-return scrub inherits the fix.",
+      "files": [
+        "plugins/audit/scripts/_machine_paths.py",
+        "plugins/audit/tests/test__machine_paths.py",
+        "tools/check-committed-pii.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__machine_paths.py: escaped control characters written as backslash sequences (a CRLF described as backslash-r backslash-n, doubled for JSON) are not a Windows user path, while an escaped C:/Users/<name> home and an escaped UNC server/share path still are",
+          "tools/check-committed-pii.py: every committed artifact is clean with no baseline row standing for an escape sequence read as a path"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.68-0h5",
+      "title": "Every text-mode file and subprocess read or write in scripts/ and hooks/ names its encoding",
+      "status": "pending",
+      "description": "Third encoding defect in this phase (F666 fixture, F668 brief read-back and fixture writes, now this): CI run 38645130027 windows plain 1 - a subprocess reader thread decoded a verb's UTF-8 output as cp1252 (`codecs.charmap_decode` in `subprocess._readerthread`), so the follower-at-integration case and sn6 still fail on Windows after P125.66. Some `subprocess.run(..., text=True)` / `universal_newlines` / `Popen(text=True)` in the product names no encoding (P125.61's owner query `<script> --follower-for` and the drive's verb runner are first suspects). The class fix is an invariant, not the next site: (1) a lint over every .py under scripts/ and hooks/ (built like the repo's other AST lints, rows in tools/prove-gates.py and tools/gate-parity.py) that reports any text-mode `open`/`io.open` and any text-mode subprocess call (`text=True`, `universal_newlines=True`, or an `encoding=`-less capture decoded later with `.decode()` without a codec) that names no encoding; (2) fix every site it reports, UTF-8 with an explicit errors policy chosen per site and stated; (3) reproduce on POSIX: run the drive and integrate suites with `LC_ALL=C PYTHONUTF8=0` (a locale whose preferred encoding is ASCII), which turns the same defect red here, and add that run as a case. Widen through the drive for the files the lint reports; stop and name them.",
+      "files": [
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/scripts/git/integrate-task.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "tools/prove-gates.py",
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__output.py: a text-mode open or a text-mode subprocess call with no encoding anywhere under scripts/ or hooks/ is reported by file and line, and one that names its encoding is not",
+          "plugins/audit/tests/test_drive_phase.py: under a locale whose preferred encoding is ASCII, a drive whose verbs print non-ASCII text integrates and closes as it does under UTF-8"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
